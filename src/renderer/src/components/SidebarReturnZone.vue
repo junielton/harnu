@@ -15,15 +15,43 @@
  * clears from the zone); the × dismisses (`markSessionSeen` — stamps last-
  * viewed = now, dropping the row). Tokens only — Section-label eyebrow,
  * `--color-warning` dot, `--border` divider (design.md §6, folder-first).
+ *
+ * Your move (design.md §6 "RETURN HERE in Your move mode Live"): when the setting is Live the zone
+ * lists the global queue of Your move cards instead (`YourMoveCard`), oldest first, with the count
+ * and the oldest clock in the eyebrow. It is global on purpose: the zone sits outside the drill
+ * view, so a card from another project shows whichever folder the sidebar is drilled into. In Off
+ * and Observe nothing about the legacy rows changes. Cards have no ×: see `YourMoveCard.vue`.
  */
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import { useSessionsStore } from '../stores/sessions'
 import type { Session } from '../stores/sessions'
+import { useYourMoveStore } from '../stores/your-move'
+import { formatClock } from '../lib/your-move-view'
 import { sessionTitle } from '../lib/session-label'
+import YourMoveCard from './YourMoveCard.vue'
 
 const sessions = useSessionsStore()
+const yourMove = useYourMoveStore()
 const { t } = useI18n()
+
+onMounted(() => void yourMove.init())
+
+const live = computed(() => yourMove.mode === 'live')
+const visible = computed(() =>
+  live.value ? yourMove.count > 0 : sessions.forgottenSessions.length > 0
+)
+const count = computed(() => (live.value ? yourMove.count : sessions.forgottenSessions.length))
+const oldestClock = computed(() =>
+  yourMove.oldestAt === null ? '' : formatClock(yourMove.now - yourMove.oldestAt)
+)
+
+/** One card open at a time: the zone is a narrow strip, and a second one would crowd the list. */
+const expandedId = ref<string | null>(null)
+const toggle = (id: string): void => {
+  expandedId.value = expandedId.value === id ? null : id
+}
 
 /** Row label — the shared session name (BUG-78, the sidebar row's own), else the
  *  "New session" placeholder. */
@@ -34,9 +62,9 @@ function labelFor(s: Session): string {
 
 <template>
   <div
-    v-if="sessions.forgottenSessions.length > 0"
+    v-if="visible"
     class="flex shrink-0 flex-col"
-    style="max-height: 168px"
+    :style="live ? 'max-height: min(380px, 45vh)' : 'max-height: 168px'"
     data-island="sidebar-return"
   >
     <!-- 1px zone divider (--border) separating the folder list from RETURN HERE. Off, it is the
@@ -45,10 +73,13 @@ function labelFor(s: Session): string {
     <div data-return-divider class="shrink-0 border-t border-border" aria-hidden="true" />
 
     <!-- Section-label eyebrow (design.md §6) — uppercase 10.5px / 500 / 0.06em /
-         --text-4, mirroring the FOLDERS / ACTIVE ELSEWHERE eyebrows. Not
-         collapsible: the zone is a transient nudge, gone the moment it's empty. -->
+         --text-4, mirroring the FOLDERS / ACTIVE ELSEWHERE eyebrows. In Your move mode Live it is
+         --color-warning and adds the oldest card's clock. Not collapsible: the zone is a
+         transient nudge, gone the moment it's empty. -->
     <div
-      class="flex shrink-0 items-center text-text-4"
+      class="flex shrink-0 items-center"
+      :class="live ? 'text-warning' : 'text-text-4'"
+      data-testid="your-move-eyebrow"
       style="
         padding: 8px 12px 4px 12px;
         gap: 4px;
@@ -60,11 +91,30 @@ function labelFor(s: Session): string {
     >
       <span>{{ $t('sidebar.returnHere.title') }}</span>
       <span aria-hidden="true">·</span>
-      <span class="tabular-nums">{{ sessions.forgottenSessions.length }}</span>
+      <span class="tabular-nums">{{ count }}</span>
+      <template v-if="live">
+        <span aria-hidden="true">·</span>
+        <span class="tabular-nums">{{ oldestClock }}</span>
+      </template>
+    </div>
+
+    <!-- Your move cards: the only part that scrolls (the eyebrow stays put). -->
+    <div
+      v-if="live"
+      class="scrollable min-h-0 flex-1 overflow-y-auto"
+      style="padding-top: 2px; padding-bottom: 2px"
+    >
+      <YourMoveCard
+        v-for="c in yourMove.queue"
+        :key="c.id"
+        :card="c"
+        :expanded="expandedId === c.id"
+        @toggle="toggle(c.id)"
+      />
     </div>
 
     <!-- Flat list of forgotten sessions: the only part that scrolls (the eyebrow stays put). -->
-    <div class="scrollable min-h-0 flex-1 overflow-y-auto" style="padding-bottom: 4px">
+    <div v-else class="scrollable min-h-0 flex-1 overflow-y-auto" style="padding-bottom: 4px">
       <button
         v-for="s in sessions.forgottenSessions"
         :key="s.sessionId"

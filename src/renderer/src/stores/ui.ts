@@ -123,6 +123,7 @@ export type SettingsTabId =
   | 'mods'
   | 'memory'
   | 'hibernationPolicy'
+  | 'yourMove'
   | 'usageHistory'
   | 'changelog'
   | 'claudeCode'
@@ -152,6 +153,7 @@ const SETTINGS_TABS: Record<SettingsTabId, true> = {
   mods: true,
   memory: true,
   hibernationPolicy: true,
+  yourMove: true,
   usageHistory: true,
   changelog: true,
   claudeCode: true,

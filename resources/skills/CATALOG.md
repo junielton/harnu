@@ -1,4 +1,4 @@
-<!-- harnu-skills v19 (2026-11-08) -->
+<!-- harnu-skills v22 (2026-11-09) -->
 
 # Harnu bundled skills
 
@@ -41,6 +41,7 @@ renders, so it is deliberately not translated.
 | `grill-me`             | Stress-test a spec or plan one question at a time; every question lands as a `D-n` row, an Amendments row or a non-goal.                                                                                                   |
 | `step-by-step`         | Walk the operator through manual actions one step at a time; each action is a check on a mission step the operator ticks.                                                                                                  |
 | `spec`                 | Triage every entry first (most end Small, with no file or tool call); above Small, open its mission, write the spec, `check` it with the staged checker, run the staged Goldfish review and ask the one approval question. |
+| `your-move`            | Tell the operator, in a self-contained card, when a turn leaves something only they can unblock: the end-of-turn test, the five kinds, and the `your_move` verb.                                                           |
 
 ## Features
 

@@ -46,6 +46,10 @@ extraResources:
   # into the JS — ship it unpacked so a packaged build can stage it too.
   - from: 'resources/skills'
     to: 'skills'
+  # Your move: the judge's prompts (gate-v1.md, enrich-v1.md) are read at runtime by `claude
+  # --system-prompt-file`, so it ships as a plain file, not bundled into the JS.
+  - from: 'resources/your-move'
+    to: 'your-move'
   # T389: the companion mod's plugin tree (staged into <userData> at spawn time, never loaded
   # from here). Tests, fixtures, api-surface.json and generated files are never shipped (MOD-9).
   - from: 'resources/companion'

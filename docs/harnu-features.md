@@ -1,4 +1,4 @@
-<!-- harnu-features v131 (2026-11-08) -->
+<!-- harnu-features v134 (2026-11-09) -->
 
 # You are running inside Harnu
 
@@ -38,7 +38,7 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `browser_console`, `browser_network`, `browser_wait_for`, `browser_eval`, `browser_click`,
 `browser_type`, `browser_fill`, `browser_press`, `browser_emulate`, `browser_upload`, `browser_download`, `adopt_folder`, `remove_folder`, `memory_append`, `create_card`, `update_card`,
 `move_card`, `archive_card`, `delete_card`, `submit_manifest`, `draw_canvas`,
-`notify`, `speak`, `message_session`, `create_worker`, `list_workers`,
+`notify`, `speak`, `your_move`, `message_session`, `create_worker`, `list_workers`,
 `list_containers`, `stop_containers`, `start_containers`, `remove_containers`,
 `list_cleanup`, `release_worktree`, `archive_session`, `hide_folder`, `github_budget`, `update_worker`, `delete_worker`, `orchestrator_arm`, `orchestrator_disarm`,
 `mission_create`, `mission_get`, `mission_list`, `mission_add_step`,
@@ -279,6 +279,32 @@ small per-minute allowance (`rateRemaining`); speak once when done, not per step
 and `muted` are the rule working; `engine-off` means the speech engine itself (a second
 switch the folder gate doesn't control) is off. None is worth a retry; fall back to
 `notify`.
+
+**Hand the operator the ball — `your_move` (when enabled).** Harnu keeps one global "Your
+move" queue of cards, each one a thing only the operator can unblock. `your_move({ folder,
+sessionId, kind, ask, blocks?, options?, recommended?, cardId? })` files ONE card from inside
+a turn: `kind` is `decide`, `go_no_go`, `provide`, `do` or `check`; `ask` is one line (up to
+500 characters) that makes sense with no other context, never "D-9 is unanswered" but what D-9
+is (a blank `ask` is refused `BAD_ARGS`); `blocks` says what stays stuck; `options` (up to 6)
+and `recommended` serve a `decide`: a `recommended` that is not one of `options` is ignored and
+the card is still filed. Pass your OWN `sessionId`. Runs free. ACK `{ ok, op, cardId, refreshed }`: pass that
+`cardId` back to refresh the same card (a new `ask`, `updatedAt` moves, `openedAt` and the clock
+never do); without it a new card is filed and the judge reconciles duplicates. **No verb
+closes a card the operator can still see**: one leaves when the operator deals with it, or when its source resolves (a
+mission card closes when the mission stops owing the item), never at an agent's word. For the
+same reason `archive_session` and `remove_folder` refuse (`OPEN_CARDS`) a session or folder that holds an open card in the operator's queue; an Observe-mode card is in no queue and does not block. Refusals, none of them worth a retry:
+`YOUR_MOVE_OFF` (the operator's Your move setting is Off, the default, or off for that folder;
+nothing was filed, say it in your reply instead), `YOUR_MOVE_RATE_LIMIT` (30 calls per session
+per UTC hour, refreshes included; the refusal is audited), `CARD_NOT_FOUND` (`cardId` is unknown, closed or another
+session's), `YOUR_MOVE_UNAVAILABLE` and `YOUR_MOVE_WRITE_FAILED` (nothing changed). **The verb
+and the skill improve a card; they are not what guarantees one.** With Your move on, Harnu
+itself inspects every turn that stops on its own, with two detector runs and an enrichment call,
+and files what only the operator can unblock whether or not you call the verb or the skill is
+switched on. `harnu:your-move` (a bundled skill, off until switched on) teaches the end-of-turn
+test, "if the operator never comes back, does this still get done?", the five kinds and how to
+write a card that stands alone. In Observe mode a card is stored for the operator's debug list
+in **Settings → Your move**; until the queue ships in the sidebar, a Live card does not reach it
+either.
 
 **Message another session — `message_session`.** `message_session({ sessionId, message })`
 puts one message into another Harnu session's Claude Code inbox through the CLI's own
@@ -961,7 +987,8 @@ it unpins/unhides the path and drops it (and its sessions) from the live model, 
 app restart needed. It ONLY ever touches Harnu's own bookkeeping — it refuses with
 `DIRECTORY_STILL_EXISTS` if the directory is still there (never a way to hide live
 data), and with `FOLDER_UNKNOWN` if the path isn't pinned, hidden, or known via
-session history at all. There is still no `remove_worktree` — this verb never
+session history at all, and with `OPEN_CARDS` (nothing removed) if the operator's Your move
+queue holds an open card for exactly that folder, because removing a folder would close it. There is still no `remove_worktree` — this verb never
 deletes a worktree, branch, or file.
 
 **Hide finished folders — `hide_folder`.**
@@ -998,8 +1025,9 @@ with the Harnu window closed (the archive set lives in the main process); an ope
 updates live. ACK: `{ ok, op, unarchive, results: [{ sessionId, outcome, reason? }], counts }`,
 one row per id; `outcome` is `archived`, `alreadyArchived`, `restored`, `alreadyActive`,
 `notFound` or `refused`, and a `refused` row carries `reason`: `FOLDER_NOT_ALLOWED` (the
-operator blocked that session's folder), `SESSION_WORKING` or `PENDING_APPROVAL` (archiving
-only: it is working, or an approval is parked for it). `ok` is true only when no row is
+operator blocked that session's folder), `SESSION_WORKING`, `PENDING_APPROVAL` or `OPEN_CARDS`
+(archiving only: it is working, an approval is parked for it, or Your move holds an open card
+for it in the operator's queue, which only the operator may close: leave the session; an Observe-mode card does not count). `ok` is true only when no row is
 `refused` or `notFound`: read each row rather than retrying the batch. Every row is decided
 inside the store's own write, so concurrent calls on one session read as one serial order
 (`restored` then `alreadyActive`) and a row always matches what the archive file holds.
@@ -1171,7 +1199,8 @@ session is `TARGET_OPERATOR_OWNED`. A drift brake that fails OPEN, not a securit
 Use it when you decide mid-session to orchestrate.
 
 **Bundled skills — OFF until switched on.** Harnu ships `orchestrate-delivery`,
-`delivery-verifier`, `mission`, `delivery-watchdog`, `conductor`, `status`, `read-aloud` and
+`delivery-verifier`, `mission`, `delivery-watchdog`, `conductor`, `status`, `read-aloud`,
+`your-move` and
 stages the ENABLED ones into sessions it spawns, **namespaced**: `harnu:mission` (a personal
 `mission` coexists). The old `capy:` prefix is an alias (`/capy:mission` still runs) — write
 `harnu:`. For "status?", "is it done", "what's left", render `harnu:status`'s six-line

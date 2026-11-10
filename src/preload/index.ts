@@ -31,6 +31,9 @@ import type {
   BrowserRect
 } from '../main/browser/state-types'
 import type { TerminalChipState } from '../main/terminal-registry'
+import type { CardView } from '../main/your-move/core'
+import type { InspectNowResult, YourMoveExitResult, YourMovePrefsView } from '../main/your-move/ipc'
+import type { YourMovePrefs } from '../main/your-move/prefs'
 import type { CommentPaneState, CommentSubmitResult, OverlayTheme } from '../shared/browser-comment'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
@@ -3170,6 +3173,25 @@ const api = {
   monitorPolicyGet: (): Promise<Policy> => ipcRenderer.invoke('monitor:policyGet'),
   monitorPolicySet: (patch: Partial<Policy>): Promise<Policy> =>
     ipcRenderer.invoke('monitor:policySet', patch),
+
+  // ---- Your move (U1) ---------------------------------------------------------
+  // The setting (Off / Observe / Live) and the debug list behind Settings → Your move.
+  // `yourMoveList` is the open cards plus the newest closed ones; `onYourMoveChanged` fires
+  // whenever the store changes, with no payload (re-list). The renderer never names a
+  // transcript path: `yourMoveInspectNow` takes a session id and main finds the file.
+  yourMovePrefsGet: (): Promise<YourMovePrefsView> => ipcRenderer.invoke('yourMove:prefs:get'),
+  yourMoveSetPrefs: (patch: Partial<YourMovePrefs>): Promise<YourMovePrefsView> =>
+    ipcRenderer.invoke('yourMove:prefs:set', patch),
+  yourMoveList: (): Promise<CardView[]> => ipcRenderer.invoke('yourMove:list'),
+  yourMoveInspectNow: (args: { sessionId: string; folder: string }): Promise<InspectNowResult> =>
+    ipcRenderer.invoke('yourMove:inspectNow', args),
+  onYourMoveChanged: (cb: () => void): (() => void) => subscribe('yourMove:changed', cb),
+  // The operator's two exits from a card (U4): close it and log the label. Nothing is sent to
+  // the session. `ok:false` means there was nothing to close (unknown, already closed, store down).
+  yourMoveExit: (args: {
+    cardId: string
+    label: 'not-for-me' | 'already-handled'
+  }): Promise<YourMoveExitResult> => ipcRenderer.invoke('yourMove:exit', args),
 
   // ---- Scheduler workers (T294 / T291 U4) -----------------------------------
   // A worker runs one prompt in one folder on a cadence, headless (`claude -p`),

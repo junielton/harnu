@@ -51,6 +51,8 @@ import {
   setCompanionSpawnKindResolver
 } from './companion/host'
 import { pruneTaskState } from './hook-bridge'
+import { getTaskState } from './detect/task-state-hub'
+import type { TaskState } from './hook-state'
 import { RingBuffer } from './pty-ring-buffer'
 import { foregroundProcessName } from './detect/foreground-process'
 import { sanitizeSpawnEnv, mergeLoginPath, loginPathOnce } from './appimage-env'
@@ -303,6 +305,31 @@ export type PtyKind = 'shell' | 'claude-new' | 'claude-resume' | 'claude-fork'
  */
 export type PtyExitReason = 'natural' | 'park'
 
+/**
+ * What an in-main observer learns when a session's PTY ends, read before the session's hook
+ * state is dropped (Your move: a process that died mid-turn is a card).
+ */
+export interface PtyExitFact {
+  sessionKey: string
+  reason: PtyExitReason
+  /** Harnu already removed the record: its own quit, the operator's close, a park. */
+  removedFirst: boolean
+  /** The folded hook state at the moment of exit. */
+  taskState?: TaskState
+  /** Epoch ms of the last Ctrl+C written to this PTY. */
+  lastCtrlCAt?: number
+  /** The directory the PTY ran in. */
+  cwd?: string
+  now: number
+}
+
+let ptyExitObserver: ((x: PtyExitFact) => void) | null = null
+
+/** One observer of session PTY exits; `null` removes it. It never blocks or breaks an exit. */
+export function setPtyExitObserver(fn: ((x: PtyExitFact) => void) | null): void {
+  ptyExitObserver = fn
+}
+
 export interface CreateOpts {
   cwd?: string
   cols: number
@@ -488,6 +515,8 @@ interface PtyRec {
   spawnedBy?: SpawnOrigin
   /** T363: the directory the PTY runs in — locates the repo whose missions it may own. */
   cwd: string
+  /** Epoch ms of the last `\x03` the operator wrote: a Ctrl+C that ends a session is not a death. */
+  lastCtrlCAt?: number
   /**
    * T257: the `--session-id` a `claude-new` spawn was handed, which is the sid its mod binding
    * reports. Lets the review selection find the PTY of a companion that has no binding yet.
@@ -869,6 +898,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     // T474: a registered terminal remembers when the operator last typed. Every other PTY
     // pays one Map lookup and nothing else.
     if (terminalRegistry.hasPty(id)) terminalRegistry.noteOperatorWrite(id, data)
+    if (data.includes('\x03')) rec.lastCtrlCAt = Date.now()
     rec.pty.write(data)
   })
 
@@ -1948,7 +1978,25 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       // Prune the dead session's hook state (T13/BUG-1) before dropping the index
       // entry — resolve the key while the reverse lookup still holds it.
       const exitedKey = sessionIndex.getSessionKey(id)
-      if (exitedKey) pruneTaskState(exitedKey)
+      if (exitedKey) {
+        // Read the state BEFORE it is pruned: whether the process ended mid-turn is its only proof.
+        if (ptyExitObserver) {
+          try {
+            ptyExitObserver({
+              sessionKey: exitedKey,
+              reason,
+              removedFirst: r !== rec,
+              taskState: getTaskState(exitedKey),
+              lastCtrlCAt: rec.lastCtrlCAt,
+              cwd: rec.cwd,
+              now: Date.now()
+            })
+          } catch (err) {
+            console.error('[pty] exit observer threw', err)
+          }
+        }
+        pruneTaskState(exitedKey)
+      }
       sessionIndex.removeByPtyId(id)
     })
   }
