@@ -42,7 +42,15 @@ function make(over: Partial<SystemCardDeps> = {}) {
     locate: async () => '/located/x.jsonl',
     resolveFolder: async (_id, cwd) => cwd ?? '/work/located',
     read: async () => ({ lines: [], nextOffset: 0, size: 0, shrunk: false }),
-    classify: () => null,
+    // what the real classifier says: every entrypoint but `cli` is programmatic
+    classify: (lines) => {
+      for (const l of lines) {
+        const ep = (l as { entrypoint?: unknown }).entrypoint
+        if (typeof ep === 'string' && ep !== '')
+          return ep === 'cli' ? 'interactive' : 'programmatic'
+      }
+      return null
+    },
     mintId: () => `card-${++n}`,
     now: () => NOW,
     ...over
@@ -254,6 +262,64 @@ describe('death cards', () => {
     expect(open('death')).toHaveLength(1)
   })
 
+  it('a turn whose prompt was not seen still files a death card after a graceful shutdown', async () => {
+    const { cards } = make()
+    cards.onTaskEvent(userPrompt())
+    cards.onTaskEvent(stop())
+    // the next turn starts with no UserPromptSubmit: a tool event moves the hub to working
+    cards.onTaskEvent({ ...userPrompt(), event: 'PostToolUse', taskState: 'working' } as never)
+    cards.onTaskEvent({
+      ...userPrompt(),
+      taskState: 'completed',
+      event: 'SessionEnd',
+      matcher: 'other'
+    } as never)
+    cards.onPtyExit(exitFact({ taskState: 'completed' }))
+    await cards.idle()
+    expect(open('death')).toHaveLength(1)
+  })
+
+  it('the mode switched on during a working turn still files a death card after a graceful shutdown', async () => {
+    const { cards, mode } = make()
+    mode.value = 'off'
+    cards.onTaskEvent(userPrompt())
+    mode.value = 'observe'
+    cards.onTaskEvent({
+      ...userPrompt(),
+      taskState: 'completed',
+      event: 'SessionEnd',
+      matcher: 'other'
+    } as never)
+    cards.onPtyExit(exitFact({ taskState: 'completed' }))
+    await cards.idle()
+    expect(open('death')).toHaveLength(1)
+  })
+
+  it('a turn that needs the operator is still an open turn', async () => {
+    const { cards } = make()
+    cards.onTaskEvent({ ...userPrompt(), event: 'Notification', taskState: 'needs-input' } as never)
+    cards.onTaskEvent({ ...userPrompt(), taskState: 'completed', event: 'SessionEnd' } as never)
+    cards.onPtyExit(exitFact({ taskState: 'completed' }))
+    await cards.idle()
+    expect(open('death')).toHaveLength(1)
+  })
+
+  it('tracking the turn reads no transcript while the mode is Off', async () => {
+    const read = vi.fn(async () => ({ lines: [], nextOffset: 0, size: 0, shrunk: false }))
+    const locate = vi.fn(async () => '/located/x.jsonl')
+    const { cards, mode } = make({ read, locate })
+    mode.value = 'off'
+    cards.onTaskEvent(userPrompt())
+    cards.onTaskEvent(stop())
+    cards.onTaskEvent(stopFailure())
+    cards.onTaskEvent(userPrompt())
+    cards.onPtyExit(exitFact({ taskState: 'completed' }))
+    await cards.idle()
+    expect(read).not.toHaveBeenCalled()
+    expect(locate).not.toHaveBeenCalled()
+    expect(store.state().cards).toEqual([])
+  })
+
   it('an exit after a Stop still does not count, whatever SessionEnd did', async () => {
     const { cards } = make()
     cards.onTaskEvent(userPrompt())
@@ -301,20 +367,38 @@ describe('death cards', () => {
     expect(open()).toHaveLength(0)
   })
 
-  it('a StopFailure from a programmatic transcript files nothing', async () => {
-    const { cards } = make({
+  const withEntrypoint = (entrypoint: string | undefined) =>
+    make({
       read: async () => ({
-        lines: [{ type: 'assistant', entrypoint: 'sdk-cli' }],
+        lines: entrypoint === undefined ? [{ type: 'user' }] : [{ type: 'assistant', entrypoint }],
         nextOffset: 10,
         size: 10,
         shrunk: false
-      }),
-      classify: (lines) =>
-        (lines[0] as { entrypoint?: string })?.entrypoint === 'sdk-cli' ? 'programmatic' : null
+      })
     })
-    cards.onTaskEvent(stopFailure())
-    await cards.idle()
+
+  it('a StopFailure from a programmatic transcript files nothing', async () => {
+    for (const entrypoint of ['sdk-cli', 'sdk-ts', 'sdk-py']) {
+      const { cards } = withEntrypoint(entrypoint)
+      cards.onTaskEvent(stopFailure())
+      await cards.idle()
+    }
     expect(store.state().cards).toEqual([])
+  })
+
+  it('a StopFailure from an interactive IDE session files a death card', async () => {
+    for (const entrypoint of [
+      'claude-vscode',
+      'claude-jetbrains',
+      'some-new-entrypoint',
+      undefined
+    ]) {
+      const { cards } = withEntrypoint(entrypoint)
+      cards.onTaskEvent(stopFailure())
+      await cards.idle()
+      expect(open('death')).toHaveLength(1)
+      await store.transact((s) => ({ next: { ...s, cards: [] }, result: null }))
+    }
   })
 
   it('a StopFailure whose transcript cannot be read still files the card', async () => {

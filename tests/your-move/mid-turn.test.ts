@@ -11,7 +11,9 @@ import { readFrom } from '../../src/main/your-move/transcript'
 import {
   MID_TURN_AFTER_MS,
   SWEEP_MS,
+  createEnsureCursor,
   createMidTurnSweep,
+  createTriggers,
   type MidTurnDeps
 } from '../../src/main/your-move/triggers'
 
@@ -280,6 +282,69 @@ describe('mid-turn cards and the live cursor', () => {
       .sort()
     expect(lanes).toEqual(['live', 'mid-turn'])
     expect(store.state().cursors['sess-0001'].offset).toBe(Buffer.byteLength(text))
+  })
+})
+
+describe('a session already seen is never given a live offset by a hook (delta 2)', () => {
+  const ev = (event: string, matcher?: string) =>
+    ({
+      sessionId: 'sess-0001',
+      taskState: 'working',
+      event,
+      matcher,
+      ts: 1,
+      source: 'hook',
+      payload: { cwd: '/work/acme', transcriptPath: file }
+    }) as never
+
+  async function fire(event: string, matcher?: string): Promise<void> {
+    const t = createTriggers({
+      inspector: { request: async () => 'judged' },
+      store,
+      mode: () => 'observe',
+      eligible: async () => true,
+      locate: async () => file,
+      resolveFolder: async (_id, cwd) => cwd ?? '/work/acme',
+      now: () => T0,
+      setTimer: () => 0,
+      ensureCursor: createEnsureCursor({
+        store,
+        read: readFrom,
+        classify: () => 'interactive',
+        now: () => T0
+      }),
+      transcriptHas: async () => true,
+      delay: async () => undefined
+    })
+    t.onTaskEvent(ev(event, matcher))
+    await new Promise((r) => setTimeout(r, 40))
+  }
+
+  it('a compaction on a shadow-only cursor leaves the live cursor unset', async () => {
+    await writeFile(file, jsonl([human('go'), asst('Which database should I use?')]))
+    await store.transact((s) => ({
+      next: { ...s, cursors: { 'sess-0001': { shadowOffset: 10, lastInspectedAt: T0 } } },
+      result: null
+    }))
+    await fire('SessionStart', 'compact')
+    expect(store.state().cursors['sess-0001'].offset).toBeUndefined()
+    expect(store.state().cursors['sess-0001'].shadowOffset).toBe(10)
+  })
+
+  it('a prompt on a shadow-only cursor leaves the live cursor unset too', async () => {
+    await writeFile(file, jsonl([human('go'), asst('Which database should I use?')]))
+    await store.transact((s) => ({
+      next: { ...s, cursors: { 'sess-0001': { shadowOffset: 10, lastInspectedAt: T0 } } },
+      result: null
+    }))
+    await fire('UserPromptSubmit')
+    expect(store.state().cursors['sess-0001'].offset).toBeUndefined()
+  })
+
+  it('a session never seen still gets its cursor at its first hook', async () => {
+    await writeFile(file, jsonl([human('go')]))
+    await fire('SessionStart', 'startup')
+    expect(store.state().cursors['sess-0001'].offset).toBeGreaterThan(0)
   })
 })
 
