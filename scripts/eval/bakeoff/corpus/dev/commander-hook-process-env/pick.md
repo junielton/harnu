@@ -1,4 +1,4 @@
-# Pick log — commander-presubcommand-hook (P3, typescript feature)
+# Pick log — commander-hook-process-env (P3, typescript feature)
 
 ## Candidates considered
 

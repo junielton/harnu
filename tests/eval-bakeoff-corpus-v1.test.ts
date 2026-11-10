@@ -87,7 +87,7 @@ it('the S-10 input is migrated byte for byte', async () => {
   ]) {
     expect(sha256(join(dir, mine)), mine).toBe(sha256(join(S10, theirs)))
   }
-  // The one deviation from byte-for-byte (spec Amendments): the S-10 reference.patch is compacted
+  // The one deviation from byte-for-byte (spec Amendments, the 2026-11-09 AC-23 row): the S-10 reference.patch is compacted
   // `rtk git diff` output, which `git apply` refuses, so validation could never pass with it. P1
   // carries the patch rebuilt from that file by restoring the leading context it dropped.
   expect(sha256(join(dir, 'hidden/reference.patch'))).toBe(RECONSTRUCTED_REFERENCE_SHA256)

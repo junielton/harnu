@@ -1,5 +1,5 @@
 {
-  "id": "commander-presubcommand-hook",
+  "id": "commander-hook-process-env",
   "split": "dev",
   "kind": "feature",
   "language": "typescript",

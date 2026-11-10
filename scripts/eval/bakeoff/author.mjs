@@ -251,14 +251,16 @@ export async function authorImportCommand(args, ctx) {
 
   const root = corpusRoot(roots, args.split)
   const dest = join(root, id)
-  // The corpus copy being replaced is kept in the sandbox until the new one validates.
-  const previous = join(sandbox, 'previous')
+  // The corpus copy being replaced waits beside the sandbox until the new one validates: it holds
+  // the reference patch, which never enters the sandbox directory.
+  const previous = `${sandbox}.previous`
   rmSync(previous, { recursive: true, force: true })
   const hadPrevious = existsSync(dest)
   if (hadPrevious) cpSync(dest, previous, { recursive: true })
   const takeBack = () => {
     rmSync(dest, { recursive: true, force: true })
     if (hadPrevious) cpSync(previous, dest, { recursive: true })
+    rmSync(previous, { recursive: true, force: true })
   }
   rmSync(dest, { recursive: true, force: true })
   mkdirSync(root, { recursive: true })
@@ -287,6 +289,7 @@ export async function authorImportCommand(args, ctx) {
     takeBack()
     return coded('VALIDATION_FAILED', `${id} failed validation; see the lines above.`)
   }
+  rmSync(previous, { recursive: true, force: true })
   say(ctx.stdout, `${id}: imported and validated (${result.testSet.length} tests)`)
   return 0
 }
