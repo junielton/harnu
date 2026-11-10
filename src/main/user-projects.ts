@@ -1446,6 +1446,30 @@ export interface HiddenPathsChange {
 
 const hiddenListeners = new Set<(change: HiddenPathsChange) => void>()
 
+const folderRemovedListeners = new Set<(path: string) => void>()
+
+/**
+ * Subscribe to folders that were REMOVED (not merely hidden): a project unpinned through
+ * {@link removeUserProject}, and a ghost reconciled by {@link removeGhostFolder}. Returns the
+ * unsubscribe. A listener that throws never breaks the removal.
+ */
+export function onFolderRemoved(listener: (path: string) => void): () => void {
+  folderRemovedListeners.add(listener)
+  return () => {
+    folderRemovedListeners.delete(listener)
+  }
+}
+
+function announceFolderRemoved(removedPath: string): void {
+  for (const listener of [...folderRemovedListeners]) {
+    try {
+      listener(removedPath)
+    } catch (err) {
+      console.error('[user-projects] folder-removed listener threw', err)
+    }
+  }
+}
+
 /**
  * Subscribe to hidden-list changes made through {@link transactHiddenPaths} (the `hide_folder`
  * verb). The sidebar's own `hideUserProject` / `unhideUserProject` do NOT notify: the renderer
@@ -1559,6 +1583,9 @@ export async function removeUserProject(targetPath: string): Promise<UserProject
 
   if (!removedProject) return next
 
+  announceFolderRemoved(removedProject.path)
+  for (const wt of removedProject.worktrees) announceFolderRemoved(wt.path)
+
   // T474: the folder's read opt-in went with it, and a write lease rides on that opt-in. Ending
   // the leases here means removing the folder, re-adding it and opting in again cannot revive an
   // approval the operator gave before they removed it.
@@ -1649,6 +1676,8 @@ async function reconcileGhost(
 
   if (wasPinned) await removeUserProject(normalizedPath)
   if (wasHidden) await unhideUserProject(normalizedPath)
+
+  announceFolderRemoved(normalizedPath)
 
   const win = getWindow()
   if (win && !win.isDestroyed()) {

@@ -311,7 +311,7 @@ describe('T658 gap, radius and joined heads', () => {
     expect(ret).toBeGreaterThan(list)
     expect(dock).toBeGreaterThan(ret)
     const zone = read('src/renderer/src/components/SidebarReturnZone.vue')
-    expect(zone).toMatch(/max-height:\s*168px/)
+    expect(zone).toMatch(/max-height:\s*min\(380px,\s*45vh\)/)
     expect(zone).toContain('overflow-y-auto')
   })
 })

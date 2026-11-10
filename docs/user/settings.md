@@ -193,13 +193,25 @@ The mode has three values:
 
 - **Off** — the default. Nothing is read and nothing is spent.
 - **Observe** — when a session stops, Harnu reads what it wrote since the last check and asks two independent, isolated Claude calls whether anything is waiting on you, then one more call to write each card clearly (a short context, what it blocks, the options and a recommendation when the session gave one). If either detection call fails, Harnu uses the other; if the writing call fails or returns nothing, the cards are filed as the detection found them, and a card it leaves out is filed as found, never dropped. Two detections of the same item are merged into one card. What it finds is stored as a card and listed at the bottom of the tab. Nothing shows in the sidebar and nothing makes a sound.
-- **Live** — saved, but until the queue ships it behaves exactly like Observe.
+- **Live** — Harnu checks sessions the same way, and lists what it finds as cards in the **Return here** box at the bottom of the sidebar, oldest first, each with a clock that keeps running until you deal with it. See [Return here: sessions waiting on you](sessions.md#return-here-sessions-waiting-on-you). For now the answer buttons on a card open the session instead of answering for you.
 
 Each check uses your own Claude quota: about US$ 0.002 and several seconds across those calls, run in the background at low priority and never more than half your CPU cores at once. The calls are isolated: it has no tools, no settings and no project files, and it never answers or changes a session.
 
 **Inspect selected session** runs one check on the session you have selected, so you can see a card appear without waiting for a stop. The result sits beside the button: checked, nothing new, skipped (the mode is Off, the folder is blocked for agents, or the session is archived) or failed, with the reason.
 
 The list shows every card Harnu stored, open ones first and then the newest closed ones. A card carries a kind (Decide, Go / no-go, Provide, Do or Check), the folder and session it came from, and the one-line ask, shown exactly as the model wrote it. The list is read-only: no card can be answered or dismissed yet.
+
+### What files a card
+
+With **Observe** or **Live**, a card is filed for each of these, with no button to press:
+
+- **A finished turn.** Two seconds after a session stops, Harnu reads what it wrote and asks whether anything is waiting on you. This never delays the session: Harnu answers the stop first.
+- **A long turn that never stops.** A session that has been working for five minutes without a check is looked at again; what it finds is kept in a separate lane that stays hidden for now, and the real check still happens when the turn ends and reads everything from the last stop on. A check that fails is not retried for five minutes.
+- **A session that died or could not be checked.** A stop on an error (rate limit, overload, billing) or a process that ended while a turn was still running files "Session stopped", even when the session shut down gracefully and Claude Code reported it finished first; a session Harnu failed to check files one "Could not check this session" for the whole run of failures. Your own Ctrl+C, closing the session and parking it are not deaths. A later good turn closes these cards.
+- **A mission.** Every blocker you own, a re-scope to approve, a close to confirm, a paused steward, due checks, a human step, an imported end to review and a red main after a merge. The card points at the mission's owner session and closes when the mission stops owing it; it never changes the mission, and a child session's approvals and waiting-for-input items file nothing.
+- **A question parked in a session.** A session waiting on `AskUserQuestion` or `ExitPlanMode` files a card that opens the session, whatever else the session wrote after asking. The card closes when the question is answered or the session next stops, and never because Harnu could not read the transcript. A normal tool permission does not file one: it stays in the Approval Inbox.
+
+Archiving a session closes its cards, and so does removing its folder from the sidebar: only the cards of that exact folder, not those of a folder nested under it. Hiding a folder does not, and switching a folder off for Your move leaves its mission cards where they are. Harnu's own background runs (the auto-namer, the usage poller) are never checked, and with the mode **Off** nothing is read at all.
 
 When you switch from Off to Observe or Live, Harnu forgets where it had read up to in every session, so the days spent Off are never judged. The first stop after that reads the most recent part of the transcript, up to 256 KiB.
 

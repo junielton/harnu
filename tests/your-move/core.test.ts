@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   advanceCursor,
+  followLive,
   applyVerdict,
   closeCard,
   closeForFolder,
@@ -191,6 +192,27 @@ describe('advanceCursor', () => {
   })
 })
 
+describe('a cursor seen only mid-turn', () => {
+  it('moving shadowOffset for an unseen session creates no live offset', () => {
+    const s = advanceCursor(emptyState(), 's1', 'shadowOffset', 150, 6)
+    expect(s.cursors.s1).toEqual({ shadowOffset: 150, lastInspectedAt: 6 })
+  })
+
+  it('followLive moves shadowOffset forward to the live offset and never backward', () => {
+    const base = advanceCursor(
+      advanceCursor(emptyState(), 's1', 'offset', 100, 5),
+      's1',
+      'shadowOffset',
+      300,
+      5
+    )
+    expect(followLive(base, 's1', 200).cursors.s1.shadowOffset).toBe(300)
+    expect(followLive(base, 's1', 400).cursors.s1.shadowOffset).toBe(400)
+    // a session with no cursor gains none
+    expect(followLive(emptyState(), 'x', 10).cursors).toEqual({})
+  })
+})
+
 describe('structured cards', () => {
   it('upsertStructured with a known sourceKey keeps openedAt and refreshes ask', () => {
     let n = 0
@@ -248,6 +270,22 @@ describe('structured cards', () => {
 })
 
 describe('closing and housekeeping', () => {
+  it('removing a folder leaves cards of a folder nested under it', () => {
+    const s = stateOf(
+      card({ id: 'a', folder: '/work/mono' }),
+      card({ id: 'b', folder: '/work/mono/app' }),
+      card({ id: 'c', folder: '/work/mono-other' })
+    )
+    const next = closeForFolder(s, '/work/mono/', 'folder-removed', 4)
+    expect(next.cards.map((c) => c.closedBy)).toEqual(['folder-removed', undefined, undefined])
+  })
+
+  it('closeForFolder on the filesystem root matches only cards of the root itself', () => {
+    const s = stateOf(card({ id: 'a', folder: '/work/mono' }), card({ id: 'b', folder: '/' }))
+    const next = closeForFolder(s, '/', 'folder-removed', 4)
+    expect(next.cards.map((c) => c.closedBy)).toEqual([undefined, 'folder-removed'])
+  })
+
   it('closeForSessions and closeForFolder close open cards with the given reason', () => {
     const s = stateOf(
       card({ id: 'a' }),
@@ -257,11 +295,8 @@ describe('closing and housekeeping', () => {
     const bySession = closeForSessions(s, ['s1'], 'archived', 4)
     expect(bySession.cards.map((c) => c.closedBy)).toEqual(['archived', undefined, undefined])
     const byFolder = closeForFolder(s, '/org/other', 'folder-removed', 4)
-    expect(byFolder.cards.map((c) => c.closedBy)).toEqual([
-      undefined,
-      'folder-removed',
-      'folder-removed'
-    ])
+    // exact folder only: a folder nested under it is its own folder and may still be pinned
+    expect(byFolder.cards.map((c) => c.closedBy)).toEqual([undefined, 'folder-removed', undefined])
   })
 
   it('closeCard never reopens or re-stamps an already closed card', () => {

@@ -2605,7 +2605,7 @@
       "hint": {
         "off": "Nothing is checked and nothing is spent.",
         "observe": "Harnu checks sessions and stores what it finds in the list below. Nothing shows in the sidebar and nothing makes a sound.",
-        "live": "Your choice is saved. Until the queue ships, Live behaves like Observe."
+        "live": "Harnu checks sessions and lists what it finds as cards in the Return here zone of the sidebar, with a running clock, until you deal with each one."
       },
       "cost": "Each check uses your own Claude quota: about US$ 0.002 and several seconds."
     },
@@ -2640,6 +2640,37 @@
       "observe": "Observe",
       "live": "Live",
       "mid-turn": "Mid-turn"
+    },
+    "buttons": {
+      "openSession": "Open session",
+      "openLink": "Open link",
+      "openMission": "Open mission",
+      "go": "Go",
+      "noGo": "No-go",
+      "done": "Done",
+      "looksRight": "Looks right",
+      "somethingWrong": "Something's wrong",
+      "recommended": "Recommended"
+    },
+    "exits": {
+      "notForMe": "Not for me",
+      "alreadyHandled": "Already handled",
+      "failed": "Could not save that. The card is still here; try again."
+    },
+    "card": {
+      "blocks": "Blocks: {what}",
+      "clock": "Waiting {time}"
+    },
+    "delivery": {
+      "wakeTimeout": "Your answer was not delivered: the session did not wake up in time.",
+      "processGone": "Your answer was not delivered: the session is no longer running.",
+      "notConfirmed": "Your answer was sent but the session never showed it. Check the session.",
+      "refused": "Your answer was not delivered: it cannot be typed into a session."
+    },
+    "system": {
+      "stopped": "Session stopped: {reason}",
+      "couldNotCheck": "Could not check this session: {reason}",
+      "planReady": "The session has a plan waiting for your approval"
     },
     "closedBy": {
       "answered": "answered",

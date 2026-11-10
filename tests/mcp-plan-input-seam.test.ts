@@ -108,6 +108,17 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   archive_session: { sessionIds: ['sess-1', 'sess-2'], unarchive: true },
   // T661: addressed by absolute path, never a gate folder (a blocked one is refused per path).
   hide_folder: { folders: ['/repos/alpha', '/repos/beta'], unhide: true },
+  // Your move (U3): anchored on `folder`; `options` is an array the translator must pass through.
+  your_move: {
+    folder: ALLOWED,
+    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    kind: 'decide',
+    ask: 'Ship PROJ-231 behind the flag or all at once?',
+    blocks: 'PROJ-231 stays unmerged',
+    options: ['Behind the flag', 'All at once'],
+    recommended: 'Behind the flag',
+    cardId: 'card-1'
+  },
   delete_card: { folder: ALLOWED, slug: 'investigate-flaky-test' },
   submit_manifest: {
     folder: ALLOWED,

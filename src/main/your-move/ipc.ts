@@ -14,12 +14,15 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { sanitizeSpawnEnv } from '../appimage-env'
 import { classifyTranscriptLines } from '../claude-watcher'
+import { addTaskEventObserver, getTaskStates } from '../detect/task-state-hub'
 import { resolveClaudePath } from '../claude-cli'
 import { isFolderDenied } from '../mcp/permission-core'
+import { setMissionListObserver } from '../mission-ipc'
+import { setPtyExitObserver } from '../pty'
 import { getSessionArchive } from '../session-archive-core'
-import { readUserProjects } from '../user-projects'
-import { pruneClosed, resetCursors, type CardView, type YourMoveCard } from './core'
-import { createInspector, type InspectOutcome, type InspectRequest } from './inspector'
+import { onFolderRemoved, readUserProjects } from '../user-projects'
+import { closeCard, pruneClosed, resetCursors, type CardView, type YourMoveCard } from './core'
+import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
 import {
   effectiveMode,
@@ -31,11 +34,22 @@ import {
   type YourMovePrefs
 } from './prefs'
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
+import { buildSegment } from './segment'
+import { createGateWatch, watchArchive, watchFolderRemoval } from './source-gate'
+import { reconcileMissions, selectForReconcile } from './source-mission'
 import { readFrom } from './transcript'
+import {
+  SWEEP_MS,
+  createEnsureCursor,
+  createMidTurnSweep,
+  createSystemCards,
+  createTriggers
+} from './triggers'
 
 const STATE_FILE = 'your-move.json'
 const PREFS_FILE = 'your-move-prefs.json'
 const INSPECTIONS_FILE = 'your-move-inspections.jsonl'
+const LABELS_FILE = 'your-move-labels.jsonl'
 const EMPTY_DIR = path.join('your-move', 'empty')
 const NEWEST_CLOSED = 200
 /** The inspection log is a debug aid: past this size it keeps only its newest half. */
@@ -45,6 +59,12 @@ const SESSION_ID = /^[0-9a-zA-Z-]{8,64}$/
 
 /** What the pane reads: the prefs with the mode resolved, so the renderer never re-derives the default. */
 export type YourMovePrefsView = Omit<YourMovePrefs, 'mode'> & { mode: YourMoveMode }
+
+/** What `yourMove:exit` answers: it never throws, `ok:false` says there was nothing to close. */
+export type YourMoveExitResult = { ok: true } | { ok: false; reason: string }
+
+const EXIT_LABELS = ['not-for-me', 'already-handled'] as const
+type ExitLabel = (typeof EXIT_LABELS)[number]
 
 export interface InspectNowResult {
   outcome: InspectOutcome
@@ -78,13 +98,48 @@ async function locateTranscript(sessionId: string): Promise<string | null> {
   return null
 }
 
+/** The first `cwd` the transcript names: where a session with no hook payload runs. */
+async function cwdFromTranscript(file: string): Promise<string | null> {
+  let fh: Awaited<ReturnType<typeof fs.open>> | null = null
+  try {
+    fh = await fs.open(file, 'r')
+    const buf = Buffer.alloc(16 * 1024)
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
+    for (const line of buf.toString('utf8', 0, bytesRead).split('\n')) {
+      try {
+        const o = JSON.parse(line) as { cwd?: unknown }
+        if (typeof o.cwd === 'string' && o.cwd !== '') return o.cwd
+      } catch {
+        /* a partial or malformed line */
+      }
+    }
+    return null
+  } catch {
+    return null
+  } finally {
+    await fh?.close().catch(() => undefined)
+  }
+}
+
+/** Does the newest part of the transcript already hold this reply? */
+async function transcriptHasReply(file: string, text: string): Promise<boolean> {
+  const wanted = text.trim()
+  if (wanted === '') return true
+  const res = await readFrom(file, { tail: 128 * 1024 })
+  return buildSegment(res.lines).some((e) => e.tag === 'ASSISTANT' && e.text.includes(wanted))
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
 let runner: JudgeRunner | null = null
 let unsubscribe: (() => void) | null = null
+let stopTriggers: (() => void) | null = null
 
 export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   const userData = app.getPath('userData')
   const prefsPath = path.join(userData, PREFS_FILE)
   const inspectionsPath = path.join(userData, INSPECTIONS_FILE)
+  const labelsPath = path.join(userData, LABELS_FILE)
   const emptyDir = path.join(userData, EMPTY_DIR)
 
   let prefs: YourMovePrefs | null = null
@@ -104,6 +159,11 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
     }
   }
 
+  const notifyChanged = (): void => {
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('yourMove:changed')
+  }
+
   // A store that cannot be opened (an unreadable file, a failed copy-aside) leaves Your move
   // inactive: the failure is logged, every channel keeps answering, and app boot goes on.
   const ready: Promise<YourMoveStore | null> = (async () => {
@@ -113,10 +173,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       prefs = await readYourMovePrefs(prefsPath)
       await fs.mkdir(emptyDir, { recursive: true })
       await trimInspections(inspectionsPath)
-      unsubscribe = store.onChange(() => {
-        const win = getWindow()
-        if (win && !win.isDestroyed()) win.webContents.send('yourMove:changed')
-      })
+      unsubscribe = store.onChange(notifyChanged)
       setYourMoveStore(store)
       return store
     } catch (e) {
@@ -139,11 +196,46 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   })
   const judge = runner
 
-  let inspectorPromise: Promise<ReturnType<typeof createInspector>> | null = null
-  const inspector = (): Promise<ReturnType<typeof createInspector>> =>
-    (inspectorPromise ??= ready.then((store) =>
-      createInspector({
-        store: store as YourMoveStore,
+  const mode = (): YourMoveMode => (prefs ? effectiveMode(prefs) : 'off')
+  const eligible = async (sessionId: string, folder: string): Promise<boolean> => {
+    await refreshDeny()
+    return (
+      !isFolderDenied(folder, denyFolders) &&
+      !(getSessionArchive()?.has(sessionId) ?? false) &&
+      !(prefs ? isFolderDisabled(prefs, folder) : false)
+    )
+  }
+  const resolveFolder = async (
+    _id: string,
+    cwd: string | undefined,
+    file: string
+  ): Promise<string | null> => cwd ?? (await cwdFromTranscript(file))
+
+  // Cards that come from no judge: a death, and a session that could not be checked.
+  const systems = ready.then((store) =>
+    store === null
+      ? null
+      : createSystemCards({
+          store,
+          mode,
+          lane: () => laneFor(mode(), 'stop', prefs?.midTurnLive ?? false),
+          eligible,
+          locate: locateTranscript,
+          resolveFolder,
+          read: readFrom,
+          mintId: () => randomUUID(),
+          now: () => Date.now()
+        })
+  )
+
+  let inspectorPromise: Promise<ReturnType<typeof createInspector> | null> | null = null
+  /** Null while the store is unavailable: nothing reaches the judge then. */
+  const inspector = (): Promise<ReturnType<typeof createInspector> | null> =>
+    (inspectorPromise ??= ready.then(async (store) => {
+      if (store === null) return null
+      const system = await systems
+      return createInspector({
+        store,
         read: readFrom,
         detect: (input) => judge.detect(input),
         enrich: (input) => judge.enrich(input),
@@ -152,17 +244,141 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         isBlocked: (folder) => isFolderDenied(folder, denyFolders),
         isArchived: (id) => getSessionArchive()?.has(id) ?? false,
         isFolderOff: (folder) => (prefs ? isFolderDisabled(prefs, folder) : false),
-        mode: () => (prefs ? effectiveMode(prefs) : 'off'),
+        mode,
         midTurnLive: () => prefs?.midTurnLive ?? false,
         classify: classifyTranscriptLines,
-        onFailure: (_req, reason) => {
+        onFailure: (req, reason) => {
           lastFailure = reason
+          system?.onInspectFailure(req, reason)
         },
+        onSuccess: (req) => system?.onInspectSuccess(req),
         appendInspection: (row) => {
           void fs.appendFile(inspectionsPath, JSON.stringify(row) + '\n').catch(() => undefined)
         }
       })
-    ))
+    }))
+
+  // Sources: wired only once the store is open. With no store nothing is observed, read or
+  // judged, and nothing here throws.
+  void ready
+    .then(async (store) => {
+      const insp = store ? await inspector() : null
+      const system = store ? await systems : null
+      if (!store || !insp || !system || runner === null) return
+      const triggers = createTriggers({
+        inspector: insp,
+        store,
+        mode,
+        eligible,
+        locate: locateTranscript,
+        resolveFolder,
+        now: () => Date.now(),
+        setTimer: (fn, ms) => setTimeout(fn, ms).unref(),
+        ensureCursor: createEnsureCursor({
+          store,
+          read: readFrom,
+          classify: classifyTranscriptLines,
+          now: () => Date.now()
+        }),
+        transcriptHas: transcriptHasReply,
+        delay: sleep
+      })
+      const sweep = createMidTurnSweep({
+        inspector: insp,
+        store,
+        mode,
+        eligible,
+        locate: locateTranscript,
+        resolveFolder,
+        read: readFrom,
+        states: getTaskStates,
+        now: () => Date.now()
+      })
+      const gate = createGateWatch({
+        store,
+        mode,
+        lane: () => laneFor(mode(), 'stop', prefs?.midTurnLive ?? false),
+        eligible,
+        locate: locateTranscript,
+        resolveFolder,
+        read: readFrom,
+        size: async (file) => {
+          try {
+            return (await fs.stat(file)).size
+          } catch {
+            return 0
+          }
+        },
+        states: getTaskStates,
+        mintId: () => randomUUID(),
+        now: () => Date.now()
+      })
+      const sweepTimer = setInterval(() => {
+        void sweep.tick()
+        void gate.tick()
+      }, SWEEP_MS)
+      sweepTimer.unref()
+      const unobserve = addTaskEventObserver((ev) => {
+        triggers.onTaskEvent(ev)
+        system.onTaskEvent(ev)
+        gate.onTaskEvent(ev)
+      })
+      const stopFolderWatch = watchFolderRemoval({
+        store,
+        subscribe: onFolderRemoved,
+        now: () => Date.now()
+      })
+      // The archive store opens on its own schedule: attach as soon as it is there.
+      let stopArchive: (() => void) | null = null
+      let archiveRetry: ReturnType<typeof setTimeout> | null = null
+      const attachArchive = (tries: number): void => {
+        const archive = getSessionArchive()
+        if (archive) {
+          stopArchive = watchArchive({ store, archive, now: () => Date.now() })
+        } else if (tries < 60) {
+          archiveRetry = setTimeout(() => attachArchive(tries + 1), 1_000)
+          archiveRetry.unref()
+        }
+      }
+      attachArchive(0)
+      setPtyExitObserver(system.onPtyExit)
+      setMissionListObserver((result, roots) => {
+        if (mode() === 'off') return
+        // The owner's archive keeps a mission's items out of the queue (a card closed by archiving
+        // must not come back with the next poll); a folder switched off leaves its cards untouched.
+        const picked = selectForReconcile(result, roots, {
+          ownerArchived: (id) => getSessionArchive()?.has(id) ?? false,
+          folderOff: (root) => (prefs ? isFolderDisabled(prefs, root) : false)
+        })
+        const lane = laneFor(mode(), 'stop', prefs?.midTurnLive ?? false)
+        store
+          .transact((s) => ({
+            next: reconcileMissions(
+              s,
+              picked.result,
+              picked.roots,
+              lane,
+              () => randomUUID(),
+              Date.now()
+            ),
+            result: undefined
+          }))
+          .catch((e) => console.error(`[your-move] mission source failed: ${(e as Error).message}`))
+      })
+      stopTriggers = () => {
+        unobserve()
+        setPtyExitObserver(null)
+        setMissionListObserver(null)
+        clearInterval(sweepTimer)
+        if (archiveRetry) clearTimeout(archiveRetry)
+        stopArchive?.()
+        stopFolderWatch()
+        gate.dispose()
+        sweep.dispose()
+        triggers.dispose()
+      }
+    })
+    .catch((e) => console.error(`[your-move] sources not started: ${(e as Error).message}`))
 
   const view = (p: YourMovePrefs): YourMovePrefsView => ({ ...p, mode: effectiveMode(p) })
   /** What the pane sees while the store is unavailable: Off, and nothing is persisted. */
@@ -189,6 +405,8 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
     if (needsCursorReset(prev, effectiveMode(next))) {
       await store.transact((s) => ({ next: resetCursors(s), result: null }))
     }
+    // The queue reads the mode too: tell it, or Live shows nothing until a card changes.
+    notifyChanged()
     return view(next)
   })
 
@@ -203,10 +421,50 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       .slice(0, NEWEST_CLOSED)
     return [...open, ...closed].map((c: YourMoveCard): CardView => ({
       ...c,
-      // Nothing answers a card before the queue ships (U4).
-      answerable: false,
-      optionDeliverable: (c.options ?? []).map(() => false)
+      // The judge's and the verb's cards carry answer buttons. Nothing is typed into a session
+      // yet: until the answering unit, those buttons open the session.
+      answerable: c.source === 'judge' || c.source === 'verb',
+      optionDeliverable: (c.options ?? []).map(() => true)
     }))
+  })
+
+  // Not for me / Already handled. Neither tells the session anything. The card closes with that
+  // reason, then the card as the operator saw it is appended to the labelled examples.
+  ipcMain.handle('yourMove:exit', async (_e, args: unknown): Promise<YourMoveExitResult> => {
+    const a = (args ?? {}) as { cardId?: unknown; label?: unknown }
+    if (
+      typeof a.cardId !== 'string' ||
+      a.cardId === '' ||
+      !EXIT_LABELS.includes(a.label as ExitLabel)
+    ) {
+      return { ok: false, reason: 'bad request' }
+    }
+    const store = await ready
+    if (!store) return { ok: false, reason: 'unavailable' }
+    const cardId = a.cardId
+    const label = a.label as ExitLabel
+    const now = Date.now()
+    let seen: YourMoveCard | null
+    try {
+      seen = await store.transact((s) => {
+        const open = s.cards.find((c) => c.id === cardId && c.closedAt === undefined) ?? null
+        return { next: open ? closeCard(s, cardId, label, now) : s, result: open }
+      })
+    } catch (e) {
+      // A store that cannot write (EACCES, ENOSPC): the card stays open and the caller is told.
+      console.error(`[your-move] exit not saved: ${(e as Error).message}`)
+      return { ok: false, reason: 'write failed' }
+    }
+    if (!seen) return { ok: false, reason: 'not found' }
+    try {
+      await fs.appendFile(labelsPath, JSON.stringify({ ts: now, label, card: seen }) + '\n', {
+        mode: 0o600
+      })
+    } catch (e) {
+      // The card is closed either way: a log that cannot be written must not undo that.
+      console.error(`[your-move] label not logged: ${(e as Error).message}`)
+    }
+    return { ok: true }
   })
 
   ipcMain.handle('yourMove:inspectNow', async (_e, args: unknown): Promise<InspectNowResult> => {
@@ -230,7 +488,9 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       transcriptPath,
       trigger: 'manual'
     }
-    const outcome = await (await inspector()).request(req)
+    const insp = await inspector()
+    if (!insp) return { outcome: 'skipped', reason: 'unavailable' }
+    const outcome = await insp.request(req)
     return outcome === 'failed' ? { outcome, reason: lastFailure } : { outcome }
   })
 }
@@ -253,6 +513,8 @@ export function closeYourMove(): void {
   runner = null
   unsubscribe?.()
   unsubscribe = null
+  stopTriggers?.()
+  stopTriggers = null
   setYourMoveStore(null)
 }
 

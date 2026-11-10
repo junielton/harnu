@@ -72,7 +72,9 @@ export interface YourMoveCard {
 export type CardView = YourMoveCard & { answerable: boolean; optionDeliverable: boolean[] }
 
 export interface SessionCursor {
-  offset: number
+  /** Where the live (Stop-driven) inspection reads from. Unset until a Stop or a first sight sets it. */
+  offset?: number
+  /** Where the hidden mid-turn inspection reads from. */
   shadowOffset?: number
   lastInspectedAt: number
 }
@@ -218,7 +220,11 @@ export function applyVerdict(
   return { ...s, cards }
 }
 
-/** Move one cursor field. A session never seen before starts both fields at `to`. */
+/**
+ * Move one cursor field. A session never seen before starts both fields at `to` when the live
+ * cursor moves first, but a mid-turn first sight sets only the shadow cursor: with no live
+ * offset the Stop that follows reads the recent tail instead of nothing.
+ */
 export function advanceCursor(
   s: YourMoveState,
   sessionId: string,
@@ -227,8 +233,26 @@ export function advanceCursor(
   now: number
 ): YourMoveState {
   const prev = s.cursors[sessionId]
-  const next: SessionCursor = { ...(prev ?? { offset: to }), [field]: to, lastInspectedAt: now }
+  const base: Partial<SessionCursor> = prev ?? (field === 'offset' ? { offset: to } : {})
+  const next: SessionCursor = { ...base, [field]: to, lastInspectedAt: now }
   return { ...s, cursors: { ...s.cursors, [sessionId]: next } }
+}
+
+/**
+ * After a live inspection judged up to `to`, the shadow cursor follows it: a long turn must read
+ * only the text since that Stop, not every turn already judged. Never backward, and a session
+ * with no cursor gains none.
+ */
+export function followLive(s: YourMoveState, sessionId: string, to: number): YourMoveState {
+  const prev = s.cursors[sessionId]
+  if (!prev) return s
+  return {
+    ...s,
+    cursors: {
+      ...s.cursors,
+      [sessionId]: { ...prev, shadowOffset: Math.max(prev.shadowOffset ?? 0, to) }
+    }
+  }
 }
 
 export function closeCard(
@@ -304,6 +328,70 @@ export function upsertStructured(
   return { ...s, cards }
 }
 
+/** The `your_move` verb files or refreshes at most this many cards per session and UTC hour. */
+export const YOUR_MOVE_LIMIT_PER_HOUR = 30
+
+/**
+ * File a card for the `your_move` verb, or refresh one this session filed before.
+ *
+ * Without `cardId` a new `verb` card is born (no `sourceKey`: the judge reconciles
+ * duplicates). With one, the open `verb` card of the same session is refreshed in place:
+ * its content and `updatedAt` change, `openedAt` never does, so the clock keeps running.
+ * A closed card, another session's card and an unknown id are all `CARD_NOT_FOUND`. There is
+ * deliberately no way to close from here: an agent can never decide the operator dealt with
+ * something.
+ */
+export function fileFromVerb(
+  s: YourMoveState,
+  input: {
+    folder: string
+    sessionId: string
+    kind: CardKind
+    ask: string
+    blocks?: string
+    options?: string[]
+    recommended?: string
+    cardId?: string
+    lane: CardLane
+  },
+  mintId: () => string,
+  now: number
+): { state: YourMoveState; cardId: string; refreshed: boolean } | { error: 'CARD_NOT_FOUND' } {
+  const options = cleanOptions(input.options)
+  const content = {
+    kind: input.kind,
+    ask: input.ask.trim(),
+    blocks: input.blocks?.trim() || undefined,
+    options,
+    recommended:
+      options && input.recommended && options.includes(input.recommended)
+        ? input.recommended
+        : undefined
+  }
+  if (input.cardId !== undefined) {
+    const at = s.cards.findIndex(
+      (c) =>
+        c.id === input.cardId && isOpen(c) && c.sessionId === input.sessionId && c.source === 'verb'
+    )
+    if (at === -1) return { error: 'CARD_NOT_FOUND' }
+    const cards = s.cards.slice()
+    cards[at] = { ...cards[at], ...content, updatedAt: now }
+    return { state: { ...s, cards }, cardId: input.cardId, refreshed: true }
+  }
+  const id = mintId()
+  const card: YourMoveCard = {
+    id,
+    sessionId: input.sessionId,
+    folder: input.folder,
+    ...content,
+    source: 'verb',
+    lane: input.lane,
+    openedAt: now,
+    updatedAt: now
+  }
+  return { state: { ...s, cards: [...s.cards, card] }, cardId: id, refreshed: false }
+}
+
 /**
  * Make the open cards of one source match what is owed right now: upsert every owed draft,
  * close the in-scope open cards whose key is no longer owed as `source-resolved`. A scope
@@ -342,15 +430,18 @@ export function closeForSessions(
   return closeWhere(s, (c) => set.has(c.sessionId), reason, now)
 }
 
-/** Close every open card of a folder that is gone, including folders nested under it. */
+/**
+ * Close every open card of exactly this folder. A folder nested under it (a worktree, a
+ * separately pinned subfolder) is its own folder: it is closed only when it is itself removed.
+ */
 export function closeForFolder(
   s: YourMoveState,
   folder: string,
   reason: CloseReason,
   now: number
 ): YourMoveState {
-  const root = folder.replace(/\/+$/, '')
-  return closeWhere(s, (c) => c.folder === root || c.folder.startsWith(root + '/'), reason, now)
+  const root = folder.length > 1 ? folder.replace(/\/+$/, '') : folder
+  return closeWhere(s, (c) => c.folder === root, reason, now)
 }
 
 /** Forget where every session was read up to: the next first sight starts at the end again. */
