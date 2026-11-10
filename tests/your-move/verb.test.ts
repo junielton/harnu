@@ -35,6 +35,12 @@ import {
   fileFromVerb,
   type YourMoveState
 } from '../../src/main/your-move/core'
+import {
+  getSessionArchive,
+  openSessionArchive,
+  setSessionArchive
+} from '../../src/main/session-archive-core'
+import type { FolderEntry } from '../../src/main/folder-model'
 import { writeYourMovePrefs } from '../../src/main/your-move/prefs'
 import {
   openYourMoveStore,
@@ -196,6 +202,25 @@ describe('your_move handler', () => {
     })
   })
 
+  it('a whitespace-only ask is refused and blanks nothing', async () => {
+    const refused = await call({ ask: '   \t ' })
+    expect(refused.isError).toBe(true)
+    expect(textOf(refused)).toMatch(/^BAD_ARGS/)
+    expect(cards()).toHaveLength(0)
+
+    // The same call against an existing card must not blank it either.
+    const first = payload(await call())
+    const blanked = await call({ cardId: first.cardId, ask: '   ' })
+    expect(blanked.isError).toBe(true)
+    expect(textOf(blanked)).toMatch(/^BAD_ARGS/)
+    expect(cards()).toHaveLength(1)
+    expect(cards()[0].ask).toBe('Pick the PROJ-231 rollout')
+
+    // The schema refuses it too, so the seam never lets one through.
+    const base = { folder: FOLDER, sessionId: SESSION, kind: 'decide' }
+    expect(parseToolInput('your_move', { ...base, ask: '   ' }).ok).toBe(false)
+  })
+
   it('cardId of a closed card or another session is CARD_NOT_FOUND', async () => {
     const first = payload(await call())
     const other = await call({ cardId: first.cardId, sessionId: 'sess-0002-bbbb' })
@@ -338,5 +363,82 @@ describe('your_move schema', () => {
     const parsed = parseToolInput('your_move', { ...ok, close: true, closedAt: 1 })
     expect(parsed.ok).toBe(true)
     if (parsed.ok) expect(Object.keys(parsed.value as object)).not.toContain('close')
+  })
+})
+
+describe('archive_session never closes a Your move card for an agent', () => {
+  const archiveTool = WIRED_TOOLS.find((t) => t.op === 'archive_session')
+  const archiveHandler = archiveTool?.handler as NonNullable<typeof archiveTool>['handler']
+  const entry = (ids: string[]): FolderEntry =>
+    ({
+      path: FOLDER,
+      alias: 'www',
+      sessions: ids.map((sessionId) => ({ sessionId, projectPath: FOLDER }))
+    }) as unknown as FolderEntry
+  const archiveCtx = (): {
+    folder: string
+    folders: FolderEntry[]
+    denyFolders: string[]
+    bridge: undefined
+  } => ({
+    folder: '',
+    folders: [entry([SESSION, 'sess-clean-0001'])],
+    denyFolders: [],
+    bridge: undefined
+  })
+  type Row = { sessionId: string; outcome: string; reason?: string }
+  const rowsOf = (res: CallToolResult): Row[] => payload(res).results as Row[]
+
+  beforeEach(async () => {
+    setSessionArchive(await openSessionArchive(path.join(live.userData, 'archived-sessions.json')))
+  })
+  afterEach(() => setSessionArchive(null))
+
+  it('archive_session refuses a session with an open card', async () => {
+    await call()
+    const res = await archiveHandler({ sessionIds: [SESSION, 'sess-clean-0001'] }, archiveCtx())
+    expect(rowsOf(res)).toEqual([
+      { sessionId: SESSION, outcome: 'refused', reason: 'OPEN_CARDS' },
+      { sessionId: 'sess-clean-0001', outcome: 'archived' }
+    ])
+    expect(payload(res).ok).toBe(false)
+    expect(getSessionArchive()?.has(SESSION)).toBe(false)
+    expect(getSessionArchive()?.has('sess-clean-0001')).toBe(true)
+    expect(cards()).toHaveLength(1)
+    expect(cards()[0].closedAt).toBeUndefined()
+  })
+
+  it('a closed card no longer blocks the archive', async () => {
+    await call()
+    await store.transact((s) => ({
+      next: {
+        ...s,
+        cards: s.cards.map((c) => ({ ...c, closedAt: 1, closedBy: 'answered' as const }))
+      },
+      result: null
+    }))
+    const res = await archiveHandler({ sessionIds: [SESSION] }, archiveCtx())
+    expect(rowsOf(res)).toEqual([{ sessionId: SESSION, outcome: 'archived' }])
+  })
+
+  it('archive_session is unaffected when the mode is Off', async () => {
+    await call()
+    await writeYourMovePrefs(prefsFile, { mode: 'off' })
+    const res = await archiveHandler({ sessionIds: [SESSION] }, archiveCtx())
+    expect(rowsOf(res)).toEqual([{ sessionId: SESSION, outcome: 'archived' }])
+  })
+
+  it('archive_session is unaffected when the store is unavailable', async () => {
+    await call()
+    setYourMoveStore(null)
+    const res = await archiveHandler({ sessionIds: [SESSION] }, archiveCtx())
+    expect(rowsOf(res)).toEqual([{ sessionId: SESSION, outcome: 'archived' }])
+  })
+
+  it('unarchive is unaffected by an open card', async () => {
+    await call()
+    await getSessionArchive()?.transact(() => ({ archive: [SESSION], result: null }))
+    const res = await archiveHandler({ sessionIds: [SESSION], unarchive: true }, archiveCtx())
+    expect(rowsOf(res)).toEqual([{ sessionId: SESSION, outcome: 'restored' }])
   })
 })
