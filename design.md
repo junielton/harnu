@@ -2370,6 +2370,54 @@ owning folder
   **No new tokens** — Section-label, `--color-warning`, `--border`, all
   already exist.
 
+##### `RETURN HERE` in Your move mode Live (the queue of cards)
+
+When the Your move setting is **Live**, the zone stops listing forgotten sessions and lists the
+**cards** of the global Your move queue instead. In Off and Observe it keeps the rows above
+unchanged; the legacy `needs-input` rows retire in the answering unit. The island, its
+`data-island="sidebar-return"` attribute, the divider and the position are the same in both
+layouts. The zone is global: it never filters by the folder the sidebar is drilled into, so a card
+from another project shows while the list is drilled (R-3).
+
+- **Eyebrow.** Same Section-label typography, in `--color-warning`: `RETURN HERE · 3 · 2h 14m`
+  (title, count, the oldest card's running clock; the middots are decorative, `aria-hidden`). The
+  eyebrow stays put; only the cards scroll.
+- **Order.** Oldest first (`openedAt` ascending). Only open cards of the `live` lane. The selected
+  session's cards are listed too.
+- **Card.** A `<div>` (never a `<button>`: it holds buttons), `bg-warning-soft`,
+  `border border-warning-line`, `--radius`, `padding: 8px 10px`, `gap 6px` between cards, `margin: 0
+8px`. Top line: **kind badge** (`yourMove.kind.*`, `bg-surface` + `text-warning`, `10.5px`,
+  `--radius-sm`), `folder alias · session name` (`--text-3`,
+  `11.5px`, `truncate`), and the **running clock** (`--text-4`, `10.5px`, `tabular-nums`, right
+  aligned; ticks every second). Below it, the **ask** in `--text`, `12.5px`, two lines max
+  (`line-clamp-2`) when collapsed, in full when expanded. A system card (death, could not check,
+  plan ready) renders its `askKey` through `$t`, the English `ask` otherwise.
+- **Expanded** (click the header; one card open at a time): the `context`, then "Blocks: …" when the
+  card says what it blocks (`--text-3`, `11.5px`), then the **buttons** row, then the two exits.
+  Every piece of model-written text (`ask`, `context`, `blocks`, option labels) is text
+  interpolation only, never `v-html`; a `link` becomes a button only for `http:` or `https:`.
+- **Buttons.** `Open session` is always present and always last. `decide`: one button per option,
+  the recommended one first with `border-accent` and a "Recommended" tag; `go_no_go`: Go, No-go;
+  `do`: Open link (when the card has an http(s) link), Done; `check`: Looks right, Something's
+  wrong; `provide`: Open session only (a secret never passes through a card). A mission card offers
+  Open session and Open mission only; death, judge-failure and human-gate cards offer Open session
+  only. Buttons use the ghost button style (`11.5px`, `--radius-sm`); until the answering unit, the
+  answer buttons open the session.
+- **Exits.** Two quiet text buttons at the end of the expanded card: **Not for me** and **Already
+  handled**. Neither tells the session anything; they close the card and log separate labels. A
+  card has **no ×** and no other dismiss control, and opening the session leaves it in the queue.
+- **Delivery failure.** A card whose answer could not be delivered keeps its place and shows one
+  `--color-red` line under the buttons saying why (`yourMove.delivery.*`).
+- **Exit failure.** When Not for me or Already handled could not be saved (the store file cannot be
+  written), the card stays open and shows one `--color-red` line (`11.5px`, `yourMove.exits.failed`)
+  right under the two exits; both exits keep working, and the next click retries and clears the line.
+  A card that was already gone shows nothing: the list just refreshes.
+- **Height cap.** `max-height: min(380px, 45vh)`, the cards scroll inside, the eyebrow does not.
+  That leaves the folder list usable on a short window (45vh at most) and still shows about three
+  collapsed cards.
+- **No new tokens**: `--color-warning`, `--color-warning-soft`, `--color-warning-line`,
+  `--color-accent`, `--color-red` already exist.
+
 **Empty state (no folders):** when `sessions.folders.length === 0`, the tree
 area shows static centered text, `--text-3` 11.5px, `padding: 14px 12px`,
 `line-height 1.5` — `$t('sidebar.emptyShort')` ("No folders added yet.").
@@ -4161,7 +4209,9 @@ side border. It keeps `--surface` and a 1px `--border` **top rule**. The islands
   dock, `--float-gap` from both (T660). When the zone is empty it is not rendered and the list and
   the dock are `--float-gap` apart as usual. Its internal top divider (the `aria-hidden` `border-t`)
   is hidden; the island gap separates it from the list. Its height is capped (see `RETURN HERE`
-  zone) and the rows scroll inside.
+  zone) and the rows scroll inside. In Your move mode Live the cap is `min(380px, 45vh)` and the
+  cards scroll inside; the island keeps `overflow: hidden` so a card never pokes past the rounded
+  corners, and the eyebrow stays pinned above the scrolling cards.
 - In **drill mode** the drill view (`data-drill-view`) renders inside the same `sidebar-list`
   island, **under the joined toolbar head** (T659). Its pinned Back row (`data-drill-back`, BUG-248)
   is the first row below the toolbar's inner rule, still outside the scroller; the toolbar, not the

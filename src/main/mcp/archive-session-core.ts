@@ -3,7 +3,7 @@
  * id, decided from plain lookups so every branch is testable without electron or fs.
  *
  * Order per id: `notFound` (no such session), then `refused` for a blocked folder, then
- * (archiving only) a `working` session, then (archiving only) a parked approval; only then
+ * (archiving only) a `working` session, then (archiving only) a parked approval, then (archiving only) an open Your move card; only then
  * the idempotent archive / restore outcomes. An id that is already archived reads
  * `alreadyArchived` even when its session is busy: nothing would change, so nothing is refused.
  */
@@ -11,7 +11,8 @@
 export type ArchiveOutcome =
   'archived' | 'alreadyArchived' | 'restored' | 'alreadyActive' | 'notFound' | 'refused'
 
-export type ArchiveRefusal = 'FOLDER_NOT_ALLOWED' | 'SESSION_WORKING' | 'PENDING_APPROVAL'
+export type ArchiveRefusal =
+  'FOLDER_NOT_ALLOWED' | 'SESSION_WORKING' | 'PENDING_APPROVAL' | 'OPEN_CARDS'
 
 export interface ArchiveRow {
   sessionId: string
@@ -31,6 +32,11 @@ export interface ArchivePlanDeps {
   taskStateOf: (sessionId: string) => string | undefined
   /** Whether an approval is parked for the session right now. */
   hasPendingApproval: (sessionId: string) => boolean
+  /**
+   * Whether the operator still owes the session something (an open Your move card). An agent's
+   * archive must never close a card, so such a session is refused. Absent means no cards.
+   */
+  hasOpenCard?: (sessionId: string) => boolean
 }
 
 export interface ArchivePlan {
@@ -86,6 +92,10 @@ export function planArchiveSession(
     }
     if (deps.hasPendingApproval(sessionId)) {
       rows.push({ sessionId, outcome: 'refused', reason: 'PENDING_APPROVAL' })
+      continue
+    }
+    if (deps.hasOpenCard?.(sessionId)) {
+      rows.push({ sessionId, outcome: 'refused', reason: 'OPEN_CARDS' })
       continue
     }
     rows.push({ sessionId, outcome: 'archived' })

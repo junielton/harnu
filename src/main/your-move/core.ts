@@ -328,6 +328,70 @@ export function upsertStructured(
   return { ...s, cards }
 }
 
+/** The `your_move` verb files or refreshes at most this many cards per session and UTC hour. */
+export const YOUR_MOVE_LIMIT_PER_HOUR = 30
+
+/**
+ * File a card for the `your_move` verb, or refresh one this session filed before.
+ *
+ * Without `cardId` a new `verb` card is born (no `sourceKey`: the judge reconciles
+ * duplicates). With one, the open `verb` card of the same session is refreshed in place:
+ * its content and `updatedAt` change, `openedAt` never does, so the clock keeps running.
+ * A closed card, another session's card and an unknown id are all `CARD_NOT_FOUND`. There is
+ * deliberately no way to close from here: an agent can never decide the operator dealt with
+ * something.
+ */
+export function fileFromVerb(
+  s: YourMoveState,
+  input: {
+    folder: string
+    sessionId: string
+    kind: CardKind
+    ask: string
+    blocks?: string
+    options?: string[]
+    recommended?: string
+    cardId?: string
+    lane: CardLane
+  },
+  mintId: () => string,
+  now: number
+): { state: YourMoveState; cardId: string; refreshed: boolean } | { error: 'CARD_NOT_FOUND' } {
+  const options = cleanOptions(input.options)
+  const content = {
+    kind: input.kind,
+    ask: input.ask.trim(),
+    blocks: input.blocks?.trim() || undefined,
+    options,
+    recommended:
+      options && input.recommended && options.includes(input.recommended)
+        ? input.recommended
+        : undefined
+  }
+  if (input.cardId !== undefined) {
+    const at = s.cards.findIndex(
+      (c) =>
+        c.id === input.cardId && isOpen(c) && c.sessionId === input.sessionId && c.source === 'verb'
+    )
+    if (at === -1) return { error: 'CARD_NOT_FOUND' }
+    const cards = s.cards.slice()
+    cards[at] = { ...cards[at], ...content, updatedAt: now }
+    return { state: { ...s, cards }, cardId: input.cardId, refreshed: true }
+  }
+  const id = mintId()
+  const card: YourMoveCard = {
+    id,
+    sessionId: input.sessionId,
+    folder: input.folder,
+    ...content,
+    source: 'verb',
+    lane: input.lane,
+    openedAt: now,
+    updatedAt: now
+  }
+  return { state: { ...s, cards: [...s.cards, card] }, cardId: id, refreshed: false }
+}
+
 /**
  * Make the open cards of one source match what is owed right now: upsert every owed draft,
  * close the in-scope open cards whose key is no longer owed as `source-resolved`. A scope
