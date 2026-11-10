@@ -70,6 +70,24 @@ Harnu only shows that panel when it is sure: the transcript must hold no convers
 
 If the panel ever shows for a session you want to open, press **Resume anyway**. The terminal opens and runs `claude --resume` regardless, so you see exactly what Claude Code says — including its error, if there is one. The choice lasts until you quit Harnu. If the transcript later gains a conversation, the panel gives way to the terminal on its own.
 
+## Return here: sessions waiting on you
+
+The **Return here** box sits at the bottom of the sidebar, above the dock. It is global: it stays put whichever project the sidebar is drilled into, so a question from one project is never hidden while you are working in another. It works the same with Floating panels on or off.
+
+With [Your move](settings.md#your-move) set to **Off** or **Observe**, it lists the sessions you probably forgot: waiting for input and not looked at for about ten minutes. With **Live**, it lists **cards** instead, one for each thing only you can unblock, oldest first. The heading shows how many there are and how long the oldest has been waiting, for example `RETURN HERE · 3 · 2h 14m`. The box grows to about 380 pixels (or 45% of the window height, whichever is smaller) and the cards scroll inside it; the heading stays in place.
+
+Each card shows its kind (Decide, Go / no-go, Provide, Do or Check), the project and session it comes from, a clock that counts up from the moment it was filed, and what is being asked. Click the card to expand it: you then see the context, what it blocks, and its buttons.
+
+- **Decide** cards have one button per option, the one the session recommended first and marked. **Go / no-go** has Go and No-go. **Do** has Done, and Open link when the card carries a web link. **Check** has Looks right and Something's wrong. **Provide** has only Open session: Harnu never takes a secret through a card.
+- **Open session** is on every card and takes you to the session. Opening the session does not close the card.
+- Cards that come from a mission also have **Open mission**. A card for a session that stopped on an error, or that Harnu could not check, has only Open session.
+- For now the answer buttons take you to the session instead of answering for you. Answering from the card comes in a later release.
+- Every card also has two exits that tell the session nothing: **Not for me** (a false alarm) and **Already handled** (it was real, but someone else dealt with it or it no longer matters). Harnu keeps them as separate labels.
+
+There is no × on a card. A card leaves the box when you use one of the exits or answer it, or when the thing it was about is resolved: you answered in the session, a mission stopped owing it, or you archived the session or removed its folder.
+
+Everything a card says was written by a model, so Harnu shows it as plain text and only follows a link that starts with `http://` or `https://`.
+
 ## Jump from the transcript to a file
 
 When Claude mentions a file — `src/main/pty.ts`, or `src/main/pty.ts:42` — you

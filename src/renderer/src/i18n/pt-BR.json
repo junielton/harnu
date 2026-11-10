@@ -2605,7 +2605,7 @@
       "hint": {
         "off": "Nada é checado e nada é gasto.",
         "observe": "O Harnu checa as sessões e guarda o que encontra na lista abaixo. Nada aparece na barra lateral e nada faz som.",
-        "live": "Sua escolha fica salva. Até a fila chegar, o Ao vivo se comporta como o Observar."
+        "live": "O Harnu verifica as sessões e lista o que encontra como cartões na zona Voltar aqui da barra lateral, com um relógio correndo, até você resolver cada um."
       },
       "cost": "Cada checagem usa a sua própria cota do Claude: cerca de US$ 0,002 e vários segundos."
     },
@@ -2640,6 +2640,36 @@
       "observe": "Observar",
       "live": "Ao vivo",
       "mid-turn": "Meio do turno"
+    },
+    "buttons": {
+      "openSession": "Abrir sessão",
+      "openLink": "Abrir link",
+      "openMission": "Abrir missão",
+      "go": "Go",
+      "noGo": "No-go",
+      "done": "Feito",
+      "looksRight": "Parece certo",
+      "somethingWrong": "Algo está errado",
+      "recommended": "Recomendado"
+    },
+    "exits": {
+      "notForMe": "Não é para mim",
+      "alreadyHandled": "Já resolvido"
+    },
+    "card": {
+      "blocks": "Bloqueia: {what}",
+      "clock": "Esperando há {time}"
+    },
+    "delivery": {
+      "wakeTimeout": "Sua resposta não foi entregue: a sessão não acordou a tempo.",
+      "processGone": "Sua resposta não foi entregue: a sessão não está mais rodando.",
+      "notConfirmed": "Sua resposta foi enviada, mas a sessão nunca a mostrou. Confira a sessão.",
+      "refused": "Sua resposta não foi entregue: ela não pode ser digitada em uma sessão."
+    },
+    "system": {
+      "stopped": "Sessão parou: {reason}",
+      "couldNotCheck": "Não foi possível verificar esta sessão: {reason}",
+      "planReady": "A sessão tem um plano esperando sua aprovação"
     },
     "closedBy": {
       "answered": "respondido",
