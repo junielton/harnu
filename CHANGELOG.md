@@ -23,7 +23,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
-- **A session can no longer archive another session that still has one of your Your move cards open.** `archive_session` now refuses that session with the reason `OPEN_CARDS` and leaves it and its cards where they are; every other session in the same call is archived as before. Only you can close a card, and archiving from the session's right-click menu still closes its cards. Nothing changes while Your move is Off.
+- **A session can no longer close one of your Your move cards by archiving a session or removing a folder.** `archive_session` refuses a session, and `remove_folder` refuses a folder, with the reason `OPEN_CARDS` while a card is open for it in your queue; they leave it and its cards where they are, and every other session in the same call is archived as before. Only you can close a card, and archiving or removing from the app's own menus still closes its cards. A card that was only checked in Observe mode shows in no queue, so it never blocks. Nothing changes while Your move is Off.
 - **A session's installed hooks now also report API errors, whatever the Your move mode.** The per-session hook set Harnu hands each session it starts now includes the error stop (`StopFailure`). An install that opted out of the global hooks therefore sees a session that stopped on a rate limit, an overload or a billing error marked as failed, with its badge and notification, even with Your move Off. Installs with the global hooks on already did.
 
 ### Fixed

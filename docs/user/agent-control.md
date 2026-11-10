@@ -133,11 +133,12 @@ you first, because all it does is add one line to your list.
 - **A card says what it asks on its own.** The session is told to write it so you never have
   to open the session to learn what it wants, and to say what stays stuck until you answer.
 - **A session can refresh a card, but it cannot close one.** It can sharpen a card it filed before
-  and the clock on it keeps running, but no action a session can take closes a card. A card leaves
-  when you deal with it, or when whatever raised it stops being owed (a mission card closes when
-  the mission stops owing you that item). A session also cannot archive a session that still has
-  one of your cards open: Harnu refuses it. A session cannot tell Harnu
-  you handled something.
+  and the clock on it keeps running, but no action a session can take closes a card you can still
+  see. A card leaves when you deal with it, or when whatever raised it stops being owed (a mission
+  card closes when the mission stops owing you that item). So Harnu also refuses a session's
+  request to archive a session, or to remove a folder, while one of your cards is open for it. A
+  card checked only in Observe mode shows in no queue, so it does not block anything. A session
+  cannot tell Harnu you handled something.
 - **It is capped.** A session can make at most 30 calls per hour, refreshes included. Past that, the call is
   refused and recorded in the audit log, so a looping session cannot bury the queue.
 - **With Your move **Off** (the default), or switched off for that folder, it files nothing.**
@@ -415,7 +416,7 @@ A session can archive other sessions for you, the same as choosing **Archive** f
 
 Harnu keeps the archived list itself now, not the window, so a session can archive while Harnu's window is closed and the same sessions show as archived the next time you open it. When it happens while the window is open, the sidebar updates on the spot. The first time you start a version with this change, the sessions you had already archived are carried over automatically; nothing is lost, and the old copy is left in place so going back to an older version still finds it.
 
-Each session is judged on its own, and the answer lists one result per session: archived, already archived, restored, already active, not found, or refused. A session is refused when its folder is one you blocked for agents, when it is working right now, when it is waiting on an approval from you, or when it still has a [Your move](settings.md#your-move) card open for you (only you can close a card); those stay as they are until you or the agent come back to them. The call is recorded in the audit log like the other actions that run without asking.
+Each session is judged on its own, and the answer lists one result per session: archived, already archived, restored, already active, not found, or refused. A session is refused when its folder is one you blocked for agents, when it is working right now, when it is waiting on an approval from you, or when it still has a [Your move](settings.md#your-move) card open in your queue (only you can close a card); those stay as they are until you or the agent come back to them. The call is recorded in the audit log like the other actions that run without asking.
 
 ## Hiding finished folders
 
@@ -425,7 +426,7 @@ When Harnu's window is open the sidebar updates on the spot; the menu's Hide and
 
 Each folder is judged on its own, and the answer lists one result per folder: hidden, already hidden, shown, already visible, not found, or refused. A folder is refused when you blocked it for agents, when a session in that exact folder is working right now, or when one of its sessions is waiting on an approval from you (showing a folder is only refused for a blocked one). "Not found" means Harnu has never seen that path: it is not pinned, not hidden and has no sessions. If two actions touch the same folder at the same moment, the results are consistent with one of them having happened first, and the answer always matches what was saved. The call is recorded in the audit log like the other actions that run without asking.
 
-This is not the same as cleaning up a folder whose directory is already gone: that is a separate action that removes the leftover sidebar entry for a deleted folder, and it refuses while the folder still exists. Hiding is for folders that are still there and can be undone at any time.
+This is not the same as cleaning up a folder whose directory is already gone: that is a separate action that removes the leftover sidebar entry for a deleted folder, and it refuses while the folder still exists, and while one of your [Your move](settings.md#your-move) cards is open for that folder in your queue (only you can close a card). Hiding is for folders that are still there and can be undone at any time.
 
 ## Parked and hibernated sessions
 

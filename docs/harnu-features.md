@@ -1,4 +1,4 @@
-<!-- harnu-features v133 (2026-11-09) -->
+<!-- harnu-features v134 (2026-11-09) -->
 
 # You are running inside Harnu
 
@@ -290,9 +290,9 @@ and `recommended` serve a `decide`: a `recommended` that is not one of `options`
 the card is still filed. Pass your OWN `sessionId`. Runs free. ACK `{ ok, op, cardId, refreshed }`: pass that
 `cardId` back to refresh the same card (a new `ask`, `updatedAt` moves, `openedAt` and the clock
 never do); without it a new card is filed and the judge reconciles duplicates. **No verb
-closes a card**: one leaves when the operator deals with it, or when its source resolves (a
+closes a card the operator can still see**: one leaves when the operator deals with it, or when its source resolves (a
 mission card closes when the mission stops owing the item), never at an agent's word. For the
-same reason `archive_session` refuses a session that still has an open card (`OPEN_CARDS`). Refusals, none of them worth a retry:
+same reason `archive_session` and `remove_folder` refuse (`OPEN_CARDS`) a session or folder that holds an open card in the operator's queue; an Observe-mode card is in no queue and does not block. Refusals, none of them worth a retry:
 `YOUR_MOVE_OFF` (the operator's Your move setting is Off, the default, or off for that folder;
 nothing was filed, say it in your reply instead), `YOUR_MOVE_RATE_LIMIT` (30 calls per session
 per UTC hour, refreshes included; the refusal is audited), `CARD_NOT_FOUND` (`cardId` is unknown, closed or another
@@ -987,7 +987,8 @@ it unpins/unhides the path and drops it (and its sessions) from the live model, 
 app restart needed. It ONLY ever touches Harnu's own bookkeeping — it refuses with
 `DIRECTORY_STILL_EXISTS` if the directory is still there (never a way to hide live
 data), and with `FOLDER_UNKNOWN` if the path isn't pinned, hidden, or known via
-session history at all. There is still no `remove_worktree` — this verb never
+session history at all, and with `OPEN_CARDS` (nothing removed) if the operator's Your move
+queue holds an open card for exactly that folder, because removing a folder would close it. There is still no `remove_worktree` — this verb never
 deletes a worktree, branch, or file.
 
 **Hide finished folders — `hide_folder`.**
@@ -1026,7 +1027,7 @@ one row per id; `outcome` is `archived`, `alreadyArchived`, `restored`, `already
 `notFound` or `refused`, and a `refused` row carries `reason`: `FOLDER_NOT_ALLOWED` (the
 operator blocked that session's folder), `SESSION_WORKING`, `PENDING_APPROVAL` or `OPEN_CARDS`
 (archiving only: it is working, an approval is parked for it, or Your move holds an open card
-for it, which only the operator may close: deal with the card first, or leave the session). `ok` is true only when no row is
+for it in the operator's queue, which only the operator may close: leave the session; an Observe-mode card does not count). `ok` is true only when no row is
 `refused` or `notFound`: read each row rather than retrying the batch. Every row is decided
 inside the store's own write, so concurrent calls on one session read as one serial order
 (`restored` then `alreadyActive`) and a row always matches what the archive file holds.

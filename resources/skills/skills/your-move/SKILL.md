@@ -77,10 +77,10 @@ your_move({
 - `YOUR_MOVE_OFF` means Your move is off for this install or this folder: nothing was filed
   and retrying will not help. Say what you need in your reply instead.
   `YOUR_MOVE_RATE_LIMIT` means you made 30 calls this hour (refreshes count): say it in your reply.
-- `your_move` cannot close a card, and no other verb does either. A card leaves when the operator deals with it
+- `your_move` cannot close a card, and no other verb closes one the operator can still see. A card leaves when the operator deals with it
   (an answer typed in the session, a button on the card) or when its source resolves (a mission
-  card closes when the mission stops owing the item). `archive_session` refuses a session that
-  still has an open card. Do not tell the operator a card is closed.
+  card closes when the mission stops owing the item). `archive_session` and `remove_folder`
+  refuse a session or folder that still has an open card in the operator's queue. Do not tell the operator a card is closed.
 
 ## Reply as well
 
