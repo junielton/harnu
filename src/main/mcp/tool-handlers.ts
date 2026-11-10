@@ -3387,7 +3387,8 @@ const yourMoveHandler: Handler = async (args) => {
     ? args.options.filter((o): o is string => typeof o === 'string')
     : undefined
   try {
-    const out = await store.transact((s) => {
+    type Filed = { cardId: string; refreshed: boolean } | { error: 'CARD_NOT_FOUND' }
+    const out = await store.transact<Filed>((s) => {
       const filed = fileFromVerb(
         s,
         {
