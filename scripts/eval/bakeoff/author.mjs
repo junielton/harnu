@@ -114,13 +114,18 @@ async function extractHarnu(repo, dest) {
   const scratch = mkdtempSync(join(dirname(dest), '.archive-'))
   const tarball = join(scratch, 'head.tar')
   try {
+    // Paths travel in the environment, never in the command text: a quote in one cannot break out.
+    const env = { ARCHIVE_TARBALL: tarball, ARCHIVE_DEST: dest }
     const archive = await runProblemCommand(
-      `git archive --format=tar --output='${tarball}' HEAD`,
-      repo
+      'git archive --format=tar --output="$ARCHIVE_TARBALL" HEAD',
+      repo,
+      { env }
     )
     if (archive.exitCode !== 0)
       return coded('ARCHIVE_FAILED', `git archive failed: ${archive.stderr}`)
-    const extract = await runProblemCommand(`tar -xf '${tarball}' -C '${dest}'`, repo)
+    const extract = await runProblemCommand('tar -xf "$ARCHIVE_TARBALL" -C "$ARCHIVE_DEST"', repo, {
+      env
+    })
     if (extract.exitCode !== 0) return coded('ARCHIVE_FAILED', `tar failed: ${extract.stderr}`)
   } finally {
     rmSync(scratch, { recursive: true, force: true })
@@ -216,7 +221,8 @@ function stampImported(problemDir) {
 
 /**
  * `author-import <id> --split <dev|holdout> --reference <file>`. A problem that does not load and
- * validate is taken back out of the corpus: the sandbox still holds it for the next attempt.
+ * validate is taken back out of the corpus, and a copy it replaced is restored: the sandbox still
+ * holds the new attempt for the next try.
  *
  * @param {object} args `{ positional, split, reference }`
  * @param {object} ctx `{ roots, stdout, stderr }`
@@ -245,6 +251,15 @@ export async function authorImportCommand(args, ctx) {
 
   const root = corpusRoot(roots, args.split)
   const dest = join(root, id)
+  // The corpus copy being replaced is kept in the sandbox until the new one validates.
+  const previous = join(sandbox, 'previous')
+  rmSync(previous, { recursive: true, force: true })
+  const hadPrevious = existsSync(dest)
+  if (hadPrevious) cpSync(dest, previous, { recursive: true })
+  const takeBack = () => {
+    rmSync(dest, { recursive: true, force: true })
+    if (hadPrevious) cpSync(previous, dest, { recursive: true })
+  }
   rmSync(dest, { recursive: true, force: true })
   mkdirSync(root, { recursive: true })
   cpSync(out, dest, { recursive: true })
@@ -256,7 +271,7 @@ export async function authorImportCommand(args, ctx) {
   const own = errors.filter((e) => e.file.split(/[\\/]/)[0] === id)
   if (own.length > 0) {
     for (const error of own) say(ctx.stderr, `${error.code}: ${error.message} [${error.file}]`)
-    rmSync(dest, { recursive: true, force: true })
+    takeBack()
     return coded('IMPORT_INVALID', `${id} does not load.`)
   }
 
@@ -269,7 +284,7 @@ export async function authorImportCommand(args, ctx) {
       const names = defect.tests?.length ? ` (${defect.tests.join(', ')})` : ''
       say(ctx.stderr, `${id}: ${defect.code}: ${defect.message}${names}`)
     }
-    rmSync(dest, { recursive: true, force: true })
+    takeBack()
     return coded('VALIDATION_FAILED', `${id} failed validation; see the lines above.`)
   }
   say(ctx.stdout, `${id}: imported and validated (${result.testSet.length} tests)`)

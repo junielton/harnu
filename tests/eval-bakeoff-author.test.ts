@@ -365,6 +365,44 @@ it('the author sandbox has no skill files and import stamps it', async () => {
   }
 }, 60_000)
 
+it('a failed re-import puts back the problem it replaced', async () => {
+  const repo = makeRepo('repo', { 'src/index.ts': 'kept\n' })
+  const target = jsTarget()
+  const roots = fakeRoots(repo.dir)
+  const { authorImportCommand } = await author()
+  const { sandbox } = await buildSandbox(roots, 'dev', 'p-two', target)
+  finishAuthoring(sandbox, 'p-two')
+  const good = join(tmp, 'good.patch')
+  writeFileSync(good, REFERENCE_PATCH)
+  const args = (reference: string): Record<string, unknown> => ({
+    positional: ['p-two'],
+    split: 'dev',
+    reference
+  })
+
+  const first = fakeCtx(roots)
+  expect(await authorImportCommand(args(good), first.ctx), first.err()).toBe(0)
+  const dest = join(repo.dir, 'scripts/eval/bakeoff/corpus/dev/p-two')
+  const before = readFileSync(join(dest, 'problem.json'), 'utf8')
+
+  // A reference patch that does not apply fails validation; the first import must survive it.
+  const bad = join(tmp, 'bad.patch')
+  writeFileSync(bad, 'not a patch\n')
+  const second = fakeCtx(roots)
+  expect(codeOf(await authorImportCommand(args(bad), second.ctx))).not.toBeNull()
+  expect(readFileSync(join(dest, 'problem.json'), 'utf8')).toBe(before)
+  expect(readFileSync(join(dest, 'hidden/reference.patch'), 'utf8')).toBe(REFERENCE_PATCH)
+}, 60_000)
+
+it('the sandbox build survives a quote in the path it extracts into', async () => {
+  const repo = makeRepo('repo', { 'src/index.ts': 'kept\n' })
+  const target = jsTarget()
+  const roots = { ...fakeRoots(repo.dir), cache: join(tmp, "o'brien", 'cache') }
+  const { sandbox, code } = await buildSandbox(roots, 'dev', 'p-quote', target)
+  expect(code).toBe(0)
+  expect(existsSync(join(sandbox, 'harnu/src/index.ts'))).toBe(true)
+}, 60_000)
+
 it('the built author sandbox holds no deny-list term', async () => {
   const { resolveRoots } = await import(/* @vite-ignore */ pathToFileURL(PATHS_MODULE).href)
   const roots = resolveRoots({
