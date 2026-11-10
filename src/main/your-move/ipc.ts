@@ -293,6 +293,13 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         locate: locateTranscript,
         resolveFolder,
         read: readFrom,
+        size: async (file) => {
+          try {
+            return (await fs.stat(file)).size
+          } catch {
+            return 0
+          }
+        },
         states: getTaskStates,
         mintId: () => randomUUID(),
         now: () => Date.now()
