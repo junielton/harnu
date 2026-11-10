@@ -24,6 +24,15 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Changed
 
 - **A session can no longer archive another session that still has one of your Your move cards open.** `archive_session` now refuses that session with the reason `OPEN_CARDS` and leaves it and its cards where they are; every other session in the same call is archived as before. Only you can close a card, and archiving from the session's right-click menu still closes its cards. Nothing changes while Your move is Off.
+- **A session's installed hooks now also report API errors, whatever the Your move mode.** The per-session hook set Harnu hands each session it starts now includes the error stop (`StopFailure`). An install that opted out of the global hooks therefore sees a session that stopped on a rate limit, an overload or a billing error marked as failed, with its badge and notification, even with Your move Off. Installs with the global hooks on already did.
+
+### Fixed
+
+- **Your move no longer loses a question to a long turn.** A session first seen in the middle of a long turn (for example right after you switch Your move on) keeps its first check for the stop at the end of the turn, which now reads the recent part of the transcript instead of nothing. A check that fails is not retried until five minutes have passed, and a stop moves the long-turn reader forward so it never re-reads turns already judged.
+- **A parked question keeps its card.** A card for an `AskUserQuestion` or `ExitPlanMode` no longer disappears when the session writes another entry after asking, when the transcript cannot be read, or when the question scrolls out of the part Harnu reads. It closes when you answer or the session next stops, and Harnu now looks for parked questions every minute in any session whose transcript grew, not only on a waiting-for-input signal.
+- **A session that shuts down mid-turn files a "Session stopped" card** even when Claude Code first reports it finished. A death with no known folder is logged instead of vanishing, and Harnu's own background runs that fail on an API error no longer file a card that nothing would close.
+- **Your move catches a graceful shutdown mid-turn even when it missed the prompt that started the turn.** A turn now counts as running from any event that shows the session working or waiting, tracked whatever the mode (in memory only, nothing is read or spent while Off), so switching Your move on during a turn, or a turn started by a background task, still files "Session stopped" if the session shuts down before it stops. An API-error stop in a session started from an IDE now files a card too (only Harnu's own background runs are skipped), and a compaction can no longer make Harnu skip the text a stop must check.
+- **Switching a folder off for Your move no longer closes its mission cards,** and removing a folder closes only that folder's cards, not those of a folder nested under it.
 
 ## 2026-11-07
 

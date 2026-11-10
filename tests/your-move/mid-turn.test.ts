@@ -11,7 +11,9 @@ import { readFrom } from '../../src/main/your-move/transcript'
 import {
   MID_TURN_AFTER_MS,
   SWEEP_MS,
+  createEnsureCursor,
   createMidTurnSweep,
+  createTriggers,
   type MidTurnDeps
 } from '../../src/main/your-move/triggers'
 
@@ -280,5 +282,176 @@ describe('mid-turn cards and the live cursor', () => {
       .sort()
     expect(lanes).toEqual(['live', 'mid-turn'])
     expect(store.state().cursors['sess-0001'].offset).toBe(Buffer.byteLength(text))
+  })
+})
+
+describe('a session already seen is never given a live offset by a hook (delta 2)', () => {
+  const ev = (event: string, matcher?: string) =>
+    ({
+      sessionId: 'sess-0001',
+      taskState: 'working',
+      event,
+      matcher,
+      ts: 1,
+      source: 'hook',
+      payload: { cwd: '/work/acme', transcriptPath: file }
+    }) as never
+
+  async function fire(event: string, matcher?: string): Promise<void> {
+    const t = createTriggers({
+      inspector: { request: async () => 'judged' },
+      store,
+      mode: () => 'observe',
+      eligible: async () => true,
+      locate: async () => file,
+      resolveFolder: async (_id, cwd) => cwd ?? '/work/acme',
+      now: () => T0,
+      setTimer: () => 0,
+      ensureCursor: createEnsureCursor({
+        store,
+        read: readFrom,
+        classify: () => 'interactive',
+        now: () => T0
+      }),
+      transcriptHas: async () => true,
+      delay: async () => undefined
+    })
+    t.onTaskEvent(ev(event, matcher))
+    await new Promise((r) => setTimeout(r, 40))
+  }
+
+  it('a compaction on a shadow-only cursor leaves the live cursor unset', async () => {
+    await writeFile(file, jsonl([human('go'), asst('Which database should I use?')]))
+    await store.transact((s) => ({
+      next: { ...s, cursors: { 'sess-0001': { shadowOffset: 10, lastInspectedAt: T0 } } },
+      result: null
+    }))
+    await fire('SessionStart', 'compact')
+    expect(store.state().cursors['sess-0001'].offset).toBeUndefined()
+    expect(store.state().cursors['sess-0001'].shadowOffset).toBe(10)
+  })
+
+  it('a prompt on a shadow-only cursor leaves the live cursor unset too', async () => {
+    await writeFile(file, jsonl([human('go'), asst('Which database should I use?')]))
+    await store.transact((s) => ({
+      next: { ...s, cursors: { 'sess-0001': { shadowOffset: 10, lastInspectedAt: T0 } } },
+      result: null
+    }))
+    await fire('UserPromptSubmit')
+    expect(store.state().cursors['sess-0001'].offset).toBeUndefined()
+  })
+
+  it('a session never seen still gets its cursor at its first hook', async () => {
+    await writeFile(file, jsonl([human('go')]))
+    await fire('SessionStart', 'startup')
+    expect(store.state().cursors['sess-0001'].offset).toBeGreaterThan(0)
+  })
+})
+
+describe('mid-turn cursor discipline (delta 1)', () => {
+  function rig(detectImpl?: () => Promise<JudgeOutcome>) {
+    const clock = { now: T0 }
+    const detect = vi.fn(
+      detectImpl ??
+        (async () =>
+          ({
+            ok: true,
+            costUsd: 0,
+            durationMs: 1,
+            verdict: { new: [{ kind: 'decide', ask: 'Which?' }], update: [], close: [] }
+          }) as JudgeOutcome)
+    )
+    const enrich = vi.fn(async (): Promise<EnrichOutcome> => ({ ok: false, reason: 'off' }))
+    let n = 0
+    const inspector = createInspector({
+      store,
+      read: readFrom,
+      detect: detect as never,
+      enrich,
+      now: () => clock.now,
+      mintId: () => `id-${++n}`,
+      isBlocked: () => false,
+      isArchived: () => false,
+      isFolderOff: () => false,
+      mode: () => 'observe',
+      midTurnLive: () => false,
+      classify: () => 'interactive'
+    })
+    const h = sweepHarness({ inspector, now: () => clock.now })
+    const stop = () =>
+      inspector.request({
+        sessionId: 'sess-0001',
+        folder: '/work/acme',
+        transcriptPath: file,
+        trigger: 'stop'
+      })
+    return { clock, detect, inspector, sweep: h.sweep, stop }
+  }
+
+  it('a mid-turn first sight leaves the live cursor unset, so the Stop judges the recent tail', async () => {
+    await writeFile(file, jsonl([human('go'), asst('Which database should I use?')]))
+    const r = rig()
+    await r.sweep.tick()
+    await r.inspector.idle()
+    expect(store.state().cursors['sess-0001'].offset).toBeUndefined()
+    expect(r.detect).not.toHaveBeenCalled()
+    expect(await r.stop()).toBe('judged')
+    expect(r.detect).toHaveBeenCalled()
+    expect(store.state().cards.map((c) => c.lane)).toEqual(['observe'])
+  })
+
+  it('a failing mid-turn inspection is not retried before MID_TURN_AFTER_MS', async () => {
+    await writeFile(file, jsonl([human('go'), asst('Which database should I use?')]))
+    await putCursor(0, T0 - MID_TURN_AFTER_MS - 1, 0)
+    const r = rig(async () => ({ ok: false, reason: 'rate limited' }) as JudgeOutcome)
+    const perTick: number[] = []
+    for (let i = 0; i < 6; i++) {
+      const before = r.detect.mock.calls.length
+      await r.sweep.tick()
+      await r.inspector.idle()
+      await new Promise((res) => setTimeout(res, 2))
+      perTick.push(r.detect.mock.calls.length - before)
+      r.clock.now += SWEEP_MS
+    }
+    // one attempt on the first tick, then silence for the five minutes that follow
+    expect(perTick[0]).toBeGreaterThan(0)
+    expect(perTick.slice(1, 5)).toEqual([0, 0, 0, 0])
+    // the cursor still did not move on failure
+    expect(store.state().cursors['sess-0001'].offset).toBe(0)
+    // after the wait it tries again
+    r.clock.now += MID_TURN_AFTER_MS
+    const before = r.detect.mock.calls.length
+    await r.sweep.tick()
+    await r.inspector.idle()
+    expect(r.detect.mock.calls.length).toBeGreaterThan(before)
+  })
+
+  it('a long turn after a Stop judges only the text since that Stop', async () => {
+    await writeFile(file, jsonl([human('first'), asst('TURN-ONE-QUESTION?')]))
+    await putCursor(0, T0, 0)
+    const r = rig()
+    expect(await r.stop()).toBe('judged')
+    await appendFile(file, jsonl([human('second'), asst('turn two text')]))
+    r.clock.now += MID_TURN_AFTER_MS + 1
+    const before = r.detect.mock.calls.length
+    await r.sweep.tick()
+    await r.inspector.idle()
+    await new Promise((res) => setTimeout(res, 2))
+    const later = r.detect.mock.calls.slice(before)
+    expect(later.length).toBeGreaterThan(0)
+    for (const call of later) {
+      expect(JSON.stringify(call)).not.toContain('TURN-ONE-QUESTION?')
+      expect(JSON.stringify(call)).toContain('turn two text')
+    }
+  })
+
+  it('a Stop never moves shadowOffset backward', async () => {
+    const text = jsonl([human('go'), asst('Which database should I use?')])
+    await writeFile(file, text)
+    const end = Buffer.byteLength(text)
+    await putCursor(0, T0, end + 1000)
+    const r = rig()
+    await r.stop()
+    expect(store.state().cursors['sess-0001'].shadowOffset).toBe(end + 1000)
   })
 })

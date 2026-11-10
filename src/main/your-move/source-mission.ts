@@ -110,3 +110,23 @@ export function reconcileMissions(
   if (gone.length === 0) return next
   return reconcileSource(next, { source: 'mission', missionIds: gone }, [], mintId, now)
 }
+
+/**
+ * Which missions the queue follows this poll. A mission whose owner session is archived leaves
+ * the pass (its cards were closed by the archive and must not come back), and a folder
+ * switched off leaves it altogether: its views AND its root, so the cards it already holds are
+ * neither refreshed nor read as "the mission ended". Absent is not the same as switched off.
+ */
+export function selectForReconcile(
+  result: Pick<MissionListResult, 'views' | 'unreadable'>,
+  roots: readonly string[],
+  off: { ownerArchived(sessionId: string): boolean; folderOff(root: string): boolean }
+): { result: Pick<MissionListResult, 'views' | 'unreadable'>; roots: string[] } {
+  const views = result.views.filter(
+    (v) => !off.ownerArchived(v.mission.owner.sessionId) && !off.folderOff(v.root)
+  )
+  return {
+    result: { views, unreadable: result.unreadable },
+    roots: roots.filter((r) => !off.folderOff(r))
+  }
+}

@@ -16,10 +16,12 @@
 import {
   advanceCursor,
   applyVerdict,
+  followLive,
   openCardsFor,
   type CardLane,
   type Verdict,
-  type YourMoveMode
+  type YourMoveMode,
+  type YourMoveState
 } from './core'
 import type { JudgeRunner } from './judge'
 import { judgeSegment } from './pipeline'
@@ -145,11 +147,10 @@ export function createInspector(deps: InspectorDeps): {
     }
     const field = req.trigger === 'mid-turn' ? 'shadowOffset' : 'offset'
     const cursor = deps.store.state().cursors[req.sessionId]
-    const from = cursor
-      ? field === 'shadowOffset'
-        ? (cursor.shadowOffset ?? cursor.offset)
-        : cursor.offset
-      : null
+    // A session first seen mid-turn has a shadow cursor and no live one: its Stop still reads
+    // the recent tail, so the text a mid-turn first sight skipped is judged there.
+    const from =
+      (field === 'shadowOffset' ? (cursor?.shadowOffset ?? cursor?.offset) : cursor?.offset) ?? null
 
     let res: ReadResult
     try {
@@ -161,6 +162,12 @@ export function createInspector(deps: InspectorDeps): {
       return fail(req, `transcript unreadable: ${(e as Error).message}`)
     }
     if (deps.classify(res.lines) === 'programmatic') return 'skipped'
+
+    /** A live inspection moves the live cursor and the shadow one with it; a mid-turn one, its own. */
+    const moveCursor = (s: YourMoveState, to: number, at: number): YourMoveState =>
+      field === 'offset'
+        ? followLive(advanceCursor(s, req.sessionId, 'offset', to, at), req.sessionId, to)
+        : advanceCursor(s, req.sessionId, 'shadowOffset', to, at)
 
     const sync = async (
       apply: Parameters<typeof deps.store.transact<void>>[0]
@@ -174,9 +181,8 @@ export function createInspector(deps: InspectorDeps): {
       }
     }
 
-    if (res.shrunk || (from === null && req.trigger === 'mid-turn')) {
-      // A file that shrank was rewritten, and a long turn first seen mid-way is not judged
-      // from its middle: start at the end, the Stop will read the recent tail.
+    if (res.shrunk) {
+      // A file that was rewritten: start both cursors at its end.
       const end = res.nextOffset
       const ok = await sync((s) => ({
         next: advanceCursor(
@@ -189,7 +195,20 @@ export function createInspector(deps: InspectorDeps): {
         result: undefined
       }))
       if (!ok) return 'failed'
-      log(req, 'first-sight', res.shrunk ? { reason: 'shrunk' } : {})
+      log(req, 'first-sight', { reason: 'shrunk' })
+      return 'first-sight'
+    }
+    if (from === null && req.trigger === 'mid-turn') {
+      // A long turn first seen mid-way is not judged from its middle. Only the shadow cursor
+      // moves: the live cursor stays unset, so the Stop judges the recent tail (AC-7) and a
+      // question written earlier in this turn is not lost.
+      const end = res.nextOffset
+      const ok = await sync((s) => ({
+        next: advanceCursor(s, req.sessionId, 'shadowOffset', end, deps.now()),
+        result: undefined
+      }))
+      if (!ok) return 'failed'
+      log(req, 'first-sight')
       return 'first-sight'
     }
 
@@ -205,7 +224,7 @@ export function createInspector(deps: InspectorDeps): {
         return 'empty'
       }
       const ok = await sync((s) => ({
-        next: advanceCursor(s, req.sessionId, field, res.nextOffset, deps.now()),
+        next: moveCursor(s, res.nextOffset, deps.now()),
         result: undefined
       }))
       if (!ok) return 'failed'
@@ -260,7 +279,7 @@ export function createInspector(deps: InspectorDeps): {
         })
       }
       return {
-        next: advanceCursor(next, req.sessionId, field, res.nextOffset, now),
+        next: moveCursor(next, res.nextOffset, now),
         result: undefined
       }
     })
