@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  * is stubbed, so the handler can find that directory.
  */
 
-const live = vi.hoisted(() => ({ userData: '' }))
+const live = vi.hoisted(() => ({ userData: '', removed: [] as string[] }))
 
 vi.mock('electron', () => ({
   app: {
@@ -22,6 +22,15 @@ vi.mock('electron', () => ({
   shell: {},
   BrowserWindow: class {},
   ipcMain: { handle: (): void => {}, on: (): void => {} }
+}))
+
+// The ghost-folder removal is stubbed: this file pins WHEN the verb may call it, not what it does.
+vi.mock('../../src/main/worktree-ipc', async (orig) => ({
+  ...(await orig<typeof import('../../src/main/worktree-ipc')>()),
+  removeGhostFolderFromSidebar: async (folder: string) => {
+    live.removed.push(folder)
+    return { ok: true, removed: { path: folder, unpinned: true, sessionsDropped: 0 } }
+  }
 }))
 
 import { clearAuditLog, getAuditLog } from '../../src/main/mcp/audit-log'
@@ -100,6 +109,7 @@ beforeEach(async () => {
   setYourMoveStore(store)
   await writeYourMovePrefs(prefsFile, { mode: 'live' })
   clearAuditLog()
+  live.removed = []
   T0 = T_START + 3 * HOUR * ++testNo
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(T0 + 5 * 60_000)
@@ -435,10 +445,86 @@ describe('archive_session never closes a Your move card for an agent', () => {
     expect(rowsOf(res)).toEqual([{ sessionId: SESSION, outcome: 'archived' }])
   })
 
+  it('an Observe card does not block archive_session', async () => {
+    await writeYourMovePrefs(prefsFile, { mode: 'observe' })
+    await call()
+    expect(cards()[0].lane).toBe('observe')
+    const res = await archiveHandler({ sessionIds: [SESSION] }, archiveCtx())
+    expect(rowsOf(res)).toEqual([{ sessionId: SESSION, outcome: 'archived' }])
+  })
+
+  it('archive_session sees a card filed after the call started, inside its own transaction', async () => {
+    const real = getSessionArchive()!
+    setSessionArchive({
+      ...real,
+      transact: async (decide) => {
+        await call() // the card lands between the guard setup and the archive decision
+        return real.transact(decide)
+      }
+    })
+    const res = await archiveHandler({ sessionIds: [SESSION] }, archiveCtx())
+    expect(rowsOf(res)).toEqual([{ sessionId: SESSION, outcome: 'refused', reason: 'OPEN_CARDS' }])
+    expect(real.has(SESSION)).toBe(false)
+  })
+
   it('unarchive is unaffected by an open card', async () => {
     await call()
     await getSessionArchive()?.transact(() => ({ archive: [SESSION], result: null }))
     const res = await archiveHandler({ sessionIds: [SESSION], unarchive: true }, archiveCtx())
     expect(rowsOf(res)).toEqual([{ sessionId: SESSION, outcome: 'restored' }])
+  })
+})
+
+describe('remove_folder never closes a Your move card for an agent', () => {
+  const removeTool = WIRED_TOOLS.find((t) => t.op === 'remove_folder')
+  const removeHandler = removeTool?.handler as NonNullable<typeof removeTool>['handler']
+  const removeCtx = (folder: string): Parameters<typeof removeHandler>[1] =>
+    ({ folder, folders: [], denyFolders: [], bridge: undefined }) as never
+
+  it('remove_folder refuses a folder with an open live card', async () => {
+    await call()
+    const res = await removeHandler({}, removeCtx(FOLDER))
+    expect(res.isError).toBe(true)
+    expect(textOf(res)).toMatch(/^OPEN_CARDS/)
+    expect(live.removed).toEqual([])
+    expect(cards()[0].closedAt).toBeUndefined()
+  })
+
+  it('remove_folder only counts cards of exactly that folder', async () => {
+    await call()
+    const res = await removeHandler({}, removeCtx(`${FOLDER}/sub`))
+    expect(res.isError).toBeUndefined()
+    expect(live.removed).toEqual([`${FOLDER}/sub`])
+  })
+
+  it('remove_folder is unaffected when the mode is Off', async () => {
+    await call()
+    await writeYourMovePrefs(prefsFile, { mode: 'off' })
+    const res = await removeHandler({}, removeCtx(FOLDER))
+    expect(res.isError).toBeUndefined()
+    expect(live.removed).toEqual([FOLDER])
+  })
+
+  it('remove_folder is unaffected when the store is unavailable', async () => {
+    await call()
+    setYourMoveStore(null)
+    expect((await removeHandler({}, removeCtx(FOLDER))).isError).toBeUndefined()
+    expect(live.removed).toEqual([FOLDER])
+  })
+
+  it('an Observe card does not block remove_folder', async () => {
+    await writeYourMovePrefs(prefsFile, { mode: 'observe' })
+    await call()
+    const res = await removeHandler({}, removeCtx(FOLDER))
+    expect(res.isError).toBeUndefined()
+    expect(live.removed).toEqual([FOLDER])
+  })
+
+  it('a folder that still exists keeps its own refusal, not OPEN_CARDS', async () => {
+    const here = process.cwd()
+    // `call` files under FOLDER; file one under a real directory too.
+    await call({ folder: here })
+    const res = await removeHandler({}, removeCtx(here))
+    expect(textOf(res)).not.toMatch(/^OPEN_CARDS/)
   })
 })
