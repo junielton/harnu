@@ -489,3 +489,26 @@ it('review stamps provenance only on yes', async () => {
   vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
   expect(await main(['review', 'p-two'])).toBe(2)
 }, 30_000)
+
+it('a re-import leaves no reference patch under the sandbox', async () => {
+  const repo = makeRepo('repo', { 'src/index.ts': 'kept\n' })
+  const target = jsTarget()
+  const roots = fakeRoots(repo.dir)
+  const { authorImportCommand } = await author()
+  const { sandbox } = await buildSandbox(roots, 'dev', 'p-again', target)
+  finishAuthoring(sandbox, 'p-again')
+  const reference = join(tmp, 'p-again.reference.patch')
+  writeFileSync(reference, REFERENCE_PATCH)
+  const args = { positional: ['p-again'], split: 'dev', reference }
+
+  for (const attempt of ['first', 'second']) {
+    const { ctx, err } = fakeCtx(roots)
+    expect(await authorImportCommand(args, ctx), `${attempt}: ${err()}`).toBe(0)
+  }
+
+  const holding = walk(sandbox).filter(
+    (rel) =>
+      rel.endsWith('reference.patch') || readFileSync(join(sandbox, rel)).includes(REFERENCE_PATCH)
+  )
+  expect(holding).toEqual([])
+}, 60_000)
