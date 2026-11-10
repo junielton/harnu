@@ -133,10 +133,12 @@ you first, because all it does is add one line to your list.
 - **A card says what it asks on its own.** The session is told to write it so you never have
   to open the session to learn what it wants, and to say what stays stuck until you answer.
 - **A session can refresh a card, but it cannot close one.** It can sharpen a card it filed before
-  and the clock on it keeps running, but nothing a session can call closes a card. A card leaves
-  when you deal with it or when whatever raised it is resolved. A session cannot tell Harnu
+  and the clock on it keeps running, but no action a session can take closes a card. A card leaves
+  when you deal with it, or when whatever raised it stops being owed (a mission card closes when
+  the mission stops owing you that item). A session also cannot archive a session that still has
+  one of your cards open: Harnu refuses it. A session cannot tell Harnu
   you handled something.
-- **It is capped.** A session can file at most 30 cards per hour. Past that, the call is
+- **It is capped.** A session can make at most 30 calls per hour, refreshes included. Past that, the call is
   refused and recorded in the audit log, so a looping session cannot bury the queue.
 - **With Your move **Off** (the default), or switched off for that folder, it files nothing.**
   The session is told so and says what it needs in its reply instead.
@@ -413,7 +415,7 @@ A session can archive other sessions for you, the same as choosing **Archive** f
 
 Harnu keeps the archived list itself now, not the window, so a session can archive while Harnu's window is closed and the same sessions show as archived the next time you open it. When it happens while the window is open, the sidebar updates on the spot. The first time you start a version with this change, the sessions you had already archived are carried over automatically; nothing is lost, and the old copy is left in place so going back to an older version still finds it.
 
-Each session is judged on its own, and the answer lists one result per session: archived, already archived, restored, already active, not found, or refused. A session is refused when its folder is one you blocked for agents, when it is working right now, or when it is waiting on an approval from you; those stay as they are until you or the agent come back to them. The call is recorded in the audit log like the other actions that run without asking.
+Each session is judged on its own, and the answer lists one result per session: archived, already archived, restored, already active, not found, or refused. A session is refused when its folder is one you blocked for agents, when it is working right now, when it is waiting on an approval from you, or when it still has a [Your move](settings.md#your-move) card open for you (only you can close a card); those stay as they are until you or the agent come back to them. The call is recorded in the audit log like the other actions that run without asking.
 
 ## Hiding finished folders
 

@@ -51,8 +51,7 @@ line, in the language the session uses.
 - Never "D-9 is unanswered". Always what D-9 is: "Should the Acme export keep the legacy
   column order?"
 - Put what stays stuck in `blocks`: "PROJ-231 cannot ship until this is answered".
-- For a `decide`, give `options` (at most 6, short) and `recommended` (it must be one of
-  them). Say what each costs in the `ask` or `blocks` when it is not obvious.
+- For a `decide`, give `options` (at most 6, short) and `recommended` (a value that is not one of them is ignored; the card is still filed). Say what each costs in the `ask` or `blocks` when it is not obvious.
 - No paths to a plan file, no "see above", no ticket keys without their title.
 
 ## When to call `your_move`
@@ -77,10 +76,11 @@ your_move({
 - Without `cardId` a new card is filed. Do not re-file the same item; refresh it.
 - `YOUR_MOVE_OFF` means Your move is off for this install or this folder: nothing was filed
   and retrying will not help. Say what you need in your reply instead.
-  `YOUR_MOVE_RATE_LIMIT` means you filed 30 cards this hour: say it in your reply.
-- `your_move` cannot close a card, and nothing else you can call does either. A card leaves
-  when the operator deals with it (an answer typed in the session, a button on the card) or
-  when its source is resolved. Do not tell the operator a card is closed.
+  `YOUR_MOVE_RATE_LIMIT` means you made 30 calls this hour (refreshes count): say it in your reply.
+- `your_move` cannot close a card, and no other verb does either. A card leaves when the operator deals with it
+  (an answer typed in the session, a button on the card) or when its source resolves (a mission
+  card closes when the mission stops owing the item). `archive_session` refuses a session that
+  still has an open card. Do not tell the operator a card is closed.
 
 ## Reply as well
 

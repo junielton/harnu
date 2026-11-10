@@ -3175,6 +3175,19 @@ const archiveSessionHandler: Handler = async (args, ctx) => {
   if (sessionIds.length === 0) return errorResult('BAD_ARGS: pass 1..100 session ids')
   const unarchive = args.unarchive === true
 
+  // An agent's archive must never close a Your move card (the archive listener would). Sessions
+  // with an open card are refused below. With the mode Off, or no store, nothing is refused.
+  const sessionsWithOpenCard = new Set<string>()
+  const yourMoveStore = unarchive ? null : getYourMoveStore()
+  if (yourMoveStore) {
+    const prefs = await readYourMovePrefs(path.join(app.getPath('userData'), YOUR_MOVE_PREFS_FILE))
+    if (effectiveMode(prefs) !== 'off') {
+      for (const c of yourMoveStore.state().cards) {
+        if (c.closedAt === undefined) sessionsWithOpenCard.add(c.sessionId)
+      }
+    }
+  }
+
   const home = os.homedir()
   const folderBySession = new Map<string, string>()
   for (const f of ctx.folders) {
@@ -3196,7 +3209,8 @@ const archiveSessionHandler: Handler = async (args, ctx) => {
         folderOf: (id) => folderBySession.get(id),
         isDenied: (folder) => isFolderDenied(folder, ctx.denyFolders, home),
         taskStateOf: (id) => states[id],
-        hasPendingApproval: (id) => withApproval.has(id)
+        hasPendingApproval: (id) => withApproval.has(id),
+        hasOpenCard: (id) => sessionsWithOpenCard.has(id)
       })
       return { archive: p.toArchive, unarchive: p.toRestore, result: p }
     })
@@ -3355,8 +3369,8 @@ const yourMoveHandler: Handler = async (args) => {
   const sessionId = strField(args, 'sessionId') ?? ''
   const kind = strField(args, 'kind')
   const ask = strField(args, 'ask')
-  if (!folder || !sessionId || !kind || !ask) {
-    return errorResult('BAD_ARGS: folder, sessionId, kind and ask are required')
+  if (!folder || !sessionId || !kind || !ask || ask.trim() === '') {
+    return errorResult('BAD_ARGS: folder, sessionId, kind and a non-blank ask are required')
   }
   const cardId = strField(args, 'cardId')
 

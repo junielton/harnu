@@ -2137,7 +2137,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'your_move',
     description:
-      "File ONE card in the operator's global 'Your move' queue: something only the operator can unblock (a decision, a go/no-go, a value only they hold, an action only they can take, a check only they can do). Call it mid-turn the moment you know the ball is theirs, so it does not rely on the end-of-turn judge. Write the card to stand alone: say WHAT is being asked (never 'D-9 is unanswered' — say what D-9 is), put what it blocks in `blocks`, and for a decision give `options` (at most 6) and the one you would pick in `recommended` (it must be one of `options`). `kind` is one of `decide`, `go_no_go`, `provide`, `do`, `check`. Pass the `cardId` from an earlier ACK to refresh that card in place (new `ask`, `updatedAt` moves, `openedAt` and the clock never do); without it a NEW card is filed and the judge reconciles duplicates. There is deliberately NO close operation: a card leaves only when the operator deals with it or its source resolves, never because you say so. Runs free. ACK: `{ ok: true, op: 'your_move', cardId, refreshed }`. Refuses: YOUR_MOVE_OFF (Your move is Off, or switched off for this folder; nothing was filed, do not retry, say it in your reply instead), YOUR_MOVE_RATE_LIMIT (more than 30 calls this UTC hour for this session; the refusal is audited, say it in your reply instead), CARD_NOT_FOUND (`cardId` is unknown, closed, or another session's), YOUR_MOVE_UNAVAILABLE (the queue's store could not be opened) and YOUR_MOVE_WRITE_FAILED (nothing was changed). `sessionId` is your own session id, taken on your word like every other verb.",
+      "File ONE card in the operator's global 'Your move' queue: something only the operator can unblock (a decision, a go/no-go, a value only they hold, an action only they can take, a check only they can do). Call it mid-turn the moment you know the ball is theirs, so it does not rely on the end-of-turn judge. Write the card to stand alone: say WHAT is being asked (never 'D-9 is unanswered' — say what D-9 is), put what it blocks in `blocks`, and for a decision give `options` (at most 6) and the one you would pick in `recommended` (a value that is not one of `options` is ignored; the card is still filed). `kind` is one of `decide`, `go_no_go`, `provide`, `do`, `check`. Pass the `cardId` from an earlier ACK to refresh that card in place (new `ask`, `updatedAt` moves, `openedAt` and the clock never do); without it a NEW card is filed and the judge reconciles duplicates. There is deliberately NO close operation, and no verb closes a card: a card leaves when the operator deals with it, or when its source resolves (a mission card closes when the mission stops owing the item), never because you say so. `archive_session` refuses a session that still has an open card (OPEN_CARDS). Runs free. ACK: `{ ok: true, op: 'your_move', cardId, refreshed }`. Refuses: YOUR_MOVE_OFF (Your move is Off, or switched off for this folder; nothing was filed, do not retry, say it in your reply instead), YOUR_MOVE_RATE_LIMIT (more than 30 calls, refreshes included, this UTC hour for this session; the refusal is audited, say it in your reply instead), CARD_NOT_FOUND (`cardId` is unknown, closed, or another session's), YOUR_MOVE_UNAVAILABLE (the queue's store could not be opened) and YOUR_MOVE_WRITE_FAILED (nothing was changed). `sessionId` is your own session id, taken on your word like every other verb.",
     inputSchema: z.object({
       folder: z
         .string()
@@ -2149,9 +2149,11 @@ export const MCP_TOOLS: McpToolDef[] = [
         .describe('What the operator must do: decide, go_no_go, provide, do or check.'),
       ask: z
         .string()
-        .min(1)
         .max(500)
-        .describe('What is asked, in a sentence that makes sense with no other context (1..500).'),
+        .refine((v) => v.trim().length > 0, 'ask must not be blank')
+        .describe(
+          'What is asked, in a sentence that makes sense with no other context (1..500, not blank).'
+        ),
       blocks: z.string().max(500).optional().describe('What stays stuck until they answer.'),
       options: z
         .array(z.string().min(1).max(120))
@@ -2162,7 +2164,9 @@ export const MCP_TOOLS: McpToolDef[] = [
         .string()
         .max(120)
         .optional()
-        .describe('The option you would pick; it must be one of `options`.'),
+        .describe(
+          'The option you would pick. If it is not one of `options` it is ignored and the card is still filed.'
+        ),
       cardId: z
         .string()
         .min(1)

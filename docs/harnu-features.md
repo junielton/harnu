@@ -1,4 +1,4 @@
-<!-- harnu-features v132 (2026-11-09) -->
+<!-- harnu-features v133 (2026-11-09) -->
 
 # You are running inside Harnu
 
@@ -285,15 +285,17 @@ move" queue of cards, each one a thing only the operator can unblock. `your_move
 sessionId, kind, ask, blocks?, options?, recommended?, cardId? })` files ONE card from inside
 a turn: `kind` is `decide`, `go_no_go`, `provide`, `do` or `check`; `ask` is one line (up to
 500 characters) that makes sense with no other context, never "D-9 is unanswered" but what D-9
-is; `blocks` says what stays stuck; `options` (up to 6) and `recommended` (one of them) serve a
-`decide`. Pass your OWN `sessionId`. Runs free. ACK `{ ok, op, cardId, refreshed }`: pass that
+is (a blank `ask` is refused `BAD_ARGS`); `blocks` says what stays stuck; `options` (up to 6)
+and `recommended` serve a `decide`: a `recommended` that is not one of `options` is ignored and
+the card is still filed. Pass your OWN `sessionId`. Runs free. ACK `{ ok, op, cardId, refreshed }`: pass that
 `cardId` back to refresh the same card (a new `ask`, `updatedAt` moves, `openedAt` and the clock
-never do); without it a new card is filed and the judge reconciles duplicates. **There is no
-close**: a card leaves only when the operator deals with it or its source resolves, never at an
-agent's word, and nothing you can call closes one. Refusals, none of them worth a retry:
+never do); without it a new card is filed and the judge reconciles duplicates. **No verb
+closes a card**: one leaves when the operator deals with it, or when its source resolves (a
+mission card closes when the mission stops owing the item), never at an agent's word. For the
+same reason `archive_session` refuses a session that still has an open card (`OPEN_CARDS`). Refusals, none of them worth a retry:
 `YOUR_MOVE_OFF` (the operator's Your move setting is Off, the default, or off for that folder;
 nothing was filed, say it in your reply instead), `YOUR_MOVE_RATE_LIMIT` (30 calls per session
-per UTC hour; the refusal is audited), `CARD_NOT_FOUND` (`cardId` is unknown, closed or another
+per UTC hour, refreshes included; the refusal is audited), `CARD_NOT_FOUND` (`cardId` is unknown, closed or another
 session's), `YOUR_MOVE_UNAVAILABLE` and `YOUR_MOVE_WRITE_FAILED` (nothing changed). **The verb
 and the skill improve a card; they are not what guarantees one.** With Your move on, Harnu
 itself inspects every turn that stops on its own, with two detector runs and an enrichment call,
@@ -301,7 +303,8 @@ and files what only the operator can unblock whether or not you call the verb or
 switched on. `harnu:your-move` (a bundled skill, off until switched on) teaches the end-of-turn
 test, "if the operator never comes back, does this still get done?", the five kinds and how to
 write a card that stands alone. In Observe mode a card is stored for the operator's debug list
-in **Settings → Your move** and does not reach the queue yet.
+in **Settings → Your move**; until the queue ships in the sidebar, a Live card does not reach it
+either.
 
 **Message another session — `message_session`.** `message_session({ sessionId, message })`
 puts one message into another Harnu session's Claude Code inbox through the CLI's own
@@ -1021,8 +1024,9 @@ with the Harnu window closed (the archive set lives in the main process); an ope
 updates live. ACK: `{ ok, op, unarchive, results: [{ sessionId, outcome, reason? }], counts }`,
 one row per id; `outcome` is `archived`, `alreadyArchived`, `restored`, `alreadyActive`,
 `notFound` or `refused`, and a `refused` row carries `reason`: `FOLDER_NOT_ALLOWED` (the
-operator blocked that session's folder), `SESSION_WORKING` or `PENDING_APPROVAL` (archiving
-only: it is working, or an approval is parked for it). `ok` is true only when no row is
+operator blocked that session's folder), `SESSION_WORKING`, `PENDING_APPROVAL` or `OPEN_CARDS`
+(archiving only: it is working, an approval is parked for it, or Your move holds an open card
+for it, which only the operator may close: deal with the card first, or leave the session). `ok` is true only when no row is
 `refused` or `notFound`: read each row rather than retrying the batch. Every row is decided
 inside the store's own write, so concurrent calls on one session read as one serial order
 (`restored` then `alreadyActive`) and a row always matches what the archive file holds.
