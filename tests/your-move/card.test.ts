@@ -311,4 +311,11 @@ describe('YourMoveCard in the Return here zone', () => {
       'did not wake up'
     )
   })
+
+  it('the store starts quietly when the bridge is missing or partial', async () => {
+    ;(window as unknown as { api: unknown }).api = {}
+    const { useYourMoveStore } = await import('../../src/renderer/src/stores/your-move')
+    await expect(useYourMoveStore().init()).resolves.toBeUndefined()
+    expect(useYourMoveStore().count).toBe(0)
+  })
 })

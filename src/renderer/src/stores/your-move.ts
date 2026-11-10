@@ -47,7 +47,11 @@ export const useYourMoveStore = defineStore('yourMove', () => {
   function init(): Promise<void> {
     if (started) return started
     started = (async () => {
-      window.api.onYourMoveChanged(() => void refresh())
+      try {
+        window.api.onYourMoveChanged(() => void refresh())
+      } catch {
+        /* no bridge (a window without the preload): the zone simply stays empty */
+      }
       await refresh()
     })()
     return started
