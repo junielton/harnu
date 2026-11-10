@@ -139,6 +139,7 @@ import { registerMemoryLocationHandlers } from './memory-location-ipc'
 import { registerRoadmapHandlers, closeRoadmapWatcher } from './roadmap-ipc'
 import { registerHelpersHandlers } from './helpers-ipc'
 import { registerSessionArchive } from './session-archive-ipc'
+import { registerYourMove, closeYourMove } from './your-move/ipc'
 import { registerSettingsHandlers, closeSettingsWatcher } from './settings'
 import { registerClaudeConfigHandlers } from './claude-config'
 import { registerPushHandlers } from './push'
@@ -636,6 +637,8 @@ app.whenReady().then(async () => {
   registerHelpersHandlers()
   // T655: the main-owned session archive (sidebar Archive + the `archive_session` verb).
   registerSessionArchive(() => mainWindow)
+  // Your move (U1): the judge, the card store and the Settings pane's IPC. Off until chosen.
+  registerYourMove(() => mainWindow)
   registerSettingsHandlers(() => mainWindow)
   // T579: confirm before quitting while agents are working (prefs IPC + OS-shutdown bypass).
   registerQuitConfirm()
@@ -1226,6 +1229,7 @@ app.on('before-quit', async (event) => {
   // best-effort. Defer Electron's actual quit until the watcher is closed
   // so chokidar's file descriptors are released cleanly.
   stopHibernationSweep()
+  closeYourMove()
   killAllPtys()
   killAllSpeech()
   cancelKokoroInstall()

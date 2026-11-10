@@ -122,6 +122,7 @@ export type ShortcutActionId =
   | 'view.settings.mods'
   | 'view.settings.memory'
   | 'view.settings.hibernationPolicy'
+  | 'view.settings.yourMove'
   | 'view.settings.usageHistory'
   | 'view.settings.changelog'
   | 'view.settings.claudeCode'
@@ -428,6 +429,7 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.settings.mods', 'views', null),
   def('view.settings.memory', 'views', null),
   def('view.settings.hibernationPolicy', 'views', null),
+  def('view.settings.yourMove', 'views', null),
   def('view.settings.usageHistory', 'views', null),
   def('view.settings.changelog', 'views', null),
   def('view.settings.claudeCode', 'views', null),

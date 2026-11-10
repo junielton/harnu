@@ -386,6 +386,19 @@ const translateHideFolder: Translator = (args) => {
   return input
 }
 
+// Your move (U3): the gate folder IS the catalog `folder` arg (like notify). Every field passes
+// through untouched so the validator does the structural check, `options` included.
+const translateYourMove: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  for (const key of ['sessionId', 'kind', 'ask', 'blocks', 'recommended', 'cardId'] as const) {
+    const v = strField(args, key)
+    if (v !== undefined) input[key] = v
+  }
+  if (args.options !== undefined) input.options = args.options
+  return input
+}
+
 // T329: the Containers actions address stacks by id, never a folder, so there
 // is no gate folder to carry; a blocked folder's stack is refused per stack by
 // the handler. Fields pass through untouched so the validator does the
@@ -540,6 +553,7 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   release_worktree: translateReleaseWorktree,
   archive_session: translateArchiveSession,
   hide_folder: translateHideFolder,
+  your_move: translateYourMove,
   stop_containers: translateStopContainers,
   start_containers: translateStartContainers,
   remove_containers: translateRemoveContainers,

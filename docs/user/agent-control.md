@@ -122,6 +122,34 @@ A session can open a **browser pane** in a folder's split stack — a real page,
 
 Blocking a folder from its right-click menu also stops every browser verb there.
 
+## Telling you the ball is yours
+
+When you turn on [Your move](settings.md#your-move), a session can file a card in your
+queue the moment it knows something only you can unblock, instead of waiting for its turn to
+end. It does that with the `your_move` verb: a decision with options and a recommendation, a
+go or no-go, something only you hold, a manual step, or a check. It runs free and never asks
+you first, because all it does is add one line to your list.
+
+- **A card says what it asks on its own.** The session is told to write it so you never have
+  to open the session to learn what it wants, and to say what stays stuck until you answer.
+- **A session can refresh a card, but it cannot close one.** It can sharpen a card it filed before
+  and the clock on it keeps running, but no action a session can take closes a card you can still
+  see. A card leaves when you deal with it, or when whatever raised it stops being owed (a mission
+  card closes when the mission stops owing you that item). So Harnu also refuses a session's
+  request to archive a session, or to remove a folder, while one of your cards is open for it. A
+  card checked only in Observe mode shows in no queue, so it does not block anything. A session
+  cannot tell Harnu you handled something.
+- **It is capped.** A session can make at most 30 calls per hour, refreshes included. Past that, the call is
+  refused and recorded in the audit log, so a looping session cannot bury the queue.
+- **With Your move **Off** (the default), or switched off for that folder, it files nothing.**
+  The session is told so and says what it needs in its reply instead.
+- **It is not what makes sure you hear about it.** With Your move on, Harnu inspects every
+  turn that ends on its own, two detector runs and one more call to write the card clearly,
+  and files what only you can unblock whether or not the session knows about the verb. The
+  verb, and the optional `your-move` skill under [bundled skills](bundled-skills.md), make
+  the cards better and earlier. Until the queue ships in the sidebar, a card from the verb
+  shows in the list under **Settings → Your move**.
+
 ## Sessions talking out loud
 
 A session can say one short line through your speakers — "the migration finished, zero conflicts" — for the times you're not at the screen. This is **not** a notification: it's heard once and then it's gone. Nothing lands in the Activity bell, nothing pops a toast, and there's nothing to come back to later. That's deliberate: if every read-aloud also filed a notice, your Activity history would fill up with sentences you'd already heard. A session that wants you to be able to find the message later posts a "Session says" notice instead (or does both).
@@ -388,7 +416,7 @@ A session can archive other sessions for you, the same as choosing **Archive** f
 
 Harnu keeps the archived list itself now, not the window, so a session can archive while Harnu's window is closed and the same sessions show as archived the next time you open it. When it happens while the window is open, the sidebar updates on the spot. The first time you start a version with this change, the sessions you had already archived are carried over automatically; nothing is lost, and the old copy is left in place so going back to an older version still finds it.
 
-Each session is judged on its own, and the answer lists one result per session: archived, already archived, restored, already active, not found, or refused. A session is refused when its folder is one you blocked for agents, when it is working right now, or when it is waiting on an approval from you; those stay as they are until you or the agent come back to them. The call is recorded in the audit log like the other actions that run without asking.
+Each session is judged on its own, and the answer lists one result per session: archived, already archived, restored, already active, not found, or refused. A session is refused when its folder is one you blocked for agents, when it is working right now, when it is waiting on an approval from you, or when it still has a [Your move](settings.md#your-move) card open in your queue (only you can close a card); those stay as they are until you or the agent come back to them. The call is recorded in the audit log like the other actions that run without asking.
 
 ## Hiding finished folders
 
@@ -398,7 +426,7 @@ When Harnu's window is open the sidebar updates on the spot; the menu's Hide and
 
 Each folder is judged on its own, and the answer lists one result per folder: hidden, already hidden, shown, already visible, not found, or refused. A folder is refused when you blocked it for agents, when a session in that exact folder is working right now, or when one of its sessions is waiting on an approval from you (showing a folder is only refused for a blocked one). "Not found" means Harnu has never seen that path: it is not pinned, not hidden and has no sessions. If two actions touch the same folder at the same moment, the results are consistent with one of them having happened first, and the answer always matches what was saved. The call is recorded in the audit log like the other actions that run without asking.
 
-This is not the same as cleaning up a folder whose directory is already gone: that is a separate action that removes the leftover sidebar entry for a deleted folder, and it refuses while the folder still exists. Hiding is for folders that are still there and can be undone at any time.
+This is not the same as cleaning up a folder whose directory is already gone: that is a separate action that removes the leftover sidebar entry for a deleted folder, and it refuses while the folder still exists, and while one of your [Your move](settings.md#your-move) cards is open for that folder in your queue (only you can close a card). Hiding is for folders that are still there and can be undone at any time.
 
 ## Parked and hibernated sessions
 

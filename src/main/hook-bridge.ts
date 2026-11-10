@@ -20,7 +20,12 @@ import {
 } from './mcp/http-guard'
 import { classifyFailure, type FailureReason } from './hook-state'
 import { buildHookSettingsBlobJson } from './hook-settings-blob'
-import { getTaskState, ingest, type BridgeEvent as HubBridgeEvent } from './detect/task-state-hub'
+import {
+  getTaskState,
+  ingest,
+  type BridgeEvent as HubBridgeEvent,
+  type HookPayload
+} from './detect/task-state-hub'
 import {
   isDispatchable,
   parseHookRequest,
@@ -53,7 +58,8 @@ export {
   addTaskEventObserver,
   getTaskStates,
   pruneTaskState,
-  type HookTaskEvent
+  type HookTaskEvent,
+  type HookPayload
 } from './detect/task-state-hub'
 
 /** Internal dispatch deadline. STRICTLY < HOOK_TIMEOUT_S*1000 (hook-installer.ts:22 = 5s). */
@@ -228,6 +234,18 @@ export function startHookServer(
         // `agent_id` marks a subagent's own tool call; the main thread never sends one.
         const agentId =
           typeof body.agent_id === 'string' && body.agent_id !== '' ? body.agent_id : undefined
+        const str = (v: unknown): string | undefined =>
+          typeof v === 'string' && v !== '' ? v : undefined
+        const payload: HookPayload = {
+          ...(str(body.transcript_path) !== undefined
+            ? { transcriptPath: str(body.transcript_path) }
+            : {}),
+          ...(str(body.cwd) !== undefined ? { cwd: str(body.cwd) } : {}),
+          ...(str(body.prompt) !== undefined ? { prompt: str(body.prompt) } : {}),
+          ...(str(body.last_assistant_message) !== undefined
+            ? { lastAssistantMessage: str(body.last_assistant_message) }
+            : {})
+        }
         if (sessionId && event)
           onEvent({
             sessionId,
@@ -236,7 +254,8 @@ export function startHookServer(
             ts: Date.now(),
             failureReason,
             resetsAt,
-            ...(agentId !== undefined ? { agentId } : {})
+            ...(agentId !== undefined ? { agentId } : {}),
+            ...(Object.keys(payload).length > 0 ? { payload } : {})
           })
 
         // ---- Dispatch branch (responder spec §4.3) — fail-open in EVERYTHING ----
