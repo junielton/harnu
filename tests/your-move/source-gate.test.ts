@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import type { HookTaskEvent } from '../../src/main/detect/task-state-hub'
 import type { TaskState } from '../../src/main/hook-state'
 import type { CardLane, YourMoveCard, YourMoveMode } from '../../src/main/your-move/core'
 import {
+  answeredToolUseIds,
   createGateWatch,
   gateDraft,
   pendingHumanGate,
@@ -102,6 +103,44 @@ describe('pendingHumanGate', () => {
     expect(pendingHumanGate([{ ...ask('toolu_1'), isSidechain: true }])).toBeNull()
   })
 
+  it('a user or system entry after the unanswered call is still pending', () => {
+    const userText = {
+      type: 'user',
+      uuid: 'u-text',
+      entrypoint: 'cli',
+      message: { content: 'are you there?' }
+    }
+    const recap = { type: 'system', uuid: 'u-sys', subtype: 'away_summary', content: 'recap' }
+    const info = { type: 'system', uuid: 'u-info', subtype: 'informational', content: 'note' }
+    for (const after of [[userText], [recap], [info], [recap, userText, info]]) {
+      expect(pendingHumanGate([ask('toolu_1'), ...after])).toMatchObject({ toolUseId: 'toolu_1' })
+    }
+  })
+
+  it('a turn that ended after the call is not pending: turn_duration and stop_hook_summary close the turn', () => {
+    for (const subtype of ['turn_duration', 'stop_hook_summary']) {
+      const end = { type: 'system', uuid: 'u-end', subtype }
+      expect(pendingHumanGate([ask('toolu_1'), end])).toBeNull()
+    }
+  })
+
+  it('the newest unanswered gate wins, and an answered earlier one does not hide it', () => {
+    const first = ask('toolu_1')
+    const second = ask('toolu_2')
+    expect(pendingHumanGate([first, toolResult('toolu_1'), second])).toMatchObject({
+      toolUseId: 'toolu_2'
+    })
+    expect(pendingHumanGate([first, second, toolResult('toolu_2')])).toMatchObject({
+      toolUseId: 'toolu_1'
+    })
+  })
+
+  it('answeredToolUseIds lists every tool_result id in the window', () => {
+    expect(
+      [...answeredToolUseIds([ask('toolu_1'), toolResult('toolu_1'), toolResult('toolu_7')])].sort()
+    ).toEqual(['toolu_1', 'toolu_7'])
+  })
+
   it('an empty window, or one with no conversation entries, is not pending', () => {
     expect(pendingHumanGate([])).toBeNull()
     expect(pendingHumanGate([{ type: 'last-prompt' }])).toBeNull()
@@ -172,6 +211,13 @@ describe('the gate watch', () => {
       locate: async () => file,
       resolveFolder: async (_id, cwd) => cwd ?? '/work/acme',
       read: reads,
+      size: async (p) => {
+        try {
+          return (await stat(p)).size
+        } catch {
+          return 0
+        }
+      },
       states: () => states,
       mintId: () => `card-${++n}`,
       now: () => NOW,
@@ -247,14 +293,131 @@ describe('the gate watch', () => {
     expect(store.state().cards).toHaveLength(0)
   })
 
-  it('an idle session with no open gate card is not read', async () => {
+  it('an idle session whose transcript did not grow is not read again', async () => {
     await writeFile(file, jsonl([asstText('done')]))
     const w = watch()
-    w.gate.onTaskEvent(needsInput({ taskState: 'idle', event: 'Stop' }))
     w.states.set('sess-0001', 'idle')
     await w.gate.tick()
+    const once = w.reads.mock.calls.length
+    await w.gate.tick()
+    await w.gate.tick()
+    expect(w.reads.mock.calls.length).toBe(once)
+  })
+
+  it('the sweep checks a session whose transcript grew, with no needs-input edge', async () => {
+    await writeFile(file, jsonl([asstText('working on it')]))
+    const w = watch()
+    w.states.set('sess-0001', 'working')
+    await w.gate.tick()
+    expect(open()).toHaveLength(0)
+    // the CLI parks on a question and no needs-input edge ever arrives
+    await appendFile(file, jsonl([ask('toolu_1', null)]))
+    await w.gate.tick()
+    expect(open()).toHaveLength(1)
+    expect(open()[0].sourceKey).toBe('gate:toolu_1')
+  })
+
+  it('the sweep reads a session again only when its transcript grew', async () => {
+    await writeFile(file, jsonl([ask('toolu_1')]))
+    const w = watch()
+    w.states.set('sess-0001', 'working')
+    await w.gate.tick()
+    const once = w.reads.mock.calls.length
+    await w.gate.tick()
+    expect(w.reads.mock.calls.length).toBe(once)
+    await appendFile(file, jsonl([asstText('still thinking')]))
+    await w.gate.tick()
+    expect(w.reads.mock.calls.length).toBeGreaterThan(once)
+  })
+
+  it('a user or system entry after the unanswered call is still pending, and keeps its card', async () => {
+    await writeFile(file, jsonl([ask('toolu_1')]))
+    const w = watch()
+    w.states.set('sess-0001', 'needs-input')
+    await w.gate.tick()
+    await appendFile(
+      file,
+      jsonl([{ type: 'system', uuid: 'sys-1', subtype: 'away_summary', content: 'recap' }])
+    )
+    await w.gate.tick()
+    expect(open()).toHaveLength(1)
+    // and a gate first seen after such an entry still files a card
+    store = await openYourMoveStore(path.join(dir, 'second.json'))
+    await writeFile(
+      file,
+      jsonl([
+        ask('toolu_5'),
+        { type: 'user', uuid: 'u-x', entrypoint: 'cli', message: { content: 'ping' } }
+      ])
+    )
+    const fresh = watch({ store })
+    fresh.states.set('sess-0001', 'working')
+    await fresh.gate.tick()
+    expect(open().map((c) => c.sourceKey)).toEqual(['gate:toolu_5'])
+  })
+
+  it('an empty or missing transcript closes nothing', async () => {
+    await writeFile(file, jsonl([ask('toolu_1')]))
+    const w = watch()
+    w.states.set('sess-0001', 'needs-input')
+    await w.gate.tick()
+    expect(open()).toHaveLength(1)
+    await writeFile(file, '')
+    await w.gate.tick()
+    w.gate.onTaskEvent(needsInput())
     await w.gate.idle()
-    expect(w.reads).not.toHaveBeenCalled()
+    expect(open()).toHaveLength(1)
+    await unlink(file)
+    await w.gate.tick()
+    w.gate.onTaskEvent(needsInput())
+    await w.gate.idle()
+    expect(open()).toHaveLength(1)
+    expect(store.state().cards[0].closedAt).toBeUndefined()
+  })
+
+  it('a gate past the tail stays open until its result or a later Stop', async () => {
+    await writeFile(file, jsonl([ask('toolu_1')]))
+    const w = watch()
+    w.states.set('sess-0001', 'needs-input')
+    await w.gate.tick()
+    expect(open()).toHaveLength(1)
+    // more than the tail of non-conversation entries scrolls the call out of sight
+    await appendFile(file, jsonl([{ type: 'content-replacement', pad: 'x'.repeat(140 * 1024) }]))
+    await w.gate.tick()
+    expect(open()).toHaveLength(1)
+    // its result arrives: the tool_result is in the tail even though the call is not
+    await appendFile(file, jsonl([toolResult('toolu_1')]))
+    await w.gate.tick()
+    expect(open()).toHaveLength(0)
+    expect(store.state().cards[0]).toMatchObject({ closedBy: 'source-resolved' })
+  })
+
+  it('a later Stop closes the gate card, and the next tick does not file it again', async () => {
+    await writeFile(file, jsonl([ask('toolu_1')]))
+    const w = watch()
+    w.states.set('sess-0001', 'needs-input')
+    await w.gate.tick()
+    expect(open()).toHaveLength(1)
+    w.gate.onTaskEvent(needsInput({ taskState: 'idle', event: 'Stop' }))
+    await w.gate.idle()
+    expect(open()).toHaveLength(0)
+    expect(store.state().cards[0]).toMatchObject({ closedBy: 'source-resolved' })
+    // the call has no result in the transcript, but the turn is over: it is not filed again
+    await appendFile(file, jsonl([asstText('moved on')]))
+    await w.gate.tick()
+    expect(open()).toHaveLength(0)
+    expect(store.state().cards).toHaveLength(1)
+  })
+
+  it('a Stop of another session, or a subagent Stop, closes nothing', async () => {
+    await writeFile(file, jsonl([ask('toolu_1')]))
+    const w = watch()
+    w.states.set('sess-0001', 'needs-input')
+    await w.gate.tick()
+    w.gate.onTaskEvent(needsInput({ sessionId: 'sess-0002', taskState: 'idle', event: 'Stop' }))
+    w.gate.onTaskEvent(needsInput({ taskState: 'idle', event: 'Stop', agentId: 'agent-1' }))
+    await w.gate.idle()
+    expect(open()).toHaveLength(1)
   })
 
   it('Off reads nothing', async () => {
