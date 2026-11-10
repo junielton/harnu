@@ -21,7 +21,7 @@ import { setMissionListObserver } from '../mission-ipc'
 import { setPtyExitObserver } from '../pty'
 import { getSessionArchive } from '../session-archive-core'
 import { onFolderRemoved, readUserProjects } from '../user-projects'
-import { pruneClosed, resetCursors, type CardView, type YourMoveCard } from './core'
+import { closeCard, pruneClosed, resetCursors, type CardView, type YourMoveCard } from './core'
 import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
 import {
@@ -49,6 +49,7 @@ import {
 const STATE_FILE = 'your-move.json'
 const PREFS_FILE = 'your-move-prefs.json'
 const INSPECTIONS_FILE = 'your-move-inspections.jsonl'
+const LABELS_FILE = 'your-move-labels.jsonl'
 const EMPTY_DIR = path.join('your-move', 'empty')
 const NEWEST_CLOSED = 200
 /** The inspection log is a debug aid: past this size it keeps only its newest half. */
@@ -58,6 +59,12 @@ const SESSION_ID = /^[0-9a-zA-Z-]{8,64}$/
 
 /** What the pane reads: the prefs with the mode resolved, so the renderer never re-derives the default. */
 export type YourMovePrefsView = Omit<YourMovePrefs, 'mode'> & { mode: YourMoveMode }
+
+/** What `yourMove:exit` answers: it never throws, `ok:false` says there was nothing to close. */
+export type YourMoveExitResult = { ok: true } | { ok: false; reason: string }
+
+const EXIT_LABELS = ['not-for-me', 'already-handled'] as const
+type ExitLabel = (typeof EXIT_LABELS)[number]
 
 export interface InspectNowResult {
   outcome: InspectOutcome
@@ -132,6 +139,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   const userData = app.getPath('userData')
   const prefsPath = path.join(userData, PREFS_FILE)
   const inspectionsPath = path.join(userData, INSPECTIONS_FILE)
+  const labelsPath = path.join(userData, LABELS_FILE)
   const emptyDir = path.join(userData, EMPTY_DIR)
 
   let prefs: YourMovePrefs | null = null
@@ -151,6 +159,11 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
     }
   }
 
+  const notifyChanged = (): void => {
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send('yourMove:changed')
+  }
+
   // A store that cannot be opened (an unreadable file, a failed copy-aside) leaves Your move
   // inactive: the failure is logged, every channel keeps answering, and app boot goes on.
   const ready: Promise<YourMoveStore | null> = (async () => {
@@ -160,10 +173,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       prefs = await readYourMovePrefs(prefsPath)
       await fs.mkdir(emptyDir, { recursive: true })
       await trimInspections(inspectionsPath)
-      unsubscribe = store.onChange(() => {
-        const win = getWindow()
-        if (win && !win.isDestroyed()) win.webContents.send('yourMove:changed')
-      })
+      unsubscribe = store.onChange(notifyChanged)
       setYourMoveStore(store)
       return store
     } catch (e) {
@@ -388,6 +398,8 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
     if (needsCursorReset(prev, effectiveMode(next))) {
       await store.transact((s) => ({ next: resetCursors(s), result: null }))
     }
+    // The queue reads the mode too: tell it, or Live shows nothing until a card changes.
+    notifyChanged()
     return view(next)
   })
 
@@ -402,10 +414,43 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       .slice(0, NEWEST_CLOSED)
     return [...open, ...closed].map((c: YourMoveCard): CardView => ({
       ...c,
-      // Nothing answers a card before the queue ships (U4).
-      answerable: false,
-      optionDeliverable: (c.options ?? []).map(() => false)
+      // The judge's and the verb's cards carry answer buttons. Nothing is typed into a session
+      // yet: until the answering unit, those buttons open the session.
+      answerable: c.source === 'judge' || c.source === 'verb',
+      optionDeliverable: (c.options ?? []).map(() => true)
     }))
+  })
+
+  // Not for me / Already handled. Neither tells the session anything. The card closes with that
+  // reason, then the card as the operator saw it is appended to the labelled examples.
+  ipcMain.handle('yourMove:exit', async (_e, args: unknown): Promise<YourMoveExitResult> => {
+    const a = (args ?? {}) as { cardId?: unknown; label?: unknown }
+    if (
+      typeof a.cardId !== 'string' ||
+      a.cardId === '' ||
+      !EXIT_LABELS.includes(a.label as ExitLabel)
+    ) {
+      return { ok: false, reason: 'bad request' }
+    }
+    const store = await ready
+    if (!store) return { ok: false, reason: 'unavailable' }
+    const cardId = a.cardId
+    const label = a.label as ExitLabel
+    const now = Date.now()
+    const seen = await store.transact((s) => {
+      const open = s.cards.find((c) => c.id === cardId && c.closedAt === undefined) ?? null
+      return { next: open ? closeCard(s, cardId, label, now) : s, result: open }
+    })
+    if (!seen) return { ok: false, reason: 'not found' }
+    try {
+      await fs.appendFile(labelsPath, JSON.stringify({ ts: now, label, card: seen }) + '\n', {
+        mode: 0o600
+      })
+    } catch (e) {
+      // The card is closed either way: a log that cannot be written must not undo that.
+      console.error(`[your-move] label not logged: ${(e as Error).message}`)
+    }
+    return { ok: true }
   })
 
   ipcMain.handle('yourMove:inspectNow', async (_e, args: unknown): Promise<InspectNowResult> => {

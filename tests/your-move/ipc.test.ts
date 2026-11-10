@@ -2,7 +2,7 @@
  * The caller of the store (`src/main/your-move/ipc.ts`): a store that cannot be opened must
  * leave Your move inactive, never crash app boot and never end in an unhandled rejection.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -58,6 +58,11 @@ vi.mock('../../src/main/your-move/store', async (importOriginal) => ({
     throw new Error('EACCES: permission denied, open your-move.json')
   }
 }))
+
+// The first import transforms the whole main-process graph, which can outlast a test's timeout.
+beforeAll(async () => {
+  await import('../../src/main/your-move/ipc')
+}, 60_000)
 
 let dir: string
 beforeEach(async () => {

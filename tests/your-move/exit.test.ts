@@ -3,7 +3,7 @@
  * Neither tells the session anything; both close the card and log a labelled example, and the
  * two labels are never mixed.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -53,6 +53,11 @@ const card = (over: Partial<YourMoveCard>): YourMoveCard => ({
   updatedAt: Date.now() - 60_000,
   ...over
 })
+
+// The first import transforms the whole main-process graph, which can outlast a test's timeout.
+beforeAll(async () => {
+  await import('../../src/main/your-move/ipc')
+}, 60_000)
 
 let dir: string
 beforeEach(async () => {

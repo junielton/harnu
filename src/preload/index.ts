@@ -32,7 +32,7 @@ import type {
 } from '../main/browser/state-types'
 import type { TerminalChipState } from '../main/terminal-registry'
 import type { CardView } from '../main/your-move/core'
-import type { InspectNowResult, YourMovePrefsView } from '../main/your-move/ipc'
+import type { InspectNowResult, YourMoveExitResult, YourMovePrefsView } from '../main/your-move/ipc'
 import type { YourMovePrefs } from '../main/your-move/prefs'
 import type { CommentPaneState, CommentSubmitResult, OverlayTheme } from '../shared/browser-comment'
 import type { ReviewCorrective } from '../main/review-corrective'
@@ -3186,6 +3186,12 @@ const api = {
   yourMoveInspectNow: (args: { sessionId: string; folder: string }): Promise<InspectNowResult> =>
     ipcRenderer.invoke('yourMove:inspectNow', args),
   onYourMoveChanged: (cb: () => void): (() => void) => subscribe('yourMove:changed', cb),
+  // The operator's two exits from a card (U4): close it and log the label. Nothing is sent to
+  // the session. `ok:false` means there was nothing to close (unknown, already closed, store down).
+  yourMoveExit: (args: {
+    cardId: string
+    label: 'not-for-me' | 'already-handled'
+  }): Promise<YourMoveExitResult> => ipcRenderer.invoke('yourMove:exit', args),
 
   // ---- Scheduler workers (T294 / T291 U4) -----------------------------------
   // A worker runs one prompt in one folder on a cadence, headless (`claude -p`),
