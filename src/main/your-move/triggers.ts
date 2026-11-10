@@ -12,6 +12,7 @@ import type { FailureReason, TaskState } from '../hook-state'
 import type { PtyExitFact } from '../pty'
 import {
   advanceCursor,
+  followLive,
   reconcileSource,
   upsertStructured,
   type CardLane,
@@ -69,20 +70,20 @@ export function createEnsureCursor(deps: {
   now(): number
 }): (sessionId: string, path: string) => Promise<void> {
   return async (sessionId, path) => {
-    if (deps.store.state().cursors[sessionId]) return
+    // Only a session never seen gets a cursor from a hook: a compaction or a prompt must never
+    // create or move the live offset of one already seen (that would skip text a Stop must judge).
+    if (deps.store.state().cursors[sessionId] !== undefined) return
     const res = await deps.read(path, { tail: CLASSIFY_TAIL_BYTES })
     if (deps.classify(res.lines) === 'programmatic') return
     const end = res.nextOffset
     await deps.store.transact((s) =>
-      s.cursors[sessionId]
+      s.cursors[sessionId] !== undefined
         ? { next: s, result: undefined }
         : {
-            next: advanceCursor(
+            next: followLive(
               advanceCursor(s, sessionId, 'offset', end, deps.now()),
               sessionId,
-              'shadowOffset',
-              end,
-              deps.now()
+              end
             ),
             result: undefined
           }
@@ -110,7 +111,7 @@ export function createTriggers(deps: TriggerDeps): {
   }
 
   async function firstSight(ev: HookTaskEvent): Promise<void> {
-    if (deps.store.state().cursors[ev.sessionId]) return
+    if (deps.store.state().cursors[ev.sessionId] !== undefined) return
     const path = await pathFor(ev.sessionId, ev.payload?.transcriptPath)
     if (!path || disposed) return
     const folder = await deps.resolveFolder(ev.sessionId, ev.payload?.cwd, path)
@@ -203,10 +204,17 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
   const running = new Set<string>()
   /** Where each swept session lives, found once. */
   const where = new Map<string, { path: string; folder: string }>()
+  /**
+   * When each session was last asked for, whether or not it worked. A failed inspection moves no
+   * cursor and no `lastInspectedAt`, so without this a failing judge would be asked again on
+   * every tick, two detector runs each.
+   */
+  const lastAttempt = new Map<string, number>()
 
   async function look(sessionId: string): Promise<void> {
     const cursor = deps.store.state().cursors[sessionId]
-    if (cursor && deps.now() - cursor.lastInspectedAt < MID_TURN_AFTER_MS) return
+    const last = Math.max(cursor?.lastInspectedAt ?? 0, lastAttempt.get(sessionId) ?? 0)
+    if (last > 0 && deps.now() - last < MID_TURN_AFTER_MS) return
     let spot = where.get(sessionId)
     if (!spot) {
       const path = await deps.locate(sessionId)
@@ -217,10 +225,10 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       where.set(sessionId, spot)
     }
     if (!(await deps.eligible(sessionId, spot.folder)) || disposed) return
-    if (cursor) {
+    const from = cursor?.shadowOffset ?? cursor?.offset
+    if (from !== undefined) {
       // Tool-only progress is not worth a judge call, and moving the shadow cursor over it
       // would hide nothing: it is left to be read together with the next text.
-      const from = cursor.shadowOffset ?? cursor.offset
       const res = await deps.read(spot.path, from)
       if (res.shrunk) {
         // a rewritten file: the inspector resets the cursors
@@ -229,6 +237,7 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       }
     }
     running.add(sessionId)
+    lastAttempt.set(sessionId, deps.now())
     void deps.inspector
       .request({
         sessionId,
@@ -248,6 +257,7 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       const working: string[] = []
       for (const [id, state] of deps.states()) if (state === 'working') working.push(id)
       for (const id of [...where.keys()]) if (!working.includes(id)) where.delete(id)
+      for (const id of [...lastAttempt.keys()]) if (!working.includes(id)) lastAttempt.delete(id)
       for (const id of working) {
         if (disposed || running.has(id)) continue
         try {
@@ -261,6 +271,7 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       disposed = true
       running.clear()
       where.clear()
+      lastAttempt.clear()
     }
   }
 }
@@ -336,6 +347,8 @@ export interface SystemCardDeps {
     cwd: string | undefined,
     transcriptPath: string
   ): Promise<string | null>
+  /** Reads a transcript, to tell Harnu's own headless runs from a session. */
+  read: typeof readFrom
   mintId(): string
   now(): number
 }
@@ -374,19 +387,75 @@ export function createSystemCards(deps: SystemCardDeps): {
       result: undefined
     }))
 
-  async function folderFor(sessionId: string, cwd: string | undefined): Promise<string | null> {
-    if (cwd) return cwd
+  /**
+   * Whether each session's current turn has not ended: set by a prompt, cleared by a Stop or a
+   * StopFailure. SessionEnd folds `working` to `completed` before the process exits, so a CLI
+   * that shuts down gracefully mid-turn would otherwise read as finished.
+   */
+  const turnOpen = new Map<string, boolean>()
+  /** The newest working directory a hook reported for each session. */
+  const lastCwd = new Map<string, string>()
+  const MAX_TRACKED = 5_000
+  const remember = <V>(map: Map<string, V>, id: string, value: V): void => {
+    map.delete(id)
+    map.set(id, value)
+    if (map.size > MAX_TRACKED) map.delete(map.keys().next().value as string)
+  }
+
+  /** The best folder known: the hook's, the PTY's, then wherever the transcript says it runs. */
+  async function folderFor(
+    sessionId: string,
+    ...known: (string | undefined)[]
+  ): Promise<string | null> {
+    for (const k of known) if (k) return k
     const path = await deps.locate(sessionId)
     return path ? await deps.resolveFolder(sessionId, undefined, path) : null
   }
 
+  /**
+   * Harnu's own headless runs (the auto-namer, the usage poller) are Agent SDK sessions: their
+   * transcripts carry an `sdk-*` entrypoint. Any other entrypoint, an IDE's among them, is a
+   * session of the operator, and one Harnu cannot place files the card: a false alarm beats a
+   * silent death.
+   */
+  async function isProgrammatic(sessionId: string, hint: string | undefined): Promise<boolean> {
+    try {
+      const path = hint ?? (await deps.locate(sessionId))
+      if (!path) return false
+      const res = await deps.read(path, { tail: CLASSIFY_TAIL_BYTES })
+      for (const line of res.lines) {
+        const ep = (line as { entrypoint?: unknown }).entrypoint
+        if (typeof ep === 'string' && ep !== '') return ep.startsWith('sdk')
+      }
+      return false
+    } catch {
+      return false // could not tell: file the card
+    }
+  }
+
   return {
     onTaskEvent(ev) {
-      if (deps.mode() === 'off' || ev.agentId !== undefined) return
+      if (ev.agentId !== undefined) return
+      // Tracked whatever the mode: an in-memory fact, no transcript read and nothing spent. A turn
+      // opens with any event that moves the session to working or waiting (a prompt, a tool event,
+      // a task notification) and only a Stop or a StopFailure closes it, so a mode switched on
+      // mid-turn, or a turn whose prompt was never seen, still reads as running at a graceful end.
+      if (ev.payload?.cwd) remember(lastCwd, ev.sessionId, ev.payload.cwd)
+      if (ev.event === 'Stop' || ev.event === 'StopFailure') {
+        remember(turnOpen, ev.sessionId, false)
+      } else if (ev.taskState === 'working' || ev.taskState === 'needs-input') {
+        remember(turnOpen, ev.sessionId, true)
+      }
+      if (deps.mode() === 'off') return
       if (ev.event === 'StopFailure') {
         track('death card', async () => {
-          const folder = await folderFor(ev.sessionId, ev.payload?.cwd)
-          if (!folder || !(await deps.eligible(ev.sessionId, folder))) return
+          const folder = await folderFor(ev.sessionId, ev.payload?.cwd, lastCwd.get(ev.sessionId))
+          if (!folder) {
+            console.error(`[your-move] no folder known for ${ev.sessionId}: death card not filed`)
+            return
+          }
+          if (!(await deps.eligible(ev.sessionId, folder))) return
+          if (await isProgrammatic(ev.sessionId, ev.payload?.transcriptPath)) return
           await file(
             deathDraft({
               sessionId: ev.sessionId,
@@ -402,10 +471,21 @@ export function createSystemCards(deps: SystemCardDeps): {
       }
     },
     onPtyExit(x) {
-      if (deps.mode() === 'off' || !isDeathExit(x)) return
+      const open = turnOpen.get(x.sessionKey) === true
+      const hookCwd = lastCwd.get(x.sessionKey)
+      turnOpen.delete(x.sessionKey)
+      lastCwd.delete(x.sessionKey)
+      if (deps.mode() === 'off') return
+      // No Stop for the current turn means the turn was still running, whatever SessionEnd made of the state.
+      const fact: PtyExitFact = open ? { ...x, taskState: 'working' } : x
+      if (!isDeathExit(fact)) return
       track('death card', async () => {
-        const folder = await folderFor(x.sessionKey, x.cwd)
-        if (!folder || !(await deps.eligible(x.sessionKey, folder))) return
+        const folder = await folderFor(x.sessionKey, hookCwd, x.cwd)
+        if (!folder) {
+          console.error(`[your-move] no folder known for ${x.sessionKey}: death card not filed`)
+          return
+        }
+        if (!(await deps.eligible(x.sessionKey, folder))) return
         await file(deathDraft({ sessionId: x.sessionKey, folder, lane: deps.lane() }))
       })
     },

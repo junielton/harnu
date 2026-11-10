@@ -34,9 +34,9 @@ import {
 } from './agent-inflight-registry'
 import { getStashedApproval } from './approval-stash'
 import { appendAudit } from './audit-log'
-import { YOUR_MOVE_LIMIT_PER_HOUR, fileFromVerb } from '../your-move/core'
+import { YOUR_MOVE_LIMIT_PER_HOUR, fileFromVerb, type YourMoveCard } from '../your-move/core'
 import { effectiveMode, isFolderDisabled, readYourMovePrefs } from '../your-move/prefs'
-import { getYourMoveStore } from '../your-move/store'
+import { getYourMoveStore, type YourMoveStore } from '../your-move/store'
 import type { ApprovalStatusResult } from './approval-status'
 import type { ManifestCardDisclosure } from './confirm-core'
 import type { CommandBridge } from '../command-bridge'
@@ -1638,6 +1638,28 @@ const adoptFolderHandler: Handler = async (_args, ctx) => {
 const removeFolderHandler: Handler = async (_args, ctx) => {
   // BUG-56 — the ghost-cleanup verb (ADR-0016). No disk/git mutation: refuses
   // outright when `ctx.folder` still exists on disk.
+  //
+  // Removing a folder closes its Your move cards, and no verb may close a card the operator can
+  // still see: refuse while the folder (exactly, not its subfolders) holds an open live card.
+  // A folder that still exists keeps its own refusal below.
+  const guard = await yourMoveGuardStore()
+  if (guard) {
+    const normalized = await normalizeStoredPath(ctx.folder)
+    const trim = (p: string): string => (p.length > 1 ? p.replace(/\/+$/, '') : p)
+    const spellings = new Set([trim(ctx.folder), trim(normalized)])
+    const holds = guard
+      .state()
+      .cards.some((c) => isQueueVisibleCard(c) && spellings.has(trim(c.folder)))
+    const exists = await fs.access(normalized).then(
+      () => true,
+      () => false
+    )
+    if (holds && !exists) {
+      return errorResult(
+        'OPEN_CARDS: this folder still has a Your move card open for the operator, and only the operator may close a card. Nothing was removed. Leave the folder in the sidebar.'
+      )
+    }
+  }
   const result = await removeGhostFolderFromSidebar(ctx.folder)
   if (!result.ok) return errorResult(result.error)
   return textResult({ ok: true, op: 'remove_folder', ...result.removed })
@@ -3175,6 +3197,12 @@ const archiveSessionHandler: Handler = async (args, ctx) => {
   if (sessionIds.length === 0) return errorResult('BAD_ARGS: pass 1..100 session ids')
   const unarchive = args.unarchive === true
 
+  // An agent's archive must never close a Your move card (the archive listener would): a
+  // session with a card the operator can still see is refused below. The cards are read inside
+  // the store's transaction, so a card filed an instant ago is seen. Mode Off, or no store, and
+  // an unarchive, skip the guard.
+  const guard = unarchive ? null : await yourMoveGuardStore()
+
   const home = os.homedir()
   const folderBySession = new Map<string, string>()
   for (const f of ctx.folders) {
@@ -3191,12 +3219,21 @@ const archiveSessionHandler: Handler = async (args, ctx) => {
       if (ctx.deadlineFlag?.fired) return { result: null }
       const states = taskStateRecord()
       const withApproval = new Set(listPendingApprovals().map((a) => a.sessionId))
+      const withCard = new Set(
+        guard
+          ? guard
+              .state()
+              .cards.filter(isQueueVisibleCard)
+              .map((c) => c.sessionId)
+          : []
+      )
       const p = planArchiveSession(sessionIds, unarchive, {
         archived,
         folderOf: (id) => folderBySession.get(id),
         isDenied: (folder) => isFolderDenied(folder, ctx.denyFolders, home),
         taskStateOf: (id) => states[id],
-        hasPendingApproval: (id) => withApproval.has(id)
+        hasPendingApproval: (id) => withApproval.has(id),
+        hasOpenCard: (id) => withCard.has(id)
       })
       return { archive: p.toArchive, unarchive: p.toRestore, result: p }
     })
@@ -3337,6 +3374,21 @@ function takeYourMoveSlot(sessionId: string, now: number): boolean {
  */
 const YOUR_MOVE_PREFS_FILE = 'your-move-prefs.json'
 
+/** A card the operator can see in the queue: open and in the live lane (Observe cards show in no queue). */
+const isQueueVisibleCard = (c: YourMoveCard): boolean =>
+  c.closedAt === undefined && c.lane === 'live'
+
+/**
+ * The store to guard against agent actions that would close a card, or null when there is
+ * nothing to guard: no store, or Your move is Off.
+ */
+async function yourMoveGuardStore(): Promise<YourMoveStore | null> {
+  const store = getYourMoveStore()
+  if (!store) return null
+  const prefs = await readYourMovePrefs(path.join(app.getPath('userData'), YOUR_MOVE_PREFS_FILE))
+  return effectiveMode(prefs) === 'off' ? null : store
+}
+
 /**
  * File or refresh one Your move card. Answers with a refusal, never a throw: a store that
  * could not be opened, a mode that is Off, a spent rate slot and a failed write each come
@@ -3355,8 +3407,8 @@ const yourMoveHandler: Handler = async (args) => {
   const sessionId = strField(args, 'sessionId') ?? ''
   const kind = strField(args, 'kind')
   const ask = strField(args, 'ask')
-  if (!folder || !sessionId || !kind || !ask) {
-    return errorResult('BAD_ARGS: folder, sessionId, kind and ask are required')
+  if (!folder || !sessionId || !kind || !ask || ask.trim() === '') {
+    return errorResult('BAD_ARGS: folder, sessionId, kind and a non-blank ask are required')
   }
   const cardId = strField(args, 'cardId')
 

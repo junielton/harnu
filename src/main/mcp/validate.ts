@@ -1142,7 +1142,10 @@ const YourMoveSchema = z.object({
   folder: absolutePathSchema,
   sessionId: z.string().min(1),
   kind: z.enum(['decide', 'go_no_go', 'provide', 'do', 'check']),
-  ask: z.string().min(1).max(500),
+  ask: z
+    .string()
+    .max(500)
+    .refine((v) => v.trim().length > 0, 'ask must not be blank'),
   blocks: z.string().max(500).optional(),
   options: z.array(z.string().min(1).max(120)).max(6).optional(),
   recommended: z.string().max(120).optional(),

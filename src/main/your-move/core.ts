@@ -72,7 +72,9 @@ export interface YourMoveCard {
 export type CardView = YourMoveCard & { answerable: boolean; optionDeliverable: boolean[] }
 
 export interface SessionCursor {
-  offset: number
+  /** Where the live (Stop-driven) inspection reads from. Unset until a Stop or a first sight sets it. */
+  offset?: number
+  /** Where the hidden mid-turn inspection reads from. */
   shadowOffset?: number
   lastInspectedAt: number
 }
@@ -218,7 +220,11 @@ export function applyVerdict(
   return { ...s, cards }
 }
 
-/** Move one cursor field. A session never seen before starts both fields at `to`. */
+/**
+ * Move one cursor field. A session never seen before starts both fields at `to` when the live
+ * cursor moves first, but a mid-turn first sight sets only the shadow cursor: with no live
+ * offset the Stop that follows reads the recent tail instead of nothing.
+ */
 export function advanceCursor(
   s: YourMoveState,
   sessionId: string,
@@ -227,8 +233,26 @@ export function advanceCursor(
   now: number
 ): YourMoveState {
   const prev = s.cursors[sessionId]
-  const next: SessionCursor = { ...(prev ?? { offset: to }), [field]: to, lastInspectedAt: now }
+  const base: Partial<SessionCursor> = prev ?? (field === 'offset' ? { offset: to } : {})
+  const next: SessionCursor = { ...base, [field]: to, lastInspectedAt: now }
   return { ...s, cursors: { ...s.cursors, [sessionId]: next } }
+}
+
+/**
+ * After a live inspection judged up to `to`, the shadow cursor follows it: a long turn must read
+ * only the text since that Stop, not every turn already judged. Never backward, and a session
+ * with no cursor gains none.
+ */
+export function followLive(s: YourMoveState, sessionId: string, to: number): YourMoveState {
+  const prev = s.cursors[sessionId]
+  if (!prev) return s
+  return {
+    ...s,
+    cursors: {
+      ...s.cursors,
+      [sessionId]: { ...prev, shadowOffset: Math.max(prev.shadowOffset ?? 0, to) }
+    }
+  }
 }
 
 export function closeCard(
@@ -406,15 +430,18 @@ export function closeForSessions(
   return closeWhere(s, (c) => set.has(c.sessionId), reason, now)
 }
 
-/** Close every open card of a folder that is gone, including folders nested under it. */
+/**
+ * Close every open card of exactly this folder. A folder nested under it (a worktree, a
+ * separately pinned subfolder) is its own folder: it is closed only when it is itself removed.
+ */
 export function closeForFolder(
   s: YourMoveState,
   folder: string,
   reason: CloseReason,
   now: number
 ): YourMoveState {
-  const root = folder.replace(/\/+$/, '')
-  return closeWhere(s, (c) => c.folder === root || c.folder.startsWith(root + '/'), reason, now)
+  const root = folder.length > 1 ? folder.replace(/\/+$/, '') : folder
+  return closeWhere(s, (c) => c.folder === root, reason, now)
 }
 
 /** Forget where every session was read up to: the next first sight starts at the end again. */

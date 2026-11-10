@@ -12,11 +12,14 @@ import type { HookTaskEvent } from '../detect/task-state-hub'
 import type { TaskState } from '../hook-state'
 import { HUMAN_GATING_TOOLS, isChainParticipant } from '../transcript-truth'
 import {
+  closeCard,
   closeForFolder,
   closeForSessions,
   reconcileSource,
+  upsertStructured,
   type CardLane,
   type StructuredDraft,
+  type YourMoveCard,
   type YourMoveMode
 } from './core'
 import type { YourMoveStore } from './store'
@@ -31,47 +34,69 @@ export interface PendingGate {
   question: string
 }
 
+/** The `system` subtypes the CLI writes when a turn has ended: nothing can be parked after one. */
+const TURN_END_SUBTYPES = new Set(['turn_duration', 'stop_hook_summary'])
+
+const contentBlocks = (e: Record<string, unknown>): Record<string, unknown>[] => {
+  const message = e.message as { content?: unknown } | undefined
+  return message && Array.isArray(message.content)
+    ? (message.content.filter((b) => b && typeof b === 'object') as Record<string, unknown>[])
+    : []
+}
+
+/** Every tool call in the window that has a result there: those gates are answered. */
+export function answeredToolUseIds(lines: readonly Record<string, unknown>[]): Set<string> {
+  const ids = new Set<string>()
+  for (const e of lines) {
+    if (e.type !== 'user') continue
+    for (const b of contentBlocks(e)) {
+      if (b.type === 'tool_result' && typeof b.tool_use_id === 'string') ids.add(b.tool_use_id)
+    }
+  }
+  return ids
+}
+
 /**
- * The human-gating tool call the session is parked on, or null. It is pending when the last
- * conversation entry is an assistant entry holding one: a resolved call would be followed by
- * its result, and a subagent's entries (`isSidechain`) are not the session's own. `stop_reason`
- * is not looked at, so a gate still marked as streaming counts: a miss costs a session.
+ * The human-gating tool call the session is parked on, or null: the newest `AskUserQuestion` or
+ * `ExitPlanMode` call that has no tool_result in the window. Whatever else follows it does not
+ * matter (a `user` prompt, a recap or an informational `system` entry are written while a
+ * question is parked); only a turn-end entry after it (`turn_duration`, `stop_hook_summary`)
+ * says the turn moved on. A subagent's entries are not the session's own. `stop_reason` is not
+ * looked at, so a gate still marked as streaming counts: a miss costs a session.
  */
 export function pendingHumanGate(lines: readonly Record<string, unknown>[]): PendingGate | null {
-  let last: Record<string, unknown> | null = null
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const e = lines[i]
-    if (e.isSidechain === true || !isChainParticipant(e)) continue
-    last = e
-    break
-  }
-  if (!last || last.type !== 'assistant') return null
-  const message = last.message as { content?: unknown } | undefined
-  if (!message || !Array.isArray(message.content)) return null
-  for (const block of message.content) {
-    if (!block || typeof block !== 'object') continue
-    const b = block as { type?: unknown; name?: unknown; id?: unknown; input?: unknown }
-    if (b.type !== 'tool_use' || typeof b.name !== 'string' || !HUMAN_GATING_TOOLS.has(b.name)) {
+  const answered = answeredToolUseIds(lines)
+  let found: { gate: PendingGate; at: number } | null = null
+  let lastTurnEnd = -1
+  for (let at = 0; at < lines.length; at++) {
+    const e = lines[at]
+    if (e.isSidechain === true) continue
+    if (e.type === 'system' && typeof e.subtype === 'string' && TURN_END_SUBTYPES.has(e.subtype)) {
+      lastTurnEnd = at
       continue
     }
-    const input = (b.input && typeof b.input === 'object' ? b.input : {}) as {
-      questions?: unknown
-    }
-    const first = Array.isArray(input.questions) ? input.questions[0] : undefined
-    const question =
-      b.name === 'AskUserQuestion' &&
-      first &&
-      typeof first === 'object' &&
-      typeof (first as { question?: unknown }).question === 'string'
-        ? ((first as { question: string }).question as string).trim()
-        : ''
-    return {
-      toolUseId: typeof b.id === 'string' && b.id !== '' ? b.id : `${b.name}:${String(last.uuid)}`,
-      tool: b.name,
-      question
+    if (e.type !== 'assistant' || !isChainParticipant(e)) continue
+    for (const b of contentBlocks(e)) {
+      if (b.type !== 'tool_use' || typeof b.name !== 'string' || !HUMAN_GATING_TOOLS.has(b.name)) {
+        continue
+      }
+      const id = typeof b.id === 'string' && b.id !== '' ? b.id : `${b.name}:${String(e.uuid)}`
+      if (answered.has(id)) continue
+      const input = (b.input && typeof b.input === 'object' ? b.input : {}) as {
+        questions?: unknown
+      }
+      const first = Array.isArray(input.questions) ? input.questions[0] : undefined
+      const question =
+        b.name === 'AskUserQuestion' &&
+        first &&
+        typeof first === 'object' &&
+        typeof (first as { question?: unknown }).question === 'string'
+          ? (first as { question: string }).question.trim()
+          : ''
+      found = { gate: { toolUseId: id, tool: b.name, question }, at }
     }
   }
-  return null
+  return found && found.at > lastTurnEnd ? found.gate : null
 }
 
 export function gateDraft(
@@ -108,15 +133,26 @@ export interface GateWatchDeps {
     transcriptPath: string
   ): Promise<string | null>
   read: typeof readFrom
+  /** The transcript's size in bytes (0 when it cannot be read): a cheap "did it grow?". */
+  size(transcriptPath: string): Promise<number>
   /** The folded task state of every live session. */
   states(): ReadonlyMap<string, TaskState>
   mintId(): string
   now(): number
 }
 
+const gateIdOf = (sourceKey: string | undefined): string | null =>
+  sourceKey?.startsWith('gate:') ? sourceKey.slice('gate:'.length) : null
+
 /**
- * Keeps one `gate:` card per parked gate. Looks at a session when it enters needs-input, on the
- * sweep, and while it still has an open gate card (to close that card once answered).
+ * Keeps one `gate:` card per parked gate. A card closes in exactly two ways: the transcript
+ * shows the matching tool_result, or the session's next Stop says the turn moved on. Nothing
+ * else closes it, and above all not "I could not see it": an empty or missing transcript, or a
+ * gate that scrolled past the tail, leaves the card open.
+ *
+ * A session is looked at when it enters needs-input (the CLI is not known to raise that edge
+ * for every parked question) and on every sweep tick for any session whose transcript grew
+ * since the last look, whatever state the hooks think it is in.
  */
 export function createGateWatch(deps: GateWatchDeps): {
   onTaskEvent(ev: HookTaskEvent): void
@@ -127,36 +163,75 @@ export function createGateWatch(deps: GateWatchDeps): {
   let disposed = false
   const pending = new Set<Promise<unknown>>()
   const checking = new Set<string>()
+  /** Where each swept session lives, found once. */
+  const where = new Map<string, { path: string; folder: string }>()
+  /** The transcript size at each session's last successful look. */
+  const lastSize = new Map<string, number>()
+  /** Gates a Stop already closed: the turn moved on, so they are not filed again. */
+  const dismissed = new Set<string>()
 
-  const hasOpenGate = (sessionId: string): boolean =>
+  const openGateCards = (sessionId: string): YourMoveCard[] =>
     deps.store
       .state()
-      .cards.some(
+      .cards.filter(
         (c) => c.closedAt === undefined && c.source === 'human-gate' && c.sessionId === sessionId
       )
 
   async function check(
     sessionId: string,
-    hint: { cwd?: string; path?: string } = {}
+    hint: { cwd?: string; path?: string },
+    onlyIfGrown: boolean
   ): Promise<void> {
-    const path = hint.path ?? (await deps.locate(sessionId))
-    if (!path || disposed) return
-    const folder = await deps.resolveFolder(sessionId, hint.cwd, path)
-    if (!folder || !(await deps.eligible(sessionId, folder)) || disposed) return
-    const res = await deps.read(path, { tail: GATE_TAIL_BYTES })
+    let spot = where.get(sessionId)
+    if (!spot) {
+      const path = hint.path ?? (await deps.locate(sessionId))
+      if (!path || disposed) return
+      const folder = await deps.resolveFolder(sessionId, hint.cwd, path)
+      if (!folder) return
+      spot = { path, folder }
+      where.set(sessionId, spot)
+    }
+    if (!(await deps.eligible(sessionId, spot.folder)) || disposed) return
+    const size = await deps.size(spot.path)
+    if (onlyIfGrown && lastSize.get(sessionId) === size) return
+    const res = await deps.read(spot.path, { tail: GATE_TAIL_BYTES })
+    // Nothing to read is not "nothing parked": an empty or missing transcript decides nothing.
+    if (res.lines.length === 0) return
     const gate = pendingHumanGate(res.lines)
-    if (!gate && !hasOpenGate(sessionId)) return
-    const owed = gate ? [gateDraft(gate, sessionId, folder, deps.lane())] : []
-    await deps.store.transact((s) => ({
-      next: reconcileSource(s, { source: 'human-gate', sessionId }, owed, deps.mintId, deps.now()),
-      result: undefined
-    }))
+    const answered = answeredToolUseIds(res.lines)
+    const folder = spot.folder
+    const open = openGateCards(sessionId)
+    const fresh = gate !== null && !dismissed.has(gate.toolUseId)
+    const resolved = open.filter((c) => {
+      const id = gateIdOf(c.sourceKey)
+      return id !== null && answered.has(id)
+    })
+    if (fresh || resolved.length > 0) {
+      await deps.store.transact((s) => {
+        let next = s
+        if (fresh && gate) {
+          next = upsertStructured(
+            next,
+            gateDraft(gate, sessionId, folder, deps.lane()),
+            deps.mintId,
+            deps.now()
+          )
+        }
+        for (const c of resolved) next = closeCard(next, c.id, 'source-resolved', deps.now())
+        return { next, result: undefined }
+      })
+    }
+    lastSize.set(sessionId, size)
   }
 
-  function run(sessionId: string, hint?: { cwd?: string; path?: string }): Promise<void> {
+  function run(
+    sessionId: string,
+    hint: { cwd?: string; path?: string } = {},
+    onlyIfGrown = false
+  ): Promise<void> {
     if (checking.has(sessionId)) return Promise.resolve()
     checking.add(sessionId)
-    const p = check(sessionId, hint)
+    const p = check(sessionId, hint, onlyIfGrown)
       .catch((e) => console.error(`[your-move] gate check failed: ${(e as Error)?.message ?? e}`))
       .finally(() => {
         checking.delete(sessionId)
@@ -166,23 +241,47 @@ export function createGateWatch(deps: GateWatchDeps): {
     return p
   }
 
+  /** The turn moved on: close the session's gate cards and remember not to file them again. */
+  async function stopped(sessionId: string): Promise<void> {
+    const open = openGateCards(sessionId)
+    if (open.length === 0) return
+    for (const c of open) {
+      const id = gateIdOf(c.sourceKey)
+      if (id) dismissed.add(id)
+    }
+    await deps.store.transact((s) => ({
+      next: reconcileSource(s, { source: 'human-gate', sessionId }, [], deps.mintId, deps.now()),
+      result: undefined
+    }))
+  }
+
   return {
     onTaskEvent(ev) {
       if (disposed || deps.mode() === 'off' || ev.agentId !== undefined) return
-      if (ev.taskState === 'needs-input' || hasOpenGate(ev.sessionId)) {
+      if (ev.event === 'Stop') {
+        const p = stopped(ev.sessionId)
+          .catch((e) =>
+            console.error(`[your-move] gate close failed: ${(e as Error)?.message ?? e}`)
+          )
+          .finally(() => pending.delete(p))
+        pending.add(p)
+        return
+      }
+      if (ev.taskState === 'needs-input' || openGateCards(ev.sessionId).length > 0) {
         void run(ev.sessionId, { cwd: ev.payload?.cwd, path: ev.payload?.transcriptPath })
       }
     },
     async tick() {
       if (disposed || deps.mode() === 'off') return
-      const ids = new Set<string>()
-      for (const [id, state] of deps.states()) if (state === 'needs-input') ids.add(id)
+      const ids = new Set<string>(deps.states().keys())
       for (const c of deps.store.state().cards) {
         if (c.closedAt === undefined && c.source === 'human-gate') ids.add(c.sessionId)
       }
+      for (const id of [...where.keys()]) if (!ids.has(id)) where.delete(id)
+      for (const id of [...lastSize.keys()]) if (!ids.has(id)) lastSize.delete(id)
       for (const id of ids) {
         if (disposed) return
-        await run(id)
+        await run(id, {}, true)
       }
     },
     async idle() {

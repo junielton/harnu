@@ -182,11 +182,29 @@ describe('first sight', () => {
     expect(h.read).toHaveBeenCalledWith('/t/s1.jsonl', { tail: 256 * 1024 })
   })
 
-  it('mid-turn with no cursor sets it to end of file, returns first-sight, calls no judge', async () => {
-    const h = await harness({ '/t/s1.jsonl': { lines: [asst('hi')], size: 500 } })
-    expect(await createInspector(h.deps).request(req({ trigger: 'mid-turn' }))).toBe('first-sight')
+  it('a mid-turn first sight leaves the live cursor unset, so the Stop judges the recent tail', async () => {
+    const h = await harness({ '/t/s1.jsonl': { lines: [asst('Pick A or B?')], size: 500 } })
+    const inspector = createInspector(h.deps)
+    expect(await inspector.request(req({ trigger: 'mid-turn' }))).toBe('first-sight')
     expect(h.judge).not.toHaveBeenCalled()
-    expect(h.store.state().cursors.s1).toMatchObject({ offset: 500, shadowOffset: 500 })
+    // only the shadow cursor moved; there is no live offset to start the Stop after the text
+    const cursor = h.store.state().cursors.s1
+    expect(cursor.shadowOffset).toBe(500)
+    expect(cursor.offset).toBeUndefined()
+    // the Stop reads the recent tail, exactly as for a session first seen at its Stop
+    expect(await inspector.request(req())).toBe('judged')
+    expect(h.read).toHaveBeenLastCalledWith('/t/s1.jsonl', { tail: 256 * 1024 })
+    expect(h.judge).toHaveBeenCalled()
+  })
+
+  it('a mid-turn pass over a file that shrank still resets both cursors', async () => {
+    const h = await harness({ '/t/s1.jsonl': { lines: [], size: 50 } })
+    await seed(h.store, (s) => ({
+      ...s,
+      cursors: { s1: { offset: 900, shadowOffset: 900, lastInspectedAt: 1 } }
+    }))
+    expect(await createInspector(h.deps).request(req({ trigger: 'mid-turn' }))).toBe('first-sight')
+    expect(h.store.state().cursors.s1).toMatchObject({ offset: 50, shadowOffset: 50 })
   })
 })
 

@@ -36,7 +36,7 @@ import {
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
 import { buildSegment } from './segment'
 import { createGateWatch, watchArchive, watchFolderRemoval } from './source-gate'
-import { reconcileMissions } from './source-mission'
+import { reconcileMissions, selectForReconcile } from './source-mission'
 import { readFrom } from './transcript'
 import {
   SWEEP_MS,
@@ -222,6 +222,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
           eligible,
           locate: locateTranscript,
           resolveFolder,
+          read: readFrom,
           mintId: () => randomUUID(),
           now: () => Date.now()
         })
@@ -301,6 +302,13 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         locate: locateTranscript,
         resolveFolder,
         read: readFrom,
+        size: async (file) => {
+          try {
+            return (await fs.stat(file)).size
+          } catch {
+            return 0
+          }
+        },
         states: getTaskStates,
         mintId: () => randomUUID(),
         now: () => Date.now()
@@ -336,20 +344,19 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       setPtyExitObserver(system.onPtyExit)
       setMissionListObserver((result, roots) => {
         if (mode() === 'off') return
-        // The owner's archive and a folder switched off keep a mission's items out of the queue:
-        // a card closed by archiving must not come back with the next poll.
-        const views = result.views.filter(
-          (v) =>
-            !(getSessionArchive()?.has(v.mission.owner.sessionId) ?? false) &&
-            !(prefs ? isFolderDisabled(prefs, v.root) : false)
-        )
+        // The owner's archive keeps a mission's items out of the queue (a card closed by archiving
+        // must not come back with the next poll); a folder switched off leaves its cards untouched.
+        const picked = selectForReconcile(result, roots, {
+          ownerArchived: (id) => getSessionArchive()?.has(id) ?? false,
+          folderOff: (root) => (prefs ? isFolderDisabled(prefs, root) : false)
+        })
         const lane = laneFor(mode(), 'stop', prefs?.midTurnLive ?? false)
         store
           .transact((s) => ({
             next: reconcileMissions(
               s,
-              { views, unreadable: result.unreadable },
-              roots,
+              picked.result,
+              picked.roots,
               lane,
               () => randomUUID(),
               Date.now()
