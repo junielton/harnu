@@ -870,6 +870,32 @@ it(
     expectVerdict(await verdictOf(held({ p: [90, 0] }), held({ p: [88, 0] })), 0, 'accepted')
     expectVerdict(await verdictOf(held({ p: [90, 0] }), held({ p: [87.5, 0] })), 1, 'rejected')
 
+    // S is the larger of the two rounds' spreads, whichever round holds it.
+    expectVerdict(await verdictOf(dev({ p: [90, 3] }), dev({ p: [95, 6] })), 1, 'rejected')
+    expectVerdict(await verdictOf(held({ p: [95, 3] }), held({ p: [90, 6] })), 0, 'accepted')
+
+    // A gain of exactly the tolerance, from real pass counts through `report`: in doubles these
+    // differences land just off 2, on the wrong side of the rule without an epsilon.
+    const counted = (id: string, split: 'dev' | 'holdout', passed: number, total: number): void => {
+      const run: RunFixture = { passed, total, judges: [{ scores: scores(4, 2, 1) }] }
+      fixtureUnits(id, split, { p: { 'harnu-spec': [run, run] } })
+    }
+    const BOUNDARY: ['dev' | 'holdout', [number, number], [number, number], number, string][] = [
+      ['dev', [27, 50], [28, 50], 1, 'rejected'],
+      ['dev', [12, 100], [14, 100], 1, 'rejected'],
+      ['holdout', [28, 50], [27, 50], 0, 'accepted'],
+      ['holdout', [14, 100], [12, 100], 0, 'accepted']
+    ]
+    for (const [i, [split, before, after, code, verdict]] of BOUNDARY.entries()) {
+      counted(`edge-base-${i}`, split, before[0], before[1])
+      counted(`edge-cand-${i}`, split, after[0], after[1])
+      for (const id of [`edge-base-${i}`, `edge-cand-${i}`]) {
+        const result = await cli(['report', id])
+        expect(result.code, result.output).toBe(0)
+      }
+      expectVerdict(await compare(`edge-base-${i}`, `edge-cand-${i}`), code, verdict)
+    }
+
     // Unrounded values: the reporter shows the candidate's 92.004 as 92.00, the verdict sees 2.004.
     const exact = (passed: number): RunFixture => ({
       passed,
@@ -1081,6 +1107,17 @@ it(
       await verdictOf(dev(), better({ pins: { ...PINS, superpowers: 'd'.repeat(40) } })),
       'pins.superpowers'
     )
+
+    // A round that cannot be compared is incomplete, whatever else differs: the fields come after.
+    const dryAndDifferent = await verdictOf(dev(), better({ dryRun: true, judges: 1 }))
+    expect(dryAndDifferent.code, dryAndDifferent.output).toBe(1)
+    expect(dryAndDifferent.output).toContain('incomplete')
+    const abortedAndDifferent = await verdictOf(
+      dev({ status: 'aborted-budget' }),
+      better({ models: { ...MODELS, judge: 'other' } })
+    )
+    expect(abortedAndDifferent.code, abortedAndDifferent.output).toBe(1)
+    expect(abortedAndDifferent.output).toContain('incomplete')
 
     // Different seeds and a different skill pin are what a comparison is for.
     const seeds = await verdictOf(
