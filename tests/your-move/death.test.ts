@@ -41,6 +41,8 @@ function make(over: Partial<SystemCardDeps> = {}) {
     eligible: async () => true,
     locate: async () => '/located/x.jsonl',
     resolveFolder: async (_id, cwd) => cwd ?? '/work/located',
+    read: async () => ({ lines: [], nextOffset: 0, size: 0, shrunk: false }),
+    classify: () => null,
     mintId: () => `card-${++n}`,
     now: () => NOW,
     ...over
@@ -60,6 +62,15 @@ const stopFailure = (
     failureReason: reason,
     source: 'hook',
     payload: { cwd: '/work/acme', transcriptPath: `/t/${sessionId}.jsonl` }
+  }) as HookTaskEvent
+const userPrompt = (sessionId = 'sess-0001') =>
+  ({
+    sessionId,
+    taskState: 'working',
+    event: 'UserPromptSubmit',
+    ts: 0,
+    source: 'hook',
+    payload: { cwd: '/work/acme' }
   }) as HookTaskEvent
 const stop = (sessionId = 'sess-0001') =>
   ({
@@ -203,11 +214,118 @@ describe('death cards', () => {
     expect(open()).toHaveLength(0)
   })
 
-  it('a death card for a session whose folder cannot be found is not lost', async () => {
+  it('a death with no resolvable folder is logged, never filed silently under nothing', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const { cards } = make({ resolveFolder: async () => null })
     cards.onPtyExit(exitFact({ cwd: undefined }))
     await cards.idle()
-    expect(open('death')).toHaveLength(0) // nothing to attach a folder to; logged, not thrown
+    expect(open('death')).toHaveLength(0)
+    expect(error.mock.calls.flat().join(' ')).toContain('sess-0001')
+    error.mockRestore()
+  })
+
+  it('a death takes the folder an earlier hook reported when the exit carries none', async () => {
+    const { cards } = make({ resolveFolder: async () => null, locate: async () => null })
+    cards.onTaskEvent({ ...userPrompt(), payload: { cwd: '/work/from-hook' } })
+    cards.onPtyExit(exitFact({ cwd: undefined }))
+    await cards.idle()
+    expect(open('death')[0]).toMatchObject({ folder: '/work/from-hook' })
+  })
+
+  it('a death takes the PTY folder when no hook ever named one', async () => {
+    const { cards } = make({ resolveFolder: async () => null, locate: async () => null })
+    cards.onPtyExit(exitFact({ cwd: '/work/from-pty' }))
+    await cards.idle()
+    expect(open('death')[0]).toMatchObject({ folder: '/work/from-pty' })
+  })
+
+  it('a graceful shutdown mid-turn files a death card even after SessionEnd folds the state', async () => {
+    const { cards } = make()
+    cards.onTaskEvent(userPrompt())
+    // SessionEnd folds working to completed before the PTY exits
+    cards.onTaskEvent({
+      ...userPrompt(),
+      taskState: 'completed',
+      event: 'SessionEnd',
+      matcher: 'other'
+    } as never)
+    cards.onPtyExit(exitFact({ taskState: 'completed' }))
+    await cards.idle()
+    expect(open('death')).toHaveLength(1)
+  })
+
+  it('an exit after a Stop still does not count, whatever SessionEnd did', async () => {
+    const { cards } = make()
+    cards.onTaskEvent(userPrompt())
+    cards.onTaskEvent(stop())
+    cards.onTaskEvent({ ...stop(), taskState: 'completed', event: 'SessionEnd' } as never)
+    cards.onPtyExit(exitFact({ taskState: 'completed' }))
+    await cards.idle()
+    expect(open()).toHaveLength(0)
+  })
+
+  it('a turn that ended in StopFailure is not an open turn', async () => {
+    const { cards } = make()
+    cards.onTaskEvent(userPrompt())
+    cards.onTaskEvent(stopFailure())
+    cards.onPtyExit(exitFact({ taskState: 'failed' }))
+    await cards.idle()
+    expect(open('death')).toHaveLength(1)
+    cards.onTaskEvent(userPrompt())
+    cards.onTaskEvent(stop())
+    cards.onPtyExit(exitFact({ taskState: 'completed' }))
+    await cards.idle()
+    expect(open()).toHaveLength(0)
+  })
+
+  it('a subagent prompt or Stop does not change whether the main turn is open', async () => {
+    const { cards } = make()
+    cards.onTaskEvent(userPrompt())
+    cards.onTaskEvent({ ...stop(), agentId: 'agent-1' })
+    cards.onPtyExit(exitFact({ taskState: 'completed' }))
+    await cards.idle()
+    expect(open('death')).toHaveLength(1)
+  })
+
+  it('Harnu quit, parking and a recent Ctrl+C still excuse an open turn', async () => {
+    for (const over of [
+      { removedFirst: true },
+      { reason: 'park' as const },
+      { lastCtrlCAt: NOW - 1_000 }
+    ]) {
+      const { cards } = make()
+      cards.onTaskEvent(userPrompt())
+      cards.onPtyExit(exitFact({ taskState: 'completed', ...over }))
+      await cards.idle()
+    }
+    expect(open()).toHaveLength(0)
+  })
+
+  it('a StopFailure from a programmatic transcript files nothing', async () => {
+    const { cards } = make({
+      read: async () => ({
+        lines: [{ type: 'assistant', entrypoint: 'sdk-cli' }],
+        nextOffset: 10,
+        size: 10,
+        shrunk: false
+      }),
+      classify: (lines) =>
+        (lines[0] as { entrypoint?: string })?.entrypoint === 'sdk-cli' ? 'programmatic' : null
+    })
+    cards.onTaskEvent(stopFailure())
+    await cards.idle()
+    expect(store.state().cards).toEqual([])
+  })
+
+  it('a StopFailure whose transcript cannot be read still files the card', async () => {
+    const { cards } = make({
+      read: async () => {
+        throw new Error('EIO')
+      }
+    })
+    cards.onTaskEvent(stopFailure())
+    await cards.idle()
+    expect(open('death')).toHaveLength(1)
   })
 })
 
