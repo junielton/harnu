@@ -42,15 +42,6 @@ function make(over: Partial<SystemCardDeps> = {}) {
     locate: async () => '/located/x.jsonl',
     resolveFolder: async (_id, cwd) => cwd ?? '/work/located',
     read: async () => ({ lines: [], nextOffset: 0, size: 0, shrunk: false }),
-    // what the real classifier says: every entrypoint but `cli` is programmatic
-    classify: (lines) => {
-      for (const l of lines) {
-        const ep = (l as { entrypoint?: unknown }).entrypoint
-        if (typeof ep === 'string' && ep !== '')
-          return ep === 'cli' ? 'interactive' : 'programmatic'
-      }
-      return null
-    },
     mintId: () => `card-${++n}`,
     now: () => NOW,
     ...over

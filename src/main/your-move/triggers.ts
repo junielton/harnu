@@ -70,16 +70,16 @@ export function createEnsureCursor(deps: {
   now(): number
 }): (sessionId: string, path: string) => Promise<void> {
   return async (sessionId, path) => {
-    if (deps.store.state().cursors[sessionId]?.offset !== undefined) return
+    // Only a session never seen gets a cursor from a hook: a compaction or a prompt must never
+    // create or move the live offset of one already seen (that would skip text a Stop must judge).
+    if (deps.store.state().cursors[sessionId] !== undefined) return
     const res = await deps.read(path, { tail: CLASSIFY_TAIL_BYTES })
     if (deps.classify(res.lines) === 'programmatic') return
     const end = res.nextOffset
     await deps.store.transact((s) =>
-      s.cursors[sessionId]?.offset !== undefined
+      s.cursors[sessionId] !== undefined
         ? { next: s, result: undefined }
         : {
-            // The live cursor starts at the end; a shadow cursor a mid-turn first sight already set
-            // is kept, and only ever moves forward.
             next: followLive(
               advanceCursor(s, sessionId, 'offset', end, deps.now()),
               sessionId,
@@ -111,7 +111,7 @@ export function createTriggers(deps: TriggerDeps): {
   }
 
   async function firstSight(ev: HookTaskEvent): Promise<void> {
-    if (deps.store.state().cursors[ev.sessionId]?.offset !== undefined) return
+    if (deps.store.state().cursors[ev.sessionId] !== undefined) return
     const path = await pathFor(ev.sessionId, ev.payload?.transcriptPath)
     if (!path || disposed) return
     const folder = await deps.resolveFolder(ev.sessionId, ev.payload?.cwd, path)
@@ -349,7 +349,6 @@ export interface SystemCardDeps {
   ): Promise<string | null>
   /** Reads a transcript, to tell Harnu's own headless runs from a session. */
   read: typeof readFrom
-  classify(lines: readonly unknown[]): 'interactive' | 'programmatic' | null
   mintId(): string
   now(): number
 }
@@ -413,26 +412,42 @@ export function createSystemCards(deps: SystemCardDeps): {
     return path ? await deps.resolveFolder(sessionId, undefined, path) : null
   }
 
-  /** Harnu's own headless `claude -p` runs fire the same hooks and are never a session of the operator. */
+  /**
+   * Harnu's own headless runs (the auto-namer, the usage poller) are Agent SDK sessions: their
+   * transcripts carry an `sdk-*` entrypoint. Any other entrypoint, an IDE's among them, is a
+   * session of the operator, and one Harnu cannot place files the card: a false alarm beats a
+   * silent death.
+   */
   async function isProgrammatic(sessionId: string, hint: string | undefined): Promise<boolean> {
     try {
       const path = hint ?? (await deps.locate(sessionId))
       if (!path) return false
       const res = await deps.read(path, { tail: CLASSIFY_TAIL_BYTES })
-      return deps.classify(res.lines) === 'programmatic'
+      for (const line of res.lines) {
+        const ep = (line as { entrypoint?: unknown }).entrypoint
+        if (typeof ep === 'string' && ep !== '') return ep.startsWith('sdk')
+      }
+      return false
     } catch {
-      return false // could not tell: file the card, a false alarm beats a silent death
+      return false // could not tell: file the card
     }
   }
 
   return {
     onTaskEvent(ev) {
-      if (deps.mode() === 'off' || ev.agentId !== undefined) return
+      if (ev.agentId !== undefined) return
+      // Tracked whatever the mode: an in-memory fact, no transcript read and nothing spent. A turn
+      // opens with any event that moves the session to working or waiting (a prompt, a tool event,
+      // a task notification) and only a Stop or a StopFailure closes it, so a mode switched on
+      // mid-turn, or a turn whose prompt was never seen, still reads as running at a graceful end.
       if (ev.payload?.cwd) remember(lastCwd, ev.sessionId, ev.payload.cwd)
-      if (ev.event === 'UserPromptSubmit') {
-        remember(turnOpen, ev.sessionId, true)
-      } else if (ev.event === 'StopFailure') {
+      if (ev.event === 'Stop' || ev.event === 'StopFailure') {
         remember(turnOpen, ev.sessionId, false)
+      } else if (ev.taskState === 'working' || ev.taskState === 'needs-input') {
+        remember(turnOpen, ev.sessionId, true)
+      }
+      if (deps.mode() === 'off') return
+      if (ev.event === 'StopFailure') {
         track('death card', async () => {
           const folder = await folderFor(ev.sessionId, ev.payload?.cwd, lastCwd.get(ev.sessionId))
           if (!folder) {
@@ -451,7 +466,6 @@ export function createSystemCards(deps: SystemCardDeps): {
           )
         })
       } else if (ev.event === 'Stop') {
-        remember(turnOpen, ev.sessionId, false)
         // A turn that ended well closes the card a failed one opened.
         track('death card close', () => resolve('death', ev.sessionId))
       }

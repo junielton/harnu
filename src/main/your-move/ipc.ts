@@ -213,7 +213,6 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
           locate: locateTranscript,
           resolveFolder,
           read: readFrom,
-          classify: classifyTranscriptLines,
           mintId: () => randomUUID(),
           now: () => Date.now()
         })
