@@ -382,7 +382,7 @@ describe('archive_session never closes a Your move card for an agent', () => {
     bridge: undefined
   } => ({
     folder: '',
-    folders: [entry([SESSION, 'sess-clean-0001'])],
+    folders: [entry([SESSION, 'sess-spare-cccc'])],
     denyFolders: [],
     bridge: undefined
   })
@@ -396,14 +396,14 @@ describe('archive_session never closes a Your move card for an agent', () => {
 
   it('archive_session refuses a session with an open card', async () => {
     await call()
-    const res = await archiveHandler({ sessionIds: [SESSION, 'sess-clean-0001'] }, archiveCtx())
+    const res = await archiveHandler({ sessionIds: [SESSION, 'sess-spare-cccc'] }, archiveCtx())
     expect(rowsOf(res)).toEqual([
       { sessionId: SESSION, outcome: 'refused', reason: 'OPEN_CARDS' },
-      { sessionId: 'sess-clean-0001', outcome: 'archived' }
+      { sessionId: 'sess-spare-cccc', outcome: 'archived' }
     ])
     expect(payload(res).ok).toBe(false)
     expect(getSessionArchive()?.has(SESSION)).toBe(false)
-    expect(getSessionArchive()?.has('sess-clean-0001')).toBe(true)
+    expect(getSessionArchive()?.has('sess-spare-cccc')).toBe(true)
     expect(cards()).toHaveLength(1)
     expect(cards()[0].closedAt).toBeUndefined()
   })
