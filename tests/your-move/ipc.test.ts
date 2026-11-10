@@ -88,6 +88,11 @@ describe('registerYourMove with a store that cannot open', () => {
     ).toMatchObject({
       outcome: 'skipped'
     })
+    // an exit has nothing to close: it answers, never throws
+    expect(await call('yourMove:exit', { cardId: 'c1', label: 'not-for-me' })).toEqual({
+      ok: false,
+      reason: 'unavailable'
+    })
     // and the failure was logged, with its reason
     expect(error.mock.calls.flat().join(' ')).toContain('EACCES')
     closeYourMove()
