@@ -1,3 +1,4 @@
+/* eslint-disable */
 const childProcess = require('child_process')
 const EventEmitter = require('events')
 const fs = require('fs')
