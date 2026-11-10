@@ -193,7 +193,7 @@ The mode has three values:
 
 - **Off** — the default. Nothing is read and nothing is spent.
 - **Observe** — when a session stops, Harnu reads what it wrote since the last check and asks two independent, isolated Claude calls whether anything is waiting on you, then one more call to write each card clearly (a short context, what it blocks, the options and a recommendation when the session gave one). If either detection call fails, Harnu uses the other; if the writing call fails or returns nothing, the cards are filed as the detection found them, and a card it leaves out is filed as found, never dropped. Two detections of the same item are merged into one card. What it finds is stored as a card and listed at the bottom of the tab. Nothing shows in the sidebar and nothing makes a sound.
-- **Live** — saved, but until the queue ships it behaves exactly like Observe.
+- **Live** — Harnu checks sessions the same way, and lists what it finds as cards in the **Return here** box at the bottom of the sidebar, oldest first, each with a clock that keeps running until you deal with it. See [Return here: sessions waiting on you](sessions.md#return-here-sessions-waiting-on-you). For now the answer buttons on a card open the session instead of answering for you.
 
 Each check uses your own Claude quota: about US$ 0.002 and several seconds across those calls, run in the background at low priority and never more than half your CPU cores at once. The calls are isolated: it has no tools, no settings and no project files, and it never answers or changes a session.
 
