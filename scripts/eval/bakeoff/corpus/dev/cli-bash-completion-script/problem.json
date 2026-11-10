@@ -1,0 +1,26 @@
+{
+  "id": "cli-bash-completion-script",
+  "split": "dev",
+  "kind": "refactor",
+  "language": "go",
+  "target": {
+    "repo": "https://github.com/urfave/cli",
+    "commit": "bc00bd4d77dae229ec7d0cb46b67760e168b28c9"
+  },
+  "setup": ["GOBIN=\"$PWD/.bin\" go install gotest.tools/gotestsum@v1.12.0", "go mod download"],
+  "versions": "go version",
+  "test": "go test ./...",
+  "hidden": {
+    "cmd": ".bin/gotestsum --junitfile \"$BAKEOFF_JUNIT\" -- -count=1 -run TestHiddenBakeoff .",
+    "files": ["hidden_bakeoff_test.go"],
+    "dest": ".",
+    "compileErrorPattern": "(undefined:|cannot use|build failed|syntax error|cannot find package|no required module)"
+  },
+  "provenance": {
+    "authoredAt": "2026-11-10T00:07:40.968Z",
+    "authoredBy": "bake-off author sandbox session",
+    "reviewedAt": null,
+    "reviewedBy": null,
+    "sandbox": true
+  }
+}

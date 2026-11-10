@@ -1,0 +1,26 @@
+{
+  "id": "commander-presubcommand-hook",
+  "split": "dev",
+  "kind": "feature",
+  "language": "typescript",
+  "target": {
+    "repo": "https://github.com/tj/commander.js",
+    "commit": "3ae30a291a777ad1f748d86f49903579277f9ea0"
+  },
+  "setup": ["npm ci", "npm i --no-save jest-junit"],
+  "versions": "node --version",
+  "test": "npm test",
+  "hidden": {
+    "cmd": "JEST_JUNIT_OUTPUT_FILE=\"$BAKEOFF_JUNIT\" npx jest tests/hidden-bakeoff.test.js --reporters=jest-junit",
+    "files": ["hidden-bakeoff.test.js"],
+    "dest": "tests",
+    "compileErrorPattern": "(SyntaxError|Cannot find module|Test suite failed to run)"
+  },
+  "provenance": {
+    "authoredAt": "2026-11-10T00:08:42.694Z",
+    "authoredBy": "bake-off author sandbox session",
+    "reviewedAt": null,
+    "reviewedBy": null,
+    "sandbox": true
+  }
+}

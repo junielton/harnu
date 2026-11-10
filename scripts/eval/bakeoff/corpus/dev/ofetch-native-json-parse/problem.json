@@ -1,0 +1,26 @@
+{
+  "id": "ofetch-native-json-parse",
+  "split": "dev",
+  "kind": "refactor",
+  "language": "typescript",
+  "target": {
+    "repo": "https://github.com/unjs/ofetch",
+    "commit": "6a879d46bdf9f9d4e65b975b91ba3e005e132771"
+  },
+  "setup": ["npx -y pnpm@10.19.0 install --frozen-lockfile"],
+  "versions": "node --version",
+  "test": "npx vitest run -t '^(?!.*204 no content)'",
+  "hidden": {
+    "cmd": "npx vitest run --reporter=junit --outputFile=\"$BAKEOFF_JUNIT\" test/hidden-bakeoff.test.ts",
+    "files": ["hidden-bakeoff.test.ts"],
+    "dest": "test",
+    "compileErrorPattern": "(Failed to load url|Failed to resolve import|Cannot find module|Cannot find package|ERR_MODULE_NOT_FOUND|Transform failed|Parse failure|Failed to parse source)"
+  },
+  "provenance": {
+    "authoredAt": "2026-11-09T23:58:59.366Z",
+    "authoredBy": "bake-off author sandbox session",
+    "reviewedAt": null,
+    "reviewedBy": null,
+    "sandbox": true
+  }
+}
