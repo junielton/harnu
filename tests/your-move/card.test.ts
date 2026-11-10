@@ -318,4 +318,41 @@ describe('YourMoveCard in the Return here zone', () => {
     await expect(useYourMoveStore().init()).resolves.toBeUndefined()
     expect(useYourMoveStore().count).toBe(0)
   })
+
+  it('a failed exit write shows an error and leaves the card open', async () => {
+    const w = await mountZone([card()])
+    await expand(w)
+    const exitButton = (): ReturnType<VueWrapper['get']> =>
+      cardEls(w)[0]
+        .findAll('button')
+        .find((b) => b.text() === 'Not for me')!
+    exitCard.mockResolvedValueOnce({ ok: false, reason: 'write failed' })
+    await exitButton().trigger('click')
+    await flushPromises()
+    const err = cardEls(w)[0].get('[data-testid="your-move-exit-error"]')
+    expect(err.text()).toContain('still here')
+    expect(cardEls(w)).toHaveLength(1)
+    // an IPC rejection reads as a failure too, and the exits keep working
+    exitCard.mockRejectedValueOnce(new Error('ipc closed'))
+    await exitButton().trigger('click')
+    await flushPromises()
+    expect(cardEls(w)[0].find('[data-testid="your-move-exit-error"]').exists()).toBe(true)
+    // the retry goes through: the card leaves and no error stays behind
+    await exitButton().trigger('click')
+    await flushPromises()
+    expect(exitCard).toHaveBeenCalledTimes(3)
+    expect(cardEls(w)).toHaveLength(0)
+  })
+
+  it('an exit for a card that is already gone shows no error', async () => {
+    const w = await mountZone([card()])
+    await expand(w)
+    exitCard.mockResolvedValueOnce({ ok: false, reason: 'not found' })
+    await cardEls(w)[0]
+      .findAll('button')
+      .find((b) => b.text() === 'Already handled')!
+      .trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="your-move-exit-error"]').exists()).toBe(false)
+  })
 })

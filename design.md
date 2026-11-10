@@ -2408,6 +2408,10 @@ from another project shows while the list is drilled (R-3).
   card has **no ×** and no other dismiss control, and opening the session leaves it in the queue.
 - **Delivery failure.** A card whose answer could not be delivered keeps its place and shows one
   `--color-red` line under the buttons saying why (`yourMove.delivery.*`).
+- **Exit failure.** When Not for me or Already handled could not be saved (the store file cannot be
+  written), the card stays open and shows one `--color-red` line (`11.5px`, `yourMove.exits.failed`)
+  right under the two exits; both exits keep working, and the next click retries and clears the line.
+  A card that was already gone shows nothing: the list just refreshes.
 - **Height cap.** `max-height: min(380px, 45vh)`, the cards scroll inside, the eyebrow does not.
   That leaves the folder list usable on a short window (45vh at most) and still shows about three
   collapsed cards.

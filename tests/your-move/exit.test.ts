@@ -4,7 +4,7 @@
  * two labels are never mixed.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import type { CardView, YourMoveCard } from '../../src/main/your-move/core'
@@ -138,6 +138,34 @@ describe('yourMove:exit', () => {
       ok: false
     })
     expect((await labels()).map((r) => r.label)).toEqual(['not-for-me'])
+    close()
+  })
+
+  it('a failed exit write returns a failure and leaves the card open, and a retry works', async () => {
+    const { call, close } = await boot()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    await call('yourMove:list') // the store is open before the folder is locked
+    // the state file's folder refuses new files: the atomic write fails with EACCES
+    await chmod(dir, 0o500)
+    try {
+      expect(await call('yourMove:exit', { cardId: 'c1', label: 'not-for-me' })).toEqual({
+        ok: false,
+        reason: 'write failed'
+      })
+    } finally {
+      await chmod(dir, 0o700)
+    }
+    const open = (await call('yourMove:list')) as CardView[]
+    expect(open.find((c) => c.id === 'c1')?.closedAt).toBeUndefined()
+    await expect(readFile(path.join(dir, 'your-move-labels.jsonl'), 'utf8')).rejects.toThrow()
+
+    expect(await call('yourMove:exit', { cardId: 'c1', label: 'not-for-me' })).toMatchObject({
+      ok: true
+    })
+    expect(((await call('yourMove:list')) as CardView[]).find((c) => c.id === 'c1')).toMatchObject({
+      closedBy: 'not-for-me'
+    })
+    expect(error).toHaveBeenCalled()
     close()
   })
 })
