@@ -2523,6 +2523,22 @@
     "effortLabel": "Effort"
   },
   "systemMonitor": {
+    "stalls": {
+      "title": "Responsiveness",
+      "summary": "no stalls over 50 ms in the last hour | one stall over 50 ms in the last hour | {count} stalls over 50 ms in the last hour",
+      "threadMain": "Main process",
+      "threadRenderer": "Renderer",
+      "busy": "Busy",
+      "busyApproxHint": "A lower bound: the share of the last minute spent in tasks over 50 ms. This platform cannot read the thread's CPU.",
+      "over50": "> 50 ms",
+      "over100": "> 100 ms",
+      "over250": "> 250 ms",
+      "offenders": "Top offenders",
+      "none": "Nothing over 50 ms in the last hour",
+      "unattributed": "unattributed",
+      "times": "×{count}",
+      "off": "The stall monitor is off (HARNU_STALL_MONITOR=off)."
+    },
     "title": "System Monitor",
     "close": "Close monitor",
     "expand": "Expand {name}",

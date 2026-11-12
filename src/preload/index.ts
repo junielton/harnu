@@ -3190,6 +3190,7 @@ const api = {
   // The renderer's long-task observer reports each task over 50 ms to main, which keeps the one
   // aggregate and the one log. `monitorInjectStall` blocks a thread on purpose (only when the app
   // runs with HARNU_STALL_INJECT=1) so a demo or a test can prove the owner shows up.
+  monitorStallEnabled: (): Promise<boolean> => ipcRenderer.invoke('monitor:stallEnabled'),
   monitorStallReport: (batch: StallReportRecord[]): void =>
     ipcRenderer.send('monitor:stallReport', batch),
   monitorInjectStall: (thread: 'main' | 'renderer', ms: number): Promise<boolean> =>

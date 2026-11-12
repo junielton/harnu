@@ -48,6 +48,9 @@ export const useMonitorStore = defineStore('monitor', () => {
   /** The 'Sessions' group, sorted by RAM desc — parked rows (RSS `null`) sort last. */
   const sessionRows = computed(() => sortByRssDesc(lastSample.value?.sessions ?? []))
 
+  /** The stall monitor's summary (T697); `null` before the first sample and when the monitor is off. */
+  const stalls = computed(() => lastSample.value?.stalls ?? null)
+
   const harnuTotalBytes = computed(() => sumRssBytes(lastSample.value?.harnu ?? []))
   const sessionCounts = computed(() => countSessions(lastSample.value?.sessions ?? []))
 
@@ -75,6 +78,7 @@ export const useMonitorStore = defineStore('monitor', () => {
     history,
     harnuRows,
     sessionRows,
+    stalls,
     harnuTotalBytes,
     sessionCounts,
     sessionHistory,

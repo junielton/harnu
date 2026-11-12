@@ -5,7 +5,13 @@
  * same convention as `usage-dashboard-format.ts`.
  */
 
-import type { HeapSample, ProcSample, SessionSample } from '../../../preload'
+import type {
+  HeapSample,
+  ProcSample,
+  SessionSample,
+  StallOffender,
+  StallsSample
+} from '../../../preload'
 import type { FolderHue } from '../lib/folder-hue'
 
 /** `1.20 GB` / `410 MB` / `40 KB` — `null` (unmeasured/parked) renders as an em-dash. */
@@ -358,3 +364,32 @@ export interface SessionView {
  */
 export const TABLE_GRID =
   'grid grid-cols-[minmax(160px,1fr)_130px_52px_76px_minmax(280px,1.8fr)] @max-[960px]:grid-cols-[minmax(160px,1fr)_130px_52px_minmax(280px,1.8fr)] @max-[760px]:grid-cols-[minmax(130px,0.8fr)_120px_46px_minmax(250px,1.6fr)]'
+
+// ---- Responsiveness section (T697, design.md "Responsiveness section") ---------------------
+
+/** `37%`, `~12%` for a lower bound, `—` when the thread has not been measured yet (never a false `0%`). */
+export function formatBusyPct(pct: number | null, approx: boolean): string {
+  if (pct === null) return '—'
+  return `${approx ? '~' : ''}${Math.round(pct)}%`
+}
+
+/** `842 ms`, `1.2 s`. */
+export function formatStallMs(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`
+}
+
+/** Colour of a stall counter: quiet at zero, warning for the 50 / 100 ms buckets, red for 250 ms. */
+export function stallCountClass(bucketMs: 50 | 100 | 250, count: number): string {
+  if (count === 0) return 'text-text-3'
+  return bucketMs === 250 ? 'text-red' : 'text-warning'
+}
+
+/** Stalls over 50 ms in the last hour, both threads. */
+export function totalStalls(stalls: StallsSample | null | undefined): number {
+  return stalls ? stalls.main.over50 + stalls.renderer.over50 : 0
+}
+
+/** The native tooltip of an offender row: its name, and the sampled frames when it has them. */
+export function offenderTitle(o: StallOffender): string {
+  return o.frames && o.frames.length > 0 ? `${o.owner}\n${o.frames.join('\n')}` : o.owner
+}

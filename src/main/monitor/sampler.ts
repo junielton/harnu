@@ -280,6 +280,7 @@ export function registerMonitorHandlers(getWindow: () => BrowserWindow | null): 
   ipcMain.on('monitor:stallReport', (_e, batch: unknown): void => {
     getStallMonitor()?.reportRenderer(batch)
   })
+  ipcMain.handle('monitor:stallEnabled', (): boolean => getStallMonitor() !== null)
   ipcMain.handle('monitor:injectStall', (_e, thread: unknown, ms: unknown): boolean => {
     if (process.env.HARNU_STALL_INJECT !== '1') return false
     const duration = typeof ms === 'number' && Number.isFinite(ms) ? ms : 0
