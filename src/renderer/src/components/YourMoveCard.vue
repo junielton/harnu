@@ -10,7 +10,7 @@
  * operator deals with it (a button, Not for me, Already handled) or when its source resolves, and
  * opening the session leaves it where it is.
  */
-import { computed, ref } from 'vue'
+import { computed, defineComponent, h, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { CardView } from '../../../main/your-move/core'
 import {
@@ -32,15 +32,18 @@ const { t, te } = useI18n()
 const sessions = useSessionsStore()
 const yourMove = useYourMoveStore()
 
+// One lookup by id into the store's index: naming a card never scans the folders (BUG-261).
+const known = computed(() => sessions.sessionIndex.get(props.card.sessionId))
+
 const folderLabel = computed(
   () =>
-    sessions.folderAliasOf(props.card.sessionId) ||
+    known.value?.folderAlias ||
     props.card.folder.split('/').filter(Boolean).pop() ||
     props.card.folder
 )
 
 const sessionLabel = computed(() => {
-  const s = sessions.allSessions.find((x) => x.sessionId === props.card.sessionId)
+  const s = known.value?.session
   return (s && sessionTitle(s, sessions.allSessions, t)) || props.card.sessionId.slice(0, 8)
 })
 
@@ -50,7 +53,27 @@ const askText = computed(() => {
   return k && te(k.key) ? t(k.key, k.params) : props.card.ask
 })
 
-const clock = computed(() => formatClock(yourMove.now - props.card.openedAt))
+/**
+ * The running clock is its own component: the queue's 1 s timer re-renders this span and nothing
+ * else, so a card whose content did not change is not rendered again (BUG-261).
+ */
+const CardClock = defineComponent({
+  props: { openedAt: { type: Number, required: true } },
+  setup(p) {
+    const clock = computed(() => formatClock(yourMove.now - p.openedAt))
+    return () =>
+      h(
+        'span',
+        {
+          class: 'shrink-0 text-text-4 tabular-nums',
+          style: 'font-size: 10.5px',
+          title: t('yourMove.card.clock', { time: clock.value }),
+          'data-testid': 'your-move-clock'
+        },
+        clock.value
+      )
+  }
+})
 const buttons = computed(() => buttonsFor(props.card))
 
 const deliveryFailure = computed(() => {
@@ -128,14 +151,7 @@ async function run(action: CardAction): Promise<void> {
         <span class="min-w-0 flex-1 truncate text-text-3" style="font-size: 11.5px">
           {{ folderLabel }} · {{ sessionLabel }}
         </span>
-        <span
-          class="shrink-0 text-text-4 tabular-nums"
-          style="font-size: 10.5px"
-          :title="$t('yourMove.card.clock', { time: clock })"
-          data-testid="your-move-clock"
-        >
-          {{ clock }}
-        </span>
+        <CardClock :opened-at="card.openedAt" />
       </span>
       <span
         class="w-full text-text"

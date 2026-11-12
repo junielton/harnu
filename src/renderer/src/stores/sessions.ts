@@ -723,6 +723,21 @@ export const useSessionsStore = defineStore('sessions', () => {
   // Empty until `init()` populates it from the main process. While
   // `folders.length === 0` the Onboarding state is shown.
   const folders = ref<Folder[]>([])
+  /**
+   * Every session by id, with the alias of the folder that holds it (BUG-261). One pass over the
+   * folders per change to the model, so a surface that names many sessions (the Your move queue)
+   * reads each in O(1) instead of scanning every folder per lookup. First folder wins, as a scan did.
+   */
+  const sessionIndex = computed(() => {
+    const index = new Map<string, { session: Folder['sessions'][number]; folderAlias: string }>()
+    for (const f of folders.value) {
+      const folderAlias = f.alias || f.path
+      for (const session of f.sessions) {
+        if (!index.has(session.sessionId)) index.set(session.sessionId, { session, folderAlias })
+      }
+    }
+    return index
+  })
   // T180: true until init()'s first reloadModel() resolves. Lets the sidebar
   // distinguish "still scanning ~/.claude/projects/" from "genuinely empty".
   const foldersLoading = ref(true)
@@ -4225,10 +4240,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   /** Resolve a session's owning folder alias (for the notification body). */
   function folderAliasOf(sessionId: string): string {
-    for (const f of folders.value) {
-      if (f.sessions.some((s) => s.sessionId === sessionId)) return f.alias || f.path
-    }
-    return ''
+    return sessionIndex.value.get(sessionId)?.folderAlias ?? ''
   }
 
   /**
@@ -6178,6 +6190,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     selectedSession,
     selectedPath,
     allSessions,
+    sessionIndex,
     watcherStatus,
     prefsBySession,
     keyboardCursor,
