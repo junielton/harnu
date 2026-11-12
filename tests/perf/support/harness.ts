@@ -138,6 +138,8 @@ export const FS_FLOOR = 200
  */
 export const CPU_BUDGET_MS = 250
 const REPEATS = 6
+const QUICK_RUN_MS = 60
+const QUICK_REPEATS = 25
 
 async function runSize(c: PerfCase, factor: number, deadlineMs: number): Promise<SizeResult> {
   const spec = factor === 1 ? REFERENCE_SCALE : scaled(REFERENCE_SCALE, factor)
@@ -146,15 +148,18 @@ async function runSize(c: PerfCase, factor: number, deadlineMs: number): Promise
   const ctx: JobContext = { fixture, expired: () => expiredRef.value }
   try {
     let best: Measurement | null = null
-    for (let i = 0; i < REPEATS; i++) {
+    let repeats = REPEATS
+    for (let i = 0; i < repeats; i++) {
       const run = await c.prepare(ctx)
       const m = await measureOnce(run, deadlineMs, expiredRef)
       if (!m.completed) {
         best = m // already over the deadline: another run adds only time
         break
       }
+      // A run of a few milliseconds is mostly noise (GC, JIT, the scheduler): take the best of many.
+      if (i === 0 && m.wallMs < QUICK_RUN_MS) repeats = QUICK_REPEATS
       if (i === 0) continue // the first run only warms the JIT and the page cache
-      // Best = the run with the smallest busy run, then the smallest CPU: noise only adds.
+      // Best = the run with the smallest busy run, then the smallest cost: noise only adds.
       if (
         !best ||
         m.busyRunMs < best.busyRunMs ||
