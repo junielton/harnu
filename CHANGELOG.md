@@ -23,6 +23,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - The Your move queue is lighter on the screen: a card finds its folder and session name with one
   lookup instead of scanning every session, the running clock redraws only itself, and an
   unchanged card is no longer redrawn when the queue refreshes.
+- Typing hitches that were left even with Your move off. Listing a repo's worktrees no longer starts
+  a `git status` for all of them at once (a repo with 56 worktrees froze the app for over a second);
+  `git` and `gh` now start a few at a time, with the app free to handle your keystrokes in between.
+  Finding which repo a folder belongs to is remembered instead of walking up to `/` on every call,
+  and the sidebar no longer re-sorts shelved worktrees on every clock tick or refresh — only when
+  the folders or the shelved list actually change.
 
 ## 2026-11-09
 

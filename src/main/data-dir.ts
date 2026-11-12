@@ -64,7 +64,8 @@ export function dataDir(folder: string): string {
  * Missions are repo-scoped and shared by every worktree (design §9, decision 17), so a
  * session running in a linked worktree must read the MAIN checkout's `.harnu/missions/`.
  * Resolved synchronously from the `.git` layout — `runPolicy` is synchronous and runs on
- * every `pty:create`, so spawning `git rev-parse` here is not an option:
+ * every `pty:create`, so spawning `git rev-parse` here is not an option. Answers are cached per
+ * directory (see {@link ROOT_CACHE_TTL_MS}); only a directory's first resolution walks the disk:
  * - `<dir>/.git` is a directory → `<dir>` is the main checkout;
  * - `<dir>/.git` is a file (`gitdir: <common>/worktrees/<name>`) → follow the gitdir's
  *   `commondir` back to `<common>`, whose parent is the main checkout.
