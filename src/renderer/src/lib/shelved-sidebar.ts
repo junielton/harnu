@@ -80,28 +80,39 @@ export function partitionShelved<
   const byRepo = new Map<string, ShelvedMember<S>[]>()
   if (entries.length === 0) return { live: [...folders], byRepo }
 
-  const live = folders.filter((f) => !entries.some((e) => isInsidePath(f.path, e.worktreePath)))
+  // BUG-262: every path is normalized ONCE up front. The old shape normalized each folder against each
+  // shelved entry (folders x entries x 2 regex passes: 325-408 ms on a 56-worktree repo).
+  const roots = entries.map((e) => normalizePath(e.worktreePath))
+  const repos = entries.map((e) => normalizePath(e.repoPath))
+  const folderPaths = folders.map((f) => normalizePath(f.path))
+  const folderRepoDirs = folders.map((f) => (f.repoId ? dirname(f.repoId) : undefined))
+  const inside = (p: string, r: string): boolean =>
+    p === r || p.startsWith(r === '/' ? '/' : `${r}/`)
 
-  const repoIdOf = (e: ShelvedSource): string | undefined => {
-    const repo = normalizePath(e.repoPath)
-    for (const f of folders) {
-      if (f.repoId && dirname(f.repoId) === repo) return f.repoId
+  const live = folders.filter((_, i) => !roots.some((r) => inside(folderPaths[i], r)))
+
+  const repoIdOf = (ei: number): string | undefined => {
+    const repo = repos[ei]
+    for (let i = 0; i < folders.length; i++) {
+      if (folderRepoDirs[i] === repo) return folders[i].repoId
     }
-    for (const f of folders) {
-      if (f.isMainWorktree === true && f.repoId && normalizePath(f.path) === repo) return f.repoId
+    for (let i = 0; i < folders.length; i++) {
+      const f = folders[i]
+      if (f.isMainWorktree === true && f.repoId && folderPaths[i] === repo) return f.repoId
     }
     return undefined
   }
 
   const ranked = new Map<string, Array<{ at: number; member: ShelvedMember<S> }>>()
-  for (const e of entries) {
-    const repoId = repoIdOf(e)
+  for (let ei = 0; ei < entries.length; ei++) {
+    const e = entries[ei]
+    const repoId = repoIdOf(ei)
     if (!repoId) continue
     const sessions: S[] = []
     const seen = new Set<string>()
-    for (const f of folders) {
-      if (!isInsidePath(f.path, e.worktreePath)) continue
-      for (const s of f.sessions) {
+    for (let i = 0; i < folders.length; i++) {
+      if (!inside(folderPaths[i], roots[ei])) continue
+      for (const s of folders[i].sessions) {
         // Same exclusions as a normal folder row: terminals and subagent chains are never session rows.
         if (s.isShellTerminal || s.isSidechain) continue
         if (seen.has(s.sessionId)) continue
