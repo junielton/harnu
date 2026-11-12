@@ -35,6 +35,7 @@ import {
 } from './prefs'
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
 import { buildSegment } from './segment'
+import { locateTranscript } from './locate'
 import { createGateWatch, watchArchive, watchFolderRemoval } from './source-gate'
 import { reconcileMissions, selectForReconcile } from './source-mission'
 import { readFrom } from './transcript'
@@ -75,27 +76,6 @@ function promptPath(name: string): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'your-move', name)
     : path.join(app.getAppPath(), 'resources', 'your-move', name)
-}
-
-/** `~/.claude/projects/<slug>/<id>.jsonl`, found by id: the renderer never names a path. */
-async function locateTranscript(sessionId: string): Promise<string | null> {
-  const root = path.join(os.homedir(), '.claude', 'projects')
-  let slugs: string[]
-  try {
-    slugs = await fs.readdir(root)
-  } catch {
-    return null
-  }
-  for (const slug of slugs) {
-    const candidate = path.join(root, slug, `${sessionId}.jsonl`)
-    try {
-      await fs.access(candidate)
-      return candidate
-    } catch {
-      /* not in this slug */
-    }
-  }
-  return null
 }
 
 /** The first `cwd` the transcript names: where a session with no hook payload runs. */
