@@ -87,9 +87,7 @@ const buckets = [
               :data-testid="`stalls-${b.key}`"
               >{{ th.data[b.key] }}</span
             >
-            <span class="text-[10.5px] uppercase text-text-4">{{
-              t(`systemMonitor.stalls.${b.key}`)
-            }}</span>
+            <span class="text-[10.5px] text-text-4">{{ t(`systemMonitor.stalls.${b.key}`) }}</span>
           </div>
         </div>
 

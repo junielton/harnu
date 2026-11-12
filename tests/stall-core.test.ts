@@ -251,6 +251,9 @@ describe('owner wrappers', () => {
     )
     expect(timerOwnerName({ name: 'sweep' }, 'a.ts:1')).toBe('timer:sweep (a.ts:1)')
     expect(timerOwnerName({ name: '' }, 'a.ts:1')).toBe('timer:a.ts:1')
+    expect(timerOwnerName({ name: '' }, 'a.ts:1', '() => void sweep(e)')).toBe(
+      'timer:a.ts:1 () => void sweep(e)'
+    )
     expect(timerOwnerName({ name: '' }, null)).toBe('timer:anonymous')
   })
 

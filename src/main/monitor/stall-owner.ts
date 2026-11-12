@@ -23,12 +23,20 @@ export const spans = createSpanRing()
  */
 export function withOwner<T>(owner: string, kind: OwnerKind, fn: () => T): T {
   const start = performance.now()
+  const outerChildMs = childMs
+  childMs = 0
   try {
     return fn()
   } finally {
-    spans.record(owner, kind, start, performance.now())
+    const end = performance.now()
+    const total = end - start
+    spans.record(owner, kind, start, end, Math.max(0, total - childMs))
+    childMs = outerChildMs + total
   }
 }
+
+/** Time spent in owners nested inside the one currently running, so an outer owner counts only its own share. */
+let childMs = 0
 
 // ---- ipcMain -------------------------------------------------------------------------------
 
@@ -98,11 +106,24 @@ export function callsiteOf(stack: string | undefined): string | null {
   return null
 }
 
-/** `timer:<function name> (<file:line>)`, whichever parts are known. */
-export function timerOwnerName(handler: { name?: string }, callsite: string | null): string {
+/** The first characters of an anonymous callback's source: `() => void sweep(e)` says what a bundle line number does not. */
+const sourceSnippet = (handler: unknown): string =>
+  String(handler).replace(/\s+/g, ' ').trim().slice(0, 48)
+
+/**
+ * `timer:<function name> (<file:line>)`; an anonymous callback is named by its call site and the start
+ * of its source, which is all a bundled build leaves.
+ */
+export function timerOwnerName(
+  handler: { name?: string },
+  callsite: string | null,
+  snippet = ''
+): string {
   const fn = handler.name && handler.name !== 'anonymous' ? handler.name : ''
   if (fn && callsite) return `timer:${fn} (${callsite})`
-  return `timer:${fn || callsite || 'anonymous'}`
+  if (fn) return `timer:${fn}`
+  if (callsite && snippet) return `timer:${callsite} ${snippet}`
+  return `timer:${callsite || snippet || 'anonymous'}`
 }
 
 /**
@@ -118,7 +139,7 @@ export function patchSetInterval(target: { setInterval: typeof setInterval }): (
     }
     const probe: { stack?: string } = {}
     Error.captureStackTrace(probe, patched)
-    const name = timerOwnerName(handler, callsiteOf(probe.stack))
+    const name = timerOwnerName(handler, callsiteOf(probe.stack), sourceSnippet(handler))
     return (original as (...a: unknown[]) => unknown).call(
       this,
       function (this: unknown, ...args: unknown[]) {

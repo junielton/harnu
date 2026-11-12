@@ -29,12 +29,12 @@ export const MAX_RUN_MS = 5_000
 export type Thread = 'main' | 'renderer'
 
 /**
- * Who was running. `ipc`, `timer`, `job`, `action` and `component` are known owners (a wrapper saw
+ * Who was running. `ipc` (a main-process handler), `event` (a renderer IPC event callback), `timer`, `job`, `action` and `component` are known owners (a wrapper saw
  * them start); `sampled` is the top application frame of a stack sampled while the stall was in
  * progress; `unattributed` is a stall nobody could name.
  */
 export type OwnerKind =
-  'ipc' | 'timer' | 'job' | 'action' | 'component' | 'sampled' | 'unattributed'
+  'ipc' | 'event' | 'timer' | 'job' | 'action' | 'component' | 'sampled' | 'unattributed'
 
 export const UNATTRIBUTED = 'unattributed'
 
@@ -159,6 +159,8 @@ export interface OwnerSpan {
   kind: OwnerKind
   startMs: number
   endMs: number
+  /** The part of the span not spent inside a nested owner (defaults to the whole span). */
+  selfMs?: number
 }
 
 /** Spans shorter than this are not kept: a stall is made of the long ones. */
@@ -170,16 +172,16 @@ const SPAN_RING_SIZE = 512
  * at least {@link MIN_SPAN_MS}). A stall asks which owner overlapped it the most.
  */
 export function createSpanRing(max = SPAN_RING_SIZE): {
-  record(owner: string, kind: OwnerKind, startMs: number, endMs: number): void
+  record(owner: string, kind: OwnerKind, startMs: number, endMs: number, selfMs?: number): void
   best(startMs: number, endMs: number): { owner: string; kind: OwnerKind } | null
   size(): number
 } {
   const ring: OwnerSpan[] = []
   let head = 0
   return {
-    record(owner, kind, startMs, endMs) {
+    record(owner, kind, startMs, endMs, selfMs) {
       if (endMs - startMs < MIN_SPAN_MS) return
-      const span = { owner, kind, startMs, endMs }
+      const span: OwnerSpan = { owner, kind, startMs, endMs, selfMs }
       if (ring.length < max) ring.push(span)
       else {
         ring[head] = span
@@ -189,7 +191,10 @@ export function createSpanRing(max = SPAN_RING_SIZE): {
     best(startMs, endMs) {
       const overlapBy = new Map<string, { kind: OwnerKind; ms: number }>()
       for (const s of ring) {
-        const ms = Math.min(s.endMs, endMs) - Math.max(s.startMs, startMs)
+        const overlap = Math.min(s.endMs, endMs) - Math.max(s.startMs, startMs)
+        if (overlap <= 0) continue
+        // A span that wraps another owner counts only for its own share: the inner owner is the better name.
+        const ms = s.selfMs === undefined ? overlap : overlap * (s.selfMs / (s.endMs - s.startMs))
         if (ms <= 0) continue
         const prev = overlapBy.get(s.owner)
         if (prev) prev.ms += ms
@@ -327,6 +332,7 @@ export const encodeRecord = (r: StallRecord): string => JSON.stringify(r) + '\n'
 
 const KINDS: ReadonlySet<string> = new Set([
   'ipc',
+  'event',
   'timer',
   'job',
   'action',

@@ -10073,7 +10073,7 @@ text-text-2` label as `SESSIONS`), `{n} stalls over 50 ms in the last hour` (`te
    thread's own CPU share on the renderer (Linux; elsewhere the share spent inside long tasks, shown with
    a leading `~` and a native-title tooltip saying so). A `null` reading renders `—`, never `0%`.
 2. **Three counters**, `grid-cols-3 gap-2`: `> 50 ms`, `> 100 ms`, `> 250 ms` (the last hour). Each is
-   a `font-mono text-[15px] font-semibold` count over a `text-[10.5px] uppercase text-text-4` label.
+   a `font-mono text-[15px] font-semibold` count over a `text-[10.5px] text-text-4` label (not uppercase: `ms` stays lowercase).
    A zero count is `text-text-3`; a non-zero `> 50` and `> 100` count is `text-warning`, a non-zero
    `> 250` count is `text-red`. The counters are nested: a 300 ms task counts in all three.
 3. **Top offenders**, a `border-t border-border` list under a `text-[10.5px] uppercase tracking-wide
@@ -10081,7 +10081,7 @@ text-text-4` `TOP OFFENDERS` label, up to 5 rows ranked by total stalled time, e
    `text-[11.5px]`: the owner name (`font-mono`, `truncate`, native title = the full name and, for an
    unattributed stall, the sampled top frames), the count (`font-mono text-text-3`, `×12`, 40px
    right), and the worst duration (`font-mono`, 56px right, `842 ms`). An owner is a job, an IPC
-   channel, a timer, a store action or a component: the first thing that was running. A stall nobody
+   channel or event, a timer, a store action or a component: the thing that held the thread the longest. A stall nobody
    owned reads `unattributed` in `text-text-3 italic` (never hidden: a stall with no name is the
    finding). No offenders reads `Nothing over 50 ms in the last hour` (`text-[11.5px] text-text-3`)
    with a 12px `Check` in `text-green`.

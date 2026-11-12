@@ -3,7 +3,7 @@
  *
  * The thread that is stuck cannot say what it is doing, so a worker thread watches a shared
  * heartbeat counter the main thread increments on every probe tick. When the counter has not moved
- * for 50 ms the worker connects to the main thread through the inspector, asks it to pause, reads
+ * for 1.6 probe periods (80 ms) the worker connects to the main thread through the inspector, asks it to pause, reads
  * the call stack of the paused thread and resumes it at once. A sample is kept only if the counter
  * is still unchanged when the pause lands (the same task is still running), so a stack is never
  * attributed to a task that already ended. Samples cost the main thread one pause of well under a

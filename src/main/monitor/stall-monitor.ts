@@ -19,12 +19,11 @@ import {
   createBusyRunTracker,
   createStallAggregator,
   sanitizeRecord,
-  STALL_THRESHOLD_MS,
   type StallRecord,
   type StallSummary,
   type Thread
 } from './stall-core'
-import { startLoopProbe, type LoopProbe } from './loop-probe'
+import { PROBE_PERIOD_MS, startLoopProbe, type LoopProbe } from './loop-probe'
 import { createStallLog, type StallLog } from './stall-log'
 import { patchSetInterval, spans, withOwner, wrapIpcMain, type IpcMainLike } from './stall-owner'
 import { startStallWatchdog, type StallWatchdog } from './stall-watchdog'
@@ -69,7 +68,9 @@ export function startStallMonitor(opts: StallMonitorOptions): StallMonitor {
   if (opts.patchTimers !== false) undo.push(patchSetInterval(globalThis as never))
 
   const watchdog: StallWatchdog | null =
-    opts.watchdog === false ? null : startStallWatchdog({ thresholdMs: STALL_THRESHOLD_MS })
+    opts.watchdog === false
+      ? null
+      : startStallWatchdog({ thresholdMs: Math.round(PROBE_PERIOD_MS * 1.6) })
 
   const record = (r: StallRecord): void => {
     aggregator.add(r)

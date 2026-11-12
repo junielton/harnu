@@ -7,21 +7,30 @@ named by the app and stopped by CI.
 
 ## The in-app stall monitor
 
-- **Main thread** (`src/main/monitor/stall-*.ts`, `loop-probe.ts`): a 25 ms heartbeat turns the event
-  loop's utilisation into busy runs; a run of 50 ms or more is a stall (one long task, or a flood of
-  short ones that never lets the loop idle). Owners come from `withOwner` (every IPC handler and
-  `setInterval` callback is wrapped at startup), and a watchdog worker samples the stack of a stall nobody
-  owns (inspector `Debugger.pause` from a worker thread, resumed at once, kept only if the same task is
-  still running).
-- **Renderer** (`src/renderer/src/lib/stall-observer.ts`): a `longtask` observer; owners are Pinia
-  actions (`store:<id>.<action>`, synchronous part) and component render functions (`component:<Name>`),
-  which is where a computed that reads the fleet is evaluated.
+- **Main thread** (`src/main/monitor/stall-*.ts`, `loop-probe.ts`): a 50 ms heartbeat turns each slice into
+  a busy time (the larger of the thread's own CPU time, `process.threadCpuUsage()`, and the tick's lateness),
+  and a busy run of 50 ms or more is a stall (one long task, or a flood of short ones that never lets the loop
+  idle). `performance.eventLoopUtilization()` is NOT usable: inside Electron's main process it reads 0 forever
+  (verified live). A computing task is measured exactly; a task that only blocks (a sync wait on a child
+  process) to within one period. Owners come from `withOwner` (every IPC handler and `setInterval` callback is
+  wrapped at startup; the innermost owner wins), and a watchdog worker samples the stack of a stall nobody owns
+  (inspector `Debugger.pause` from a worker thread, resumed at once, kept only if the same task is still
+  running).
+- **Renderer** (`src/renderer/src/lib/stall-observer.ts`): a `longtask` observer (exact) plus a 25 ms
+  heartbeat. The heartbeat is needed because the Long Tasks API does not report tasks Electron starts from an
+  IPC message (verified live: a 300 ms block inside an `ipcRenderer` callback never shows up), and those are
+  the fleet updates pushed by main. A late tick that no observer entry covers is reported after 400 ms.
+  Owners are Pinia actions (`store:<id>.<action>`, synchronous part), component render functions
+  (`component:<Name>`, where a computed that reads the fleet is evaluated) and the preload's timed IPC event
+  callbacks (`event:<channel>`, asked through `monitorOwnerHint`).
 - One aggregate and one log (`stalls.jsonl`, 1 MiB + one previous generation, 24 h) live in main. The
   System Monitor's Responsiveness section reads the aggregate from `monitor:sample`.
 - Pure decisions are in `src/shared/stall-core.ts` (shared by both threads and unit tested).
 - `HARNU_STALL_MONITOR=off` disables everything. `HARNU_STALL_INJECT=1` lets `window.api.monitorInjectStall('main' | 'renderer', ms)` block a thread on purpose (used for the demo and for live verification).
 - Overhead is measured in `tests/perf/monitor-overhead.perf.ts` (idle main thread, IPC wrapper per call,
-  Pinia action wrapper per call). A wake-up of the loop is the cost, not the callback, which is why the heartbeat is slow.
+  Pinia action wrapper per call) and live in Electron (see the T697 report: about +0.6% of the main thread and
+  +0.6% of the renderer thread, idle). A wake-up of the loop is the cost, not the callback, which is why the
+  heartbeats are slow.
 
 ## The suite
 

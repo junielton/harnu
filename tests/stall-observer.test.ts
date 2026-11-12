@@ -23,23 +23,37 @@ describe('renderer stall reporter', () => {
     const sent: StallRecord[][] = []
     const timers: Array<() => void> = []
     const spans = createSpanRing()
+    let t = 10_000
+    const hints: Array<{ owner: string; kind: 'event' } | null> = []
     const reporter = createStallReporter({
       send: (b) => sent.push(b),
       timeOrigin: 1_000_000,
       spans,
+      now: () => t,
+      hint: () => hints.shift() ?? null,
       setTimer: (fn) => timers.push(fn)
     })
-    return { sent, timers, spans, reporter }
+    return {
+      sent,
+      timers,
+      spans,
+      reporter,
+      hints,
+      advance: (ms: number) => {
+        t += ms
+      },
+      run: () => timers.splice(0).forEach((f) => f())
+    }
   }
 
   it('names a long task by the owner that overlapped it and batches the report', () => {
-    const { sent, timers, spans, reporter } = setup()
+    const { sent, timers, spans, reporter, run } = setup()
     spans.record('store:sessions.load', 'action', 1000, 1230)
     reporter.onLongTask(1000, 240)
     reporter.onLongTask(5000, 90) // nobody owned this one
     expect(sent).toEqual([]) // batched, not sent per task
     expect(timers).toHaveLength(1)
-    timers[0]()
+    run()
     expect(sent).toHaveLength(1)
     expect(sent[0]).toEqual([
       {
@@ -62,9 +76,48 @@ describe('renderer stall reporter', () => {
   it('ignores tasks under 50 ms', () => {
     const { sent, timers, reporter } = setup()
     reporter.onLongTask(0, 49)
+    reporter.onLateTick(0, 49)
     expect(timers).toHaveLength(0)
     reporter.flush()
     expect(sent).toEqual([])
+  })
+
+  it('a late heartbeat tick no observer entry covers is reported after a short wait, named by the IPC event hint', () => {
+    const { sent, reporter, hints, advance, run } = setup()
+    hints.push({ owner: 'event:fleet:updated', kind: 'event' })
+    reporter.onLateTick(2000, 2210)
+    run() // too early: the observer entry may still arrive
+    expect(sent).toEqual([])
+    advance(500)
+    run()
+    expect(sent[0]).toEqual([
+      {
+        atMs: 1_002_210,
+        thread: 'renderer',
+        durationMs: 210,
+        owner: 'event:fleet:updated',
+        ownerKind: 'event'
+      }
+    ])
+  })
+
+  it('an observer entry that arrives in time replaces the heartbeat estimate of the same stall', () => {
+    const { sent, reporter, advance, run } = setup()
+    reporter.onLateTick(2000, 2210)
+    reporter.onLongTask(2005, 200)
+    advance(500)
+    run()
+    expect(sent.flat()).toHaveLength(1)
+    expect(sent.flat()[0].durationMs).toBe(200) // the exact one
+  })
+
+  it('a heartbeat estimate is dropped when an exact entry already covers it', () => {
+    const { sent, reporter, advance, run } = setup()
+    reporter.onLongTask(2005, 200)
+    reporter.onLateTick(2000, 2210)
+    advance(500)
+    run()
+    expect(sent.flat()).toHaveLength(1)
   })
 })
 
