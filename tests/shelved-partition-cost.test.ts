@@ -12,8 +12,8 @@ const REPO = '/home/u/org/api-gateway'
 
 function counted(path: string, hits: { n: number }): string {
   // A String subclass whose `replace` (the first step of normalizePath) is counted.
-  const s = new String(path) as String & { replace: typeof String.prototype.replace }
-  s.replace = function (this: String, ...a: Parameters<typeof String.prototype.replace>) {
+  const s = new String(path) as unknown as { replace: typeof String.prototype.replace }
+  s.replace = function (...a: Parameters<typeof String.prototype.replace>) {
     hits.n++
     return String.prototype.replace.apply(path, a)
   } as typeof String.prototype.replace

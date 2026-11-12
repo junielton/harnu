@@ -155,7 +155,7 @@ async function spawnGh(
   args: readonly string[],
   opts: GhRunOptions,
   common: {
-    cwd: string
+    cwd?: string
     timeout?: number
     maxBuffer?: number
     windowsHide: boolean
