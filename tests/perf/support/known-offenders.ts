@@ -6,6 +6,12 @@
  *
  * `PERF_STRICT=1` ignores this list: that is how the red run is produced.
  */
-export const KNOWN_OFFENDERS: Readonly<Record<string, string>> = {}
+export const KNOWN_OFFENDERS: Readonly<Record<string, string>> = {
+  // Your move resolves a transcript by probing every project slug with fs.access.
+  'main/your-move-gate-tick': 'BUG-261',
+  'main/your-move-mid-turn-sweep': 'BUG-261',
+  // The sidebar's shelvedPartition compares every folder with every shelved worktree.
+  'renderer/partition-shelved': 'BUG-262'
+}
 
 export const isStrict = (): boolean => process.env.PERF_STRICT === '1'
