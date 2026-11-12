@@ -31,6 +31,7 @@ const beat = new Int32Array(workerData.sab)
 const THRESHOLD_MS = workerData.thresholdMs
 const MAX_PER_STALL = 4
 const SPACING_MS = 80
+const POLL_MS = 20
 const IDLE_DISABLE_MS = 30000
 
 const session = new inspector.Session()
@@ -107,7 +108,7 @@ if (connected) {
     setTimeout(() => {
       busy = false
     }, 250)
-  }, 10)
+  }, POLL_MS)
 }
 `
 

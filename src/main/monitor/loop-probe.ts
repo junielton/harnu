@@ -5,14 +5,18 @@
  *
  * Each tick asks `performance.eventLoopUtilization()` how much of the time since the last tick the
  * loop spent running JavaScript. A single long task and a flood of short ones both show up as a
- * stretch of fully busy slices. The probe's own cost is one `setInterval` callback per period, a
- * few microseconds each.
+ * stretch of fully busy slices. The probe's own cost is one `setInterval` callback per period.
  */
 
 import { performance } from 'node:perf_hooks'
 import type { LoopSlice } from './stall-core'
 
-export const PROBE_PERIOD_MS = 5
+/**
+ * One wake-up of the event loop costs real CPU (measured: ~0.6% of a thread at 20 ms, ~1.8% at 5 ms,
+ * even for an empty callback), so the heartbeat is slow. Detection does not need it fast: a slice that
+ * holds a task is classified by its exact busy time (`stall-core.ts`, solo slices).
+ */
+export const PROBE_PERIOD_MS = 25
 
 export interface LoopProbe {
   stop(): void

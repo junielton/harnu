@@ -21,6 +21,8 @@ export const STALL_BUCKETS_MS = [50, 100, 250] as const
 export const SUMMARY_WINDOW_MS = 60 * 60 * 1000
 /** A loop slice counts as busy at or above this utilisation (a 50 ms task in a 55 ms slice is 0.91). */
 export const BUSY_RATIO = 0.85
+/** A slice that is at least this busy and holds a task over the threshold is a stall on its own. */
+export const SOLO_RATIO = 0.5
 /** An unbroken busy run is reported in chunks of at most this long. */
 export const MAX_RUN_MS = 5_000
 
@@ -132,8 +134,18 @@ export function createBusyRunTracker(opts: {
         if (runStart === null) runStart = slice.startMs
         runEnd = slice.endMs
         if (runEnd - runStart >= maxRun) close()
-      } else {
-        close()
+        return
+      }
+      close()
+      // One task long enough to be a stall on its own, whose slice also holds the idle gap that came
+      // before it (the heartbeat could not tick while the task ran, so the slice spans both): its busy
+      // time is exact, the idle part is not part of the stall.
+      if (slice.activeMs >= threshold && slice.activeMs / wall >= SOLO_RATIO) {
+        opts.onRun({
+          startMs: slice.endMs - slice.activeMs,
+          endMs: slice.endMs,
+          durationMs: slice.activeMs
+        })
       }
     },
     flush: close

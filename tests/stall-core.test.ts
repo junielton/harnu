@@ -54,6 +54,14 @@ describe('busy run tracker', () => {
     expect(runs([slice(0, 55, 50)])).toHaveLength(1)
   })
 
+  it('a task over the limit is a stall on its own even when its slice holds the idle gap before it', () => {
+    // 20 ms of idle, then 50 ms of work, then the heartbeat could tick: one slice of 70 ms.
+    expect(runs([slice(0, 70, 50)])).toEqual([{ startMs: 20, endMs: 70, durationMs: 50 }])
+    // Mostly idle with a small task: nothing.
+    expect(runs([slice(0, 200, 60)])).toEqual([])
+    expect(runs([slice(0, 80, 49)])).toEqual([])
+  })
+
   it('a loop that works a lot but yields every few milliseconds is not a stall', () => {
     const busyButYielding = Array.from({ length: 100 }, (_, i) => slice(i * 10, i * 10 + 10, 7))
     expect(runs(busyButYielding)).toEqual([])
