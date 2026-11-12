@@ -72,6 +72,9 @@ import {
 } from './browser/folder-flag-ipc'
 import { pageSchemeEntry } from './browser/page-service'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
+import { isStallMonitorDisabled, startStallMonitor } from './monitor/stall-monitor'
+import { getStallMonitor, setStallMonitor } from './monitor/stall-registry'
+import type { IpcMainLike } from './monitor/stall-owner'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
 import {
   registerBundledSkillsHandlers,
@@ -517,6 +520,17 @@ process.on('unhandledRejection', (reason) => {
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.harnu.app')
+
+  // T697: the stall monitor starts first so every IPC handler and interval registered after this
+  // line names itself when it holds the main thread. `HARNU_STALL_MONITOR=off` switches it off.
+  if (!isStallMonitorDisabled()) {
+    setStallMonitor(
+      startStallMonitor({
+        logDir: app.getPath('userData'),
+        ipcMain: ipcMain as unknown as IpcMainLike
+      })
+    )
+  }
 
   // Per-repo data dir copy (legacy `.capy/` → `.harnu/`), AFTER the userData migration
   // above and BEFORE any memory/roadmap/mission watcher below binds. Capped by a time
@@ -1248,6 +1262,7 @@ app.on('before-quit', async (event) => {
   }
   stopHeartbeat()
   stopFullSamplerForced()
+  void getStallMonitor()?.stop()
   // MCP teardown (fail-closed): deny every parked agent confirm + reject every
   // in-flight CommandBridge dispatch synchronously, so nothing actuates during
   // shutdown. The server's async close (stop listener + SSE connections + delete

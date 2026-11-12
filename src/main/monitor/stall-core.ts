@@ -21,6 +21,8 @@ export const STALL_BUCKETS_MS = [50, 100, 250] as const
 export const SUMMARY_WINDOW_MS = 60 * 60 * 1000
 /** A loop slice counts as busy at or above this utilisation (a 50 ms task in a 55 ms slice is 0.91). */
 export const BUSY_RATIO = 0.85
+/** An unbroken busy run is reported in chunks of at most this long. */
+export const MAX_RUN_MS = 5_000
 
 export type Thread = 'main' | 'renderer'
 
@@ -102,9 +104,15 @@ export interface BusyRun {
 export function createBusyRunTracker(opts: {
   thresholdMs?: number
   busyRatio?: number
+  /**
+   * A run still open after this long is reported and a new one starts, so a loop that never goes idle
+   * (a flood of short tasks) is visible while it is happening, in chunks of this size.
+   */
+  maxRunMs?: number
   onRun(run: BusyRun): void
 }): { push(slice: LoopSlice): void; flush(): void } {
   const threshold = opts.thresholdMs ?? STALL_THRESHOLD_MS
+  const maxRun = opts.maxRunMs ?? MAX_RUN_MS
   const ratio = opts.busyRatio ?? BUSY_RATIO
   let runStart: number | null = null
   let runEnd = 0
@@ -123,6 +131,7 @@ export function createBusyRunTracker(opts: {
       if (slice.activeMs / wall >= ratio) {
         if (runStart === null) runStart = slice.startMs
         runEnd = slice.endMs
+        if (runEnd - runStart >= maxRun) close()
       } else {
         close()
       }

@@ -103,6 +103,7 @@ import type {
 import type { UsageCostSummary } from '../main/usage-cost'
 import type { UsageBiSnapshot, UsageBiRange } from '../main/usage-bi'
 import type { HeapSample, MonitorSample } from '../main/monitor/types'
+import type { StallRecord as StallReportRecord } from '../main/monitor/stall-core'
 import type { Policy } from '../main/fleet-policy'
 import type { ImageEntry } from '../main/image-cache'
 import type { FolderLinkGroup, SessionLink } from '../main/session-links'
@@ -466,7 +467,19 @@ export type {
 // System Monitor wire types (T127 S1). `monitor/types.ts` is a pure module (no
 // node deps), so the renderer imports its shapes directly; `Policy` is likewise
 // plain data from the pure `fleet-policy.ts`.
-export type { HeapSample, ProcSample, SessionSample, MonitorSample } from '../main/monitor/types'
+export type {
+  HeapSample,
+  ProcSample,
+  SessionSample,
+  MonitorSample,
+  StallsSample,
+  ThreadStalls
+} from '../main/monitor/types'
+export type {
+  Offender as StallOffender,
+  StallRecord,
+  OwnerKind as StallOwnerKind
+} from '../main/monitor/stall-core'
 export type { Policy } from '../main/fleet-policy'
 export type { SessionAnatomy, EnrichedWindow, EnrichedWindowSession } from '../main/usage-bi-core'
 // Pasted-images gallery: `image-cache.ts` keeps its type next to the pure core.
@@ -3173,6 +3186,16 @@ const api = {
   monitorPolicyGet: (): Promise<Policy> => ipcRenderer.invoke('monitor:policyGet'),
   monitorPolicySet: (patch: Partial<Policy>): Promise<Policy> =>
     ipcRenderer.invoke('monitor:policySet', patch),
+  // ---- Stall monitor (T697) ---------------------------------------------------
+  // The renderer's long-task observer reports each task over 50 ms to main, which keeps the one
+  // aggregate and the one log. `monitorInjectStall` blocks a thread on purpose (only when the app
+  // runs with HARNU_STALL_INJECT=1) so a demo or a test can prove the owner shows up.
+  monitorStallReport: (batch: StallReportRecord[]): void =>
+    ipcRenderer.send('monitor:stallReport', batch),
+  monitorInjectStall: (thread: 'main' | 'renderer', ms: number): Promise<boolean> =>
+    ipcRenderer.invoke('monitor:injectStall', thread, ms),
+  onMonitorInjectStall: (cb: (ms: number) => void): (() => void) =>
+    subscribe('monitor:injectStall', cb),
 
   // ---- Your move (U1) ---------------------------------------------------------
   // The setting (Off / Observe / Live) and the debug list behind Settings → Your move.
