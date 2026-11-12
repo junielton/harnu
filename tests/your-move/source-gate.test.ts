@@ -304,6 +304,28 @@ describe('the gate watch', () => {
     expect(w.reads.mock.calls.length).toBe(once)
   })
 
+  it('the sweep does not look up a session that has ended (AC-2)', async () => {
+    const locate = vi.fn(async () => file)
+    const w = watch({ locate })
+    w.states.set('sess-done', 'completed')
+    w.states.set('sess-stopped', 'stopped')
+    await w.gate.tick()
+    await w.gate.tick()
+    expect(locate).not.toHaveBeenCalled()
+  })
+
+  it('an ended session that still holds an open gate card is looked at until it closes (AC-2)', async () => {
+    await writeFile(file, jsonl([ask('toolu_1')]))
+    const w = watch()
+    w.states.set('sess-0001', 'needs-input')
+    await w.gate.tick()
+    expect(open()).toHaveLength(1)
+    await writeFile(file, jsonl([ask('toolu_1'), toolResult('toolu_1')]))
+    w.states.set('sess-0001', 'completed')
+    await w.gate.tick()
+    expect(open()).toHaveLength(0)
+  })
+
   it('the sweep checks a session whose transcript grew, with no needs-input edge', async () => {
     await writeFile(file, jsonl([asstText('working on it')]))
     const w = watch()
