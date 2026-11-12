@@ -46,6 +46,22 @@ export function shelvedDays(e: Pick<ShelvedSource, 'shelvedAt'>, nowMs: number):
   return Math.max(0, Math.floor((nowMs - e.shelvedAt) / DAY_MS))
 }
 
+/** Whether two shelved lists describe the same rows (what the partition reads), so a refresh can be ignored. */
+export function sameShelvedList(a: readonly ShelvedSource[], b: readonly ShelvedSource[]): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  return a.every((x, i) => {
+    const y = b[i]
+    return (
+      x.id === y.id &&
+      x.repoPath === y.repoPath &&
+      x.worktreePath === y.worktreePath &&
+      x.branch === y.branch &&
+      x.shelvedAt === y.shelvedAt
+    )
+  })
+}
+
 /** The identity of a shelved row: the branch survives the folder; a detached worktree shows its folder name. */
 export function shelvedLabel(e: Pick<ShelvedSource, 'branch' | 'worktreePath'>): string {
   return e.branch ?? (basename(e.worktreePath) || e.worktreePath)

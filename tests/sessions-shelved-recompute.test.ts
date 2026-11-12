@@ -71,7 +71,7 @@ const shelvedEntry = (over: Record<string, unknown> = {}): GcSnapshot['shelved']
     branch: 'PROJ-231-auth-refresh',
     headSha: 'abc123',
     namespace: 'refs/archive/x',
-    shelvedAt: Date.now() - 9 * DAY,
+    shelvedAt: Date.now() - 9.5 * DAY, // mid-day: a 30 s tick must not flip the whole-day count
     idleDays: 11,
     reason: 'Shelved',
     freedBytes: null,
