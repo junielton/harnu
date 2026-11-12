@@ -168,7 +168,10 @@ interface FleetFolder {
  * checkout of a repo with its linked worktrees (some cut by the orchestrator at the main one), and
  * the folders of shelved worktrees, which the scan still reports because their transcripts remain.
  */
-function fleetFolders(f: ScaleFixture): { folders: FleetFolder[]; shelved: ShelvedSource[] } {
+function fleetFolders(
+  f: ScaleFixture,
+  reads?: { n: number }
+): { folders: FleetFolder[]; shelved: ShelvedSource[] } {
   const repoPath = '/home/dev/Workspace/org/main'
   const repoId = `${repoPath}/.git`
   const perFolder = Math.max(1, Math.round(f.spec.knownSessions / f.spec.slugs))
@@ -215,6 +218,19 @@ function fleetFolders(f: ScaleFixture): { folders: FleetFolder[]; shelved: Shelv
       shelvedAt: 1_760_000_000_000 - w * 86_400_000
     })
   }
+  // The counting pass: every read of a folder's path is counted, so a loop over every folder inside a
+  // loop over every shelved worktree is an exact quadratic, not a timing.
+  if (reads) {
+    for (const fo of folders) {
+      const path = fo.path
+      Object.defineProperty(fo, 'path', {
+        get() {
+          reads.n++
+          return path
+        }
+      })
+    }
+  }
   return { folders, shelved }
 }
 
@@ -223,7 +239,7 @@ const partitionCase: PerfCase = {
   thread: 'renderer',
   describes: 'sidebar shelvedPartition computed: every folder against every shelved worktree',
   prepare(ctx) {
-    const { folders, shelved } = fleetFolders(ctx.fixture)
+    const { folders, shelved } = fleetFolders(ctx.fixture, ctx.counting ? ctx.reads : undefined)
     return () => {
       partitionShelved(folders, shelved, 1_760_000_000_000)
     }
@@ -235,7 +251,7 @@ const groupingCase: PerfCase = {
   thread: 'renderer',
   describes: 'sidebar zone classification and repo grouping of the whole fleet',
   prepare(ctx) {
-    const { folders } = fleetFolders(ctx.fixture)
+    const { folders } = fleetFolders(ctx.fixture, ctx.counting ? ctx.reads : undefined)
     const zoneCtx = {
       nowMs: 1_760_000_000_000,
       activeWindowMs: 3_600_000,
@@ -254,7 +270,7 @@ const lineageCase: PerfCase = {
   thread: 'renderer',
   describes: 'sidebar worktree lineage nesting of the whole fleet',
   prepare(ctx) {
-    const { folders } = fleetFolders(ctx.fixture)
+    const { folders } = fleetFolders(ctx.fixture, ctx.counting ? ctx.reads : undefined)
     return () => {
       nestByLineage(folders, new Set())
     }

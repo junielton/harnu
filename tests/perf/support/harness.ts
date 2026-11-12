@@ -37,6 +37,13 @@ export interface Measurement {
 /** `run` gets a `expired()` it should consult between units of work, and a `signal` flag-equivalent. */
 export interface JobContext {
   fixture: ScaleFixture
+  /**
+   * True during the counting pass: a synchronous case builds its data with counting accessors
+   * (`ctx.reads.n++` on every read of a fleet field), so a loop inside a loop shows up as an exact
+   * count instead of a noisy few-millisecond timing.
+   */
+  counting: boolean
+  reads: { n: number }
   /** True once the deadline passed: a job wrapper uses it to stop doing real work. */
   expired(): boolean
 }
@@ -106,6 +113,8 @@ export async function measureOnce(
 }
 
 export interface SizeResult {
+  /** Reads of the fleet's fields in the counting pass (0 for a case that does not count). */
+  reads: number
   factor: number
   spec: ScaleFixture['spec']
   best: Measurement
@@ -117,6 +126,8 @@ export interface CaseResult {
   reference: SizeResult
   /** cost(reference) / cost(small), `null` when the reference cost is under the noise floor or a run did not finish. */
   growth: number | null
+  /** reads(reference) / reads(small), `null` when the reference pass counted few reads. */
+  readsGrowth: number | null
   /** fsCalls(reference) / fsCalls(small), `null` when the reference run made few calls or a run did not finish. */
   fsGrowth: number | null
   /** What a linear job would cost more at the reference size (reference factor / small factor). */
@@ -145,7 +156,12 @@ async function runSize(c: PerfCase, factor: number, deadlineMs: number): Promise
   const spec = factor === 1 ? REFERENCE_SCALE : scaled(REFERENCE_SCALE, factor)
   const fixture = await buildScaleFixture(spec)
   const expiredRef = { value: false }
-  const ctx: JobContext = { fixture, expired: () => expiredRef.value }
+  const ctx: JobContext = {
+    fixture,
+    expired: () => expiredRef.value,
+    counting: false,
+    reads: { n: 0 }
+  }
   try {
     let best: Measurement | null = null
     let repeats = REPEATS
@@ -167,7 +183,14 @@ async function runSize(c: PerfCase, factor: number, deadlineMs: number): Promise
       )
         best = m
     }
-    return { factor, spec, best: best as Measurement }
+    // The counting pass: one run with counting accessors, never timed.
+    ctx.counting = true
+    ctx.reads.n = 0
+    await (
+      await c.prepare(ctx)
+    )()
+    const reads = ctx.reads.n
+    return { factor, spec, best: best as Measurement, reads }
   } finally {
     await fixture.cleanup()
   }
@@ -184,6 +207,8 @@ export async function measureCase(c: PerfCase, deadlineMs = 1500): Promise<CaseR
     id: c.id,
     small,
     reference,
+    readsGrowth:
+      small.reads > 0 && reference.reads >= FS_FLOOR ? reference.reads / small.reads : null,
     fsGrowth: fsComparable ? reference.best.fsCalls / Math.max(small.best.fsCalls, 1) : null,
     growth: comparable ? reference.best.costMs / Math.max(small.best.costMs, 0.5) : null,
     linear: REFERENCE_FACTOR / SMALL_FACTOR
@@ -211,6 +236,11 @@ export function violations(r: CaseResult): string[] {
       `cost grew ${r.growth.toFixed(1)}x for a ${r.linear}x larger fixture (super-linear; limit ${(r.linear * GROWTH_TOLERANCE).toFixed(1)}x)`
     )
   }
+  if (r.readsGrowth !== null && r.readsGrowth > r.linear * GROWTH_TOLERANCE) {
+    out.push(
+      `reads of fleet fields grew ${r.readsGrowth.toFixed(1)}x (${r.small.reads} → ${r.reference.reads}) for a ${r.linear}x larger fixture (limit ${(r.linear * GROWTH_TOLERANCE).toFixed(1)}x)`
+    )
+  }
   if (r.fsGrowth !== null && r.fsGrowth > r.linear * GROWTH_TOLERANCE) {
     out.push(
       `filesystem calls grew ${r.fsGrowth.toFixed(1)}x (${r.small.best.fsCalls} → ${r.reference.best.fsCalls}) for a ${r.linear}x larger fixture (limit ${(r.linear * GROWTH_TOLERANCE).toFixed(1)}x)`
@@ -221,6 +251,6 @@ export function violations(r: CaseResult): string[] {
 
 export function describeResult(r: CaseResult): string {
   const f = (s: SizeResult): string =>
-    `${s.factor}x: run ${Math.round(s.best.busyRunMs)} ms · cost ${Math.round(s.best.costMs)} ms · wall ${Math.round(s.best.wallMs)} ms · fs ${s.best.fsCalls} calls${s.best.completed ? '' : ' (cut off)'}`
+    `${s.factor}x: run ${Math.round(s.best.busyRunMs)} ms · cost ${Math.round(s.best.costMs)} ms · wall ${Math.round(s.best.wallMs)} ms · fs ${s.best.fsCalls} calls${s.reads > 0 ? ` · ${s.reads} field reads` : ''}${s.best.completed ? '' : ' (cut off)'}`
   return `${r.id}\n  ${f(r.small)}\n  ${f(r.reference)}\n  growth ${r.growth === null ? 'n/a' : r.growth.toFixed(1) + 'x'} (linear ${r.linear}x)`
 }

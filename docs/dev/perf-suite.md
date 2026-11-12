@@ -47,8 +47,11 @@ a temp dir) at 0.25x and 1x, and fails on:
 - a busy run over 50 ms (the probe above, the same definition as the app's);
 - more than 250 ms of CPU in one run;
 - a run that does not finish within the deadline;
-- cost, or filesystem calls (counted exactly, `support/fs-counter.ts`), growing more than 1.5x faster than
-  the fixture between the two sizes (the loop-inside-a-loop shape, P4).
+- cost, filesystem calls (counted exactly, `support/fs-counter.ts`) or reads of fleet fields (counted exactly
+  in a separate pass: a synchronous case builds its data with counting accessors when `ctx.counting` is set),
+  growing more than 1.5x faster than the fixture between the two sizes (the loop-inside-a-loop shape, P4). The
+  counts are exact on any machine; the timings of a few-millisecond computed are not, which is why the counts
+  carry the verdict for them.
 
 `tests/perf/timer-coverage.perf.ts` keeps the list honest: every `setInterval` in `src/main` is either
 covered by a case or listed with the reason it is not yet. A new timer fails it until you decide.
