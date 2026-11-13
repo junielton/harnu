@@ -23,7 +23,6 @@
  */
 
 import { ipcMain, type BrowserWindow } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
 import { promises as fs, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -76,6 +75,7 @@ import {
   saveWorkers,
   type NetworkLossNotice
 } from './scheduler-store'
+import { spawnChild, type SpawnedChild } from './spawn-runner'
 
 /** State pushed to the renderer on every change (`scheduler:changed`). */
 export interface SchedulerState {
@@ -183,7 +183,7 @@ function runForOutcome(
 
 interface LiveTick {
   worker: Worker
-  child: ChildProcess
+  child: SpawnedChild
   startedAt: number
   stdout: string
   timeoutHandle: ReturnType<typeof setTimeout>
@@ -553,7 +553,7 @@ async function startTick(worker: Worker, wakeReason?: WakeReason): Promise<void>
     process.env,
     companionPlan && companionOwner ? companionPlan.mintToken(companionOwner) : null
   )
-  const child = spawn(claudePath, argv, {
+  const child = spawnChild(claudePath, argv, {
     cwd: worker.folder,
     stdio: ['ignore', 'pipe', 'pipe'],
     ...(env ? { env } : {})
