@@ -77,6 +77,7 @@ import type { ChannelMode } from './command-gate-core'
 import { cliGate } from './version-gate'
 import type { SpawnOwner } from './session-table'
 import surface from '../../../resources/companion/api-surface.json'
+import { runFile } from '../spawn-runner'
 
 export type { CompanionBus, CompanionDiagnostics, CompanionHostFacade } from './host-core'
 
@@ -173,24 +174,21 @@ function recordIdentityParity(rec: IdentityParityRecord): void {
 async function runPluginList(): Promise<{ exitCode: number; output: string } | null> {
   const bin = await resolveClaudePath()
   if (!bin) return null
-  const { execFile } = await import('node:child_process')
-  return new Promise((resolve) => {
-    execFile(
-      bin,
-      ['plugin', 'list', '--json'],
-      {
-        cwd: homedir(),
-        timeout: 10_000,
-        maxBuffer: 1 << 20,
-        env: sanitizeSpawnEnv(process.env, { execPath: process.execPath })
-      },
-      (err, stdout, stderr) =>
-        resolve({
-          exitCode: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
-          output: String(stdout) + String(stderr)
-        })
-    )
-  })
+  try {
+    const { stdout, stderr } = await runFile(bin, ['plugin', 'list', '--json'], {
+      cwd: homedir(),
+      timeout: 10_000,
+      maxBuffer: 1 << 20,
+      env: sanitizeSpawnEnv(process.env, { execPath: process.execPath })
+    })
+    return { exitCode: 0, output: stdout + stderr }
+  } catch (err) {
+    const e = err as { code?: unknown; stdout?: string; stderr?: string }
+    return {
+      exitCode: typeof e.code === 'number' ? e.code : 1,
+      output: (e.stdout ?? '') + (e.stderr ?? '')
+    }
+  }
 }
 
 /** Called once from `src/main/index.ts` beside `registerHookBridge`. */
