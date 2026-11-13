@@ -26,7 +26,7 @@ vi.mock('node:child_process', async (importOriginal) => {
     sp.maxInFlight = Math.max(sp.maxInFlight, sp.inFlight)
     sp.finishers.push(() => {
       sp.inFlight--
-      cb(null, '[]', '')
+      cb(null, { stdout: '[]', stderr: '' })
     })
     return { stdin: { on: (): void => {}, end: (): void => {} } }
   }

@@ -27,6 +27,7 @@
 import { EventEmitter } from 'node:events'
 import { execFile, fork, spawn, type ChildProcess } from 'node:child_process'
 import { PassThrough, Writable, type Readable } from 'node:stream'
+import { promisify } from 'node:util'
 import { setImmediate as yieldToLoop } from 'node:timers/promises'
 import type {
   FromHelper,
@@ -414,37 +415,31 @@ function execViaHelper(
   })
 }
 
+const execFileAsync = promisify(execFile)
+
 function execInProcess(
   file: string,
   args: readonly string[],
   opts: RunFileOptions,
   setKiller: (k: (signal?: NodeJS.Signals) => boolean) => void
 ): Promise<RunResult> {
-  return new Promise<RunResult>((resolve, reject) => {
-    const child = execFile(
-      file,
-      [...args],
-      {
-        cwd: opts.cwd,
-        env: opts.env,
-        timeout: opts.timeout,
-        maxBuffer: opts.maxBuffer,
-        windowsHide: opts.windowsHide ?? true,
-        killSignal: opts.killSignal,
-        encoding: 'utf8'
-      },
-      (err, stdout, stderr) => {
-        if (err)
-          reject(Object.assign(err, { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }))
-        else resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })
-      }
-    )
-    setKiller((signal) => child.kill(signal))
-    // `gh` can exit before the body is written (bad auth, no such PR): EPIPE on this stream is not the story,
-    // the callback above carries the real reason.
-    child.stdin?.on('error', () => {})
-    if (opts.stdin !== undefined) child.stdin?.end(opts.stdin)
+  // `promisify(execFile)`, as every call site used before the runner existed (and as the tests that stub it expect).
+  const run = execFileAsync(file, [...args], {
+    cwd: opts.cwd,
+    env: opts.env,
+    timeout: opts.timeout,
+    maxBuffer: opts.maxBuffer,
+    windowsHide: opts.windowsHide ?? true,
+    killSignal: opts.killSignal,
+    encoding: 'utf8'
   })
+  const child = (run as { child?: ChildProcess }).child
+  setKiller((signal) => child?.kill(signal) ?? false)
+  // `gh` can exit before the body is written (bad auth, no such PR): EPIPE on this stream is not the story,
+  // the rejection carries the real reason.
+  child?.stdin?.on('error', () => {})
+  if (opts.stdin !== undefined) child?.stdin?.end(opts.stdin)
+  return run.then((r) => ({ stdout: String(r.stdout), stderr: String(r.stderr ?? '') }))
 }
 
 // --- spawnChild ----------------------------------------------------------------------------------------------
