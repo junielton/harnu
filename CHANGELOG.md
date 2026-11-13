@@ -21,6 +21,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   unavailable or its context is lost. Background sessions keep running without holding a GPU
   context, so a long list of open sessions is unaffected.
 
+- A performance check in the developer test suite no longer fails at random. It compared a job's cost
+  at two fleet sizes, and a run that took only a few milliseconds made a healthy job look many times
+  slower. The check now judges a job on the exact number of file and field accesses, which do not
+  vary between runs, and only falls back to time for a job with nothing to count.
+
 ## 2026-11-12
 
 ### Added
