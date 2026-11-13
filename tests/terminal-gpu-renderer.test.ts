@@ -116,6 +116,28 @@ describe('terminal GPU renderer', () => {
     expect(log).toHaveBeenCalledTimes(1)
   })
 
+  it('AC-1: context loss tells the caller once the DOM renderer is back, so it can re-fit the grid', () => {
+    const { deps, term, state, created } = setup()
+    let heldWhenCalled: unknown = 'unset'
+    const onContextLost = vi.fn(() => {
+      heldWhenCalled = state.gpu
+    })
+    acquireGpuRenderer(term, state, deps, onContextLost)
+    expect(onContextLost).not.toHaveBeenCalled()
+    created[0].fireContextLoss()
+    expect(onContextLost).toHaveBeenCalledTimes(1)
+    expect(heldWhenCalled).toBeNull()
+  })
+
+  it('a throwing onContextLost callback never escapes the context-loss event', () => {
+    const { deps, term, state, created } = setup()
+    acquireGpuRenderer(term, state, deps, () => {
+      throw new Error('refit failed')
+    })
+    expect(() => created[0].fireContextLoss()).not.toThrow()
+    expect(state.gpu).toBeNull()
+  })
+
   it('AC-1: WebGL unavailable (createAddon throws) falls back without throwing, logged once', () => {
     const { deps, term, state, log } = setup({ createThrows: true })
     expect(acquireGpuRenderer(term, state, deps)).toBe(false)

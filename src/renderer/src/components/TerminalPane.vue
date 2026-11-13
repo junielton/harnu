@@ -804,7 +804,7 @@ function wireLiveTerminal(
   attachResizeObserver(live, host)
   live.focusCleanup = installFocusListeners(live)
   // BUG-267: paint through WebGL instead of the DOM renderer (falls back itself).
-  acquireGpuRenderer(live.term, live)
+  acquireGpuRenderer(live.term, live, undefined, () => refitToRenderer(live, host))
   refitToRenderer(live, host)
   return live
 }
@@ -988,7 +988,7 @@ function attachLiveTerminal(live: LiveTerminal): void {
   // BUG-267: the WebGL context is released on detach, so re-acquire it now that
   // the element is back in the document (falls back to the DOM renderer itself).
   // Done BEFORE measuring: the grid must be sized from the renderer that paints it.
-  acquireGpuRenderer(live.term, live)
+  acquireGpuRenderer(live.term, live, undefined, () => refitToRenderer(live, host))
   refitToRenderer(live, host)
 
   attachResizeObserver(live, host)

@@ -65,11 +65,16 @@ function logFallbackOnce(deps: GpuRendererDeps, reason: string, error?: unknown)
  * Switch `term` to the WebGL renderer. Returns true when a context is now held,
  * false when it fell back to the DOM renderer. Idempotent, never throws. `term`
  * must already be opened and attached to the document.
+ *
+ * `onContextLost` runs after a later context loss, once xterm is back on the DOM
+ * renderer: the DOM and WebGL cells differ in size, so the caller re-fits the
+ * grid there. Its errors are swallowed (it runs inside a WebGL event handler).
  */
 export function acquireGpuRenderer(
   term: Pick<Terminal, 'loadAddon'>,
   state: GpuRendererState,
-  deps: GpuRendererDeps = defaultDeps
+  deps: GpuRendererDeps = defaultDeps,
+  onContextLost?: () => void
 ): boolean {
   if (state.gpu) return true
   let addon: GpuAddon | null = null
@@ -79,6 +84,11 @@ export function acquireGpuRenderer(
     const lossSub = created.onContextLoss(() => {
       releaseGpuRenderer(state)
       logFallbackOnce(deps, 'context lost')
+      try {
+        onContextLost?.()
+      } catch {
+        /* a failed re-fit must not break the event handler */
+      }
     })
     state.gpu = { addon: created, lossSub }
     liveContexts++
