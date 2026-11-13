@@ -27,6 +27,7 @@ describe('fleet store: one session event does not re-read the fleet', () => {
         console.warn(`[perf] known offender (${owner}), not failing:\n${detail}`)
         return
       }
+      console.info(`[perf] ${detail}`)
       expect(found, detail).toEqual([])
     })
   }
