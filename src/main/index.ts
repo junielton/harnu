@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, session, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, session, dialog, utilityProcess } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
@@ -73,6 +73,7 @@ import {
 import { pageSchemeEntry } from './browser/page-service'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
 import { isStallMonitorDisabled, startStallMonitor } from './monitor/stall-monitor'
+import { fromUtilityProcess, startSpawnRunner } from './spawn-runner'
 import { getStallMonitor, setStallMonitor } from './monitor/stall-registry'
 import type { IpcMainLike } from './monitor/stall-owner'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
@@ -529,6 +530,20 @@ app.whenReady().then(async () => {
         logDir: app.getPath('userData'),
         ipcMain: ipcMain as unknown as IpcMainLike
       })
+    )
+  }
+
+  // BUG-266: from here on, child processes are forked by a small helper process, never by this one (a
+  // fork of the main process holds the thread that carries keystrokes for 10-370 ms). Started now, while
+  // this process is still small. `HARNU_SPAWN_INLINE=1` keeps the old in-process behaviour as an escape hatch.
+  if (process.env.HARNU_SPAWN_INLINE !== '1') {
+    startSpawnRunner(() =>
+      fromUtilityProcess(
+        utilityProcess.fork(join(__dirname, 'spawn-helper.js'), [], {
+          serviceName: 'harnu-spawn-helper',
+          stdio: 'ignore'
+        })
+      )
     )
   }
 
