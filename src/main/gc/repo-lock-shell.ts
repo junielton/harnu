@@ -14,14 +14,11 @@
 // Fail closed: a lock that cannot be read is held until its file is old enough to be stale; a
 // repository whose git dir cannot be found cannot be locked, so it is not worked on.
 
-import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { promisify } from 'node:util'
-
-const run = promisify(execFile)
+import { runFile as run } from '../spawn-runner'
 
 export const LOCK_NAME = 'harnu-gc.lock'
 /** A lock older than this is a crashed holder, not a long cycle. */
