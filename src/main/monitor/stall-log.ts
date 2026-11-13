@@ -78,21 +78,28 @@ export function createStallLog(dir: string): StallLog {
       chain = chain.then(writeBuffered)
       return chain as Promise<void>
     },
-    async load(nowMs) {
-      const read = async (f: string): Promise<string> => fs.readFile(f, 'utf8').catch(() => '')
-      const records = [
-        ...parseLog(await read(previous), nowMs),
-        ...parseLog(await read(file), nowMs)
-      ]
-      try {
-        const kept = records.map(encodeRecord).join('')
-        if (kept !== '' || size > 0) await fs.mkdir(dir, { recursive: true })
-        await fs.writeFile(file, kept)
-        size = Buffer.byteLength(kept)
-      } catch (e) {
-        warn(e)
+    load(nowMs) {
+      // Same chain as the writes: a flush can never land between the read and the truncating
+      // rewrite below, so a record appended during boot is not lost.
+      const run = async (): Promise<StallRecord[]> => {
+        const read = async (f: string): Promise<string> => fs.readFile(f, 'utf8').catch(() => '')
+        const records = [
+          ...parseLog(await read(previous), nowMs),
+          ...parseLog(await read(file), nowMs)
+        ]
+        try {
+          const kept = records.map(encodeRecord).join('')
+          if (kept !== '' || size > 0) await fs.mkdir(dir, { recursive: true })
+          await fs.writeFile(file, kept)
+          size = Buffer.byteLength(kept)
+        } catch (e) {
+          warn(e)
+        }
+        return records
       }
-      return records
+      const result = chain.then(run)
+      chain = result.catch(() => undefined)
+      return result
     },
     async dispose() {
       await this.flush()
