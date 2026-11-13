@@ -346,6 +346,9 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 | Campaign map — board                   | tile `164×96px` · gutter `36px` · row gap `40px` · lane `20px` | The one fixed canvas of the Campaign map (§6 "Campaign map"): 4 columns × 164 + 3 × 36 + the 20px return lane = 784px wide; a dock chip is 164×20px. Mockup `v6--map`; scrolls inside its wrapper, never reflows                                                                                                                                                                   |
 | Resizable divider — hit area           | 6px                                                            | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
 | Resizable divider — visible stripe     | 1px                                                            | Colored stripe (`w-px`) flush to the side panel's edge inside the 6px hit area                                                                                                                                                                                                                                                                                                     |
+| Sidebar section — minimum height       | 88px                                                           | Drag floor of a resizable sidebar section (`SidebarSection`, §6 "Sidebar sections"): its eyebrow (28px) plus one row (60px, the height of one collapsed Your move card)                                                                                                                                                                                                            |
+| Sidebar section — collapsed height     | 28px                                                           | A collapsed section is its eyebrow row only; the chevron expands it again                                                                                                                                                                                                                                                                                                          |
+| Sidebar list — minimum height          | `min(160px, 40vh)`                                             | The folder list keeps at least this much room while a section is dragged taller; the dock is never pushed off-screen                                                                                                                                                                                                                                                               |
 | Footer / status bar — height           | 24px (`h-6`)                                                   | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
 | Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)`           | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
 | Settings pane — bounded list           | max-height `280px`                                             | A long row list inside a settings pane scrolls in place (`.scrollable overflow-y-auto`) instead of pushing the sections below it off the pane — see §6 "Bounded list (settings pane)"                                                                                                                                                                                              |
@@ -2344,9 +2347,10 @@ chrome: it vanishes the instant the last session is seen/dispatched.
 
 **Eyebrow** (Section-label): reuses the Section-label typography (uppercase
 `10.5px`, weight 500, `letter-spacing 0.06em`, `--text-4`) with title + count —
-`RETURN HERE · 2` (the middot is decorative, `aria-hidden`). **Not**
-collapsible — it's a transient nudge, not an organizational zone (there is no
-collapsible zone left in the sidebar to compare it against).
+`RETURN HERE · 2` (the middot is decorative, `aria-hidden`). Since T702 the zone is the
+first **sidebar section** (§6 "Sidebar sections"): a chevron at the right end of the eyebrow
+collapses it to the eyebrow row, and its top edge is a resize handle. The title, count and
+clock stay visible while collapsed.
 
 **Flat list** (this axis is **per session**, not per folder). Each row (height
 `28px`, `padding: 0 8px 0 12px`, `gap 8px`, `font-size 12.5px`) is a `<button>`
@@ -2364,9 +2368,10 @@ owning folder
   along) → `markSessionSeen(id)` (stamps last-viewed = now → the predicate
   flips and the row leaves). **Zone divider**: a 1px `--border` top rule
   (`data-return-divider`, no margin), separating the folder list above from `RETURN HERE`; the
-  dock below draws its own top rule. **Height cap**: the zone is at most `168px` tall (about
-  four rows plus the eyebrow); the eyebrow stays put and only the rows scroll, so a long list never
-  pushes the dock off-screen. The folder list keeps the remaining height.
+  dock below draws its own top rule. **Height**: until the operator drags the handle the zone is
+  content-sized and at most `168px` tall (about four rows plus the eyebrow); the eyebrow stays put
+  and only the rows scroll, so a long list never pushes the dock off-screen. Once dragged, the stored
+  height replaces that cap (§6 "Sidebar sections"). The folder list keeps the remaining height.
   **No new tokens** — Section-label, `--color-warning`, `--border`, all
   already exist.
 
@@ -2412,9 +2417,10 @@ from another project shows while the list is drilled (R-3).
   written), the card stays open and shows one `--color-red` line (`11.5px`, `yourMove.exits.failed`)
   right under the two exits; both exits keep working, and the next click retries and clears the line.
   A card that was already gone shows nothing: the list just refreshes.
-- **Height cap.** `max-height: min(380px, 45vh)`, the cards scroll inside, the eyebrow does not.
-  That leaves the folder list usable on a short window (45vh at most) and still shows about three
-  collapsed cards.
+- **Height.** Until the operator drags the handle: content-sized, `max-height: min(380px, 45vh)`,
+  the cards scroll inside, the eyebrow does not. That leaves the folder list usable on a short
+  window (45vh at most) and still shows about three collapsed cards. A dragged height replaces the
+  cap (§6 "Sidebar sections"); the cards and the legacy rows are the section's body, untouched.
 - **No new tokens**: `--color-warning`, `--color-warning-soft`, `--color-warning-line`,
   `--color-accent`, `--color-red` already exist.
 
@@ -4240,11 +4246,67 @@ side border. It keeps `--surface` and a 1px `--border` **top rule**. The islands
   zone) and the rows scroll inside. In Your move mode Live the cap is `min(380px, 45vh)` and the
   cards scroll inside; the island keeps `overflow: hidden` so a card never pokes past the rounded
   corners, and the eyebrow stays pinned above the scrolling cards.
+- The zone is mounted through `SidebarSection` (T702): the island keeps its `data-island`
+  attribute, but sits inside a transparent wrapper that carries the resize handle, so the handle can
+  live **in the gap** above the island without being clipped by its rounded corners (see "Sidebar
+  sections" below).
 - In **drill mode** the drill view (`data-drill-view`) renders inside the same `sidebar-list`
   island, **under the joined toolbar head** (T659). Its pinned Back row (`data-drill-back`, BUG-248)
   is the first row below the toolbar's inner rule, still outside the scroller; the toolbar, not the
   Back row, sits on the island's top edge and is clipped by its rounded corners. The default layout is
   untouched.
+
+##### Sidebar sections (T702)
+
+`SidebarSection.vue` is the generic shell for a section stacked **between the list island and the
+dock**: an eyebrow with a chevron, a body that scrolls, and a resize handle on its top edge. It
+holds no section logic (Return here is its first user and nothing in the shell knows about it); a
+second section mounts the same way:
+
+```vue
+<SidebarSection id="queue" :label="$t('sidebar.queue.title')" data-island="sidebar-queue">
+  <template #eyebrow>{{ $t('sidebar.queue.title') }} · {{ n }}</template>
+  <QueueRows />
+</SidebarSection>
+```
+
+- **Anatomy, top to bottom.** A transparent wrapper (`data-section="<id>"`, `position: relative`)
+  holding (1) the **handle**, absolutely placed above the island, and (2) the **island** (the
+  element that carries `data-island`, the border and the rounded corners, `overflow: hidden` in
+  Floating panels). Inside the island: the 1px `--border` top rule (`data-return-divider`; hidden by
+  Floating panels, where the gap separates the islands), the **eyebrow**, then the **body**.
+- **Eyebrow.** The Section-label (uppercase `10.5px` / 500 / `0.06em`, padding `8px 12px 4px`,
+  `gap 4px`, `--text-4`; `tone="warning"` makes it `--color-warning`). The `eyebrow` slot is the
+  title and whatever the section shows beside it (count, clock). The **chevron** is an 18×18px
+  `<button>` pushed to the right end (`ml-auto`): lucide `ChevronDown` (expanded) / `ChevronRight`
+  (collapsed), 12px, stroke `1.8`, `--text-3` → `--text` and `--surface-2` on hover, the ghost
+  button radius. It carries `aria-expanded` and an `aria-controls` pointing at the body, and its
+  label is `sidebar.section.collapse` / `.expand` ("Collapse {name}" / "Expand {name}"). Enter and
+  Space toggle it, as on any button; focus keeps the standard focus ring.
+- **Collapsed.** The island is the eyebrow row only (28px, plus the 1px rule when the layout is
+  off); the body is hidden (`v-show`, so a card's expanded state survives) and the handle is not
+  rendered, since there is nothing to resize. The list island takes the freed height.
+- **Handle.** The horizontal variant of the T627 divider (§6 "Resizable divider (handle)"): a
+  `<div role="separator" aria-orientation="horizontal">`, `h-1.5 w-full cursor-row-resize`, the
+  visible line `h-px w-full`, **transparent at rest** (the section's own top rule already draws the
+  edge) and `--accent-line` on hover with the `--dur-fast` / `--ease` color transition, flush against
+  the island's top edge (`items-end`). With Floating panels on it takes the divider rules of that
+  layout instead: its height is `--float-gap`, it sits **in the gap**, no line at rest and the
+  36px × 2px grip on hover. Dragging **up** makes the section taller; the height tracks the pointer
+  1:1 and there is no easing. Double-click clears the stored height, so the section goes back to its
+  default (content-sized, up to its default cap).
+- **Bounds.** The height is clamped to `[88px, max]` (`max` is the section's prop, `640px` by
+  default) **and** to what leaves the folder list `min(160px, 40vh)`: the ceiling is the section's
+  height at drag start plus the list island's spare height at that moment. When the window gets
+  shorter the section yields first (down to its 88px floor), then the list; the dock never moves.
+  A stored height above the ceiling is clamped when it is applied, never rewritten.
+- **Persistence.** One `localStorage` key per section id, `om2tab.sidebarSection.<id>`, holding
+  `{"height": number | null, "collapsed": boolean}`. `null` means "never dragged" (content-sized).
+  Reads and writes sit in `try/catch`; a missing, corrupt or out-of-range value reads as the
+  default. The state lives in a module-level store, so it survives the section's component
+  unmounting when the section hides itself because it is empty and reappearing later.
+- **No new tokens.** `--border`, `--accent-line`, `--text-3`, `--text-4`, `--surface-2`,
+  `--float-gap`, `--dur-fast` and `--ease` already exist.
 
 ##### Sidebar dock (slot)
 
