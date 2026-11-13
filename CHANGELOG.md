@@ -10,6 +10,15 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-13
+
+### Fixed
+
+- A performance check in the developer test suite no longer fails at random. It compared a job's cost
+  at two fleet sizes, and a run that took only a few milliseconds made a healthy job look many times
+  slower. The check now judges a job on the exact number of file and field accesses, which do not
+  vary between runs, and only falls back to time for a job with nothing to count.
+
 ## 2026-11-12
 
 ### Added
