@@ -10,11 +10,11 @@
  *    learning live in the repo's MAIN checkout, shared by every worktree.
  */
 
-import { execFile } from 'node:child_process'
 import { readFileSync, statSync } from 'node:fs'
 import { appendFile, mkdir, readFile, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import { DATA_DIR } from '../shared/data-dir'
+import { runFile } from './spawn-runner'
 
 export { DATA_DIR }
 
@@ -295,17 +295,13 @@ export function resetDataDirExcludeCache(): void {
 }
 
 function gitCommonDir(folder: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile(
-      'git',
-      ['rev-parse', '--git-common-dir'],
-      { cwd: folder, timeout: 10_000 },
-      (err, stdout) => {
-        const out = String(stdout ?? '').trim()
-        resolve(err || !out ? null : path.resolve(folder, out))
-      }
-    )
-  })
+  return runFile('git', ['rev-parse', '--git-common-dir'], { cwd: folder, timeout: 10_000 }).then(
+    ({ stdout }) => {
+      const out = stdout.trim()
+      return out ? path.resolve(folder, out) : null
+    },
+    () => null
+  )
 }
 
 /**
