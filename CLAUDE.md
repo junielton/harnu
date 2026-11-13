@@ -256,6 +256,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Layout shell                                       | `src/renderer/src/App.vue`                                                       |
 | Sidebar (§6 — session rows)                        | `src/renderer/src/components/Sidebar.vue`                                        |
 | Sidebar folder row                                 | `src/renderer/src/components/SidebarFolder.vue`                                  |
+| Sidebar section shell (§6 — T702)                  | `SidebarSection.vue` + `lib/sidebar-section.ts`                                  |
 | Sidebar jump palette (§6 — T288)                   | `src/renderer/src/components/SidebarJumpPalette.vue`                             |
 | Repo group header (multi-worktree repos)           | `src/renderer/src/components/RepoGroupHeader.vue`                                |
 | Shelved section of a repo group (§6 — U2.3b)       | `SidebarShelvedSection.vue` + `lib/shelved-sidebar.ts`                           |
