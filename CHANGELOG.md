@@ -16,8 +16,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - A performance check in the developer test suite no longer fails at random. It compared a job's cost
   at two fleet sizes, and a run that took only a few milliseconds made a healthy job look many times
-  slower. When a run is that short, the check now judges the job on the exact number of file and
-  field accesses instead of on time.
+  slower. The check now judges a job on the exact number of file and field accesses, which do not
+  vary between runs, and only falls back to time for a job with nothing to count.
 
 ## 2026-11-12
 
