@@ -542,26 +542,48 @@ class HelperChild extends EventEmitter implements SpawnedChild {
     switch (m.t) {
       case 'spawned':
         this.pid = m.pid
-        this.emit('spawn')
+        this.ordered(() => this.emit('spawn'))
         return
       case 'data':
         ;(m.stream === 'stdout' ? this.stdout : this.stderr)?.write(Buffer.from(m.data))
         return
       case 'exit':
-        this.emit('exit', m.code, m.signal)
+        this.ordered(() => this.emit('exit', m.code, m.signal))
         return
       case 'spawn-error':
-        this.finish(rebuildError(m.error), null, null)
+        this.ordered(() => this.finish(rebuildError(m.error), null, null))
         return
       case 'close':
-        this.finish(null, m.code, m.signal)
+        this.ordered(() => this.finish(null, m.code, m.signal))
         return
     }
   }
 
+  private tail: Promise<void> = Promise.resolve()
+  /**
+   * Run `fn` after the stream chunks already pushed have been delivered, and after the previous event.
+   * Node callers read what a child printed from their `data` handlers and then act on `exit`; a stream
+   * delivers its `data` a tick after `write`, so emitting `exit` straight from the helper's message would
+   * run before the last chunk's handler and drop it.
+   */
+  private ordered(fn: () => void): void {
+    this.tail = this.tail.then(
+      () =>
+        new Promise<void>((resolve) =>
+          setImmediate(() => {
+            try {
+              fn()
+            } finally {
+              resolve()
+            }
+          })
+        )
+    )
+  }
+
   /** The helper died (or could not be reached) while this child was ours. */
   helperGone(err: unknown): void {
-    this.finish(err instanceof Error ? err : new Error(String(err)), null, null)
+    this.ordered(() => this.finish(err instanceof Error ? err : new Error(String(err)), null, null))
   }
 
   private finish(err: Error | null, code: number | null, signal: string | null): void {

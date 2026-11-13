@@ -155,6 +155,26 @@ describe.each<Mode>(['in-process', 'helper'])('spawnChild (%s)', (mode) => {
     expect(r.code).toBe(0)
   })
 
+  it('delivers every chunk to the data handlers before exit is emitted', async () => {
+    const seen = await inMode(mode, async () => {
+      const results: string[] = []
+      for (let i = 0; i < 15; i++) {
+        const c = spawnChild(
+          NODE,
+          js("process.stdout.write('tail-' + process.pid.toString().length)")
+        )
+        let out = ''
+        c.stdout?.on('data', (d: Buffer) => (out += d.toString('utf8')))
+        const atExit = new Promise<string>((resolve) => c.on('exit', () => resolve(out)))
+        const closed = new Promise((r) => c.on('close', r))
+        results.push(await atExit)
+        await closed
+      }
+      return results
+    })
+    expect(seen.every((o) => o.startsWith('tail-'))).toBe(true)
+  })
+
   it('reports the pid on spawn', async () => {
     const pid = await inMode(mode, async () => {
       const c = spawnChild(NODE, js('setTimeout(()=>{},50)'))
