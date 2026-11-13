@@ -7,17 +7,14 @@
 // shelve-eligibility-core.ts. Nothing here throws: a probe that cannot answer yields a null, and a
 // null HEAD makes the binding match nothing.
 
-import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
-import { promisify } from 'node:util'
 import type { ExecFn } from '../reaper/dehydrate-shell'
 import type { ReapItem } from '../reaper/reaper-core'
 import { workStampOf } from './gc-work-stamp'
 import { readShelveManifest } from './shelve-manifest-shell'
 import type { ShelveProbe } from './shelve-eligibility-core'
-
-const run = promisify(execFile)
+import { runFile as run } from '../spawn-runner'
 
 /** The three facts a decision is bound to. */
 export type ShelveBinding = Pick<ShelveProbe, 'headSha' | 'workStamp' | 'newestMtime'>
