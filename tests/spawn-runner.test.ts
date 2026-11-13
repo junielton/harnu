@@ -13,6 +13,7 @@ import {
   type RunFileOptions
 } from '../src/main/spawn-runner'
 import { forkedHelperFactory } from './support/spawn-helper-fork'
+import type { ToHelper } from '../src/main/spawn-protocol'
 
 /**
  * BUG-266 AC-2 / AC-4 — the one spawn runner. Everything runs against the REAL helper script as a forked
@@ -211,6 +212,28 @@ describe.each<Mode>(['in-process', 'helper'])('spawnChild (%s)', (mode) => {
     })
     expect(c.stdout).toBeNull()
     expect(c.stdin).toBeNull()
+  })
+})
+
+describe('what crosses to the helper', () => {
+  it('never posts process.env itself, always a plain copy (cloning it aborts Electron main)', async () => {
+    const posted: ToHelper[] = []
+    startSpawnRunner(() => ({
+      post: (m) => void posted.push(m),
+      onMessage: () => {},
+      onExit: () => {},
+      kill: () => {}
+    }))
+    runFile(NODE, js('0')).catch(() => {}) // rejected when the runner stops below
+    spawnChild(NODE, js('0')).on('error', () => {})
+    await new Promise((r) => setTimeout(r, 50))
+    const envs = posted.map((m) => (m.t === 'exec' || m.t === 'spawn' ? m.o.env : undefined))
+    expect(envs).toHaveLength(2)
+    for (const env of envs) {
+      expect(env).not.toBe(process.env)
+      expect(Object.getPrototypeOf(env)).toBe(Object.prototype)
+      expect(env?.PATH).toBe(process.env.PATH)
+    }
   })
 })
 

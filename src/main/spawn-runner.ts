@@ -341,11 +341,21 @@ function post(m: ToHelper): void {
 
 // --- runFile -------------------------------------------------------------------------------------------------
 
+/**
+ * The environment as a plain object. A child that is given no env inherits ours, as in-process, but
+ * `process.env` itself must never be posted to the helper: in Electron's main process, cloning that exotic
+ * object through `utilityProcess.postMessage` aborts the whole process (verified live: a GTK fatal error).
+ */
+function plainEnv(env: NodeJS.ProcessEnv | undefined): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(env ?? process.env)) if (v !== undefined) out[k] = v
+  return out
+}
+
 function wireExec(o: RunFileOptions): WireExecOptions {
   return {
     cwd: o.cwd,
-    // Same as the in-process default: a child that is given no env inherits ours.
-    env: o.env ?? process.env,
+    env: plainEnv(o.env),
     timeout: o.timeout,
     maxBuffer: o.maxBuffer,
     windowsHide: o.windowsHide ?? true,
@@ -486,7 +496,7 @@ export function spawnChild(
   const child = new HelperChild(id, stdio)
   const wire: WireSpawnOptions = {
     cwd: opts.cwd,
-    env: opts.env ?? process.env,
+    env: plainEnv(opts.env),
     windowsHide: opts.windowsHide ?? true,
     stdio,
     priority: opts.priority,
