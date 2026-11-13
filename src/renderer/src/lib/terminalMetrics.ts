@@ -30,6 +30,27 @@ export const XTERM_SCROLLBAR_WIDTH = 14
  */
 export const SAFETY_GUTTER_CELLS = 1
 
+/**
+ * The cell size (CSS px) xterm's active renderer is actually painting with, or
+ * null when it is not available. Read from the render service's dimensions — the
+ * same private field xterm's own FitAddon uses — because the WebGL renderer
+ * (BUG-267) has no `.xterm-rows` DOM to measure and snaps cells to whole device
+ * pixels, so the DOM-derived width would size the grid wider than what is drawn.
+ */
+export function rendererCellSize(term: unknown): { width: number; height: number } | null {
+  const cell = (
+    term as {
+      _core?: {
+        _renderService?: {
+          dimensions?: { css?: { cell?: { width?: number; height?: number } } }
+        }
+      }
+    }
+  )?._core?._renderService?.dimensions?.css?.cell
+  if (!cell || !(cell.width && cell.width > 0) || !(cell.height && cell.height > 0)) return null
+  return { width: cell.width, height: cell.height }
+}
+
 export interface CellDims {
   cols: number
   rows: number
@@ -77,13 +98,17 @@ export function ensureTerminalFontLoaded(): Promise<void> {
  *
  * `letterSpacing` is the extra advance xterm's DOM renderer adds to every glyph
  * (see `measureXtermCells`); it widens the cell so `cols × advance` still fits.
+ *
+ * `charWidthOverride` replaces the span-measured advance (and `letterSpacing`)
+ * outright — used with the WebGL renderer's real cell width.
  */
 export function measureCells(
   el: HTMLElement,
   cellHOverride?: number,
   fontSize = 13,
   scrollbarWidth = XTERM_SCROLLBAR_WIDTH,
-  letterSpacing = 0
+  letterSpacing = 0,
+  charWidthOverride?: number
 ): CellDims {
   const cs = getComputedStyle(document.documentElement)
   const fontFamily = cs.getPropertyValue('--font-mono').trim() || 'monospace'
@@ -97,7 +122,7 @@ export function measureCells(
   measureSpan.textContent = 'M'.repeat(10)
   el.appendChild(measureSpan)
   const rect = measureSpan.getBoundingClientRect()
-  const charWidth = rect.width / 10 + letterSpacing
+  const charWidth = charWidthOverride ?? rect.width / 10 + letterSpacing
   const charHeight = cellHOverride ?? rect.height
   el.removeChild(measureSpan)
 
@@ -142,8 +167,15 @@ export function measureCells(
 export function measureXtermCells(
   host: HTMLElement,
   fontSize = 13,
-  scrollbarWidth = XTERM_SCROLLBAR_WIDTH
+  scrollbarWidth = XTERM_SCROLLBAR_WIDTH,
+  gpuTerm?: unknown
 ): CellDims | null {
+  // GPU-rendered terminal (BUG-267): there is no DOM row to measure, so size the
+  // grid from the cell the renderer really draws.
+  if (gpuTerm) {
+    const cell = rendererCellSize(gpuTerm)
+    if (cell) return measureCells(host, cell.height, fontSize, scrollbarWidth, 0, cell.width)
+  }
   const xtermRows = host.querySelector('.xterm-rows') as HTMLElement | null
   const xtermRow = xtermRows?.firstElementChild as HTMLElement | null
   if (!xtermRows || !xtermRow) return null
