@@ -155,7 +155,7 @@ describe('ADR-0014 §2: containers-shell.ts is the only file that spawns docker'
     expect(src).toMatch(/env: await spawnEnvOnce\(\)/)
     // One spawn site (docker and the git probe share it), and every call to it
     // passes one of the bounded option sets.
-    expect(src.match(/execFileAsync\(/g)).toHaveLength(1)
+    expect(src.match(/\brunFile\(/g)).toHaveLength(1)
     const calls = [...src.matchAll(/runDocker\(\s*[^)]*?,\s*(\w+)\s*\)/gs)].map((m) => m[1])
     expect(calls.length).toBeGreaterThanOrEqual(6)
     expect(new Set(calls)).toEqual(new Set(['PROBE_OPTS', 'SCAN_OPTS', 'ACT_OPTS']))
