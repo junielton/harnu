@@ -5,10 +5,8 @@
  * engine and its replay run under plain vitest.
  */
 
-import { execFile } from 'node:child_process'
 import { createReadStream, promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { promisify } from 'node:util'
 import { deriveTranscriptTruth, isNoiseEntry, type TranscriptEntry } from '../transcript-truth'
 import {
   commitsAfter,
@@ -21,8 +19,7 @@ import {
 } from './digest-core'
 import { emptyFacts, scanTranscriptLines, type TranscriptFacts } from './digest-transcript'
 import { hasDigestFile } from './digest-state'
-
-const runFile = promisify(execFile)
+import { runFile } from '../spawn-runner'
 
 /** A transcript line longer than this many UTF-8 bytes (newline excluded) is dropped unread. */
 export const LINE_MAX_BYTES = 1_048_576
