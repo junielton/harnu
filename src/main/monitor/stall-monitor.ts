@@ -37,8 +37,13 @@ export interface StallMonitor {
   rendererStalledMs(spanMs: number, nowMs?: number): number
   /** Records reported by the renderer (untrusted: clamped, rate limited). */
   reportRenderer(batch: unknown): number
-  /** Blocks the main thread for `ms` as owner `diagnostic:injected-stall` (tests and demos). */
-  injectMainStall(ms: number): void
+  /**
+   * Blocks the main thread for `ms` as owner `diagnostic:injected-stall` (tests and demos).
+   * `cpu: true` spins until the thread has consumed `ms` of CPU time instead of `ms` of wall time:
+   * the probe measures a computing stall by CPU time, so on a loaded machine (a descheduled
+   * thread) only the CPU form is guaranteed to read as at least `ms`. Wall time is still capped.
+   */
+  injectMainStall(ms: number, opts?: { cpu?: boolean }): void
   stop(): Promise<void>
 }
 
@@ -56,6 +61,16 @@ export interface StallMonitorOptions {
 /** The renderer may report this many records per second; the rest are dropped. */
 const RENDERER_RATE_PER_SEC = 20
 const RENDERER_MAX_BATCH = 50
+/** Wall-clock ceiling of a CPU-time injected stall: a thread starved this long is not a test of ours. */
+const MAX_INJECT_MS = 5_000
+
+/** Cumulative CPU time of the calling thread in ms; `null` when the runtime cannot say (node < 22.19). */
+function threadCpuMs(): number | null {
+  const fn = (process as { threadCpuUsage?: () => { user: number; system: number } }).threadCpuUsage
+  if (typeof fn !== 'function') return null
+  const u = fn.call(process)
+  return (u.user + u.system) / 1000
+}
 
 export const isStallMonitorDisabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
   env.HARNU_STALL_MONITOR === 'off'
@@ -133,11 +148,21 @@ export function startStallMonitor(opts: StallMonitorOptions): StallMonitor {
       }
       return accepted
     },
-    injectMainStall(ms) {
+    injectMainStall(ms, opts) {
       withOwner('diagnostic:injected-stall', 'job', () => {
-        const end = performance.now() + Math.min(Math.max(ms, 0), 5_000)
-        while (performance.now() < end) {
-          /* hold the thread */
+        const want = Math.min(Math.max(ms, 0), 5_000)
+        const wallEnd = performance.now() + (opts?.cpu ? MAX_INJECT_MS : want)
+        const cpu0 = opts?.cpu ? threadCpuMs() : null
+        if (cpu0 === null) {
+          const end = performance.now() + want
+          while (performance.now() < end) {
+            /* hold the thread */
+          }
+          return
+        }
+        while (performance.now() < wallEnd) {
+          const now = threadCpuMs()
+          if (now === null || now - cpu0 >= want) break
         }
       })
     },
