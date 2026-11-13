@@ -10,6 +10,20 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-12
+
+### Fixed
+
+- Typing into a session no longer stutters once a minute when Your move is on. Harnu used to
+  look for each session's transcript by trying every project folder in turn, for every session,
+  every minute; with a few hundred sessions that kept the app's main thread busy for seconds at a
+  time. It now lists the project folders once, remembers what it found (and what is missing), and
+  uses the transcript path Claude Code already reports. Sessions that have ended are no longer
+  checked for parked questions.
+- The Your move queue is lighter on the screen: a card finds its folder and session name with one
+  lookup instead of scanning every session, the running clock redraws only itself, and an
+  unchanged card is no longer redrawn when the queue refreshes.
+
 ## 2026-11-09
 
 ### Added
