@@ -8,7 +8,7 @@
  * connections". Nothing here opens, closes or changes a connection.
  */
 
-import { execFile } from 'node:child_process'
+import { runFile } from '../spawn-runner'
 
 export interface ListenerDeps {
   /** Runs `cmd args` with no shell; rejects on a non-zero exit. */
@@ -83,12 +83,11 @@ export async function readEstablishedPorts(
 }
 
 /** `execFile` as the probe's runner: no shell, a short timeout, a bounded buffer. */
-export const execRun: ListenerDeps['run'] = (cmd, args) =>
-  new Promise((resolve, reject) => {
-    execFile(
-      cmd,
-      [...args],
-      { windowsHide: true, timeout: 10_000, maxBuffer: 8 << 20 },
-      (err, stdout) => (err ? reject(err) : resolve({ stdout }))
-    )
+export const execRun: ListenerDeps['run'] = async (cmd, args) => {
+  const { stdout } = await runFile(cmd, [...args], {
+    windowsHide: true,
+    timeout: 10_000,
+    maxBuffer: 8 << 20
   })
+  return { stdout }
+}

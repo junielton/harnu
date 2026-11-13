@@ -1,8 +1,5 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { ipcMain } from 'electron'
-
-const runFile = promisify(execFile)
+import { runFile } from './spawn-runner'
 
 /**
  * Hover-triggered, throttled per-folder git status probe (T52 Slice 3). The

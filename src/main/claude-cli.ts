@@ -1,12 +1,9 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { sanitizeSpawnEnv } from './appimage-env'
 import { parseClaudeVersion, type ClaudeVersion } from './claude-cli-version'
-
-const execFileP = promisify(execFile)
+import { runFile as execFileP } from './spawn-runner'
 
 /**
  * Best-effort lookup for the `claude` CLI on disk.

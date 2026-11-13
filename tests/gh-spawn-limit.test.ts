@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 /**
+ * BUG-266: the limit now lives in the spawn runner's `gh` lane (runGh takes a slot via runFile).
+ *
  * BUG-262 AC-1 — every `spawn()` blocks the main thread while the child forks, so a burst of
  * `gh` calls in one task froze typing. `runGh` now holds at most GH_SPAWN_LIMIT children in
  * flight and yields to the event loop before each spawn.

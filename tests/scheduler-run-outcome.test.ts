@@ -81,7 +81,7 @@ describe('runFromResult', () => {
  * AC-6 / AC-7 — the runner's live-process behaviors: kill-at-timeout,
  * stop()-kill, and the vanished-folder disable-and-never-spawn rule. These
  * are env-bound (electron IPC, `node:child_process.spawn`), so `electron`
- * and `node:child_process` are mocked; `node:fs` and `scheduler-store.ts`
+ * and the spawn runner are mocked; `node:fs` and `scheduler-store.ts`
  * stay REAL, pointed at a throwaway `userData` dir, so a worker's disable
  * and its recorded run genuinely round-trip through disk — the same
  * integration-over-mocking posture `usage-poller.test.ts` uses for the
@@ -104,12 +104,11 @@ describe('registerScheduler — the runner (mocked spawn)', () => {
     stageModes: [] as string[]
   }))
 
-  vi.mock('node:child_process', () => ({ spawn: h.spawn }))
+  vi.mock('../src/main/spawn-runner', () => ({ spawnChild: h.spawn }))
   // BUG-111 — the runner asks the Hook Bridge for Harnu's inline hook settings.
   // Mocked at the module seam (like `claude-cli` below) rather than by widening
-  // the `node:child_process` mock: importing the real bridge drags in
-  // `git-probe.ts`, which needs an `execFile` this suite deliberately does not
-  // provide.
+  // the spawn-runner mock: importing the real bridge drags in `git-probe.ts`, which needs a
+  // `runFile` this suite deliberately does not provide.
   vi.mock('../src/main/hook-bridge', () => ({
     hookSettingsBlobJson: () => h.hookBlob
   }))

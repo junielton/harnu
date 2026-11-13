@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { homedir } from 'node:os'
 
 /**
- * Imperative-shell tests for the Haiku service. `electron`, `node:child_process`,
+ * Imperative-shell tests for the Haiku service. `electron`, the spawn runner,
  * `./claude-cli`, and `./appimage-env` are mocked (mirrors the usage poller's
  * approach) so we can prove single-flight / cache / never-reject / argv / handler
  * without spawning a real `claude`.
@@ -25,9 +25,13 @@ function flush(stdout = '{"title":"t","summary":"s."}', err: Error | null = null
 }
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
-vi.mock('node:child_process', () => ({
-  execFile: (...a: unknown[]) => execFileMock(...(a as [string, string[], unknown, Cb]))
-}))
+vi.mock('../src/main/spawn-runner', async () => {
+  const { runFileFromExecFile } = await import('./support/fake-run-file')
+  return {
+    runFile: (...a: unknown[]) =>
+      runFileFromExecFile(execFileMock as never)(...(a as [string, string[], unknown]))
+  }
+})
 vi.mock('../src/main/claude-cli', () => ({
   resolveClaudePath: vi.fn(async () => '/bin/claude'),
   resolveClaudeVersion: vi.fn(async () => null),

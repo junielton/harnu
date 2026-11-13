@@ -13,10 +13,7 @@
  * Spec: docs/specs/2026-11-02-github-rate-limit/spec.md.
  */
 
-import { execFile } from 'node:child_process'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { promisify } from 'node:util'
-import { setImmediate as yieldToLoop } from 'node:timers/promises'
 import { spawnEnvOnce } from './appimage-env'
 import {
   isRateLimitStderr,
@@ -25,31 +22,13 @@ import {
   type GhResource
 } from './github-budget-core'
 import { githubBudget } from './github-budget-tracker'
-
-const execFileAsync = promisify(execFile)
+import { GH_SPAWN_LIMIT, runFile } from './spawn-runner'
 
 /**
- * BUG-262 — `spawn()` blocks the main thread while the child forks (tens of ms with a big parent
- * heap), so a burst of `gh` calls in one task froze typing. At most this many children are in
- * flight, and each start yields to the event loop first so input and timers run between spawns.
+ * BUG-262 / BUG-266 — the limit on `gh` children in flight (and the fork itself) lives in the spawn runner:
+ * `runFile('gh', …)` takes a slot in the `gh` lane. Re-exported here because the budget docs and tests name it.
  */
-export const GH_SPAWN_LIMIT = 4
-let ghInFlight = 0
-const ghWaiters: Array<() => void> = []
-
-async function withSpawnSlot<T>(fn: () => Promise<T>): Promise<T> {
-  if (ghInFlight >= GH_SPAWN_LIMIT) await new Promise<void>((resolve) => ghWaiters.push(resolve))
-  else ghInFlight++
-  // The slot is ours (taken above, or handed over by the call that just finished); yield first.
-  try {
-    await yieldToLoop()
-    return await fn()
-  } finally {
-    const next = ghWaiters.shift()
-    if (next) next()
-    else ghInFlight--
-  }
-}
+export { GH_SPAWN_LIMIT }
 
 export interface GhRunOptions {
   /** Who is spending (the default; {@link withGhConsumer} can re-attribute a whole call tree). */
@@ -135,49 +114,20 @@ export async function runGh(args: readonly string[], opts: GhRunOptions): Promis
   // Counted when spawned: a call that fails still reached GitHub far enough to be charged.
   githubBudget.record(consumer, opts.resource)
   const env = await spawnEnvOnce()
-  const common = {
-    cwd: opts.cwd,
-    timeout: opts.timeout,
-    maxBuffer: opts.maxBuffer,
-    windowsHide: opts.windowsHide ?? true,
-    encoding: 'utf8' as const,
-    env
-  }
   try {
-    return await withSpawnSlot(() => spawnGh(args, opts, common))
+    return await runFile('gh', args, {
+      cwd: opts.cwd,
+      timeout: opts.timeout,
+      maxBuffer: opts.maxBuffer,
+      windowsHide: opts.windowsHide ?? true,
+      env,
+      stdin: opts.stdin,
+      lane: 'gh'
+    })
   } catch (err) {
     bookkeep(err)
     throw err
   }
-}
-
-async function spawnGh(
-  args: readonly string[],
-  opts: GhRunOptions,
-  common: {
-    cwd?: string
-    timeout?: number
-    maxBuffer?: number
-    windowsHide: boolean
-    encoding: 'utf8'
-    env: NodeJS.ProcessEnv
-  }
-): Promise<GhResult> {
-  if (opts.stdin === undefined) {
-    const { stdout, stderr } = await execFileAsync('gh', [...args], common)
-    return { stdout: String(stdout), stderr: String(stderr ?? '') }
-  }
-  return await new Promise<GhResult>((resolve, reject) => {
-    const child = execFile('gh', [...args], common, (err, stdout, stderr) => {
-      if (err)
-        reject(Object.assign(err, { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }))
-      else resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })
-    })
-    // `gh` can exit before the body is written (bad auth, no such PR): EPIPE on this stream is
-    // not the story, the callback above carries the real reason.
-    child.stdin?.on('error', () => {})
-    child.stdin?.end(opts.stdin)
-  })
 }
 
 /**
@@ -185,12 +135,11 @@ async function spawnGh(
  * so it is neither counted here nor held back while the budget is spent.
  */
 export async function runGhBudgetProbe(timeoutMs = 15_000): Promise<GhResult> {
-  const { stdout, stderr } = await execFileAsync('gh', ['api', 'rate_limit'], {
+  return await runFile('gh', ['api', 'rate_limit'], {
     timeout: timeoutMs,
     windowsHide: true,
     maxBuffer: 1 << 20,
-    encoding: 'utf8',
-    env: await spawnEnvOnce()
+    env: await spawnEnvOnce(),
+    lane: 'gh-budget'
   })
-  return { stdout: String(stdout), stderr: String(stderr ?? '') }
 }

@@ -10,7 +10,7 @@
  * and the children run at low priority: the operator keeps working while they run.
  */
 
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawnChild, type SpawnedChild } from '../spawn-runner'
 import * as os from 'node:os'
 import type { Verdict } from './core'
 import {
@@ -53,7 +53,7 @@ export function createJudgeRunner(deps: {
 }): JudgeRunner {
   const limit = judgeConcurrency(deps.cores)
   const delay = deps.delay ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
-  const children = new Set<ChildProcess>()
+  const children = new Set<SpawnedChild>()
   const waiters: (() => void)[] = []
   let active = 0
   let closed = false
@@ -92,16 +92,18 @@ export function createJudgeRunner(deps: {
         clearTimeout(timer)
         resolve(o)
       }
-      let child: ChildProcess
+      let child: SpawnedChild
       try {
-        child = spawn(bin, buildJudgeArgs(promptPath), {
+        child = spawnChild(bin, buildJudgeArgs(promptPath), {
           cwd: deps.emptyDir,
           env: {
             ...deps.env,
             CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
             CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1'
           },
-          stdio: ['pipe', 'pipe', 'pipe']
+          stdio: ['pipe', 'pipe', 'pipe'],
+          // The judge is a background courtesy: it must never compete with the operator's sessions.
+          priority: os.constants.priority.PRIORITY_LOW
         })
       } catch (e) {
         resolve({ ok: false, reason: `spawn failed: ${(e as Error).message}` })
@@ -112,11 +114,6 @@ export function createJudgeRunner(deps: {
         child.kill('SIGKILL')
         finish({ ok: false, reason: 'timeout' })
       }, ATTEMPT_TIMEOUT_MS)
-      try {
-        if (child.pid !== undefined) os.setPriority(child.pid, os.constants.priority.PRIORITY_LOW)
-      } catch {
-        /* priority is a courtesy */
-      }
       let stdout = ''
       let stderr = ''
       child.stdout?.on('data', (d: Buffer) => (stdout += d.toString('utf8')))

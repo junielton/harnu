@@ -4,16 +4,15 @@
 // failure here lists nothing rather than guess. Imports are lazy so loading the gather for its
 // pure parts never loads the PTY layer.
 
-import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import * as path from 'node:path'
-import { promisify } from 'node:util'
 import { fsOrphanProbe, fsPathExistence, planOrphanTranscripts } from './gc-orphan-transcripts'
 import { evidenceFromGit, proveGone } from './gc-orphan-proof'
 import { readRemovedFolders } from './gc-removed-folders'
 import { digestOrphans, fsOrphanSessions, inspectOrphanTranscript } from './gc-orphan-digest'
 import type { OrphanTranscriptItem } from './gc-orphan-transcripts'
+import { runFile as runGit } from '../spawn-runner'
 
 export interface OrphanSourceContext {
   /** Every folder Harnu knows (sidebar, pinned, hidden, repos, worktrees), existing or not. */
@@ -34,8 +33,6 @@ async function protectedSessionIds(): Promise<Set<string>> {
   ])
   return new Set([...liveSessionKeys(), ...hibernatedKeys()])
 }
-
-const runGit = promisify(execFile)
 
 /**
  * Digests the sessions of the listed orphans into their owning repo's memory, at gather time

@@ -37,8 +37,6 @@ import { ipcMain, app } from 'electron'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { homedir } from 'node:os'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { resolveMemoryLocation, appendMemoryEntry } from './mcp/memory-store'
 import { formatMemoryDate, lintSecrets } from './mcp/memory-core'
 import { grantDecision } from './mcp/grant-core'
@@ -92,8 +90,7 @@ import { pokeManifestDrain } from './manifest-drain'
 import { pushShadowEntry } from './responder-registry'
 import { getExtensionBoardTemplatePath } from './extensions/extensions-loader'
 import { DATA_DIR, mkdirDataDir, onDataDirMigrated } from './data-dir'
-
-const runGit = promisify(execFile)
+import { runFile as runGit } from './spawn-runner'
 
 /** A card-name segment: filesystem-safe, no traversal, no separators. */
 const SAFE_SLUG = /^[A-Za-z0-9._-]+$/

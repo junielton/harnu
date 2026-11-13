@@ -8,12 +8,11 @@
  * ADR-0001; only the re-exported {@link ghCacheFresh} is unit-tested.
  */
 
-import { execFile, spawn, type ExecFileOptions } from 'node:child_process'
-import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { app } from 'electron'
 import { runGh } from '../gh-runner'
+import { runFile as spawnRun, spawnChild, type RunFileOptions } from '../spawn-runner'
 import { githubReadsPaused } from '../github-budget-tracker'
 import {
   buildRepoItems,
@@ -74,8 +73,6 @@ import { needsWorkStamp, scanWorkStamp } from '../gc/gc-work-stamp'
 
 export { ghCacheFresh }
 
-const execFileAsync = promisify(execFile)
-
 /**
  * Every subprocess in the scan goes through here so it is spawned with the
  * user's login-shell PATH (BUG-34). A Dock-launched macOS build inherits
@@ -87,15 +84,9 @@ const execFileAsync = promisify(execFile)
 async function runFile(
   file: string,
   args: readonly string[],
-  opts: Omit<ExecFileOptions, 'env'>
+  opts: Omit<RunFileOptions, 'env'>
 ): Promise<{ stdout: string }> {
-  // `encoding` is pinned so the promisified overload resolves to the string
-  // form (utf8 is execFile's own default — no behavior change).
-  return execFileAsync(file, [...args], {
-    ...opts,
-    encoding: 'utf8',
-    env: await spawnEnvOnce()
-  })
+  return spawnRun(file, args, { ...opts, env: await spawnEnvOnce() })
 }
 
 /** The dehydrate shell's subprocess seam, bound to the same login-PATH runner (BUG-34). */
@@ -525,19 +516,19 @@ async function runGitPipe(
       }
       resolve(value)
     }
-    const a = spawn('git', [...head], { env, windowsHide: true })
-    const b = spawn('git', [...tail], { env, windowsHide: true })
+    const a = spawnChild('git', head, { env, windowsHide: true })
+    const b = spawnChild('git', tail, { env, windowsHide: true })
     const timer = setTimeout(() => finish(null), timeoutMs)
     let out = ''
     // An early `patch-id` exit closes its stdin, so the producer's writes EPIPE.
     // That is an ordinary end of the pipeline, not a failure to report.
     a.on('error', () => finish(null))
     b.on('error', () => finish(null))
-    a.stdout.on('error', () => undefined)
-    b.stdin.on('error', () => undefined)
-    a.stdout.pipe(b.stdin)
-    b.stdout.setEncoding('utf8')
-    b.stdout.on('data', (chunk: string) => {
+    a.stdout!.on('error', () => undefined)
+    b.stdin!.on('error', () => undefined)
+    a.stdout!.pipe(b.stdin!)
+    b.stdout!.setEncoding('utf8')
+    b.stdout!.on('data', (chunk: string) => {
       out += chunk
     })
     b.on('close', (code) => finish(code === 0 ? out : null))
