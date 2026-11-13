@@ -25,7 +25,14 @@ import {
   type FolderGroup,
   type ShelvedMember
 } from './folder-zones'
-import { isInsidePath, partitionShelved, shelvedMatchesQuery } from '../lib/shelved-sidebar'
+import {
+  isInsidePath,
+  partitionShelved,
+  sameShelvedList,
+  shelvedDays,
+  shelvedMatchesQuery,
+  type ShelvedSource
+} from '../lib/shelved-sidebar'
 import { useGcStore } from './gc'
 import { persistedRef, persistedSet } from './persisted'
 import { useApprovalQueue } from './session-approvals'
@@ -2410,9 +2417,26 @@ export const useSessionsStore = defineStore('sessions', () => {
    * pulled out here and re-presented as a member of its repo group's Shelved section (`shelvedByRepo`).
    * The entries come from the GC snapshot, which the footer keeps live (`gc.init()`).
    */
+  // BUG-262 AC-3: the partition costs 325-408 ms on a large fleet, so it must re-run only when its real
+  // inputs change — not on the 30 s clock tick, nor on a GC snapshot that carries the same shelved list.
+  //  1. `shelvedEntries` keeps the PREVIOUS array while the new one is structurally equal, so a
+  //     replaced-but-identical snapshot never reaches the partition.
+  //  2. `shelvedDaysKey` is the only reader of the clock: it changes only when a row's whole-day count does.
+  //  3. The partition itself then tracks just the folder fields it reads (path / repoId / isMainWorktree and
+  //     the sessions of folders inside a shelved worktree), never a live folder's session churn.
+  const shelvedEntries = computed<ShelvedSource[]>((prev) => {
+    const next = useGcStore().snapshot?.shelved ?? []
+    return prev && sameShelvedList(prev, next) ? prev : next
+  })
+  let shelvedNowMs = Date.now()
+  const shelvedDaysKey = computed(() => {
+    shelvedNowMs = closureNow.value
+    return shelvedEntries.value.map((e) => shelvedDays(e, shelvedNowMs)).join(',')
+  })
   const shelvedPartition = computed(() => {
-    const entries = useGcStore().snapshot?.shelved ?? []
-    return partitionShelved<Session, Folder>(folders.value, entries, closureNow.value)
+    const entries = shelvedEntries.value
+    void shelvedDaysKey.value // re-run when a day count flips; `shelvedNowMs` is fresh by now
+    return partitionShelved<Session, Folder>(folders.value, entries, shelvedNowMs)
   })
   const listableFolders = computed<Folder[]>(() => shelvedPartition.value.live)
 

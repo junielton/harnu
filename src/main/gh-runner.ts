@@ -16,6 +16,7 @@
 import { execFile } from 'node:child_process'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { promisify } from 'node:util'
+import { setImmediate as yieldToLoop } from 'node:timers/promises'
 import { spawnEnvOnce } from './appimage-env'
 import {
   isRateLimitStderr,
@@ -26,6 +27,29 @@ import {
 import { githubBudget } from './github-budget-tracker'
 
 const execFileAsync = promisify(execFile)
+
+/**
+ * BUG-262 — `spawn()` blocks the main thread while the child forks (tens of ms with a big parent
+ * heap), so a burst of `gh` calls in one task froze typing. At most this many children are in
+ * flight, and each start yields to the event loop first so input and timers run between spawns.
+ */
+export const GH_SPAWN_LIMIT = 4
+let ghInFlight = 0
+const ghWaiters: Array<() => void> = []
+
+async function withSpawnSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (ghInFlight >= GH_SPAWN_LIMIT) await new Promise<void>((resolve) => ghWaiters.push(resolve))
+  else ghInFlight++
+  // The slot is ours (taken above, or handed over by the call that just finished); yield first.
+  try {
+    await yieldToLoop()
+    return await fn()
+  } finally {
+    const next = ghWaiters.shift()
+    if (next) next()
+    else ghInFlight--
+  }
+}
 
 export interface GhRunOptions {
   /** Who is spending (the default; {@link withGhConsumer} can re-attribute a whole call tree). */
@@ -120,25 +144,40 @@ export async function runGh(args: readonly string[], opts: GhRunOptions): Promis
     env
   }
   try {
-    if (opts.stdin === undefined) {
-      const { stdout, stderr } = await execFileAsync('gh', [...args], common)
-      return { stdout: String(stdout), stderr: String(stderr ?? '') }
-    }
-    return await new Promise<GhResult>((resolve, reject) => {
-      const child = execFile('gh', [...args], common, (err, stdout, stderr) => {
-        if (err)
-          reject(Object.assign(err, { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }))
-        else resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })
-      })
-      // `gh` can exit before the body is written (bad auth, no such PR): EPIPE on this stream is
-      // not the story, the callback above carries the real reason.
-      child.stdin?.on('error', () => {})
-      child.stdin?.end(opts.stdin)
-    })
+    return await withSpawnSlot(() => spawnGh(args, opts, common))
   } catch (err) {
     bookkeep(err)
     throw err
   }
+}
+
+async function spawnGh(
+  args: readonly string[],
+  opts: GhRunOptions,
+  common: {
+    cwd?: string
+    timeout?: number
+    maxBuffer?: number
+    windowsHide: boolean
+    encoding: 'utf8'
+    env: NodeJS.ProcessEnv
+  }
+): Promise<GhResult> {
+  if (opts.stdin === undefined) {
+    const { stdout, stderr } = await execFileAsync('gh', [...args], common)
+    return { stdout: String(stdout), stderr: String(stderr ?? '') }
+  }
+  return await new Promise<GhResult>((resolve, reject) => {
+    const child = execFile('gh', [...args], common, (err, stdout, stderr) => {
+      if (err)
+        reject(Object.assign(err, { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }))
+      else resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })
+    })
+    // `gh` can exit before the body is written (bad auth, no such PR): EPIPE on this stream is
+    // not the story, the callback above carries the real reason.
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(opts.stdin)
+  })
 }
 
 /**
