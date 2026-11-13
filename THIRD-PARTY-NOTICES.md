@@ -240,7 +240,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-## npm packages (188)
+## npm packages (190)
 
 | Package | Version | License |
 | --- | --- | --- |
@@ -286,6 +286,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 | @vueuse/shared | 14.3.0 | MIT |
 | @xterm/addon-image | 0.9.0 | MIT |
 | @xterm/addon-web-links | 0.12.0 | MIT |
+| @xterm/addon-webgl | 0.19.0 | MIT |
 | @xterm/headless | 6.0.0 | MIT |
 | @xterm/xterm | 6.0.0 | MIT |
 | accepts | 2.0.0 | MIT |
@@ -1579,14 +1580,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### @xterm/headless@6.0.0 — MIT
+### @xterm/addon-webgl@0.19.0 — MIT
 
-https://github.com/xtermjs/xterm.js
+https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl
 
 ```text
-Copyright (c) 2017-2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
-Copyright (c) 2014-2016, SourceLair Private Company (https://www.sourcelair.com)
-Copyright (c) 2012-2013, Christopher Jeffrey (https://github.com/chjj/)
+Copyright (c) 2018, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1606,6 +1605,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
+
+### @xterm/headless@6.0.0 — MIT
+
+https://github.com/xtermjs/xterm.js
+
+_No license file in the package; declared license: MIT._
 
 ### @xterm/xterm@6.0.0 — MIT
 
