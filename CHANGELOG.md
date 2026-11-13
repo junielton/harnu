@@ -21,6 +21,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   unavailable or its context is lost. Background sessions keep running without holding a GPU
   context, so a long list of open sessions is unaffected.
 
+- Typing into a session no longer waits on the interface redrawing the whole fleet. Every hook event
+  or transcript update from one session used to make the footer's supervision count and the fleet
+  rail recompute from every session you have (a profile of four live sessions showed over a hundred
+  stalls of 100 ms or more in 90 s). Each session now keeps its own cached status, so an event
+  recomputes only the session it came from. The rail's cards find their session directly, the board
+  sorts without re-parsing every date, and the command palette no longer re-sorts every session
+  while it is closed.
 - A performance check in the developer test suite no longer fails at random. It compared a job's cost
   at two fleet sizes, and a run that took only a few milliseconds made a healthy job look many times
   slower. The check now judges a job on the exact number of file and field accesses, which do not

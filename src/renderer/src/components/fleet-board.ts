@@ -93,6 +93,12 @@ function createdKey(created: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null
 }
 
+/** A card with its `created` parsed once (BUG-265: parsing inside the comparator cost N log N parses). */
+interface KeyedCard {
+  card: BoardSession
+  key: number | null
+}
+
 /**
  * Total order for cards inside one bucket (T459): by creation time in the
  * requested direction; a missing/invalid `created` sorts AFTER every valid one
@@ -100,15 +106,17 @@ function createdKey(created: string | undefined): number | null {
  * including two invalid values — break on `sessionId` ascending, so the result
  * never depends on input order and refreshes can never shuffle equal cards.
  */
-function compareCreated(a: BoardSession, b: BoardSession, order: BoardOrder): number {
-  const ak = createdKey(a.created)
-  const bk = createdKey(b.created)
+function compareCreated(a: KeyedCard, b: KeyedCard, order: BoardOrder): number {
+  const ak = a.key
+  const bk = b.key
   if (ak !== null && bk !== null && ak !== bk) {
     return order === 'newest-first' ? bk - ak : ak - bk
   }
   if (ak === null && bk !== null) return 1
   if (ak !== null && bk === null) return -1
-  return a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0
+  const aId = a.card.sessionId
+  const bId = b.card.sessionId
+  return aId < bId ? -1 : aId > bId ? 1 : 0
 }
 
 /**
@@ -116,17 +124,27 @@ function compareCreated(a: BoardSession, b: BoardSession, order: BoardOrder): nu
  * creation time (T459 — stable, activity never moves a card; `order` picks the
  * direction, default newest first), and DROP empty buckets. Pure; never
  * mutates the input. Sidechains are assumed pre-filtered by the caller.
+ *
+ * One pass classifies every card and parses its `created` once (BUG-265).
  */
 export function buildBoard(
   sessions: readonly BoardSession[],
   order: BoardOrder = DEFAULT_BOARD_ORDER
 ): BoardBucket[] {
+  const byState = new Map<BoardState, KeyedCard[]>()
+  for (const card of sessions) {
+    const state = classifyBoardState(card)
+    const keyed: KeyedCard = { card, key: createdKey(card.created) }
+    const list = byState.get(state)
+    if (list) list.push(keyed)
+    else byState.set(state, [keyed])
+  }
   const buckets: BoardBucket[] = []
   for (const state of BOARD_STATES) {
-    const inState = sessions.filter((s) => classifyBoardState(s) === state)
-    if (inState.length === 0) continue
+    const inState = byState.get(state)
+    if (!inState || inState.length === 0) continue
     inState.sort((a, b) => compareCreated(a, b, order))
-    buckets.push({ state, sessions: inState })
+    buckets.push({ state, sessions: inState.map((k) => k.card) })
   }
   return buckets
 }
