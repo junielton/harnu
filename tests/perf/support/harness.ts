@@ -55,6 +55,13 @@ export interface PerfCase {
   /** What it is, in a line: shown in the failure message. */
   describes: string
   /**
+   * An O(1) contract, stated as a number: the most fleet-field reads the counting pass may make, at
+   * EITHER fixture size. The growth check below only catches a job that is worse than linear, so a case
+   * that must not touch the fleet at all (one session changed: read that session, not all of them) sets
+   * this, and fails when the reads are linear in the fleet.
+   */
+  readsBudget?: number
+  /**
    * Prepares anything per fixture (env, deps) and returns the thing to measure. Async jobs resolve
    * when the work is done; sync computeds just return.
    */
@@ -216,8 +223,17 @@ export async function measureCase(c: PerfCase, deadlineMs = 1500): Promise<CaseR
 }
 
 /** The reasons a result violates the contract; empty means it passes. */
-export function violations(r: CaseResult): string[] {
+export function violations(r: CaseResult, readsBudget?: number): string[] {
   const out: string[] = []
+  if (readsBudget !== undefined) {
+    for (const s of [r.small, r.reference]) {
+      if (s.reads > readsBudget) {
+        out.push(
+          `${s.reads} reads of fleet fields at ${s.factor}x scale for ONE changed session (budget ${readsBudget}: the cost must not depend on the fleet size)`
+        )
+      }
+    }
+  }
   for (const s of [r.small, r.reference]) {
     if (s.best.busyRunMs > STALL_THRESHOLD_MS) {
       out.push(
