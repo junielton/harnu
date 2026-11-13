@@ -2673,6 +2673,9 @@
       "alreadyHandled": "Already handled",
       "failed": "Could not save that. The card is still here; try again."
     },
+    "queue": {
+      "more": "Show {n} more · {left} not shown"
+    },
     "card": {
       "blocks": "Blocks: {what}",
       "clock": "Waiting {time}"

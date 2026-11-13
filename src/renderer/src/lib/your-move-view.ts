@@ -38,16 +38,20 @@ const DAY = 24 * HOUR
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 
-/** `02m 03s`, `1h 02m 03s`, `2d 03h 04m`: the running clock of a card. */
+/**
+ * `00m 05s` in the first minute, then minutes only: `02m`, `1h 02m`, `2d 03h 04m`. A clock past
+ * its first minute keeps one text for a whole minute, so a queue of old cards writes nothing to
+ * the page on most seconds (BUG-271).
+ */
 export function formatClock(ms: number): string {
   const total = Math.max(0, Math.floor(ms))
   const days = Math.floor(total / DAY)
   const hours = Math.floor((total % DAY) / HOUR)
   const minutes = Math.floor((total % HOUR) / MINUTE)
-  const seconds = Math.floor((total % MINUTE) / SECOND)
   if (days > 0) return `${days}d ${pad(hours)}h ${pad(minutes)}m`
-  if (hours > 0) return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`
-  return `${pad(minutes)}m ${pad(seconds)}s`
+  if (hours > 0) return `${hours}h ${pad(minutes)}m`
+  if (minutes > 0) return `${pad(minutes)}m`
+  return `00m ${pad(Math.floor(total / SECOND))}s`
 }
 
 /** Oldest `openedAt` first; a new array, the input is never reordered. */
@@ -58,6 +62,25 @@ export function sortOldestFirst(cards: readonly CardView[]): CardView[] {
 /** What the queue lists: open cards of the `live` lane, oldest first. */
 export function queueCards(cards: readonly CardView[]): CardView[] {
   return sortOldestFirst(cards.filter((c) => c.closedAt === undefined && c.lane === 'live'))
+}
+
+/** How many cards the queue renders at a time: its cost must not grow with the open count (BUG-271). */
+export const QUEUE_PAGE = 25
+
+export interface QueuePage {
+  /** The first `shown` cards of the queue, in the queue's order. */
+  cards: CardView[]
+  /** How many open cards are not rendered. */
+  hidden: number
+  /** What the next "more" click adds: a full page, or what is left; 0 when nothing is hidden. */
+  next: number
+}
+
+/** The rendered part of the queue: its first `shown` cards, and what the "more" button offers. */
+export function pageOfQueue(queue: readonly CardView[], shown: number): QueuePage {
+  const cards = queue.slice(0, Math.max(0, shown))
+  const hidden = queue.length - cards.length
+  return { cards, hidden, next: Math.min(QUEUE_PAGE, hidden) }
 }
 
 /** A model-written link is only ever followed when it is a plain http(s) URL. */

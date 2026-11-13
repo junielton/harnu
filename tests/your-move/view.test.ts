@@ -3,6 +3,8 @@ import type { CardView } from '../../src/main/your-move/core'
 import {
   buttonsFor,
   formatClock,
+  pageOfQueue,
+  QUEUE_PAGE,
   queueCards,
   sortOldestFirst
 } from '../../src/renderer/src/lib/your-move-view'
@@ -27,12 +29,52 @@ const labelsOf = (card: CardView): (string | undefined)[] =>
   buttonsFor(card).map((b) => b.label ?? b.labelKey)
 
 describe('formatClock', () => {
-  it('formatClock: 123_000→02m 03s; 3_723_000→1h 02m 03s; 183_840_000→2d 03h 04m', () => {
-    expect(formatClock(123_000)).toBe('02m 03s')
-    expect(formatClock(3_723_000)).toBe('1h 02m 03s')
+  it('formatClock: seconds under a minute; minute granularity from a minute on (BUG-271)', () => {
+    expect(formatClock(5_000)).toBe('00m 05s')
+    expect(formatClock(59_999)).toBe('00m 59s')
+    expect(formatClock(60_000)).toBe('01m')
+    expect(formatClock(123_000)).toBe('02m')
+    expect(formatClock(3_723_000)).toBe('1h 02m')
     expect(formatClock(183_840_000)).toBe('2d 03h 04m')
     expect(formatClock(0)).toBe('00m 00s')
     expect(formatClock(-5_000)).toBe('00m 00s')
+  })
+
+  it('an old clock keeps one text for a whole minute, so a tick writes nothing (BUG-271)', () => {
+    const base = 3_600_000 + 120_000
+    expect(formatClock(base + 1_000)).toBe(formatClock(base + 59_000))
+  })
+})
+
+describe('the queue page (BUG-271)', () => {
+  const many = (n: number): CardView[] =>
+    Array.from({ length: n }, (_, i) => view({ id: `c${i}`, openedAt: i }))
+
+  it('the page size is bounded to 50 at most', () => {
+    expect(QUEUE_PAGE).toBeGreaterThan(0)
+    expect(QUEUE_PAGE).toBeLessThanOrEqual(50)
+  })
+
+  it('shows the first page in queue order and counts what is left', () => {
+    const page = pageOfQueue(many(2_000), QUEUE_PAGE)
+    expect(page.cards).toHaveLength(QUEUE_PAGE)
+    expect(page.cards[0].id).toBe('c0')
+    expect(page.cards[QUEUE_PAGE - 1].id).toBe(`c${QUEUE_PAGE - 1}`)
+    expect(page.hidden).toBe(2_000 - QUEUE_PAGE)
+    expect(page.next).toBe(QUEUE_PAGE)
+  })
+
+  it('a queue that fits shows everything and no more affordance', () => {
+    const page = pageOfQueue(many(3), QUEUE_PAGE)
+    expect(page.cards).toHaveLength(3)
+    expect(page.hidden).toBe(0)
+    expect(page.next).toBe(0)
+  })
+
+  it('the last page offers only what is left', () => {
+    const page = pageOfQueue(many(30), QUEUE_PAGE)
+    expect(page.hidden).toBe(30 - QUEUE_PAGE)
+    expect(page.next).toBe(30 - QUEUE_PAGE)
   })
 })
 

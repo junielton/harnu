@@ -105,7 +105,7 @@ describe('YourMoveCard in the Return here zone', () => {
     expect(el.text()).toContain('Decide')
     expect(el.text()).toContain('www')
     expect(el.text()).toContain('Ship PROJ-231')
-    expect(el.text()).toContain('02m 03s')
+    expect(el.text()).toContain('02m')
     expect(el.text()).toContain('Merge PROJ-231 now?')
     // collapsed: no context, no buttons
     expect(el.text()).not.toContain('CI is green')
@@ -189,7 +189,7 @@ describe('YourMoveCard in the Return here zone', () => {
     const eyebrow = w.get('[data-testid="your-move-eyebrow"]')
     expect(eyebrow.text()).toContain('Return here')
     expect(eyebrow.text()).toContain('2')
-    expect(eyebrow.text()).toContain('1h 02m 03s')
+    expect(eyebrow.text()).toContain('1h 02m')
     // oldest first
     expect(cardEls(w)[0].text()).toContain('Old one')
   })
