@@ -15,35 +15,25 @@ const sp = vi.hoisted(() => ({
 vi.mock('../src/main/appimage-env', () => ({
   spawnEnvOnce: async (): Promise<Record<string, string>> => ({ PATH: '/usr/bin' })
 }))
-vi.mock('node:child_process', async (importOriginal) => {
-  const real = await importOriginal<typeof import('node:child_process')>()
-  // Two shapes, as in production: the promisified form (cb(err, {stdout, stderr})) and the plain
-  // callback form the stdin path uses (cb(err, stdout, stderr)).
-  const execFile = (file: string, args: string[], _opts: object, cb: (...a: unknown[]) => void) => {
-    const call: { file: string; args: string[]; stdin?: string } = { file, args }
-    sp.calls.push(call)
+vi.mock('../src/main/spawn-runner', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/main/spawn-runner')>()
+  // BUG-266: every `gh` call goes through the spawn runner's `runFile`; this fake is the process boundary.
+  const runFile = (file: string, args: readonly string[], opts: { stdin?: string }) => {
+    sp.calls.push({ file, args: [...args], stdin: opts.stdin })
     const n = sp.next
-    const done = (): void => {
-      if (n.kind === 'ok') cb(null, { stdout: n.stdout, stderr: '' })
-      else cb(Object.assign(new Error('gh failed'), { code: n.code ?? 1, stderr: n.stderr }))
-    }
-    const plain = (): void => {
-      if (n.kind === 'ok') cb(null, n.stdout, '')
-      else cb(Object.assign(new Error('gh failed'), { code: n.code ?? 1 }), '', n.stderr)
-    }
-    // `promisify(execFile)` calls with a 4-arg callback expecting one result object; the stdin path
-    // marks itself by reading `child.stdin` right after the call.
-    queueMicrotask(() => (call.stdin !== undefined ? plain() : done()))
-    return {
-      stdin: {
-        on: (): void => {},
-        end: (body: string): void => {
-          call.stdin = body
-        }
-      }
-    }
+    const promise =
+      n.kind === 'ok'
+        ? Promise.resolve({ stdout: n.stdout, stderr: '' })
+        : Promise.reject(
+            Object.assign(new Error('gh failed'), {
+              code: n.code ?? 1,
+              stdout: '',
+              stderr: n.stderr
+            })
+          )
+    return Object.assign(promise, { kill: (): boolean => true })
   }
-  return { ...real, execFile }
+  return { ...real, runFile }
 })
 
 type Runner = typeof import('../src/main/gh-runner')
