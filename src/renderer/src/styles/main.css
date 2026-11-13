@@ -113,6 +113,37 @@ textarea,
   background: var(--color-border-2);
 }
 
+/* Layout containment for long lists (BUG-269, design.md §6 — "Layout containment").
+   The sidebar keeps every session row in the DOM, including the rows of collapsed
+   folders (zero-height clip, not `display: none`), and the Fleet rail one card per
+   live session — tens of thousands of boxes on a large workspace. With no
+   containment a style or layout pass walked all of them, so a single change anywhere
+   in the page cost 100–240 ms and stalled key delivery to the terminal.
+   `content-visibility: auto` makes the browser skip style, layout and paint for any
+   row that is outside the scroll viewport (or clipped to zero height) while keeping
+   it in the DOM — find-in-page, focus, `scrollIntoView` and `querySelector` still
+   reach it. Pure performance: no row changes size, position or paint.
+   - `.sidebar-contain`: the sidebar column is a layout-containment root with a fixed
+     width, so a layout change elsewhere in the window (terminal, topbar, Fleet rail)
+     never re-walks the folder list, and a change inside it never escapes. Nothing in
+     the column is `position: fixed` (menus and popovers are teleported to `body`),
+     which is what makes the new containing block safe.
+   - `.sidebar-row-cv`: session rows have a fixed inline height, so no
+     `contain-intrinsic-size` is needed and scroll positions cannot shift.
+   - `.fleet-card-cv`: a card's height depends on its optional second line, so the
+     placeholder size is `auto <fallback>` — the browser remembers the real height
+     once a card has rendered, which keeps the scrollbar from jumping. */
+.sidebar-contain {
+  contain: layout style;
+}
+.sidebar-row-cv {
+  content-visibility: auto;
+}
+.fleet-card-cv {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 64px;
+}
+
 /* Eyebrow / section label — design.md §3 (Eyebrow scale) + §6 (Section label).
    Typography only (size/weight/tracking/uppercase); the COLOR is applied per
    context (default text-4; the Fleet status board tints each section header by

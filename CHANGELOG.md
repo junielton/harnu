@@ -14,6 +14,15 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- A long folder list no longer makes the whole window slower to lay out. The sidebar keeps every
+  session row in the page, including the rows of collapsed folders, and the Fleet rail one card per
+  live session, so a large workspace is about 15,000 elements, and any change on the page made the
+  browser re-walk all of them (100–240 ms a pass while a key was held in a terminal, which delayed
+  the keystrokes). Rows and cards that are off-screen are now skipped until they scroll into view,
+  and the sidebar is isolated from layout changes elsewhere in the window. Nothing looks or scrolls
+  differently: in an isolated instance with 2,400 sessions the screenshots are pixel-identical, and
+  the number of layout objects dropped from about 15,000 to about 3,700.
+
 - Starting a git, GitHub, Docker or Claude helper process no longer freezes typing for 10 to 370 ms. Every one of those used to be started by the main window process itself, and starting a process copies that whole process first, so each start cost more the bigger Harnu had grown. They now go through one small helper process that does the starting, and the main process only sends it a request (about 0.1 ms). If the helper ever stops, the calls waiting on it fail right away instead of hanging, and it is restarted on the next request. `HARNU_SPAWN_INLINE=1` brings back the old behaviour as an escape hatch.
 - Typing into a session no longer waits behind the terminal redrawing itself while Claude streams
   output. The visible terminal used to be drawn as thousands of page elements that the browser had

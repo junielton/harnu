@@ -655,7 +655,7 @@ function onSelectTeammate(session: Session): void {
         <template v-for="s in [row.session]" :key="s.sessionId">
           <button
             data-session-row
-            class="sidebar-row group relative flex w-full cursor-pointer items-center text-left transition"
+            class="sidebar-row sidebar-row-cv group relative flex w-full cursor-pointer items-center text-left transition"
             :class="
               sessions.selectedId === s.sessionId ? 'text-text' : 'text-text-2 hover:text-text'
             "
