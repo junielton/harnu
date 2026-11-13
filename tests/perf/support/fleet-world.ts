@@ -14,7 +14,7 @@
  * does.
  */
 
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { toRaw } from 'vue'
 import type { FolderEntry } from '../../../src/preload'
 import type { ScaleSpec } from './scale-fixture'
@@ -23,6 +23,8 @@ type DiskSession = FolderEntry['sessions'][number]
 type Listener = (payload: never) => void
 
 export interface FleetWorld {
+  /** The Pinia instance the store lives in, for a case that mounts a component against it. */
+  pinia: Pinia
   /** The store, typed loosely on purpose: the cases read named computeds from it. */
   store: Record<string, unknown> & {
     allSessions: Array<{ sessionId: string }>
@@ -106,19 +108,21 @@ export async function buildFleetWorld(
     onSessionUpdated: on('onSessionUpdated'),
     fleetReportShellSessions: () => undefined
   }
-  const g = globalThis as unknown as { window?: unknown }
+  const g = globalThis as unknown as { window?: Record<string, unknown> }
   const hadWindow = 'window' in g
   const prevWindow = g.window
-  g.window = {
-    api: new Proxy(known, {
-      // Anything else: an `onX` subscribes (and is never fired), any other call resolves to nothing.
-      get: (t, k: string) => (k in t ? t[k] : k.startsWith('on') ? on(k) : async () => undefined),
-      has: () => true
-    }),
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined
-  }
-  setActivePinia(createPinia())
+  const api = new Proxy(known, {
+    // Anything else: an `onX` subscribes (and is never fired), any other call resolves to nothing.
+    get: (t, k: string) => (k in t ? t[k] : k.startsWith('on') ? on(k) : async () => undefined),
+    has: () => true
+  })
+  // Under jsdom (a case that mounts a component) the real window stays and only gets an `api`.
+  const jsdom = typeof prevWindow?.document === 'object'
+  const prevApi = jsdom ? prevWindow?.api : undefined
+  if (jsdom) (prevWindow as Record<string, unknown>).api = api
+  else g.window = { api, addEventListener: () => undefined, removeEventListener: () => undefined }
+  const pinia = createPinia()
+  setActivePinia(pinia)
   const { useSessionsStore } = await import('../../../src/renderer/src/stores/sessions')
   const store = useSessionsStore() as unknown as FleetWorld['store'] & {
     init(): Promise<void>
@@ -152,6 +156,7 @@ export async function buildFleetWorld(
   const live = new Set(liveIds)
   let tick = 0
   return {
+    pinia,
     store,
     size: ids.length,
     fire(k) {
@@ -174,7 +179,8 @@ export async function buildFleetWorld(
     },
     dispose() {
       armed = false
-      if (hadWindow) g.window = prevWindow
+      if (jsdom) (prevWindow as Record<string, unknown>).api = prevApi
+      else if (hadWindow) g.window = prevWindow
       else delete g.window
     }
   }
