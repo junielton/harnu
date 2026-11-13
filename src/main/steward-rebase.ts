@@ -16,11 +16,8 @@
  * run, the same posture as the observe tick's "no config-driven code execution" rule (BUG-164).
  */
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import * as path from 'node:path'
-
-const execFileP = promisify(execFile)
+import { runFile as execFileP } from './spawn-runner'
 
 export type RebaseResult =
   | { ok: true; branch: string; before: string; after: string; rebased: boolean; pushed: false }
