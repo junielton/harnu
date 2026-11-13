@@ -74,4 +74,23 @@ describe('harness growth judgement', () => {
     expect(r.growth).toBeNull()
     expect(r.fsGrowth).toBeNull()
   })
+
+  it('lets exact counters decide when they exist, however the timing swings above the floor', () => {
+    // Measured: the same job at the same size costs 19 ms in one run and 75 ms in the next
+    // (a 4x swing from the machine, with 251 -> 1001 fs calls both times), so 12 ms -> 81 ms
+    // is noise, not growth.
+    const r = assembleCaseResult('case', size(0.25, 12, 251, 0), size(1, 81, 1001, 0))
+    expect(r.growth).toBeCloseTo(6.75) // still reported
+    expect(violations(r)).toEqual([])
+  })
+
+  it('still fails time growth above the floor when the case has no counters to judge it', () => {
+    const r = assembleCaseResult('case', size(0.25, 12, 20, 0), size(1, 81, 80, 0))
+    expect(violations(r).join('\n')).toMatch(/cost grew/)
+  })
+
+  it('fails on a super-linear counter whatever the timing says', () => {
+    const r = assembleCaseResult('case', size(0.25, 12, 251, 0), size(1, 40, 4000, 0))
+    expect(violations(r).join('\n')).toMatch(/filesystem calls grew/)
+  })
 })
