@@ -8,6 +8,7 @@
  * linear. The world is the real sessions store (`support/fleet-world.ts`).
  */
 
+import { buildFleetCards } from '../../src/renderer/src/lib/fleet-cards'
 import type { JobContext, PerfCase } from './support/harness'
 import { buildFleetWorld, type FleetWorld } from './support/fleet-world'
 
@@ -68,4 +69,14 @@ export const boardBucketsCase = eventCase(
   (w) => w.store.boardBuckets
 )
 
-export const STORE_CASES: PerfCase[] = [supervisionLoadCase, boardBucketsCase]
+export const fleetCardsCase = eventCase(
+  'renderer/store-fleet-cards',
+  'InboxRail fleetCards (rail cards flattened from the board) after one session event',
+  (w) =>
+    buildFleetCards(
+      w.store.boardBuckets as Parameters<typeof buildFleetCards>[0],
+      w.store as unknown as Parameters<typeof buildFleetCards>[1]
+    )
+)
+
+export const STORE_CASES: PerfCase[] = [supervisionLoadCase, boardBucketsCase, fleetCardsCase]
