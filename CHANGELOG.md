@@ -10,6 +10,17 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-13
+
+### Fixed
+
+- Typing into a session no longer waits behind the terminal redrawing itself while Claude streams
+  output. The visible terminal used to be drawn as thousands of page elements that the browser had
+  to re-lay-out on every burst of output, freezing the window for 100–175 ms at a time. It is now
+  drawn on the GPU (WebGL), and falls back to the old drawing automatically if the GPU is
+  unavailable or its context is lost. Background sessions keep running without holding a GPU
+  context, so a long list of open sessions is unaffected.
+
 ## 2026-11-12
 
 ### Added
