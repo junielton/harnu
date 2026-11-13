@@ -674,3 +674,27 @@ describe('S2 delta 4 contracts absorbed (delta 2, item 3)', () => {
     expect(r.log.filter((l) => l !== 'housekeeping')).toEqual([])
   })
 })
+
+describe('runGcCycle: the staged-skills prune rides the tick (T616)', () => {
+  it('runs once per cycle, and a throw never fails the cycle', async () => {
+    const r = rig([], live())
+    let calls = 0
+    r.deps.pruneStagedSkills = async () => {
+      calls++
+      throw new Error('disk gone')
+    }
+    const record = await runGcCycle(r.deps, 'timer')
+    expect(calls).toBe(1)
+    expect(record.mode).toBeDefined()
+  })
+
+  it('does not run while autonomous cleanup is paused', async () => {
+    const r = rig([], { ...live(), pauseAutonomous: true })
+    let calls = 0
+    r.deps.pruneStagedSkills = async () => {
+      calls++
+    }
+    await runGcCycle(r.deps, 'timer')
+    expect(calls).toBe(0)
+  })
+})

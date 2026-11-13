@@ -327,6 +327,73 @@ export function folderStageKey(folder: string): string {
     .slice(0, 16)
 }
 
+/** A stage dir name is exactly what {@link folderStageKey} produces: 16 lowercase hex chars. */
+const STAGE_KEY_RE = /^[0-9a-f]{16}$/
+
+/** An unmatched stage dir (no known folder hashes to it) survives this long after its last use. */
+export const STAGING_GRACE_MS = 24 * 3_600_000
+
+/** A dir touched this recently is never pruned: a spawn may be about to register its session. */
+export const STAGING_JUST_STAGED_MS = 10 * 60_000
+
+export interface StagedDirStat {
+  name: string
+  isDirectory: boolean
+  /** Last use: refreshed by every stage, so it reads "unused for N" and not just "created". */
+  mtimeMs: number
+}
+
+export interface StagingPruneInput {
+  /** Every entry directly under `<userData>/skills/`. */
+  entries: readonly StagedDirStat[]
+  /** Folders with a live or parked session: their stage dir is never removed. */
+  inUseFolders: readonly string[]
+  /** Every folder the app knows (session index + pinned), used to tell "dormant" from "unknown". */
+  knownFolders: readonly string[]
+  now: number
+  graceMs?: number
+  justStagedMs?: number
+}
+
+export type StagingKeepReason = 'not-a-stage-dir' | 'in-use' | 'just-staged' | 'within-grace'
+
+export interface StagingPruneDecision {
+  remove: string[]
+  keep: Array<{ name: string; reason: StagingKeepReason }>
+}
+
+/**
+ * Decide which staged-skill dirs are dead. A staged dir is a regenerable copy (`stage` rebuilds it
+ * at every spawn), so the only way to hurt is deleting one a running `claude` uses as
+ * `--plugin-dir`. Hence: in use (live or parked session) ⇒ keep; dormant known folder ⇒ remove
+ * unless staged moments ago; unknown hash (a deleted folder, a worker's mention-keyed dir, a
+ * legacy dir) ⇒ remove only past the grace window. Entries that are not 16-hex directories are
+ * never ours to delete.
+ */
+export function planStagingPrune(input: StagingPruneInput): StagingPruneDecision {
+  const graceMs = input.graceMs ?? STAGING_GRACE_MS
+  const justStagedMs = input.justStagedMs ?? STAGING_JUST_STAGED_MS
+  const inUse = new Set(input.inUseFolders.map(folderStageKey))
+  const known = new Set(input.knownFolders.map(folderStageKey))
+  const out: StagingPruneDecision = { remove: [], keep: [] }
+  for (const e of input.entries) {
+    if (!e.isDirectory || !STAGE_KEY_RE.test(e.name)) {
+      out.keep.push({ name: e.name, reason: 'not-a-stage-dir' })
+      continue
+    }
+    if (inUse.has(e.name)) {
+      out.keep.push({ name: e.name, reason: 'in-use' })
+      continue
+    }
+    const age = input.now - e.mtimeMs
+    if (age < justStagedMs) out.keep.push({ name: e.name, reason: 'just-staged' })
+    else if (!known.has(e.name) && age < graceMs)
+      out.keep.push({ name: e.name, reason: 'within-grace' })
+    else out.remove.push(e.name)
+  }
+  return out
+}
+
 /**
  * The stamp that decides whether a folder's staged copy is still current: the
  * catalog version AND the exact enabled set. One mechanism covers both re-stage

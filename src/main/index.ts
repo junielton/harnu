@@ -81,6 +81,7 @@ import {
   registerBundledSkillsHandlers,
   injectBundledSkillArgs,
   cleanStaleLegacyStaging,
+  pruneStagedSkillsLive,
   setDocReaderEndpointProvider
 } from './bundled-skills'
 import { registerModsAuditHandlers } from './mods-audit'
@@ -744,6 +745,9 @@ app.whenReady().then(async () => {
   registerModsAuditHandlers()
   // Drop the dead pre-rename `<hash>/capy/` staging dirs the userData migration carried over.
   void cleanStaleLegacyStaging().catch(() => {})
+  // T616: drop the staged skill dirs of folders that are gone (and what piled up before this
+  // existed). Never fails boot; the Cleanup cycle repeats it.
+  void pruneStagedSkillsLive().catch(() => {})
   setBundledSkillsArgsProvider((args, cwd) => injectBundledSkillArgs(args, cwd))
   // T389: the companion mod — the second, unconditional `--plugin-dir` plus a spawn token. The
   // provider answers null (spawn exactly as before) unless the mode is on, the CLI version is

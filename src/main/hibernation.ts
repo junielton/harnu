@@ -18,8 +18,17 @@ import { missionsDir, parseMissionFile, type Mission } from './mission-core'
  */
 const hibernated = new Set<string>()
 
-export function markHibernated(sessionKey: string): void {
+/** T616: the folder each parked session was staged for, so the skills prune can keep its dir. */
+const hibernatedFolderOf = new Map<string, string>()
+
+export function markHibernated(sessionKey: string, folder?: string): void {
   hibernated.add(sessionKey)
+  if (folder !== undefined) hibernatedFolderOf.set(sessionKey, folder)
+}
+
+/** Folders of the sessions currently parked (T616). Sessions parked without a folder are absent. */
+export function hibernatedFolders(): string[] {
+  return [...hibernatedFolderOf.values()]
 }
 
 /**
@@ -28,6 +37,7 @@ export function markHibernated(sessionKey: string): void {
  */
 export function clearHibernated(sessionKey: string): void {
   hibernated.delete(sessionKey)
+  hibernatedFolderOf.delete(sessionKey)
 }
 
 export function isHibernated(sessionKey: string): boolean {
@@ -121,6 +131,7 @@ export function parkHistory(): readonly ParkEvent[] {
 /** Test-only: drop all state between cases. */
 export function resetHibernation(): void {
   hibernated.clear()
+  hibernatedFolderOf.clear()
   parkingPtyIds.clear()
   parkLedger.length = 0
 }

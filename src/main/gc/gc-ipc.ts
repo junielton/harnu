@@ -487,6 +487,7 @@ export async function registerGcHandlers(
     notify,
     emitCycle: (record) => send('gc:cycle', record),
     rememberLeftovers: remember,
+    pruneStagedSkills: async () => (await import('../bundled-skills')).pruneStagedSkillsLive(),
     // The one place the autopilot deletes refs: the cycle calls it only when the operator turned
     // "Expire archives automatically" on.
     expireArchives: (keepDays, now, neverClean) => expireArchivesNow(keepDays, now, neverClean),

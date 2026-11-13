@@ -515,6 +515,12 @@ interface PtyRec {
   spawnedBy?: SpawnOrigin
   /** T363: the directory the PTY runs in — locates the repo whose missions it may own. */
   cwd: string
+  /**
+   * T616: the folder exactly as the skills stager keyed it (`opts.cwd`, which differs from `cwd`
+   * when the folder is gone and the PTY fell back to an ancestor). Names the staged dir this
+   * process uses as `--plugin-dir`, so the prune never removes it.
+   */
+  stageFolder: string
   /** Epoch ms of the last `\x03` the operator wrote: a Ctrl+C that ends a session is not a death. */
   lastCtrlCAt?: number
   /**
@@ -829,7 +835,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     sessionIndex.removeByPtyId(ptyId)
     pruneTaskState(sessionKey)
     lastFocusedAt.delete(sessionKey)
-    markHibernated(sessionKey)
+    markHibernated(sessionKey, rec.stageFolder)
     recordPark(sessionKey, Date.now())
     getWindow()?.webContents.send('pty:hibernated', { sessionKey })
   }
@@ -1276,6 +1282,19 @@ export function livePtyDescriptors(): LivePtyDescriptor[] {
     })
   }
   return out
+}
+
+/**
+ * T616: every folder a running PTY's staged skills dir is keyed on (the folder as handed to the
+ * stager, plus the directory it actually runs in). The staged-skills prune never removes these.
+ */
+export function livePtyFolders(): string[] {
+  const out = new Set<string>()
+  for (const rec of ptys.values()) {
+    out.add(rec.stageFolder)
+    out.add(rec.cwd)
+  }
+  return [...out]
 }
 
 /**
@@ -1823,6 +1842,7 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     // T215: fail closed — an unstamped spawn is treated as the operator's.
     spawnedBy: opts.spawnedBy === 'agent' ? 'agent' : 'operator',
     cwd: runCwd,
+    stageFolder: opts.cwd ?? '',
     ...(kind === 'claude-new' && opts.claudeSessionId
       ? { claudeSessionId: opts.claudeSessionId }
       : {})
