@@ -15,7 +15,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - Starting a git, GitHub, Docker or Claude helper process no longer freezes typing for 10 to 370 ms. Every one of those used to be started by the main window process itself, and starting a process copies that whole process first, so each start cost more the bigger Harnu had grown. They now go through one small helper process that does the starting, and the main process only sends it a request (about 0.1 ms). If the helper ever stops, the calls waiting on it fail right away instead of hanging, and it is restarted on the next request. `HARNU_SPAWN_INLINE=1` brings back the old behaviour as an escape hatch.
-
+- Typing into a session no longer waits on the interface redrawing the whole fleet. Every hook event
+  or transcript update from one session used to make the footer's supervision count and the fleet
+  rail recompute from every session you have (a profile of four live sessions showed over a hundred
+  stalls of 100 ms or more in 90 s). Each session now keeps its own cached status, so an event
+  recomputes only the session it came from. The rail's cards find their session directly, the board
+  sorts without re-parsing every date, and the command palette no longer re-sorts every session
+  while it is closed.
 - A performance check in the developer test suite no longer fails at random. It compared a job's cost
   at two fleet sizes, and a run that took only a few milliseconds made a healthy job look many times
   slower. The check now judges a job on the exact number of file and field accesses, which do not

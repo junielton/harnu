@@ -346,10 +346,16 @@ watch(isOpen, async (open) => {
 })
 
 // Reset the cursor whenever the filtered set changes so the highlight never
-// points past the new end of the list.
-watch(flatItems, () => {
-  if (cursor.value >= flatItems.value.length) cursor.value = 0
-})
+// points past the new end of the list. Only while the palette is OPEN: the palette is always mounted, and
+// a watcher on `flatItems` evaluates the whole list (every session sorted by mtime, every session titled)
+// on each session event even when nobody can see it (BUG-265). Closed, the source is `null` and the lists
+// are not read; opening makes the source change, which re-checks the cursor.
+watch(
+  () => (isOpen.value ? flatItems.value : null),
+  () => {
+    if (cursor.value >= flatItems.value.length) cursor.value = 0
+  }
+)
 
 watch(query, () => {
   cursor.value = 0
