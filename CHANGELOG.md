@@ -15,6 +15,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - Starting a git, GitHub, Docker or Claude helper process no longer freezes typing for 10 to 370 ms. Every one of those used to be started by the main window process itself, and starting a process copies that whole process first, so each start cost more the bigger Harnu had grown. They now go through one small helper process that does the starting, and the main process only sends it a request (about 0.1 ms). If the helper ever stops, the calls waiting on it fail right away instead of hanging, and it is restarted on the next request. `HARNU_SPAWN_INLINE=1` brings back the old behaviour as an escape hatch.
+- Typing into a session no longer waits behind the terminal redrawing itself while Claude streams
+  output. The visible terminal used to be drawn as thousands of page elements that the browser had
+  to re-lay-out on every burst of output, freezing the window for 100–175 ms at a time. It is now
+  drawn on the GPU (WebGL), and falls back to the old drawing automatically if the GPU is
+  unavailable or its context is lost. Background sessions keep running without holding a GPU
+  context, so a long list of open sessions is unaffected.
+
 - Typing into a session no longer waits on the interface redrawing the whole fleet. Every hook event
   or transcript update from one session used to make the footer's supervision count and the fleet
   rail recompute from every session you have (a profile of four live sessions showed over a hundred
