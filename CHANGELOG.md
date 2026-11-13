@@ -16,6 +16,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - Starting a git, GitHub, Docker or Claude helper process no longer freezes typing for 10 to 370 ms. Every one of those used to be started by the main window process itself, and starting a process copies that whole process first, so each start cost more the bigger Harnu had grown. They now go through one small helper process that does the starting, and the main process only sends it a request (about 0.1 ms). If the helper ever stops, the calls waiting on it fail right away instead of hanging, and it is restarted on the next request. `HARNU_SPAWN_INLINE=1` brings back the old behaviour as an escape hatch.
 
+- A performance check in the developer test suite no longer fails at random. It compared a job's cost
+  at two fleet sizes, and a run that took only a few milliseconds made a healthy job look many times
+  slower. The check now judges a job on the exact number of file and field accesses, which do not
+  vary between runs, and only falls back to time for a job with nothing to count.
+
 ## 2026-11-12
 
 ### Added

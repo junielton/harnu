@@ -124,19 +124,25 @@ export interface CaseResult {
   id: string
   small: SizeResult
   reference: SizeResult
-  /** cost(reference) / cost(small), `null` when the reference cost is under the noise floor or a run did not finish. */
+  /** cost(reference) / cost(small), `null` when either cost is under the noise floor or a run did not finish (the counters judge then). */
   growth: number | null
   /** reads(reference) / reads(small), `null` when the reference pass counted few reads. */
   readsGrowth: number | null
   /** fsCalls(reference) / fsCalls(small), `null` when the reference run made few calls or a run did not finish. */
   fsGrowth: number | null
+  /**
+   * What decides growth for this case: `counters` (fs calls or reads of fleet fields: exact, the same
+   * on every machine), `time` (only when the case has no counter to read) or `none` (a run did not
+   * finish, or the timings are under the noise floor and there is no counter).
+   */
+  growthJudgedBy: 'counters' | 'time' | 'none'
   /** What a linear job would cost more at the reference size (reference factor / small factor). */
   linear: number
 }
 
 export const SMALL_FACTOR = 0.25
 export const REFERENCE_FACTOR = 1
-/** Below this CPU a ratio is noise. */
+/** A cost under this is noise: it is never used as either side of a time ratio. */
 export const NOISE_FLOOR_MS = 8
 /** Allowed excess over linear before growth is called super-linear. */
 export const GROWTH_TOLERANCE = 1.5
@@ -196,23 +202,46 @@ async function runSize(c: PerfCase, factor: number, deadlineMs: number): Promise
   }
 }
 
+/**
+ * Puts the two measured sizes together and decides what each growth ratio may say.
+ *
+ * The exact counters (fs calls, reads of fleet fields) are the same on every machine, so a case that
+ * has them is judged on them. Time growth is only the fallback for a case with no counter, and is
+ * read only when BOTH costs are at or above `NOISE_FLOOR_MS`: a 3 ms small run is mostly GC, JIT and
+ * scheduler noise, and as the denominator of a ratio it turned a linear job into a "16x" one while the
+ * filesystem calls grew exactly 4x. Even above the floor an async job's timing swings by 4x between
+ * identical runs (19 ms vs 75 ms measured, same 251 -> 1001 calls), so a ratio of two such timings is
+ * not evidence when a counter exists. The CPU budget and the 50 ms limit still apply to every case.
+ */
+export function assembleCaseResult(
+  id: string,
+  small: SizeResult,
+  reference: SizeResult
+): CaseResult {
+  const finished = small.best.completed && reference.best.completed
+  const comparable =
+    finished && small.best.costMs >= NOISE_FLOOR_MS && reference.best.costMs >= NOISE_FLOOR_MS
+  const fsComparable = finished && reference.best.fsCalls >= FS_FLOOR
+  const readsGrowth =
+    small.reads > 0 && reference.reads >= FS_FLOOR ? reference.reads / small.reads : null
+  const fsGrowth = fsComparable ? reference.best.fsCalls / Math.max(small.best.fsCalls, 1) : null
+  const hasCounters = readsGrowth !== null || fsGrowth !== null
+  return {
+    id,
+    small,
+    reference,
+    readsGrowth,
+    fsGrowth,
+    growth: comparable ? reference.best.costMs / small.best.costMs : null,
+    growthJudgedBy: hasCounters ? 'counters' : comparable ? 'time' : 'none',
+    linear: REFERENCE_FACTOR / SMALL_FACTOR
+  }
+}
+
 export async function measureCase(c: PerfCase, deadlineMs = 1500): Promise<CaseResult> {
   const small = await runSize(c, SMALL_FACTOR, deadlineMs)
   const reference = await runSize(c, REFERENCE_FACTOR, deadlineMs)
-  const comparable =
-    small.best.completed && reference.best.completed && reference.best.costMs >= NOISE_FLOOR_MS
-  const fsComparable =
-    small.best.completed && reference.best.completed && reference.best.fsCalls >= FS_FLOOR
-  return {
-    id: c.id,
-    small,
-    reference,
-    readsGrowth:
-      small.reads > 0 && reference.reads >= FS_FLOOR ? reference.reads / small.reads : null,
-    fsGrowth: fsComparable ? reference.best.fsCalls / Math.max(small.best.fsCalls, 1) : null,
-    growth: comparable ? reference.best.costMs / Math.max(small.best.costMs, 0.5) : null,
-    linear: REFERENCE_FACTOR / SMALL_FACTOR
-  }
+  return assembleCaseResult(c.id, small, reference)
 }
 
 /** The reasons a result violates the contract; empty means it passes. */
@@ -231,7 +260,7 @@ export function violations(r: CaseResult): string[] {
     }
     if (!s.best.completed) out.push(`did not finish within the deadline at ${s.factor}x scale`)
   }
-  if (r.growth !== null && r.growth > r.linear * GROWTH_TOLERANCE) {
+  if (r.growthJudgedBy === 'time' && r.growth !== null && r.growth > r.linear * GROWTH_TOLERANCE) {
     out.push(
       `cost grew ${r.growth.toFixed(1)}x for a ${r.linear}x larger fixture (super-linear; limit ${(r.linear * GROWTH_TOLERANCE).toFixed(1)}x)`
     )
