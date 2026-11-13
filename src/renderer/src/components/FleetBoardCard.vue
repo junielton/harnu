@@ -159,7 +159,7 @@ function onEnter(e: MouseEvent): void {
 
 <template>
   <button
-    class="group block cursor-pointer border border-border bg-surface text-left transition hover:bg-surface-2"
+    class="fleet-card-cv group block cursor-pointer border border-border bg-surface text-left transition hover:bg-surface-2"
     :class="[
       entering ? 'card-enter' : '',
       sessions.selectedId === session.sessionId ? '!border-border-2 !bg-surface-2' : ''

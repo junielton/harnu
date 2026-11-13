@@ -2629,6 +2629,34 @@ Stacked visual states:
 | Selected         | `rgba(217,119,87,0.08)`   | `--text`, weight 500    | 2px `--accent` bar on the left (border-radius `0 2px 2px 0`) |
 | Faded (idle-old) | transparent               | `--text-2` opacity 0.62 | —                                                            |
 
+#### Layout containment (long lists)
+
+The sidebar keeps every session row in the DOM — including the rows of collapsed
+folders, which sit behind a zero-height clip rather than `display: none` — and the
+Fleet rail renders one card per live session. On a large workspace that is ~15k
+elements, and without containment a style or layout pass walked all of them
+(measured: 100–240 ms per pass while a key was held in a terminal). Three
+containment helpers in `main.css` bound that cost. **None of them changes a row's
+size, position or paint** — the check is a pixel-identical before/after in an
+isolated instance.
+
+| Helper             | Applied to                       | Declaration                                                         | Why this shape                                                                                                                                                              |
+| ------------------ | -------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.sidebar-row-cv`  | session row (`data-session-row`) | `content-visibility: auto`                                          | Rows have a fixed inline height (28 / 24 px by density), so no `contain-intrinsic-size` is needed and scroll positions cannot shift.                                        |
+| `.fleet-card-cv`   | Fleet card root (`fleet-card`)   | `content-visibility: auto; contain-intrinsic-block-size: auto 64px` | A card's height depends on its optional second line; `auto 64px` means "64px until it has rendered once, then its real height", so the scrollbar does not jump.             |
+| `.sidebar-contain` | the sidebar `<aside>`            | `contain: layout style`                                             | A fixed-width layout root: a change elsewhere in the window never re-walks the folder list. Deliberately **no** `paint` (it would clip the jump palette) and **no** `size`. |
+
+Rules for anyone touching these surfaces:
+
+- Off-screen rows stay in the DOM — find-in-page, focus, `scrollIntoView` and
+  `querySelector` still reach them. Do not "fix" a missing row by removing the class.
+- A new variable-height row type gets `contain-intrinsic-block-size: auto <fallback>`
+  alongside `content-visibility: auto`, never the bare property.
+- Nothing inside the sidebar column may be `position: fixed`: `contain: layout` makes
+  the column the containing block for fixed descendants. Menus and popovers are
+  teleported to `body` for exactly this reason (`tests/sidebar-containment.test.ts`
+  guards it).
+
 #### Row anatomy & indentation (fixed slots)
 
 A session row is a strict horizontal sequence of **fixed-width slots** so the
