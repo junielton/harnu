@@ -1,15 +1,12 @@
 import { ipcMain, shell } from 'electron'
-import { execFile, spawn } from 'node:child_process'
 import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { delimiter, isAbsolute, join } from 'node:path'
-import { promisify } from 'node:util'
 import { spawnEnvOnce } from './appimage-env'
+import { runFile, spawnChild, type SpawnedChild } from './spawn-runner'
 import { pickAttempt, planEditorLaunch } from './editor-launch'
 import { githubPullsUrlFromRemote } from './github-remote'
 import { readEditorSetting } from './settings'
-
-const execFileAsync = promisify(execFile)
 
 /**
  * What `external:openInEditor` resolves with. `terminal` is a launch the
@@ -92,10 +89,9 @@ export function registerExternal(): void {
   ipcMain.handle('external:githubPullsUrl', async (_e, p: string): Promise<string | null> => {
     if (typeof p !== 'string' || p.length === 0 || !isAbsolute(p)) return null
     try {
-      const { stdout } = await execFileAsync('git', ['-C', p, 'remote', 'get-url', 'origin'], {
+      const { stdout } = await runFile('git', ['-C', p, 'remote', 'get-url', 'origin'], {
         windowsHide: true,
         timeout: 5_000,
-        encoding: 'utf8',
         env: await spawnEnvOnce()
       })
       return githubPullsUrlFromRemote(stdout)
@@ -191,9 +187,9 @@ export function findExecutable(cmd: string, pathEnv: string, platform: NodeJS.Pl
 function trySpawnDetached(cmd: string, args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false
-    let child: ReturnType<typeof spawn>
+    let child: SpawnedChild
     try {
-      child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
+      child = spawnChild(cmd, args, { detached: true, stdio: 'ignore' })
     } catch {
       resolve(false)
       return
