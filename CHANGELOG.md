@@ -21,6 +21,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
   recomputes only the session it came from. The rail's cards find their session directly, the board
   sorts without re-parsing every date, and the command palette no longer re-sorts every session
   while it is closed.
+- A performance check in the developer test suite no longer fails at random. It compared a job's cost
+  at two fleet sizes, and a run that took only a few milliseconds made a healthy job look many times
+  slower. The check now judges a job on the exact number of file and field accesses, which do not
+  vary between runs, and only falls back to time for a job with nothing to count.
 
 ## 2026-11-12
 
