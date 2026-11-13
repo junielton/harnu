@@ -4284,7 +4284,8 @@ second section mounts the same way:
   label is `sidebar.section.collapse` / `.expand` ("Collapse {name}" / "Expand {name}"). Enter and
   Space toggle it, as on any button; focus keeps the standard focus ring.
 - **Collapsed.** The island is the eyebrow row only (28px, plus the 1px rule when the layout is
-  off); the body is hidden (`v-show`, so a card's expanded state survives) and the handle is not
+  off), with symmetric `6px 12px` padding so the text sits on the row's vertical center (expanded
+  it is `8px 12px 4px`, because it heads a body); the body is hidden (`v-show`, so a card's expanded state survives) and the handle is not
   rendered, since there is nothing to resize. The list island takes the freed height.
 - **Handle.** The horizontal variant of the T627 divider (§6 "Resizable divider (handle)"): a
   `<div role="separator" aria-orientation="horizontal">`, `h-1.5 w-full cursor-row-resize`, the

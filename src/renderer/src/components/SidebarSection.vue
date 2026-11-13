@@ -176,12 +176,14 @@ onBeforeUnmount(stopDrag)
 
       <!-- Section-label eyebrow (design.md §6): uppercase 10.5px / 500 / 0.06em, --text-4 (or
            --color-warning). The slot is the title and whatever sits beside it; the chevron is
-           pushed to the right end and always stays visible, collapsed or not. -->
+           pushed to the right end and always stays visible, collapsed or not. Expanded it has
+           8px above / 4px below (it heads a body); collapsed it is the whole row, so the padding
+           is symmetric (6px) and the text sits on the vertical center. -->
       <div
         class="flex shrink-0 items-center"
         :class="tone === 'warning' ? 'text-warning' : 'text-text-4'"
+        :style="{ padding: collapsed ? '6px 12px' : '8px 12px 4px 12px' }"
         style="
-          padding: 8px 12px 4px 12px;
           gap: 4px;
           font-size: 10.5px;
           font-weight: 500;
