@@ -290,5 +290,10 @@ sub-agents included). From S-10's figures a `harnu-spec` problem-run costs about
 build) and a Superpowers one about 8.8M, so a default dev round (6 problems × 2 repeats × 2
 contestants, plus judges) is about 300M and a holdout round about 150M. The default cap is 400M
 per round. A skill change costs four rounds (two dev, two holdout); `--with-tlc` adds a third
-contestant to each. The reproduction of S-10 measured one problem with all three contestants; its
-`report.md` has the actual cost.
+contestant to each.
+
+The harness measures less than that. The reproduction of S-10 (one problem, three contestants,
+2 repeats, 3 judges each) spent 18.6M in all. Per run, spec plus build, that is 4.6M for
+`harnu-spec`, 1.9M for Superpowers and 2.7M for `tlc-spec-driven`. Judges cost about 0.06M per run.
+Read the cap's size against those numbers, not S-10's. A round on the other dev problems can cost
+differently, and the `budget` section of each report gives the actual cost.
