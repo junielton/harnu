@@ -12,6 +12,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-13
 
+### Added
+
+- The **Return here** box at the bottom of the sidebar can now be resized and collapsed. Drag its top edge (the boundary with the folder list) to give either one more room, double-click the edge to reset it, and click the chevron in its heading to fold it down to the heading alone, with the title, count and clock still visible. The folder list always keeps a minimum height and the dock never moves. The size and the collapsed state are remembered, including when the box disappears because nothing is waiting. It is built as a reusable sidebar section, so future boxes stacked there get the same behavior.
+
 ### Fixed
 
 - A long folder list no longer makes the whole window slower to lay out. The sidebar keeps every

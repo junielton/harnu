@@ -2367,7 +2367,7 @@ owning folder
   `<button>`; `--text-3` → `--text` on hover, `@click.stop` so it doesn't jump
   along) → `markSessionSeen(id)` (stamps last-viewed = now → the predicate
   flips and the row leaves). **Zone divider**: a 1px `--border` top rule
-  (`data-return-divider`, no margin), separating the folder list above from `RETURN HERE`; the
+  (`data-section-divider`, no margin), separating the folder list above from `RETURN HERE`; the
   dock below draws its own top rule. **Height**: until the operator drags the handle the zone is
   content-sized and at most `168px` tall (about four rows plus the eyebrow); the eyebrow stays put
   and only the rows scroll, so a long list never pushes the dock off-screen. Once dragged, the stored
@@ -4273,11 +4273,11 @@ second section mounts the same way:
 - **Anatomy, top to bottom.** A transparent wrapper (`data-section="<id>"`, `position: relative`)
   holding (1) the **handle**, absolutely placed above the island, and (2) the **island** (the
   element that carries `data-island`, the border and the rounded corners, `overflow: hidden` in
-  Floating panels). Inside the island: the 1px `--border` top rule (`data-return-divider`; hidden by
+  Floating panels). Inside the island: the 1px `--border` top rule (`data-section-divider`; hidden by
   Floating panels, where the gap separates the islands), the **eyebrow**, then the **body**.
 - **Eyebrow.** The Section-label (uppercase `10.5px` / 500 / `0.06em`, padding `8px 12px 4px`,
   `gap 4px`, `--text-4`; `tone="warning"` makes it `--color-warning`). The `eyebrow` slot is the
-  title and whatever the section shows beside it (count, clock). The **chevron** is an 18×18px
+  title and whatever the section shows beside it (count, clock). The **chevron** is a 16×16px
   `<button>` pushed to the right end (`ml-auto`): lucide `ChevronDown` (expanded) / `ChevronRight`
   (collapsed), 12px, stroke `1.8`, `--text-3` → `--text` and `--surface-2` on hover, the ghost
   button radius. It carries `aria-expanded` and an `aria-controls` pointing at the body, and its

@@ -1019,7 +1019,7 @@ textarea,
   margin-bottom: var(--float-gap);
 }
 /* the Return here zone's own top rule: the island gap separates it from the list now */
-:root[data-floating='on'] [data-return-divider] {
+:root[data-floating='on'] [data-section-divider] {
   display: none;
 }
 /* dock and rail sections are drop-in slots: each extra section is divided from the one above */
