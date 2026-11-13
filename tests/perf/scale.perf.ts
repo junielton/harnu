@@ -18,7 +18,7 @@ describe('scale fixture: no job or computed breaks the typing path', () => {
   for (const c of ALL_CASES) {
     it(`${c.id}: ${c.describes}`, { timeout: 60_000 }, async () => {
       const result = await measureCase(c)
-      const found = violations(result)
+      const found = violations(result, c.readsBudget)
       const owner = KNOWN_OFFENDERS[c.id]
       const detail = `${describeResult(result)}\n  ${found.join('\n  ') || 'within budget'}`
       if (owner && !isStrict()) {
