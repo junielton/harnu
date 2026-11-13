@@ -3,10 +3,10 @@
 // SIGKILL after a short grace. The promise settles either way, so a child that traps SIGTERM cannot
 // hang the advisor's queue. It starts one process, never retries, and imports nothing from electron.
 
-import { spawn } from 'node:child_process'
 import { mkdtempSync, rmdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnChild } from '../spawn-runner'
 
 const DEFAULT_GRACE_MS = 5000
 const DEFAULT_STDOUT_MAX = 4 << 20
@@ -63,12 +63,17 @@ export function runSupervised(
       resolve(value)
     }
 
-    const child = spawn(cmd, args, {
+    const child = spawnChild(cmd, args, {
       cwd: o.cwd ?? scratch ?? undefined,
       env: o.env,
       stdio: ['pipe', 'pipe', 'pipe']
     })
-    if (child.pid !== undefined) o.onSpawn?.(child.pid)
+    // The pid arrives with the helper's `spawn` report (in-process it is already set).
+    const reportPid = (): void => {
+      if (child.pid !== undefined) o.onSpawn?.(child.pid)
+    }
+    if (child.pid !== undefined) reportPid()
+    else child.once('spawn', reportPid)
 
     const cap = o.maxStdout ?? DEFAULT_STDOUT_MAX
     child.stdout?.on('data', (d: Buffer) => {

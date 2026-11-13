@@ -12,7 +12,6 @@
  * never a silent pass.
  */
 
-import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -20,6 +19,7 @@ import { planArchive } from '../reaper/archive-core'
 import { ARCHIVE_IDENTITY, archiveTip, archiveWip } from '../reaper/archive-shell'
 import { removeWorktreeAdmin } from '../reaper/worktree-admin-shell'
 import { rawRm } from '../raw-fs'
+import { runFile } from '../spawn-runner'
 import {
   DEFAULT_SNAPSHOT_CAP_BYTES,
   decideRestoreBase,
@@ -57,35 +57,22 @@ class GitError extends Error {
 }
 
 /** `git -C <cwd> <args>` → stdout. Rejects with a {@link GitError} (exit code kept) on any failure. */
-function git(cwd: string, args: string[], opts: GitOpts = {}): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('git', ['-C', cwd, ...args], {
+async function git(cwd: string, args: string[], opts: GitOpts = {}): Promise<string> {
+  try {
+    const { stdout } = await runFile('git', ['-C', cwd, ...args], {
       windowsHide: true,
       timeout: GIT_TIMEOUT_MS,
-      env: opts.env ? { ...process.env, ...opts.env } : process.env
+      maxBuffer: GIT_MAX_BUFFER,
+      env: opts.env ? { ...process.env, ...opts.env } : process.env,
+      stdin: opts.input ?? ''
     })
-    const out: Buffer[] = []
-    const err: Buffer[] = []
-    let size = 0
-    child.stdout.on('data', (d: Buffer) => {
-      size += d.length
-      if (size > GIT_MAX_BUFFER) child.kill()
-      else out.push(d)
-    })
-    child.stderr.on('data', (d: Buffer) => err.push(d))
-    child.on('error', (e) => {
-      reject(new GitError(`git ${args[0]}: ${e.message}`, null))
-    })
-    child.on('close', (code) => {
-      if (code === 0 && size <= GIT_MAX_BUFFER) resolve(Buffer.concat(out).toString('utf8'))
-      else {
-        const text = Buffer.concat(err).toString('utf8').trim()
-        reject(new GitError(`git ${args[0]} failed (${code}): ${text}`, code))
-      }
-    })
-    child.stdin.on('error', () => undefined)
-    child.stdin.end(opts.input ?? '')
-  })
+    return stdout
+  } catch (err) {
+    const e = err as { code?: unknown; stderr?: string; message?: string }
+    // A number is git's own exit code; a string (`ENOENT`, a buffer overflow) means it never produced one.
+    if (typeof e.code !== 'number') throw new GitError(`git ${args[0]}: ${e.message}`, null)
+    throw new GitError(`git ${args[0]} failed (${e.code}): ${(e.stderr ?? '').trim()}`, e.code)
+  }
 }
 
 /** The sha `rev` resolves to (as a commit), or null when it does not exist; any other failure throws. */

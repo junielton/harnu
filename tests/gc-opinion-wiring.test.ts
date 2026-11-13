@@ -116,8 +116,10 @@ describe('the advisor can only read (AC-2)', () => {
     const run = read('src/main/gc/opinion-run.ts')
     expect(shell).not.toMatch(/spawn\(/)
     expect(shell).toContain('runSupervised(bin, a.argv,')
-    expect(run.match(/spawn\(/g)).toHaveLength(1)
-    expect(run).toContain('spawn(cmd, args,')
+    // BUG-266: the one child comes from the spawn runner, never from `child_process` here.
+    expect(run.match(/spawnChild\(/g)).toHaveLength(1)
+    expect(run).toContain('spawnChild(cmd, args,')
+    expect(run).not.toMatch(/child_process/)
     for (const file of [shell, run]) {
       expect(file).not.toMatch(/--dangerously|bypassPermissions|--allowedTools|--mcp-config/)
     }
