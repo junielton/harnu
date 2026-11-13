@@ -80,6 +80,12 @@ interface LiveTerminal {
    * contract for terminals nobody has asked to reuse yet.
    */
   dead: boolean
+  /**
+   * WebGL renderer slot (BUG-267). Non-null only while attached and GPU-rendering:
+   * acquired in `wireLiveTerminal` / `attachLiveTerminal`, released in
+   * `detachLiveTerminal`, so a cached fleet never holds more than one context.
+   */
+  gpu: GpuRendererState['gpu']
 }
 
 /**
@@ -161,6 +167,11 @@ import { ref, watch, onBeforeUnmount, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { ImageAddon } from '@xterm/addon-image'
+import {
+  acquireGpuRenderer,
+  releaseGpuRenderer,
+  type GpuRendererState
+} from '../lib/terminal-gpu-renderer'
 import { useSessionsStore } from '../stores/sessions'
 import { getMcpApi } from '../stores/command-dispatch'
 import { resolveSpawnSpec } from './spawn-spec'
@@ -688,7 +699,8 @@ function wireLiveTerminal(
     screenMode,
     lastTitle: null,
     snapshotTimer: null,
-    dead: false
+    dead: false,
+    gpu: null
   }
 
   // Track the OSC title for the screen-detection classifier ("is this pane
@@ -786,6 +798,8 @@ function wireLiveTerminal(
   armInjectionWatchdog(sessionId)
   attachResizeObserver(live, host)
   live.focusCleanup = installFocusListeners(live)
+  // BUG-267: paint through WebGL instead of the DOM renderer (falls back itself).
+  acquireGpuRenderer(live.term, live)
   return live
 }
 
@@ -952,6 +966,10 @@ function attachLiveTerminal(live: LiveTerminal): void {
     window.api.ptyResize(live.ptyId, next.cols, next.rows)
   }
 
+  // BUG-267: the WebGL context is released on detach, so re-acquire it now that
+  // the element is back in the document (falls back to the DOM renderer itself).
+  acquireGpuRenderer(live.term, live)
+
   attachResizeObserver(live, host)
   // Re-bind focus listeners on every attach: while detached we tear them
   // down to keep the shared `terminalFocused` ref accurate (a detached
@@ -1012,6 +1030,10 @@ function detachLiveTerminal(live: LiveTerminal): void {
     live.focusCleanup = null
   }
   unregisterFocusedPane(MAIN_PANE_ID)
+  // BUG-267: free the WebGL context while backgrounded (xterm reverts to the DOM
+  // renderer, whose state is kept in the buffer) so 15+ sessions never hit the
+  // browser's context limit.
+  releaseGpuRenderer(live)
   if (live.term.element && live.term.element.parentNode) {
     live.term.element.parentNode.removeChild(live.term.element)
   }

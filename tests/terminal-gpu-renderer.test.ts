@@ -25,6 +25,7 @@ function fakeAddon(): FakeAddon {
   let lossCb: (() => void) | null = null
   const a: FakeAddon = {
     disposed: false,
+    activate() {},
     dispose() {
       a.disposed = true
     },
