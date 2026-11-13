@@ -63,6 +63,13 @@ covered by a case or listed with the reason it is not yet. A new timer fails it 
    job is cut off instead of making CI slow.
 2. If the job is a timer in `src/main`, move its file from `UNCOVERED` to `COVERED` in `timer-coverage.perf.ts`.
 
+### Issuing a child process (BUG-266)
+
+`tests/perf/spawn-issue.perf.ts` is a separate case: it holds the process at the main process's size (~460 MB RSS) and
+times how long the calling thread is blocked while it issues 20 child processes through the product's git probe. A
+`fork()` costs time proportional to the parent's memory, so this fails if anything starts forking from the main
+thread again. See `docs/dev/spawn-runner.md`.
+
 ### Known offenders
 
 `tests/perf/support/known-offenders.ts` names the cases that violate the contract today and the bug that

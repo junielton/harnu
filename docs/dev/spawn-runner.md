@@ -2,7 +2,7 @@
 
 Harnu's main thread carries keystrokes. After the BUG-261/262 fixes the longest remaining tasks were single
 `child_process` spawns: one Your move judge (`claude -p`) held the thread for 374 ms, one git probe for 267 ms.
-This page records why, and (once the runner lands) how the code is arranged so it cannot happen again.
+This page records why, and how the code is arranged so it cannot happen again.
 
 ## AC-1 — why one spawn costs 100–370 ms
 
@@ -49,3 +49,55 @@ must not be the main process.
 The fix is the one AC-2 names for this case: **a small helper process does the forking**. The main thread posts
 a message (0.1 ms) and gets the result back as another message. A helper's own fork costs 1–3 ms (it is small),
 and no keystroke waits on it.
+
+## How it is arranged
+
+```
+main process                         helper process (utilityProcess)        children
+ runFile() / spawnChild()  --msg-->   spawn-helper.ts  --fork/exec-->         git, gh, docker, claude -p
+ (spawn-runner.ts)         <--msg--   (self-contained script)  <-- pipes --
+```
+
+- **`src/main/spawn-runner.ts`** is the only module in `src/main` that imports `child_process` besides the
+  helper script (`tests/spawn-runner-no-direct-spawn.test.ts` fails on any other import, with file:line).
+  - `runFile(file, args, opts)` is `execFile` as a promise: it resolves `{ stdout, stderr }` and rejects the way
+    `execFile` does (`code`, `killed`, `signal`, `stdout`, `stderr`), and the promise has a `kill()`.
+  - `spawnChild(file, args, opts)` is a streaming child (`stdout`/`stderr` streams, `stdin`, `kill`, `spawn` /
+    `exit` / `close` / `error`). `stdio`, `priority` (`os.setPriority`) and `detached` (an editor launch) are supported.
+    `exit` is emitted after the chunks the child already printed have reached their `data` handlers.
+  - **Lanes** (BUG-262's limits live here now): at most `GH_SPAWN_LIMIT` (4) `gh` children and
+    `GIT_PROBE_CONCURRENCY` (4) `git-probe` children in flight; everything else shares 16 slots. A start yields to the
+    event loop first. Pass `lane: 'git-probe'` for a loop of cheap probes. Streaming children are not laned.
+- **`src/main/spawn-helper.ts`** is built by electron-vite as its own main entry (`out/main/spawn-helper.js`) and
+  started with `utilityProcess.fork` at boot, while the main process is still small. It has no local runtime
+  imports, so it never shares a chunk with the app.
+- **`src/main/spawn-protocol.ts`** holds the message types (imported with `import type` only).
+- Until `startSpawnRunner` is called (unit tests, tooling) the runner runs the same calls in-process, so tests that
+  stub `execFile`/`spawn` keep working. Tests of a call site stub `../src/main/spawn-runner`
+  (`tests/support/fake-run-file.ts` adapts an `execFile`-style fake).
+
+### Failure behaviour
+
+- The helper dies: every request waiting on it rejects with `SpawnHelperExitedError` (`code: 'SPAWN_HELPER_EXITED'`),
+  a streaming child gets `error` then `close`, and the next request starts a new helper. Nothing hangs.
+- The helper cannot start (or dies before it is ready three times in 30 s): requests reject with
+  `SpawnHelperUnavailableError` (`code: 'SPAWN_HELPER_UNAVAILABLE'`) instead of restarting in a loop.
+- `HARNU_SPAWN_INLINE=1` skips the helper and forks from the main process like before (an escape hatch, not a mode
+  to run in).
+- When the helper stops (the app quits), it terminates its children, except `detached` ones.
+
+### Adding a spawn
+
+Import `runFile` or `spawnChild` from the runner. Never `child_process`. Pass `env` from `spawnEnvOnce()` as before.
+A call that must read what a child printed before it acts on `exit` is fine: `exit` follows the data.
+
+### The perf case
+
+`tests/perf/spawn-issue.perf.ts` (AC-3) runs the product's own git probe against 20 folders at ~460 MB RSS and times
+how long the calling thread is held until each call has been issued. Before the runner: median 33 ms, p95 40 ms.
+After: median 0.08 ms, p95 0.14 ms. Budget: 10 ms.
+
+### Packaging
+
+The helper is one extra file in the main bundle (`out/main/spawn-helper.js`, ~5 KB). It loads from inside
+`app.asar` (checked with `@electron/asar` and `utilityProcess.fork`), so `asarUnpack` is unchanged.
