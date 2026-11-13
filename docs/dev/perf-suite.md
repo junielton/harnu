@@ -53,6 +53,14 @@ a temp dir) at 0.25x and 1x, and fails on:
   counts are exact on any machine; the timings of a few-millisecond computed are not, which is why the counts
   carry the verdict for them.
 
+**How growth is judged.** A time ratio (`cost(reference) / cost(small)`) is only read when both costs are
+at least `NOISE_FLOOR_MS` (8 ms). A run of 3 ms is mostly GC, JIT and scheduler noise, and as a denominator
+it made a linear job look 16x slower while its filesystem calls grew exactly 4x. When either size is under
+the floor, time says nothing and the verdict belongs to the exact counters (filesystem calls, reads of fleet
+fields), which are always checked on their own. The floor is applied to both sides in
+`assembleCaseResult` (`support/harness.ts`) and pinned by `tests/perf/growth.test.ts`; raising the floor or
+a budget is not how to fix a flaky case.
+
 `tests/perf/timer-coverage.perf.ts` keeps the list honest: every `setInterval` in `src/main` is either
 covered by a case or listed with the reason it is not yet. A new timer fails it until you decide.
 
