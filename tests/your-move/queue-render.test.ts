@@ -25,8 +25,9 @@ const card = (i: number): CardView => ({
   ask: `Pick A or B (${i})`,
   source: 'judge',
   lane: 'live',
-  // Filed hours ago, so every clock is past its first minute; card 0 is the oldest.
-  openedAt: START - 10 * 3_600_000 + i * 1_000,
+  // Filed hours ago, so every clock is past its first minute and none crosses a minute boundary
+  // within a few seconds (ages 10h 00m 20-40 s); card 0 is the oldest.
+  openedAt: START - 10 * 3_600_000 - 40_000 + i * 10,
   updatedAt: START,
   answerable: false,
   optionDeliverable: []
@@ -58,6 +59,26 @@ async function mountZone(): Promise<VueWrapper> {
   return wrapper
 }
 
+/** Counts DOM text writes (a changed text node or a replaced child) while `act` runs. */
+async function countWrites(w: VueWrapper, act: () => Promise<void>): Promise<number> {
+  let writes = 0
+  const count = (records: MutationRecord[]): void => {
+    for (const r of records) writes += r.type === 'characterData' ? 1 : r.addedNodes.length
+  }
+  const observer = new MutationObserver(count)
+  observer.observe(w.element, { childList: true, characterData: true, subtree: true })
+  await act()
+  count(observer.takeRecords())
+  observer.disconnect()
+  return writes
+}
+
+const tick = async (): Promise<void> => {
+  vi.advanceTimersByTime(1_000)
+  await nextTick()
+  await nextTick()
+}
+
 const cardsIn = (w: VueWrapper): number => w.findAll('[data-testid="your-move-card"]').length
 
 describe('Return here zone with a huge queue (BUG-271)', () => {
@@ -74,7 +95,7 @@ describe('Return here zone with a huge queue (BUG-271)', () => {
     const more = w.findAll('[data-testid="your-move-more"]')
     expect(more).toHaveLength(1)
     expect(more[0].text()).toContain(String(QUEUE_PAGE))
-    expect(more[0].text()).toContain(String(OPEN - QUEUE_PAGE))
+    expect(more[0].text()).toContain((OPEN - QUEUE_PAGE).toLocaleString('en-US'))
     await more[0].trigger('click')
     expect(cardsIn(w)).toBe(2 * QUEUE_PAGE)
     expect(w.findAll('[data-testid="your-move-more"]')).toHaveLength(1)
@@ -92,19 +113,27 @@ describe('Return here zone with a huge queue (BUG-271)', () => {
 
   it('one 1 s tick writes at most a page of text nodes with 2,000 open cards (AC-2)', async () => {
     const w = await mountZone()
-    const yourMove = useYourMoveStore()
-    const observer = new MutationObserver(() => {})
-    observer.observe(w.element, { childList: true, characterData: true, subtree: true })
-    // Drive the real timer: the store ticks `now` once a second.
-    vi.advanceTimersByTime(1_000)
-    await nextTick()
-    await nextTick()
-    const writes = observer
-      .takeRecords()
-      .reduce((n, r) => n + (r.type === 'characterData' ? 1 : r.addedNodes.length), 0)
-    observer.disconnect()
-    expect(yourMove.now).toBeGreaterThan(START)
+    const writes = await countWrites(w, tick)
+    expect(useYourMoveStore().now).toBeGreaterThan(START)
     expect(writes).toBeLessThanOrEqual(QUEUE_PAGE)
+    // Every clock here is hours old and none crosses a minute boundary: the tick writes nothing.
+    expect(writes).toBe(0)
+  })
+
+  it('with 2,000 cards filed seconds ago, a tick still writes at most a page (AC-2)', async () => {
+    const fresh = Array.from({ length: OPEN }, (_, i) => ({
+      ...card(i),
+      openedAt: START - 10_000 + i // 10 s old: seconds are shown and change on every tick
+    }))
+    ;(window as unknown as { api: { yourMoveList: unknown } }).api.yourMoveList = vi.fn(async () =>
+      structuredClone(fresh)
+    )
+    const w = await mountZone()
+    const writes = await countWrites(w, tick)
+    // The counter sees real writes (the page's clocks changed)...
+    expect(writes).toBeGreaterThan(0)
+    // ...and only the rendered page pays for them.
+    expect(writes).toBeLessThanOrEqual(QUEUE_PAGE + 1)
   })
 
   it('a clock past its first minute does not change inside that minute (AC-2)', async () => {

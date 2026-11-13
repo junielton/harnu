@@ -2384,12 +2384,24 @@ from another project shows while the list is drilled (R-3).
   eyebrow stays put; only the cards scroll.
 - **Order.** Oldest first (`openedAt` ascending). Only open cards of the `live` lane. The selected
   session's cards are listed too.
+- **Page.** The zone renders the first **25** cards of that order and nothing else, however many
+  are open: its cost does not grow with the queue (BUG-271; a real queue held 1,594 cards). The
+  eyebrow count is still the total. When more are open, one quiet text button closes the list
+  (`data-testid="your-move-more"`, `--text-3`, `11.5px`, `--radius-sm`, hover `--text`, same side
+  padding as a card, `margin: 0 8px 6px 8px`): `Show 25 more · 1,569 not shown`
+  (`yourMove.queue.more`; the first number is the next page, the second what stays hidden; the
+  last page offers only what is left). Each click renders the next page after the ones already
+  shown, in the same order; nothing re-sorts and a card never moves. The button is absent when the
+  queue fits one page.
 - **Card.** A `<div>` (never a `<button>`: it holds buttons), `bg-warning-soft`,
   `border border-warning-line`, `--radius`, `padding: 8px 10px`, `gap 6px` between cards, `margin: 0
 8px`. Top line: **kind badge** (`yourMove.kind.*`, `bg-surface` + `text-warning`, `10.5px`,
   `--radius-sm`), `folder alias · session name` (`--text-3`,
   `11.5px`, `truncate`), and the **running clock** (`--text-4`, `10.5px`, `tabular-nums`, right
-  aligned; ticks every second). Below it, the **ask** in `--text`, `12.5px`, two lines max
+  aligned). The clock counts seconds only in the first minute (`00m 05s`); from a minute on it
+  shows minutes (`02m`, `1h 02m`, `2d 03h 04m`) and changes once a minute, so a queue of old
+  cards writes nothing to the page on most seconds (BUG-271). The eyebrow's clock follows the same
+  rule. Below it, the **ask** in `--text`, `12.5px`, two lines max
   (`line-clamp-2`) when collapsed, in full when expanded. A system card (death, could not check,
   plan ready) renders its `askKey` through `$t`, the English `ask` otherwise.
 - **Expanded** (click the header; one card open at a time): the `context`, then "Blocks: …" when the

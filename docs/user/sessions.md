@@ -76,6 +76,8 @@ The **Return here** box sits at the bottom of the sidebar, above the dock. It is
 
 With [Your move](settings.md#your-move) set to **Off** or **Observe**, it lists the sessions you probably forgot: waiting for input and not looked at for about ten minutes. With **Live**, it lists **cards** instead, one for each thing only you can unblock, oldest first. The heading shows how many there are and how long the oldest has been waiting, for example `RETURN HERE · 3 · 2h 14m`. The box grows to about 380 pixels (or 45% of the window height, whichever is smaller) and the cards scroll inside it; the heading stays in place.
 
+The box shows the first 25 cards. When more are waiting, a **Show 25 more · 1,569 not shown** button at the end of the list adds the next 25, in the same order, and the heading still counts every open card. A card's clock counts seconds during its first minute and minutes after that (`02m`, `1h 02m`, `2d 03h 04m`).
+
 Each card shows its kind (Decide, Go / no-go, Provide, Do or Check), the project and session it comes from, a clock that counts up from the moment it was filed, and what is being asked. Click the card to expand it: you then see the context, what it blocks, and its buttons.
 
 - **Decide** cards have one button per option, the one the session recommended first and marked. **Go / no-go** has Go and No-go. **Do** has Done, and Open link when the card carries a web link. **Check** has Looks right and Something's wrong. **Provide** has only Open session: Harnu never takes a secret through a card.

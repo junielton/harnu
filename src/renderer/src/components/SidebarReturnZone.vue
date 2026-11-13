@@ -28,7 +28,7 @@ import { X } from 'lucide-vue-next'
 import { useSessionsStore } from '../stores/sessions'
 import type { Session } from '../stores/sessions'
 import { useYourMoveStore } from '../stores/your-move'
-import { formatClock } from '../lib/your-move-view'
+import { formatClock, pageOfQueue, QUEUE_PAGE } from '../lib/your-move-view'
 import { sessionTitle } from '../lib/session-label'
 import YourMoveCard from './YourMoveCard.vue'
 
@@ -46,6 +46,16 @@ const count = computed(() => (live.value ? yourMove.count : sessions.forgottenSe
 const oldestClock = computed(() =>
   yourMove.oldestAt === null ? '' : formatClock(yourMove.now - yourMove.oldestAt)
 )
+
+/**
+ * The queue renders one page at a time (BUG-271): a real queue held 1,594 cards, and every one of
+ * them was a live row in the sidebar. "More" reveals the next page after the ones already shown.
+ */
+const shown = ref(QUEUE_PAGE)
+const page = computed(() => pageOfQueue(yourMove.queue, shown.value))
+const showMore = (): void => {
+  shown.value += QUEUE_PAGE
+}
 
 /** One card open at a time: the zone is a narrow strip, and a second one would crowd the list. */
 const expandedId = ref<string | null>(null)
@@ -105,12 +115,32 @@ function labelFor(s: Session): string {
       style="padding-top: 2px; padding-bottom: 2px"
     >
       <YourMoveCard
-        v-for="c in yourMove.queue"
+        v-for="c in page.cards"
         :key="c.id"
         :card="c"
         :expanded="expandedId === c.id"
         @toggle="toggle(c.id)"
       />
+      <button
+        v-if="page.hidden > 0"
+        type="button"
+        class="block cursor-pointer text-left text-text-3 transition hover:text-text"
+        style="
+          font-size: 11.5px;
+          border-radius: var(--radius-sm);
+          padding: 4px 10px;
+          margin: 0 8px 6px 8px;
+        "
+        data-testid="your-move-more"
+        @click="showMore"
+      >
+        {{
+          $t('yourMove.queue.more', {
+            n: $n(page.next),
+            left: $n(page.hidden)
+          })
+        }}
+      </button>
     </div>
 
     <!-- Flat list of forgotten sessions: the only part that scrolls (the eyebrow stays put). -->

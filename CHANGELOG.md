@@ -14,6 +14,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- Holding a key in a session no longer stutters about once a second when a lot of Your move cards are open. The Return here list used to draw every open card (one real queue held 1,594) and rewrite about 800 running clocks every second, which made the browser re-lay-out the sidebar over and over. It now draws the first 25 cards and ends with a **Show 25 more** button that adds the next 25; the heading still counts every open card, and the order, buttons and exits are unchanged. A card's clock counts seconds only during its first minute, then minutes (`02m`, `1h 02m`), so an old queue writes nothing to the page on most seconds.
 - Starting a git, GitHub, Docker or Claude helper process no longer freezes typing for 10 to 370 ms. Every one of those used to be started by the main window process itself, and starting a process copies that whole process first, so each start cost more the bigger Harnu had grown. They now go through one small helper process that does the starting, and the main process only sends it a request (about 0.1 ms). If the helper ever stops, the calls waiting on it fail right away instead of hanging, and it is restarted on the next request. `HARNU_SPAWN_INLINE=1` brings back the old behaviour as an escape hatch.
 - Typing into a session no longer waits behind the terminal redrawing itself while Claude streams
   output. The visible terminal used to be drawn as thousands of page elements that the browser had

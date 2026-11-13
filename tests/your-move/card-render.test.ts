@@ -96,8 +96,8 @@ describe('Your move card rendering', () => {
     seed()
     let renders = 0
     const yourMove = useYourMoveStore()
-    // Opened a minute ago, so the clock shows seconds and changes on every tick.
-    const w = mountCard({ ...card('sess-3-3'), openedAt: yourMove.now - 60_000 }, () => renders++)
+    // Opened 10 s ago: still in its first minute, so the clock shows seconds and changes on every tick.
+    const w = mountCard({ ...card('sess-3-3'), openedAt: yourMove.now - 10_000 }, () => renders++)
     await nextTick()
     const before = w.get('[data-testid="your-move-clock"]').text()
     yourMove.now += 1_000
