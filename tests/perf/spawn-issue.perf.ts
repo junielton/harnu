@@ -15,6 +15,8 @@ import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { clearGitProbeCache, probeGitMeta } from '../../src/main/git-probe'
+import { startSpawnRunner, stopSpawnRunner } from '../../src/main/spawn-runner'
+import { forkedHelperFactory } from '../support/spawn-helper-fork'
 
 /** The main process of the packaged build sat at about this RSS in the profile that opened BUG-266. */
 const TARGET_RSS_MB = 460
@@ -27,10 +29,14 @@ const rssMb = (): number => process.memoryUsage().rss / 1048576
 
 let root = ''
 beforeAll(async () => {
+  // As in the app: the helper starts at boot, while the process is still small, and the ballast grows after.
+  startSpawnRunner(forkedHelperFactory)
+  await new Promise((r) => setTimeout(r, 300))
   while (rssMb() < TARGET_RSS_MB) ballast.push(Buffer.alloc(8 << 20, (ballast.length & 255) + 1))
   root = await mkdtemp(join(tmpdir(), 'harnu-spawn-issue-'))
 })
 afterAll(async () => {
+  stopSpawnRunner()
   ballast.length = 0
   await rm(root, { recursive: true, force: true })
 })
