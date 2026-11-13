@@ -10,6 +10,8 @@
  * Spec: docs/specs/T127-system-monitor.md §6.4.
  */
 
+import type { ThreadSummary } from './stall-core'
+
 /** Pushed on `monitor:heap` every 30s, always — the cheap always-on heartbeat. */
 export interface HeapSample {
   atMs: number
@@ -63,6 +65,22 @@ export interface FleetCounters {
   deadline?: unknown
 }
 
+/**
+ * One thread's responsiveness (T697): how busy it was over the last sample window, and its stalls
+ * (tasks over 50 / 100 / 250 ms) in the last hour with the top offenders by owner name.
+ */
+export interface ThreadStalls extends ThreadSummary {
+  /** 0..100, the share of the last window spent running JavaScript; `null` when not measurable yet. */
+  busyPct: number | null
+  /** True when `busyPct` is the share spent in long tasks (a lower bound) rather than a thread-CPU reading. */
+  busyApprox: boolean
+}
+
+export interface StallsSample {
+  main: ThreadStalls
+  renderer: ThreadStalls
+}
+
 /** Pushed on `monitor:sample` every 1–2s, only while the takeover is visible. */
 export interface MonitorSample {
   atMs: number
@@ -73,4 +91,6 @@ export interface MonitorSample {
   sessions: SessionSample[]
   /** Absent today — see {@link FleetCounters}. */
   counters?: FleetCounters
+  /** Stall monitor summary (T697); absent when `HARNU_STALL_MONITOR=off`. */
+  stalls?: StallsSample
 }

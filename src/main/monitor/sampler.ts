@@ -1,6 +1,12 @@
 import { app, ipcMain, type BrowserWindow, type ProcessMetric } from 'electron'
 import * as v8 from 'node:v8'
-import { createSampler, TICKS_PER_SEC, coreCount, type ProcRawSample } from './proc-linux'
+import {
+  createSampler,
+  readThreadCpu,
+  TICKS_PER_SEC,
+  coreCount,
+  type ProcRawSample
+} from './proc-linux'
 import { cpuPercent, type CpuTimeSample } from './cpu-delta'
 import { aggregateSubtree, subtreePids, type ProcNode } from './aggregate'
 import { heapStatus } from './thresholds'
@@ -8,7 +14,8 @@ import { getPolicy, setPolicy } from './policy-store'
 import { livePtyDescriptors, type LivePtyDescriptor } from '../pty'
 import { hibernatedKeys } from '../hibernation'
 import { explainFleet, type LiveSession, type Policy } from '../fleet-policy'
-import type { HeapSample, ProcSample, SessionSample, MonitorSample } from './types'
+import { getStallMonitor } from './stall-registry'
+import type { HeapSample, ProcSample, SessionSample, MonitorSample, StallsSample } from './types'
 
 /**
  * The System Monitor's two cadences (T127 spec §5) + the IPC surface (§6.3) that
@@ -177,8 +184,53 @@ function parkedSessionRows(): SessionSample[] {
   }))
 }
 
-function buildSample(atMs: number): MonitorSample {
+/** The renderer's main-thread CPU at the previous full sample, for the busy % delta. */
+let prevRendererThread: CpuTimeSample | null = null
+const RENDERER_FALLBACK_SPAN_MS = 60_000
+
+/**
+ * Busy % of the renderer's main thread. On Linux it is that thread's own CPU share (`/proc`, `tid === pid`);
+ * elsewhere it falls back to the time spent in reported long tasks over the last minute, a lower bound,
+ * and says so (`approx`).
+ */
+function rendererBusy(
+  getWindow: () => BrowserWindow | null,
+  atMs: number
+): { pct: number | null; approx: boolean } {
+  const monitor = getStallMonitor()
+  const win = getWindow()
+  const pid = win && !win.isDestroyed() ? win.webContents.getOSProcessId() : 0
+  const cpu = pid > 0 ? readThreadCpu(pid, pid) : null
+  if (cpu) {
+    const curr: CpuTimeSample = { utime: cpu.utime, stime: cpu.stime, atMs }
+    const pct = cpuPercent(prevRendererThread, curr, TICKS_PER_SEC, 1)
+    prevRendererThread = curr
+    return { pct: pct === null ? null : Math.round(pct * 10) / 10, approx: false }
+  }
+  prevRendererThread = null
+  if (!monitor) return { pct: null, approx: true }
+  const share =
+    monitor.rendererStalledMs(RENDERER_FALLBACK_SPAN_MS, atMs) / RENDERER_FALLBACK_SPAN_MS
+  return { pct: Math.min(100, Math.round(share * 1000) / 10), approx: true }
+}
+
+function stallsSample(
+  getWindow: () => BrowserWindow | null,
+  atMs: number
+): StallsSample | undefined {
+  const monitor = getStallMonitor()
+  if (!monitor) return undefined
+  const summary = monitor.summary(atMs)
+  const renderer = rendererBusy(getWindow, atMs)
+  return {
+    main: { ...summary.main, busyPct: monitor.mainBusyPct(), busyApprox: false },
+    renderer: { ...summary.renderer, busyPct: renderer.pct, busyApprox: renderer.approx }
+  }
+}
+
+function buildSample(atMs: number, getWindow: () => BrowserWindow | null): MonitorSample {
   const { nodes, byPid } = sampleProcTree(atMs)
+  const stalls = stallsSample(getWindow, atMs)
   return {
     atMs,
     heap: heapSample(atMs),
@@ -186,14 +238,15 @@ function buildSample(atMs: number): MonitorSample {
     sessions: [
       ...liveSessionRows(livePtyDescriptors(), nodes, byPid, getPolicy(), atMs),
       ...parkedSessionRows()
-    ]
+    ],
+    ...(stalls ? { stalls } : {})
   }
 }
 
 function pushFullSample(getWindow: () => BrowserWindow | null): void {
   const win = getWindow()
   if (!win || win.isDestroyed()) return
-  win.webContents.send('monitor:sample', buildSample(Date.now()))
+  win.webContents.send('monitor:sample', buildSample(Date.now(), getWindow))
 }
 
 function startFullSampler(getWindow: () => BrowserWindow | null): void {
@@ -221,6 +274,23 @@ export function registerMonitorHandlers(getWindow: () => BrowserWindow | null): 
   // broadcast left the renderer's terminal never disposed).
   ipcMain.handle('monitor:policyGet', (): Policy => getPolicy())
   ipcMain.handle('monitor:policySet', (_e, patch: Partial<Policy>): Policy => setPolicy(patch))
+
+  // T697: the renderer reports its long tasks here; a diagnostic block can be injected on either
+  // thread (off unless HARNU_STALL_INJECT=1) to prove the monitor names its owner.
+  ipcMain.on('monitor:stallReport', (_e, batch: unknown): void => {
+    getStallMonitor()?.reportRenderer(batch)
+  })
+  ipcMain.handle('monitor:stallEnabled', (): boolean => getStallMonitor() !== null)
+  ipcMain.handle('monitor:injectStall', (_e, thread: unknown, ms: unknown): boolean => {
+    if (process.env.HARNU_STALL_INJECT !== '1') return false
+    const duration = typeof ms === 'number' && Number.isFinite(ms) ? ms : 0
+    if (thread === 'main') getStallMonitor()?.injectMainStall(duration)
+    else if (thread === 'renderer') {
+      const win = getWindow()
+      if (win && !win.isDestroyed()) win.webContents.send('monitor:injectStall', duration)
+    } else return false
+    return true
+  })
 
   stopHeartbeat()
   pushHeap(getWindow)

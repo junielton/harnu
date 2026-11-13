@@ -14,7 +14,7 @@ Click the **heap gauge** in the footer, next to the plan-usage summary in the bo
 
 ## What you see
 
-The monitor has two columns: a **Harnu sidebar** on the left and, on the right, a strip of **three headline numbers** above your **sessions**. (In a narrow window — under about 1000px wide — the sidebar stacks above the right column.)
+The monitor has two columns: a **Harnu sidebar** on the left and, on the right, a strip of **three headline numbers**, the **Responsiveness** section and your **sessions**. (In a narrow window — under about 1000px wide — the sidebar stacks above the right column.)
 
 ### The Harnu sidebar
 
@@ -27,6 +27,28 @@ The monitor has two columns: a **Harnu sidebar** on the left and, on the right, 
 - **Total RAM** — Harnu plus live sessions, with a bar split between the two so you can see who owns the memory.
 - **CPU** — the combined CPU, and how many processes it spans (Harnu's own plus every live session's subprocesses).
 - **Sessions** — how many are live and how many are parked, and roughly how much RAM parking has freed (the sum of what each parked session was using when it was last live). The freed-RAM line is hidden until Harnu knows at least one number.
+
+### Responsiveness — what froze typing
+
+Everything you type crosses two threads of JavaScript, the **Main process** and the **Renderer** (the window you are looking at). If either one is busy for more than a split second, your keystrokes queue up and arrive in a burst. The Responsiveness section, between the headline numbers and the sessions, shows what each of them has been doing, and who held it.
+
+Each thread gets a card:
+
+- **Busy** — how much of the last few seconds the thread spent running code. For the Main process that is exact. For the Renderer on Linux it is the thread's own CPU share. On other platforms Harnu cannot read that, so the number is shown with a `~` and means "the share of the last minute spent in tasks over 50 ms", a lower bound; hover it for the explanation. A dash means "not measured yet", never zero.
+- **> 50 ms, > 100 ms, > 250 ms** — how many tasks held the thread for at least that long in the last hour. They are nested: a 300 ms task counts in all three. A count turns amber when it is not zero, and the 250 ms count turns red. Fifty milliseconds is the limit: a task over it can be felt as a hitch.
+- **Top offenders** — up to five names ranked by the time they held the thread, each with how many times (`×4`) and the worst single stall (`842 ms`). A name is whatever was running: an IPC channel (`ipc:fleet:rescan`), an event the Renderer received (`event:fleet:updated`), a periodic job (`timer:` and its name), a store action (`store:sessions.load`), a component (`component:SidebarFolder`), or, when nothing was labelled, the innermost function of a stack sampled while the stall was happening. A stall nobody could name reads `unattributed`; hover an offender to see the sampled frames.
+
+When a thread has had no task over 50 ms in the last hour, its card says so.
+
+A stall is reported when it ends: a thread stuck for 20 seconds shows up 20 seconds after it started, and a loop that never goes idle is reported in chunks of a few seconds while it runs.
+
+#### The stall log
+
+Every stall over 50 ms is also written, one line each, to `stalls.jsonl` in Harnu's data folder (the same folder as your settings). It holds the time, the thread, how long it lasted, its owner and, for a sampled one, the stack. It is local, nothing is sent anywhere. The file is capped at 1 MiB (the previous generation is kept as `stalls.1.jsonl`) and lines older than 24 hours are dropped when Harnu starts, so it never grows without limit. The last hour is read back at startup, so a restart does not blank the section.
+
+#### Turning it off
+
+The stall monitor costs well under 1% of a thread. If you want it gone anyway, start Harnu with `HARNU_STALL_MONITOR=off`: nothing is measured, the section says the monitor is off, and no log is written.
 
 ### Your sessions — cards or a table
 
@@ -60,7 +82,7 @@ Waking a parked session is still the normal path: select it in the sidebar and i
 
 ## What it costs to run
 
-The monitor's detailed sampling only runs while this pane is open and the window has focus — it pauses the moment you switch away or the window loses focus, and stops entirely when you close the pane. A much lighter heartbeat (just the heap number, roughly every 30 seconds) keeps running in the background regardless, so an early memory-growth warning doesn't require you to have the monitor open to catch it.
+The monitor's detailed sampling only runs while this pane is open and the window has focus — it pauses the moment you switch away or the window loses focus, and stops entirely when you close the pane. A much lighter heartbeat (just the heap number, roughly every 30 seconds) keeps running in the background regardless, so an early memory-growth warning doesn't require you to have the monitor open to catch it. The stall monitor behind the Responsiveness section also runs in the background (it has to, to catch a stall when it happens), at well under 1% of a thread.
 
 ## The footer heap gauge
 

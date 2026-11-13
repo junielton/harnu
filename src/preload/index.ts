@@ -103,6 +103,11 @@ import type {
 import type { UsageCostSummary } from '../main/usage-cost'
 import type { UsageBiSnapshot, UsageBiRange } from '../main/usage-bi'
 import type { HeapSample, MonitorSample } from '../main/monitor/types'
+import {
+  createSpanRing,
+  type OwnerKind,
+  type StallRecord as StallReportRecord
+} from '../shared/stall-core'
 import type { Policy } from '../main/fleet-policy'
 import type { ImageEntry } from '../main/image-cache'
 import type { FolderLinkGroup, SessionLink } from '../main/session-links'
@@ -466,7 +471,19 @@ export type {
 // System Monitor wire types (T127 S1). `monitor/types.ts` is a pure module (no
 // node deps), so the renderer imports its shapes directly; `Policy` is likewise
 // plain data from the pure `fleet-policy.ts`.
-export type { HeapSample, ProcSample, SessionSample, MonitorSample } from '../main/monitor/types'
+export type {
+  HeapSample,
+  ProcSample,
+  SessionSample,
+  MonitorSample,
+  StallsSample,
+  ThreadStalls
+} from '../main/monitor/types'
+export type {
+  Offender as StallOffender,
+  StallRecord,
+  OwnerKind as StallOwnerKind
+} from '../main/monitor/stall-core'
 export type { Policy } from '../main/fleet-policy'
 export type { SessionAnatomy, EnrichedWindow, EnrichedWindowSession } from '../main/usage-bi-core'
 // Pasted-images gallery: `image-cache.ts` keeps its type next to the pure core.
@@ -686,11 +703,14 @@ const ptyExitListeners = new Map<string, Set<(evt: PtyExitEvent) => void>>()
 // Single, lifetime-scoped dispatchers — registered once at preload boot. This
 // is the optimization called out in `findings/05` §3.2: it eliminates the
 // "N listeners per PTY" pattern of the previous `pty:data:<id>` design.
-ipcRenderer.on('pty:data', (_e, payload: PtyDataPayload) => {
-  const set = ptyDataListeners.get(payload.id)
-  if (!set) return
-  for (const cb of set) cb(payload.data, payload.seq)
-})
+ipcRenderer.on(
+  'pty:data',
+  ownedEvent('pty:data', (_e: unknown, payload: PtyDataPayload): void => {
+    const set = ptyDataListeners.get(payload.id)
+    if (!set) return
+    for (const cb of set) cb(payload.data, payload.seq)
+  })
+)
 
 ipcRenderer.on('pty:exit', (_e, payload: PtyExitPayload) => {
   const set = ptyExitListeners.get(payload.id)
@@ -1219,13 +1239,35 @@ export interface McpConfirmPending {
 }
 
 /**
+ * T697: IPC events run their callbacks on the renderer's main thread, and the browser's long-task API
+ * does not report tasks started that way. Each callback is timed here, in the preload, and the stall
+ * monitor asks (`monitorOwnerHint`) which channel overlapped a stall it caught with its heartbeat.
+ * A channel such as `pty:data:<id>` is named without its id: `event:pty:data`.
+ */
+const eventSpans = createSpanRing()
+function ownedEvent<A extends unknown[]>(
+  channel: string,
+  fn: (...a: A) => void
+): (...a: A) => void {
+  const owner = `event:${channel.split(':').slice(0, 2).join(':')}`
+  return (...args: A): void => {
+    const start = performance.now()
+    try {
+      fn(...args)
+    } finally {
+      eventSpans.record(owner, 'event', start, performance.now())
+    }
+  }
+}
+
+/**
  * Build a typed `on*` subscription helper for a single watcher channel.
  * Returns an unsubscribe function so callers can clean up in `onUnmounted`
  * (or any other lifecycle hook). Captures the wrapped handler so the same
  * function reference is passed to `ipcRenderer.off`.
  */
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
-  const handler = (_e: unknown, payload: T): void => cb(payload)
+  const handler = ownedEvent(channel, (_e: unknown, payload: T): void => cb(payload))
   ipcRenderer.on(channel, handler)
   return () => ipcRenderer.off(channel, handler)
 }
@@ -3173,6 +3215,19 @@ const api = {
   monitorPolicyGet: (): Promise<Policy> => ipcRenderer.invoke('monitor:policyGet'),
   monitorPolicySet: (patch: Partial<Policy>): Promise<Policy> =>
     ipcRenderer.invoke('monitor:policySet', patch),
+  // ---- Stall monitor (T697) ---------------------------------------------------
+  // The renderer's long-task observer reports each task over 50 ms to main, which keeps the one
+  // aggregate and the one log. `monitorInjectStall` blocks a thread on purpose (only when the app
+  // runs with HARNU_STALL_INJECT=1) so a demo or a test can prove the owner shows up.
+  monitorStallEnabled: (): Promise<boolean> => ipcRenderer.invoke('monitor:stallEnabled'),
+  monitorOwnerHint: (startMs: number, endMs: number): { owner: string; kind: OwnerKind } | null =>
+    eventSpans.best(startMs, endMs),
+  monitorStallReport: (batch: StallReportRecord[]): void =>
+    ipcRenderer.send('monitor:stallReport', batch),
+  monitorInjectStall: (thread: 'main' | 'renderer', ms: number): Promise<boolean> =>
+    ipcRenderer.invoke('monitor:injectStall', thread, ms),
+  onMonitorInjectStall: (cb: (ms: number) => void): (() => void) =>
+    subscribe('monitor:injectStall', cb),
 
   // ---- Your move (U1) ---------------------------------------------------------
   // The setting (Off / Observe / Live) and the debug list behind Settings → Your move.

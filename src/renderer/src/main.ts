@@ -12,10 +12,16 @@ import { useKeybindingsStore } from './stores/keybindings'
 import { useUsageStore } from './stores/usage'
 import { useDailyBudgetStore } from './stores/daily-budget'
 import { useClaudeStatusStore } from './stores/claude-status'
+import { startRendererStallMonitor } from './lib/stall-observer'
 
 const app = createApp(App)
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
 app.use(i18n)
+
+// T697: the long-task observer names the owner of every task over 50 ms. It installs its
+// store/component instruments before any store exists, and does nothing when main has it switched off.
+void startRendererStallMonitor(window.api, { app, pinia }).catch(() => undefined)
 
 // Kick off the initial scan + IPC subscriptions before painting. The store
 // itself handles the await — we just fire and forget here so a slow disk

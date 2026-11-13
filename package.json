@@ -35,6 +35,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:perf": "vitest run --config vitest.perf.config.mts",
     "verify:voice-licence": "node scripts/ci/voice-licence-gate.mjs",
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test --project=smoke",

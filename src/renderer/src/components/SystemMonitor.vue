@@ -10,6 +10,7 @@ import { pingToast } from '../lib/companion-view'
 import SystemMonitorCard from './SystemMonitorCard.vue'
 import SystemMonitorKpis from './SystemMonitorKpis.vue'
 import SystemMonitorRow from './SystemMonitorRow.vue'
+import SystemMonitorStalls from './SystemMonitorStalls.vue'
 import SystemMonitorSidebar from './SystemMonitorSidebar.vue'
 import {
   MONITOR_VIEW_KEY,
@@ -190,6 +191,8 @@ const headerHeapTextClass = computed(() => monitorHeapTextClass(monitor.lastHeap
 
       <section class="flex min-w-0 flex-col gap-3.5 px-[18px] pb-5 pt-4">
         <SystemMonitorKpis :totals="totals" />
+
+        <SystemMonitorStalls :stalls="monitor.stalls" :sampled="monitor.lastSample !== null" />
 
         <div class="flex items-center gap-2.5">
           <span class="text-[10.5px] font-semibold uppercase tracking-wide text-text-2">{{

@@ -2523,6 +2523,22 @@
     "effortLabel": "Effort"
   },
   "systemMonitor": {
+    "stalls": {
+      "title": "Responsividade",
+      "summary": "nenhum travamento acima de 50 ms na última hora | um travamento acima de 50 ms na última hora | {count} travamentos acima de 50 ms na última hora",
+      "threadMain": "Processo principal",
+      "threadRenderer": "Renderer",
+      "busy": "Ocupada",
+      "busyApproxHint": "Um limite inferior: a fatia do último minuto gasta em tarefas acima de 50 ms. Esta plataforma não consegue ler a CPU da thread.",
+      "over50": "> 50 ms",
+      "over100": "> 100 ms",
+      "over250": "> 250 ms",
+      "offenders": "Maiores ofensores",
+      "none": "Nada acima de 50 ms na última hora",
+      "unattributed": "sem dono",
+      "times": "×{count}",
+      "off": "O monitor de travamentos está desligado (HARNU_STALL_MONITOR=off)."
+    },
     "title": "Monitor do sistema",
     "close": "Fechar monitor",
     "expand": "Expandir {name}",
