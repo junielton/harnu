@@ -204,7 +204,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
     ref="asideRef"
     data-sidebar
     data-column="sidebar"
-    class="scrollable relative flex shrink-0 select-none flex-col bg-sidebar"
+    class="sidebar-contain scrollable relative flex shrink-0 select-none flex-col bg-sidebar"
     :style="{ width: layout.sidebarWidth + 'px' }"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
