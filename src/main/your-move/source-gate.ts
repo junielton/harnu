@@ -141,6 +141,9 @@ export interface GateWatchDeps {
   now(): number
 }
 
+/** Task states of a session that cannot park a new question. */
+const ENDED_STATES: ReadonlySet<TaskState> = new Set<TaskState>(['completed', 'stopped'])
+
 const gateIdOf = (sourceKey: string | undefined): string | null =>
   sourceKey?.startsWith('gate:') ? sourceKey.slice('gate:'.length) : null
 
@@ -273,7 +276,10 @@ export function createGateWatch(deps: GateWatchDeps): {
     },
     async tick() {
       if (disposed || deps.mode() === 'off') return
-      const ids = new Set<string>(deps.states().keys())
+      // A session that ended (SessionEnd, or its process stopped) can park nothing new: only a
+      // live one, or one still holding a gate card the sweep must close, is looked at.
+      const ids = new Set<string>()
+      for (const [id, state] of deps.states()) if (!ENDED_STATES.has(state)) ids.add(id)
       for (const c of deps.store.state().cards) {
         if (c.closedAt === undefined && c.source === 'human-gate') ids.add(c.sessionId)
       }

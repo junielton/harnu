@@ -11,7 +11,16 @@ const sessionsFake = vi.hoisted(() => ({
   allSessions: [] as unknown[],
   activateSession: vi.fn((_id: string) => true),
   markSessionSeen: vi.fn(),
-  folderAliasOf: vi.fn((_id: string) => 'www')
+  folderAliasOf: vi.fn((_id: string) => 'www'),
+  // The id index the card reads (BUG-261): the same sessions, each in the folder 'www'.
+  get sessionIndex() {
+    return new Map(
+      (this.allSessions as { sessionId: string }[]).map((s) => [
+        s.sessionId,
+        { session: s, folderAlias: 'www' }
+      ])
+    )
+  }
 }))
 const missionsFake = vi.hoisted(() => ({ requestPopover: vi.fn() }))
 vi.mock('../../src/renderer/src/stores/sessions', () => ({ useSessionsStore: () => sessionsFake }))

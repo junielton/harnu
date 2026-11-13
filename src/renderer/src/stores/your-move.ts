@@ -10,7 +10,7 @@
  * Nothing here answers a card yet: until the answering unit, `answer` opens the session.
  */
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import type { CardView, YourMoveMode } from '../../../main/your-move/core'
 import { queueCards, type AnswerRequest } from '../lib/your-move-view'
 import { useSessionsStore } from './sessions'
@@ -18,6 +18,18 @@ import { useSessionsStore } from './sessions'
 export type CardExitLabel = 'not-for-me' | 'already-handled'
 
 const TICK_MS = 1_000
+
+/**
+ * The new list, reusing the old object of every card whose content did not change: main re-lists
+ * on every store write, and a card handed a new object re-renders even when nothing on it moved.
+ */
+function keepUnchanged(old: readonly CardView[], next: CardView[]): CardView[] {
+  const byId = new Map(old.map((c) => [c.id, toRaw(c)]))
+  return next.map((c) => {
+    const before = byId.get(c.id)
+    return before !== undefined && JSON.stringify(before) === JSON.stringify(c) ? before : c
+  })
+}
 
 export const useYourMoveStore = defineStore('yourMove', () => {
   const cards = ref<CardView[]>([])
@@ -35,7 +47,7 @@ export const useYourMoveStore = defineStore('yourMove', () => {
         window.api.yourMoveList(),
         window.api.yourMovePrefsGet()
       ])
-      cards.value = list
+      cards.value = keepUnchanged(cards.value, list)
       mode.value = prefs.mode
     } catch {
       /* a transient IPC failure keeps what is on screen; the next change re-lists */

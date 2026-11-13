@@ -24,6 +24,7 @@ import { onFolderRemoved, readUserProjects } from '../user-projects'
 import { closeCard, pruneClosed, resetCursors, type CardView, type YourMoveCard } from './core'
 import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
+import { createTranscriptLocator } from './locate'
 import {
   effectiveMode,
   isFolderDisabled,
@@ -35,7 +36,6 @@ import {
 } from './prefs'
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
 import { buildSegment } from './segment'
-import { locateTranscript } from './locate'
 import { createGateWatch, watchArchive, watchFolderRemoval } from './source-gate'
 import { reconcileMissions, selectForReconcile } from './source-mission'
 import { readFrom } from './transcript'
@@ -77,6 +77,15 @@ function promptPath(name: string): string {
     ? path.join(process.resourcesPath, 'your-move', name)
     : path.join(app.getAppPath(), 'resources', 'your-move', name)
 }
+
+/** `~/.claude/projects/<slug>/<id>.jsonl`, found by id: the renderer never names a path. */
+const transcripts = createTranscriptLocator({
+  root: path.join(os.homedir(), '.claude', 'projects'),
+  fs: { readdir: (dir) => fs.readdir(dir) },
+  now: () => Date.now()
+})
+const locateTranscript = (sessionId: string): Promise<string | null> =>
+  transcripts.locate(sessionId)
 
 /** The first `cwd` the transcript names: where a session with no hook payload runs. */
 async function cwdFromTranscript(file: string): Promise<string | null> {
@@ -299,6 +308,10 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       }, SWEEP_MS)
       sweepTimer.unref()
       const unobserve = addTaskEventObserver((ev) => {
+        // The path the hook carried is the one place a session's transcript is named for certain:
+        // remember it, and nothing ever lists a directory to find this session. A subagent's
+        // event names the subagent's own file, not the session's.
+        if (ev.agentId === undefined) transcripts.note(ev.sessionId, ev.payload?.transcriptPath)
         triggers.onTaskEvent(ev)
         system.onTaskEvent(ev)
         gate.onTaskEvent(ev)

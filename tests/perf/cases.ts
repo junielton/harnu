@@ -10,9 +10,12 @@
  * from `UNCOVERED_TIMERS` in `tests/perf/timer-coverage.perf.ts`.
  */
 
+import { promises as fs } from 'node:fs'
+import * as path from 'node:path'
+
 import { mainCheckoutRoot } from '../../src/main/data-dir'
 import { missionOwnersWithLiveChildren } from '../../src/main/hibernation'
-import { locateTranscript } from '../../src/main/your-move/locate'
+import { createTranscriptLocator } from '../../src/main/your-move/locate'
 import { createGateWatch } from '../../src/main/your-move/source-gate'
 import { createMidTurnSweep } from '../../src/main/your-move/triggers'
 import { emptyState } from '../../src/main/your-move/core'
@@ -45,11 +48,19 @@ function taskStates(f: ScaleFixture): Map<string, TaskState> {
   return m
 }
 
-/** The real `locateTranscript`, cut off once the case's deadline passes so a regressed job stays fast. */
-const locateFor =
-  (ctx: JobContext) =>
-  (id: string): Promise<string | null> =>
-    ctx.expired() ? Promise.resolve(null) : locateTranscript(id)
+/**
+ * The real transcript locator of the app, pointed at the fixture's `~/.claude/projects` and cut
+ * off once the case's deadline passes so a regressed job stays fast. A fresh one per case, so no
+ * index survives from a previous run.
+ */
+const locateFor = (ctx: JobContext): ((id: string) => Promise<string | null>) => {
+  const locator = createTranscriptLocator({
+    root: path.join(ctx.fixture.home, '.claude', 'projects'),
+    fs: { readdir: (dir) => fs.readdir(dir) },
+    now: () => Date.now()
+  })
+  return (id) => (ctx.expired() ? Promise.resolve(null) : locator.locate(id))
+}
 
 const fakeStore = (): YourMoveStore =>
   ({

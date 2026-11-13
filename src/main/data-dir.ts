@@ -12,7 +12,7 @@
 
 import { execFile } from 'node:child_process'
 import { readFileSync, statSync } from 'node:fs'
-import { appendFile, mkdir, readFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import { DATA_DIR } from '../shared/data-dir'
 
@@ -64,14 +64,56 @@ export function dataDir(folder: string): string {
  * Missions are repo-scoped and shared by every worktree (design §9, decision 17), so a
  * session running in a linked worktree must read the MAIN checkout's `.harnu/missions/`.
  * Resolved synchronously from the `.git` layout — `runPolicy` is synchronous and runs on
- * every `pty:create`, so spawning `git rev-parse` here is not an option:
+ * every `pty:create`, so spawning `git rev-parse` here is not an option. Answers are cached per
+ * directory (see {@link ROOT_CACHE_TTL_MS}); only a directory's first resolution walks the disk:
  * - `<dir>/.git` is a directory → `<dir>` is the main checkout;
  * - `<dir>/.git` is a file (`gitdir: <common>/worktrees/<name>`) → follow the gitdir's
  *   `commondir` back to `<common>`, whose parent is the main checkout.
  */
 export function mainCheckoutRoot(folder: string): string | null {
-  let dir = path.resolve(folder)
+  const dir = path.resolve(folder)
+  const hit = rootCache.get(dir)
+  if (hit) {
+    // Stale: answer from the cache NOW and re-resolve off the main thread (async fs), so a
+    // changed `.git` entry is picked up without a blocking walk on this call.
+    if (Date.now() - hit.at > ROOT_CACHE_TTL_MS) revalidateRoot(dir)
+    return hit.root
+  }
+  const walked: string[] = []
+  const root = walkSync(dir, walked)
+  const at = Date.now()
+  // Every directory walked through shares the answer (a `.git`-less ancestor resolves exactly
+  // like its descendant), so the next call from a sibling path costs no fs call either.
+  for (const d of walked) rootCache.set(d, { root, at })
+  return root
+}
+
+/**
+ * BUG-262 AC-2 — resolved roots per directory. `mainCheckoutRoot` is called on every
+ * `pty:create` and by every mission read; each call used to `statSync` every ancestor up to
+ * `/` (~700 probes a minute in a live profile, 100-150 ms per task). A hit costs no fs call.
+ */
+interface CachedRoot {
+  root: string | null
+  at: number
+}
+const rootCache = new Map<string, CachedRoot>()
+const revalidating = new Set<string>()
+
+/** How long a cached root is trusted before an async re-check (a `.git` entry rarely changes). */
+export const ROOT_CACHE_TTL_MS = 30_000
+
+/** Test seam: forget every cached root. */
+export function clearRootCache(): void {
+  rootCache.clear()
+  revalidating.clear()
+}
+
+/** One walk-up, synchronous: only the first call for a directory (a cache miss) pays it. */
+function walkSync(start: string, walked: string[]): string | null {
+  let dir = start
   for (;;) {
+    walked.push(dir)
     const dotGit = path.join(dir, '.git')
     try {
       if (statSync(dotGit).isDirectory()) return dir
@@ -95,6 +137,51 @@ export function mainCheckoutRoot(folder: string): string | null {
     if (parent === dir) return null
     dir = parent
   }
+}
+
+/** The same walk-up on async fs; used only to refresh a stale cache entry. */
+async function walkAsync(start: string): Promise<{ root: string | null; walked: string[] }> {
+  const walked: string[] = []
+  let dir = start
+  for (;;) {
+    walked.push(dir)
+    const dotGit = path.join(dir, '.git')
+    try {
+      if ((await stat(dotGit)).isDirectory()) return { root: dir, walked }
+      const match = /^gitdir:\s*(.+)$/m.exec(await readFile(dotGit, 'utf8'))
+      if (!match) return { root: dir, walked }
+      const gitDir = path.resolve(dir, match[1].trim())
+      let commonDir: string
+      try {
+        commonDir = path.resolve(
+          gitDir,
+          (await readFile(path.join(gitDir, 'commondir'), 'utf8')).trim()
+        )
+      } catch {
+        return { root: dir, walked }
+      }
+      return { root: path.basename(commonDir) === '.git' ? path.dirname(commonDir) : dir, walked }
+    } catch {
+      // No `.git` here — keep walking up.
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) return { root: null, walked }
+    dir = parent
+  }
+}
+
+function revalidateRoot(dir: string): void {
+  if (revalidating.has(dir)) return
+  revalidating.add(dir)
+  void walkAsync(dir)
+    .then(({ root, walked }) => {
+      const at = Date.now()
+      for (const d of walked) rootCache.set(d, { root, at })
+    })
+    .catch(() => {
+      // Keep the stale answer; the next stale hit tries again.
+    })
+    .finally(() => revalidating.delete(dir))
 }
 
 /** The repo root whose data dir holds `folder`'s repo-level state (main checkout, else `folder`). */

@@ -89,6 +89,8 @@ import {
   type SeedOp,
   type WorktreeProvisionStage
 } from './worktree-manifest'
+import { setImmediate as yieldToLoop } from 'node:timers/promises'
+import { mapLimit } from './map-limit'
 import { probeGitMeta } from './git-probe'
 import {
   addUserProject,
@@ -1477,6 +1479,12 @@ export async function listBranches(repoPath: string): Promise<BranchRef[]> {
 }
 
 /**
+ * BUG-262 — most `git status` children one listing keeps in flight. The repo this was measured on
+ * has 56 worktrees; spawning all at once held the main thread for 1.2 s.
+ */
+export const GIT_PROBE_CONCURRENCY = 4
+
+/**
  * Gather real `git worktree list` truth across the given (already-distinct) repo
  * roots for the MCP `list_worktrees` read (T44 S3b — the "diverged from git" face
  * of BUG-4). Dedups entries by path (repos may overlap) and best-effort probes
@@ -1498,16 +1506,18 @@ export async function collectWorktreeListing(
   }
   const entries = [...byPath.values()]
   const dirtyByPath: Record<string, boolean> = {}
-  await Promise.all(
-    entries
-      .filter((e) => !e.bare)
-      .map(async (e) => {
-        try {
-          dirtyByPath[e.path] = await isWorktreeDirty(e.path)
-        } catch {
-          dirtyByPath[e.path] = false
-        }
-      })
+  await mapLimit(
+    entries.filter((e) => !e.bare),
+    GIT_PROBE_CONCURRENCY,
+    async (e) => {
+      // BUG-262: each `spawn()` blocks the main thread while the child forks; yield between them.
+      await yieldToLoop()
+      try {
+        dirtyByPath[e.path] = await isWorktreeDirty(e.path)
+      } catch {
+        dirtyByPath[e.path] = false
+      }
+    }
   )
   return { entries, dirtyByPath }
 }

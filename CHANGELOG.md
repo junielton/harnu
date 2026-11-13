@@ -16,6 +16,24 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **The System Monitor now has a Responsiveness section that names whatever froze typing.** Everything you type crosses two threads, the Main process and the Renderer; for each of them the section shows how busy it is, how many tasks held it for over 50, 100 and 250 ms in the last hour, and the top offenders by name: an IPC channel, a periodic job, a store action, a component, or, when nothing was labelled, the function a sampled stack was standing in. A stall nobody can name is listed as `unattributed` rather than hidden. Each stall is also kept in a local, bounded log (`stalls.jsonl`, 1 MiB, last 24 hours) so a freeze can be named minutes later, not after an investigation. It costs well under 1% of a thread; `HARNU_STALL_MONITOR=off` turns it off.
 
+### Fixed
+
+- Typing into a session no longer stutters once a minute when Your move is on. Harnu used to
+  look for each session's transcript by trying every project folder in turn, for every session,
+  every minute; with a few hundred sessions that kept the app's main thread busy for seconds at a
+  time. It now lists the project folders once, remembers what it found (and what is missing), and
+  uses the transcript path Claude Code already reports. Sessions that have ended are no longer
+  checked for parked questions.
+- The Your move queue is lighter on the screen: a card finds its folder and session name with one
+  lookup instead of scanning every session, the running clock redraws only itself, and an
+  unchanged card is no longer redrawn when the queue refreshes.
+- Typing hitches that were left even with Your move off. Listing a repo's worktrees no longer starts
+  a `git status` for all of them at once (a repo with 56 worktrees froze the app for over a second);
+  `git` and `gh` now start a few at a time, with the app free to handle your keystrokes in between.
+  Finding which repo a folder belongs to is remembered instead of walking up to `/` on every call,
+  and the sidebar no longer re-sorts shelved worktrees on every clock tick or refresh — only when
+  the folders or the shelved list actually change.
+
 ## 2026-11-09
 
 ### Added
