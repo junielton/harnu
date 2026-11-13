@@ -48,6 +48,8 @@ export interface HelperCore {
 
 export function createHelperCore(post: (m: FromHelper) => void): HelperCore {
   const children = new Map<number, ChildProcess>()
+  /** Children started `detached`: they outlive this helper, so `killAll` leaves them alone. */
+  const detached = new Set<number>()
 
   function runExec(m: Extract<ToHelper, { t: 'exec' }>): void {
     const { id, file, args, o } = m
@@ -95,14 +97,17 @@ export function createHelperCore(post: (m: FromHelper) => void): HelperCore {
         cwd: o.cwd,
         env: o.env as NodeJS.ProcessEnv | undefined,
         windowsHide: o.windowsHide ?? true,
-        stdio: o.stdio ?? ['pipe', 'pipe', 'pipe']
+        stdio: o.stdio ?? ['pipe', 'pipe', 'pipe'],
+        detached: o.detached === true
       })
     } catch (e) {
       post({ t: 'spawn-error', id, error: toWireError(e) })
       return
     }
     children.set(id, child)
+    if (o.detached) detached.add(id)
     child.once('spawn', () => {
+      if (o.detached) child.unref()
       if (o.priority !== undefined && child.pid !== undefined) {
         try {
           os.setPriority(child.pid, o.priority)
@@ -117,11 +122,13 @@ export function createHelperCore(post: (m: FromHelper) => void): HelperCore {
     child.stdin?.on('error', () => {})
     child.on('error', (e) => {
       children.delete(id)
+      detached.delete(id)
       post({ t: 'spawn-error', id, error: toWireError(e) })
     })
     child.on('exit', (code, signal) => post({ t: 'exit', id, code, signal }))
     child.on('close', (code, signal) => {
       children.delete(id)
+      detached.delete(id)
       post({ t: 'close', id, code, signal })
     })
   }
@@ -145,7 +152,8 @@ export function createHelperCore(post: (m: FromHelper) => void): HelperCore {
       }
     },
     killAll() {
-      for (const c of children.values()) {
+      for (const [id, c] of children) {
+        if (detached.has(id)) continue
         try {
           c.kill('SIGTERM')
         } catch {

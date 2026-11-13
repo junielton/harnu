@@ -45,6 +45,8 @@ export interface WireSpawnOptions {
   stdio?: [WireStdio, WireStdio, WireStdio]
   /** `os.setPriority` for the child, applied inside the helper right after the spawn. */
   priority?: number
+  /** Start it in its own session and let it outlive the helper (an editor launch). Needs `stdio: 'ignore'`. */
+  detached?: boolean
 }
 
 export type ToHelper =

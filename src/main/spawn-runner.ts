@@ -27,6 +27,7 @@
 import { EventEmitter } from 'node:events'
 import { execFile, fork, spawn, type ChildProcess } from 'node:child_process'
 import { PassThrough, Writable, type Readable } from 'node:stream'
+import { setPriority } from 'node:os'
 import { promisify } from 'node:util'
 import { setImmediate as yieldToLoop } from 'node:timers/promises'
 import type {
@@ -65,9 +66,12 @@ export interface SpawnChildOptions {
   cwd?: string
   env?: NodeJS.ProcessEnv
   windowsHide?: boolean
-  stdio?: [WireStdio, WireStdio, WireStdio]
+  /** One value for all three, or `[stdin, stdout, stderr]`. Default: all `pipe`. */
+  stdio?: WireStdio | [WireStdio, WireStdio, WireStdio]
   /** `os.setPriority` for the child, applied by whoever forks it (the helper). */
   priority?: number
+  /** Start it in its own session and let it outlive the app's helper (an editor launch). */
+  detached?: boolean
 }
 
 /** What every caller needs of a streaming child; a real `ChildProcess` satisfies it too. */
@@ -454,22 +458,39 @@ export function spawnChild(
   args: readonly string[],
   opts: SpawnChildOptions = {}
 ): SpawnedChild {
+  const stdio: [WireStdio, WireStdio, WireStdio] =
+    typeof opts.stdio === 'string'
+      ? [opts.stdio, opts.stdio, opts.stdio]
+      : (opts.stdio ?? ['pipe', 'pipe', 'pipe'])
   if (!factory) {
-    return spawn(file, [...args], {
+    const child = spawn(file, [...args], {
       cwd: opts.cwd,
       env: opts.env,
       windowsHide: opts.windowsHide ?? true,
-      stdio: opts.stdio ?? ['pipe', 'pipe', 'pipe']
-    }) as unknown as SpawnedChild
+      stdio: opts.stdio ?? stdio,
+      detached: opts.detached === true
+    })
+    const { priority } = opts
+    if (priority !== undefined) {
+      child.once('spawn', () => {
+        try {
+          if (child.pid !== undefined) setPriority(child.pid, priority)
+        } catch {
+          /* a priority is a courtesy, never a failure */
+        }
+      })
+    }
+    return child as unknown as SpawnedChild
   }
   const id = nextId++
-  const child = new HelperChild(id, opts.stdio)
+  const child = new HelperChild(id, stdio)
   const wire: WireSpawnOptions = {
     cwd: opts.cwd,
     env: opts.env ?? process.env,
     windowsHide: opts.windowsHide ?? true,
-    stdio: opts.stdio,
-    priority: opts.priority
+    stdio,
+    priority: opts.priority,
+    detached: opts.detached
   }
   try {
     helperChildren.set(id, child)
