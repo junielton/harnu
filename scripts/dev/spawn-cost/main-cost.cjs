@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unused-vars -- a standalone probe script run by Electron/Node directly */
 // AC-1 probe (BUG-266). Run inside the real Electron main process:
 //   BALLAST_MB=300 CHURN=0 node_modules/electron/dist/electron --no-sandbox --disable-gpu --ozone-platform=headless scripts/dev/spawn-cost/main-cost.cjs
 // Prints the main-thread cost of one execFile() (a fork) against the cost of handing the same call to a utilityProcess.

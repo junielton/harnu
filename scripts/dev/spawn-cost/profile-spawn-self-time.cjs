@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unused-vars -- a standalone probe script run by Electron/Node directly */
 // Reads a V8 .cpuprofile and prints the biggest self-time frames, plus every `spawn` frame (BUG-266).
 const fs = require('fs')
 const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
