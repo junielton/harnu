@@ -10,6 +10,18 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-13
+
+### Fixed
+
+- Typing into a session no longer waits on the interface redrawing the whole fleet. Every hook event
+  or transcript update from one session used to make the footer's supervision count and the fleet
+  rail recompute from every session you have (a profile of four live sessions showed over a hundred
+  stalls of 100 ms or more in 90 s). Each session now keeps its own cached status, so an event
+  recomputes only the session it came from. The rail's cards find their session directly, the board
+  sorts without re-parsing every date, and the command palette no longer re-sorts every session
+  while it is closed.
+
 ## 2026-11-12
 
 ### Added

@@ -63,6 +63,28 @@ covered by a case or listed with the reason it is not yet. A new timer fails it 
    job is cut off instead of making CI slow.
 2. If the job is a timer in `src/main`, move its file from `UNCOVERED` to `COVERED` in `timer-coverage.perf.ts`.
 
+### One session event against the fleet (BUG-265)
+
+A pure function that is fast at reference scale can still be the problem: in the renderer, a hook event or
+a transcript append for ONE session used to re-run every computed that reads the fleet (`supervisionLoad`,
+`boardBuckets`, the rail's `fleetCards`, the palette's lists), each one classifying every session again.
+`tests/perf/store-cases.ts` and `palette-cases.ts` measure that directly:
+
+- `support/fleet-world.ts` builds the REAL sessions store through `init()` (a stubbed `window.api` hands it
+  the fleet and keeps the listeners), then fires events through the same listeners the preload would call
+  (`onHook`, `onSessionUpdated`). Every field of every session is an accessor that counts reads while armed.
+- A case fires one event, then evaluates ONE computed and reads the counter. It sets `readsBudget`
+  (`READS_PER_EVENT`, 64): the most session-field reads one event may cost, at both fixture sizes. The
+  growth check alone would not do, since it only fails a job that is worse than linear and an O(fleet)
+  re-read is exactly linear.
+- `fleet-store.perf.ts` runs in node; `fleet-palette.perf.ts` mounts `CommandPalette` and needs jsdom
+  (`// @vitest-environment jsdom`), which is why they are separate files. Both register their cases through
+  `support/run-cases.ts`, the same reporting as `scale.perf.ts`.
+
+The fix pattern is `lib/keyed-computeds.ts`: one cached computed per session id, so an event wakes the
+verdicts of the sessions it touched and an aggregate only folds the results. Return a primitive from a
+verdict (a state string, a boolean): a computed that is unchanged wakes nothing.
+
 ### Known offenders
 
 `tests/perf/support/known-offenders.ts` names the cases that violate the contract today and the bug that
