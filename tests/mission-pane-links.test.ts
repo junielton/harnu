@@ -235,7 +235,8 @@ describe('AC-50 — an open step lists its criteria, who settles each, and folds
   const PLAN: StepSeed = {
     id: 'stp-1',
     title: 'Write the plan for the scoring tool',
-    state: 'waiting-review',
+    // Running, so the tree shows the step (a step waiting for review folds behind "N more steps").
+    state: 'running',
     criteria: [
       ...NINETEEN,
       { id: 'ac-20', text: 'The plan names the test files', by: 'fact' },
@@ -294,6 +295,8 @@ describe('AC-50 — an open step lists its criteria, who settles each, and folds
     expect(one.get('[data-test="criteria-verified"]').text()).toBe('1 criterion verified')
     one.unmount()
     wrapper = null
+    // A second mount in one test needs its own stores: the first answer would still be the store's.
+    setActivePinia(createPinia())
 
     const none = await mountPane(
       reply([

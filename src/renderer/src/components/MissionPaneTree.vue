@@ -2,6 +2,7 @@
 import { computed, defineComponent, h, nextTick, reactive, ref, type PropType } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown, ChevronRight, Flag } from 'lucide-vue-next'
+import MissionPaneStep from './MissionPaneStep.vue'
 import {
   milestoneGlyph,
   milestoneOfStep,
@@ -187,6 +188,14 @@ const Glyph = defineComponent({
     }
   }
 })
+
+/** The pull request number is a link: it opens the pull request and never folds or unfolds the step. */
+function onPrClick(ev: Event, s: PaneStepRow): void {
+  if (!s.prUrl) return
+  ev.stopPropagation()
+  ev.preventDefault()
+  void Promise.resolve(window.api.shellOpenExternal(s.prUrl)).catch(() => undefined)
+}
 
 /** "Open step": unfold the milestone and the step, then bring the step into view. */
 async function openStep(stepId: string): Promise<void> {
@@ -392,53 +401,24 @@ defineExpose({ openStep })
                     data-test="chip-yours"
                     >{{ $t('missionPane.tree.chipYours') }}</span
                   >
-                  <span v-if="s.pr" class="font-mono text-accent" data-test="step-pr"
+                  <!-- A link, not a button: the row is the button, and a button does not nest in a button. -->
+                  <span
+                    v-if="s.pr"
+                    class="font-mono text-accent"
+                    :class="s.prUrl ? 'cursor-pointer hover:underline' : ''"
+                    :role="s.prUrl ? 'link' : undefined"
+                    :tabindex="s.prUrl ? 0 : undefined"
+                    :title="
+                      s.prUrl ? $t('missionPane.step.openLink', { label: `#${s.pr}` }) : undefined
+                    "
+                    data-test="step-pr"
+                    @click="onPrClick($event, s)"
+                    @keydown.enter="onPrClick($event, s)"
                     >#{{ s.pr }}</span
                   >
                 </span>
               </button>
-              <div
-                v-if="stepOpen[s.id]"
-                class="flex flex-col"
-                style="margin: 2px 0 8px 29px; gap: 5px"
-                data-test="criteria"
-                :data-step="s.id"
-              >
-                <div
-                  v-for="c in s.criteria"
-                  :key="c.id"
-                  class="grid items-start"
-                  :class="c.settled ? 'text-text-2' : 'text-text'"
-                  style="
-                    grid-template-columns: 12px minmax(0, 1fr);
-                    column-gap: 8px;
-                    font-size: 11.5px;
-                  "
-                  data-test="criterion"
-                  :data-settled="c.settled"
-                >
-                  <Check
-                    v-if="c.settled"
-                    :size="10"
-                    :stroke-width="2.5"
-                    class="text-green"
-                    style="margin-top: 2px"
-                    role="img"
-                    :aria-label="$t('missionPane.tree.criterionDone')"
-                  />
-                  <span
-                    v-else
-                    class="rounded-sm border border-text-4"
-                    style="width: 10px; height: 10px; margin-top: 2px"
-                    role="img"
-                    :aria-label="$t('missionPane.tree.criterionOpen')"
-                  />
-                  <span class="break-words">{{ c.text }}</span>
-                </div>
-                <span v-if="s.criteria.length === 0" class="text-text-4" style="font-size: 11px">{{
-                  $t('missionPane.tree.noCriteria')
-                }}</span>
-              </div>
+              <MissionPaneStep v-if="stepOpen[s.id]" :step="s" />
             </template>
 
             <button
