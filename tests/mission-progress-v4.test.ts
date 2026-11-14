@@ -209,6 +209,27 @@ describe('more than one milestone can be open', () => {
     expect(p.openMilestones).toEqual(['mls-1', 'mls-2', 'mls-3'])
     // the first one in plan order is still the one the headline names.
     expect(p.current).toEqual({ id: 'mls-1', ordinal: 1 })
+
+    // a second fixture: one milestone holding one step of each kind. The summary shows running,
+    // waiting for review and blocked, and has no `todo` key at all.
+    const one = mkMission({
+      milestones: [ms('mls-1')],
+      steps: [
+        mkStep('stp-1', { milestone: 'mls-1' }), // running
+        mkStep('stp-2', { milestone: 'mls-1' }), // waiting for review
+        mkStep('stp-3', {
+          milestone: 'mls-1',
+          blockers: [{ id: 'blk-1', reason: 'needs a key', owner: 'operator' }]
+        }), // to do, blocked
+        mkStep('stp-4', { milestone: 'mls-1' }) // to do
+      ]
+    })
+    const [mls] = deriveProgress(one, {
+      'stp-1': { workerWorking: true },
+      'stp-2': { pr: 'open' }
+    }).milestones
+    expect(mls.counts).toEqual({ running: 1, waitingReview: 1, blocked: 1 })
+    expect('todo' in mls.counts).toBe(false)
   })
 
   it('the milestone summary counts running, waiting for review and blocked steps, never to do', () => {

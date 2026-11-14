@@ -244,6 +244,21 @@ describe('a fact replaces stale state', () => {
     expect(deriveStepState(s, { pr: 'open' }).blocked).toBe(true)
     expect(deriveStepState(s, { pr: 'merged' }).blocked).toBe(false)
     expect(deriveStepState(s, { pr: 'merged' }).blockers).toEqual([])
+
+    // a fact replaces stale state on the criterion side too: a hand tick on a criterion tied to a
+    // fact never settles it. Open while the pull request is open, settled by the fact once merged.
+    const handTicked = ac('ac-9', 'fact', {
+      fact: 'pr-merged',
+      settled: { at: AT, by: 'operator' }
+    })
+    expect(criterionSettlement(handTicked, step([]), { pr: 'open' })).toEqual({
+      settled: false,
+      via: null
+    })
+    expect(criterionSettlement(handTicked, step([]), { pr: 'merged' })).toEqual({
+      settled: true,
+      via: 'fact'
+    })
   })
 
   it('a criterion tied to a fact is never ticked by hand', () => {
