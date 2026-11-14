@@ -13,6 +13,7 @@ import {
   deriveMilestoneState,
   deriveMissionState,
   deriveStepState,
+  factReading,
   type StepInput
 } from '../src/main/missions/state'
 
@@ -306,5 +307,63 @@ describe('the mission state with milestones', () => {
     const open = { status: 'open' } as const
     expect(deriveMissionState(open, ['done'], ['done', 'not-started'])).toBe('open')
     expect(deriveMissionState(open, ['done'], ['done', 'done'])).toBe('ready-to-close')
+  })
+})
+
+describe('delta 1 · a re-queued card, a closed pull request, and unknown is not false', () => {
+  it('a card in Backlog or Ready reads to do unless a pull request exists, whatever startedAt says', () => {
+    const started = step([ac('ac-1', 'session')], { startedAt: AT })
+    // the card was re-queued: the board column wins over the leader's old start stamp.
+    expect(state(started, { card: 'backlog' })).toBe('todo')
+    expect(state(started, { card: 'ready' })).toBe('todo')
+    // with no card, or a card already in progress, a started step is still running.
+    expect(state(started)).toBe('running')
+    expect(state(started, { card: 'in-progress' })).toBe('running')
+    // a pull request still wins by rule 2.
+    expect(state(started, { card: 'backlog', pr: 'open' })).toBe('waiting-review')
+    expect(state(started, { card: 'ready', pr: 'merged' })).toBe('waiting-review')
+  })
+
+  it('a pull request closed without merging counts as no pull request', () => {
+    const started = step([ac('ac-1', 'session')], { startedAt: AT })
+    // the work does not exist: a started step is back to running, not waiting for review.
+    expect(state(started, { pr: 'closed' })).toBe('running')
+    expect(state(step([ac('ac-1', 'session')]), { pr: 'closed' })).toBe('todo')
+    // a sign-off step reads waiting for review by the no-pull-request rule, as it does with none.
+    expect(state(step([ac('ac-1', 'operator')]), { pr: 'closed' })).toBe('waiting-review')
+    // no fact reads a closed pull request as opened or merged.
+    const reads = (fact: AcceptanceCriterion['fact']): boolean =>
+      criterionSettlement(ac('ac-1', 'fact', { fact }), step([]), { pr: 'closed' }).settled
+    expect(reads('pr-opened')).toBe(false)
+    expect(reads('pr-merged')).toBe(false)
+  })
+
+  it('a fact that is absent is not read yet and false is read and does not hold', () => {
+    // main-green absent: nothing was read. main-green false: it was read and main is red.
+    expect(factReading('main-green', {})).toBe('unknown')
+    expect(factReading('main-green', { facts: {} })).toBe('unknown')
+    expect(factReading('main-green', { facts: { 'main-green': false } })).toBe('does-not-hold')
+    expect(factReading('main-green', { facts: { 'main-green': true } })).toBe('holds')
+    expect(factReading('ci-green', {})).toBe('unknown')
+    expect(factReading('link-exists', { facts: { 'link-exists': false } })).toBe('does-not-hold')
+    // the pull request facts follow `pr`: absent is unknown, anything given was read.
+    expect(factReading('pr-merged', {})).toBe('unknown')
+    expect(factReading('pr-merged', { pr: 'none' })).toBe('does-not-hold')
+    expect(factReading('pr-merged', { pr: 'closed' })).toBe('does-not-hold')
+    expect(factReading('pr-merged', { pr: 'open' })).toBe('does-not-hold')
+    expect(factReading('pr-merged', { pr: 'merged' })).toBe('holds')
+    expect(factReading('pr-opened', { pr: 'merged' })).toBe('holds')
+    expect(factReading('pr-opened', { pr: 'closed' })).toBe('does-not-hold')
+  })
+
+  it('an unknown fact is never a failure: it settles nothing and clears nothing, as a false one does', () => {
+    const fact = step([ac('ac-1', 'fact', { fact: 'main-green' })], {
+      blockers: [blocker({ clearsWhen: 'main-green' })]
+    })
+    const unknown = deriveStepState(fact, { pr: 'merged' })
+    const red = deriveStepState(fact, { pr: 'merged', facts: { 'main-green': false } })
+    expect(unknown).toEqual(red)
+    expect(unknown.state).toBe('waiting-review')
+    expect(unknown.blocked).toBe(true)
   })
 })
