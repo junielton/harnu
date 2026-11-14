@@ -112,7 +112,6 @@ const TABLE: Record<string, Row> = {
   'ImageLightbox.vue': ui('close[[]]', 'none', 'label'),
   'McpConfirmOverlay.vue': ui('', 'dismiss', 'label'),
   'MemoryLocationDialog.vue': ui(STORE, 'close'),
-  'MergeBatchDialog.vue': ui('close[]', 'cancel'),
   'MissionBulkCloseConfirmDialog.vue': ui('cancel[]', 'cancel'),
   'MissionCloseConfirmDialog.vue': ui('cancel[]', 'cancel'),
   'MissionsReviewDialog.vue': ui('local open=false (card removed from DOM)', 'cancel'),

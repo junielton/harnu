@@ -7351,7 +7351,6 @@ verified** is a button wearing the Badge **Accent** anatomy (`check` 10px) and
 | Delete check           | the check row's `x` (hover)               | icon button             | `applyDeleteCheck`        |
 | Pause steward…         | the steward line → reason dialog          | Ghost → dialog          | `applyPauseSteward`       |
 | Resume steward         | the steward line / the paused `you` row   | Primary (you) / link    | `applyResumeSteward`      |
-| Merge batch            | the `merge-batch` `you` row → dialog      | Primary → dialog        | `runMergeBatchDoor`       |
 
 No MCP verb reaches any of them. A refused door, or an IPC failure, raises a
 danger toast with the reason ("Mission action refused").
@@ -7381,23 +7380,9 @@ part of the sentence, so the row's own age slot stays empty). When it is the fir
 warning look with a **Resume steward** button (Primary, `play` 14px) under the sentence. Resuming writes a
 second `steward` Log entry and clears the row.
 
-**Merge batch (T609; mockup `v6--campaign` state `merge-batch`).** A derived `you` row, drawn when two or
-more of a mission's steps have an open PR whose CI is green, in step order: "{n} PRs ready to merge in
-order: #305 → #306 → #308" (mid risk, no age) with the action **Merge {n} in order…** (Primary, `git-merge`
-14px) at the row's end. It opens the **Merge batch dialog (`MergeBatchDialog.vue`)** — the End dialog's
-anatomy again, `min(480px, 90vw)`: header "Merge {n} PRs in order"; a "who" line (the `running` step glyph,
-"**Steward** merges one, then works between merges"); an ordered list — a PR row (the `waiting` step glyph,
-**#305** `font-mono 500`, the step title, a dim "· CI green") and, between two PRs, a "between" row (the
-mockup's `.between`: a 12px `bot` marker and three chips "rebase --onto #306", "re-check gates", "stop on
-red", `10.5px`, `border border-border-2 rounded-sm px-1.5`, `text-text-3`). Footer: **Cancel** (Ghost) +
-**Merge {n} in order** (Primary; **initial focus is Cancel**). While the batch runs the list is
-non-interactive, each PR row shows its state glyph (`verified` once merged, `running` for the one being
-merged) and the footer reads "Merging…" disabled — a batch waits on the steward and on CI between merges
-and can take minutes. A **stop** replaces the footer's confirm with a warning callout (Warning look,
-`triangle-alert` 13px, eyebrow "Stopped at #306": the reason in words — "has failing checks", "conflicts with its base", "does not merge into the default branch", "is not
-open any more", "the steward did not run", "the mission was closed", "the steward was paused", "GitHub refused the merge: {message}", "checks still running") over the merged PRs and the
-PRs still to merge, and the confirm becomes **Merge the rest…** — Harnu asks again, and nothing more is
-merged until the operator answers. Merging is the operator's: no MCP verb reaches this door.
+**No merge door (T701).** The mission popover and the Campaign popover carry no merge row, button or dialog: PRs
+that are open with green CI add nothing to the `you` list, and merging stays the operator's, done on GitHub.
+(The T609 "Merge {n} in order…" door, its dialog and its `v6--campaign` mockup state were removed.)
 
 **End dialog (`MissionCloseConfirmDialog.vue`, spec §3.5).** One dialog ends
 any non-closed mission, with a choice. Ending is the one irreversible door
@@ -7666,9 +7651,7 @@ chapters, each row tagged "ch. {n}") and a footer (`padding: 8px 14px`,
 `border-t border-border`): **End campaign…** (Ghost) — rendered **disabled with a
 tooltip** until main exposes a campaign end door — and **Open map** (Primary) —
 enabled since T607: it closes the Topbar popover and opens the Campaign map takeover
-for this campaign (§6 "Campaign map"). The **merge-batch** row and dialog of the mockup (T609) are
-the Mission popover's, drawn in the You lane the same way (§6 "Mission progress" → Merge batch); the
-**Steward** line stays with the chapter popover, where its Pause door lives.
+for this campaign (§6 "Campaign map"). The **Steward** line stays with the chapter popover, where its Pause door lives.
 
 States (mockup `v6--campaign`): `default`; `side` (a side quest selected —
 eyebrow "Side quest · not required for the end", its origin chapter and gates);
@@ -14049,7 +14032,7 @@ them:
 3. **Who spent it · this hour** for the tighter bucket: a 6px split bar (Harnu in `--accent`, outside
    in `--text-4`, widths a share of the limit), a legend (`Harnu 582` / `Outside Harnu 306`), one
    row per consumer (name · count · 3px bar relative to the busiest consumer; Missions, PR Stack,
-   Review, Cleanup, Steward, plus Merge batch once it has spent a call), the outside row in `--text-3`.
+   Review, Cleanup, Steward), the outside row in `--text-3`.
    While low, Missions carries a `slowed` tag; while exhausted every Harnu row reads `--text-4` with a
    `paused` tag. A **note** closes the block in the Throttle-note anatomy: `accent-soft` / `accent-line`
    ("Harnu is polling slower. …") while low, `red-soft` / `red-line` ("Limit reached. …") while spent;

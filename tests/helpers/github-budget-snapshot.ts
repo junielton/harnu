@@ -54,7 +54,6 @@ function view(args: {
     review: 0,
     cleanup: 0,
     steward: 0,
-    'merge-batch': 0,
     budget: 0,
     ...args.byConsumer
   }

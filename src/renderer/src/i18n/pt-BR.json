@@ -4897,7 +4897,6 @@
       "humanSteps": "Confirme o passo humano: {steps}. | Confirme os passos humanos: {steps}.",
       "reviewImport": "Revise o fim importado — ele é provisório até você aprovar um re-escopo.",
       "stewardPaused": "Steward pausado {age}: {reason}",
-      "mergeBatch": "{n} PRs prontos para mergear em ordem: {chain}",
       "mainRed": "main está vermelha após #{pr} — {step} foi mergeado, mas o commit de merge falha no CI da main.",
       "approvals": "Responda às aprovações pendentes ({count}) de {session} no Approval Inbox.",
       "needsInput": "{session} está esperando por você — abra e responda.",
@@ -4958,40 +4957,6 @@
         "confirm": "Pausar steward",
         "cancel": "Cancelar",
         "dismiss": "Cancelar e manter o steward rodando"
-      }
-    },
-    "mergeBatch": {
-      "title": "Mergear {n} PRs em ordem",
-      "who": "O {steward} mergeia um e trabalha entre os merges",
-      "stewardWord": "Steward",
-      "ciGreen": "· CI verde",
-      "rebase": "rebase --onto #{pr}",
-      "recheck": "reverificar gates",
-      "stopOnRed": "parar no vermelho",
-      "action": "Mergear {n} em ordem…",
-      "confirm": "Mergear {n} em ordem",
-      "merging": "Mergeando…",
-      "mergeRest": "Mergear o resto…",
-      "cancel": "Cancelar",
-      "close": "Fechar",
-      "dismiss": "Cancelar — nada é mergeado",
-      "running": "Mergeando em ordem — espera o steward e o CI entre os merges, então pode levar alguns minutos.",
-      "stoppedAt": "Parou em #{pr}",
-      "merged": "Mergeados: {list}",
-      "remaining": "Faltam mergear: {list}",
-      "done": "{n} PRs mergeados em ordem.",
-      "reason": {
-        "closed": "#{pr} não está mais aberto.",
-        "red": "#{pr} tem checks falhando.",
-        "not-ready": "#{pr} não está pronto — um rascunho, ou ainda sem checks passando.",
-        "pending": "#{pr} ainda tem checks rodando.",
-        "wrong-base": "#{pr} não mergeia na branch padrão — redirecione-o antes.",
-        "conflict": "#{pr} tem conflito com a base.",
-        "steward-skipped": "O steward não rodou depois do último merge, então #{pr} não foi rebaseado nem reverificado.",
-        "steward-timeout": "O steward não terminou a tempo depois do último merge, então #{pr} não foi rebaseado nem reverificado.",
-        "mission-closed": "A missão foi encerrada — #{pr} não foi mergeado.",
-        "paused": "O steward foi pausado — #{pr} não foi mergeado.",
-        "merge-failed": "O GitHub recusou o merge de #{pr}: {detail}"
       }
     },
     "recordFailedTitle": "Parte da memória não foi registrada",
@@ -5407,7 +5372,6 @@
       "review": "Review",
       "cleanup": "Limpeza",
       "steward": "Steward",
-      "mergeBatch": "Merge em lote",
       "outside": "Fora do Harnu"
     },
     "tag": {
@@ -5424,7 +5388,6 @@
       "review": "Review",
       "cleanup": "Limpeza · checagens de merge",
       "steward": "Steward",
-      "mergeBatch": "Merge em lote",
       "delivered": "{n} missão entregue | {n} missões entregues",
       "outside": "Fora do Harnu · sessões, scripts, monitores"
     },

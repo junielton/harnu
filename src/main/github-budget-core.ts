@@ -18,15 +18,13 @@
  * Who spent the call. `budget` is the budget feature itself: its one REST call per app run that
  * resolves the signed-in login (`gh api rate_limit`, the poll, is free and never counted).
  */
-export type GhConsumer =
-  'missions' | 'pr-stack' | 'review' | 'cleanup' | 'steward' | 'merge-batch' | 'budget'
+export type GhConsumer = 'missions' | 'pr-stack' | 'review' | 'cleanup' | 'steward' | 'budget'
 export const GH_CONSUMERS: readonly GhConsumer[] = [
   'missions',
   'pr-stack',
   'review',
   'cleanup',
   'steward',
-  'merge-batch',
   'budget'
 ]
 

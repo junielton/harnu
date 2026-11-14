@@ -10,6 +10,16 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-14
+
+### Removed
+
+- The **Merge {n} in order…** door is gone. Mission and Campaign popovers no longer offer to merge a
+  stack of PRs, a mission whose steps have open PRs with green CI shows nothing extra in its **You**
+  list, and the "Merge batch" row of the GitHub budget table is removed with it. Merging a stack in
+  order will come back as its own engine rather than as a button on the popovers. The steward still
+  rebases a branch onto its new base after you merge its parent.
+
 ## 2026-11-13
 
 ### Added

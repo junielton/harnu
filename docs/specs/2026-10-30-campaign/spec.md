@@ -2,6 +2,8 @@
 
 _Draft spec, 2026-10-30. Written by the orchestrator from the exploration, four research reports, one 93-hour real orchestration transcript (scrubbed) and the approved mockup v6. Both now live in this folder: this file and the mockup (`index.html`, `mockup.json`, `screens/v6--*.html`, scrubbed of client identifiers). §3.2 was aligned to the data model chapters 1 and 2 shipped (T604); later changes are recorded, append-only, in the Amendments table at the end._
 
+> **T701 (2026-11-14):** the operator door of §4 that merges a stack in order was removed from the product. This spec stays as the record of what T609 built.
+
 ## 1. Problem
 
 A Mission is one quest: one declared end, a flat list of required, roughly sequential steps (1 step = 1 PR). A real delivery needed five missions opened by hand, grew to a 110-row plan, spawned 26 worktrees and 73 sessions, and produced at least eight unplanned detours that had nowhere to live. The pill read "Step 1 of 4" while the operator asked the orchestrator to hand-draw a twelve-box campaign on a canvas to know where he was. Nothing a mission learns reaches project memory; "done" is asserted by executors, not proven by facts; the human is the only merge gate and the only relay between sessions.
