@@ -46,6 +46,7 @@ import {
   readMissionRecord,
   updateMissionRecord
 } from '../src/main/missions/record-store'
+import { writeMission } from '../src/main/missions/write'
 
 const FIXTURES = path.join(__dirname, 'fixtures', 'missions-v4-compat')
 
@@ -265,6 +266,38 @@ describe('no v4 write path touches a v3 file', () => {
       expect(parsed, n).not.toHaveProperty('error')
     }
     expect(files).toContain('mnt-5c0de001-modern-active.md')
+  })
+
+  it('leaves every v3 byte unchanged after the guarded write path (S-11) has written every mission and campaign, and after it refused a session', async () => {
+    const v3Before = {
+      missions: snapshot(path.join(root, '.harnu', 'missions')),
+      campaigns: snapshot(path.join(root, '.harnu', 'campaigns'))
+    }
+    for (const id of ALL_V3_IDS(root)) {
+      const refused = await writeMission(
+        root,
+        id,
+        { kind: 'session', sessionId: 'e0e0e0e0-0000-4000-8000-0000000000ff' },
+        'write',
+        (record, log) => ({ record, log: `${log}\nnope\n` })
+      )
+      expect(refused.ok, id).toBe(false)
+      const written = await writeMission(
+        root,
+        id,
+        { kind: 'operator' },
+        'operator',
+        (record, log) => ({
+          record,
+          log: `${log}\nwritten through the guarded path on ${id}\n`
+        })
+      )
+      expect(written.ok, id).toBe(true)
+    }
+    expect({
+      missions: snapshot(path.join(root, '.harnu', 'missions')),
+      campaigns: snapshot(path.join(root, '.harnu', 'campaigns'))
+    }).toEqual(v3Before)
   })
 
   it('keeps the v3 file whole when the first write fails', async () => {
