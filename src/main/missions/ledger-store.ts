@@ -12,12 +12,19 @@
  *  - The observer (`./observer.ts`) is synchronous and dedupes against what it has seen, so the
  *    rows of a mission are also kept in memory ({@link observedRows}, {@link recordObserved}) and
  *    persisted behind it, debounced. A row is never edited or removed once stored.
- *  - A read that knows the repo ({@link hydrateMissionLedger}, {@link readObservedLedger}) binds
- *    the mission to its root, loads what the file holds and writes what only memory holds. That is
- *    also how the rows the old userData cache carries are copied in ({@link adoptCachedRows}); the
- *    cache itself is never edited, so an older build that still reads it keeps working.
- *  - Rows are told apart by their content, so copying the same row twice (two clones, a restart, a
- *    cache that is read on every boot) stores it once.
+ *  - A READ ({@link readObservedLedger}, {@link missionLedgerCount}) binds nothing, loads nothing
+ *    into memory and stores nothing. The observer pass's {@link hydrateMissionLedger} binds the
+ *    mission to its repo, loads what the file holds and stores what only memory holds; that is
+ *    also how the rows the old userData cache carries are copied in ({@link adoptCachedRows}),
+ *    for open and closed missions alike. The cache itself is never edited, so an older build that
+ *    still reads it keeps working.
+ *  - Rows are told apart by their whole content, so copying the same row twice (two clones, a
+ *    restart, a cache that is read on every boot) stores it once, and nothing else is dropped: every
+ *    observed fact is stored, including a CI state that holds across two sightings or returns.
+ *  - Accepted limits: two Harnu instances on one repo may each record the same change once (their
+ *    clocks differ, so the rows differ), and a closed mission's row count is read once and kept, so
+ *    another instance appending to its file shows in `mission_get` but not in `mission_list` until
+ *    a restart.
  */
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
@@ -71,48 +78,20 @@ function rowKey(r: LedgerRow): string {
   ])
 }
 
-/** Rows that state ONE fact about their `ref`: however late or by whom it is seen, it is stored once. */
-const SINGLE_FACT: ReadonlySet<LedgerRow['kind']> = new Set([
-  'pr-opened',
-  'pr-merged',
-  'session-died'
-])
-
 /**
- * The rows already known, in order, and what tells a new one it is a repeat. Two Harnu instances
- * on one repo each observe the same world at their own time, so identity is the fact, not the
- * clock: a pull request opened or merged, or a builder ending, is one fact per `ref`; a CI row
- * repeats the newest CI state of its pull request; every other row is told apart by its content.
+ * The rows of `rows` that `known` does not hold yet, and that do not repeat each other, in order.
+ * Identity is the row's whole content: copying the same row twice (a second pass, a restart, a
+ * cache read on every boot) stores it once, and nothing else is ever dropped — two rows that look
+ * alike but were observed at different times are two facts (a CI state that returns, or holds
+ * across two sightings, is every one of its rows).
  */
-class KnownRows {
-  private readonly keys = new Set<string>()
-  private readonly facts = new Set<string>()
-  private readonly lastCi = new Map<string, string | undefined>()
-
-  constructor(known: readonly LedgerRow[] = []) {
-    for (const r of known) this.add(r)
-  }
-
-  has(r: LedgerRow): boolean {
-    if (this.keys.has(rowKey(r))) return true
-    if (SINGLE_FACT.has(r.kind)) return this.facts.has(`${r.kind}\u0000${r.ref}`)
-    return r.kind === 'ci' && this.lastCi.has(r.ref) && this.lastCi.get(r.ref) === r.detail
-  }
-
-  add(r: LedgerRow): void {
-    this.keys.add(rowKey(r))
-    if (SINGLE_FACT.has(r.kind)) this.facts.add(`${r.kind}\u0000${r.ref}`)
-    else if (r.kind === 'ci') this.lastCi.set(r.ref, r.detail)
-  }
-}
-
-/** The rows of `rows` that `known` does not hold yet (and not each other), in order. */
 function freshAgainst(known: readonly LedgerRow[], rows: readonly LedgerRow[]): LedgerRow[] {
-  const seen = new KnownRows(known)
+  const seen = new Set(known.map(rowKey))
   const out: LedgerRow[] = []
   for (const row of rows) {
-    if (seen.has(row)) continue
-    seen.add(row)
+    const key = rowKey(row)
+    if (seen.has(key)) continue
+    seen.add(key)
     out.push(row)
   }
   return out
