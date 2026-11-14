@@ -72,6 +72,7 @@ import {
   approveDoneWhen,
   clearBlocker as clearBlockerDoor,
   closeMission,
+  declineDoneWhen,
   decideAttachRequest,
   markCriterion,
   runDoor
@@ -584,6 +585,63 @@ describe('no v4 write path touches a v3 file', () => {
       [
         'endSession',
         async (r) => ok('end session', await endSession(r, ID, { sessionId: BUILDER }))
+      ],
+      [
+        'door: declineDoneWhen (after a staging)',
+        async (r) => {
+          ok(
+            'stage',
+            await stageDoneWhen(r, AS_LEADER, {
+              missionId: ID,
+              doneWhen: 'The importer reports every skipped row too',
+              reason: 'The first end did not name the skipped rows'
+            })
+          )
+          ok('decline', await declineDoneWhen(r, ID))
+        }
+      ],
+      [
+        'runDoor (the IPC entry): approveDoneWhen and declineDoneWhen (after a staging)',
+        async (r) => {
+          const stage = async (doneWhen: string): Promise<void> =>
+            ok(
+              'stage',
+              await stageDoneWhen(r, AS_LEADER, {
+                missionId: ID,
+                doneWhen,
+                reason: 'The first end did not name the skipped rows'
+              })
+            )
+          await stage('The importer reports every skipped row too')
+          ok('approve', await runDoor({ door: 'approveDoneWhen', folder: r, missionId: ID }))
+          await stage('The importer also reports every duplicate row')
+          ok('decline', await runDoor({ door: 'declineDoneWhen', folder: r, missionId: ID }))
+        }
+      ],
+      [
+        'runDoor (the IPC entry): close',
+        async (r) =>
+          ok(
+            'close',
+            await runDoor({ door: 'close', folder: r, missionId: ID, closedAs: 'discarded' })
+          )
+      ],
+      [
+        'runDoor (the IPC entry): decideAttach (after a request)',
+        async (r) => {
+          const asked = await askToAttach(r, AS_STRANGER, { missionId: ID })
+          if (!asked.ok) throw new Error(JSON.stringify(asked))
+          ok(
+            'decide',
+            await runDoor({
+              door: 'decideAttach',
+              folder: r,
+              missionId: ID,
+              requestId: asked.requestId,
+              decision: 'denied'
+            })
+          )
+        }
       ],
       [
         'runDoor (the IPC entry): mark, clearBlocker, attach',

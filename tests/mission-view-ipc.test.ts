@@ -30,7 +30,9 @@ const h = vi.hoisted(() => ({
   userDataDir: '',
   handlers: new Map<string, (e: unknown, arg?: unknown) => unknown>(),
   listCalls: 0,
-  readCalls: [] as string[]
+  readCalls: [] as string[],
+  /** The actor of every `attachFoundPrs` call the observer made. */
+  attachActors: [] as unknown[]
 }))
 
 vi.mock('electron', () => ({
@@ -68,6 +70,18 @@ vi.mock('../src/main/missions/record-store', async (importOriginal) => {
     readMissionRecord: (...a: Parameters<typeof real.readMissionRecord>) => {
       h.readCalls.push(a[1])
       return real.readMissionRecord(...a)
+    }
+  }
+})
+
+// S-13's attach, observed: who the observer attached as.
+vi.mock('../src/main/missions/verbs-plan', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/main/missions/verbs-plan')>()
+  return {
+    ...real,
+    attachFoundPrs: (...a: Parameters<typeof real.attachFoundPrs>) => {
+      h.attachActors.push(a[1])
+      return real.attachFoundPrs(...a)
     }
   }
 })
@@ -196,6 +210,7 @@ beforeEach(async () => {
   h.userDataDir = ud
   h.listCalls = 0
   h.readCalls = []
+  h.attachActors = []
   root = mkdtempSync(path.join(os.tmpdir(), 'harnu-view-'))
   vi.resetModules()
   ipc = await import('../src/main/mission-ipc')
@@ -551,5 +566,95 @@ describe('the preload entries', () => {
       /missionV4(View|Door)/.test(readFileSync(f, 'utf8'))
     )
     expect(callers).toEqual([])
+  })
+})
+
+// Delta 1 (S-11's final head) -----------------------------------------------------------------------
+
+describe('the observer writes as Harnu', () => {
+  const WORKTREE = '/home/user/Workspace/org/www/.claude/worktrees/card-T701-write-rows'
+  const withWorktree = (id: string): MissionV4 =>
+    record({
+      id,
+      steps: [
+        {
+          id: 'stp-1',
+          title: 'Load the rows',
+          acs: [{ id: 'ac-1', text: 'The pull request is merged', by: 'fact', fact: 'pr-merged' }],
+          links: [{ kind: 'worktree', ref: WORKTREE }],
+          blockers: []
+        }
+      ]
+    } as Partial<MissionV4>)
+
+  it('attaches the pull requests it finds as { kind: "harnu" }, never as the operator', async () => {
+    seed(withWorktree(ID))
+    const found = factsDeps({
+      worktrees: {
+        [WORKTREE]: { exists: true, branch: 'feat/rows', head: null, prs: [pr({ number: 413 })] }
+      }
+    })
+    await ipc.observeOpenMissions([root], Date.now(), { v4Facts: found })
+    expect(h.attachActors).toEqual([{ kind: 'harnu' }])
+    expect(readFileSync(path.join(v4Dir(), `${ID}-score-report.md`), 'utf8')).toMatch(
+      /ref: '?413'?/
+    )
+  })
+})
+
+describe('the mission:v4Door type lists every door runDoor routes', () => {
+  it('names each routed door, declineDoneWhen included', () => {
+    const doors = readFileSync(
+      path.join(__dirname, '..', 'src', 'main', 'missions', 'doors.ts'),
+      'utf8'
+    )
+    const router = doors.slice(
+      doors.indexOf('export async function runDoor'),
+      doors.indexOf('export function doorReply')
+    )
+    const routed = [...router.matchAll(/case '(\w+)':/g)].map((m) => m[1])
+    expect(routed).toContain('declineDoneWhen')
+    const ipcSource = readFileSync(
+      path.join(__dirname, '..', 'src', 'main', 'mission-ipc.ts'),
+      'utf8'
+    )
+    const typeBlock = ipcSource.slice(
+      ipcSource.indexOf('export type MissionV4Door ='),
+      ipcSource.indexOf('export type MissionV4DoorReply')
+    )
+    for (const door of routed) expect(typeBlock, door).toContain(`door: '${door}'`)
+  })
+})
+
+describe('the observer reads the board once per pass', () => {
+  it('reads it once for N records that name cards, and not at all when none does', async () => {
+    const cardStep = (): MissionV4['steps'] => [
+      {
+        id: 'stp-1',
+        title: 'Load the rows',
+        card: 'T1-a',
+        acs: [{ id: 'ac-1', text: 'The pull request is merged', by: 'fact', fact: 'pr-merged' }],
+        links: [],
+        blockers: []
+      } as MissionV4['steps'][number]
+    ]
+    for (const n of [11, 12, 13]) seed(record({ id: `mnt-d00000${n}`, steps: cardStep() }))
+    let boards = 0
+    const base = factsDeps()
+    const counted = (root: string): FactsDeps => ({
+      ...base(root),
+      board: async () => {
+        boards++
+        return []
+      }
+    })
+    await ipc.observeOpenMissions([root], Date.now(), { v4Facts: counted })
+    expect(boards).toBe(1)
+
+    rmSync(v4Dir(), { recursive: true, force: true })
+    boards = 0
+    for (const n of [21, 22]) seed(record({ id: `mnt-d00000${n}` }))
+    await ipc.observeOpenMissions([root], Date.now(), { v4Facts: counted })
+    expect(boards).toBe(0)
   })
 })
