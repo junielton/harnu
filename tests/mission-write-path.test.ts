@@ -1121,3 +1121,298 @@ describe('one guard and one write path: every refusal is typed, and a change may
     expect(good.ok).toBe(true)
   })
 })
+
+describe('one guard and one write path: round 5, the refusals the owner asked for', () => {
+  const REPLIER = 'e0e0e0e0-0000-4000-8000-000000000009'
+  const acOf = (over: Record<string, unknown> = {}) => ({
+    id: 'ac-1',
+    text: 'Every reviewer question has an answer',
+    by: 'session' as const,
+    ...over
+  })
+  const stepOf = (acs: unknown[], links: unknown[] = [{ kind: 'session', ref: WORKER }]) =>
+    ({ id: 'stp-1', title: 'Load the test files', acs, links, blockers: [] }) as never
+  const stamp = (by: string) => ({ at: NOW, by, evidence: 'Read the replies' })
+  const code = (r: { ok: boolean; code?: string }): string | undefined => (r.ok ? 'ok' : r.code)
+  const fresh = (over: Partial<MissionV4> = {}): MissionV4 =>
+    missionOf(newMissionId(), {
+      sessions: [{ id: OUTSIDER, role: 'leads', from: NOW, to: null }],
+      ...over
+    })
+  const stored = (id: string): MissionV4 =>
+    parseMissionRecordFile(readFileSync(fileOf(id), 'utf8')) as MissionV4
+  const write = (
+    actor: Actor,
+    change: (r: MissionV4) => MissionV4,
+    need: 'write' | 'lead' | 'operator' | 'ask-to-attach' = 'write',
+    id = ID
+  ) => writeMission(root, id, actor, need, (rec, log) => ({ record: change(rec), log }))
+
+  describe('1. a session creates no mission that is already settled or proven', () => {
+    it('a stamp on any criterion, in any name, is refused SETTLE_NOT_ALLOWED', async () => {
+      for (const by of [OUTSIDER, WORKER, 'operator']) {
+        const record = fresh({ steps: [stepOf([acOf({ settled: stamp(by) })], [])] })
+        const r = await createMission(root, session(OUTSIDER), record, '')
+        expect(code(r), by).toBe('SETTLE_NOT_ALLOWED')
+      }
+      expect(v4Files()).toEqual([])
+    })
+
+    it('a mission that already carries doneWhenVerified is refused OPERATOR_ONLY', async () => {
+      const r = await createMission(
+        root,
+        session(OUTSIDER),
+        fresh({ doneWhenVerified: { by: OUTSIDER, at: NOW } }),
+        ''
+      )
+      expect(code(r)).toBe('OPERATOR_ONLY')
+      expect(v4Files()).toEqual([])
+    })
+
+    it('cross-references and preloaded attach requests are judged on create', async () => {
+      const dup = fresh({ steps: [stepOf([acOf()], []), stepOf([acOf()], [])] })
+      expect(code(await createMission(root, session(OUTSIDER), dup, ''))).toBe('DUPLICATE_ID')
+      const ghost = fresh({
+        steps: [{ ...(stepOf([acOf()], []) as object), milestone: 'mls-3' } as never]
+      })
+      expect(code(await createMission(root, session(OUTSIDER), ghost, ''))).toBe(
+        'UNKNOWN_MILESTONE'
+      )
+      const preloaded = fresh({
+        attachRequests: [
+          {
+            id: 'atr-1',
+            missionId: 'mnt-bb000001',
+            sessionId: OUTSIDER,
+            at: NOW,
+            decision: 'allowed'
+          }
+        ]
+      })
+      expect(code(await createMission(root, session(OUTSIDER), preloaded, ''))).toBe(
+        'LEADER_NOT_CALLER'
+      )
+      expect(v4Files()).toEqual([])
+    })
+  })
+
+  describe('2. a settled stamp is append-only for a session', () => {
+    beforeEach(() => {
+      seed(missionOf(ID, { steps: [stepOf([acOf({ settled: stamp(LEADER) })])] }))
+    })
+    const withAc = (over: Record<string, unknown> | null, links?: unknown[]) => (r: MissionV4) =>
+      ({
+        ...r,
+        steps: [
+          stepOf(
+            over === null ? [] : [{ ...r.steps[0].acs[0], ...over }],
+            links ?? r.steps[0].links
+          )
+        ]
+      }) as MissionV4
+
+    it('removing a stamp, or changing one, is refused for the one who wrote it and for any other session', async () => {
+      const before = v4Snapshot()
+      for (const actor of [session(LEADER), session(WORKER)]) {
+        expect(code(await write(actor, withAc({ settled: undefined }))), 'removed').toBe(
+          'SETTLE_NOT_ALLOWED'
+        )
+        expect(
+          code(
+            await write(
+              actor,
+              withAc({ settled: stamp(actor.kind === 'session' ? actor.sessionId : '') })
+            )
+          ),
+          'overwritten'
+        ).toBe('SETTLE_NOT_ALLOWED')
+        expect(code(await write(actor, withAc(null))), 'criterion dropped').toBe(
+          'SETTLE_NOT_ALLOWED'
+        )
+        expect(code(await write(actor, (r) => ({ ...r, steps: [] }))), 'step dropped').toBe(
+          'SETTLE_NOT_ALLOWED'
+        )
+      }
+      expect(v4Snapshot()).toEqual(before)
+    })
+
+    it('only an operator write removes or changes one', async () => {
+      expect(code(await write(operator, withAc({ settled: stamp('operator') }), 'operator'))).toBe(
+        'ok'
+      )
+      expect(stored(ID).steps[0].acs[0].settled?.by).toBe('operator')
+      expect(code(await write(operator, withAc({ settled: undefined }), 'operator'))).toBe('ok')
+      expect(stored(ID).steps[0].acs[0].settled).toBeUndefined()
+    })
+
+    it('a builder cannot drop its own link and settle in one write', async () => {
+      seed(missionOf(ID, { steps: [stepOf([acOf()])] }))
+      const r = await write(session(WORKER), withAc({ settled: stamp(WORKER) }, []))
+      expect(code(r)).toBe('SETTLE_NOT_ALLOWED')
+    })
+
+    it('a session never changes the by, fact or person of a criterion that exists', async () => {
+      const before = v4Snapshot()
+      for (const over of [
+        { by: 'operator' },
+        { by: 'person', person: 'the designer' },
+        { by: 'fact', fact: 'pr-merged' },
+        { fact: 'ci-green' },
+        { person: 'someone' }
+      ]) {
+        const r = await write(session(LEADER), withAc(over))
+        expect(code(r), JSON.stringify(over)).toBe('SETTLE_NOT_ALLOWED')
+      }
+      expect(v4Snapshot()).toEqual(before)
+    })
+
+    it('a session cannot turn an operator criterion into its own and settle it', async () => {
+      seed(missionOf(ID, { steps: [stepOf([acOf({ by: 'operator' })])] }))
+      const r = await write(session(LEADER), withAc({ by: 'session', settled: stamp(LEADER) }))
+      expect(code(r)).toBe('SETTLE_NOT_ALLOWED')
+    })
+
+    it('a stamp written back unchanged by an unrelated write is not judged again', async () => {
+      const r = await write(session(WORKER), (rec) => ({
+        ...rec,
+        links: [{ kind: 'doc', ref: 'docs/x.md' }]
+      }))
+      expect(code(r)).toBe('ok')
+    })
+  })
+
+  describe('3. a session never writes doneWhenVerified', () => {
+    it('is the operator’s field', async () => {
+      seed(missionOf(ID))
+      const r = await write(session(LEADER), (rec) => ({
+        ...rec,
+        doneWhenVerified: { by: LEADER, at: NOW }
+      }))
+      expect(code(r)).toBe('OPERATOR_ONLY')
+      expect(
+        code(
+          await write(
+            operator,
+            (rec) => ({ ...rec, doneWhenVerified: { by: 'operator', at: NOW } }),
+            'operator'
+          )
+        )
+      ).toBe('ok')
+    })
+  })
+
+  describe('4. an attach request carries no role', () => {
+    beforeEach(() => {
+      seed(missionOf(ID))
+    })
+    const ask = (req: Record<string, unknown>) =>
+      write(
+        session(OUTSIDER),
+        (rec) => ({ ...rec, attachRequests: [req] }) as MissionV4,
+        'ask-to-attach'
+      )
+    const base = { id: 'atr-1', missionId: ID, sessionId: OUTSIDER, at: NOW, decision: null }
+
+    it('any role key is refused: leads as LEADER_IS_OPERATORS, anything else as BAD_ARGS', async () => {
+      expect(code(await ask({ ...base, role: 'leads' }))).toBe('LEADER_IS_OPERATORS')
+      expect(code(await ask({ ...base, role: 'worked' }))).toBe('BAD_ARGS')
+      expect(code(await ask({ ...base, role: 'anything' }))).toBe('BAD_ARGS')
+      expect(code(await ask(base))).toBe('ok')
+      expect(stored(ID).attachRequests?.[0]).not.toHaveProperty('role')
+    })
+
+    it('an asker never drops or changes an earlier request, and never names another mission', async () => {
+      const earlier = {
+        id: 'atr-1',
+        missionId: ID,
+        sessionId: REPLIER_ID(),
+        at: NOW,
+        decision: null
+      }
+      seed(missionOf(ID, { attachRequests: [earlier] }))
+      const before = v4Snapshot()
+      const attempts: Array<[string, Record<string, unknown>[], string]> = [
+        ['dropped', [], 'OPERATOR_ONLY'],
+        ['changed', [{ ...earlier, at: '2026-11-15T00:00:00Z' }], 'OPERATOR_ONLY'],
+        [
+          'another mission',
+          [
+            earlier,
+            { id: 'atr-2', missionId: OTHER, sessionId: OUTSIDER, at: NOW, decision: null }
+          ],
+          'NOT_ATTACHED'
+        ]
+      ]
+      for (const [name, requests, want] of attempts) {
+        const r = await write(
+          session(OUTSIDER),
+          (rec) => ({ ...rec, attachRequests: requests }) as MissionV4,
+          'ask-to-attach'
+        )
+        expect(code(r), name).toBe(want)
+      }
+      expect(v4Snapshot()).toEqual(before)
+    })
+
+    it('asking to attach to a closed mission is MISSION_CLOSED', async () => {
+      seed(missionOf(ID, { status: 'closed', closedAs: 'delivered' }))
+      expect(code(await ask(base))).toBe('MISSION_CLOSED')
+    })
+  })
+
+  describe('5. a worked session never dispatches', () => {
+    it('appending a worked entry is NOT_LEADER for a worker, and fine for the leader', async () => {
+      seed(missionOf(ID))
+      const added = { id: OUTSIDER, role: 'worked' as const, from: NOW, to: null }
+      const asWorker = await write(session(WORKER), (rec) => ({
+        ...rec,
+        sessions: [...rec.sessions, added]
+      }))
+      expect(code(asWorker)).toBe('NOT_LEADER')
+      const asLeader = await write(session(LEADER), (rec) => ({
+        ...rec,
+        sessions: [...rec.sessions, added]
+      }))
+      expect(code(asLeader)).toBe('ok')
+    })
+  })
+
+  describe('6. Harnu writes under its own name', () => {
+    it('the guard treats it as the operator, and the result names it harnu, never the operator', async () => {
+      seed(missionOf(ID))
+      const harnu: Actor = { kind: 'harnu' }
+      for (const need of ['read', 'write', 'lead', 'operator', 'ask-to-attach'] as const) {
+        const r = guardMission(missionOf(ID), harnu, need)
+        expect(r.ok && r.standing, need).toBe('harnu')
+      }
+      const change = (rec: MissionV4): MissionV4 => ({
+        ...rec,
+        sessions: [
+          ...rec.sessions.map((s) =>
+            s.id === WORKER ? { ...s, to: NOW, stoppedAt: { step: 'stp-1' } } : s
+          ),
+          { id: OUTSIDER, role: 'worked' as const, from: NOW, to: null }
+        ]
+      })
+      const byHarnu = await write(harnu, change, 'operator')
+      expect(byHarnu.ok && byHarnu.standing).toBe('harnu')
+      seed(missionOf(ID))
+      const byOperator = await write(operator, change, 'operator')
+      expect(byOperator.ok && byOperator.standing).toBe('operator')
+      expect(code(byHarnu)).toBe('ok')
+      expect((await readMissionAs(root, ID, harnu)).ok).toBe(true)
+    })
+
+    it('Harnu creates a mission as it writes one, and is bound by the caps like the operator', async () => {
+      const harnu: Actor = { kind: 'harnu' }
+      expect(code(await createMission(root, harnu, fresh(), ''))).toBe('ok')
+      expect(code(await createMission(root, harnu, fresh({ title: 'k'.repeat(61) }), ''))).toBe(
+        'OVER_CAP'
+      )
+    })
+  })
+})
+
+function REPLIER_ID(): string {
+  return 'e0e0e0e0-0000-4000-8000-000000000009'
+}
