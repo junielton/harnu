@@ -167,12 +167,8 @@ async function seed(): Promise<{ mission: Mission; log: string; file: string }> 
   return { mission, log, file }
 }
 
-const ctx = (): Record<string, unknown> => ({
-  folder: root,
-  folders: [],
-  denyFolders: [],
-  bridge: undefined
-})
+/** The scoped session projection is the MCP layer's; a read only needs something that answers it. */
+const deps = { children: async (): Promise<never[]> => [] }
 
 beforeEach(async () => {
   h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-s3-ud-'))
@@ -193,7 +189,7 @@ describe('mission derive — a read with no side effects (AC-4)', () => {
     const cache = await import('../src/main/mission-link-cache')
     await cache.ensureLinkCacheLoaded()
 
-    const reading = await derive(root, mission, log, ctx() as never, Date.now())
+    const reading = await derive(root, mission, log, deps, Date.now())
 
     // The read really looked: the PRs were joined and the gates computed from them.
     expect(h.joinCalls).toBeGreaterThan(0)
@@ -218,14 +214,24 @@ describe('mission derive — a read with no side effects (AC-4)', () => {
   it('hands back what it saw instead of recording it', async () => {
     const { mission, log } = await seed()
     const { derive } = await loadDerive()
-    const reading = await derive(root, mission, log, ctx() as never, Date.now())
+    const reading = await derive(root, mission, log, deps, Date.now())
     // The sticky sightings and the PR facts the observer needs travel in the reading.
     const sticky = reading.observation.sticky
     expect(sticky).toContainEqual(
-      expect.objectContaining({ op: 'remember', kind: 'pr', ref: '8', state: 'MERGED' })
+      expect.objectContaining({
+        op: 'remember',
+        kind: 'pr',
+        ref: '8',
+        seen: expect.objectContaining({ state: 'MERGED' })
+      })
     )
     expect(sticky).toContainEqual(
-      expect.objectContaining({ op: 'remember', kind: 'pr', ref: '7', state: 'OPEN' })
+      expect.objectContaining({
+        op: 'remember',
+        kind: 'pr',
+        ref: '7',
+        seen: expect.objectContaining({ state: 'OPEN' })
+      })
     )
     expect(reading.observation.prByStep.map((p) => p?.facts.number ?? null)).toEqual([7, 8, null])
   })
@@ -234,8 +240,8 @@ describe('mission derive — a read with no side effects (AC-4)', () => {
     const { mission, log } = await seed()
     const { derive } = await loadDerive()
     const now = Date.parse('2026-11-01T09:30:00.000Z')
-    const a = await derive(root, mission, log, ctx() as never, now)
-    const b = await derive(root, mission, log, ctx() as never, now)
+    const a = await derive(root, mission, log, deps, now)
+    const b = await derive(root, mission, log, deps, now)
     expect(b.derived).toEqual(a.derived)
   })
 })
@@ -248,7 +254,7 @@ describe('mission observer — the only writer', () => {
     const { observeMission, lastKnownProgress } = await import('../src/main/missions/observer')
     const cache = await import('../src/main/mission-link-cache')
     const now = Date.now()
-    const reading = await derive(root, mission, log, ctx() as never, now)
+    const reading = await derive(root, mission, log, deps, now)
     expect(lastKnownProgress(MISSION_ID)).toBeUndefined()
 
     observeMission(mission, reading, now)
