@@ -203,7 +203,7 @@ describe('criterion settlement', () => {
     expect(criterionSettlement(checkByOther, s, {})).toEqual({ settled: false, via: null })
     expect(state(step([checkOnly]), { pr: 'open' })).toBe('waiting-review')
     // beside a second session's stamp the self-check changes nothing: the stamp settles it.
-    const both = ac('ac-10', 'session', {
+    const both = ac('ac-5', 'session', {
       selfCheck: { at: AT, by: 'sess-builder', evidence: 'I ran it myself' },
       settled: { at: AT, by: 'sess-checker', evidence: 'ran it again' }
     })
