@@ -15,6 +15,9 @@
  * that may ALREADY carry a user `--settings` — the merge rule is the delicate part
  * (§ "Merge with a user-provided --settings" below).
  *
+ * One handler is not an observer: the `command` hook on `SessionStart` (matcher `compact`) that fetches
+ * the mission summary for the leader of a v4 mission after a compaction (`summaryHandler`).
+ *
  * Deliberately NARROW event set (spec §2): UserPromptSubmit → working · Stop →
  * idle (its payload natively carries `last_assistant_message`) · StopFailure → failed
  * (why a turn died, for Your move's death cards) · Notification →
@@ -83,6 +86,24 @@ function httpHandler(port: number, token: string, event: string, tag: string): H
 }
 
 /**
+ * The summary handler (Missions v4 S-16b, AC-41): a `command` hook on `SessionStart` with matcher
+ * `compact`. After a compaction Claude Code runs it, `curl` posts the hook's body to the bridge's
+ * `/mission/<token>/summary` route, and whatever the route prints (the mission summary, for the open
+ * leader of an open v4 mission; nothing for anyone else) is added to the session's context. The one
+ * handler here that is not an observer. `|| true`: Harnu down, a stale token or a slow bridge never
+ * fails a session, and `--max-time` keeps it under the hook's own timeout. Nothing is written to disk:
+ * the blob is rebuilt with the live port and token at every spawn.
+ */
+function summaryHandler(port: number, token: string): Handler {
+  return {
+    type: 'command',
+    command: `curl -s --max-time 4 -X POST --data-binary @- http://127.0.0.1:${port}/mission/${token}/summary || true`,
+    timeout: HOOK_TIMEOUT_S,
+    [HARNU_HOOK_MARKER]: 'v1'
+  }
+}
+
+/**
  * Build the inline `--settings` object injected at spawn. `port`/`token` point at
  * the live Hook Bridge. Also sets `preferredNotifChannel: 'notifications_disabled'`
  * so the spawned session never rings its own terminal bell — Harnu owns the single
@@ -93,7 +114,10 @@ export function buildHookSettingsBlob(port: number, token: string): HookSettings
     UserPromptSubmit: [{ hooks: [httpHandler(port, token, 'UserPromptSubmit', '_')] }],
     Stop: [{ hooks: [httpHandler(port, token, 'Stop', '_')] }],
     StopFailure: [{ hooks: [httpHandler(port, token, 'StopFailure', '_')] }],
-    SessionStart: [{ hooks: [httpHandler(port, token, 'SessionStart', '_')] }],
+    SessionStart: [
+      { hooks: [httpHandler(port, token, 'SessionStart', '_')] },
+      { matcher: 'compact', hooks: [summaryHandler(port, token)] }
+    ],
     SessionEnd: [{ hooks: [httpHandler(port, token, 'SessionEnd', '_')] }],
     Notification: NOTIFICATION_TYPES.map((t) => ({
       matcher: t,
