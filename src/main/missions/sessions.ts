@@ -75,8 +75,24 @@ export async function applyChange(
 
 // ---- Small shared helpers -------------------------------------------------------------
 
-/** Every character a reader may take for the end of a line. */
-const LINE_BREAKS = /[\r\n\u2028\u2029\u0085\u000b\u000c]+/g
+/** Every character a reader may take for the end of a line: LF, CR, VT, FF, NEL, LS and PS. */
+const LINE_BREAK_CODES = new Set([0x0a, 0x0d, 0x0b, 0x0c, 0x85, 0x2028, 0x2029])
+
+/** `text` on one line: each run of line breaks becomes a single space. */
+function oneLine(text: string): string {
+  let out = ''
+  let inBreak = false
+  for (const ch of text) {
+    if (LINE_BREAK_CODES.has(ch.codePointAt(0) as number)) {
+      if (!inBreak) out += ' '
+      inBreak = true
+    } else {
+      out += ch
+      inBreak = false
+    }
+  }
+  return out
+}
 
 /**
  * The Log with one more heading: `### <at> · <what>`. The Log is append-only, and the summary reads its
@@ -87,8 +103,7 @@ const LINE_BREAKS = /[\r\n\u2028\u2029\u0085\u000b\u000c]+/g
  */
 export function logEntry(log: string, at: string, what: string): string {
   const base = log === '' || log.endsWith('\n') ? log : `${log}\n`
-  const line = (text: string): string => text.replace(LINE_BREAKS, ' ')
-  return `${base}${base === '' ? '' : '\n'}### ${line(at)} · ${line(what)}\n`
+  return `${base}${base === '' ? '' : '\n'}### ${oneLine(at)} · ${oneLine(what)}\n`
 }
 
 /**
