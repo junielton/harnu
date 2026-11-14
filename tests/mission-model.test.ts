@@ -15,6 +15,8 @@ import {
   SessionEntrySchema,
   StepSchema,
   BlockerSchema,
+  FACTS,
+  LINK_KINDS,
   buildMissionRecordContent,
   parseMissionRecordFile,
   readMissionRecordLog
@@ -399,5 +401,143 @@ describe('the v4 file: frontmatter and an append-only Log', () => {
     const parsed = parseMissionRecordFile(content)
     if ('error' in parsed) throw new Error(parsed.error)
     expect(parsed.closeRequested).toEqual({ at: '2026-11-14T10:00:00Z' })
+  })
+})
+
+/**
+ * Delta 1 · AC-9's proof. The suite above stayed green when a nested schema lost `.passthrough()` or
+ * a closed list grew, so every nested entity is pinned here: an unknown key on it survives the parse
+ * AND the file round trip, and the closed lists are written out.
+ */
+describe('the v4 record keeps what it does not name (delta 1)', () => {
+  /** Each place an unknown key is planted: where it goes in the record, by path. */
+  const PLACES: Array<[string, (m: Record<string, unknown>) => Record<string, unknown>]> = [
+    ['a milestone', (m) => (m.milestones as Record<string, unknown>[])[0]],
+    ['a step', (m) => (m.steps as Record<string, unknown>[])[0]],
+    [
+      'a criterion',
+      (m) =>
+        ((m.steps as Record<string, unknown>[])[0].acs as Record<string, unknown>[])[0] as Record<
+          string,
+          unknown
+        >
+    ],
+    [
+      'a criterion settled stamp',
+      (m) =>
+        ((m.steps as Record<string, unknown>[])[0].acs as Record<string, unknown>[])[2]
+          .settled as Record<string, unknown>
+    ],
+    [
+      'a step link',
+      (m) =>
+        ((m.steps as Record<string, unknown>[])[0].links as Record<string, unknown>[])[0] as Record<
+          string,
+          unknown
+        >
+    ],
+    [
+      'a step blocker',
+      (m) =>
+        (
+          (m.steps as Record<string, unknown>[])[0].blockers as Record<string, unknown>[]
+        )[0] as Record<string, unknown>
+    ],
+    ['a mission link', (m) => (m.links as Record<string, unknown>[])[0]],
+    ['a session entry', (m) => (m.sessions as Record<string, unknown>[])[0]],
+    ['closeRequested', (m) => m.closeRequested as Record<string, unknown>]
+  ]
+
+  /** A record with `stoppedAt` and `doneWhenVerified` filled, so those nested objects can carry a key. */
+  function withNested(): Record<string, unknown> {
+    const m = fullRecord()
+    ;(m.sessions as Record<string, unknown>[])[0].stoppedAt = {
+      step: 'stp-1',
+      waitingFor: 'a review of pull request 256'
+    }
+    m.doneWhenVerified = { by: '99999999-2222-4333-8444-555555555555', at: AT }
+    return m
+  }
+
+  const ALL_PLACES: Array<[string, (m: Record<string, unknown>) => Record<string, unknown>]> = [
+    ...PLACES,
+    [
+      'a session stoppedAt',
+      (m) => (m.sessions as Record<string, unknown>[])[0].stoppedAt as Record<string, unknown>
+    ],
+    ['doneWhenVerified', (m) => m.doneWhenVerified as Record<string, unknown>]
+  ]
+
+  for (const [where, locate] of ALL_PLACES) {
+    it(`an unknown key on ${where} survives the parse and the file round trip`, () => {
+      const m = withNested()
+      locate(m).futureKey = 'kept'
+      const parsed = MissionRecordSchema.safeParse(m)
+      expect(parsed.success).toBe(true)
+      if (!parsed.success) return
+      expect(locate(parsed.data as unknown as Record<string, unknown>).futureKey).toBe('kept')
+      expect(parsed.data).toEqual(m)
+      const content = buildMissionRecordContent(parsed.data)
+      const back = parseMissionRecordFile(content)
+      if ('error' in back) throw new Error(back.error)
+      expect(locate(back as unknown as Record<string, unknown>).futureKey).toBe('kept')
+      expect(back).toEqual(m)
+    })
+  }
+
+  it('an unknown key on an attach request survives its parse and a JSON round trip', () => {
+    const request = {
+      id: 'atr-1',
+      missionId: 'mnt-1a2b3c4d',
+      sessionId: '99999999-2222-4333-8444-555555555555',
+      role: 'worked',
+      at: AT,
+      decision: null,
+      futureKey: 'kept'
+    }
+    const parsed = AttachRequestSchema.parse(request)
+    expect(parsed).toEqual(request)
+    expect(AttachRequestSchema.parse(JSON.parse(JSON.stringify(parsed)))).toEqual(request)
+  })
+
+  it('a link is one of five kinds, and a card link is refused', () => {
+    expect([...LINK_KINDS]).toEqual(['session', 'pr', 'worktree', 'url', 'doc'])
+    const withLink = (kind: string): Record<string, unknown> => {
+      const m = smallRecord()
+      ;(m.steps as Record<string, unknown>[])[0].links = [{ kind, ref: 'x' }]
+      m.links = [{ kind, ref: 'x' }]
+      return m
+    }
+    expect(MissionRecordSchema.safeParse(withLink('card')).success).toBe(false)
+    for (const kind of LINK_KINDS)
+      expect(MissionRecordSchema.safeParse(withLink(kind)).success).toBe(true)
+  })
+
+  it('a fact is one of five', () => {
+    expect([...FACTS]).toEqual(['pr-opened', 'ci-green', 'pr-merged', 'main-green', 'link-exists'])
+  })
+
+  it('a step may be optional and round-trips; a wrong type is refused', () => {
+    const m = smallRecord()
+    ;(m.steps as Record<string, unknown>[])[0].optional = true
+    const record = MissionRecordSchema.parse(m)
+    expect(record.steps[0].optional).toBe(true)
+    expect(parseMissionRecordFile(buildMissionRecordContent(record))).toEqual(record)
+    ;(m.steps as Record<string, unknown>[])[0].optional = 'yes'
+    expect(MissionRecordSchema.safeParse(m).success).toBe(false)
+  })
+
+  it('a mission may record who verified its Done when and when; a wrong type is refused', () => {
+    const verified = { by: '99999999-2222-4333-8444-555555555555', at: AT }
+    const m = { ...smallRecord(), doneWhenVerified: verified }
+    const record = MissionRecordSchema.parse(m)
+    expect(record.doneWhenVerified).toEqual(verified)
+    expect(parseMissionRecordFile(buildMissionRecordContent(record))).toEqual(record)
+    expect(MissionRecordSchema.safeParse({ ...m, doneWhenVerified: 'the operator' }).success).toBe(
+      false
+    )
+    expect(MissionRecordSchema.safeParse({ ...m, doneWhenVerified: { by: 'x' } }).success).toBe(
+      false
+    )
   })
 })
