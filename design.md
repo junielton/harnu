@@ -7649,8 +7649,8 @@ selected chapter's **objectives**: its mission's counted steps as compact rows
 chapters, each row tagged "ch. {n}") and a footer (`padding: 8px 14px`,
 `border-t border-border`): **End campaign…** (Ghost, left-aligned, the footer's only
 control) — rendered **disabled with a tooltip** until main exposes a campaign end door.
-There is no map takeover (removed by T704; the Mission pane replaces it), and no merge-batch
-row or dialog (removed by T701). The **Steward** line stays with the chapter popover, where its Pause door lives.
+There is no map takeover (removed by T704; the Mission pane replaces it), and no merge
+row or dialog (T701). The **Steward** line stays with the chapter popover, where its Pause door lives.
 
 States (mockup `v6--campaign`): `default`; `side` (a side quest selected —
 eyebrow "Side quest · not required for the end", its origin chapter and gates);
