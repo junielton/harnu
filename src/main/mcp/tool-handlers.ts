@@ -158,7 +158,7 @@ import {
 } from '../mission-core'
 import { probeGitMeta } from '../git-probe'
 import { ensureLinkCacheLoaded } from '../mission-link-cache'
-import { readMissionLedger, readObservedLedger } from '../missions/ledger-store'
+import { missionLedgerCount, readMissionLedger, readObservedLedger } from '../missions/ledger-store'
 import { lastKnownProgress, wakeSteward } from '../missions/observer'
 import {
   MAIN_CI_GET_WAIT_MS,
@@ -4497,12 +4497,14 @@ const missionListHandler: Handler = async (_args, ctx) => {
   }
   const read = await readMissionsDeduped(roots, { includeClosed: true })
   const unreadable = read.unreadable.map((u) => path.join(missionsDir(u.root), u.name))
-  // The ledger of each mission is read from the repo store, beside its file.
+  // The ledger of each mission is read from the repo store, beside its file; a closed mission's
+  // count is read once and kept (the poll must not read a file per closed mission each tick).
+  await ensureLinkCacheLoaded()
   const ledgerCounts = new Map<string, number>(
     await Promise.all(
       read.missions.map(async ({ mission: m, root }): Promise<[string, number]> => [
         m.id,
-        (await missionLedgerOf(root, m)).length
+        await missionLedgerCount(root, m)
       ])
     )
   )
@@ -5396,6 +5398,9 @@ const missionRequestCloseHandler: Handler = async (args, ctx) => {
   }
   const currentHot = ctx.folder ? await readHotBody(ctx.folder) : undefined
   // Missions v4 S-4: the consolidator reads the observed rows too, from the repo store.
+  // The cache is read first: a close asked before any observer pass in this process must still see
+  // the rows only the userData cache holds.
+  await ensureLinkCacheLoaded()
   const observed = ctx.folder
     ? await readObservedLedger(missionRoot(ctx.folder), strField(args, 'missionId') ?? '')
     : []
