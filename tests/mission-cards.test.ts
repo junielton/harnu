@@ -14,11 +14,21 @@ import {
   type ColumnKey,
   type RoadmapCard
 } from '../src/main/roadmap-core'
-import { StepSchema, type StepV4 } from '../src/main/missions/model'
+import {
+  MISSION_V4_ID_RE,
+  STATE_WORDS,
+  STEP_STATES,
+  StepSchema,
+  type StepState,
+  type StepV4
+} from '../src/main/missions/model'
 import {
   MISSION_BLOCK_END,
   extractMissionBlock,
+  findCardByName,
   findStepCard,
+  indexStepCards,
+  stepCardKey,
   moveStepCard,
   planStepCard,
   stepCardColumn,
@@ -228,8 +238,18 @@ describe('a dispatched step is a card with a marked block', () => {
 })
 
 /** AC-29's mapping, from its own text: backlog and ready read as to do, in progress as running,
- *  review as waiting for review, and the operator closing the card (done) reads as done. */
-const AC_29_STATE: Record<ColumnKey, string> = {
+ *  review as waiting for review, and the operator closing the card (done) reads as done. The values
+ *  are the model's state identifiers, never display words. */
+const AC_29_STATE: Record<ColumnKey, StepState> = {
+  backlog: 'todo',
+  ready: 'todo',
+  'in-progress': 'running',
+  review: 'waiting-review',
+  done: 'done'
+}
+
+/** The same mapping as the AC's own words, written separately so a fault in the table above shows. */
+const AC_29_WORDS: Record<ColumnKey, string> = {
   backlog: 'to do',
   ready: 'to do',
   'in-progress': 'running',
@@ -246,8 +266,17 @@ describe('the card column is an input and Harnu never closes a card', () => {
     for (const column of COLUMN_ORDER) {
       const card = parseCard(cardFile('T1-card', column, stamp).content, 'T1-card')
       expect(stepCardColumn(card, ref)).toBe(column)
-      expect(AC_29_STATE[stepCardColumn(card, ref) as ColumnKey]).toBeTruthy()
     }
+  })
+
+  it('AC-29 mapping table: every column names a model state, in the AC words', () => {
+    for (const column of COLUMN_ORDER) {
+      expect(STEP_STATES).toContain(AC_29_STATE[column])
+      expect(STATE_WORDS[AC_29_STATE[column]]).toBe(AC_29_WORDS[column])
+    }
+    // Backlog and ready are the same state; every other column has a state of its own.
+    expect(AC_29_STATE.backlog).toBe(AC_29_STATE.ready)
+    expect(new Set(Object.values(AC_29_STATE)).size).toBe(4)
   })
 
   it('has no column for a step with no card, a card of another step, or a card that does not parse', () => {
@@ -297,14 +326,17 @@ describe('the card column is an input and Harnu never closes a card', () => {
     }
   })
 
-  it('a card the operator closed stays closed: no move, no status change by create, bind or block rewrite', () => {
+  it('a card the operator closed stays closed: no move, no status change by a block rewrite, and no bind', () => {
     const closed = cardFile('T1-card', 'done', stamp)
     expect(moveStepCard(closed.content, 'backlog').ok).toBe(false)
     const rewritten = writeMissionBlock(closed.content, 'stp-5', step().acs)
     expect(parseCard(rewritten, 'T1-card').status).toBe('done')
-    const bound = plan({ step: step({ card: 'T1-card' }) }, [closed])
-    expect(bound.action).toBe('bind')
-    if (bound.action === 'bind') expect(parseCard(bound.content, bound.slug).status).toBe('done')
+    // A closed card is finished work: a step needs a card that can still move.
+    const named = plan({ step: step({ card: 'T1-card' }) }, [closed])
+    expect(named).toMatchObject({ action: 'refused', code: 'CARD_CLOSED' })
+    // Found by its stamp rather than by name, it is refused too, and no second card is made.
+    const stamped = plan({}, [closed])
+    expect(stamped).toMatchObject({ action: 'refused', code: 'CARD_CLOSED' })
   })
 
   it('no path through the module ever writes status: done onto a card that was not already done', () => {
@@ -338,5 +370,136 @@ describe('the card column is an input and Harnu never closes a card', () => {
     }).replace('status: backlog', 'status: done')
     const made = created(plan({}, [{ slug: 'T1-d', content: done }]))
     expect(parseCard(made.content, made.slug).status).toBe('backlog')
+  })
+})
+
+describe('a card is never closed through a hostile id', () => {
+  const hostile = `${MISSION}\nstatus: done`
+
+  it('refuses a mission id that is not mnt-<8 hex>, on create', () => {
+    const result = plan({ missionId: hostile })
+    expect(result).toMatchObject({ action: 'refused', code: 'BAD_MISSION_ID' })
+    for (const bad of [
+      '',
+      'mnt-xyz',
+      'MNT-0a1b2c3d',
+      ` ${MISSION}`,
+      `${MISSION}\n`,
+      `${MISSION}x`
+    ]) {
+      expect(MISSION_V4_ID_RE.test(bad)).toBe(false)
+      expect(plan({ missionId: bad })).toMatchObject({ action: 'refused', code: 'BAD_MISSION_ID' })
+    }
+  })
+
+  it('refuses it on bind too, and leaves the card as it was', () => {
+    const existing = cardFile('T9-hand-made', 'ready')
+    const result = plan({ missionId: hostile, step: step({ card: 'T9-hand-made' }) }, [existing])
+    expect(result).toMatchObject({ action: 'refused', code: 'BAD_MISSION_ID' })
+    expect('content' in result).toBe(false)
+  })
+
+  it('refuses a step id or milestone that is not an id, and a provenance that spans lines', () => {
+    const badStep = plan({ step: step({ id: 'stp-5' }), missionId: MISSION })
+    expect(badStep.action).toBe('create')
+    const forged = { ...step(), id: 'stp-5\nstatus: done' } as StepV4
+    expect(plan({ step: forged })).toMatchObject({ action: 'refused', code: 'BAD_INPUT' })
+    const forgedMilestone = { ...step(), milestone: 'mls-1\nstatus: done' } as StepV4
+    expect(plan({ step: forgedMilestone })).toMatchObject({ action: 'refused', code: 'BAD_INPUT' })
+    expect(plan({ provenance: { at: AT, branch: 'main\nstatus: done' } })).toMatchObject({
+      action: 'refused',
+      code: 'BAD_INPUT'
+    })
+    expect(plan({ provenance: { at: `${AT}\nstatus: done` } })).toMatchObject({
+      action: 'refused',
+      code: 'BAD_INPUT'
+    })
+  })
+
+  it('never yields a done card from any hostile id, on create or bind', () => {
+    const existing = cardFile('T9-hand-made', 'ready')
+    const outputs: StepCardPlan[] = [
+      plan({ missionId: hostile }),
+      plan({ missionId: hostile, step: step({ card: 'T9-hand-made' }) }, [existing]),
+      plan({ step: { ...step(), id: 'stp-5\nstatus: done' } }),
+      plan({ step: { ...step(), milestone: 'mls-1\nstatus: done' } })
+    ]
+    for (const out of outputs) {
+      expect(out.action).toBe('refused')
+      if ('content' in out) expect(out.content).not.toMatch(/^status:\s*done\s*$/m)
+    }
+  })
+})
+
+describe('every reader finds the step card the way the planner does', () => {
+  const stamped = (slug: string, stp: string, status = 'backlog'): CardFile =>
+    cardFile(slug, status, { mission: MISSION, step: stp })
+
+  it('findCardByName finds a card by slug or by id and by nothing else', () => {
+    const cards = [cardFile('T9-first', 'backlog'), cardFile('T10-second', 'ready')]
+    expect(findCardByName(cards, 'T9-first')?.slug).toBe('T9-first')
+    expect(findCardByName(cards, 'T10')?.slug).toBe('T10-second')
+    expect(findCardByName(cards, 'T1')).toBeUndefined()
+    expect(findCardByName(cards, '')).toBeUndefined()
+  })
+
+  it('findCardByName answers what planStepCard binds', () => {
+    const cards = [cardFile('T9-hand-made', 'ready')]
+    const bound = plan({ step: step({ card: 'T9' }) }, cards)
+    expect(bound.action).toBe('bind')
+    if (bound.action === 'bind') expect(bound.slug).toBe(findCardByName(cards, 'T9')?.slug)
+  })
+
+  it('indexStepCards maps mission/step to the stamped card and leaves out the rest', () => {
+    const cards = [
+      stamped('T1-a', 'stp-1'),
+      stamped('T2-b', 'stp-2', 'review'),
+      cardFile('T3-plain', 'backlog'),
+      cardFile('T4-half', 'backlog', { mission: MISSION })
+    ]
+    const index = indexStepCards(cards)
+    expect([...index.keys()].sort()).toEqual(
+      [
+        stepCardKey({ missionId: MISSION, stepId: 'stp-1' }),
+        stepCardKey({ missionId: MISSION, stepId: 'stp-2' })
+      ].sort()
+    )
+    const entry = index.get(stepCardKey({ missionId: MISSION, stepId: 'stp-2' }))
+    expect(entry?.file.slug).toBe('T2-b')
+    expect(entry?.card.column).toBe('review')
+    expect(index.get(stepCardKey({ missionId: MISSION, stepId: 'stp-9' }))).toBeUndefined()
+  })
+
+  it('indexStepCards agrees with findStepCard, the first card on the board winning a duplicate stamp', () => {
+    const cards = [stamped('T1-first', 'stp-1'), stamped('T2-dup', 'stp-1')]
+    const entry = indexStepCards(cards).get(stepCardKey({ missionId: MISSION, stepId: 'stp-1' }))
+    expect(entry?.file.slug).toBe('T1-first')
+    expect(entry?.file.slug).toBe(
+      findStepCard(cards, { missionId: MISSION, stepId: 'stp-1' })?.slug
+    )
+  })
+
+  it('indexStepCards reads each card once, however many steps are looked up', () => {
+    let reads = 0
+    const cards: CardFile[] = Array.from({ length: 50 }, (_, i) => {
+      const file = stamped(`T${i + 1}-card`, `stp-${i + 1}`)
+      return {
+        slug: file.slug,
+        get content(): string {
+          reads++
+          return file.content
+        }
+      }
+    })
+    const index = indexStepCards(cards)
+    for (let i = 1; i <= 50; i++) {
+      expect(index.get(stepCardKey({ missionId: MISSION, stepId: `stp-${i}` }))).toBeDefined()
+    }
+    expect(reads).toBe(50)
+  })
+
+  it('a malformed card file is left out of the index and never throws', () => {
+    const cards = [{ slug: 'T5-bad', content: 'no frontmatter at all' }, stamped('T6-ok', 'stp-1')]
+    expect(indexStepCards(cards).size).toBe(1)
   })
 })
