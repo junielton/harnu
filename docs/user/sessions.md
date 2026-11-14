@@ -90,6 +90,15 @@ There is no × on a card. A card leaves the box when you use one of the exits, o
 
 Everything a card says was written by a model, so Harnu shows it as plain text and only follows a link that starts with `http://` or `https://`.
 
+### Resize or collapse the box
+
+The Return here box is a sidebar _section_, so you can make room either way:
+
+- **Resize.** Drag the top edge of the box (the boundary with the folder list) up to give it more room, or down to give the folder list more. Double-click the edge to put the box back to its default size. The box never gets smaller than its heading plus one row, the folder list always keeps at least about 160 pixels, and the dock at the bottom never moves.
+- **Collapse.** Click the small chevron at the right end of the heading to fold the box down to the heading alone: the title, the count and the oldest clock stay visible, so you can still see something is waiting. Click it again to open the box. The chevron works with the keyboard too.
+
+Harnu remembers the size and whether the box is collapsed, including across restarts and across the box disappearing when nothing is waiting.
+
 ## Jump from the transcript to a file
 
 When Claude mentions a file — `src/main/pty.ts`, or `src/main/pty.ts:42` — you

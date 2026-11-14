@@ -223,7 +223,11 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
          border is the inner rule). Off, this wrapper is an invisible flex column. The Jump palette
          is absolute against the aside, so it stays a sibling of the island. -->
     <SidebarJumpPalette />
-    <div class="flex min-h-0 flex-1 flex-col" data-island="sidebar-list">
+    <div
+      class="flex min-h-0 flex-1 flex-col"
+      style="min-height: min(160px, 40vh)"
+      data-island="sidebar-list"
+    >
       <header
         role="toolbar"
         data-island-head="sidebar-toolbar"
@@ -442,7 +446,9 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
 
     <!-- RETURN HERE zone (T37 — closure axis, T660) — forgotten needs-input sessions. Sits at the
          BOTTOM, between the list island and the dock, so it never competes with the toolbar. It
-         self-hides when the forgotten set is empty (calm-tech) and caps its own height. -->
+         self-hides when the forgotten set is empty (calm-tech). It is a resizable, collapsible
+         `SidebarSection` (T702); the list island above keeps a minimum height (`min-height` on it,
+         design.md §6 "Sidebar sections") so dragging the section taller never squeezes it away. -->
     <SidebarReturnZone />
 
     <!-- Dock (design.md §6 "Sidebar dock (slot)"): the lower island is a slot that stacks N

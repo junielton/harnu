@@ -178,7 +178,11 @@ describe('YourMoveCard in the Return here zone', () => {
     expect(w.find('[aria-label="Mark as seen"]').exists()).toBe(false)
     expect(w.find('[role="button"]').exists()).toBe(false)
     // every control a card has is named by words
-    for (const b of w.findAll('button')) expect(b.text().trim().length).toBeGreaterThan(1)
+    // (the section's chevron is the one icon control; it is named by its aria-label)
+    for (const b of w.findAll('button:not([data-section-toggle])')) {
+      expect(b.text().trim().length).toBeGreaterThan(1)
+    }
+    expect(w.get('[data-section-toggle]').attributes('aria-label')).toBe('Collapse Return here')
   })
 
   it('the eyebrow shows the count and the oldest clock', async () => {

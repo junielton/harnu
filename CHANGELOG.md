@@ -12,6 +12,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-13
 
+### Added
+
+- The **Return here** box at the bottom of the sidebar can now be resized and collapsed. Drag its top edge (the boundary with the folder list) to give either one more room, double-click the edge to reset it, and click the chevron in its heading to fold it down to the heading alone, with the title, count and clock still visible. The folder list always keeps a minimum height and the dock never moves. The size and the collapsed state are remembered, including when the box disappears because nothing is waiting. It is built as a reusable sidebar section, so future boxes stacked there get the same behavior.
+
 ### Fixed
 
 - Holding a key in a session no longer stutters about once a second when a lot of Your move cards are open. The Return here list used to draw every open card (one real queue held 1,594) and rewrite about 800 running clocks every second, which made the browser re-lay-out the sidebar over and over. It now draws the first 25 cards and ends with a **Show 25 more** button that adds the next 25; the heading still counts every open card, and the order, buttons and exits are unchanged. A card's clock counts seconds only during its first minute, then minutes (`02m`, `1h 02m`), so an old queue writes nothing to the page on most seconds.
