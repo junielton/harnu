@@ -205,14 +205,24 @@ function criteriaOf(step: V3MissionStep, ctx: StepContext): Array<Omit<Criterion
         }
       })
     } else if (step.proof === 'self-verified' || step.proof === 'claimed') {
-      // A self-check is labelled and never proof: the criterion stays open and the check is noted.
+      // A self-check is labelled and never proof: the criterion stays open and the check is noted, in
+      // the model's shape { at, by, evidence }. The v3 word stays at `legacyV3.steps[].proof`.
+      const by = step.verifiedBy
       out.push({
         text,
         by: 'session',
-        selfCheck: {
-          proof: step.proof,
-          ...(step.verifiedBy ? { by: step.verifiedBy.sessionId, at: step.verifiedBy.at } : {})
-        }
+        selfCheck:
+          step.proof === 'self-verified' && by
+            ? {
+                at: by.at,
+                by: by.sessionId,
+                evidence: `Self-verified in v3 (verdict ${by.verdict ?? 'met'})`
+              }
+            : {
+                at: fallbackAt,
+                by: step.links.find((l) => l.kind === 'session')?.ref ?? mission.owner.sessionId,
+                evidence: 'Claimed done in v3, never checked'
+              }
       })
     } else {
       out.push({ text, by: 'session' })
