@@ -87,7 +87,7 @@ describe('the unit follows the plan', () => {
         // mls-3 has no steps yet: only the next ones are planned in detail.
       ]
     })
-    const p = deriveProgress(m)
+    const p = deriveProgress(m, { 'stp-3': { workerWorking: true } })
     expect(p.unit).toBe('milestones')
     expect(p.total).toBe(3)
     expect(p.done).toBe(1)
