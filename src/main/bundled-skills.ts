@@ -52,11 +52,13 @@ import {
   enabledSkillNames,
   folderStageKey,
   parseBundledSkillsVersion,
+  planStagingPrune,
   parseSkillFrontmatter,
   skillFrontmatterVerdict,
   stageStamp,
   type BundledSkill,
   type BundledSkillsPrefs,
+  type StagedDirStat,
   type SkillFlags
 } from './bundled-skills-core'
 import {
@@ -167,6 +169,99 @@ export async function cleanStaleLegacyStaging(): Promise<number> {
     }
   }
   return removed
+}
+
+/** What {@link pruneStagedSkills} needs from the rest of the app (injected: no Electron/PTY here). */
+export interface StagedSkillsPruneDeps {
+  /** Folders with a live or parked session. A throw aborts the prune: nothing is removed. */
+  inUseFolders(): Promise<readonly string[]>
+  /** Every folder the app knows (session index + pinned). */
+  knownFolders(): Promise<readonly string[]>
+  now?(): number
+}
+
+/**
+ * T616: remove the staged-skill dirs nothing uses any more (a cleaned worktree, a removed folder,
+ * everything accumulated before this existed). Safe because a staged dir is rebuilt at every
+ * spawn; see {@link planStagingPrune} for the rule. Never throws: if "in use" cannot be
+ * determined nothing is removed, and an undeletable dir is counted and skipped.
+ */
+export async function pruneStagedSkills(
+  deps: StagedSkillsPruneDeps
+): Promise<{ removed: number; failed: number; kept: number }> {
+  const result = { removed: 0, failed: 0, kept: 0 }
+  try {
+    const root = stagingRoot()
+    let dirents: import('node:fs').Dirent[]
+    try {
+      dirents = await fs.readdir(root, { withFileTypes: true })
+    } catch {
+      return result
+    }
+    const entries: StagedDirStat[] = []
+    for (const d of dirents) {
+      const st = await fs.stat(path.join(root, d.name)).catch(() => null)
+      if (st) entries.push({ name: d.name, isDirectory: st.isDirectory(), mtimeMs: st.mtimeMs })
+    }
+    const [inUseFolders, knownFolders] = await Promise.all([
+      deps.inUseFolders(),
+      deps.knownFolders()
+    ])
+    const plan = planStagingPrune({
+      entries,
+      inUseFolders,
+      knownFolders,
+      now: deps.now?.() ?? Date.now()
+    })
+    result.kept = plan.keep.length
+    for (const name of plan.remove) {
+      try {
+        await fs.rm(path.join(root, name), { recursive: true, force: true })
+        // `force` swallows ENOENT only; anything left behind means the removal did not work.
+        const left = await fs.stat(path.join(root, name)).then(
+          () => true,
+          () => false
+        )
+        if (left) result.failed++
+        else result.removed++
+      } catch (err) {
+        result.failed++
+        console.warn('[bundled-skills] could not prune staged dir', name, err)
+      }
+    }
+  } catch (err) {
+    console.warn('[bundled-skills] staged-skills prune skipped', err)
+  }
+  return result
+}
+
+/**
+ * {@link pruneStagedSkills} wired to the running app: "in use" is every folder a live PTY or a
+ * parked session was staged for; "known" is the folder index (`~/.claude/projects/`) plus the
+ * pinned folders. Imported lazily so this module stays loadable without the PTY layer.
+ */
+export async function pruneStagedSkillsLive(): Promise<{
+  removed: number
+  failed: number
+  kept: number
+}> {
+  return pruneStagedSkills({
+    inUseFolders: async () => {
+      const [{ livePtyFolders }, { hibernatedFolders }] = await Promise.all([
+        import('./pty'),
+        import('./hibernation')
+      ])
+      return [...livePtyFolders(), ...hibernatedFolders()]
+    },
+    knownFolders: async () => {
+      const [{ scanFolders }, { readUserProjects }] = await Promise.all([
+        import('./claude-reader'),
+        import('./user-projects')
+      ])
+      const [folders, pinned] = await Promise.all([scanFolders(), readUserProjects()])
+      return [...folders.map((f) => f.path), ...pinned.projects.map((p) => p.path)]
+    }
+  })
 }
 
 function prefsPath(): string {
@@ -740,7 +835,12 @@ async function stageInternal(
     ])
     const stampFile = path.join(dir, '.stamp')
     const current = await fs.readFile(stampFile, 'utf8').catch(() => null)
-    if (current?.trim() === wanted) return { dir, enabled, mentioned, rejected }
+    if (current?.trim() === wanted) {
+      // Record the use: the prune reads this dir's mtime as "last used" (T616).
+      const now = new Date()
+      await fs.utimes(path.dirname(dir), now, now).catch(() => {})
+      return { dir, enabled, mentioned, rejected }
+    }
 
     // Build in a SIBLING temp dir and swap it in, rather than wiping `dir` and
     // copying into it: two sessions can start in the same folder at once, and a
