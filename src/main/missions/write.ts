@@ -26,6 +26,10 @@
  * is judged against today's contract. The same goes for the cross-reference checks (a record read from
  * v3 that already breaks one is not refused for it; a write may not add a new breach).
  *
+ * **The folder is any folder a session works in**, a worktree included: every function here resolves the
+ * repository's main checkout itself (`repoRoot`, cached, no `git` spawned) and hands THAT to the store,
+ * so every worktree of a repo reads and writes one record.
+ *
  * Reads v3 only through the store (AC-26). Electron-free.
  */
 
@@ -33,7 +37,7 @@ import { randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { dataDirReady, mkdirDataDir } from '../data-dir'
+import { dataDirReady, mkdirDataDir, repoRoot } from '../data-dir'
 import {
   checkAsk,
   checkBlockerReason,
@@ -351,14 +355,14 @@ function checkContract(before: MissionV4 | null, after: MissionV4): void {
  * an unattached session may make).
  */
 export async function writeMission(
-  root: string,
+  folder: string,
   missionId: string,
   actor: Actor,
   need: Exclude<Need, 'read'>,
   change: (record: MissionV4, log: string) => RecordChange | Promise<RecordChange>
 ): Promise<MissionWrite> {
   let refusal: WriteRefusal | null = null
-  const result = await updateMissionRecord(root, missionId, async (record, log) => {
+  const result = await updateMissionRecord(repoRoot(folder), missionId, async (record, log) => {
     try {
       const access = guardMission(record, actor, need)
       if (!access.ok) throw new Refusal(access.code, access.error.replace(/^[A-Z_]+: /, ''))
@@ -411,7 +415,7 @@ export type MissionCreate = { ok: true; record: MissionV4; file: string } | Writ
  * the cross-references apply to the whole record. An id already taken is never overwritten.
  */
 export async function createMission(
-  root: string,
+  folder: string,
   actor: Actor,
   record: MissionV4,
   log: string
@@ -449,6 +453,7 @@ export async function createMission(
       throw new Refusal('BAD_ARGS', (e as Error).message)
     }
 
+    const root = repoRoot(folder)
     await dataDirReady(root)
     const existing = await readMissionRecord(root, record.id)
     if (existing.ok)

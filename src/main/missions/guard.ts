@@ -24,6 +24,7 @@
  * Pure apart from the two reads at the bottom, which only read through the v4 store. Never writes.
  */
 
+import { repoRoot } from '../data-dir'
 import { deriveProgress, type MissionProgress } from './progress'
 import type { StepInput } from './state'
 import type { MissionV4, SessionEntry, SessionRole } from './model'
@@ -145,11 +146,11 @@ export type GuardedRead = MissionRecordRead | { ok: false; error: string; code: 
 
 /** Read one mission's detail as `actor`: refused `NOT_ATTACHED` unless the guard allows it. */
 export async function readMissionAs(
-  root: string,
+  folder: string,
   missionId: string,
   actor: Actor
 ): Promise<GuardedRead> {
-  const read = await readMissionRecord(root, missionId)
+  const read = await readMissionRecord(repoRoot(folder), missionId)
   if (!read.ok) return read
   const access = guardMission(read.record, actor, 'read')
   return access.ok ? read : access
@@ -177,11 +178,11 @@ export function headlineOf(progress: Pick<MissionProgress, 'unit' | 'total' | 'd
  * caller has them (see `deriveProgress`); without them the headline counts only what the record says.
  */
 export async function listMissionRows(
-  root: string,
+  folder: string,
   _actor: Actor,
   inputs: Readonly<Record<string, Readonly<Record<string, StepInput>>>> = {}
 ): Promise<MissionRow[]> {
-  const { records } = await listMissionRecords(root)
+  const { records } = await listMissionRecords(repoRoot(folder))
   return records
     .filter((r) => r.record.status === 'open')
     .map(({ record }) => ({
