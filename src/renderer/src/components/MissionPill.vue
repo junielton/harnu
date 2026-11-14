@@ -16,14 +16,26 @@
  * pill also draws a tick per required chapter (the server's `progress.states`) and, when the
  * server reports a radiant, its "48/88". Both are decoration over numbers the server already
  * counted; a mission with no campaign has neither.
+ *
+ * Missions v4 S-17 (design.md §6 "Mission pane" → Topbar pill — v4): the pill CHOOSES. A session whose
+ * mission is a v4 record gets the v4 pill — "4/21 · 3 for you", the server's numbers, no campaign or
+ * chapter wording — and it toggles the Mission pane in the helper stack. A v3 record keeps everything
+ * above unchanged: its popover, its doors, and no v4 code writes it.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import { BookOpen, Check, ListChecks } from 'lucide-vue-next'
+import { BookOpen, Check, ListChecks, Target } from 'lucide-vue-next'
 import { campaignPillText, type CampaignTick } from '../lib/campaign-view'
+import {
+  missionPillText,
+  missionPillTone,
+  V4_PILL_RING_CLASS,
+  V4_PILL_TONE_CLASS
+} from '../lib/mission-pane-view'
 import { headlineText, PILL_TONE_CLASS, pulseText, type MissionState } from '../lib/mission-view'
 import { useCampaignsStore } from '../stores/campaigns'
+import { useHelpersStore } from '../stores/helpers'
 import { useMissionsStore } from '../stores/missions'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
@@ -36,9 +48,31 @@ const { t } = useI18n()
 const missions = useMissionsStore()
 const campaigns = useCampaignsStore()
 const ui = useUiStore()
+const helpers = useHelpersStore()
 const keybindings = useKeybindingsStore()
 missions.ensureStarted()
 campaigns.ensureStarted()
+
+/**
+ * The v4 mission this session is attached to, as the view channel answered it (S-17), or `null`: none, a
+ * v3 record (its popover still serves it), a refusal, or no answer yet. When it is set the pill is the v4
+ * pill and toggles the pane; the v3 view below is then never drawn.
+ */
+const v4 = computed(() => missions.v4MissionForSession(props.sessionId))
+const v4Label = computed(() => (v4.value ? missionPillText(t, v4.value.detail) : ''))
+const v4Tone = computed(() => (v4.value ? missionPillTone(v4.value.detail) : 'accent'))
+const v4Title = computed(() =>
+  v4.value
+    ? t('missionPane.pill.title', { title: v4.value.detail.title, label: v4Label.value })
+    : ''
+)
+const v4Ready = computed(() => v4.value?.detail.state === 'ready-to-close')
+/** Whether the Mission pane is open in the selected session's stack: the v4 pill reads pressed. */
+const paneOpen = computed(() => helpers.panesForCurrentWorktree.some((p) => p.type === 'mission'))
+function togglePane(): void {
+  const worktree = helpers.currentWorktreePath
+  if (worktree) helpers.toggleMissionHelper(worktree)
+}
 
 const view = computed(() => missions.viewForSession(props.sessionId))
 const model = computed(() => missions.modelForSession(props.sessionId))
@@ -86,7 +120,7 @@ const rootEl = ref<HTMLElement | null>(null)
 // only while the session owns an open mission.
 const open = computed(() => ui.popovers.missionProgress)
 watch(
-  () => !!(view.value && model.value),
+  () => !!(v4.value || (view.value && model.value)),
   (present) => ui.setPopoverAnchor('missionProgress', present),
   { immediate: true }
 )
@@ -124,6 +158,12 @@ watch(
   open,
   (isOpen) => {
     if (!isOpen) return
+    // A v4 mission has no popover: the keyboard action that opens it toggles the pane instead.
+    if (v4.value) {
+      ui.closePopover('missionProgress')
+      togglePane()
+      return
+    }
     stage.value = 'campaign'
     chapterMissionId.value = view.value?.mission.id ?? null
     const left = rootEl.value?.getBoundingClientRect().left ?? 0
@@ -212,8 +252,31 @@ const title = computed(() => {
 </script>
 
 <template>
+  <!-- A v4 mission: the v4 pill, which toggles the Mission pane (design.md §6 "Mission pane"). -->
   <div
-    v-if="view && model"
+    v-if="v4"
+    class="relative flex min-w-0 shrink"
+    style="-webkit-app-region: no-drag"
+    data-v4="true"
+  >
+    <button
+      type="button"
+      class="flex min-w-0 shrink cursor-pointer items-center rounded-sm border tabular-nums transition hover:brightness-110"
+      :class="[V4_PILL_TONE_CLASS[v4Tone], paneOpen ? V4_PILL_RING_CLASS[v4Tone] : '']"
+      style="gap: 5px; padding: 1px 7px; font-size: 10.5px; font-weight: 500; height: 18px"
+      :title="keybindings.withChord(v4Title, 'view.missionProgress')"
+      :aria-label="v4Title"
+      :aria-pressed="paneOpen"
+      :data-dsqa="`topbar-pill--${v4Tone}`"
+      @click="togglePane"
+    >
+      <component :is="v4Ready ? Check : Target" :size="10" :stroke-width="1.8" class="shrink-0" />
+      <span class="truncate" data-test="mission-pill-label">{{ v4Label }}</span>
+    </button>
+  </div>
+  <!-- A v3 record keeps its popover until the cut-over; v4 code never writes it. -->
+  <div
+    v-else-if="view && model"
     ref="rootEl"
     class="relative flex min-w-0 shrink"
     style="-webkit-app-region: no-drag"

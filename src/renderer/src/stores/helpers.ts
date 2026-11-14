@@ -1157,6 +1157,32 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
+   * Missions v4 S-17: open the Mission pane in a worktree's stack. Non-PTY and reproducible from nothing,
+   * so it persists like the memory pane. One per worktree (registry `dedupKey`): opening it twice returns
+   * the pane already there.
+   */
+  function addMissionHelper(worktreePath: string): string {
+    const id = `h-${crypto.randomUUID()}`
+    return addHelper(worktreePath, { id, type: 'mission', cwd: worktreePath, ratio: 0 })
+  }
+
+  /** The id of a worktree's Mission pane, or `undefined` when it has none. */
+  function missionHelperId(worktreePath: string): string | undefined {
+    return byWorktree.value.get(worktreePath)?.panes.find((p) => p.type === 'mission')?.id
+  }
+
+  /** The Topbar pill's toggle: close the worktree's Mission pane if it is open, else open it. Returns whether it is open now. */
+  function toggleMissionHelper(worktreePath: string): boolean {
+    const id = missionHelperId(worktreePath)
+    if (id) {
+      removeHelper(worktreePath, id)
+      return false
+    }
+    addMissionHelper(worktreePath)
+    return true
+  }
+
+  /**
    * Open a root-backed project file-tree pane (Cluster D) in a worktree's stack.
    * Non-PTY like {@link addMemoryHelper} — cheap, reproducible from `root`, so it
    * never enters `liveHelpers`.
@@ -1764,6 +1790,9 @@ export const useHelpersStore = defineStore('helpers', () => {
     patchBrowserPayload,
     addMemoryHelper,
     addExplorerHelper,
+    addMissionHelper,
+    missionHelperId,
+    toggleMissionHelper,
     addReviewCompanionHelper,
     promoteReviewCompanion,
     canPromoteReviewCompanion,

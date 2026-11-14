@@ -6,6 +6,7 @@ import MemoryPane from '../components/MemoryPane.vue'
 import ExplorerPane from '../components/ExplorerPane.vue'
 import DiagramPane from '../components/DiagramPane.vue'
 import BrowserPane from '../components/BrowserPane.vue'
+import MissionPane from '../components/MissionPane.vue'
 
 /**
  * T121 — the Vue component that renders each pane type. Kept apart from the
@@ -27,5 +28,6 @@ export const paneComponents: Record<AnyHelperPane['type'], Component> = {
   memory: MemoryPane,
   explorer: ExplorerPane,
   canvas: DiagramPane,
-  browser: BrowserPane
+  browser: BrowserPane,
+  mission: MissionPane
 }
