@@ -67,6 +67,27 @@ export function handoffOffer(
   return { offer: reading >= HANDOFF_OFFER_AT && !quiet, percent: reading }
 }
 
+/** One live status-line reading: the session and its context percentage (`null` when it has none). */
+export interface ContextReading {
+  sessionId: string
+  contextPercent: number | null
+}
+
+/**
+ * The leader's context percentage from the LIVE readings only (`getTelemetryPayload().perSession`).
+ * `null` when there is no leader, the leader has no live record, or its record holds no percentage:
+ * the stale last-known readings are never passed here, so a session that is not running cannot
+ * produce an offer.
+ */
+export function leaderContextPercent(
+  live: readonly ContextReading[],
+  leaderId: string | null
+): number | null {
+  if (leaderId === null) return null
+  const reading = live.find((r) => r.sessionId === leaderId)?.contextPercent
+  return isReading(reading) ? reading : null
+}
+
 // ---- The first prompt -------------------------------------------------------------------------
 
 /**
@@ -359,7 +380,11 @@ export async function handOff(
 // ---- The channel's wrapper -------------------------------------------------------------------------
 
 /** What the renderer gets back: the outcome and the new session id, never the record or a file path. */
-export function handOffReply(result: HandoffResult): Record<string, unknown> {
+export type HandOffReply =
+  | { ok: true; changed: true; sessionId: string; previousLeader: string | null }
+  | { ok: false; code: string; error: string }
+
+export function handOffReply(result: HandoffResult): HandOffReply {
   if (!result.ok) return { ok: false, code: result.code, error: result.error }
   const { record: _record, file: _file, ...rest } = result
   return rest
@@ -370,10 +395,7 @@ export function handOffReply(result: HandoffResult): Record<string, unknown> {
  * operator's: the channel is the app's own interface (a renderer click on the pane's confirm dialog),
  * so no session id, actor or time in the arguments is looked at. With no starter wired the door says so.
  */
-export async function runHandOff(
-  raw: unknown,
-  deps: HandoffDeps | null
-): Promise<Record<string, unknown>> {
+export async function runHandOff(raw: unknown, deps: HandoffDeps | null): Promise<HandOffReply> {
   const a = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
   if (
     typeof a.folder !== 'string' ||

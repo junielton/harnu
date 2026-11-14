@@ -71,6 +71,7 @@ import type { QuitDialogStrings, QuitGuardPrefs } from '../main/quit-guard'
 import type {
   MissionDoor,
   MissionDoorResult,
+  MissionHandOffReply,
   MissionListResult,
   MissionV4Door,
   MissionV4DoorReply,
@@ -2959,6 +2960,14 @@ const api = {
    */
   missionV4Door: (door: MissionV4Door): Promise<MissionV4DoorReply> =>
     ipcRenderer.invoke('mission:v4Door', door),
+  /**
+   * The hand-off (S-16b): the only thing that changes who leads a mission, and the operator's. Harnu
+   * starts a normal session with the mission summary as its first prompt, waits for its real id, then
+   * writes once: the old leader becomes `worked`, the new session leads. A start that fails or times
+   * out changes nothing. Answers the outcome and the new session id, never the record.
+   */
+  missionHandOff: (args: { folder: string; missionId: string }): Promise<MissionHandOffReply> =>
+    ipcRenderer.invoke('mission:handOff', args),
   // ---- Campaign progress (T596; UI-only, read-only — no campaign door exists in main yet) --
   /** Every open campaign in the repos of `folders`, with the server's chapter progress. */
   campaignList: (folders: string[]): Promise<CampaignListResult> =>

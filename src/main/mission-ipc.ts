@@ -92,9 +92,24 @@ import {
   stagedDoneWhenOf,
   type CloseWarning as V4CloseWarning
 } from './missions/doors'
+import type { MissionV4 } from './missions/model'
 import { sessionHistory, type SessionHistoryRow } from './missions/sessions'
 import { attachFoundPrs } from './missions/verbs-plan'
 import { gatherStepFacts, gatherStepInputs, type FactsDeps } from './missions/facts'
+import {
+  handoffOffer,
+  leaderContextPercent,
+  runHandOff,
+  type ContextReading,
+  type HandOffReply,
+  type HandoffOffer,
+  type HandoffStart
+} from './missions/handoff'
+
+/** What `mission:handOff` answers: the outcome and the new session id, never the record (S-16b). */
+export type MissionHandOffReply = HandOffReply
+import { defaultSummaryRouteDeps, summaryRoute } from './missions/summary-route'
+import { getTelemetryPayload } from './telemetry-store'
 
 /** One open mission as the renderer reads it (design.md §6 "Mission progress"). */
 export interface MissionView {
@@ -676,6 +691,8 @@ export interface MissionV4ViewRequest {
   folder: string
   sessionId: string
   missionId?: string
+  /** The percentage the operator last said "Not now" to the hand-off offer at, if any (S-16b). */
+  dismissedPercent?: number
 }
 
 /**
@@ -695,6 +712,12 @@ export type MissionV4ViewReply =
       /** The Done when a session staged for the operator to approve, or `null`. */
       pendingDoneWhen: { text: string; at?: string } | null
       sessions: SessionHistoryRow[]
+      /**
+       * Whether to offer "Continue in a new session…": the leader's context from a LIVE reading, 80
+       * percent or more, quiet after a "Not now" until it grows five points. An offer only: nothing
+       * starts until the operator confirms the hand-off (S-16b).
+       */
+      handoff: HandoffOffer
     }
   | { state: 'none'; missions: ListedMission[] }
   | { state: 'refused'; code: string; error: string }
@@ -766,6 +789,9 @@ async function missionOfSession(
   }
 }
 
+/** The status line's LIVE readings: one record per running session. The last-known ones are never used. */
+const liveContexts = (): readonly ContextReading[] => getTelemetryPayload().perSession
+
 /**
  * Missions v4 S-16a (V-1, V-3) — the view of one mission for the Mission pane. It READS and never
  * writes, even for a mission that exists only as a v3 file: no v4 record, no sidecar, no ledger row,
@@ -778,7 +804,11 @@ async function missionOfSession(
  */
 export async function buildMissionV4View(
   raw: unknown,
-  opts: { facts?: (root: string) => FactsDeps } = {}
+  opts: {
+    facts?: (root: string) => FactsDeps
+    /** The live context readings (default: the status-line telemetry's live records). */
+    contexts?: () => readonly ContextReading[]
+  } = {}
 ): Promise<MissionV4ViewReply> {
   const a = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
   if (
@@ -833,11 +863,46 @@ export async function buildMissionV4View(
       detail,
       closeWarnings: closeWarningsOf(record, inputs),
       pendingDoneWhen: stagedDoneWhenOf(record),
-      sessions: sessionHistory(record)
+      sessions: sessionHistory(record),
+      handoff: handoffOffer(
+        leaderContextPercent((opts.contexts ?? liveContexts)(), v4LeaderOf(record)),
+        typeof a.dismissedPercent === 'number' ? a.dismissedPercent : null
+      )
     }
   } catch (err) {
     return refusedView('UNREADABLE', (err as Error).message)
   }
+}
+
+/**
+ * The facts of a record's steps for a surface that must answer soon (the hand-off's summary, the
+ * summary after a compaction): the same sources the view reads, with a short wait for GitHub, so a
+ * step reads its last-known state instead of holding the answer up.
+ */
+async function stepInputsOf(
+  root: string,
+  record: MissionV4,
+  waitMs: number
+): Promise<Awaited<ReturnType<typeof gatherStepInputs>>> {
+  return gatherStepInputs(root, record, await realFactsDeps(root, waitMs))
+}
+
+/** The starter of the hand-off door: set once by `index.ts` from the command bridge, `null` until then. */
+let handoffStart: HandoffStart | null = null
+
+export function setMissionHandoffStarter(start: HandoffStart | null): void {
+  handoffStart = start
+}
+
+/**
+ * The text the summary hook prints (S-16b): the mission summary for the open leader of an open v4
+ * mission after a compaction, and nothing for anyone else. Wired to the hook bridge by `index.ts`.
+ */
+export function answerMissionSummaryHook(body: Record<string, unknown>): Promise<string> {
+  return summaryRoute(body, {
+    ...defaultSummaryRouteDeps(),
+    inputsFor: (cwd, record) => stepInputsOf(repoRoot(cwd), record, VIEW_PR_WAIT_MS)
+  })
 }
 
 /**
@@ -992,6 +1057,20 @@ export function registerMissionIpc(): void {
     if (typeof folder === 'string') noteAskedFolders([folder])
     return buildMissionV4View(args)
   })
+  // Missions v4 S-16b — the hand-off: the one thing that changes who leads. The pane's confirm dialog
+  // calls it; it starts a normal session with the mission summary as its first prompt, waits for its
+  // real id and writes once as the operator. No renderer calls it until S-20.
+  ipcMain.handle('mission:handOff', async (_e, args: unknown) =>
+    runHandOff(
+      args,
+      handoffStart === null
+        ? null
+        : {
+            start: handoffStart,
+            inputs: (root, record) => stepInputsOf(root, record, VIEW_PR_WAIT_MS)
+          }
+    )
+  )
   // Campaign spec §4 — the Choose door has its own channel; it is the same door.
   ipcMain.handle('mission:choose', async (_e, args: unknown): Promise<MissionDoorResult> => {
     const a = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>

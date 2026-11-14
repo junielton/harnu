@@ -155,7 +155,8 @@ import {
   closeHookBridge,
   hookSettingsBlobJson,
   getStewardHookEndpoint,
-  getTaskStates
+  getTaskStates,
+  setMissionSummaryHandler
 } from './hook-bridge'
 import { registerCompanionHost, closeCompanionHost } from './companion/host'
 import {
@@ -221,7 +222,13 @@ import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
 import { registerGithubBudget, stopGithubBudget } from './github-budget'
-import { registerMissionIpc, startMissionObserver } from './mission-ipc'
+import {
+  answerMissionSummaryHook,
+  registerMissionIpc,
+  setMissionHandoffStarter,
+  startMissionObserver
+} from './mission-ipc'
+import { bridgeStarter } from './missions/handoff'
 import { registerCampaignIpc } from './campaign-ipc'
 import { registerReviewHandlers } from './review-ipc'
 import { resolveCliFolderArg } from './cli-folder-arg'
@@ -718,6 +725,9 @@ app.whenReady().then(async () => {
     // steward's `.claude/settings.local.json` hooks at the live port/token (both change per boot).
     .then(async () => {
       registerStewardWiring()
+      // Missions v4 S-16b: the summary a `SessionStart` (compact) hook in every spawned session fetches
+      // after a compaction. It prints something only for the open leader of an open v4 mission.
+      setMissionSummaryHandler(answerMissionSummaryHook)
       await reconcileStewardsOnBoot()
     })
     .catch((err) => console.error('[hook-bridge] register failed', err))
@@ -800,6 +810,9 @@ app.whenReady().then(async () => {
   // it overrides pty's `--mcp-config` provider, so it must run AFTER
   // `registerPtyHandlers` set the default (order satisfied above).
   const cmdBridge = registerCommandBridge(() => mainWindow)
+  // Missions v4 S-16b: the hand-off door starts its session the way the operator's own dispatch does
+  // (`session.dispatchCard` over this bridge, never the agent-controlled `session.create`).
+  setMissionHandoffStarter(bridgeStarter(cmdBridge.bridge))
   // The digest engine (registered above) posts its "Memory digest failed" notice over this bridge.
   setDigestNoticeBridge(cmdBridge.bridge)
   // T474: terminal lifecycle IPC. After the bridge, so its `renderer:ready` listener runs once
