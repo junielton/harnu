@@ -420,6 +420,42 @@ describe('every observed fact is stored, none is dropped for looking like anothe
     expect(rows[rows.length - 1].detail).toBe('failing')
   })
 
+  it('a returning CI state across instances: the real newest row is stored and is the newest read', async () => {
+    await seed()
+    // Another instance already stored its sightings.
+    await fs.mkdir(path.dirname(ledgerFile()), { recursive: true })
+    await fs.writeFile(
+      ledgerFile(),
+      [
+        ci('2026-11-12T10:00:00.000Z', 'failing', '#7'),
+        ci('2026-11-12T10:10:00.000Z', 'passing', '#7')
+      ]
+        .map((r) => `${JSON.stringify(r)}\n`)
+        .join('')
+    )
+    // This instance saw the same world a little later, and then CI went red again.
+    const store = await import('../src/main/missions/ledger-store')
+    store.bindMissionRoot(MISSION_ID, root)
+    store.recordObserved(MISSION_ID, [
+      ci('2026-11-12T10:00:20.000Z', 'failing', '#7'),
+      ci('2026-11-12T10:10:00.000Z', 'passing', '#7'),
+      ci('2026-11-12T10:20:00.000Z', 'failing', '#7')
+    ])
+    await store.flushLedgerStore()
+
+    const stored = (await storedRows()).filter((r) => r.kind === 'ci' && r.ref === '#7')
+    expect(stored).toContainEqual(
+      expect.objectContaining({ at: '2026-11-12T10:20:00.000Z', detail: 'failing' })
+    )
+    const newest = [...stored].sort((a, b) => a.at.localeCompare(b.at)).at(-1)
+    expect(newest).toMatchObject({ at: '2026-11-12T10:20:00.000Z', detail: 'failing' })
+
+    // And a read shows the real state: the newest CI row is the failing one.
+    const ack = payloadOf(await read())
+    const rows = (ack.ledger as LedgerRow[]).filter((r) => r.kind === 'ci' && r.ref === '#7')
+    expect(rows.at(-1)).toMatchObject({ at: '2026-11-12T10:20:00.000Z', detail: 'failing' })
+  })
+
   it('a row stored by another instance does not hide a real change of this one', async () => {
     await seed()
     await fs.mkdir(path.dirname(ledgerFile()), { recursive: true })
