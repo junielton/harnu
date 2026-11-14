@@ -31,9 +31,15 @@ import { OPERATOR_VERIFIER, type DeclaredEnd, type Mission } from '../mission-co
 import type { MissionChildState } from '../mcp/fleet-snapshot'
 import type { MissionProgress } from '../mission-progress'
 import type { MissionStepSignals } from './derive'
-import type { AttachRequest, BlockerV4, MissionV4, StepV4 } from './model'
+import type { BlockerV4, MissionV4, StepV4 } from './model'
 import { deriveProgress, type MissionProgress as MissionProgressV4 } from './progress'
-import { activeBlockers, deriveStepState, type StepInput } from './state'
+import {
+  activeBlockers,
+  deriveStepState,
+  factReading,
+  type StepInput,
+  type StepStateResult
+} from './state'
 
 /** The `you` line when the operator owes this mission nothing (design §4). */
 export const YOU_CLEAR = "— nothing, you're clear"
@@ -349,6 +355,28 @@ export interface WaitingListV4 {
   people: WaitingPerson[]
   /** "Waiting for the designer" for one person, "Waiting for other people" for several, else `null`. */
   peopleLine: string | null
+  /** One "Waiting for <person>" line per distinct person, in plan order. */
+  peopleLines: string[]
+}
+
+/** The one empty line: what a mission says when nothing waits on the operator. Worded here only. */
+export const WAITING_EMPTY_LINE = 'Nothing waits on the operator.'
+/** The line for several people at once. */
+export const WAITING_OTHERS_LINE = 'Waiting for other people'
+/** The line for one person: a person's sign-off is never the operator's move. */
+export const waitingForLine = (person: string): string => `Waiting for ${person}`
+
+/** Every step's derived state, keyed by step id. Derive it once and hand it to every reader of a view. */
+export type StepResults = Readonly<Record<string, StepStateResult>>
+
+/** Derive every step of a mission once (`state.ts`), from the caller's plain input facts. */
+export function deriveStepResults(
+  mission: Pick<MissionV4, 'steps'>,
+  inputs: Readonly<Record<string, StepInput>> = {}
+): StepResults {
+  return Object.fromEntries(
+    mission.steps.map((step) => [step.id, deriveStepState(step, inputs[step.id] ?? {})])
+  )
 }
 
 /** Input facts the record does not hold. All optional: no input is a mission with nothing read. */
@@ -357,8 +385,8 @@ export interface WaitingInputV4 {
   inputs?: Readonly<Record<string, StepInput>>
   /** The mission's progress, when the caller already derived it from the same inputs. */
   progress?: MissionProgressV4
-  /** Attach requests; only a pending one for this mission is listed. */
-  attachRequests?: readonly AttachRequest[]
+  /** Every step's derived state ({@link deriveStepResults}), when the caller already derived it. */
+  results?: StepResults
 }
 
 /** The number a `pr` link names (`256`, `#256`, `org/proj#7`, a pull request URL), or `null`. */
@@ -374,7 +402,8 @@ function blockerItem(b: BlockerV4, step: Pick<StepV4, 'id'> | null): WaitingItem
     id: `unblock:${step?.id ?? 'mission'}:${b.id}`,
     stepId: step?.id ?? null,
     blockerId: b.id,
-    ask: b.ask ?? `Unblock: ${b.reason}`,
+    // An old record's blocker has no `ask`: its reason is the ask, whole, with nothing in front of it.
+    ask: b.ask ?? b.reason,
     why:
       b.unblocks ??
       (step ? 'The step cannot go on until then' : 'The mission cannot go on until then')
@@ -388,11 +417,13 @@ function blockerItem(b: BlockerV4, step: Pick<StepV4, 'id'> | null): WaitingItem
  * - `main-failing`: a merged step whose `main-green` fact was read and is `false`. A fact that was
  *   never read does not make `main` failing.
  * - `unblock`: an operator-owned blocker that still shows (a `clearsWhen` fact that holds hides it); a
- *   decision is one of these. The blocker's own `ask` and `unblocks` are the wording.
+ *   decision is one of these. The blocker's own `ask` and `unblocks` are the wording. A mission-level
+ *   blocker's `clearsWhen` is ignored: the write path refuses it, because a fact belongs to a step.
  * - `settle`: one item per open operator criterion on a started step (not `todo`, not done).
- * - `review`: the pull requests that wait for the operator, grouped into one item.
+ * - `review`: the pull requests the operator can look over, grouped into one item: the step waits for
+ *   review, is not blocked, and its checks are not known to be red (`ci-green` read and false).
  * - `close`: the mission is ready to close (derived); `requested` says the agent asked.
- * - `attach`: a pending request from a session to join the mission, whatever role the request names.
+ * - `attach`: a pending request in the record's `attachRequests`: a session asks to join the mission.
  *
  * A criterion that waits for another person is not an item: it is in `people`, and `peopleLine` says so.
  * A closed mission owes nothing.
@@ -404,16 +435,18 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
     more: [],
     moreLine: null,
     people: [],
-    peopleLine: null
+    peopleLine: null,
+    peopleLines: []
   }
   if (mission.status === 'closed') return none
 
   const inputs = opts.inputs ?? {}
   const progress = opts.progress ?? deriveProgress(mission, inputs)
+  const results = opts.results ?? deriveStepResults(mission, inputs)
   const steps = mission.steps.map((step) => ({
     step,
     input: inputs[step.id] ?? {},
-    result: deriveStepState(step, inputs[step.id] ?? {})
+    result: results[step.id] ?? deriveStepState(step, inputs[step.id] ?? {})
   }))
 
   const mainFailing: WaitingItemV4[] = []
@@ -427,15 +460,18 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
   }
   for (const { step, input, result } of steps) {
     const started = result.state !== 'todo' && result.state !== 'done'
-    if (input.pr === 'merged' && input.facts?.['main-green'] === false) {
-      const pr = prNumber(step)
+    // A merged step whose `main` was READ and does not hold. A `main` nobody read is never a failure.
+    if (
+      factReading('pr-merged', input) === 'holds' &&
+      factReading('main-green', input) === 'does-not-hold'
+    ) {
       mainFailing.push({
         kind: 'main-failing',
         id: `main-failing:${step.id}`,
         stepId: step.id,
-        pr,
-        ask: `Fix main: ${step.title} fails CI after ${pr ? `#${pr}` : 'it'} merged`,
-        why: 'Merged work is not safe until main is green'
+        pr: prNumber(step),
+        ask: `Fix the main branch: it broke after "${step.title}"`,
+        why: 'Everything that merges next starts from a broken base'
       })
     }
     for (const b of result.blockers) {
@@ -450,7 +486,10 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
             stepId: step.id,
             criterionId: c.id,
             ask: `Mark done: ${c.text}`,
-            why: 'The step moves on once you mark it'
+            why:
+              result.open.length === 1
+                ? 'It is the last thing open on this step'
+                : `${result.open.length - 1} more ${result.open.length === 2 ? 'thing is' : 'things are'} open on this step`
           })
         } else if (c.by === 'person') {
           people.push({
@@ -462,7 +501,14 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
         }
       }
     }
-    if (input.pr === 'open' && result.state === 'waiting-review') {
+    // A pull request the operator can look over: its step waits for review, is not blocked, and its
+    // checks are not known to be red (unread checks are not a reason to hold it back).
+    if (
+      input.pr === 'open' &&
+      result.state === 'waiting-review' &&
+      !result.blocked &&
+      factReading('ci-green', input) !== 'does-not-hold'
+    ) {
       reviewing.push({ stepId: step.id, title: step.title, pr: prNumber(step) })
     }
   }
@@ -497,16 +543,17 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
     })
   }
 
-  const attach: WaitingItemV4[] = (opts.attachRequests ?? [])
-    .filter((r) => r.decision === null && r.missionId === mission.id)
+  // A session's request to join lives in the record; only an undecided one waits on the operator.
+  const attach: WaitingItemV4[] = (mission.attachRequests ?? [])
+    .filter((r) => r.decision === null)
     .map((r) => ({
       kind: 'attach' as const,
       id: `attach:${r.id}`,
       requestId: r.id,
+      // The session id is the door's target (Allow, Deny); it is never in the text.
       sessionId: r.sessionId,
-      // The operator is only ever asked to let a session join, whatever role the request names.
-      ask: `Let session ${r.sessionId.slice(0, 8)} join the mission`,
-      why: 'It can then read the plan and work on it'
+      ask: 'Let another session join this mission',
+      why: 'It asked to work on it and waits for your answer'
     }))
 
   const byKind: Record<WaitingKind, WaitingItemV4[]> = {
@@ -530,7 +577,8 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
       persons.length === 0
         ? null
         : persons.length === 1
-          ? `Waiting for ${persons[0]}`
-          : 'Waiting for other people'
+          ? waitingForLine(persons[0])
+          : WAITING_OTHERS_LINE,
+    peopleLines: persons.map(waitingForLine)
   }
 }
