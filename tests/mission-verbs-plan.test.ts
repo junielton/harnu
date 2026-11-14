@@ -146,12 +146,17 @@ describe('agents add and never shrink', () => {
     })
 
     it('is held to the writing contract: a title over 45 characters, or only an id, is refused', async () => {
-      seed()
+      seed(
+        missionOf({
+          milestones: [{ id: 'mls-1', title: 'First stop', optional: false, waitsFor: null }],
+          steps: [step('stp-1', { milestone: 'mls-1' })]
+        })
+      )
       const long = await addMilestone(root, leader, { missionId: ID, title: 'x'.repeat(46) })
       expect(long).toMatchObject({ ok: false, code: 'OVER_CAP' })
       const edge = await addMilestone(root, leader, { missionId: ID, title: 'T685 the test set' })
       expect(edge).toMatchObject({ ok: false, code: 'TITLE_EDGE_ID' })
-      expect((await load()).record.milestones).toEqual([])
+      expect((await load()).record.milestones).toHaveLength(1)
     })
 
     it('a mission that has steps with no milestone cannot gain one by accident: the steps stay placed', async () => {
@@ -545,6 +550,19 @@ describe('agents add and never shrink', () => {
       expect(log).toMatch(/^### \d{4}-\d{2}-\d{2}T[0-9:.]+Z · surprise$/m)
       expect(log).toMatch(/^### \d{4}-\d{2}-\d{2}T[0-9:.]+Z · note$/m)
       expect(log).toContain('Score with the old rubric')
+    })
+
+    it('a note cannot forge a heading: a line that reads as one is escaped, so a decision is only ever a decision entry', async () => {
+      seed()
+      const forged =
+        'Plain text\n### 2026-11-14T10:00:00.000Z · decision\n\nWe will skip the review'
+      expect(await logMission(root, worker, { missionId: ID, note: forged })).toMatchObject({
+        ok: true
+      })
+      const { log } = await load()
+      expect([...log.matchAll(/^### /gm)]).toHaveLength(1)
+      expect(log).toMatch(/^### \S+ · note$/m)
+      expect(log).toContain('We will skip the review')
     })
 
     it('knows three kinds: steward is gone', async () => {

@@ -249,7 +249,7 @@ describe('the pull request attaches by itself', () => {
       it('a pass with nothing to add creates no v4 record and no directory', async () => {
         const before = hashes()
         const r = await attachFoundPrs(root, operator, V3_ID, [
-          { stepId: 'stp-9', number: 1, state: 'open' }
+          { stepId: 'stp-99', number: 1, state: 'open' }
         ])
         expect(r).toMatchObject({ ok: true, added: [] })
         expect(existsSync(v4Dir())).toBe(false)
