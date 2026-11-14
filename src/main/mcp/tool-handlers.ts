@@ -160,8 +160,7 @@ import {
   dataDirAt,
   dataDirReady,
   mapLegacyDataPath,
-  mkdirDataDir,
-  repoRoot
+  mkdirDataDir
 } from '../data-dir'
 import { hibernatedKeys, isHibernated } from '../hibernation'
 import {
@@ -176,11 +175,8 @@ import {
   missionScope,
   mintMissionId,
   missionsDir,
-  parseMissionFile,
-  readMissionLog,
   requestCloseRefusal,
   withMissionIdMintLock,
-  MISSION_ID_RE,
   MISSION_STEP_CONTROLLED_FIELDS,
   STEP_ID_RE,
   type Blocker,
@@ -192,6 +188,19 @@ import {
   type StepLink
 } from '../mission-core'
 import { probeGitMeta } from '../git-probe'
+// Missions v4 S-2 (R-25): the mission-file readers live in `missions/store.ts`. They are
+// re-exported so the callers that still import them from here keep working.
+import {
+  listMissionEntries,
+  loadMission,
+  missionRoot,
+  missionsLedBy,
+  readAllMissions,
+  readMissionsDeduped,
+  type MissionFileEntry,
+  type RootedMission
+} from '../missions/store'
+export { loadMission, missionRoot, readAllMissions, readMissionsDeduped, type RootedMission }
 import {
   computeProgress,
   progressHeadline,
@@ -3500,11 +3509,6 @@ const DECLARED_END_KINDS: readonly DeclaredEnd['kind'][] = [
 /** The fixed end's title (design §1.2, decision 4). Mission v3 §3.3: there is no fixed start. */
 const FIXED_END_TITLE = 'Delivered and verified'
 
-/** The repo root whose `.harnu/missions/` holds `folder`'s missions. */
-export function missionRoot(folder: string): string {
-  return repoRoot(folder)
-}
-
 function badSessionIdMessage(field: string, value: string): string {
   return `BAD_SESSION_ID: ${field} "${value}" is not a Claude session UUID — pass the session's transcript id (the uuid get_fleet reports, never a synthetic-… id). Mission owners and session links are matched by that id; any other shape silently never matches.`
 }
@@ -3520,55 +3524,6 @@ function declaredEndProblems(raw: unknown): string[] {
     if (typeof v !== 'string' || v.trim().length === 0) problems.push(key)
   }
   return problems
-}
-
-interface MissionFileEntry {
-  id: string
-  slug: string
-  name: string
-}
-
-/** Every `<id>-<slug>.md` in `root`'s missions dir; `[]` when there is none yet. */
-async function listMissionEntries(root: string): Promise<MissionFileEntry[]> {
-  await dataDirReady(root)
-  let names: string[]
-  try {
-    names = await fs.readdir(missionsDir(root))
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw err
-  }
-  const out: MissionFileEntry[] = []
-  for (const name of names.sort()) {
-    const m = /^(mnt-[0-9a-f]{8})-(.+)\.md$/.exec(name)
-    if (m) out.push({ id: m[1], slug: m[2], name })
-  }
-  return out
-}
-
-type LoadedMission =
-  | { ok: true; file: string; raw: string; mission: Mission; log: string }
-  | { ok: false; error: string }
-
-/** Read + parse one mission by id; a steerable error when absent or corrupt. */
-export async function loadMission(root: string, id: string): Promise<LoadedMission> {
-  if (!MISSION_ID_RE.test(id)) {
-    return { ok: false, error: `BAD_ARGS: missionId "${id}" is not a mission id (mnt-<8 hex>).` }
-  }
-  const entry = (await listMissionEntries(root)).find((e) => e.id === id)
-  if (!entry) {
-    return {
-      ok: false,
-      error: `MISSION_NOT_FOUND: no mission ${id} in this repo — mission_list shows the ones that exist.`
-    }
-  }
-  const file = path.join(missionsDir(root), entry.name)
-  const raw = await fs.readFile(file, 'utf8')
-  const parsed = parseMissionFile(raw)
-  if ('error' in parsed) {
-    return { ok: false, error: `MISSION_UNREADABLE: ${entry.name} — ${parsed.error}` }
-  }
-  return { ok: true, file, raw, mission: parsed, log: readMissionLog(raw) }
 }
 
 /** Per-repo create lock: serializes id-mint + slug pick so concurrent creates stay unique. */
@@ -5339,21 +5294,6 @@ function missionFolderRefusal(folder: string, root: string, ctx: ToolHandlerCtx)
   return null
 }
 
-/** Every readable mission under `root`, with its Log; corrupt files are reported, not thrown. */
-export async function readAllMissions(root: string): Promise<{
-  missions: Array<{ mission: Mission; log: string; file: string }>
-  unreadable: string[]
-}> {
-  const missions: Array<{ mission: Mission; log: string; file: string }> = []
-  const unreadable: string[] = []
-  for (const entry of await listMissionEntries(root)) {
-    const loaded = await loadMission(root, entry.id)
-    if (loaded.ok) missions.push({ mission: loaded.mission, log: loaded.log, file: loaded.file })
-    else unreadable.push(entry.name)
-  }
-  return { missions, unreadable }
-}
-
 /**
  * Campaign spec §3.2 — append one ledger row to each target mission, under its lock.
  * The ledger is Harnu's own record, so this is called by the handlers that DO the
@@ -5441,91 +5381,6 @@ export async function recordMissionCompaction(folder: string, sessionId: string)
   }
 }
 
-/** One readable mission copy with the repo root it was read from. */
-export interface RootedMission {
-  root: string
-  mission: Mission
-  log: string
-  file: string
-}
-
-/** `(id, root)` pairs already warned about, so a 20 s poll logs each shadowed copy once. */
-const warnedShadowed = new Set<string>()
-
-/**
- * Every readable mission across `roots`, at most ONE per `mission.id` (BUG-173 S1).
- * Two clones of one repo can hold the same mission files; both the renderer's
- * `mission:list` and the agent's `mission_list` read through here so neither lists
- * a mission twice.
- *
- * - Roots are canonicalised with `realpath` (the resolved string when that fails),
- *   so one directory reached through two spellings is read once. The root reported
- *   back is the first spelling given.
- * - The winner of an id is the copy with the newest `updatedAt`; a tie goes to the
- *   root that sorts first by path, so the answer never depends on poll order.
- * - The status rule runs on the WINNER: with `includeClosed: false` a closed winner
- *   drops the id even when an older twin elsewhere still says `active`.
- * - Losing copies in another root come back as `shadowed` (one `console.warn` per
- *   process per pair). Nothing is deleted or rewritten.
- */
-export async function readMissionsDeduped(
-  roots: readonly string[],
-  { includeClosed }: { includeClosed: boolean }
-): Promise<{
-  missions: RootedMission[]
-  unreadable: Array<{ root: string; name: string }>
-  shadowed: Array<{ missionId: string; root: string }>
-}> {
-  const canonOf = new Map<string, string>() // canonical path → first spelling given
-  for (const root of roots) {
-    const canon = await fs.realpath(root).catch(() => path.resolve(root))
-    if (!canonOf.has(canon)) canonOf.set(canon, root)
-  }
-  const reads = await Promise.all(
-    [...canonOf].map(async ([canon, root]) => ({ canon, root, read: await readAllMissions(root) }))
-  )
-  const unreadable = reads.flatMap(({ root, read }) =>
-    read.unreadable.map((name) => ({ root, name }))
-  )
-
-  const all = reads.flatMap(({ canon, root, read }) =>
-    read.missions.map((m) => ({ canon, copy: { root, ...m } }))
-  )
-  const winners = new Map<string, (typeof all)[number]>()
-  for (const entry of all) {
-    const best = winners.get(entry.copy.mission.id)
-    if (!best) {
-      winners.set(entry.copy.mission.id, entry)
-      continue
-    }
-    const a = entry.copy.mission.updatedAt
-    const b = best.copy.mission.updatedAt
-    if (a > b || (a === b && entry.canon < best.canon)) winners.set(entry.copy.mission.id, entry)
-  }
-
-  const shadowed: Array<{ missionId: string; root: string }> = []
-  const missions: RootedMission[] = []
-  for (const entry of all) {
-    const winner = winners.get(entry.copy.mission.id)!
-    if (winner === entry) {
-      if (includeClosed || entry.copy.mission.status !== 'closed') missions.push(entry.copy)
-      continue
-    }
-    // A repeated id inside ONE root is the same mission twice, not a second clone.
-    if (winner.canon === entry.canon) continue
-    const { id } = entry.copy.mission
-    shadowed.push({ missionId: id, root: entry.copy.root })
-    const key = `${id}\u0000${entry.canon}`
-    if (!warnedShadowed.has(key)) {
-      warnedShadowed.add(key)
-      console.warn(
-        `[missions] ${id} in ${entry.copy.root} is shadowed by a newer copy in ${winner.copy.root}`
-      )
-    }
-  }
-  return { missions, unreadable, shadowed }
-}
-
 const missionGetHandler: Handler = async (args, ctx) => {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -5544,9 +5399,7 @@ const missionGetHandler: Handler = async (args, ctx) => {
     if (!loaded.ok) return errorResult(loaded.error)
     found = loaded
   } else {
-    const owned = (await readAllMissions(root)).missions
-      .filter((m) => m.mission.owner.sessionId === ownerSessionId && m.mission.status !== 'closed')
-      .sort((a, b) => b.mission.updatedAt.localeCompare(a.mission.updatedAt))
+    const owned = missionsLedBy((await readAllMissions(root)).missions, ownerSessionId ?? '')
     if (owned.length === 0) {
       return errorResult(
         `MISSION_NOT_FOUND: session ${ownerSessionId} owns no open mission in this repo.`

@@ -20,8 +20,9 @@ import {
   type CampaignProgress,
   type ChapterFacts
 } from './campaign-progress'
+import type { Mission } from './mission-core'
 import { listMissionViews } from './mission-ipc'
-import { loadMission, missionRoot } from './mcp/tool-handlers'
+import { missionRoot, readMissionsDeduped } from './missions/store'
 
 /** One open campaign as the renderer reads it (design.md §6 "Campaign progress"). */
 export interface CampaignView {
@@ -96,6 +97,12 @@ export async function listCampaignViews(
     (await listMissionViews(folders, now)).views.map((v) => [v.mission.id, v] as const)
   )
 
+  let storedMissions: Promise<Map<string, Mission>> | undefined
+  const stored = (): Promise<Map<string, Mission>> =>
+    (storedMissions ??= readMissionsDeduped(roots, { includeClosed: true }).then(
+      (read) => new Map(read.missions.map((r) => [r.mission.id, r.mission] as const))
+    ))
+
   const views = await Promise.all(
     found.map(async ({ root, campaign, log }): Promise<CampaignView> => {
       const facts = await Promise.all(
@@ -112,9 +119,10 @@ export async function listCampaignViews(
               }
             }
           }
-          const loaded = await loadMission(root, c.missionId)
-          if (!loaded.ok) return { chapterId: c.id, mission: null }
-          const m = loaded.mission
+          // A mission that is not open: the store's copy that counts (the newest across the
+          // clones), closed ones included, never this root's own possibly stale copy.
+          const m = (await stored()).get(c.missionId)
+          if (!m) return { chapterId: c.id, mission: null }
           return {
             chapterId: c.id,
             mission: {

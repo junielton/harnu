@@ -1,7 +1,6 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import * as path from 'node:path'
 import { mainCheckoutRoot } from './data-dir'
-import { missionsDir, parseMissionFile, type Mission } from './mission-core'
+import type { Mission } from './mission-core'
+import { readMissionsDedupedSync } from './missions/store'
 
 /**
  * The set of session keys currently PARKED — process killed to reclaim memory, conversation
@@ -149,7 +148,7 @@ export function resetHibernation(): void {
  * running under it must not pin its owner's hundreds of MB indefinitely. The pin also
  * self-releases — once every child is parked or closed, the owner is eligible again.
  *
- * Missions are read straight from disk with S1's `parseMissionFile` (no `mission_*` verb
+ * Missions are read straight from disk through the mission store (no `mission_*` verb
  * exists at this point in the stack). Fails OPEN: an unreadable directory or a malformed
  * file exempts nobody, which is exactly the behavior before this exemption existed.
  */
@@ -175,36 +174,6 @@ export function ownsMissionWithLiveChild(
 export { mainCheckoutRoot }
 
 /**
- * Every well-formed `active` mission under `root`; `[]` when there is no missions dir.
- *
- * Synchronous on purpose (the fleet snapshot it feeds is). A repo the boot pass never saw
- * has its legacy `.capy/` copied lazily, so the FIRST sweep over it can read no missions and
- * park an owner whose child is live. That self-heals on the next sweep, once the copy has
- * landed — and a parked session is intact on disk (selecting the row resumes it), so the
- * miss costs a resume, never work. Pinned by the AC-3e test in `tests/hibernation.test.ts`.
- */
-function readActiveMissions(root: string): Mission[] {
-  const dir = missionsDir(root)
-  let names: string[]
-  try {
-    names = readdirSync(dir)
-  } catch {
-    return []
-  }
-  const out: Mission[] = []
-  for (const name of names) {
-    if (!name.endsWith('.md')) continue
-    try {
-      const parsed = parseMissionFile(readFileSync(path.join(dir, name), 'utf8'))
-      if (!('error' in parsed) && parsed.status === 'active') out.push(parsed)
-    } catch {
-      // Unreadable file — fail open, skip it.
-    }
-  }
-  return out
-}
-
-/**
  * The keys of every live session that {@link ownsMissionWithLiveChild} exempts. `sessions`
  * is the whole live fleet (it doubles as the liveness set); `cwd` locates each session's
  * repo, and each distinct repo's missions are read once.
@@ -218,7 +187,12 @@ export function missionOwnersWithLiveChildren(
     const root = s.cwd ? mainCheckoutRoot(s.cwd) : null
     if (root) roots.add(root)
   }
-  const missions = [...roots].flatMap(readActiveMissions)
+  // The store's one read: the newest copy of each mission across the clones, so a stale twin
+  // in another clone pins nobody. Whether a mission pins its leader is this module's rule
+  // (`ownsMissionWithLiveChild`: `active` only), not the store's.
+  const missions = readMissionsDedupedSync([...roots], { includeClosed: false }).missions.map(
+    (m) => m.mission
+  )
   const owners = new Set<string>()
   if (missions.length === 0) return owners
   for (const key of liveKeys) {
