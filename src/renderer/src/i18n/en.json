@@ -383,6 +383,52 @@
       "ready-to-close": "Ready to close",
       "closed": "Closed"
     },
+    "bar": {
+      "label": "Mission progress"
+    },
+    "next": {
+      "label": "What is next",
+      "you": "Your next step",
+      "calm": "Next step",
+      "running": "{n} step is running. Nothing for you right now. | {n} steps are running. Nothing for you right now.",
+      "idle": "Nothing is running. Nothing for you right now.",
+      "more": "{n} more waiting on you",
+      "less": "Show less",
+      "openStep": "Open step",
+      "kind": {
+        "main-failing": "Fix",
+        "unblock": "Unblock",
+        "settle": "Check",
+        "review": "Review",
+        "close": "Close",
+        "attach": "Join"
+      }
+    },
+    "tree": {
+      "label": "Steps of the mission",
+      "waitsFor": "Waits for “{title}”",
+      "running": "{n} running",
+      "waitingReview": "{n} waiting for review",
+      "blocked": "{n} blocked",
+      "nothingRunning": "Nothing running",
+      "allDone": "Every step is done",
+      "more": "{n} more step | {n} more steps",
+      "less": "Show less",
+      "optional": "{n} optional milestone | {n} optional milestones",
+      "chipYours": "Yours",
+      "chipBlocked": "Blocked",
+      "noCriteria": "No criteria yet.",
+      "criterionDone": "Settled",
+      "criterionOpen": "Not settled yet",
+      "state": {
+        "todo": "To do",
+        "running": "Running",
+        "waiting-review": "Waiting for review",
+        "done": "Done",
+        "not-started": "Not started",
+        "in-progress": "In progress"
+      }
+    },
     "none": {
       "title": "This session has no mission."
     },

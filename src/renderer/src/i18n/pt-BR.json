@@ -383,6 +383,52 @@
       "ready-to-close": "Pronta para fechar",
       "closed": "Fechada"
     },
+    "bar": {
+      "label": "Progresso da missão"
+    },
+    "next": {
+      "label": "O que vem a seguir",
+      "you": "Seu próximo passo",
+      "calm": "Próximo passo",
+      "running": "{n} passo em andamento. Nada para você agora. | {n} passos em andamento. Nada para você agora.",
+      "idle": "Nada em andamento. Nada para você agora.",
+      "more": "Mais {n} esperando por você",
+      "less": "Mostrar menos",
+      "openStep": "Abrir passo",
+      "kind": {
+        "main-failing": "Corrigir",
+        "unblock": "Destravar",
+        "settle": "Conferir",
+        "review": "Revisar",
+        "close": "Fechar",
+        "attach": "Entrar"
+      }
+    },
+    "tree": {
+      "label": "Passos da missão",
+      "waitsFor": "Espera por “{title}”",
+      "running": "{n} em andamento",
+      "waitingReview": "{n} aguardando revisão",
+      "blocked": "{n} bloqueado | {n} bloqueados",
+      "nothingRunning": "Nada em andamento",
+      "allDone": "Todos os passos estão concluídos",
+      "more": "Mais {n} passo | Mais {n} passos",
+      "less": "Mostrar menos",
+      "optional": "{n} marco opcional | {n} marcos opcionais",
+      "chipYours": "Seu",
+      "chipBlocked": "Bloqueado",
+      "noCriteria": "Ainda sem critérios.",
+      "criterionDone": "Confirmado",
+      "criterionOpen": "Ainda não confirmado",
+      "state": {
+        "todo": "A fazer",
+        "running": "Em andamento",
+        "waiting-review": "Aguardando revisão",
+        "done": "Concluído",
+        "not-started": "Não iniciado",
+        "in-progress": "Em andamento"
+      }
+    },
     "none": {
       "title": "Esta sessão não tem missão."
     },
