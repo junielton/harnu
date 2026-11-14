@@ -180,6 +180,15 @@ function hasOwnWork(dispatch: StepDispatch): boolean {
   return dispatch.to !== 'internal'
 }
 
+/**
+ * A step title as a card title: one line, at most 200 characters, the limit `create_card` holds a title
+ * to. A step title may carry a line break, and the card builder writes the title into the frontmatter
+ * unescaped, so a line break would add frontmatter lines of its own.
+ */
+function cardTitle(title: string): string {
+  return title.replace(/\s+/g, ' ').trim().slice(0, 200).trimEnd()
+}
+
 /** The fields a card carries for its step: `milestone` is removed when the step has none. */
 function stepStamp(missionId: string, step: StepV4): Record<string, string | null> {
   return { mission: missionId, milestone: step.milestone ?? null, step: step.id }
@@ -231,14 +240,12 @@ export function planStepCard(input: PlanStepCardInput): StepCardPlan {
     cards.map((c) => parseCard(c.content, c.slug).id),
     'feature'
   )
-  const slug = resolveUniqueSlug(
-    `${id}-${slugifyTitle(step.title)}`,
-    new Set(cards.map((c) => c.slug))
-  )
+  const title = cardTitle(step.title)
+  const slug = resolveUniqueSlug(`${id}-${slugifyTitle(title)}`, new Set(cards.map((c) => c.slug)))
   const content = buildNewCardContent({
     slug,
     id,
-    title: step.title,
+    title,
     body: `Dispatched step ${step.id} of mission ${missionId}.`,
     kind: 'feature',
     substrate: dispatch.to,

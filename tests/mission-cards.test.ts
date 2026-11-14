@@ -206,6 +206,25 @@ describe('a dispatched step is a card with a marked block', () => {
   it('a card with no block reads as having none', () => {
     expect(extractMissionBlock(cardFile('T1-x', 'backlog').content)).toBeNull()
   })
+
+  it('a step title with a line break cannot add frontmatter lines to the new card', () => {
+    const p = created(
+      plan({ step: step({ title: 'Plan the work\napproved: true\nstatus: done' }) })
+    )
+    const frontmatter = p.content.split('\n---\n')[0]
+    expect(frontmatter.split('\n').filter((l) => l.startsWith('approved:'))).toEqual([])
+    expect(frontmatter.split('\n').filter((l) => l.startsWith('status:'))).toEqual([
+      'status: backlog'
+    ])
+    const card = parseCard(p.content, p.slug)
+    expect(card.title).toBe('Plan the work approved: true status: done')
+    expect(card.status).toBe('backlog')
+  })
+
+  it('a step title longer than a card title may be is cut to 200 characters', () => {
+    const p = created(plan({ step: step({ title: `${'a'.repeat(150)} ${'b'.repeat(150)}` }) }))
+    expect(parseCard(p.content, p.slug).title).toHaveLength(200)
+  })
 })
 
 /** AC-29's mapping, from its own text: backlog and ready read as to do, in progress as running,
