@@ -161,7 +161,9 @@ describe('the operator doors', () => {
       const { record, log } = await reread()
       expect(record.steps[0].acs[0].settled).toEqual({ at: AT, by: 'operator' })
       expect(headings(log).filter((h) => h.includes(AT))).toHaveLength(1)
-      expect(log).toMatch(/operator marked .*ac-1/)
+      expect(log).toContain(
+        `operator marked "The layout is confirmed" done on "Check the layout with the designer"`
+      )
     })
 
     it('a criterion for another person records who approved, still in the operator’s name', async () => {
@@ -247,7 +249,9 @@ describe('the operator doors', () => {
       const { record, log } = await reread()
       expect(record.steps[0].blockers).toEqual([])
       expect(record.blockers).toEqual([])
-      expect(headings(log).filter((h) => h.includes('cleared blocker'))).toHaveLength(2)
+      expect(headings(log).filter((h) => h.includes('cleared the blocker'))).toHaveLength(2)
+      expect(log).toContain('operator cleared the blocker on "Check the layout with the designer"')
+      expect(log).toContain('operator cleared the blocker on the mission')
     })
 
     it('finds the blocker without the step when only one place holds it', async () => {
@@ -783,5 +787,48 @@ describe('closing as delivered confirms the Done when', () => {
     seed(missionOf({ status: 'closed', closedAs: 'discarded' }))
     await closeMission(root, ID, { closedAs: 'delivered', at: AT })
     expect((await reread()).record.doneWhenVerified).toBeUndefined()
+  })
+})
+
+/** Owner delta: a Log line a reader sees names a step by its quoted title, never by `stp-1`; and it is the operator's. */
+describe('the doors name a step by its title in the Log', () => {
+  it('mark, clear and a person’s sign-off carry the quoted title and no step id', async () => {
+    seed(missionOf())
+    await markCriterion(root, ID, { stepId: 'stp-1', criterionId: 'ac-2', at: AT })
+    await clearBlocker(root, ID, { blockerId: 'blk-1', stepId: 'stp-1', at: AT })
+    const lines = headings((await reread()).log)
+    expect(lines).toEqual([
+      `### ${AT} · operator marked "The designer signed off" done on "Check the layout with the designer" for the designer`,
+      `### ${AT} · operator cleared the blocker on "Check the layout with the designer"`
+    ])
+    for (const l of lines) expect(l).not.toMatch(/stp-\d/)
+  })
+
+  it('a blocker found without its step is named by the step it was found on', async () => {
+    seed(missionOf())
+    await clearBlocker(root, ID, { blockerId: 'blk-1', at: AT })
+    expect(headings((await reread()).log).at(-1)).toContain(
+      'on "Check the layout with the designer"'
+    )
+  })
+
+  it('no door writes as Harnu: each says operator', async () => {
+    seed(
+      missionOf({
+        attachRequests: [pending('atr-1')],
+        ...({ pendingDoneWhen: { text: 'Another end', at: NOW } } as object)
+      })
+    )
+    await markCriterion(root, ID, { stepId: 'stp-1', criterionId: 'ac-1', at: AT })
+    await clearBlocker(root, ID, { blockerId: 'blk-2', at: AT })
+    await decideAttachRequest(root, ID, { requestId: 'atr-1', decision: 'denied', at: AT })
+    await declineDoneWhen(root, ID, { at: AT })
+    await closeMission(root, ID, { closedAs: 'delivered', at: AT })
+    const lines = headings((await reread()).log)
+    expect(lines).toHaveLength(5)
+    for (const l of lines) {
+      expect(l).toContain('operator')
+      expect(l).not.toContain('Harnu')
+    }
   })
 })

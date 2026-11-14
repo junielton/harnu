@@ -288,7 +288,7 @@ describe('attach needs confirmation except for the creator and dispatched worker
         id,
         sessions: [{ id: ASKER, role: 'leads', from: AT, to: null }]
       })
-      const r = await createMission(root, { kind: 'session', sessionId: ASKER }, record, '# Log\n')
+      const r = await createMission(root, { kind: 'session', sessionId: ASKER }, record, '')
       expect(r.ok).toBe(true)
       const { record: stored } = await reread(id)
       expect(leaders(stored).map((s) => s.id)).toEqual([ASKER])
@@ -544,7 +544,7 @@ describe('the mission remembers its sessions', () => {
     const { record, log } = await reread()
     expect(record.sessions[0].to).toBe(AT)
     expect(record.sessions[0].stoppedAt).toEqual({})
-    expect(log).toContain(`### ${AT} · session ${LEADER} ended`)
+    expect(log).toContain(`### ${AT} · Harnu recorded that session ${LEADER} ended`)
   })
 
   it('history only grows: ending twice keeps the first to, a re-attach is a new row, no row is removed', async () => {
@@ -597,5 +597,105 @@ describe('the mission remembers its sessions', () => {
     expect(releaseEntry(released, WORKER, '2027-01-01T00:00:00Z')).toEqual(released)
     // Already open: not added again.
     expect(appendWorked(added, WORKER, LATER)).toEqual(added)
+  })
+})
+
+/**
+ * S-11's final Log rule: the Log is append-only for every writer, a SESSION appends at most one heading and
+ * it reads `### <time> · note|decision|surprise`. What Harnu does (a dispatch attaching a worker, recording
+ * where a session stopped) is written as `{ kind: 'harnu' }`, so a Log line never says the operator did it;
+ * the picker and the doors stay the operator's.
+ */
+describe('Harnu writes what Harnu does, and the operator what the operator does', () => {
+  const harnu = { kind: 'harnu' } as const
+  const lastHeading = (log: string): string =>
+    log
+      .split('\n')
+      .filter((l) => l.startsWith('### '))
+      .at(-1) ?? ''
+
+  it('a dispatch attaches the worker as Harnu: the Log names Harnu and the step by its title', async () => {
+    seed(missionOf())
+    const r = await attachDispatchedWorker(root, ID, {
+      sessionId: DISPATCHED,
+      stepId: 'stp-1',
+      actor: harnu,
+      at: AT
+    })
+    expect(r.ok).toBe(true)
+    const { record, log } = await reread()
+    expect(record.sessions.at(-1)).toEqual({
+      id: DISPATCHED,
+      role: 'worked',
+      from: AT,
+      to: null,
+      stoppedAt: null
+    })
+    expect(record.steps[0].links).toContainEqual({ kind: 'session', ref: DISPATCHED })
+    expect(lastHeading(log)).toBe(
+      `### ${AT} · Harnu attached session ${DISPATCHED} as a worker on step "Load the test files"`
+    )
+    expect(lastHeading(log)).not.toContain('operator')
+    expect(lastHeading(log)).not.toContain('stp-1')
+  })
+
+  it('a dispatch by Harnu on a closed mission, or with nobody leading, is never refused and never leads', async () => {
+    seed(missionOf({ status: 'closed', closedAs: 'delivered', sessions: [] }))
+    const r = await attachDispatchedWorker(root, ID, {
+      sessionId: DISPATCHED,
+      stepId: 'stp-2',
+      actor: harnu,
+      at: AT
+    })
+    expect(r.ok).toBe(true)
+    expect((await reread()).record.sessions.map((s) => s.role)).toEqual(['worked'])
+  })
+
+  it('a leader session that dispatches writes a Log the write path accepts: one session-shaped note', async () => {
+    seed(missionOf())
+    const r = await attachDispatchedWorker(root, ID, {
+      sessionId: DISPATCHED,
+      stepId: 'stp-1',
+      actor: { kind: 'session', sessionId: LEADER },
+      at: AT
+    })
+    expect(r.ok).toBe(true)
+    const { log } = await reread()
+    expect(lastHeading(log)).toBe(`### ${AT} · note`)
+    expect(log).toContain(
+      `attached session ${DISPATCHED} as a worker on step "Load the test files"`
+    )
+  })
+
+  it('the end of a session is recorded by Harnu, never as the operator', async () => {
+    seed(missionOf())
+    await attachFromPicker(root, ID, { sessionId: PICKED, at: AT })
+    await endSession(root, ID, { sessionId: PICKED, at: LATER, how: 'released' })
+    const { log } = await reread()
+    expect(lastHeading(log)).toBe(`### ${LATER} · Harnu recorded that session ${PICKED} released`)
+    expect(lastHeading(log)).not.toContain('operator')
+  })
+
+  it('the picker and the allowed request stay the operator’s, never Harnu’s', async () => {
+    seed(missionOf({ attachRequests: [pending('atr-1', ASKER)] }))
+    await attachFromPicker(root, ID, { sessionId: PICKED, at: AT })
+    await decideAttachRequest(root, ID, { requestId: 'atr-1', decision: 'allowed', at: LATER })
+    const headings = (await reread()).log.split('\n').filter((l) => l.startsWith('### '))
+    expect(headings).toHaveLength(2)
+    for (const h of headings) {
+      expect(h).toContain('operator')
+      expect(h).not.toContain('Harnu')
+    }
+  })
+
+  it('a step named by an old id is still named by its title in the Log', async () => {
+    seed(missionOf({ legacyV3: { stepIds: { 'stp-5': 'stp-2' } } }))
+    await attachDispatchedWorker(root, ID, {
+      sessionId: DISPATCHED,
+      stepId: 'stp-5',
+      actor: harnu,
+      at: AT
+    })
+    expect(lastHeading((await reread()).log)).toContain('on step "Show the score"')
   })
 })
