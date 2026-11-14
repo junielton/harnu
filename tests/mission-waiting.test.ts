@@ -101,7 +101,18 @@ describe('one list feeds every reader (AC-7)', () => {
   })
 
   it('keeps the order the operator already saw: blockers, then the decision, then the rest', () => {
-    expect(list.map((i) => i.kind)).toEqual(['blocker', 'decide', 'human-steps'])
+    expect(list.map((i) => i.kind)).toEqual(['blocker', 'decide'])
+  })
+
+  it('a decision at the human level is listed once, as a decision, not again as a human step', () => {
+    expect(m.steps[1].verification).toBe('human')
+    expect(list.filter((i) => i.kind === 'decide')).toHaveLength(1)
+    const human = list.find((i) => i.kind === 'human-steps')
+    expect(human).toBeUndefined()
+    // A human step that is not a decision is still listed as one.
+    const plain = mission()
+    delete plain.steps[1].decision
+    expect(waitingList(plain, [], progressOf(plain)).map((i) => i.kind)).toContain('human-steps')
   })
 
   it('a decided decision is not waiting, and a closed mission waits on nothing', () => {
@@ -189,13 +200,7 @@ describe('the list is a pure read of derived values (S-3: a read leaves nothing 
     ])
     const a = waitingList(m, kids, p)
     expect(waitingList(m, kids, p)).toEqual(a)
-    expect(a.map((i) => i.kind)).toEqual([
-      'blocker',
-      'decide',
-      'human-steps',
-      'approvals',
-      'needs-input'
-    ])
+    expect(a.map((i) => i.kind)).toEqual(['blocker', 'decide', 'approvals', 'needs-input'])
   })
 
   it('imports no file system, Electron, observer, ledger or store: it cannot write, cache or wake', () => {
