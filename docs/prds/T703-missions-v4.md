@@ -38,7 +38,7 @@ An automatic fact (the pull request is merged, CI is green); a second session th
 
 ### 3.4 A mission that outlives its sessions
 
-The mission lives in the folder with its plan, history and the list of sessions that worked on it. When the leading session is getting long, the pane says so and offers to continue in a new one. You decide: you see the summary the new session starts from (goal, where it is, what was decided, where each session stopped, the next step), you confirm, and Harnu starts it and releases the old one. Harnu never switches by itself. A session only touches the mission it is attached to, and attaching needs your confirmation.
+The mission lives in the folder with its plan, history and the list of sessions that worked on it. When the leading session is getting long, the pane says so and offers to continue in a new one. You decide: you see the summary the new session starts from (goal, where it is, what was decided, where each session stopped, the next step), you confirm, and Harnu starts it and releases the old one. Harnu never switches by itself. A session only touches the mission it is attached to, and attaching needs your confirmation, except for the session that creates the mission (it leads it) and for sessions dispatched for a step, which can only touch their own step.
 
 ### 3.5 What you do not have to do any more
 
@@ -58,7 +58,7 @@ Every mission and campaign file written by the current version still opens, in e
 
 ## 6. What is not in this release
 
-A kanban view; a view across missions or sessions; several orchestrators at once; two milestones planned in parallel; the sidebar tag as a cross-session signal; a limit on the review queue, a ready-to-start rule, ordering what waits by age; watching the tracker for a person's sign-off; an automatic timeline for a session with no mission; bulk close of finished missions (each is closed in the pane). The merge batch is gone and no surface merges.
+A kanban view; a view across missions or sessions; several orchestrators at once; two milestones planned in parallel; the sidebar tag as a cross-session signal; a limit on the review queue, a ready-to-start rule, ordering what waits by age; watching the tracker for a person's sign-off; an automatic timeline built by Harnu for a session with no mission (no transcript carries a step list, so the session creates the mission itself instead; see the proactive missions above); bulk close of finished missions (each is closed in the pane). The merge batch is gone and no surface merges.
 
 ## 7. How we know it worked
 
