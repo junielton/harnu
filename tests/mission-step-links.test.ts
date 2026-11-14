@@ -150,6 +150,15 @@ describe('the pull request attaches by itself', () => {
       ])
     })
 
+    it('a branch that two steps share is ambiguous: the pull request is skipped, never guessed', () => {
+      const plan = planPrLinks(record, [{ branch: 'card/T9-score', number: 8, state: 'open' }], {
+        'stp-1': 'card/T9-score',
+        'stp-2': 'card/T9-score'
+      })
+      expect(plan.add).toEqual([])
+      expect(plan.skipped).toEqual([{ number: 8, reason: 'ambiguous-branch' }])
+    })
+
     it('a step id the record does not have is found through the ids a v3 campaign had', () => {
       const converted = missionOf({
         legacyV3: { stepIds: [{ mission: 'mnt-ca000002', step: 'stp-7', id: 'stp-2' }] }

@@ -574,6 +574,16 @@ describe('agents add and never shrink', () => {
       expect((await load()).log).toBe('')
     })
 
+    it('a note is at most 4000 characters: longer is refused and nothing is written', async () => {
+      seed()
+      const ok = await logMission(root, leader, { missionId: ID, note: 'x'.repeat(4000) })
+      expect(ok).toMatchObject({ ok: true })
+      const before = readFileSync(v4File(), 'utf8')
+      const r = await logMission(root, leader, { missionId: ID, note: 'x'.repeat(4001) })
+      expect(r).toMatchObject({ ok: false, code: 'BAD_ARGS' })
+      expect(readFileSync(v4File(), 'utf8')).toBe(before)
+    })
+
     it('refuses an empty note, an unknown step, an unattached session and a system worker', async () => {
       seed()
       expect(await logMission(root, leader, { missionId: ID, note: '  ' })).toMatchObject({

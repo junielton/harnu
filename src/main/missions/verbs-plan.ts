@@ -363,8 +363,7 @@ function checkPageRef(root: string, kind: string, ref: string): void {
     throw new PlanError('BAD_LINK', pageRuleMessage(kind))
   }
   if (SCHEME_RE.test(ref)) {
-    // A one-letter scheme is a Windows drive: an absolute path.
-    if (/^[A-Za-z]:/.test(ref)) refuse()
+    // Only `http(s)://host` passes: a one-letter scheme is a Windows drive, an absolute path.
     if (!/^https?:\/\/[^/\\\s?#]/i.test(ref)) refuse()
     let url: URL
     try {
