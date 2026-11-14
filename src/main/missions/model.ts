@@ -65,7 +65,7 @@ export type ClearsWhen = (typeof CLEARS_WHEN)[number]
 /** Whose move a blocker is. */
 export const BLOCKER_OWNERS = ['agent', 'operator'] as const
 
-/** A session is attached as the one that leads or as one that worked a step. */
+/** A session is attached as the one that leads or as one that worked a step (a session history row; an attach request has no role). */
 export const SESSION_ROLES = ['leads', 'worked'] as const
 export type SessionRole = (typeof SESSION_ROLES)[number]
 
@@ -75,18 +75,68 @@ export const MISSION_STATUSES = ['open', 'closed'] as const
 /** What the operator decided on an attach request; `null` while it is pending. */
 export const ATTACH_DECISIONS = ['allowed', 'denied'] as const
 
+// ---- State vocabulary -----------------------------------------------------------
+
+/**
+ * One state vocabulary, named once (spec "One state vocabulary"). A step is `to do`, `running`,
+ * `waiting for review` or `done`; blocked is a mark on a step, never a fifth state. These are the
+ * names every reader shows and every derive returns; `state.ts` (S-7) computes which one applies and
+ * the card slice (S-10) maps the board's columns onto them, so both import the list from here.
+ */
+export const STEP_STATES = ['to do', 'running', 'waiting for review', 'done'] as const
+export type StepState = (typeof STEP_STATES)[number]
+
+/** A milestone's state, derived from its steps. */
+export const MILESTONE_STATES = [
+  'not started',
+  'in progress',
+  'waiting for review',
+  'done'
+] as const
+export type MilestoneState = (typeof MILESTONE_STATES)[number]
+
+/** A mission is `open`, `ready to close` (every required step is done; derived) or `closed`. */
+export const MISSION_STATES = ['open', 'ready to close', 'closed'] as const
+export type MissionState = (typeof MISSION_STATES)[number]
+
 // ---- Entities -----------------------------------------------------------------
 
-const LinkSchema = z.object({ kind: z.enum(LINK_KINDS), ref: z.string() }).passthrough()
+/*
+ * Each entity is a CLOSED interface, written by hand (as `mission-core.ts` does for v3), and its schema
+ * is annotated with it: a misspelt field (`step.titel`, a literal with `critera: []`) is a compile
+ * error in every slice that imports these types. The schemas stay `.passthrough()`, so at RUNTIME a key
+ * the interface does not name still survives a parse and the file round trip. A caller that reads such
+ * a key on purpose names it with {@link WithUnknownKeys}.
+ */
+
+/**
+ * The one way to read a key the closed types do not name, on purpose: a later build's field, or a
+ * value the compatibility reader keeps. `(step as WithUnknownKeys<StepV4>).futureKey` is `unknown`.
+ */
+export type WithUnknownKeys<T> = T & { [key: string]: unknown }
 
 /** A link on a step or on the mission. */
-export type MissionLink = z.infer<typeof LinkSchema>
+export interface MissionLink {
+  kind: LinkKind
+  ref: string
+}
+
+export const LinkSchema: z.ZodType<MissionLink> = z
+  .object({ kind: z.enum(LINK_KINDS), ref: z.string() })
+  .passthrough()
 
 /**
  * The stamp a human-shaped criterion carries once settled (`{ at, by, evidence }`): `by` is the second
  * session's id, or `operator`; `person` names the other person when the operator marked it for them.
  */
-const SettledSchema = z
+export interface Settled {
+  at: string
+  by: string
+  evidence?: string
+  person?: string
+}
+
+export const SettledSchema: z.ZodType<Settled> = z
   .object({
     at: z.string(),
     by: z.string(),
@@ -96,19 +146,45 @@ const SettledSchema = z
   .passthrough()
 
 /**
+ * A builder's own check of a criterion: labelled, and never proof. `by` is the session that built the
+ * step. It sits beside `settled` and never replaces it: a criterion with a self-check and no `settled`
+ * is still open (spec "Facts, and who is trusted": a self-check is labelled and never proof).
+ */
+export interface SelfCheck {
+  at: string
+  by: string
+  evidence: string
+}
+
+export const SelfCheckSchema: z.ZodType<SelfCheck> = z
+  .object({ at: z.string(), by: z.string(), evidence: z.string() })
+  .passthrough()
+
+/**
  * An acceptance criterion: a fact that is true when its step is done. `fact` names the thing Harnu
  * reads and is required when `by` is `fact`; `person` names who approves when `by` is `person`.
  * A criterion tied to a fact is settled by the fact (derived, never stored); `settled` is stored only
  * for the three human-shaped ways.
  */
-export const CriterionSchema = z
+export interface AcceptanceCriterion {
+  id: string
+  text: string
+  by: CriterionBy
+  fact?: Fact
+  person?: string
+  settled?: Settled
+  selfCheck?: SelfCheck
+}
+
+export const CriterionSchema: z.ZodType<AcceptanceCriterion> = z
   .object({
     id: z.string().regex(CRITERION_ID_RE),
     text: z.string(),
     by: z.enum(CRITERION_BY),
     fact: z.enum(FACTS).optional(),
     person: z.string().optional(),
-    settled: SettledSchema.optional()
+    settled: SettledSchema.optional(),
+    selfCheck: SelfCheckSchema.optional()
   })
   .passthrough()
   .refine((c) => c.by !== 'fact' || c.fact !== undefined, {
@@ -116,14 +192,23 @@ export const CriterionSchema = z
     path: ['fact']
   })
 
-export type AcceptanceCriterion = z.infer<typeof CriterionSchema>
-
 /**
  * A blocker with an id. `reason` is the exact thing needed; `ask` and `unblocks` are the next-step
  * wording and are optional on read because a blocker converted from v3 has neither. `clearsWhen` is a
- * fact that, once it holds, stops the blocker showing with no manual clear.
+ * fact that, once it holds, stops the blocker showing with no manual clear. `raisedAt` is what a
+ * reminder's age is counted from.
  */
-export const BlockerSchema = z
+export interface BlockerV4 {
+  id: string
+  reason: string
+  ask?: string
+  unblocks?: string
+  owner: 'agent' | 'operator'
+  clearsWhen?: ClearsWhen
+  raisedAt?: string
+}
+
+export const BlockerSchema: z.ZodType<BlockerV4> = z
   .object({
     id: z.string().regex(BLOCKER_V4_ID_RE),
     reason: z.string(),
@@ -135,13 +220,18 @@ export const BlockerSchema = z
   })
   .passthrough()
 
-export type BlockerV4 = z.infer<typeof BlockerSchema>
-
 /**
  * An optional stop on the way. A milestone holds no criteria of its own: they live on its steps, so
  * a milestone that carries `acs` (or `criteria`) is refused rather than silently ignored.
  */
-export const MilestoneSchema = z
+export interface Milestone {
+  id: string
+  title: string
+  optional: boolean
+  waitsFor: string | null
+}
+
+export const MilestoneSchema: z.ZodType<Milestone> = z
   .object({
     id: z.string().regex(MILESTONE_ID_RE),
     title: z.string(),
@@ -152,13 +242,24 @@ export const MilestoneSchema = z
   })
   .passthrough()
 
-export type Milestone = z.infer<typeof MilestoneSchema>
-
 /**
  * One unit of work, one pull request. `card` is set only when the step is dispatched to its own session
  * or worktree; `startedAt` when a dispatched step starts or the leader starts one it does itself.
  */
-export const StepSchema = z
+export interface StepV4 {
+  id: string
+  milestone?: string
+  title: string
+  optional?: boolean
+  card?: string
+  startedAt?: string
+  acs: AcceptanceCriterion[]
+  links: MissionLink[]
+  blockers: BlockerV4[]
+  waitsFor?: string | null
+}
+
+export const StepSchema: z.ZodType<StepV4> = z
   .object({
     id: z.string().regex(STEP_V4_ID_RE),
     milestone: z.string().regex(MILESTONE_ID_RE).optional(),
@@ -173,18 +274,29 @@ export const StepSchema = z
   })
   .passthrough()
 
-export type StepV4 = z.infer<typeof StepSchema>
-
 /**
  * Where a session stopped: the step it was on and what it was waiting for. Both optional; the
  * hand-off writes them, a session that is still working has `stoppedAt: null`.
  */
-const StoppedAtSchema = z
+export interface StoppedAt {
+  step?: string
+  waitingFor?: string
+}
+
+export const StoppedAtSchema: z.ZodType<StoppedAt> = z
   .object({ step: z.string().optional(), waitingFor: z.string().optional() })
   .passthrough()
 
 /** One row of the mission's session history. A mission has at most one `leads` open at a time. */
-export const SessionEntrySchema = z
+export interface SessionEntry {
+  id: string
+  role: SessionRole
+  from: string
+  to: string | null
+  stoppedAt?: StoppedAt | null
+}
+
+export const SessionEntrySchema: z.ZodType<SessionEntry> = z
   .object({
     id: z.string(),
     role: z.enum(SESSION_ROLES),
@@ -194,32 +306,57 @@ export const SessionEntrySchema = z
   })
   .passthrough()
 
-export type SessionEntry = z.infer<typeof SessionEntrySchema>
-
 /**
- * A session's request to lead or join a mission that exists, and what the operator answered. The verb
- * that writes it and the door that reads it share this one definition. `decision` is `null` while the
- * request is pending.
+ * A session's request to JOIN a mission that exists, and what the operator answered. Nobody asks to
+ * lead: a session that creates a mission leads it (operator's decision, spec amendment C3-32). The
+ * verb that writes it and the door that reads it share this one definition. `decision` is `null`
+ * while the request is pending; the mission record holds the requests in `attachRequests`.
  */
-export const AttachRequestSchema = z
+export interface AttachRequest {
+  id: string
+  missionId: string
+  sessionId: string
+  at: string
+  decision: 'allowed' | 'denied' | null
+  decidedAt?: string
+}
+
+export const AttachRequestSchema: z.ZodType<AttachRequest> = z
   .object({
     id: z.string().regex(ATTACH_REQUEST_ID_RE),
     missionId: z.string().regex(MISSION_V4_ID_RE),
     sessionId: z.string().min(1),
-    role: z.enum(SESSION_ROLES),
     at: z.string(),
     decision: z.enum(ATTACH_DECISIONS).nullable(),
     decidedAt: z.string().optional()
   })
   .passthrough()
 
-export type AttachRequest = z.infer<typeof AttachRequestSchema>
-
 /**
  * The mission. Key order here is the key order written to disk. `doneWhenVerified` is set on a record
- * converted from a v3 mission whose fixed end was verified: who and when.
+ * converted from a v3 mission whose fixed end was verified: who and when. `attachRequests` is absent
+ * until a session first asks to join.
  */
-export const MissionRecordSchema = z
+export interface MissionV4 {
+  schemaVersion: 4
+  id: string
+  title: string
+  doneWhen: string
+  doneWhenVerified?: { by: string; at: string }
+  status: 'open' | 'closed'
+  closedAs?: 'delivered' | 'discarded'
+  closeReason?: string
+  closeRequested?: { at: string }
+  milestones: Milestone[]
+  steps: StepV4[]
+  sessions: SessionEntry[]
+  links: MissionLink[]
+  blockers: BlockerV4[]
+  attachRequests?: AttachRequest[]
+  legacyV3?: unknown
+}
+
+export const MissionRecordSchema: z.ZodType<MissionV4> = z
   .object({
     schemaVersion: z.literal(4),
     id: z.string().regex(MISSION_V4_ID_RE),
@@ -235,11 +372,30 @@ export const MissionRecordSchema = z
     sessions: z.array(SessionEntrySchema).default([]),
     links: z.array(LinkSchema).default([]),
     blockers: z.array(BlockerSchema).default([]),
+    attachRequests: z.array(AttachRequestSchema).optional(),
     legacyV3: z.unknown().optional()
   })
   .passthrough()
 
-export type MissionV4 = z.infer<typeof MissionRecordSchema>
+/**
+ * Compile-time proof that every entity type is closed: an index signature would make a misspelt field
+ * compile. `npm run typecheck` fails here if one gains `[key: string]: …`.
+ */
+type IsClosed<T> = string extends keyof T ? false : true
+type AssertTrue<T extends true> = T
+export type ClosedEntityTypes = [
+  AssertTrue<IsClosed<MissionV4>>,
+  AssertTrue<IsClosed<Milestone>>,
+  AssertTrue<IsClosed<StepV4>>,
+  AssertTrue<IsClosed<AcceptanceCriterion>>,
+  AssertTrue<IsClosed<Settled>>,
+  AssertTrue<IsClosed<SelfCheck>>,
+  AssertTrue<IsClosed<BlockerV4>>,
+  AssertTrue<IsClosed<MissionLink>>,
+  AssertTrue<IsClosed<SessionEntry>>,
+  AssertTrue<IsClosed<StoppedAt>>,
+  AssertTrue<IsClosed<AttachRequest>>
+]
 
 // ---- File format --------------------------------------------------------------
 

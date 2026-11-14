@@ -648,8 +648,10 @@ describe('what the other slices import (delta 1)', () => {
       expect(MissionRecordSchema.safeParse(bad).success).toBe(false)
       const planted = { ...smallRecord(), attachRequests: [{ ...request, futureKey: 'kept' }] }
       const record = MissionRecordSchema.parse(planted)
-      expect(record).toEqual(planted)
-      expect(parseMissionRecordFile(buildMissionRecordContent(record))).toEqual(planted)
+      expect(record.attachRequests).toEqual(planted.attachRequests)
+      const back = parseMissionRecordFile(buildMissionRecordContent(record))
+      expect(back).toEqual(record)
+      if (!('error' in back)) expect(back.attachRequests).toEqual(planted.attachRequests)
     })
   })
 
