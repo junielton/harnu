@@ -71,16 +71,55 @@ function rowKey(r: LedgerRow): string {
   ])
 }
 
-function dedupe(rows: readonly LedgerRow[]): LedgerRow[] {
-  const seen = new Set<string>()
+/** Rows that state ONE fact about their `ref`: however late or by whom it is seen, it is stored once. */
+const SINGLE_FACT: ReadonlySet<LedgerRow['kind']> = new Set([
+  'pr-opened',
+  'pr-merged',
+  'session-died'
+])
+
+/**
+ * The rows already known, in order, and what tells a new one it is a repeat. Two Harnu instances
+ * on one repo each observe the same world at their own time, so identity is the fact, not the
+ * clock: a pull request opened or merged, or a builder ending, is one fact per `ref`; a CI row
+ * repeats the newest CI state of its pull request; every other row is told apart by its content.
+ */
+class KnownRows {
+  private readonly keys = new Set<string>()
+  private readonly facts = new Set<string>()
+  private readonly lastCi = new Map<string, string | undefined>()
+
+  constructor(known: readonly LedgerRow[] = []) {
+    for (const r of known) this.add(r)
+  }
+
+  has(r: LedgerRow): boolean {
+    if (this.keys.has(rowKey(r))) return true
+    if (SINGLE_FACT.has(r.kind)) return this.facts.has(`${r.kind}\u0000${r.ref}`)
+    return r.kind === 'ci' && this.lastCi.has(r.ref) && this.lastCi.get(r.ref) === r.detail
+  }
+
+  add(r: LedgerRow): void {
+    this.keys.add(rowKey(r))
+    if (SINGLE_FACT.has(r.kind)) this.facts.add(`${r.kind}\u0000${r.ref}`)
+    else if (r.kind === 'ci') this.lastCi.set(r.ref, r.detail)
+  }
+}
+
+/** The rows of `rows` that `known` does not hold yet (and not each other), in order. */
+function freshAgainst(known: readonly LedgerRow[], rows: readonly LedgerRow[]): LedgerRow[] {
+  const seen = new KnownRows(known)
   const out: LedgerRow[] = []
   for (const row of rows) {
-    const key = rowKey(row)
-    if (seen.has(key)) continue
-    seen.add(key)
+    if (seen.has(row)) continue
+    seen.add(row)
     out.push(row)
   }
   return out
+}
+
+function dedupe(rows: readonly LedgerRow[]): LedgerRow[] {
+  return freshAgainst([], rows)
 }
 
 /** The rows a ledger file's text holds; a line that is not a row (a torn write) is skipped. */
@@ -127,8 +166,7 @@ async function appendNew(
   const file = ledgerFilePath(root, missionId)
   const run = (chains.get(file) ?? Promise.resolve()).then(async () => {
     const text = await readText(file)
-    const have = new Set(parseLedgerText(text).map(rowKey))
-    const fresh = dedupe(rows).filter((r) => !have.has(rowKey(r)))
+    const fresh = freshAgainst(parseLedgerText(text), rows)
     if (fresh.length === 0) return 0
     await dataDirReady(root)
     await fs.mkdir(path.dirname(file), { recursive: true })
@@ -244,6 +282,36 @@ export async function readMissionLedger(
   mission: Pick<Mission, 'id' | 'ledger'>
 ): Promise<LedgerRow[]> {
   return mergeLedger(mission.ledger, await readObservedLedger(root, mission.id))
+}
+
+/** Closed missions' row counts: a closed mission's ledger no longer changes, so it is counted once. */
+const closedCounts = new Map<string, number>()
+const CLOSED_COUNTS_MAX = 5000
+
+/**
+ * How many rows a mission's ledger holds, for the list verb. An open mission is counted from the
+ * repo store each time; a CLOSED one is read once and remembered, so a polled list does not read
+ * one ledger file per closed mission on every tick.
+ */
+export async function missionLedgerCount(
+  root: string,
+  mission: Pick<Mission, 'id' | 'ledger' | 'status'>
+): Promise<number> {
+  const key = `${root}\u0000${mission.id}`
+  const closed = mission.status === 'closed'
+  if (closed) {
+    const hit = closedCounts.get(key)
+    if (hit !== undefined) return hit
+  }
+  const count = (await readMissionLedger(root, mission)).length
+  if (closed) {
+    closedCounts.set(key, count)
+    if (closedCounts.size > CLOSED_COUNTS_MAX) {
+      const oldest = closedCounts.keys().next().value
+      if (oldest !== undefined) closedCounts.delete(oldest)
+    }
+  }
+  return count
 }
 
 /** Store every row not yet stored (tests; a debounced write calls this too). */

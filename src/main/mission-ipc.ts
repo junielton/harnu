@@ -60,7 +60,7 @@ import {
 import { loadMission, missionRoot, readMissionsDeduped, type RootedMission } from './missions/store'
 import { createMissionObserver, observeMission, type MissionObserver } from './missions/observer'
 import { ensureLinkCacheLoaded } from './mission-link-cache'
-import { hydrateMissionLedger } from './missions/ledger-store'
+import { hydrateMissionLedger, observedRows } from './missions/ledger-store'
 
 /** One open mission as the renderer reads it (design.md §6 "Mission progress"). */
 export interface MissionView {
@@ -512,6 +512,25 @@ export async function runOperatorDoor(
 // ---- The observer pass (S-3 delta 1) -------------------------------------------------------
 
 /**
+ * Missions v4 S-4 (AC-6): a closed mission is never derived or observed, but the observed rows the
+ * userData cache still holds for it belong in the repo too. Copy them — only for the missions that
+ * have any (a closed mission with nothing cached costs no read), once per process.
+ */
+async function copyClosedMissionLedgers(missions: readonly RootedMission[]): Promise<void> {
+  const closed = missions.filter((m) => m.mission.status === 'closed')
+  if (closed.length === 0) return
+  await ensureLinkCacheLoaded()
+  for (const { root, mission } of closed) {
+    if (observedRows(mission.id).length === 0) continue
+    try {
+      await hydrateMissionLedger(root, mission.id)
+    } catch (err) {
+      console.warn(`[mission-observer] could not copy the cached ledger of ${mission.id}:`, err)
+    }
+  }
+}
+
+/**
  * One observer pass: derive every open mission of `folders` (or the ones linking `onlySessions`)
  * and let the observer record what each reading saw. It does what one `mission:list` poll does
  * — the same file read, the same fleet scan (memoized), one derive per mission, which joins the
@@ -529,8 +548,12 @@ export async function observeOpenMissions(
 ): Promise<number> {
   const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
   if (roots.length === 0) return 0
-  const read = await readMissionsDeduped(roots, { includeClosed: false })
-  const jobs = pickJobs(read.missions, opts.onlySessions)
+  const read = await readMissionsDeduped(roots, { includeClosed: true })
+  await copyClosedMissionLedgers(read.missions)
+  const jobs = pickJobs(
+    read.missions.filter((m) => m.mission.status !== 'closed'),
+    opts.onlySessions
+  )
   if (jobs.length === 0) return 0
   const folderRows = await (opts.scan ?? scanFoldersMemo)()
   await mapLimit(jobs, LIST_CONCURRENCY, async ({ root, mission, log }) => {
