@@ -129,8 +129,8 @@ const LABEL: Record<keyof typeof CAPS, string> = {
 
 /** The forms the spec names: `T685`, `#256`, `PROJ-231`, `stp-3`, `mls-2`. */
 const ID_TOKEN = String.raw`(?:#\d+|T\d+|[A-Z][A-Z0-9]*-\d+|(?:stp|mls)-\d+)`
-const ID_AT_START = new RegExp(String.raw`^\s*\(?${ID_TOKEN}\)?(?!\w)`, 'i')
-const ID_AT_END = new RegExp(String.raw`(?<![\w-])\(?${ID_TOKEN}\)?\s*$`, 'i')
+const ID_AT_START = new RegExp(String.raw`^\s*\(?${ID_TOKEN}\)?(?!\w)`)
+const ID_AT_END = new RegExp(String.raw`(?<![\w-])\(?${ID_TOKEN}\)?\s*$`)
 
 /**
  * Rule 1. A title may not start with an id (`T685 E2E round`) or end with one, in parentheses or not
