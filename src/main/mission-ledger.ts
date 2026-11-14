@@ -98,7 +98,7 @@ export function pickLedgerTargets(
 /**
  * The ledger as `mission_get` reads it: the rows written into the mission file
  * (dispatch, worktree, manifest, verdict, compaction) and the rows observed while
- * reading it (kept beside the link cache), in time order. Equal times keep the file's
+ * reading it (stored beside the mission by `missions/ledger-store.ts`), in time order. Equal times keep the file's
  * rows first, then the observed ones, so the order never depends on the sort engine.
  */
 export function mergeLedger(
