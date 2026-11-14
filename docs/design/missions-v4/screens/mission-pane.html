@@ -1,0 +1,1545 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: mission-pane</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa='mission-pane'][data-state='default'] [data-show]:not([data-show~='default']),
+      [data-dsqa='mission-pane'][data-state='waiting'] [data-show]:not([data-show~='waiting']),
+      [data-dsqa='mission-pane'][data-state='step-open'] [data-show]:not([data-show~='step-open']),
+      [data-dsqa='mission-pane'][data-state='step-blocked']
+        [data-show]:not([data-show~='step-blocked']),
+      [data-dsqa='mission-pane'][data-state='all-steps'] [data-show]:not([data-show~='all-steps']),
+      [data-dsqa='mission-pane'][data-state='ask'] [data-show]:not([data-show~='ask']),
+      [data-dsqa='mission-pane'][data-state='sessions'] [data-show]:not([data-show~='sessions']),
+      [data-dsqa='mission-pane'][data-state='handoff-suggest']
+        [data-show]:not([data-show~='handoff-suggest']),
+      [data-dsqa='mission-pane'][data-state='handoff-confirm']
+        [data-show]:not([data-show~='handoff-confirm']),
+      [data-dsqa='mission-pane'][data-state='clear'] [data-show]:not([data-show~='clear']),
+      [data-dsqa='mission-pane'][data-state='done'] [data-show]:not([data-show~='done']),
+      [data-dsqa='mission-pane'][data-state='other-session']
+        [data-show]:not([data-show~='other-session']),
+      [data-dsqa='mission-pane'][data-state='simple'] [data-show]:not([data-show~='simple']),
+      [data-dsqa='mission-pane'][data-state='simple-signoff']
+        [data-show]:not([data-show~='simple-signoff']),
+      [data-dsqa='mission-pane'][data-state='big'] [data-show]:not([data-show~='big']),
+      [data-dsqa='mission-pane'][data-state='big-waiting']
+        [data-show]:not([data-show~='big-waiting']),
+      [data-dsqa='mission-pane'][data-state='no-mission']
+        [data-show]:not([data-show~='no-mission']),
+      [data-dsqa='mission-pane'][data-state='attach-request']
+        [data-show]:not([data-show~='attach-request']),
+      [data-dsqa='mission-pane'][data-state='closed'] [data-show]:not([data-show~='closed']) {
+        display: none;
+      }
+      [data-dsqa='mission-pane'] .wrap {
+        display: contents;
+      }
+    </style>
+  </head>
+  <body
+    data-states="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+  >
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="ck" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+      <symbol id="flag" viewBox="0 0 24 24">
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+        <path d="M4 22v-7" />
+      </symbol>
+      <symbol id="x" viewBox="0 0 24 24">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </symbol>
+      <symbol id="right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></symbol>
+      <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+      <symbol id="target" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <circle cx="12" cy="12" r="6" />
+        <circle cx="12" cy="12" r="2" />
+      </symbol>
+      <symbol id="inbox" viewBox="0 0 24 24">
+        <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+        <path
+          d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"
+        />
+      </symbol>
+      <symbol id="folder" viewBox="0 0 24 24">
+        <path
+          d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+        />
+      </symbol>
+      <symbol id="expand" viewBox="0 0 24 24">
+        <path d="M15 3h6v6" />
+        <path d="M9 21H3v-6" />
+        <path d="m21 3-7 7" />
+        <path d="m3 21 7-7" />
+      </symbol>
+      <symbol id="msg" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></symbol>
+      <symbol id="swap" viewBox="0 0 24 24">
+        <path d="m16 3 4 4-4 4" />
+        <path d="M20 7H4" />
+        <path d="m8 21-4-4 4-4" />
+        <path d="M4 17h16" />
+      </symbol>
+      <symbol id="plus" viewBox="0 0 24 24">
+        <path d="M5 12h14" />
+        <path d="M12 5v14" />
+      </symbol>
+      <symbol id="link" viewBox="0 0 24 24">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+      </symbol>
+    </svg>
+    <div data-dsqa="mission-pane">
+      <div class="app">
+        <div class="topbar">
+          <span
+            class="crumb"
+            data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session no-mission attach-request closed"
+            ><svg class="i"><use href="#folder" /></svg>harnu &rsaquo;</span
+          ><span class="crumb" data-show="simple simple-signoff"
+            ><svg class="i"><use href="#folder" /></svg>org/www &rsaquo;</span
+          ><span class="crumb" data-show="simple simple-signoff"><b>Data table</b></span
+          ><span class="crumb" data-show="big big-waiting"
+            ><svg class="i"><use href="#folder" /></svg>org/collector &rsaquo;</span
+          ><span class="crumb" data-show="big big-waiting"><b>Collector base</b></span
+          ><span class="chip-role" data-show="big big-waiting">Orchestrator</span
+          ><span
+            class="crumb"
+            data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done closed"
+            ><b>[i] Harnu Spec</b></span
+          ><span class="crumb" data-show="other-session"><b>WebGL renderer</b></span
+          ><span class="crumb" data-show="no-mission attach-request"><b>scratch</b></span
+          ><span
+            class="chip-role"
+            data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done closed"
+            >Orchestrator</span
+          ><span
+            class="pill pressed"
+            data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm"
+            data-goto="mission-pane?state=closed"
+            data-dsqa-part="pill"
+            ><svg class="i i10"><use href="#target" /></svg>4/21 · 3 for you</span
+          ><span class="pill" data-show="closed" data-goto="mission-pane?state=default"
+            ><svg class="i i10"><use href="#target" /></svg>4/21 · 3 for you</span
+          ><span class="pill accent pressed" data-show="clear" data-goto="mission-pane?state=closed"
+            ><svg class="i i10"><use href="#target" /></svg>4/21</span
+          ><span class="pill success pressed" data-show="done" data-goto="mission-pane?state=closed"
+            ><svg class="i i10"><use href="#ck" /></svg>21/21 · ready to close</span
+          ><span class="pill pressed" data-show="other-session"
+            ><svg class="i i10"><use href="#target" /></svg>9/22 · 2 for you</span
+          ><span class="pill pressed" data-show="simple"
+            ><svg class="i i10"><use href="#target" /></svg>0/2 · 1 for you</span
+          ><span class="pill accent pressed" data-show="simple-signoff"
+            ><svg class="i i10"><use href="#target" /></svg>1/2</span
+          ><span class="pill pressed" data-show="big big-waiting"
+            ><svg class="i i10"><use href="#target" /></svg>1/10 · 5 for you</span
+          >
+        </div>
+        <div
+          class="app-body"
+          data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request"
+        >
+          <div class="sb" data-dsqa-part="sidebar">
+            <span class="fold"
+              ><svg class="i"><use href="#folder" /></svg>harnu</span
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done closed"
+              data-goto="mission-pane?state=default"
+            >
+              <span class="t">[i] Harnu Spec</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >4/21 · 3</span
+              ><span class="tag" data-show="clear">4/21</span
+              ><span class="tag" data-show="done">21/21</span></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="other-session simple simple-signoff big big-waiting no-mission attach-request"
+              data-goto="mission-pane?state=default"
+            >
+              <span class="t">[i] Harnu Spec</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >4/21 · 3</span
+              ><span class="tag" data-show="clear">4/21</span
+              ><span class="tag" data-show="done">21/21</span></button
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="other-session"
+              data-goto="mission-pane?state=other-session"
+            >
+              <span class="t">WebGL renderer</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >9/22 · 2</span
+              ></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done simple simple-signoff big big-waiting no-mission attach-request closed"
+              data-goto="mission-pane?state=other-session"
+            >
+              <span class="t">WebGL renderer</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >9/22 · 2</span
+              ></button
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="no-mission attach-request"
+              data-goto="mission-pane?state=no-mission"
+            >
+              <span class="t">scratch</span></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting closed"
+              data-goto="mission-pane?state=no-mission"
+            >
+              <span class="t">scratch</span></button
+            ><span class="fold" style="margin-top: 8px"
+              ><svg class="i"><use href="#folder" /></svg>org/www</span
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="simple simple-signoff"
+              data-goto="mission-pane?state=simple"
+            >
+              <span class="t">Data table</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple big big-waiting no-mission attach-request closed"
+                >0/2 · 1</span
+              ><span class="tag" data-show="simple-signoff">1/2</span></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session big big-waiting no-mission attach-request closed"
+              data-goto="mission-pane?state=simple"
+            >
+              <span class="t">Data table</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple big big-waiting no-mission attach-request closed"
+                >0/2 · 1</span
+              ><span class="tag" data-show="simple-signoff">1/2</span></button
+            ><span class="fold" style="margin-top: 8px"
+              ><svg class="i"><use href="#folder" /></svg>org/collector</span
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="big big-waiting"
+              data-goto="mission-pane?state=big"
+            >
+              <span class="t">Collector base</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >1/10 · 5</span
+              ></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff no-mission attach-request closed"
+              data-goto="mission-pane?state=big"
+            >
+              <span class="t">Collector base</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >1/10 · 5</span
+              >
+            </button>
+          </div>
+          <span
+            class="wrap"
+            data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session no-mission attach-request closed"
+            ><div class="term">
+              <div>
+                <span class="a">●</span>
+                <span class="u"
+                  >Started “Run the tool on the whole test set” in a fresh worktree.</span
+                >
+              </div>
+              <div>&nbsp;&nbsp;⎿ session test-run · worktree …/harnu-T685</div>
+              <div>
+                <span class="a">●</span>
+                <span class="u">It stopped: HARNU_CORPUS_DIR is not set on this machine.</span>
+              </div>
+              <div>&nbsp;&nbsp;⎿ raised a blocker for you</div>
+              <div>&nbsp;</div>
+              <div class="u">&gt; <span style="opacity: 0.6">▍</span></div>
+            </div></span
+          ><span class="wrap" data-show="simple simple-signoff"
+            ><div class="term">
+              <div>
+                <span class="a">●</span> <span class="u">Scoped the task from the tracker.</span>
+              </div>
+              <div>&nbsp;&nbsp;⎿ 5 acceptance criteria pulled in · 3 sign-offs · 2 links</div>
+              <div>
+                <span class="a">●</span>
+                <span class="u"
+                  >Plan: one pull request, desktop and mobile. Waiting for you to confirm.</span
+                >
+              </div>
+              <div>&nbsp;</div>
+              <div class="u">&gt; <span style="opacity: 0.6">▍</span></div>
+            </div></span
+          ><span class="wrap" data-show="big big-waiting"
+            ><div class="term">
+              <div>
+                <span class="a">●</span>
+                <span class="u"
+                  >Milestones 2, 3 and 4 are built. 4 pull requests wait for review.</span
+                >
+              </div>
+              <div>&nbsp;&nbsp;⎿ they stack: #21, then #27, then #29 and #28</div>
+              <div>
+                <span class="a">●</span>
+                <span class="u">Nothing is running. 5 things wait for you.</span>
+              </div>
+              <div>&nbsp;</div>
+              <div class="u">&gt; <span style="opacity: 0.6">▍</span></div>
+            </div></span
+          >
+          <div class="hp" data-dsqa-part="mission-pane">
+            <div class="hp-h">
+              <svg class="i i13"><use href="#target" /></svg>Mission<span class="sp"
+                ><button type="button" title="Close" data-goto="mission-pane?state=closed">
+                  <svg class="i"><use href="#x" /></svg></button
+              ></span>
+            </div>
+            <div
+              class="wrap"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done"
+            >
+              <div class="hp-b">
+                <div class="hs" data-dsqa-part="mission-head">
+                  <h2>Measure harnu:spec, then fix what the numbers show</h2>
+                  <div
+                    class="pbar"
+                    data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="21"
+                    aria-valuenow="4"
+                  >
+                    <i style="width: 19%"></i><span><b>4</b> of 21 steps done</span>
+                  </div>
+                  <div
+                    class="pbar full"
+                    data-show="done"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="21"
+                    aria-valuenow="21"
+                  >
+                    <i style="width: 100%"></i><span><b>21</b> of 21 steps done</span>
+                  </div>
+                  <div
+                    class="ns you"
+                    data-show="default step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm"
+                  >
+                    <span class="k">Your next step</span
+                    ><span class="tx">Approve the plan for the scoring tool</span
+                    ><span class="why">9 finished steps wait for it.</span>
+                    <div class="ac">
+                      <button type="button" class="btn primary">Approve</button
+                      ><button type="button" class="more" data-goto="mission-pane?state=waiting">
+                        2 more waiting on you
+                      </button>
+                    </div>
+                  </div>
+                  <div class="ns you" data-show="waiting" data-dsqa-part="waiting">
+                    <span class="k">Your next step</span>
+                    <span class="tx">Approve the plan for the scoring tool</span
+                    ><span class="why">9 finished steps wait for it.</span>
+                    <div class="ac">
+                      <button type="button" class="btn primary">Approve</button
+                      ><button type="button" class="more" data-goto="mission-pane?state=default">
+                        Show less
+                      </button>
+                    </div>
+                    <div class="rest">
+                      <div class="wy-r">
+                        <span
+                          ><span class="k unblock">Unblock</span>Tell this machine where the private
+                          test files are</span
+                        ><span class="sub">The test run starts right after · waiting 40m</span
+                        ><button
+                          type="button"
+                          class="btn sm"
+                          data-goto="mission-pane?state=step-blocked"
+                        >
+                          Open step
+                        </button>
+                      </div>
+                      <div class="wy-r">
+                        <span><span class="k review">Review</span>Look over 8 pull requests</span
+                        ><span class="sub">All pass CI · waiting 1h 50m</span
+                        ><button type="button" class="btn sm">GitHub</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="ns" data-show="clear">
+                    <span class="k">Next step</span
+                    ><span class="tx">5 steps are running. Nothing for you right now.</span>
+                  </div>
+                  <div class="ns ok" data-show="done">
+                    <span class="k">Your next step</span
+                    ><span class="tx">Everything is done. Look it over and close the mission.</span>
+                    <div class="ac">
+                      <button type="button" class="btn primary">
+                        <svg class="i i14"><use href="#flag" /></svg>Close mission…
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="hs">
+                  <div
+                    class="tree"
+                    data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear"
+                    data-dsqa-part="tree"
+                  >
+                    <button type="button" class="mrow done">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g verified"
+                        ><svg class="i"><use href="#ck" /></svg></span
+                      ><span class="nm">A test set we can trust</span><span class="rt">4/4</span>
+                    </button>
+                    <button type="button" class="mrow now">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#down" /></svg></span
+                      ><span class="g running cur"></span
+                      ><span class="nm">A tool that scores a spec</span><span class="rt">0/14</span>
+                    </button>
+                    <div class="mopen">
+                      <div class="msum">
+                        <span
+                          data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm"
+                          >4 running · 9 waiting for review ·
+                          <span class="bad">1 blocked</span></span
+                        ><span data-show="clear">5 running · 9 waiting for review</span>
+                        <button
+                          type="button"
+                          class="btn sm ask"
+                          data-show="default waiting step-open step-blocked all-steps sessions handoff-suggest handoff-confirm clear"
+                          data-goto="mission-pane?state=ask"
+                          title="Ask the session about this milestone"
+                        >
+                          <svg class="i i10"><use href="#msg" /></svg>Ask
+                        </button>
+                      </div>
+                      <div class="askbox" data-show="ask" data-dsqa-part="ask">
+                        <div class="in">
+                          What is still missing to finish this milestone?<span style="opacity: 0.6"
+                            >▍</span
+                          >
+                        </div>
+                        <div class="ft">
+                          <span>Sent to [i] Harnu Spec. The answer shows in that session.</span>
+                          <span class="r"
+                            ><button
+                              type="button"
+                              class="btn sm ghost"
+                              data-goto="mission-pane?state=default"
+                            >
+                              Cancel</button
+                            ><button
+                              type="button"
+                              class="btn sm primary"
+                              data-goto="mission-pane?state=default"
+                            >
+                              Send
+                            </button></span
+                          >
+                        </div>
+                      </div>
+                      <span
+                        class="wrap"
+                        data-show="default waiting step-open all-steps ask sessions handoff-suggest handoff-confirm"
+                        ><button
+                          type="button"
+                          class="srow"
+                          data-goto="mission-pane?state=step-blocked"
+                        >
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g" style="color: var(--color-red)"
+                            ><svg class="i"><use href="#flag" /></svg></span
+                          ><span class="nm">Run the tool on the whole test set</span
+                          ><span class="rt"><span class="chip red">Blocked</span></span>
+                        </button></span
+                      >
+                      <span class="wrap" data-show="step-blocked"
+                        ><button type="button" class="srow" data-goto="mission-pane?state=default">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#down" /></svg></span
+                          ><span class="g" style="color: var(--color-red)"
+                            ><svg class="i"><use href="#flag" /></svg></span
+                          ><span class="nm">Run the tool on the whole test set</span
+                          ><span class="rt"><span class="chip red">Blocked</span></span>
+                        </button></span
+                      >
+                      <span class="wrap" data-show="clear"
+                        ><button type="button" class="srow">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g running"></span
+                          ><span class="nm">Run the tool on the whole test set</span
+                          ><span class="rt">running</span>
+                        </button></span
+                      >
+                      <div class="acs" data-show="step-blocked" data-dsqa-part="blocker">
+                        <div class="blk">
+                          <span class="h"
+                            ><svg class="i i13"><use href="#flag" /></svg>Blocked · waiting for you
+                            · 40m</span
+                          >
+                          <span
+                            >This machine doesn’t know where the private test files are. Set
+                            <span class="mono">HARNU_CORPUS_DIR</span> to their folder and the run
+                            starts.</span
+                          >
+                          <span style="display: flex; gap: 6px"
+                            ><button
+                              type="button"
+                              class="btn sm primary"
+                              data-goto="mission-pane?state=default"
+                            >
+                              Done, continue</button
+                            ><button type="button" class="btn sm">Open session</button></span
+                          >
+                        </div>
+                        <span class="hd">Acceptance criteria</span>
+                        <div class="ac">
+                          <span class="nac"></span
+                          ><span>The run finishes on both test sets and writes a report</span
+                          ><span class="by">not yet</span>
+                        </div>
+                        <div class="ac">
+                          <span class="nac"></span
+                          ><span>The pull request is open and passes CI</span
+                          ><span class="by">not yet</span>
+                        </div>
+                        <div class="ac">
+                          <span class="box"></span><span>You read the report</span
+                          ><span class="by">later</span>
+                        </div>
+                      </div>
+                      <span
+                        class="wrap"
+                        data-show="default waiting step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear"
+                        ><button
+                          type="button"
+                          class="srow"
+                          data-goto="mission-pane?state=step-open"
+                        >
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">Write the plan for the scoring tool</span
+                          ><span class="rt"
+                            ><span
+                              class="chip warn"
+                              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm"
+                              >Yours</span
+                            ></span
+                          >
+                        </button></span
+                      >
+                      <span class="wrap" data-show="step-open"
+                        ><button type="button" class="srow" data-goto="mission-pane?state=default">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#down" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">Write the plan for the scoring tool</span
+                          ><span class="rt"><span class="chip warn">Yours</span></span>
+                        </button></span
+                      >
+                      <div class="acs" data-show="step-open" data-dsqa-part="acs">
+                        <span class="hd">Acceptance criteria</span>
+                        <div class="ac">
+                          <span class="okc"
+                            ><svg class="i"><use href="#ck" /></svg></span
+                          ><span>The plan names the test files and how they are split</span
+                          ><span class="by" title="Checked by a second session">verified</span>
+                        </div>
+                        <div class="ac">
+                          <span class="okc"
+                            ><svg class="i"><use href="#ck" /></svg></span
+                          ><span>Every reviewer question has an answer</span
+                          ><span class="by" title="Checked by a second session">verified</span>
+                        </div>
+                        <div class="ac open">
+                          <span class="box"></span><span>You approved the plan</span
+                          ><button type="button" class="btn sm primary">Approve</button>
+                        </div>
+                        <span class="hd">Links from the session</span>
+                        <div class="lks">
+                          <span class="lk"
+                            ><svg class="i i10"><use href="#link" /></svg>scoring-tool-plan.md</span
+                          ><span class="lk"
+                            ><svg class="i i10"><use href="#link" /></svg>review-answers.md</span
+                          ><span class="lk" title="The finished page, ready to open"
+                            ><svg class="i i10"><use href="#link" /></svg>Page ·
+                            localhost:5173/score-report</span
+                          >
+                        </div>
+                      </div>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#right" /></svg></span
+                        ><span class="g running"></span
+                        ><span class="nm">Compare two versions of a spec</span
+                        ><span class="rt">running</span>
+                      </button>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#right" /></svg></span
+                        ><span class="g running"></span
+                        ><span class="nm">Show the scores in the terminal</span
+                        ><span class="rt">running</span>
+                      </button>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#right" /></svg></span
+                        ><span class="g running"></span
+                        ><span class="nm">Save the results of every round</span
+                        ><span class="rt">running</span>
+                      </button>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#right" /></svg></span
+                        ><span class="g running"></span
+                        ><span class="nm">Warn when a score drops</span
+                        ><span class="rt">running</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="morelink"
+                        data-show="default waiting step-open step-blocked ask sessions handoff-suggest handoff-confirm clear"
+                        data-goto="mission-pane?state=all-steps"
+                      >
+                        8 more waiting for review
+                      </button>
+                      <span class="wrap" data-show="all-steps">
+                        <button type="button" class="srow">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">Load the test files</span
+                          ><span class="rt"
+                            ><span class="prl" title="Open the pull request">#256</span></span
+                          >
+                        </button>
+                        <button type="button" class="srow">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">Keep an untouched set for the final check</span
+                          ><span class="rt"
+                            ><span class="prl" title="Open the pull request">#257</span></span
+                          >
+                        </button>
+                        <button type="button" class="srow">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">Score a spec against the rubric</span
+                          ><span class="rt"
+                            ><span class="prl" title="Open the pull request">#258</span></span
+                          >
+                        </button>
+                        <button type="button" class="srow">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">One command to run a round</span
+                          ><span class="rt"
+                            ><span class="prl" title="Open the pull request">#259</span></span
+                          >
+                        </button>
+                        <button type="button" class="srow">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">Report of the results</span
+                          ><span class="rt"
+                            ><span class="prl" title="Open the pull request">#261</span></span
+                          >
+                        </button>
+                        <button type="button" class="srow">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">Fail when test coverage drops</span
+                          ><span class="rt"
+                            ><span class="prl" title="Open the pull request">#262</span></span
+                          >
+                        </button>
+                        <button type="button" class="srow">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">Keep the untouched set out of the repo</span
+                          ><span class="rt"
+                            ><span class="prl" title="Open the pull request">#265</span></span
+                          >
+                        </button>
+                        <button type="button" class="srow">
+                          <span class="cv"
+                            ><svg class="i i10"><use href="#right" /></svg></span
+                          ><span class="g"><span class="ring"></span></span
+                          ><span class="nm">Docs and changelog</span
+                          ><span class="rt"
+                            ><span class="prl" title="Open the pull request">#277</span></span
+                          >
+                        </button>
+                        <button
+                          type="button"
+                          class="morelink"
+                          data-goto="mission-pane?state=default"
+                        >
+                          Show less
+                        </button></span
+                      >
+                    </div>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span
+                      ><span class="nm">Two fixes, each proven by the score</span
+                      ><span class="rt">0/3</span>
+                    </button>
+                  </div>
+                  <div class="tree" data-show="done">
+                    <button type="button" class="mrow done">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g verified"
+                        ><svg class="i"><use href="#ck" /></svg></span
+                      ><span class="nm">A test set we can trust</span><span class="rt">4/4</span>
+                    </button>
+                    <button type="button" class="mrow done">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g verified"
+                        ><svg class="i"><use href="#ck" /></svg></span
+                      ><span class="nm">A tool that scores a spec</span
+                      ><span class="rt">14/14</span>
+                    </button>
+                    <button type="button" class="mrow done">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g verified"
+                        ><svg class="i"><use href="#ck" /></svg></span
+                      ><span class="nm">Two fixes, each proven by the score</span
+                      ><span class="rt">3/3</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="hs" data-dsqa-part="sessions">
+                  <button
+                    type="button"
+                    class="secrow"
+                    data-show="default waiting step-open step-blocked all-steps ask handoff-suggest handoff-confirm clear done"
+                    data-goto="mission-pane?state=sessions"
+                  >
+                    <span class="cv"
+                      ><svg class="i i10"><use href="#right" /></svg></span
+                    ><span class="eyebrow">Sessions</span
+                    ><span class="meta">7 · led by this session</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="secrow"
+                    data-show="sessions"
+                    data-goto="mission-pane?state=default"
+                  >
+                    <span class="cv"
+                      ><svg class="i i10"><use href="#down" /></svg></span
+                    ><span class="eyebrow">Sessions</span><span class="meta">7</span>
+                  </button>
+                  <div class="sess" data-show="sessions">
+                    <div class="se">
+                      <span class="d live"></span
+                      ><span><b>[i] Harnu Spec</b> · leads the mission · this session</span
+                      ><span class="sub">since Nov 13 · milestone 2</span>
+                    </div>
+                    <div class="se">
+                      <span class="d"></span
+                      ><span><b>test-run</b> · Run the tool on the whole test set</span
+                      ><span class="sub">stopped 40m ago · blocked, waiting for you</span>
+                    </div>
+                    <div class="se">
+                      <span class="d live"></span
+                      ><span><b>4 sessions</b> · each running one step</span
+                      ><span class="sub">in their own worktrees, in parallel</span>
+                    </div>
+                    <div class="se">
+                      <span class="d off"></span><span><b>orch-1</b> · led it before</span
+                      ><span class="sub">Nov 12 to Nov 13 · stopped at milestone 1</span>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn sm"
+                      data-goto="mission-pane?state=handoff-confirm"
+                    >
+                      <svg class="i i10"><use href="#swap" /></svg>Continue in a new session…
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="wrap" data-show="other-session">
+              <div class="hp-b">
+                <div class="hs">
+                  <h2>Make WebGL the default terminal renderer</h2>
+                  <div
+                    class="pbar"
+                    data-show="other-session"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="22"
+                    aria-valuenow="9"
+                  >
+                    <i style="width: 40.9%"></i><span><b>9</b> of 22 steps done</span>
+                  </div>
+                  <div class="ns you">
+                    <span class="k">Your next step</span
+                    ><span class="tx"
+                      >main is failing since #301 was merged. Fix it or undo the merge.</span
+                    >
+                    <div class="ac">
+                      <button type="button" class="btn primary">Open task</button
+                      ><button type="button" class="more">1 more waiting on you</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="hs">
+                  <div class="tree">
+                    <button type="button" class="mrow done">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g verified"
+                        ><svg class="i"><use href="#ck" /></svg></span
+                      ><span class="nm">Know how fast the old renderer is</span
+                      ><span class="rt">4/4</span>
+                    </button>
+                    <button type="button" class="mrow done">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g verified"
+                        ><svg class="i"><use href="#ck" /></svg></span
+                      ><span class="nm">WebGL works behind a switch</span
+                      ><span class="rt">5/5</span>
+                    </button>
+                    <button type="button" class="mrow now">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#down" /></svg></span
+                      ><span class="g running cur"></span
+                      ><span class="nm">WebGL is the default, the old one is the fallback</span
+                      ><span class="rt">2/5</span>
+                    </button>
+                    <div class="mopen">
+                      <div class="msum">
+                        <span>2 done · 1 in progress · 2 to do</span
+                        ><button type="button" class="btn sm ask">
+                          <svg class="i i10"><use href="#msg" /></svg>Ask
+                        </button>
+                      </div>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#right" /></svg></span
+                        ><span class="g verified"
+                          ><svg class="i"><use href="#ck" /></svg></span
+                        ><span class="nm">Make WebGL the default</span
+                        ><span class="rt"
+                          ><span class="prl" title="Open the pull request">#298</span></span
+                        >
+                      </button>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#right" /></svg></span
+                        ><span class="g verified"
+                          ><svg class="i"><use href="#ck" /></svg></span
+                        ><span class="nm">Share the glyph cache between panes</span
+                        ><span class="rt"><span class="chip red">broke main</span></span>
+                      </button>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#right" /></svg></span
+                        ><span class="g running cur"></span
+                        ><span class="nm">Fall back when the GPU context is lost</span
+                        ><span class="rt"
+                          ><span class="prl" title="Open the pull request">#305</span></span
+                        >
+                      </button>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#right" /></svg></span
+                        ><span class="g todo"></span
+                        ><span class="nm">Repaint when the theme changes</span
+                        ><span class="rt"></span>
+                      </button>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#right" /></svg></span
+                        ><span class="g todo"></span><span class="nm">Settings switch and docs</span
+                        ><span class="rt"></span>
+                      </button>
+                    </div>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span
+                      ><span class="nm">CI stops changes that slow it down</span
+                      ><span class="rt">0/4</span>
+                    </button>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span><span class="nm">Remove the old renderer</span
+                      ><span class="rt">0/4</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="hs">
+                  <button type="button" class="secrow">
+                    <span class="cv"
+                      ><svg class="i i10"><use href="#right" /></svg></span
+                    ><span class="eyebrow">Sessions</span
+                    ><span class="meta">2 · led by this session</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="wrap" data-show="simple simple-signoff">
+              <div class="hp-b">
+                <div class="hs">
+                  <h2>Build the data table section</h2>
+                  <div
+                    class="pbar"
+                    data-show="simple"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="2"
+                    aria-valuenow="0"
+                  >
+                    <span><b>0</b> of 2 steps done</span>
+                  </div>
+                  <div
+                    class="pbar"
+                    data-show="simple-signoff"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="2"
+                    aria-valuenow="1"
+                  >
+                    <i style="width: 50%"></i><span><b>1</b> of 2 steps done</span>
+                  </div>
+                  <div class="ns you" data-show="simple">
+                    <span class="k">Your next step</span
+                    ><span class="tx">Confirm the plan: one pull request, desktop and mobile</span
+                    ><span class="why">The build starts when you confirm.</span>
+                    <div class="ac"><button type="button" class="btn primary">Confirm</button></div>
+                  </div>
+                  <div class="ns" data-show="simple-signoff">
+                    <span class="k">Next step · waiting for other people</span
+                    ><span class="tx"
+                      >The designer is reviewing. Mark the sign-off here when they approve.</span
+                    >
+                  </div>
+                </div>
+                <div class="hs">
+                  <div class="tree" data-show="simple">
+                    <button type="button" class="mrow now">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#down" /></svg></span
+                      ><span class="g todo cur"></span
+                      ><span class="nm">Build the table, desktop and mobile</span
+                      ><span class="rt">to do</span>
+                    </button>
+                    <div class="mopen">
+                      <div class="acs" data-dsqa-part="task-acs">
+                        <span class="hd">Acceptance criteria · from the task</span>
+                        <div class="ac">
+                          <span class="nac"></span
+                          ><span>Desktop matches the Figma frame, in light and dark</span
+                          ><span class="by">second session</span>
+                        </div>
+                        <div class="ac">
+                          <span class="nac"></span><span>Desktop adapts to every screen width</span
+                          ><span class="by">second session</span>
+                        </div>
+                        <div class="ac">
+                          <span class="nac"></span
+                          ><span>Mobile matches the Figma frame, in light and dark</span
+                          ><span class="by">second session</span>
+                        </div>
+                        <div class="ac">
+                          <span class="nac"></span><span>Mobile adapts to every screen width</span
+                          ><span class="by">second session</span>
+                        </div>
+                        <div class="ac">
+                          <span class="nac"></span><span>Everything the design calls out works</span
+                          ><span class="by">second session</span>
+                        </div>
+                        <div class="note">
+                          Not expected to work: anything that needs a real API.
+                        </div>
+                        <span class="hd">Links from the task</span>
+                        <div class="lks">
+                          <span class="lk"
+                            ><svg class="i i10"><use href="#link" /></svg>Figma frame</span
+                          ><span class="lk"
+                            ><svg class="i i10"><use href="#link" /></svg>Design system</span
+                          ><span class="lk"
+                            ><svg class="i i10"><use href="#link" /></svg>Task in the tracker</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="mrow"
+                      data-goto="mission-pane?state=simple-signoff"
+                    >
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span><span class="nm">Get the sign-offs</span
+                      ><span class="rt">3</span>
+                    </button>
+                  </div>
+                  <div class="tree" data-show="simple-signoff">
+                    <button type="button" class="mrow done" data-goto="mission-pane?state=simple">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g verified"
+                        ><svg class="i"><use href="#ck" /></svg></span
+                      ><span class="nm">Build the table, desktop and mobile</span
+                      ><span class="rt"><span class="prl">#412</span></span>
+                    </button>
+                    <button type="button" class="mrow now">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#down" /></svg></span
+                      ><span class="g running cur"></span><span class="nm">Get the sign-offs</span
+                      ><span class="rt">1 of 3</span>
+                    </button>
+                    <div class="mopen">
+                      <div class="acs" data-dsqa-part="signoffs">
+                        <span class="hd"
+                          >Sign-offs · you mark each one when the person approves</span
+                        >
+                        <div class="ac">
+                          <span class="okc"
+                            ><svg class="i"><use href="#ck" /></svg></span
+                          ><span>The QA analyst signed off</span
+                          ><span class="by">marked by you · Nov 14</span>
+                        </div>
+                        <div class="ac open">
+                          <span class="box"></span><span>The designer signed off</span
+                          ><span class="by">waiting for the designer</span>
+                        </div>
+                        <div class="ac open">
+                          <span class="box"></span
+                          ><span>The project manager was told it is done</span
+                          ><span class="by">yours, after the designer</span>
+                        </div>
+                      </div>
+                      <div class="acs">
+                        <span class="hd">Links from the session</span>
+                        <div class="lks">
+                          <span class="lk"
+                            ><svg class="i i10"><use href="#link" /></svg>Pull request #412</span
+                          ><span class="lk"
+                            ><svg class="i i10"><use href="#link" /></svg>Page ·
+                            localhost:8000/design-system/data-table</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="wrap" data-show="big big-waiting">
+              <div class="hp-b">
+                <div class="hs">
+                  <h2>Collect partner listings every day, live in production</h2>
+                  <div
+                    class="pbar"
+                    data-show="big big-waiting"
+                    role="progressbar"
+                    aria-valuemin="0"
+                    aria-valuemax="10"
+                    aria-valuenow="1"
+                  >
+                    <i style="width: 10%"></i><span><b>1</b> of 10 milestones done</span>
+                  </div>
+                  <div class="ns you" data-show="big">
+                    <span class="k">Your next step</span
+                    ><span class="tx"
+                      >main is failing since #16 was merged. Fix it or undo the merge.</span
+                    ><span class="why">Every open pull request stacks on it.</span>
+                    <div class="ac">
+                      <button type="button" class="btn primary">Open step</button
+                      ><button
+                        type="button"
+                        class="more"
+                        data-goto="mission-pane?state=big-waiting"
+                      >
+                        4 more waiting on you
+                      </button>
+                    </div>
+                  </div>
+                  <div class="ns you" data-show="big-waiting">
+                    <span class="k">Your next step</span
+                    ><span class="tx"
+                      >main is failing since #16 was merged. Fix it or undo the merge.</span
+                    ><span class="why">Every open pull request stacks on it.</span>
+                    <div class="ac">
+                      <button type="button" class="btn primary">Open step</button
+                      ><button type="button" class="more" data-goto="mission-pane?state=big">
+                        Show less
+                      </button>
+                    </div>
+                    <div class="rest">
+                      <div class="wy-r">
+                        <span
+                          ><span class="k review">Review</span>Review and merge #21, sign-in and
+                          users</span
+                        ><span class="sub">3 other pull requests stack on it</span
+                        ><button type="button" class="btn sm">GitHub</button>
+                      </div>
+                      <div class="wy-r">
+                        <span
+                          ><span class="k check">Check</span>In two browsers, switch a user off and
+                          see the other logged out</span
+                        ><span class="sub">Sign-in and users</span
+                        ><button type="button" class="btn sm">Mark done</button>
+                      </div>
+                      <div class="wy-r">
+                        <span
+                          ><span class="k check">Check</span>Run one live call to the fetch
+                          service</span
+                        ><span class="sub">Page fetcher · uses 1 credit</span
+                        ><button type="button" class="btn sm">Mark done</button>
+                      </div>
+                      <div class="wy-r">
+                        <span><span class="k review">Review</span>Review #27, #29 and #28</span
+                        ><span class="sub">#29 and #28 fail CI until main is fixed</span
+                        ><button type="button" class="btn sm">GitHub</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="hs">
+                  <div class="tree" data-dsqa-part="big-tree">
+                    <button type="button" class="mrow done">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g verified"
+                        ><svg class="i"><use href="#ck" /></svg></span
+                      ><span class="nm">A test foundation we can trust</span
+                      ><span class="rt"><span class="chip red">main failing</span>4/4</span>
+                    </button>
+                    <button type="button" class="mrow now">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#down" /></svg></span
+                      ><span class="g"><span class="ring"></span></span
+                      ><span class="nm">Sign-in and users</span><span class="rt">0/1</span>
+                    </button>
+                    <div class="mopen">
+                      <div class="msum">
+                        <span>Nothing running · 1 waiting for review · 1 check for you</span
+                        ><button type="button" class="btn sm ask">
+                          <svg class="i i10"><use href="#msg" /></svg>Ask
+                        </button>
+                      </div>
+                      <button type="button" class="srow">
+                        <span class="cv"
+                          ><svg class="i i10"><use href="#down" /></svg></span
+                        ><span class="g"><span class="ring"></span></span
+                        ><span class="nm">Sign-in by code, users, roles and notices</span
+                        ><span class="rt"><span class="prl">#21</span></span>
+                      </button>
+                      <div class="acs">
+                        <span class="hd">Acceptance criteria</span>
+                        <div class="ac">
+                          <span class="okc"
+                            ><svg class="i"><use href="#ck" /></svg></span
+                          ><span>19 criteria verified by a second session</span
+                          ><span class="by">show</span>
+                        </div>
+                        <div class="ac open">
+                          <span class="box"></span
+                          ><span>In two browsers, switching a user off logs the other one out</span
+                          ><button type="button" class="btn sm">Mark done</button>
+                        </div>
+                        <span class="hd">Links from the session</span>
+                        <div class="lks">
+                          <span class="lk"
+                            ><svg class="i i10"><use href="#link" /></svg>Pull request #21</span
+                          ><span class="lk"
+                            ><svg class="i i10"><use href="#link" /></svg>Page ·
+                            localhost:8000/login</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g"><span class="ring"></span></span
+                      ><span class="nm">Site registry, schedule and settings</span
+                      ><span class="rt"><span class="chip red">CI failing</span>0/2</span>
+                    </button>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g"><span class="ring"></span></span
+                      ><span class="nm">Page fetcher and page archive</span
+                      ><span class="rt"><span class="chip warn">1 for you</span>0/1</span>
+                    </button>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span
+                      ><span class="nm">Extraction rules and the first site profile</span
+                      ><span class="rt"></span>
+                    </button>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span
+                      ><span class="nm">Runs, problem detection and budgets</span
+                      ><span class="rt"></span>
+                    </button>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span
+                      ><span class="nm">Item tracking and raw observations</span
+                      ><span class="rt"></span>
+                    </button>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span
+                      ><span class="nm">Clean names and a review queue</span
+                      ><span class="rt"></span>
+                    </button>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span
+                      ><span class="nm">Inventory sync with the partner</span
+                      ><span class="rt"></span>
+                    </button>
+                    <button type="button" class="mrow">
+                      <span class="cv"
+                        ><svg class="i i10"><use href="#right" /></svg></span
+                      ><span class="g todo"></span><span class="nm">First launch and sign-off</span
+                      ><span class="rt"></span>
+                    </button>
+                  </div>
+                  <button type="button" class="morelink" style="padding-left: 0; margin-top: 8px">
+                    2 optional milestones
+                  </button>
+                </div>
+                <div class="hs">
+                  <button type="button" class="secrow">
+                    <span class="cv"
+                      ><svg class="i i10"><use href="#right" /></svg></span
+                    ><span class="eyebrow">Sessions</span
+                    ><span class="meta">14 · none running now</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="wrap" data-show="no-mission attach-request">
+              <div class="hp-b">
+                <div
+                  class="hp-empty"
+                  style="align-items: stretch; text-align: left; padding: 20px 16px"
+                >
+                  <span style="display: flex; gap: 8px; align-items: center"
+                    ><span class="ic"
+                      ><svg class="i i14"><use href="#target" /></svg></span
+                    ><b style="font-weight: 500; color: var(--color-text)"
+                      >This session has no mission.</b
+                    ></span
+                  >
+                  <div class="req" data-show="attach-request" data-dsqa-part="attach-request">
+                    <span class="k">Asks to join</span>
+                    <span
+                      >This session asks to lead
+                      <b style="font-weight: 600"
+                        >Measure harnu:spec, then fix what the numbers show</b
+                      >. It will read the mission summary and take over from [i] Harnu Spec.</span
+                    >
+                    <span class="ac2"
+                      ><button
+                        type="button"
+                        class="btn sm primary"
+                        data-goto="mission-pane?state=default"
+                      >
+                        Allow</button
+                      ><button
+                        type="button"
+                        class="btn sm ghost"
+                        data-goto="mission-pane?state=no-mission"
+                      >
+                        Deny
+                      </button></span
+                    >
+                  </div>
+                  <div class="pick" data-show="no-mission" data-dsqa-part="attach-picker">
+                    <span class="hd">Open missions in this folder</span>
+                    <div class="pk">
+                      <span>Measure harnu:spec, then fix what the numbers show</span
+                      ><span class="sub">4 of 21 steps done · led by [i] Harnu Spec</span
+                      ><button type="button" class="btn sm" data-goto="mission-pane?state=default">
+                        <svg class="i i10"><use href="#link" /></svg>Attach
+                      </button>
+                    </div>
+                    <div class="pk">
+                      <span>Make WebGL the default terminal renderer</span
+                      ><span class="sub">9 of 22 steps done · led by WebGL renderer</span
+                      ><button type="button" class="btn sm">
+                        <svg class="i i10"><use href="#link" /></svg>Attach
+                      </button>
+                    </div>
+                    <button type="button" class="btn sm ghost" style="align-self: flex-start">
+                      <svg class="i i10"><use href="#plus" /></svg>Start a new mission
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="notice" data-show="handoff-suggest" data-dsqa-part="handoff-notice">
+              <span
+                >This session is getting long (82% of its memory is used). You can continue the
+                mission in a fresh session. It starts from the mission summary, so nothing is
+                lost.</span
+              >
+              <span class="ac2"
+                ><button
+                  type="button"
+                  class="btn sm primary"
+                  data-goto="mission-pane?state=handoff-confirm"
+                >
+                  <svg class="i i10"><use href="#swap" /></svg>Continue in a new session…</button
+                ><button type="button" class="btn sm ghost" data-goto="mission-pane?state=default">
+                  Not now
+                </button></span
+              >
+            </div>
+            <div
+              class="hp-f"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting"
+            >
+              <button type="button" class="btn sm ghost">
+                <svg class="i i10"><use href="#flag" /></svg>Close mission…
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="app-body no-pane" data-show="closed">
+          <div class="sb" data-dsqa-part="sidebar">
+            <span class="fold"
+              ><svg class="i"><use href="#folder" /></svg>harnu</span
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done closed"
+              data-goto="mission-pane?state=default"
+            >
+              <span class="t">[i] Harnu Spec</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >4/21 · 3</span
+              ><span class="tag" data-show="clear">4/21</span
+              ><span class="tag" data-show="done">21/21</span></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="other-session simple simple-signoff big big-waiting no-mission attach-request"
+              data-goto="mission-pane?state=default"
+            >
+              <span class="t">[i] Harnu Spec</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >4/21 · 3</span
+              ><span class="tag" data-show="clear">4/21</span
+              ><span class="tag" data-show="done">21/21</span></button
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="other-session"
+              data-goto="mission-pane?state=other-session"
+            >
+              <span class="t">WebGL renderer</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >9/22 · 2</span
+              ></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done simple simple-signoff big big-waiting no-mission attach-request closed"
+              data-goto="mission-pane?state=other-session"
+            >
+              <span class="t">WebGL renderer</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >9/22 · 2</span
+              ></button
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="no-mission attach-request"
+              data-goto="mission-pane?state=no-mission"
+            >
+              <span class="t">scratch</span></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting closed"
+              data-goto="mission-pane?state=no-mission"
+            >
+              <span class="t">scratch</span></button
+            ><span class="fold" style="margin-top: 8px"
+              ><svg class="i"><use href="#folder" /></svg>org/www</span
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="simple simple-signoff"
+              data-goto="mission-pane?state=simple"
+            >
+              <span class="t">Data table</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple big big-waiting no-mission attach-request closed"
+                >0/2 · 1</span
+              ><span class="tag" data-show="simple-signoff">1/2</span></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session big big-waiting no-mission attach-request closed"
+              data-goto="mission-pane?state=simple"
+            >
+              <span class="t">Data table</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple big big-waiting no-mission attach-request closed"
+                >0/2 · 1</span
+              ><span class="tag" data-show="simple-signoff">1/2</span></button
+            ><span class="fold" style="margin-top: 8px"
+              ><svg class="i"><use href="#folder" /></svg>org/collector</span
+            ><button
+              type="button"
+              class="ses sel"
+              data-show="big big-waiting"
+              data-goto="mission-pane?state=big"
+            >
+              <span class="t">Collector base</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >1/10 · 5</span
+              ></button
+            ><button
+              type="button"
+              class="ses"
+              data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff no-mission attach-request closed"
+              data-goto="mission-pane?state=big"
+            >
+              <span class="t">Collector base</span
+              ><span
+                class="tag warn"
+                data-show="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+                >1/10 · 5</span
+              >
+            </button>
+          </div>
+          <div class="term">
+            <div>
+              <span class="a">●</span>
+              <span class="u"
+                >Started “Run the tool on the whole test set” in a fresh worktree.</span
+              >
+            </div>
+            <div>&nbsp;&nbsp;⎿ session test-run · worktree …/harnu-T685</div>
+            <div>
+              <span class="a">●</span>
+              <span class="u">It stopped: HARNU_CORPUS_DIR is not set on this machine.</span>
+            </div>
+            <div>&nbsp;&nbsp;⎿ raised a blocker for you</div>
+            <div>&nbsp;</div>
+            <div class="u">&gt; <span style="opacity: 0.6">▍</span></div>
+          </div>
+        </div>
+        <div class="scrim" data-show="handoff-confirm"></div>
+        <div class="dlg" data-show="handoff-confirm" data-dsqa-part="handoff-dialog">
+          <div class="dh">Continue this mission in a new session</div>
+          <div class="db">
+            <ol>
+              <li>Harnu saves where this session stopped.</li>
+              <li>A new session opens with the summary below and leads the mission.</li>
+              <li>This session is released. It stays in the mission’s session history.</li>
+            </ol>
+            <div class="brief">
+              <span class="hd">Mission summary — what the new session starts with</span>
+              <span>Goal</span
+              ><span
+                >Measure harnu:spec with a test set, then land two fixes that the score
+                proves.</span
+              >
+              <span>Where it is</span
+              ><span
+                >Milestone 2 of 3. 4 of 21 steps done, 4 running, 9 waiting for review, 1
+                blocked.</span
+              >
+              <span>Decided</span><span>The untouched test set never goes into the repo.</span>
+              <span>Stopped at</span
+              ><span
+                >The test run waits for HARNU_CORPUS_DIR. The plan waits for your approval.</span
+              >
+              <span>Next step</span><span>Once the plan is approved, start milestone 3.</span>
+            </div>
+          </div>
+          <div class="df">
+            <button type="button" class="btn ghost" data-goto="mission-pane?state=default">
+              Cancel</button
+            ><button type="button" class="btn primary" data-goto="mission-pane?state=default">
+              <svg class="i i14"><use href="#swap" /></svg>Start new session
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="../mockup.js"></script>
+  </body>
+</html>
