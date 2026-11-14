@@ -614,6 +614,7 @@ describe('registerMissionIpc — the v4 door channel (S-15)', () => {
     ipc.registerMissionIpc()
     expect([...h.handlers.keys()].sort()).toEqual([
       'mission:choose',
+      'mission:handOff',
       'mission:list',
       'mission:operatorDoor',
       'mission:v4Door',
@@ -667,5 +668,136 @@ describe('registerMissionIpc — the v4 door channel (S-15)', () => {
       unknown
     >
     expect(bad).toMatchObject({ ok: false, code: 'BAD_ARGS' })
+  })
+})
+
+describe('the hand-off and the summary route on the app (S-16b)', () => {
+  const LEADER = '3f1c9a52-7d4e-4b8a-9c21-5e6a0b7d8f10'
+  const NEW_ONE = '9d2e7a10-5c3b-4f68-8a14-2b9e6c0d7f31'
+  const ID = 'mnt-d0000077'
+
+  async function seedV4(): Promise<void> {
+    const { buildMissionRecordContent } = await import('../src/main/missions/model')
+    const dir = path.join(root, '.harnu', 'missions-v4')
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, `${ID}-hand-off.md`),
+      buildMissionRecordContent(
+        {
+          schemaVersion: 4,
+          id: ID,
+          title: 'Hand off',
+          doneWhen: 'The hand-off works',
+          status: 'open',
+          milestones: [],
+          steps: [
+            {
+              id: 'stp-1',
+              title: 'Check the hand-off',
+              acs: [{ id: 'ac-1', text: 'The hand-off is checked', by: 'operator' }],
+              links: [],
+              blockers: []
+            }
+          ],
+          sessions: [{ id: LEADER, role: 'leads', from: '2026-11-14T10:00:00Z', to: null }],
+          links: [],
+          blockers: []
+        },
+        '# Log\n'
+      )
+    )
+  }
+
+  it('mission:handOff with no starter wired says so and changes nothing', async () => {
+    await seedV4()
+    h.handlers.clear()
+    ipc.registerMissionIpc()
+    ipc.setMissionHandoffStarter(null)
+    const reply = await h.handlers.get('mission:handOff')!({}, { folder: root, missionId: ID })
+    expect(reply).toMatchObject({ ok: false, code: 'HANDOFF_UNAVAILABLE' })
+  })
+
+  it('mission:handOff runs the one hand-off: it starts one session, and replies with the id and no record', async () => {
+    await seedV4()
+    const calls: Array<{ folder: string; prompt: string }> = []
+    h.handlers.clear()
+    ipc.registerMissionIpc()
+    ipc.setMissionHandoffStarter(async (args) => {
+      calls.push(args)
+      return { ok: true, sessionId: NEW_ONE }
+    })
+    const reply = (await h.handlers.get('mission:handOff')!(
+      {},
+      {
+        folder: root,
+        missionId: ID,
+        sessionId: LEADER,
+        actor: { kind: 'session', sessionId: LEADER }
+      }
+    )) as Record<string, unknown>
+    expect(reply).toMatchObject({ ok: true, sessionId: NEW_ONE, previousLeader: LEADER })
+    expect(reply).not.toHaveProperty('record')
+    expect(reply).not.toHaveProperty('file')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].folder).toBe(root)
+    expect(calls[0].prompt).toContain('Hand off')
+    ipc.setMissionHandoffStarter(null)
+  })
+
+  it('the view carries the offer from a LIVE reading of the leader’s context, and never starts anything', async () => {
+    await seedV4()
+    const started: unknown[] = []
+    ipc.setMissionHandoffStarter(async (a) => {
+      started.push(a)
+      return { ok: true, sessionId: NEW_ONE }
+    })
+    const view = async (
+      contexts: Array<{ sessionId: string; contextPercent: number | null }>,
+      extra: Record<string, unknown> = {}
+    ): Promise<{ handoff?: unknown }> =>
+      (await ipc.buildMissionV4View(
+        { folder: root, sessionId: 'app', missionId: ID, ...extra },
+        { contexts: () => contexts }
+      )) as { handoff?: unknown }
+
+    expect((await view([{ sessionId: LEADER, contextPercent: 95 }])).handoff).toEqual({
+      offer: true,
+      percent: 95
+    })
+    expect((await view([{ sessionId: LEADER, contextPercent: 40 }])).handoff).toEqual({
+      offer: false,
+      percent: 40
+    })
+    // no live reading for the leader (null, or another session's), no offer
+    expect((await view([{ sessionId: LEADER, contextPercent: null }])).handoff).toEqual({
+      offer: false,
+      percent: null
+    })
+    expect((await view([{ sessionId: 'someone-else', contextPercent: 99 }])).handoff).toEqual({
+      offer: false,
+      percent: null
+    })
+    expect((await view([])).handoff).toEqual({ offer: false, percent: null })
+    // "Not now" at 82: quiet until 87
+    const quiet = await view([{ sessionId: LEADER, contextPercent: 85 }], { dismissedPercent: 82 })
+    expect(quiet.handoff).toEqual({ offer: false, percent: 85 })
+    expect(started).toHaveLength(0)
+    ipc.setMissionHandoffStarter(null)
+  })
+
+  it('answerMissionSummaryHook serves the open leader after a compaction, and prints nothing for anyone else', async () => {
+    await seedV4()
+    const body = (sessionId: string, source = 'compact'): Record<string, unknown> => ({
+      session_id: sessionId,
+      cwd: root,
+      source
+    })
+    const text = await ipc.answerMissionSummaryHook(body(LEADER))
+    expect(text).toContain('Hand off')
+    expect(text.length).toBeLessThan(10_000)
+    expect(await ipc.answerMissionSummaryHook(body('b6b6b6b6-0000-4000-8000-0000000000b6'))).toBe(
+      ''
+    )
+    expect(await ipc.answerMissionSummaryHook(body(LEADER, 'startup'))).toBe('')
   })
 })
