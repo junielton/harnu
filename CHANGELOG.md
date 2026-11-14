@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-14
+
+### Fixed
+
+- A step whose pull request is still a draft now reads "PR #7 · draft" (or "rascunho" in Portuguese) in the mission step rail, instead of printing the raw text `mission.pr.state.isDraft`.
+
 ## 2026-11-13
 
 ### Added
