@@ -45,6 +45,7 @@ import type { TaskState, FailureReason } from '../hook-state'
 import { addTaskEventObserver, getTaskStates } from '../hook-bridge'
 import { lastSubagentActivity } from '../subagent-activity'
 import { withHelperActivity } from '../mission-pulse'
+import { waitingList, youLine } from '../missions/waiting'
 import { listPendingApprovals } from '../approval-resolver'
 import { githubBudget } from '../github-budget-tracker'
 import { githubBudgetPayload } from './github-budget-view'
@@ -137,7 +138,6 @@ import {
   buildMissionFileContent,
   CHECK_LABEL_MAX,
   createMissionFile,
-  OPERATOR_VERIFIER,
   declaredEndHash,
   isStarted,
   missionScope,
@@ -171,23 +171,22 @@ import {
   scopeTargetProblem,
   linkPath,
   type MissionDerived,
-  type MissionStepSignals,
   type ScopeTargetProblem
 } from '../missions/derive'
 // Missions v4 S-2 (R-25): the mission-file readers live in `missions/store.ts`. They are
 // re-exported so the callers that still import them from here keep working.
 import {
+  leaderOf,
   listMissionEntries,
   loadMission,
   missionRoot,
   missionsLedBy,
   readAllMissions,
   readMissionsDeduped,
-  type MissionFileEntry,
-  type RootedMission
+  type MissionFileEntry
 } from '../missions/store'
-export { loadMission, missionRoot, readAllMissions, readMissionsDeduped, type RootedMission }
-import { progressHeadline, progressSteps, type MissionProgress } from '../mission-progress'
+export { loadMission, missionRoot, readAllMissions }
+import { progressHeadline, progressSteps } from '../mission-progress'
 import {
   applyAddChapter,
   buildCampaignFileContent,
@@ -4189,139 +4188,18 @@ const missionImportLegacyHandler: Handler = async (args, ctx) => {
   })
 }
 
-/** The `you` line when the operator owes this mission nothing (design §4). */
-const YOU_CLEAR = "— nothing, you're clear"
-
-/**
- * Mission v3 §3.12 — one thing the operator owes a mission. `mission_get` reports
- * the whole ordered list as `youItems` (and its first item as the `you` line);
- * the UI translates each item and shows "+N more" below the first.
- */
-export type MissionYouItem =
-  | { kind: 'rescope'; end: DeclaredEnd }
-  | { kind: 'close' }
-  /** Campaign spec §3.4 — the operator paused the steward; it does not tick until they resume it. */
-  | { kind: 'steward-paused'; reason: string; at: string }
-  | { kind: 'blocker'; reason: string; unblocks: string }
-  | { kind: 'checks'; count: number; stepIds: string[] }
-  | { kind: 'human-steps'; stepIds: string[] }
-  | { kind: 'review-import' }
-  /** Campaign spec §3.2 — a step is done, its PR merged, and the merge commit's CI on main is red. */
-  | { kind: 'main-red'; stepId: string; pr: number }
-  | { kind: 'approvals'; count: number; sessionId: string }
-  | { kind: 'needs-input'; sessionId: string }
-
-/**
- * What the operator owes this mission (Mission v3 §3.12), in this order: a
- * re-scope to approve, a pending close, a paused steward, each operator-owned blocker, the due
- * checks (unticked checks on a reached step — not `todo`/`blocked`), the `human`
- * steps that are current or left behind and not ticked, an imported end to
- * review, and the linked children's parked approvals and needs-input. A closed
- * mission owes nothing. A dead legacy draft (read as active) owes nothing either:
- * stale is not an owed kind.
- */
-export function youItems(
-  m: Mission,
-  children: readonly MissionChildState[],
-  progress: MissionProgress,
-  /** The derived steps, for the gates (campaign spec §3.2); omitted = no gate items. */
-  steps: readonly Pick<MissionStepSignals, 'stepId' | 'gates' | 'prNumber'>[] = []
-): MissionYouItem[] {
-  if (m.status === 'closed') return []
-  const items: MissionYouItem[] = []
-  if (m.pendingRescope) items.push({ kind: 'rescope', end: m.pendingRescope })
-  if (m.pendingClose) items.push({ kind: 'close' })
-  if (m.stewardPause) {
-    items.push({ kind: 'steward-paused', reason: m.stewardPause.reason, at: m.stewardPause.at })
-  }
-  for (const b of [...m.blockers, ...m.steps.flatMap((s) => s.blockers)]) {
-    if (b.owner === 'operator')
-      items.push({ kind: 'blocker', reason: b.reason, unblocks: b.unblocks })
-  }
-  const reached = (stepId: string): boolean => {
-    const st = progress.states[stepId]
-    return st !== undefined && st !== 'todo' && st !== 'blocked'
-  }
-  const due = m.steps.flatMap((s) =>
-    reached(s.id) ? (s.checks ?? []).filter((c) => !c.ticked).map(() => s.id) : []
-  )
-  if (due.length > 0) items.push({ kind: 'checks', count: due.length, stepIds: [...new Set(due)] })
-  // A `human` step is the operator's gate: it is owed until the OPERATOR ticks it
-  // (proof verified by the 'operator' verifier) — a claim by the owner reads `done`
-  // in progress but never clears it, and a gate the work moved past (a later step
-  // running, or the mission otherwise reached it) must not drop off the list.
-  const current = progress.current
-  // The headline's own steps: `current` counts positions among them, so a side step
-  // (`required: false`, campaign spec §3.2) must not shift the index.
-  const counted = m.steps.filter((s) => s.kind !== 'fixed-start' && s.required !== false)
-  const humans = counted
-    .filter((s, i) => {
-      if (s.verification !== 'human') return false
-      if (s.proof === 'verified' && s.verifiedBy?.sessionId === OPERATOR_VERIFIER) return false
-      // A decision the operator has made is finished — nothing left to confirm.
-      if (s.decision?.chosen !== undefined) return false
-      const isCurrent = current !== null && i + 1 >= current.from && i + 1 <= current.to
-      return reached(s.id) || isCurrent || progress.leftBehind.includes(s.id)
-    })
-    .map((s) => s.id)
-  if (humans.length > 0) items.push({ kind: 'human-steps', stepIds: humans })
-  if (m.legacy?.needsReview.includes('declaredEnd')) items.push({ kind: 'review-import' })
-  // A red main after a merge downgrades nothing stored — the step stays as it was —
-  // but it is the operator's to know about (campaign spec §8 AC-1).
-  for (const st of steps) {
-    const state = progress.states[st.stepId]
-    if (
-      st.gates.main === 'red' &&
-      st.prNumber !== null &&
-      (state === 'done' || state === 'verified')
-    ) {
-      items.push({ kind: 'main-red', stepId: st.stepId, pr: st.prNumber })
-    }
-  }
-  for (const c of children) {
-    if (c.pendingApprovals > 0) {
-      items.push({ kind: 'approvals', count: c.pendingApprovals, sessionId: c.sessionId })
-    }
-  }
-  for (const c of children) {
-    if (c.taskState === 'needs-input') items.push({ kind: 'needs-input', sessionId: c.sessionId })
-  }
-  return items
-}
-
-/** One {@link MissionYouItem} as an English sentence. */
-export function youSentence(item: MissionYouItem): string {
-  const s = (n: number): string => (n === 1 ? '' : 's')
-  switch (item.kind) {
-    case 'rescope':
-      return `Approve the new declared end (${item.end.kind}: ${item.end.target}).`
-    case 'close':
-      return 'Close the mission — its end is verified and a close was requested.'
-    case 'steward-paused':
-      return `The steward is paused (${item.reason}) — resume it from the mission popover when ready.`
-    case 'blocker':
-      return `Unblock: ${item.reason} — unblocks when ${item.unblocks}.`
-    case 'checks':
-      return `Tick ${item.count} due check${s(item.count)} — on ${item.stepIds.join(', ')}.`
-    case 'human-steps':
-      return `Confirm the human step${s(item.stepIds.length)} ${item.stepIds.join(', ')}.`
-    case 'review-import':
-      return 'Review the imported end — it is a placeholder until you approve a re-scope.'
-    case 'main-red':
-      return `main is red after #${item.pr} — ${item.stepId} is merged but its merge commit fails CI.`
-    case 'approvals':
-      return `Answer ${item.count} pending approval${s(item.count)} in the Approval Inbox — from linked session ${item.sessionId.slice(0, 8)}.`
-    case 'needs-input':
-      return `Linked session ${item.sessionId.slice(0, 8)} is waiting on you (needs-input) — open it and answer.`
-  }
-}
-
-/** The `you` line `mission_get` reports: the first item, plus "(+N more)". */
-export function youLine(items: readonly MissionYouItem[]): string {
-  if (items.length === 0) return YOU_CLEAR
-  const more = items.length > 1 ? ` (+${items.length - 1} more)` : ''
-  return `${youSentence(items[0])}${more}`
-}
+// Missions v4 S-5 (R-25): the list of what waits on the operator is built once, in
+// `missions/waiting.ts`; the names other modules import from here are re-exported.
+export {
+  YOU_CLEAR,
+  describeWaiting,
+  waitingList,
+  waitingList as youItems,
+  youLine,
+  youSentence,
+  type MissionYouItem,
+  type WaitingItem
+} from '../missions/waiting'
 
 // ---- T358 S6: derived live signals + the stall rule (design §7, §8) ---------
 
@@ -4521,7 +4399,7 @@ export async function recordMissionCompaction(folder: string, sessionId: string)
   try {
     const root = missionRoot(folder)
     const owned = (await openMissionsOf(root))
-      .filter((m) => m.owner.sessionId === sessionId)
+      .filter((m) => leaderOf(m) === sessionId)
       .map((m) => ({ missionId: m.id }))
     await appendLedgerTo(root, owned, { kind: 'compaction', ref: sessionId, sessionId })
   } catch (err) {
@@ -4564,7 +4442,7 @@ const missionGetHandler: Handler = async (args, ctx) => {
   const { derived, children } = await deriveMissionSignals(root, mission, log, ctx, Date.now(), {
     mainCiWaitMs: MAIN_CI_GET_WAIT_MS
   })
-  const items = youItems(mission, children, derived.progress, derived.steps)
+  const items = waitingList(mission, children, derived.progress, derived.steps)
   // design §9: an imported mission's legacyRaw (up to the whole legacy file) is
   // left out of the projection — every tick reads this — and pointed at instead. The
   // ledger is left out too: the tail below is the read (campaign spec §3.2).

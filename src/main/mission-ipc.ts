@@ -48,12 +48,17 @@ import { recordMemoryDrafts, unknownDraftIds, type RecordResult } from './missio
 import {
   deriveMissionSignals,
   missionTitle,
-  youItems,
   type MissionDerived,
-  type MissionYouItem,
   type ToolHandlerCtx
 } from './mcp/tool-handlers'
-import { loadMission, missionRoot, readMissionsDeduped, type RootedMission } from './missions/store'
+import {
+  leaderOf,
+  loadMission,
+  missionRoot,
+  readMissionsDeduped,
+  type RootedMission
+} from './missions/store'
+import { waitingList, type WaitingItem } from './missions/waiting'
 
 /** One open mission as the renderer reads it (design.md §6 "Mission progress"). */
 export interface MissionView {
@@ -63,8 +68,11 @@ export interface MissionView {
   mission: Omit<Mission, 'legacyRaw'>
   title: string
   derived: MissionDerived
-  /** Mission v3 §3.12 — what the operator owes, in order; `[]` = nothing. */
-  you: MissionYouItem[]
+  /**
+   * What waits on the operator, in order; `[]` = nothing. THE waiting list (missions/waiting.ts):
+   * a pending decision is in it, and `describeWaiting` words each item.
+   */
+  you: WaitingItem[]
   /** Mission v3 §3.1 — the server's progress (the same object as `derived.progress`). */
   progress: MissionProgress
   /** Mission v3 §3.5 — what the end dialog warns about. Warnings, never refusals. */
@@ -179,7 +187,7 @@ async function buildMissionView(
     mission: projected,
     title: missionTitle(log, mission.slug),
     derived,
-    you: youItems(mission, children, derived.progress, derived.steps),
+    you: waitingList(mission, children, derived.progress, derived.steps),
     progress: derived.progress,
     closeWarnings: closeWarnings(mission, derived.progress)
   }
@@ -214,7 +222,7 @@ export async function listMissionViews(
   const only = opts.onlySessions
   const wanted = (m: Mission): boolean =>
     only === undefined ||
-    only.has(m.owner.sessionId) ||
+    only.has(leaderOf(m) ?? '') ||
     m.steps.some((s) => s.links.some((l) => l.kind === 'session' && only.has(l.ref)))
   for (const m of read.missions) {
     if (!wanted(m.mission)) continue
