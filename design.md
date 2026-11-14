@@ -881,10 +881,12 @@ store's existing 20 s poll — no per-mission timer):
   `close`, `checks`, `review-import` — are a to-do nobody is waiting on: they
   cue once when they appear (or `checks` grows) and **never re-nudge**; the
   pill, the bell entry and the review dialog keep showing them. _Blocking_
-  kinds — `rescope`, `blocker`, `human-steps` — are something an agent or a
-  later step waits on: they re-nudge with **back-off**, **30 min, 1 h, 2 h,
-  4 h** after the key's last cue, then go **silent** until the key changes (one
-  fixed constant, `BLOCKING_NUDGE_MS`, no Setting). Each key keeps its own clock.
+  kinds — `rescope`, `blocker`, `decide` (a pending decision, one key per
+  decision step), `human-steps` — are something an agent or a later step waits
+  on: they cue when they appear, then re-nudge with **back-off**, **30 min, 1 h,
+  2 h, 4 h** after the key's last cue (five cues in all), then go **silent**
+  until the key changes (one fixed constant, `BLOCKING_NUDGE_MS`, no Setting).
+  Each key keeps its own clock.
 - **One sound per poll.** Every key that cues in the same poll, across all
   missions, produces ONE chime, ONE `requestAttention()` and ONE Activity
   post.
@@ -910,8 +912,10 @@ store's existing 20 s poll — no per-mission timer):
 - **Copy** (`mission.cue.*`): the cue posts **one** Activity entry, in place —
   a snapshot of everything currently owed (see _Activity bell → Grouped
   entry_). One mission owed → "Mission “{title}” needs you: {what}", where
-  `{what}` is the first owed item in words (the blocker's reason, "re-scope
-  awaiting your approval", "delivered, awaiting your close", "2 due checks", …);
+  `{what}` is the first owed item in the one wording the You lane uses
+  (`youItemText` → `youRowText`, `mission.you.*`: "Unblock: {reason} — unblocks
+  when {unblocks}.", "Decide: {title}", "Close the mission when you’re satisfied —
+  its end is verified.", "Tick 2 due checks on {steps}.", …);
   several → "{n} missions need you". Each owed mission is its own clickable row
   inside the entry.
 
