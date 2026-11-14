@@ -1259,7 +1259,6 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', async (event) => {
   stopGithubBudget()
-  stopMissionObserver?.()
   // T579: ask first when agents are mid-turn. Cancel keeps everything alive (nothing below runs).
   guardQuit(event, () => mainWindow)
   if (event.defaultPrevented) return
@@ -1267,6 +1266,8 @@ app.on('before-quit', async (event) => {
   // best-effort. Defer Electron's actual quit until the watcher is closed
   // so chokidar's file descriptors are released cleanly.
   stopHibernationSweep()
+  // Below the guard: a cancelled quit keeps every service alive, and the observer is never restarted.
+  stopMissionObserver?.()
   closeYourMove()
   killAllPtys()
   killAllSpeech()
