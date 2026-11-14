@@ -6,6 +6,7 @@
  * The list is typed with the v4 kinds (rank) from the start; the v3 sources feed it through an adapter, so
  * the v3 detail of each item (the `kind` and its fields) is still there for the readers that use it.
  */
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { computeProgress } from '../src/main/mission-progress'
 import type { Mission } from '../src/main/mission-core'
@@ -168,5 +169,40 @@ describe('one list feeds every reader (AC-7)', () => {
     expect(youRowText(t as never, listed, decideRow!, (s) => s)).toBe(
       'mission.you.decide {"title":"Which store?"}'
     )
+  })
+})
+
+describe('the list is a pure read of derived values (S-3: a read leaves nothing behind)', () => {
+  const deepFreeze = <T>(o: T): T => {
+    if (o && typeof o === 'object') {
+      Object.values(o as object).forEach(deepFreeze)
+      Object.freeze(o)
+    }
+    return o
+  }
+
+  it('builds from frozen inputs and returns the same list twice, so it writes nothing it reads', () => {
+    const m = deepFreeze(mission())
+    const p = deepFreeze(progressOf(m))
+    const kids = deepFreeze([
+      { sessionId: 'child-1', pendingApprovals: 2, taskState: 'needs-input' as const }
+    ])
+    const a = waitingList(m, kids, p)
+    expect(waitingList(m, kids, p)).toEqual(a)
+    expect(a.map((i) => i.kind)).toEqual([
+      'blocker',
+      'decide',
+      'human-steps',
+      'approvals',
+      'needs-input'
+    ])
+  })
+
+  it('imports no file system, Electron, observer, ledger or store: it cannot write, cache or wake', () => {
+    const src = readFileSync('src/main/missions/waiting.ts', 'utf8')
+    const imports = [...src.matchAll(/^import[^\n]*from '([^']+)'/gm)].map((x) => x[1])
+    for (const spec of imports) {
+      expect(spec).not.toMatch(/^node:|^electron|observer|ledger|store|steward|fs/)
+    }
   })
 })
