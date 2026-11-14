@@ -47,7 +47,14 @@ import {
   type ContractCode,
   type ContractResult
 } from './contract'
-import { guardMission, isBuilderOf, type Actor, type GuardCode, type Need } from './guard'
+import {
+  guardMission,
+  isBuilderOf,
+  type Actor,
+  type GuardCode,
+  type Need,
+  type Standing
+} from './guard'
 import { AttachRequestSchema, MISSION_V4_ID_RE, type BlockerV4, type MissionV4 } from './model'
 import {
   createMissionRecord,
@@ -91,6 +98,8 @@ export type MissionWrite =
       file: string
       /** The first v4 write of a mission born in v3: its v4 record was just created by copy. */
       created: boolean
+      /** Who wrote, by name: `harnu` for Harnu's own writes, never `operator`; a Log or audit line uses it. */
+      standing: Standing
     }
   | WriteRefusal
 
@@ -140,7 +149,8 @@ function checkOperatorFields(before: MissionV4, after: MissionV4): void {
     ['status', 'closing the mission'],
     ['closedAs', 'closing the mission'],
     ['closeReason', 'closing the mission'],
-    ['doneWhen', 'changing Done when (stage a change for the operator instead)']
+    ['doneWhen', 'changing Done when (stage a change for the operator instead)'],
+    ['doneWhenVerified', 'proving Done when']
   ] as const) {
     if (!same(key))
       throw new Refusal('OPERATOR_ONLY', `${what} is the operator's door, not a session's.`)
@@ -156,16 +166,40 @@ function checkOperatorFields(before: MissionV4, after: MissionV4): void {
 /**
  * Who settles a criterion (spec "What settles a criterion"). A session writes a `settled` stamp only
  * on a criterion a second session settles (`by: session`), in its own name, and only on a step it did
- * not build: a builder's check is a `selfCheck`, labelled and never proof, which carries the builder's
- * own id and settles nothing. A fact settles itself, and the operator marks the other two; no session
- * writes a stamp for either. Judged only on stamps the write added or changed.
+ * not build (judged on the record before AND after the write, so a builder cannot drop its own link
+ * and settle in one write): a builder's check is a `selfCheck`, labelled and never proof, which
+ * carries the builder's own id and settles nothing. A fact settles itself, and the operator marks the
+ * other two; no session writes a stamp for either.
+ *
+ * A stamp is append-only for a session: one that existed before the write is deep-equal after it (only
+ * an operator write changes or removes one), and a session never changes the `by`, `fact` or `person`
+ * of a criterion that exists, so it cannot turn an operator criterion into its own to settle it.
  */
 function checkSettlements(before: MissionV4, after: MissionV4, sessionId: string): void {
+  for (const step of before.steps) {
+    const kept = after.steps.find((p) => p.id === step.id)
+    for (const old of step.acs) {
+      if (old.settled === undefined) continue
+      const now = kept?.acs.find((p) => p.id === old.id)
+      if (!isDeepStrictEqual(now?.settled, old.settled)) {
+        throw new Refusal(
+          'SETTLE_NOT_ALLOWED',
+          `step ${step.id} criterion ${old.id} is settled; a session never removes or changes a stamp, the operator does.`
+        )
+      }
+    }
+  }
   for (const step of after.steps) {
     const prev = before.steps.find((p) => p.id === step.id)
     for (const ac of step.acs) {
       const old = prev?.acs.find((p) => p.id === ac.id)
       const at = `step ${step.id} criterion ${ac.id}`
+      if (old && (old.by !== ac.by || old.fact !== ac.fact || old.person !== ac.person)) {
+        throw new Refusal(
+          'SETTLE_NOT_ALLOWED',
+          `${at}: a session never changes who or what settles a criterion that exists.`
+        )
+      }
       if (ac.settled && !isDeepStrictEqual(ac.settled, old?.settled)) {
         if (ac.by !== 'session') {
           throw new Refusal(
@@ -176,7 +210,7 @@ function checkSettlements(before: MissionV4, after: MissionV4, sessionId: string
         if (ac.settled.by !== sessionId) {
           throw new Refusal('SETTLE_NOT_ALLOWED', `${at}: a session settles in its own name only.`)
         }
-        if (isBuilderOf(after, sessionId, step.id)) {
+        if (isBuilderOf(before, sessionId, step.id) || isBuilderOf(after, sessionId, step.id)) {
           throw new Refusal(
             'SETTLE_NOT_ALLOWED',
             `${at}: this session built the step, so what it says of it is a self-check, which settles nothing. A second session settles it.`
@@ -224,8 +258,12 @@ function checkAskOnly(
     throw new Refusal('OPERATOR_ONLY', 'an earlier attach request is not changed by a session.')
   }
   for (const raw of now.slice(prior.length)) {
-    if ((raw as { role?: unknown } | null)?.role === 'leads')
-      throw new Refusal('LEADER_IS_OPERATORS', LEAD_MSG)
+    if (raw !== null && typeof raw === 'object' && 'role' in raw) {
+      // An attach request carries no role: nobody asks to lead, and a session asks only to join.
+      if ((raw as { role?: unknown }).role === 'leads')
+        throw new Refusal('LEADER_IS_OPERATORS', LEAD_MSG)
+      throw new Refusal('BAD_ARGS', 'an attach request carries no role: a session asks to join.')
+    }
     const parsed = AttachRequestSchema.safeParse(raw)
     if (!parsed.success) throw new Refusal('BAD_ARGS', 'the attach request is not well formed.')
     const req = parsed.data
@@ -338,6 +376,48 @@ function checkContract(before: MissionV4 | null, after: MissionV4): void {
   checkBlockers(before?.blockers ?? [], after.blockers, 'mission blocker')
 }
 
+// ---- The Log -----------------------------------------------------------------------
+
+/** Characters some reader treats as a line break and `split('\n')` does not: `\r`, NEL, LS, PS, VT, FF. */
+const LOG_SEPARATORS = /[\r\u0085\u2028\u2029\v\f]/
+/** A line that a Markdown or summary reader takes as a heading. */
+const HEADING_SHAPED = /^\s{0,3}#{1,6}(\s|$)/
+/** The only heading a session writes: `### <ISO time> · note|decision|surprise`, optionally `· stp-<n>`. */
+const SESSION_HEADING =
+  /^### \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z · (?:note|decision|surprise)(?: · stp-\d+)?[ \t]*$/
+
+/**
+ * The Log is append-only for every writer: what it holds after a write starts with what it held before,
+ * byte for byte, and the appended text carries none of the characters that some reader takes for a line
+ * break (`\r`, U+0085, U+2028, U+2029, VT, FF). Harnu's own text and the operator's pass through the same
+ * check: it costs them nothing and catches a bug. A session also writes at most one heading, and it is
+ * `### <time> · note|decision|surprise`, so it can never write a heading that names `operator`, `harnu`
+ * or `steward`: a Log line that says who did something is written by Harnu, not by a session.
+ */
+function checkLog(before: string, after: string, actor: Actor): void {
+  if (!after.startsWith(before)) {
+    throw new Refusal(
+      'BAD_ARGS',
+      'the Log is append-only: it keeps everything it held, byte for byte.'
+    )
+  }
+  const added = after.slice(before.length)
+  if (LOG_SEPARATORS.test(added)) {
+    throw new Refusal(
+      'BAD_ARGS',
+      'the Log text holds a line separator other than a newline (CR, NEL, U+2028, U+2029, VT or FF); write plain lines.'
+    )
+  }
+  if (actor.kind !== 'session') return
+  const headings = added.split('\n').filter((line) => HEADING_SHAPED.test(line))
+  if (headings.length > 1 || (headings[0] !== undefined && !SESSION_HEADING.test(headings[0]))) {
+    throw new Refusal(
+      'BAD_ARGS',
+      'a session writes at most one Log heading, and it reads "### <time> · note", "decision" or "surprise" (optionally "· stp-<n>"); Harnu writes the others.'
+    )
+  }
+}
+
 // ---- Writing an existing mission ----------------------------------------------------
 
 /**
@@ -368,6 +448,7 @@ export async function writeMission(
     const access = guardMission(record, actor, need)
     if (!access.ok) throw new Refusal(access.code, access.error.replace(/^[A-Z_]+: /, ''))
     const next = await change(record, log)
+    checkLog(log, next.log, actor)
     if (actor.kind === 'session') {
       if (need === 'ask-to-attach') checkAskOnly(record, log, next, actor.sessionId)
       else {
@@ -381,7 +462,7 @@ export async function writeMission(
     return next
   })
   // A throw inside `change` comes back from the store as a typed refusal that keeps its `code`.
-  return result.ok ? result : typed(result)
+  return result.ok ? { ...result, standing: early.standing } : typed(result)
 }
 
 // ---- Creating a mission --------------------------------------------------------------
@@ -438,8 +519,21 @@ export async function createMission(
         )
       }
       if (record.status !== 'open') throw new Refusal('OPERATOR_ONLY', 'a new mission starts open.')
+      if (record.doneWhenVerified !== undefined) {
+        throw new Refusal(
+          'OPERATOR_ONLY',
+          'a session does not create a mission that is already proven.'
+        )
+      }
+      if (record.steps.some((st) => st.acs.some((ac) => ac.settled !== undefined))) {
+        throw new Refusal(
+          'SETTLE_NOT_ALLOWED',
+          'a session does not create a mission with criteria already settled.'
+        )
+      }
     }
     checkReferences(null, record)
+    checkLog('', log, actor)
     checkContract(null, record)
     const result = await createMissionRecord(
       repoRoot(folder),
