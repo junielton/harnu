@@ -32,6 +32,7 @@ import {
   attachFromPicker,
   doorError,
   logEntry,
+  quotedTitle,
   resolveStepId,
   type DoorRefusal,
   type DoorResult
@@ -94,7 +95,7 @@ export async function markCriterion(
       log: logEntry(
         log,
         at,
-        `operator marked step ${step.id} criterion ${criterion.id} done${
+        `operator marked "${criterion.text}" done on "${step.title}"${
           settled.person ? ` for ${settled.person}` : ''
         }`
       )
@@ -153,7 +154,7 @@ export async function clearBlocker(
       log: logEntry(
         log,
         at,
-        `operator cleared blocker ${args.blockerId}${stepId !== null ? ` on step ${stepId}` : ''}`
+        `operator cleared the blocker on ${stepId !== null ? quotedTitle(record, stepId) : 'the mission'}`
       )
     }
   })
@@ -435,6 +436,6 @@ export async function runDoor(raw: unknown): Promise<DoorResult<object>> {
  */
 export function doorReply(result: DoorResult<object>): Record<string, unknown> {
   if (!result.ok) return { ok: false, code: result.code, error: result.error }
-  const { record: _record, file: _file, ...rest } = result
+  const { record: _record, file: _file, standing: _standing, ...rest } = result
   return rest
 }
