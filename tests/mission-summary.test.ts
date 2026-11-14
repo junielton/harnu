@@ -212,7 +212,8 @@ describe('AC-19 · the summary', () => {
     expect(parts.goal).toContain('A test set we trust scores harnu:spec')
 
     // Where it is: the position among milestones and the four counts
-    expect(parts.whereItIs).toContain('Milestone 3 of 10') // milestones 1 and 2 are done
+    // Milestones 1 and 2 are done. The title is quoted: it never reads as an order.
+    expect(parts.whereItIs).toContain('Milestone 3 of 10: "Milestone number 3 is true"')
     expect(parts.whereItIs).toContain('2 of 10 milestones done')
     expect(parts.whereItIs).toContain('4 done')
     expect(parts.whereItIs).toMatch(/2 running/)
@@ -296,7 +297,7 @@ describe('AC-19 · the summary', () => {
     const m = mkMission({ steps: [mkStep('stp-1'), doneStep('stp-2')] })
     const { text, parts } = buildMissionSummary(m, '')
     for (const h of HEADINGS) expect(text).toContain(h)
-    expect(parts.whereItIs).toContain('Step 1 of 2')
+    expect(parts.whereItIs).toContain('Step 1 of 2: "Step stp-1"')
     expect(parts.decided).toMatch(/nothing/i)
     expect(parts.stoppedAt).toMatch(/no session/i)
     expect(parts.nextStep).toMatch(/nothing/i)
@@ -454,9 +455,9 @@ describe('what a fresh session reads at a hand-off', () => {
     ]
     const { parts } = buildMissionSummary(mission, log, { inputs })
     expect(parts.whereItIs).toContain(
-      'stp-7 Open step 7: Set HARNU_CORPUS_DIR to the folder with the test files'
+      '- stp-7 "Open step 7": Set HARNU_CORPUS_DIR to the folder with the test files'
     )
-    expect(parts.whereItIs).toContain('stp-8 Open step 8: Waiting for the key from ops')
+    expect(parts.whereItIs).toContain('- stp-8 "Open step 8": Waiting for the key from ops')
   })
 
   it('lists by title the steps that wait for review', () => {
@@ -473,6 +474,30 @@ describe('what a fresh session reads at a hand-off', () => {
     expect(parts.stoppedAt).toContain(
       'stopped at stp-5 "Step stp-5", waiting for the private test files'
     )
+  })
+
+  it('quotes a title in a list: the steps waiting for review and a step in the open criteria', () => {
+    const { mission, inputs, log } = bigMission()
+    const { parts } = buildMissionSummary(mission, log, { inputs })
+    const waiting = parts.whereItIs.split('Waiting for review:')[1]
+    expect(waiting).toContain('- "Open step 7"')
+    expect(waiting).not.toMatch(/^- Open step/m)
+    expect(parts.openCriteria).toContain('- stp-9 "Open step 9"')
+    expect(parts.openCriteria).toContain('- stp-7 "Open step 7" (blocked)')
+  })
+
+  it('has no exception: a step title is always inside quotes, wherever the summary writes it', () => {
+    const { mission, inputs, log } = bigMission()
+    const { text } = buildMissionSummary(mission, log, { inputs })
+    const shown = mission.steps.map((s) => s.title).filter((t) => text.includes(t))
+    expect(shown.length).toBeGreaterThan(8) // the open steps, the running ones: it is a real check
+    for (const title of shown) {
+      for (let at = text.indexOf(title); at >= 0; at = text.indexOf(title, at + 1)) {
+        expect(text.slice(at - 1, at + title.length + 1), `"${title}" at ${at}`).toBe(`"${title}"`)
+      }
+    }
+    // A mission's own title is the one bare title: it starts the Goal and the row.
+    expect(text).toContain(`## Goal\n${mission.title}\n`)
   })
 
   it('keeps the next step the operator’s first waiting item, as the spec says', () => {
