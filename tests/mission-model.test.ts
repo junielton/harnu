@@ -20,6 +20,7 @@ import {
   LinkSchema,
   MILESTONE_STATES,
   MISSION_STATES,
+  STATE_WORDS,
   STEP_STATES,
   SettledSchema,
   StoppedAtSchema,
@@ -29,6 +30,7 @@ import {
   parseMissionRecordFile,
   readMissionRecordLog
 } from '../src/main/missions/model'
+import { checkAsk } from '../src/main/missions/contract'
 
 const AT = '2026-11-14T10:00:00Z'
 
@@ -557,15 +559,49 @@ describe('the v4 record keeps what it does not name (delta 1)', () => {
  * request that nobody uses to lead, and entity types that do not accept a misspelt field.
  */
 describe('what the other slices import (delta 1)', () => {
-  it('exports the state vocabulary once: step, milestone and mission', () => {
-    expect([...STEP_STATES]).toEqual(['to do', 'running', 'waiting for review', 'done'])
-    expect([...MILESTONE_STATES]).toEqual([
-      'not started',
-      'in progress',
-      'waiting for review',
-      'done'
-    ])
-    expect([...MISSION_STATES]).toEqual(['open', 'ready to close', 'closed'])
+  it('exports the state identifiers once: step, milestone and mission', () => {
+    // Identifiers, not display words: S-7 returns these and the renderer translates them (i18n), so the
+    // words are never the keys. Kebab-case, one per state of the spec's one vocabulary.
+    expect([...STEP_STATES]).toEqual(['todo', 'running', 'waiting-review', 'done'])
+    expect([...MILESTONE_STATES]).toEqual(['not-started', 'in-progress', 'waiting-review', 'done'])
+    expect([...MISSION_STATES]).toEqual(['open', 'ready-to-close', 'closed'])
+  })
+
+  describe('STATE_WORDS: the English words, for agent-facing text only', () => {
+    const ALL = [...new Set([...STEP_STATES, ...MILESTONE_STATES, ...MISSION_STATES])]
+
+    it('maps every identifier to the words the spec vocabulary uses, and nothing else', () => {
+      expect({ ...STATE_WORDS }).toEqual({
+        todo: 'to do',
+        running: 'running',
+        'waiting-review': 'waiting for review',
+        done: 'done',
+        'not-started': 'not started',
+        'in-progress': 'in progress',
+        open: 'open',
+        'ready-to-close': 'ready to close',
+        closed: 'closed'
+      })
+      for (const id of ALL) expect(typeof STATE_WORDS[id]).toBe('string')
+      expect(Object.keys(STATE_WORDS).sort()).toEqual([...ALL].sort())
+    })
+
+    it('is frozen', () => {
+      expect(typeof STATE_WORDS).toBe('object')
+      expect(Object.isFrozen(STATE_WORDS)).toBe(true)
+      expect(() => {
+        ;(STATE_WORDS as Record<string, string>).todo = 'in review'
+      }).toThrow()
+    })
+
+    it('holds no word the writing contract refuses: no internal word, never "in review" or "driver"', () => {
+      for (const word of Object.values(STATE_WORDS)) {
+        // The contract's own check accepts it as agent-facing text ...
+        expect(checkAsk(word), word).toEqual({ ok: true })
+        // ... and it is not one of the words the spec says people do not say for a state.
+        expect(['in review', 'driver']).not.toContain(word)
+      }
+    })
   })
 
   it('exports the nested schemas: a link, a settled stamp, a stoppedAt', () => {
