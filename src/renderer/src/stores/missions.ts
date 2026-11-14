@@ -34,6 +34,7 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import type {
   MissionDoor,
   MissionDoorResult,
+  MissionHandOffReply,
   MissionV4Door,
   MissionV4DoorReply,
   MissionV4ViewReply,
@@ -252,8 +253,14 @@ export const useMissionsStore = defineStore('missions', () => {
   ): Promise<MissionV4ViewReply | null> {
     const ask = window.api.missionV4View
     if (typeof ask !== 'function') return null
+    const dismissed = missionId ? dismissedPercentFor(sessionId, missionId) : null
     try {
-      return await ask({ folder, sessionId, ...(missionId ? { missionId } : {}) })
+      return await ask({
+        folder,
+        sessionId,
+        ...(missionId ? { missionId } : {}),
+        ...(dismissed !== null ? { dismissedPercent: dismissed } : {})
+      })
     } catch {
       return null
     }
@@ -279,8 +286,10 @@ export const useMissionsStore = defineStore('missions', () => {
     }
     // The selected session changed while this was in flight: its answer is not news.
     if (seq !== v4Seq) return
-    if (reply && reply.state === 'mission') v4Ids.set(sessionId, reply.missionId)
-    else v4Ids.delete(sessionId)
+    if (reply && reply.state === 'mission') {
+      v4Ids.set(sessionId, reply.missionId)
+      forgetStaleDismissal(reply)
+    } else v4Ids.delete(sessionId)
     if (reply) v4.value = { sessionId, reply, at: Date.now() }
     else if (v4.value?.sessionId !== sessionId) v4.value = null
   }
@@ -310,6 +319,125 @@ export const useMissionsStore = defineStore('missions', () => {
   function v4ReplyForSession(sessionId: string | null | undefined): MissionV4ViewReply | null {
     const entry = v4.value
     return entry && sessionId && entry.sessionId === sessionId ? entry.reply : null
+  }
+
+  // ---- Missions v4 (S-20): the hand-off ----------------------------------------------------------------
+  /**
+   * "Not now" on the hand-off offer: the context percentage it was dismissed at, per mission and per
+   * leader. The view takes it back (`dismissedPercent`) and offers again only once the context has grown
+   * five points, so a leader that is replaced starts with none. Kept across a restart: the operator said
+   * "not now" to a session, and a restart is not a reason to ask again at the same number.
+   */
+  const handoffDismissed = persistedRef<Record<string, { leader: string; percent: number }>>(
+    'om2tab.missionHandoffDismissed',
+    {},
+    {
+      validate: (v) =>
+        typeof v === 'object' &&
+        v !== null &&
+        Object.values(v).every(
+          (e) => typeof e?.leader === 'string' && typeof e?.percent === 'number'
+        )
+    }
+  )
+  /** Whether a hand-off is waiting for the door (it awaits up to 90 s): a second click starts nothing. */
+  const handOffPending = ref(false)
+
+  /** The open leader a reply names, or `null` (nobody leads, or the reply holds no mission). */
+  function leaderIn(reply: MissionV4ViewReply | null): string | null {
+    if (!reply || reply.state !== 'mission') return null
+    return reply.sessions.find((r) => r.open && r.role === 'leads')?.id ?? null
+  }
+
+  /** The percent to send with the next view call for this mission: the leader the last answer named, or `null`. */
+  function dismissedPercentFor(sessionId: string, missionId: string): number | null {
+    const entry = handoffDismissed.value[missionId]
+    if (!entry) return null
+    const last = v4ReplyForSession(sessionId)
+    return leaderIn(last) === entry.leader ? entry.percent : null
+  }
+
+  /**
+   * The percentage the operator said "Not now" at for this mission's current leader, or `null`. The pane
+   * stays quiet at a reading no higher than this even before the view has answered again; when to offer
+   * again (five points more) is the view's rule, not repeated here.
+   */
+  function handoffDismissedAt(missionId: string, leaderId: string | null): number | null {
+    const entry = handoffDismissed.value[missionId]
+    return entry && leaderId !== null && entry.leader === leaderId ? entry.percent : null
+  }
+
+  /** A dismissal belongs to one leader: once the leader changes, it is not asked again. */
+  function forgetStaleDismissal(reply: MissionV4ViewReply): void {
+    if (reply.state !== 'mission') return
+    const entry = handoffDismissed.value[reply.missionId]
+    if (!entry || leaderIn(reply) === entry.leader) return
+    const { [reply.missionId]: _gone, ...rest } = handoffDismissed.value
+    handoffDismissed.value = rest
+  }
+
+  /**
+   * "Not now" on the offer. It stores the percentage the offer was made at and reads the view again, so the
+   * offer goes quiet until the context grows five points. It starts nothing and writes nothing to the
+   * mission.
+   */
+  async function dismissHandoff(): Promise<void> {
+    const selected = sessions.selectedSession
+    const mission = selected ? v4MissionForSession(selected.sessionId) : null
+    const leader = mission?.sessions.find((r) => r.open && r.role === 'leads')?.id
+    if (!mission || !leader || typeof mission.handoff?.percent !== 'number') return
+    handoffDismissed.value = {
+      ...handoffDismissed.value,
+      [mission.missionId]: { leader, percent: mission.handoff.percent }
+    }
+    await loadV4()
+  }
+
+  /**
+   * The hand-off (S-16b): the one thing that changes who leads. The operator confirmed it in the dialog;
+   * Harnu starts a normal session with the mission summary and the door writes once. The mission id is the
+   * one the view answered for. The door waits up to 90 s for the session to appear, so a second call while
+   * one waits is refused here (`HANDOFF_IN_PROGRESS`) before it reaches the channel. The reply is always a
+   * value, never a throw, and the view is read again after it, whichever way it went.
+   */
+  async function runHandOff(): Promise<MissionHandOffReply> {
+    const selected = sessions.selectedSession
+    const mission = selected ? v4MissionForSession(selected.sessionId) : null
+    const door = window.api.missionHandOff
+    if (!selected || !mission || typeof door !== 'function') {
+      return {
+        ok: false,
+        code: 'UNAVAILABLE',
+        error: 'UNAVAILABLE: the pane has no mission to hand off.'
+      }
+    }
+    if (handOffPending.value) {
+      return {
+        ok: false,
+        code: 'HANDOFF_IN_PROGRESS',
+        error: 'HANDOFF_IN_PROGRESS: a hand-off is already starting a session.'
+      }
+    }
+    handOffPending.value = true
+    let res: MissionHandOffReply
+    try {
+      res = await door({ folder: selected.projectPath, missionId: mission.missionId })
+    } catch (err) {
+      res = {
+        ok: false,
+        code: 'UNAVAILABLE',
+        error: `UNAVAILABLE: ${err instanceof Error ? err.message : String(err)}`
+      }
+    } finally {
+      handOffPending.value = false
+    }
+    // The new leader starts with no dismissal of the old one's.
+    if (res.ok) {
+      const { [mission.missionId]: _gone, ...rest } = handoffDismissed.value
+      handoffDismissed.value = rest
+    }
+    await loadV4()
+    return res
   }
 
   /**
@@ -607,6 +735,10 @@ export const useMissionsStore = defineStore('missions', () => {
     v4ReplyForSession,
     v4MissionForSession,
     runV4Door,
+    handOffPending,
+    handoffDismissedAt,
+    dismissHandoff,
+    runHandOff,
     runDoor,
     runDoors,
     popoverRequest,

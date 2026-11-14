@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Expand, Maximize2, Minimize2, Target, X } from 'lucide-vue-next'
+import { ArrowLeftRight, Expand, Maximize2, Minimize2, Target, X } from 'lucide-vue-next'
 import { useFocusRegion } from '../composables/useTerminalFocus'
 import { useSessionLinks } from '../composables/useSessionLinks'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
@@ -12,15 +12,20 @@ import {
   buildPaneTree,
   classifyReply,
   doorErrorKey,
+  handoffErrorKey,
+  handoffOfferView,
   missionNumbers,
   missionProgressLine,
   missionStateKey,
   progressPercent,
+  sessionNameOf,
   v4MissionOf,
   type PaneKind
 } from '../lib/mission-pane-view'
 import Button from './ui/Button.vue'
+import MissionHandoffDialog from './MissionHandoffDialog.vue'
 import MissionPaneNext from './MissionPaneNext.vue'
+import MissionPaneSessions from './MissionPaneSessions.vue'
 import MissionPaneTree from './MissionPaneTree.vue'
 
 /**
@@ -33,8 +38,9 @@ import MissionPaneTree from './MissionPaneTree.vue'
  * answer; this component never calls the view itself. A door (mark a criterion, clear a blocker, approve or
  * decline a staged Done when) goes through the store, which reads the view again after every reply. What it draws is what the server said: the numbers are the
  * server's, the state is an identifier translated through i18n, a v3 record is not drawn at all (the v3
- * popover still serves it). This slice is the shell: the glance, an open step, sessions and the hand-off
- * land in later slices.
+ * popover still serves it). The Sessions row and the hand-off (S-20) live in `MissionPaneSessions` and
+ * `MissionHandoffDialog`: this component hosts them, holds the operator's "Not now" and calls the store's
+ * hand-off only from the dialog's confirm.
  */
 interface Props {
   /** The shared pane union (HelperStack routes only `type:'mission'` here). */
@@ -111,6 +117,55 @@ async function decideDoneWhen(door: 'approveDoneWhen' | 'declineDoneWhen'): Prom
   } finally {
     doneWhenBusy.value = false
   }
+}
+
+// ---- Sessions and the hand-off (S-20) -----------------------------------------------------------------
+// The operator always decides a hand-off. The view may OFFER one (the leader's context at 80 percent or
+// more); nothing here starts a session until the operator confirms in the dialog.
+const offer = computed(() => {
+  const o = mission.value ? handoffOfferView(mission.value, sessionId.value) : null
+  if (!o || !mission.value) return null
+  // "Not now" is kept per leader: at a reading no higher than the one it was said at, stay quiet.
+  const at = missions.handoffDismissedAt(mission.value.missionId, o.leaderId)
+  return at !== null && o.percent <= at ? null : o
+})
+const offerName = computed(() =>
+  offer.value?.leaderId ? sessionNameOf(offer.value.leaderId, sessions.allSessions, t) : ''
+)
+const handoffOpen = ref(false)
+const handoffDone = ref(false)
+const handoffError = ref<string | null>(null)
+const newLeader = ref<string | null>(null)
+const handoffSummary = computed(() => mission.value?.detail.summary ?? '')
+const newLeaderLoaded = computed(
+  () =>
+    newLeader.value !== null && sessions.allSessions.some((s) => s.sessionId === newLeader.value)
+)
+
+function openHandoff(): void {
+  handoffDone.value = false
+  handoffError.value = null
+  handoffOpen.value = true
+}
+function closeHandoff(): void {
+  // A hand-off that is waiting for the door cannot be dismissed from here: the dialog is not dismissible.
+  if (missions.handOffPending) return
+  handoffOpen.value = false
+}
+async function confirmHandoff(): Promise<void> {
+  if (missions.handOffPending) return
+  handoffError.value = null
+  const res = await missions.runHandOff()
+  if (res.ok) {
+    handoffDone.value = true
+    newLeader.value = res.sessionId
+  } else {
+    handoffError.value = handoffErrorKey(res.code)
+  }
+}
+function openNewLeader(): void {
+  if (newLeader.value && newLeaderLoaded.value) sessions.select(newLeader.value)
+  handoffOpen.value = false
 }
 
 function onClose(): void {
@@ -321,6 +376,13 @@ useFocusRegion(props.pane.id, rootEl, {
           <!-- Keyed by the mission the reply was answered for: another mission starts with its own folds. -->
           <MissionPaneTree ref="treeRef" :key="mission.missionId" :tree="tree" />
         </section>
+        <!-- Who worked on the mission, and the way to continue it in a new session. -->
+        <MissionPaneSessions
+          :mission="mission"
+          :selected-id="sessionId"
+          :pending="missions.handOffPending"
+          @continue="openHandoff"
+        />
       </template>
 
       <!-- No mission, a refusal, or a v3 record: the same empty layout (design.md §6 "Mission pane" → States). -->
@@ -341,5 +403,61 @@ useFocusRegion(props.pane.id, rootEl, {
         >
       </div>
     </div>
+
+    <!-- The offer: the leader's context is high. Pinned under the scroll body so it is never below the fold. -->
+    <section
+      v-if="kind === 'mission' && offer"
+      class="flex shrink-0 flex-col rounded border border-warning-line bg-warning-soft text-text"
+      style="margin: 0 12px 10px; padding: 10px 12px; gap: 8px; font-size: 12px; line-height: 1.45"
+      data-dsqa-part="handoff-notice"
+      data-test="handoff-offer"
+    >
+      <span>{{
+        offer.leaderIsCurrent
+          ? $t('missionPane.handoff.offer.thisSession', { percent: offer.percent })
+          : $t('missionPane.handoff.offer.otherSession', {
+              percent: offer.percent,
+              name: offerName || $t('missionPane.handoff.offer.leaderUnnamed')
+            })
+      }}</span>
+      <span class="flex" style="gap: 6px">
+        <button
+          type="button"
+          class="inline-flex items-center rounded-sm bg-accent text-accent-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          style="height: 20px; padding: 0 7px; gap: 4px; font-size: 11px; font-weight: 500"
+          :disabled="missions.handOffPending"
+          data-test="handoff-offer-open"
+          @click="openHandoff"
+        >
+          <ArrowLeftRight :size="10" :stroke-width="1.8" />{{
+            $t('missionPane.handoff.offer.open')
+          }}
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
+          style="height: 20px; padding: 0 7px; font-size: 11px; font-weight: 500"
+          data-test="handoff-offer-later"
+          @click="missions.dismissHandoff()"
+        >
+          {{ $t('missionPane.handoff.offer.later') }}
+        </button>
+      </span>
+    </section>
+
+    <!-- At the pane's root, not in the mission branch: after a hand-off this session is released, the pane
+         shows no mission, and the dialog is still the one that says what happened. -->
+    <MissionHandoffDialog
+      :open="handoffOpen"
+      :summary="handoffSummary"
+      :pending="missions.handOffPending"
+      :error-key="handoffError"
+      :done="handoffDone"
+      :can-open-new="newLeaderLoaded"
+      @cancel="closeHandoff"
+      @close="closeHandoff"
+      @confirm="confirmHandoff"
+      @open-new="openNewLeader"
+    />
   </div>
 </template>

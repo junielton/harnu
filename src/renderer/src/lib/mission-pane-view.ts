@@ -9,6 +9,7 @@
  * and the state is the identifier translated through i18n, never the English words in the reply.
  */
 import type { MissionV4ViewReply } from '../../../main/mission-ipc'
+import { sessionTitle, type SessionLike } from './session-label'
 
 type Translate = (key: string, values?: Record<string, unknown>, plural?: number) => string
 
@@ -672,4 +673,218 @@ export function nextLook(detail: Detail): NextLook {
   const next = detail.waiting.next
   if (next === null) return 'calm'
   return next.kind === 'close' ? 'ok' : 'you'
+}
+
+// ---- Sessions row and the hand-off (Missions v4, S-20) -----------------------------------------------
+
+type HistoryRow = MissionV4Reply['sessions'][number]
+
+/** One session of the mission, ready to draw: the server's history row with the step it stopped at named. */
+export interface SessionRowView {
+  id: string
+  /** What the record says it is, or was: `leads` stays on a row the hand-off released (it led, it no longer does). */
+  role: HistoryRow['role']
+  /** Still attached: the hand-off or the end has not closed it. */
+  open: boolean
+  /** It is the one that leads the mission NOW: open and `leads`. At most one row has this. */
+  leads: boolean
+  /** It is the session the pane is following. */
+  current: boolean
+  from: string
+  to: string | null
+  /** The TITLE of the step it stopped at (never the id), or `null` when the record names none or it is gone. */
+  stoppedStep: string | null
+  /** What it was waiting for when it stopped, as the record says it, or `null`. */
+  waitingFor: string | null
+}
+
+/**
+ * The mission's sessions as rows, in the order the operator reads them: the one that leads first, then
+ * the ones still attached (oldest first), then the closed ones, the latest to stop first. A closed
+ * session says where it stopped: the step by its title, and what it waited for. The pane decides
+ * nothing about who leads; this reads the server's history.
+ */
+export function buildSessionRows(
+  history: readonly HistoryRow[],
+  ctx: { steps: ReadonlyArray<{ id: string; title: string }>; selectedId: string | null }
+): SessionRowView[] {
+  const title = (id: string | undefined): string | null =>
+    id === undefined ? null : (ctx.steps.find((s) => s.id === id)?.title ?? null)
+  const rows = history.map((h, index) => {
+    const row: SessionRowView = {
+      id: h.id,
+      role: h.role,
+      open: h.open,
+      leads: h.open && h.role === 'leads',
+      current: h.id === ctx.selectedId,
+      from: h.from,
+      to: h.to,
+      stoppedStep: title(h.stoppedAt?.step),
+      waitingFor:
+        typeof h.stoppedAt?.waitingFor === 'string' && h.stoppedAt.waitingFor.trim() !== ''
+          ? h.stoppedAt.waitingFor.trim()
+          : null
+    }
+    return { row, index }
+  })
+  const rank = (r: SessionRowView): number => (r.leads ? 0 : r.open ? 1 : 2)
+  const stoppedAt = (r: SessionRowView): number => {
+    const t = r.to === null ? NaN : Date.parse(r.to)
+    return Number.isNaN(t) ? 0 : t
+  }
+  return rows
+    .sort((a, b) => {
+      const byRank = rank(a.row) - rank(b.row)
+      if (byRank !== 0) return byRank
+      if (rank(a.row) < 2) return a.index - b.index
+      return stoppedAt(b.row) - stoppedAt(a.row) || b.index - a.index
+    })
+    .map((x) => x.row)
+}
+
+/** How many closed sessions the row lists before the rest fold behind "N more sessions". */
+export const SESSIONS_CLOSED_SHOWN = 5
+
+/** The rows to draw, and how many are folded away. Every session still attached always shows. */
+export function foldSessionRows(
+  rows: readonly SessionRowView[],
+  expanded: boolean
+): { shown: SessionRowView[]; hidden: number } {
+  if (expanded) return { shown: [...rows], hidden: 0 }
+  let closed = 0
+  const shown = rows.filter((r) => r.open || ++closed <= SESSIONS_CLOSED_SHOWN)
+  return { shown, hidden: rows.length - shown.length }
+}
+
+/** Who leads, as the header of the row says it: this session, another one, or nobody. */
+export function sessionsLeader(
+  rows: readonly SessionRowView[]
+): { kind: 'this' } | { kind: 'other'; id: string } | { kind: 'none' } {
+  const leader = rows.find((r) => r.leads)
+  if (!leader) return { kind: 'none' }
+  return leader.current ? { kind: 'this' } : { kind: 'other', id: leader.id }
+}
+
+/** When a session worked, in the parts the row words: a start, a day span, or one day with its hours. */
+export type SessionWhen =
+  | { kind: 'none' }
+  | { kind: 'since'; day: string }
+  | { kind: 'span'; from: string; to: string }
+  | { kind: 'sameDay'; day: string; from: string; to: string }
+
+/** `from` and `to` of a session row in the reader's locale: a month and day, and the time when both are one day. */
+export function sessionWhen(from: string, to: string | null, locale: string): SessionWhen {
+  const start = Date.parse(from)
+  if (Number.isNaN(start)) return { kind: 'none' }
+  const dayOf = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
+  const timeOf = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' })
+  if (to === null) return { kind: 'since', day: dayOf.format(start) }
+  const end = Date.parse(to)
+  if (Number.isNaN(end)) return { kind: 'since', day: dayOf.format(start) }
+  const a = dayOf.format(start)
+  const b = dayOf.format(end)
+  return a === b
+    ? { kind: 'sameDay', day: a, from: timeOf.format(start), to: timeOf.format(end) }
+    : { kind: 'span', from: a, to: b }
+}
+
+/** The offer to continue in a new session, from the view: the context percentage and who it is about. */
+export interface HandoffOfferView {
+  /** The leader's context, rounded for the reader. */
+  percent: number
+  /** The leading session, or `null` when none leads. */
+  leaderId: string | null
+  /** The pane is following the leading session. */
+  leaderIsCurrent: boolean
+}
+
+/**
+ * The offer, or `null`. The view decides: it offers at 80 percent of the leader's context or more, stays
+ * quiet after a "Not now" until the context grows five points, and offers nothing with no reading. This
+ * only reads that answer; it never starts anything.
+ */
+export function handoffOfferView(
+  mission: MissionV4Reply,
+  selectedId: string | null
+): HandoffOfferView | null {
+  const offer = mission.handoff
+  if (!offer || offer.offer !== true || typeof offer.percent !== 'number') return null
+  const leader = mission.sessions.find((s) => s.open && s.role === 'leads')
+  return {
+    percent: Math.round(offer.percent),
+    leaderId: leader?.id ?? null,
+    leaderIsCurrent: leader !== undefined && leader.id === selectedId
+  }
+}
+
+/** The text a new session starts from, split into the labelled sections the mission summary has. */
+export interface ParsedSummary {
+  /** The line above the first section, without its `#`. Not shown to the operator. */
+  title: string
+  sections: Array<{ heading: string; body: string }>
+}
+
+/**
+ * The server's mission summary (`detail.summary`) as sections, so the confirmation can show it as a list
+ * of "Goal", "Where it is"… instead of one block. A text with no `## ` headings has no sections: the
+ * caller shows it whole.
+ */
+export function parseSummary(text: string): ParsedSummary {
+  const lines = text.split(/\r?\n/)
+  const sections: ParsedSummary['sections'] = []
+  const head: string[] = []
+  let current: { heading: string; lines: string[] } | null = null
+  for (const line of lines) {
+    const m = /^##\s+(.+?)\s*$/.exec(line)
+    if (m) {
+      if (current)
+        sections.push({ heading: current.heading, body: current.lines.join('\n').trim() })
+      current = { heading: m[1], lines: [] }
+    } else if (current) {
+      current.lines.push(line)
+    } else {
+      head.push(line)
+    }
+  }
+  if (current) sections.push({ heading: current.heading, body: current.lines.join('\n').trim() })
+  return {
+    title: head
+      .join('\n')
+      .trim()
+      .replace(/^#+\s*/, ''),
+    sections
+  }
+}
+
+/** The codes the hand-off door answers that the dialog words one by one; any other code reads as `other`. */
+export const HANDOFF_CODES = [
+  'MISSION_CLOSED',
+  'HANDOFF_START_FAILED',
+  'HANDOFF_IN_PROGRESS',
+  'HANDOFF_UNAVAILABLE',
+  'LEADER_CHANGED'
+] as const
+
+/** The i18n key (under `missionPane.handoff.error`) that says what to do after the door answered `code`. */
+export function handoffErrorKey(code: string): (typeof HANDOFF_CODES)[number] | 'other' {
+  return (HANDOFF_CODES as readonly string[]).includes(code)
+    ? (code as (typeof HANDOFF_CODES)[number])
+    : 'other'
+}
+
+/**
+ * The name a session shows in the Sessions row and the offer: the one name every surface shows
+ * (`sessionTitle`), else "Session" and the first eight characters of its id, so a session that is not
+ * loaded any more is never a blank.
+ */
+export function sessionNameOf(
+  id: string,
+  all: readonly (SessionLike & { sessionId: string })[],
+  t: Translate
+): string {
+  const found = all.find((s) => s.sessionId === id)
+  return (
+    (found ? sessionTitle(found, all, t) : '') ||
+    t('missionPane.sessions.unnamed', { id: id.slice(0, 8) })
+  )
 }

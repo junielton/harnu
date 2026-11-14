@@ -441,7 +441,7 @@ describe('AC-53 — the Sessions row lists every session with role, from, to and
   })
 
   it('says another session leads when the selected one is a worker, by its name', async () => {
-    const w = await mountPane(reply(FIVE), {
+    await mountPane(reply(FIVE), {
       selected: WORKER,
       known: [{ sessionId: SESSION, summary: 'orch-1' }]
     })
