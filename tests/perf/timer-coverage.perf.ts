@@ -57,7 +57,7 @@ const UNCOVERED: Record<string, [number, string]> = {
   'companion/mission-state.ts': [1, `reads every open mission; ${FOLLOW_UP}`],
   'missions/observer.ts': [
     1,
-    `one pass a minute over the open missions only (none open: it reads the mission files and stops), each mission the same work as one mission:list read through the same caches at the same concurrency of 4; ${FOLLOW_UP}`
+    `one pass a minute over the open missions only (none open: it reads the mission files and stops), each mission the same work as one mission:list read through the same caches at the same concurrency of 4, then for a repo that has a missions-v4 directory one listing and the facts of each open v4 record (one pull request join per record through the same caches, no spawn of its own; a repo with none costs one directory check); ${FOLLOW_UP}`
   ],
   'scheduler-shell.ts': [1, `scheduler ticker over every worker; ${FOLLOW_UP}`],
   'containers/containers-ipc.ts': [1, `docker scan (child processes); ${FOLLOW_UP}`],
