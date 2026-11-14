@@ -114,6 +114,7 @@ const TABLE: Record<string, Row> = {
   'MemoryLocationDialog.vue': ui(STORE, 'close'),
   'MissionBulkCloseConfirmDialog.vue': ui('cancel[]', 'cancel'),
   'MissionCloseConfirmDialog.vue': ui('cancel[]', 'cancel'),
+  'MissionHandoffDialog.vue': ui('cancel[]', 'cancel'),
   'MissionsReviewDialog.vue': ui('local open=false (card removed from DOM)', 'cancel'),
   'NewFolderDialog.vue': ui(STORE, 'input'),
   'NewSessionDialog.vue': ui(STORE, 'start'),
@@ -197,7 +198,7 @@ describe('characterization table — coverage (AC-2)', () => {
       .sort()
     // `ui/` primitives live in a subfolder and are not listed by this top-level read.
     expect(Object.keys(TABLE).sort()).toEqual(onDisk)
-    expect(Object.keys(TABLE)).toHaveLength(30)
+    expect(Object.keys(TABLE)).toHaveLength(31)
   })
 
   it('lists the two inline overlays with a reason instead of mounting them', () => {
