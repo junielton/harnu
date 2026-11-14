@@ -34,7 +34,9 @@ const h = vi.hoisted(() => ({
     ci: string
     createdAt?: string
     mergedAt?: string
-  }
+  },
+  /** What the fleet scan returns: the folders carrying the builder session. */
+  scan: [] as unknown[]
 }))
 
 vi.mock('electron', () => ({
@@ -52,6 +54,10 @@ vi.mock('../src/main/hook-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/hook-bridge')>()),
   getTaskStates: () => h.taskStates,
   addTaskEventObserver: () => () => {}
+}))
+vi.mock('../src/main/claude-reader', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/claude-reader')>()),
+  scanFolders: async (): Promise<unknown[]> => h.scan
 }))
 vi.mock('../src/main/pty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/pty')>()),
@@ -218,7 +224,13 @@ function ctx(): Record<string, unknown> {
   }
 }
 
+/**
+ * The ledger after one observation. A read (`mission_get`) no longer observes — AC-4, Missions v4
+ * S-3 — so every call here runs the observer pass first, then reads the ledger the way an agent does.
+ */
 async function ledgerOf(): Promise<LedgerRow[]> {
+  const { observeOpenMissions } = await import('../src/main/mission-ipc')
+  await observeOpenMissions([root])
   const ack = payloadOf(await handlers.mission_get({ folder: root, missionId }, ctx()))
   return ack.ledger as LedgerRow[]
 }
@@ -233,6 +245,7 @@ beforeEach(async () => {
   h.taskStates = new Map()
   h.live = new Set()
   h.pr = { state: 'OPEN', ci: 'pending' }
+  h.scan = (ctx() as { folders: unknown[] }).folders
   vi.resetModules()
   const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
   handlers = Object.fromEntries(WIRED_TOOLS.map((t) => [t.op, t.handler as unknown as Handler]))
@@ -303,7 +316,7 @@ describe('write-time events — appended to the mission file', () => {
   })
 })
 
-describe('read-time events — observed once, kept out of the mission file', () => {
+describe('observed events — recorded once by the observer pass, kept out of the mission file', () => {
   it('records pr-opened once, and a ci row per CI change, across repeated reads', async () => {
     await ledgerOf()
     await ledgerOf()
@@ -389,7 +402,7 @@ describe('read-time events — observed once, kept out of the mission file', () 
     expect(ofKind(await ledgerOf(), 'session-died')).toHaveLength(0)
   })
 
-  it('never rewrites the mission file on a read, whatever it observes', async () => {
+  it('never rewrites the mission file, whatever the observer pass records', async () => {
     const dir = path.join(root, '.harnu', 'missions')
     const file = path.join(dir, (await fs.readdir(dir))[0])
     const before = await fs.readFile(file, 'utf8')

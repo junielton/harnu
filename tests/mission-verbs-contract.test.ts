@@ -553,7 +553,7 @@ const CONTRACT: ContractRow[] = [
             id: z.string().regex(/^mnt-[0-9a-f]{8}$/),
             slug: z.string(),
             status: z.enum(['draft', 'active', 'stale', 'delivered', 'closed']),
-            // Mission v3 §3.10: the last derive's progress (mission_get ran above).
+            // Mission v3 §3.10: the progress of the last observer pass (a read does not remember it).
             progress: z
               .object({ total: z.number().int(), computedAt: z.iso.datetime() })
               .passthrough(),
@@ -562,6 +562,12 @@ const CONTRACT: ContractRow[] = [
         )
         .min(1)
     }),
+    // Missions v4 S-3 (AC-4): a read remembers nothing, so the progress this row carries is the
+    // one an observer pass computed — the pass the app runs once a minute.
+    setup: async (s) => {
+      const { observeOpenMissions } = await import('../src/main/mission-ipc')
+      await observeOpenMissions([s.folder], Date.now(), { scan: async () => [] })
+    },
     call: (s) => ({ folder: s.folder })
   },
   // ---- S7 (T368): legacy goal-file migration ----

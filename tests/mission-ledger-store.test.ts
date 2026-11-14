@@ -3,8 +3,9 @@
  *
  * What Harnu OBSERVES while reading a mission (a pull request opened or merged, CI, a builder
  * ending) is kept beside the mission, in the repo, append-only — not in a machine-local userData
- * cache. The close-out consolidator reads it from there, and rows the old cache already holds
- * are copied in while the cache itself is left alone.
+ * cache. The observer pass writes it (a read never does, AC-4); the close-out consolidator reads
+ * it from there, and rows the old cache already holds are copied in by the pass while the cache
+ * itself is left alone.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
@@ -47,6 +48,10 @@ vi.mock('../src/main/hook-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/hook-bridge')>()),
   getTaskStates: () => new Map(),
   addTaskEventObserver: () => () => {}
+}))
+vi.mock('../src/main/claude-reader', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/claude-reader')>()),
+  scanFolders: async (): Promise<unknown[]> => []
 }))
 vi.mock('../src/main/pty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/pty')>()),
@@ -195,6 +200,12 @@ async function storedRows(): Promise<LedgerRow[]> {
     .map((l) => JSON.parse(l) as LedgerRow)
 }
 
+/** One observer pass over the repo: the only thing that records what Harnu saw (AC-4). */
+async function observe(): Promise<void> {
+  const { observeOpenMissions } = await import('../src/main/mission-ipc')
+  await observeOpenMissions([root])
+}
+
 async function settle(): Promise<void> {
   const store = await import('../src/main/missions/ledger-store')
   await store.flushLedgerStore()
@@ -210,18 +221,19 @@ beforeEach(async () => {
 })
 
 describe('the ledger store (AC-5)', () => {
-  it('stores the rows a read observed beside the mission, not in userData', async () => {
+  it('stores the rows the observer pass saw beside the mission, not in userData', async () => {
     const file = await seed()
     const before = await fs.readFile(file)
 
-    const ack = payloadOf(await read())
+    await observe()
     await settle()
+    const ack = payloadOf(await read())
 
     expect(kinds(ack.ledger as LedgerRow[])).toEqual(
       expect.arrayContaining(['pr-merged:#7', 'ci:#7'])
     )
     expect(kinds(await storedRows())).toEqual(expect.arrayContaining(['pr-merged:#7', 'ci:#7']))
-    // Beside the mission file, and the mission file itself is untouched by the read.
+    // Beside the mission file, and the mission file itself is untouched by the pass.
     expect(path.dirname(ledgerFile())).toBe(path.dirname(file))
     expect((await fs.readFile(file)).equals(before)).toBe(true)
     // The userData cache no longer receives observed rows.
@@ -231,9 +243,18 @@ describe('the ledger store (AC-5)', () => {
     expect(JSON.parse(cache).ledger).toBeUndefined()
   })
 
+  it('a read stores nothing: no ledger file appears under mission_get or mission_list', async () => {
+    await seed()
+    payloadOf(await read())
+    payloadOf(await handlers.mission_list({ folder: root }, ctx()))
+    await settle()
+    await expect(fs.stat(ledgerFile())).rejects.toThrow()
+    expect(await fs.readdir(path.join(root, '.harnu', 'missions'))).toHaveLength(1)
+  })
+
   it('consolidator sees observed rows', async () => {
     const file = await seed()
-    payloadOf(await read())
+    await observe()
     await settle()
 
     // A restart: nothing is in memory any more, the rows are only in the repo.
@@ -253,15 +274,15 @@ describe('the ledger store (AC-5)', () => {
     expect(perStep?.mergedAt).toBe(MERGED_AT)
   })
 
-  it('a restart records a row once: the same world read again adds nothing', async () => {
+  it('a restart records a row once: the same world observed again adds nothing', async () => {
     await seed()
-    payloadOf(await read())
+    await observe()
     await settle()
     const first = await storedRows()
 
     await boot()
-    payloadOf(await read())
-    payloadOf(await read())
+    await observe()
+    await observe()
     await settle()
 
     expect(await storedRows()).toEqual(first)
@@ -270,12 +291,12 @@ describe('the ledger store (AC-5)', () => {
 
   it('is append-only: a row already stored is never rewritten', async () => {
     await seed()
-    payloadOf(await read())
+    await observe()
     await settle()
     const text = await fs.readFile(ledgerFile(), 'utf8')
 
     h.pr = { state: 'MERGED', ci: 'failing', mergedAt: MERGED_AT }
-    payloadOf(await read())
+    await observe()
     await settle()
 
     const next = await fs.readFile(ledgerFile(), 'utf8')
@@ -285,7 +306,7 @@ describe('the ledger store (AC-5)', () => {
 
   it('mission_list counts the stored rows too', async () => {
     await seed()
-    payloadOf(await read())
+    await observe()
     await settle()
     const stored = (await storedRows()).length
 
@@ -319,8 +340,9 @@ describe('importing the userData cache (AC-6)', () => {
     const before = await fs.readFile(sidecar, 'utf8')
     await boot()
 
-    const ack = payloadOf(await read())
+    await observe()
     await settle()
+    const ack = payloadOf(await read())
     const { flushLinkCache, rememberResolved } = await import('../src/main/mission-link-cache')
     rememberResolved('/elsewhere', 'pr', '1', { state: 'OPEN', prNumber: 1 })
     await flushLinkCache()
@@ -338,12 +360,33 @@ describe('importing the userData cache (AC-6)', () => {
     expect(JSON.parse(before).ledger[MISSION_ID]).toEqual(cached)
   })
 
+  it('a read copies nothing: the cache rows show, but no ledger file is written and the cache is untouched', async () => {
+    await seed()
+    const sidecar = await writeCache()
+    const before = await fs.readFile(sidecar)
+    await boot()
+
+    const ack = payloadOf(await read())
+    payloadOf(await handlers.mission_list({ folder: root }, ctx()))
+    await settle()
+    const { flushLinkCache } = await import('../src/main/mission-link-cache')
+    await flushLinkCache()
+
+    // Read as they are, never imported: nothing was written beside the mission...
+    expect(kinds(ack.ledger as LedgerRow[])).toEqual(
+      expect.arrayContaining(['pr-opened:#3', 'pr-merged:#3'])
+    )
+    await expect(fs.stat(ledgerFile())).rejects.toThrow()
+    // ...and the cache file is byte-for-byte what it was.
+    expect((await fs.readFile(sidecar)).equals(before)).toBe(true)
+  })
+
   it('copying twice, across restarts, stores each cached row once', async () => {
     await seed()
     await writeCache()
     for (let i = 0; i < 2; i++) {
       await boot()
-      payloadOf(await read())
+      await observe()
       await settle()
     }
     const stored = await storedRows()

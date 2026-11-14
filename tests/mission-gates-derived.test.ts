@@ -237,6 +237,15 @@ describe('AC-1 — a step is proven by facts', () => {
   })
 })
 
+/**
+ * One observer pass over the repo's open missions. A read no longer remembers what it saw (AC-4,
+ * Missions v4 S-3): the last-known facts a later read falls back on are the observer's.
+ */
+async function observe(): Promise<void> {
+  const { observeOpenMissions } = await import('../src/main/mission-ipc')
+  await observeOpenMissions([root], Date.now(), { scan: async () => [] })
+}
+
 describe('AC-1b — gates exist on every read, and stay last-known when GitHub is unreachable', () => {
   it('every step carries the five keys, even with no links', async () => {
     const id = await seed([step('stp-1')])
@@ -253,6 +262,7 @@ describe('AC-1b — gates exist on every read, and stay last-known when GitHub i
     const id = await seed([verifiedStep()])
     const live = await get(id)
     expect(live.derived.steps[0].gates.stale).toBeUndefined()
+    await observe()
     h.join = () => joinOf([pr(8, 'MERGED', 'passing')], false)
     h.main = () => mainOf({}, false)
     const down = await get(id)

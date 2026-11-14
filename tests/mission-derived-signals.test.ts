@@ -66,6 +66,10 @@ vi.mock('../src/main/hook-bridge', async (importOriginal) => ({
   }
 }))
 
+vi.mock('../src/main/claude-reader', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/claude-reader')>()),
+  scanFolders: async (): Promise<unknown[]> => []
+}))
 vi.mock('../src/main/pty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/pty')>()),
   liveSessionKeys: () => h.live
@@ -595,6 +599,9 @@ describe('mission_get — sticky link resolutions (Mission v3 §3.7)', () => {
     existence: { proven: boolean; reason?: string } | null
     link: Record<string, unknown>
   }> => {
+    // One observation (the pass that remembers what the links showed), then the read.
+    const { observeOpenMissions } = await import('../src/main/mission-ipc')
+    await observeOpenMissions([root])
     const s = (await get(id)).derived.steps[1]
     return { existence: s.existence, link: s.links[0] }
   }

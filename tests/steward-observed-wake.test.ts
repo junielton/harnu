@@ -28,7 +28,9 @@ const h = vi.hoisted(() => ({
   taskStates: new Map<string, string>(),
   live: new Set<string>(),
   pr: { state: 'OPEN', ci: 'pending' } as { state: string; ci: string },
-  wakes: [] as Array<[string, string]>
+  wakes: [] as Array<[string, string]>,
+  /** What the fleet scan returns: the folders carrying the builder session. */
+  scan: [] as unknown[]
 }))
 
 vi.mock('electron', () => ({
@@ -46,6 +48,10 @@ vi.mock('../src/main/hook-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/hook-bridge')>()),
   getTaskStates: () => h.taskStates,
   addTaskEventObserver: () => () => {}
+}))
+vi.mock('../src/main/claude-reader', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/claude-reader')>()),
+  scanFolders: async (): Promise<unknown[]> => h.scan
 }))
 vi.mock('../src/main/pty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/pty')>()),
@@ -177,9 +183,13 @@ const ctx = (): Record<string, unknown> => ({
   bridge: { dispatch: async () => ({}), awaitMaterialization: async () => null }
 })
 
+/**
+ * One observation: the observer pass over the repo's open missions. A read (`mission_get`) no
+ * longer observes — AC-4, Missions v4 S-3 — so what used to be pinned on a read is pinned here.
+ */
 const read = async (): Promise<void> => {
-  const res = await handlers.mission_get({ folder: root, missionId: MISSION }, ctx())
-  expect(res.isError, res.content[0]?.text).not.toBe(true)
+  const { observeOpenMissions } = await import('../src/main/mission-ipc')
+  expect(await observeOpenMissions([root])).toBe(1)
 }
 
 beforeEach(async () => {
@@ -191,13 +201,14 @@ beforeEach(async () => {
   h.live = new Set()
   h.pr = { state: 'OPEN', ci: 'pending' }
   h.wakes = []
+  h.scan = ctx().folders as unknown[]
   vi.resetModules()
   const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
   handlers = Object.fromEntries(WIRED_TOOLS.map((t) => [t.op, t.handler as unknown as Handler]))
   await seed()
 })
 
-describe('observeLedger → wake reason', () => {
+describe('observer pass → wake reason', () => {
   it('a new CI row wakes the steward as `ci`; an unchanged world wakes nobody', async () => {
     await read() // observes pr-opened AND ci(pending) in one read: CI is the more specific fact
     expect(h.wakes).toEqual([[MISSION, 'ci']])
@@ -206,6 +217,10 @@ describe('observeLedger → wake reason', () => {
     await read()
     expect(h.wakes).toEqual([])
     h.pr = { state: 'OPEN', ci: 'passing' }
+    // A read sees the new CI and wakes nobody (AC-4); the observer pass is what wakes the steward.
+    const res = await handlers.mission_get({ folder: root, missionId: MISSION }, ctx())
+    expect(res.isError, res.content[0]?.text).not.toBe(true)
+    expect(h.wakes).toEqual([])
     await read()
     expect(h.wakes).toEqual([[MISSION, 'ci']])
   })

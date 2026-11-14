@@ -187,6 +187,15 @@ beforeEach(async () => {
   handlers = Object.fromEntries(WIRED_TOOLS.map((t) => [t.op, t.handler as unknown as Handler]))
 })
 
+/**
+ * One observer pass over the repo's open missions. A read no longer remembers what it saw (AC-4,
+ * Missions v4 S-3): the last-known facts a later read falls back on are the observer's.
+ */
+async function observe(): Promise<void> {
+  const { observeOpenMissions } = await import('../src/main/mission-ipc')
+  await observeOpenMissions([root], Date.now(), { scan: async () => [] })
+}
+
 describe('delivered missions are not checked on GitHub (AC-7, D-5)', () => {
   it('an active mission asks GitHub for its PR and its main CI', async () => {
     const id = await seed('active')
@@ -209,6 +218,7 @@ describe('delivered missions are not checked on GitHub (AC-7, D-5)', () => {
     // The mission is polled while active: GitHub says PR 8 is MERGED, main CI passing.
     const id = await seed('active')
     await get(id)
+    await observe()
     // It is then delivered (status flips on disk) and polled again — without asking GitHub.
     const file = missionFilePath(root, id, `seeded-${seq}`)
     const raw = await fs.readFile(file, 'utf8')

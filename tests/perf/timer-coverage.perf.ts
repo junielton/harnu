@@ -55,6 +55,10 @@ const UNCOVERED: Record<string, [number, string]> = {
   'fleet-model.ts': [1, `degraded-watcher poll of the whole fleet scan; ${FOLLOW_UP}`],
   'memory-digest.ts': [1, `digest catch-up over every repo's memory; ${FOLLOW_UP}`],
   'companion/mission-state.ts': [1, `reads every open mission; ${FOLLOW_UP}`],
+  'missions/observer.ts': [
+    1,
+    `one pass a minute over the open missions only (none open: it reads the mission files and stops), each mission the same work as one mission:list read through the same caches at the same concurrency of 4; ${FOLLOW_UP}`
+  ],
   'scheduler-shell.ts': [1, `scheduler ticker over every worker; ${FOLLOW_UP}`],
   'containers/containers-ipc.ts': [1, `docker scan (child processes); ${FOLLOW_UP}`],
   'gc/capacity-watcher.ts': [1, `docker network capacity (child processes); ${FOLLOW_UP}`],
