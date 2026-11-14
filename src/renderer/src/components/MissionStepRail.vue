@@ -151,8 +151,13 @@ function operatorTicked(s: StepModel): boolean {
 
 /** "PR #7 · open" — the PR line's leading part; the CI state follows in its own tone. */
 function prLine(p: StepPrModel): string {
-  const state = p.state === 'MERGED' ? 'merged' : p.draft ? 'isDraft' : 'open'
-  return t('mission.pr.line', { n: p.number, state: t(`mission.pr.state.${state}`) })
+  const state =
+    p.state === 'MERGED'
+      ? t('mission.pr.state.merged')
+      : p.draft
+        ? t('mission.pr.state.draft')
+        : t('mission.pr.state.open')
+  return t('mission.pr.line', { n: p.number, state })
 }
 
 const CI_CLASS: Record<Exclude<StepPrModel['ci'], 'unknown'>, string> = {

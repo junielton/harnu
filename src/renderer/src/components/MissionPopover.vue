@@ -12,16 +12,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useI18n } from 'vue-i18n'
-import {
-  Bot,
-  Check,
-  ChevronLeft,
-  FileText,
-  Flag,
-  GitMerge,
-  Play,
-  TriangleAlert
-} from 'lucide-vue-next'
+import { Bot, Check, ChevronLeft, FileText, Flag, Play, TriangleAlert } from 'lucide-vue-next'
 import type { MissionDoor, MissionView } from '../../../main/mission-ipc'
 import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
 import {
@@ -43,7 +34,6 @@ import Button from './ui/Button.vue'
 import MissionStepRail from './MissionStepRail.vue'
 import MissionCloseConfirmDialog from './MissionCloseConfirmDialog.vue'
 import StewardPauseDialog from './StewardPauseDialog.vue'
-import MergeBatchDialog from './MergeBatchDialog.vue'
 
 const props = defineProps<{
   view: MissionView
@@ -230,16 +220,6 @@ function resumeSteward(): void {
   void door({ door: 'resumeSteward' } as Omit<MissionDoor, 'root' | 'missionId'>)
 }
 
-/**
- * The Merge batch dialog and the PRs it was opened with. A SNAPSHOT, like the Campaign popover's: the
- * store refreshes after every merge, and once #305 is merged the merge-batch row (and its PR list)
- * disappears from the view — the open dialog, with its "Stopped at…" panel, must not go with it.
- */
-const mergeBatch = ref<NonNullable<YouRow['prs']> | null>(null)
-function openMergeBatch(row: YouRow): void {
-  if (row.prs) mergeBatch.value = [...row.prs]
-}
-
 // An in-app popover: registers with the native-overlay freeze (a browser pane under it freezes, spec §2.4).
 const rootEl = ref<HTMLElement | null>(null)
 useNativeOverlay('mission-popover', rootEl)
@@ -404,18 +384,6 @@ useNativeOverlay('mission-popover', rootEl)
               <Play :size="14" :stroke-width="1.8" />{{ $t('mission.steward.resume') }}
             </Button>
           </div>
-          <div v-if="firstRow?.kind === 'merge-batch'" style="margin-top: 7px">
-            <Button
-              variant="primary"
-              :disabled="missions.doorInFlight || missions.mergeBatchInFlight"
-              data-test="mission-merge-batch"
-              @click="openMergeBatch(firstRow)"
-            >
-              <GitMerge :size="14" :stroke-width="1.8" />{{
-                $t('mission.mergeBatch.action', { n: firstRow.prs?.length ?? 0 })
-              }}
-            </Button>
-          </div>
           <div v-if="firstRow?.kind === 'rescope'" style="margin-top: 7px">
             <Button
               variant="primary"
@@ -447,18 +415,7 @@ useNativeOverlay('mission-popover', rootEl)
           >
           <span class="min-w-0 flex-1">{{ rowText(row) }}</span>
           <button
-            v-if="row.kind === 'merge-batch'"
-            type="button"
-            class="shrink-0 cursor-pointer text-accent hover:underline"
-            style="font-size: 11px"
-            :disabled="missions.doorInFlight || missions.mergeBatchInFlight"
-            data-test="mission-merge-batch"
-            @click="openMergeBatch(row)"
-          >
-            {{ $t('mission.mergeBatch.action', { n: row.prs?.length ?? 0 }) }}
-          </button>
-          <button
-            v-else-if="row.kind === 'steward-paused'"
+            v-if="row.kind === 'steward-paused'"
             type="button"
             class="shrink-0 cursor-pointer text-accent hover:underline"
             style="font-size: 11px"
@@ -591,13 +548,6 @@ useNativeOverlay('mission-popover', rootEl)
       :busy="missions.doorInFlight"
       @cancel="pausingSteward = false"
       @confirm="confirmPause"
-    />
-    <MergeBatchDialog
-      v-if="mergeBatch"
-      :root="view.root"
-      :mission-id="view.mission.id"
-      :prs="mergeBatch"
-      @close="mergeBatch = null"
     />
     <MissionCloseConfirmDialog
       v-if="confirmingClose"

@@ -69,7 +69,6 @@ import type {
 } from '../main/github-budget-core'
 import type { QuitDialogStrings, QuitGuardPrefs } from '../main/quit-guard'
 import type { MissionDoor, MissionDoorResult, MissionListResult } from '../main/mission-ipc'
-import type { MergeBatchResult } from '../main/merge-batch-ipc'
 import type { CampaignListResult } from '../main/campaign-ipc'
 import type {
   ReviewSnapshot,
@@ -2938,15 +2937,6 @@ const api = {
     stepId: string
     index: number
   }): Promise<MissionDoorResult> => ipcRenderer.invoke('mission:choose', args),
-  /**
-   * Campaign spec §4 — Merge batch: the operator confirmed "merge #A → #B → #C in order". Resolves
-   * when the batch ends or stops (a red gate, a refused merge); `outcome.remaining` is what to ask about again.
-   */
-  missionMergeBatch: (args: {
-    root: string
-    missionId: string
-    prs: number[]
-  }): Promise<MergeBatchResult> => ipcRenderer.invoke('mission:mergeBatch', args),
   // ---- Campaign progress (T596; UI-only, read-only — no campaign door exists in main yet) --
   /** Every open campaign in the repos of `folders`, with the server's chapter progress. */
   campaignList: (folders: string[]): Promise<CampaignListResult> =>
