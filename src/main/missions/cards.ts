@@ -31,7 +31,13 @@ import {
   type ColumnKey,
   type RoadmapCard
 } from '../roadmap-core'
-import type { AcceptanceCriterion, StepV4 } from './model'
+import {
+  MILESTONE_ID_RE,
+  MISSION_V4_ID_RE,
+  STEP_V4_ID_RE,
+  type AcceptanceCriterion,
+  type StepV4
+} from './model'
 
 // ---- The marked block ----------------------------------------------------------
 
@@ -128,8 +134,12 @@ function isStampedFor(card: RoadmapCard, ref: StepRef): boolean {
   return card.mission === ref.missionId && card.step === ref.stepId
 }
 
-/** A card file by the name a step records: its slug or its id. */
-function byName(cards: readonly CardFile[], name: string): CardFile | undefined {
+/**
+ * A card file by the name a step records in `step.card`: its slug or its id. The one lookup every reader
+ * uses, so "the step's card" is found the same way the planner finds it.
+ */
+export function findCardByName(cards: readonly CardFile[], name: string): CardFile | undefined {
+  if (!name) return undefined
   const bySlug = cards.find((c) => c.slug === name)
   if (bySlug) return bySlug
   return cards.find((c) => parseCard(c.content, c.slug).id === name)
@@ -138,6 +148,34 @@ function byName(cards: readonly CardFile[], name: string): CardFile | undefined 
 /** The card stamped for this step, if the board has one. */
 export function findStepCard(cards: readonly CardFile[], ref: StepRef): CardFile | undefined {
   return cards.find((c) => isStampedFor(parseCard(c.content, c.slug), ref))
+}
+
+/** The key of a step in {@link indexStepCards}: `<mission>/<step>`. */
+export function stepCardKey(ref: StepRef): string {
+  return `${ref.missionId}/${ref.stepId}`
+}
+
+/** A step's card as the index holds it: the file the shell wrote and the card parsed from it. */
+export interface StepCardEntry {
+  file: CardFile
+  card: RoadmapCard
+}
+
+/**
+ * Parse a board's cards ONCE and map `mission/step` to the card stamped for it, so a list over many
+ * dispatched steps does not parse the board once per step. A card with no full stamp, or that does not
+ * parse, is left out; when two cards carry the same stamp the first on the board wins, as it does in
+ * {@link findStepCard}.
+ */
+export function indexStepCards(cards: readonly CardFile[]): Map<string, StepCardEntry> {
+  const index = new Map<string, StepCardEntry>()
+  for (const file of cards) {
+    const card = parseCard(file.content, file.slug)
+    if (card.malformed || !card.mission || !card.step) continue
+    const key = stepCardKey({ missionId: card.mission, stepId: card.step })
+    if (!index.has(key)) index.set(key, { file, card })
+  }
+  return index
 }
 
 /**
@@ -173,7 +211,12 @@ export type StepCardPlan =
   | { action: 'create'; slug: string; id: string; content: string }
   /** The step already has a card: write `content` over `<slug>.md`. Its column is untouched. */
   | { action: 'bind'; slug: string; content: string }
-  | { action: 'refused'; code: 'CARD_NOT_FOUND' | 'CARD_BOUND_ELSEWHERE'; message: string }
+  | {
+      action: 'refused'
+      code:
+        'BAD_MISSION_ID' | 'BAD_INPUT' | 'CARD_NOT_FOUND' | 'CARD_BOUND_ELSEWHERE' | 'CARD_CLOSED'
+      message: string
+    }
 
 /** Dispatch targets that are work of the step's own: a session or a worktree of its own. */
 function hasOwnWork(dispatch: StepDispatch): boolean {
@@ -189,6 +232,39 @@ function cardTitle(title: string): string {
   return title.replace(/\s+/g, ' ').trim().slice(0, 200).trimEnd()
 }
 
+/** A value written onto one frontmatter line: no line break can add a line of its own. */
+function isOneLine(value: string): boolean {
+  return !/[\r\n\u2028\u2029]/.test(value)
+}
+
+/**
+ * Refuse any id or stamp that could write more than its own frontmatter line. The ids are written into
+ * the card unquoted, so one with a line break and `status: done` would otherwise make a done card: that
+ * is the one thing Harnu must never do.
+ */
+function checkInputs(input: PlanStepCardInput): StepCardPlan | null {
+  const { missionId, step, provenance } = input
+  if (!MISSION_V4_ID_RE.test(missionId)) {
+    return {
+      action: 'refused',
+      code: 'BAD_MISSION_ID',
+      message: 'The mission id is not an id (mnt- and eight hex digits), so no card is written.'
+    }
+  }
+  const badStep = !STEP_V4_ID_RE.test(step.id)
+  const badMilestone = step.milestone !== undefined && !MILESTONE_ID_RE.test(step.milestone)
+  const badProvenance =
+    !isOneLine(provenance.at) || (provenance.branch !== undefined && !isOneLine(provenance.branch))
+  if (badStep || badMilestone || badProvenance) {
+    return {
+      action: 'refused',
+      code: 'BAD_INPUT',
+      message: 'A step id, milestone or provenance is not one plain line, so no card is written.'
+    }
+  }
+  return null
+}
+
 /** The fields a card carries for its step: `milestone` is removed when the step has none. */
 function stepStamp(missionId: string, step: StepV4): Record<string, string | null> {
   return { mission: missionId, milestone: step.milestone ?? null, step: step.id }
@@ -202,11 +278,13 @@ function stepStamp(missionId: string, step: StepV4): Record<string, string | nul
  */
 export function planStepCard(input: PlanStepCardInput): StepCardPlan {
   const { missionId, step, dispatch, cards } = input
+  const bad = checkInputs(input)
+  if (bad) return bad
   if (dispatch === null) return { action: 'none', reason: 'leader-does-it' }
   if (!hasOwnWork(dispatch)) return { action: 'none', reason: 'not-dispatched' }
 
   const ref: StepRef = { missionId, stepId: step.id }
-  const named = step.card ? byName(cards, step.card) : undefined
+  const named = step.card ? findCardByName(cards, step.card) : undefined
   if (step.card && !named) {
     return {
       action: 'refused',
@@ -218,6 +296,14 @@ export function planStepCard(input: PlanStepCardInput): StepCardPlan {
 
   if (existing) {
     const card = parseCard(existing.content, existing.slug)
+    // A closed card is finished work: a step needs a card that can still move. No second card is made.
+    if (card.status === 'done') {
+      return {
+        action: 'refused',
+        code: 'CARD_CLOSED',
+        message: `The card ${existing.slug} is closed. Open a new step for new work.`
+      }
+    }
     const taken = card.step !== undefined && !isStampedFor(card, ref)
     const takenByOtherMission = card.mission !== undefined && card.mission !== missionId
     if (taken || takenByOtherMission) {
