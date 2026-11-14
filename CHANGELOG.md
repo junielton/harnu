@@ -128,6 +128,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **`orchestrate-delivery` picks up the mission a spec started.** When the delivery comes from a spec written by the `spec` skill, the orchestrating session adopts that mission instead of opening a second one, adds one step per slice, makes the cards with the skill's own planner, and turns each open decision into a decision step that holds back only the slices it gates. The other slices are dispatched as usual. With the `spec` skill switched off it derives the cards by hand, as before, and says so.
 
+### Fixed
+
+- **Session cards in the Fleet rail now sit centred.** The gap between a card and the rail's right border was wider than the gap on the left, because room for the scrollbar was always reserved on the right even when nothing scrolled. The same room is now reserved on the left too, so both gaps match with or without a visible scrollbar, and cards still don't change width when the scrollbar appears.
+
 ## 2026-11-06
 
 ### Added
