@@ -519,14 +519,18 @@ export async function runOperatorDoor(
 export async function observeOpenMissions(
   folders: readonly string[],
   now = Date.now(),
-  opts: { onlySessions?: ReadonlySet<string> } = {}
+  opts: {
+    onlySessions?: ReadonlySet<string>
+    /** Test seam: the fleet scan that feeds the linked children's live state. */
+    scan?: () => Promise<FolderEntry[]>
+  } = {}
 ): Promise<number> {
   const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
   if (roots.length === 0) return 0
   const read = await readMissionsDeduped(roots, { includeClosed: false })
   const jobs = pickJobs(read.missions, opts.onlySessions)
   if (jobs.length === 0) return 0
-  const folderRows = await scanFoldersMemo()
+  const folderRows = await (opts.scan ?? scanFoldersMemo)()
   await mapLimit(jobs, LIST_CONCURRENCY, async ({ root, mission, log }) => {
     try {
       const reading = await deriveMissionReading(
