@@ -752,8 +752,8 @@ describe('one guard and one write path: cross-references and the builder', () =>
         record: { ...rec, attachRequests: [req] } as MissionV4,
         log
       }))
-    expect((await ask({ ...base, role: 'worked' })).ok).toBe(true)
-    seed(missionOf(ID))
+    // Round 5: a request carries no role at all, so even `worked` is refused (BAD_ARGS).
+    expect((await ask({ ...base, role: 'worked' })).ok).toBe(false)
     const lead = await ask({ ...base, role: 'leads' })
     expect(lead.ok).toBe(false)
     if (!lead.ok) expect(lead.code).toBe('LEADER_IS_OPERATORS')
@@ -1221,7 +1221,12 @@ describe('one guard and one write path: round 5, the refusals the owner asked fo
           code(
             await write(
               actor,
-              withAc({ settled: stamp(actor.kind === 'session' ? actor.sessionId : '') })
+              withAc({
+                settled: {
+                  ...stamp(actor.kind === 'session' ? actor.sessionId : ''),
+                  evidence: 'Changed my mind'
+                }
+              })
             )
           ),
           'overwritten'
@@ -1325,7 +1330,7 @@ describe('one guard and one write path: round 5, the refusals the owner asked fo
       const earlier = {
         id: 'atr-1',
         missionId: ID,
-        sessionId: REPLIER_ID(),
+        sessionId: REPLIER,
         at: NOW,
         decision: null
       }
@@ -1412,7 +1417,3 @@ describe('one guard and one write path: round 5, the refusals the owner asked fo
     })
   })
 })
-
-function REPLIER_ID(): string {
-  return 'e0e0e0e0-0000-4000-8000-000000000009'
-}
