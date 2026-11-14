@@ -1,7 +1,7 @@
 /**
  * Campaign IPC (T596, campaign chapter 4b) — the renderer's read of every open campaign over the
  * typed `campaign:list` channel. Mirrors `mission-ipc.ts` and is READ-ONLY on purpose: there is no
- * campaign operator door in main yet (the end door and the merge batch land with later chapters),
+ * campaign operator door in main yet (the end door lands with a later chapter),
  * so the UI renders what the record says and offers nothing that would write it.
  *
  * Each {@link CampaignView} carries the campaign as stored plus the SERVER's chapter progress

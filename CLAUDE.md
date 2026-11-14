@@ -381,12 +381,9 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission step rail (§6 — T370)                      | `src/renderer/src/components/MissionStepRail.vue`                                |
 | Mission step glyph (§6 — T596)                     | `src/renderer/src/components/MissionStepGlyph.vue`                               |
 | Campaign popover (§6 — T596)                       | `src/renderer/src/components/CampaignPopover.vue` + `lib/campaign-view.ts`       |
-| Campaign map takeover (§6 — T607)                  | `src/renderer/src/components/CampaignMap.vue` + `lib/campaign-map.ts`            |
-| Campaign map gate dots (§6 — T607)                 | `src/renderer/src/components/CampaignGateDots.vue`                               |
 | Campaign store + IPC (§6 — T596)                   | `stores/campaigns.ts` + `src/main/campaign-ipc.ts`                               |
 | Mission close confirm (§6 — T370 AC-S9-8)          | `src/renderer/src/components/MissionCloseConfirmDialog.vue`                      |
 | Pause steward dialog (§6 — T609)                   | `src/renderer/src/components/StewardPauseDialog.vue`                             |
-| Merge batch dialog (§6 — T609)                     | `src/renderer/src/components/MergeBatchDialog.vue` + `src/main/merge-batch-*.ts` |
 | Scheduler Stewards section (§6 — T609)             | `src/renderer/src/components/SchedulerStewards.vue` + `lib/steward-view.ts`      |
 | Missions review dialog (§6 — BUG-173 S5)           | `src/renderer/src/components/MissionsReviewDialog.vue`                           |
 | Bulk close confirm (§6 — BUG-173 S5)               | `src/renderer/src/components/MissionBulkCloseConfirmDialog.vue`                  |
