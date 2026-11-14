@@ -124,6 +124,21 @@ export function guardMission(record: MissionV4, actor: Actor, need: Need): Acces
   return { ok: true, standing: entry.role }
 }
 
+/**
+ * The sessions that built a step: the `session` links on it. A session that built a step only
+ * self-checks it; a second session, one that is NOT in this list, may settle its criteria (the verb
+ * that does is `mission_settle_ac`, which asks this).
+ */
+export function buildersOf(record: MissionV4, stepId: string): string[] {
+  const step = record.steps.find((s) => s.id === stepId)
+  return (step?.links ?? []).filter((l) => l.kind === 'session').map((l) => l.ref)
+}
+
+/** Whether `sessionId` built the step, so that anything it says of it is a self-check. */
+export function isBuilderOf(record: MissionV4, sessionId: string, stepId: string): boolean {
+  return buildersOf(record, stepId).includes(sessionId)
+}
+
 // ---- Reads -----------------------------------------------------------------------
 
 export type GuardedRead = MissionRecordRead | { ok: false; error: string; code: GuardCode }

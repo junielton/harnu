@@ -27,7 +27,9 @@ import {
   type MissionV4
 } from '../src/main/missions/model'
 import {
+  buildersOf,
   guardMission,
+  isBuilderOf,
   listMissionRows,
   readMissionAs,
   type Actor,
@@ -663,5 +665,93 @@ describe('one guard and one write path', () => {
       expect(again.ok).toBe(false)
       expect(v4Snapshot()).toEqual(before)
     })
+  })
+})
+
+describe('one guard and one write path: cross-references and the builder', () => {
+  beforeEach(() => {
+    seed(missionOf(ID))
+  })
+  const refused = async (change: (r: MissionV4) => MissionV4, actor: Actor = session(LEADER)) =>
+    writeMission(root, ID, actor, 'write', (rec, log) => ({ record: change(rec), log }))
+  const stepTwo = { id: 'stp-2', title: 'Write the report', acs: [], links: [], blockers: [] }
+
+  it('step and milestone ids are unique', async () => {
+    const before = v4Snapshot()
+    const dupStep = await refused((r) => ({
+      ...r,
+      steps: [...r.steps, { ...stepTwo, id: 'stp-1' }]
+    }))
+    expect(dupStep.ok).toBe(false)
+    if (!dupStep.ok) expect(dupStep.code).toBe('DUPLICATE_ID')
+    const dupMilestone = await refused((r) => ({
+      ...r,
+      milestones: [
+        { id: 'mls-1', title: 'First', optional: false, waitsFor: null },
+        { id: 'mls-1', title: 'Second', optional: false, waitsFor: null }
+      ]
+    }))
+    expect(dupMilestone.ok).toBe(false)
+    if (!dupMilestone.ok) expect(dupMilestone.code).toBe('DUPLICATE_ID')
+    expect(v4Snapshot()).toEqual(before)
+  })
+
+  it('a step names a milestone the mission has', async () => {
+    const before = v4Snapshot()
+    const r = await refused((rec) => ({ ...rec, steps: [{ ...rec.steps[0], milestone: 'mls-9' }] }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.code).toBe('UNKNOWN_MILESTONE')
+    expect(v4Snapshot()).toEqual(before)
+    const ok = await refused((rec) => ({
+      ...rec,
+      milestones: [{ id: 'mls-1', title: 'Load the data', optional: false, waitsFor: null }],
+      steps: [{ ...rec.steps[0], milestone: 'mls-1' }, stepTwo]
+    }))
+    expect(ok.ok).toBe(true)
+  })
+
+  it('a record that already breaks a reference is not refused for it by an unrelated change', async () => {
+    seed(missionOf(ID, { steps: [{ ...missionOf(ID).steps[0], milestone: 'mls-9' }] }))
+    const r = await refused((rec) => ({ ...rec, links: [{ kind: 'doc', ref: 'docs/x.md' }] }))
+    expect(r.ok).toBe(true)
+  })
+
+  it('at most one open leader, whoever writes and however the second one arrives', async () => {
+    const second = { id: OUTSIDER, role: 'leads' as const, from: NOW, to: null }
+    const r = await refused((rec) => ({ ...rec, sessions: [...rec.sessions, second] }), operator)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.code).toBe('TWO_LEADERS')
+  })
+
+  it('names the builders of a step, so a verb can tell a self-check from a second session', () => {
+    const record = missionOf(ID, {
+      steps: [
+        {
+          ...missionOf(ID).steps[0],
+          links: [
+            { kind: 'session', ref: WORKER },
+            { kind: 'pr', ref: '256' }
+          ]
+        }
+      ]
+    })
+    expect(buildersOf(record, 'stp-1')).toEqual([WORKER])
+    expect(isBuilderOf(record, WORKER, 'stp-1')).toBe(true)
+    expect(isBuilderOf(record, LEADER, 'stp-1')).toBe(false)
+    expect(buildersOf(record, 'stp-9')).toEqual([])
+  })
+
+  it('an attach request that asks to lead is refused', async () => {
+    const base = { id: 'atr-1', missionId: ID, sessionId: OUTSIDER, at: NOW, decision: null }
+    const ask = (req: Record<string, unknown>) =>
+      writeMission(root, ID, session(OUTSIDER), 'ask-to-attach', (rec, log) => ({
+        record: { ...rec, attachRequests: [req] } as MissionV4,
+        log
+      }))
+    expect((await ask({ ...base, role: 'worked' })).ok).toBe(true)
+    seed(missionOf(ID))
+    const lead = await ask({ ...base, role: 'leads' })
+    expect(lead.ok).toBe(false)
+    if (!lead.ok) expect(lead.code).toBe('LEADER_IS_OPERATORS')
   })
 })
