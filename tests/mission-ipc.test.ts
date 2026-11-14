@@ -22,7 +22,9 @@ const h = vi.hoisted(() => ({
   inFlight: 0,
   peakInFlight: 0,
   scanCalls: 0,
-  deriveFails: false
+  deriveFails: false,
+  /** What `registerMissionIpc` registered, by channel (S-15). */
+  handlers: new Map<string, (e: unknown, arg?: unknown) => unknown>()
 }))
 
 vi.mock('electron', () => ({
@@ -34,7 +36,12 @@ vi.mock('electron', () => ({
   dialog: {},
   shell: {},
   BrowserWindow: class {},
-  ipcMain: { handle: (): void => {}, on: (): void => {} }
+  ipcMain: {
+    handle: (channel: string, fn: (e: unknown, arg?: unknown) => unknown): void => {
+      h.handlers.set(channel, fn)
+    },
+    on: (): void => {}
+  }
 }))
 
 // The fleet scan reads the real ~/.claude/projects — keep the tests off it.
@@ -598,5 +605,66 @@ describe('runOperatorDoor', () => {
         closedAs: 'delivered'
       })
     ).toEqual({ ok: false, error: expect.stringMatching(/^MISSION_NOT_FOUND/) })
+  })
+})
+
+describe('registerMissionIpc — the v4 door channel (S-15)', () => {
+  it('adds mission:v4Door beside the existing channels and routes a door to the v4 record', async () => {
+    h.handlers.clear()
+    ipc.registerMissionIpc()
+    expect([...h.handlers.keys()].sort()).toEqual([
+      'mission:choose',
+      'mission:list',
+      'mission:operatorDoor',
+      'mission:v4Door'
+    ])
+
+    const { buildMissionRecordContent } = await import('../src/main/missions/model')
+    const id = 'mnt-d0000099'
+    const dir = path.join(root, '.harnu', 'missions-v4')
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, `${id}-doors.md`),
+      buildMissionRecordContent(
+        {
+          schemaVersion: 4,
+          id,
+          title: 'Doors',
+          doneWhen: 'The doors open',
+          status: 'open',
+          milestones: [],
+          steps: [
+            {
+              id: 'stp-1',
+              title: 'Check the doors',
+              acs: [{ id: 'ac-1', text: 'The doors are checked', by: 'operator' }],
+              links: [],
+              blockers: []
+            }
+          ],
+          sessions: [],
+          links: [],
+          blockers: []
+        },
+        '# Log\n'
+      )
+    )
+    const reply = (await h.handlers.get('mission:v4Door')!(
+      {},
+      {
+        door: 'mark',
+        folder: root,
+        missionId: id,
+        stepId: 'stp-1',
+        criterionId: 'ac-1'
+      }
+    )) as Record<string, unknown>
+    // The outcome, and never the record or the path of its file.
+    expect(reply).toEqual({ ok: true, changed: true, stepId: 'stp-1', criterionId: 'ac-1' })
+    const bad = (await h.handlers.get('mission:v4Door')!({}, { door: 'nope' })) as Record<
+      string,
+      unknown
+    >
+    expect(bad).toMatchObject({ ok: false, code: 'BAD_ARGS' })
   })
 })

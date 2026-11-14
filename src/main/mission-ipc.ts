@@ -63,6 +63,7 @@ import {
   type RootedMission
 } from './missions/store'
 import { waitingList, type WaitingItem } from './missions/waiting'
+import { doorReply, runDoor } from './missions/doors'
 import { createMissionObserver, observeMission, type MissionObserver } from './missions/observer'
 import { ensureLinkCacheLoaded } from './mission-link-cache'
 import { hydrateMissionLedger, observedRows } from './missions/ledger-store'
@@ -667,6 +668,11 @@ export function registerMissionIpc(): void {
   ipcMain.handle('mission:operatorDoor', async (_e, door: unknown): Promise<MissionDoorResult> =>
     runOperatorDoor(door)
   )
+  // Missions v4 S-15 — the operator's doors on a v4 record (mark, clear a blocker, approve a Done when,
+  // close, allow or deny a join, attach from the picker). Additive: nothing above changes. It has no
+  // preload entry until S-16, so the renderer cannot reach it yet. The reply carries the outcome and the
+  // close warnings, never the record or a file path.
+  ipcMain.handle('mission:v4Door', async (_e, door: unknown) => doorReply(await runDoor(door)))
   // Campaign spec §4 — the Choose door has its own channel; it is the same door.
   ipcMain.handle('mission:choose', async (_e, args: unknown): Promise<MissionDoorResult> => {
     const a = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
