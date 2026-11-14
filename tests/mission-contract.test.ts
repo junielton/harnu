@@ -118,7 +118,7 @@ describe('the caps', () => {
     }
   })
 
-  it('count characters, not UTF-16 units: a long text of emoji is measured as typed', () => {
+  it('count characters, not code units: a long text of emoji is measured as typed', () => {
     const atCap = '🚀'.repeat(CAPS.button)
     expect(checkButtonLabel(atCap)).toEqual({ ok: true })
     refusedWith(checkButtonLabel(atCap + '🚀'), 'OVER_CAP')

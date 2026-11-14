@@ -93,7 +93,7 @@ function refuse(
 
 // ---- Helpers ------------------------------------------------------------------
 
-/** Characters as a person counts them: a code point, not a UTF-16 unit. */
+/** Characters as a person counts them: a code point, not half of a surrogate pair. */
 function charCount(text: string): number {
   return Array.from(text).length
 }
