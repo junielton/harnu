@@ -68,6 +68,7 @@ const ALLOWED_UPPER_PREFIXES = [
   'GUID', // prose, not a key
   'ISO', // ISO-8601, a standard's name
   'PR', // PR-123 in examples
+  'JKEY', // a requirement id a contestant coined in its own spec, quoted in a judge note of the S-10 reproduction report
   'PROJ', // neutral placeholder (CLAUDE.md)
   'PYI', // a PyInstaller log tag (`PYI-3853`), quoted from a public upstream issue in the bake-off corpus
   'TASK', // neutral placeholder, pre-existing
