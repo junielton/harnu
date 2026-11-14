@@ -109,6 +109,20 @@ const PR_STATE: Record<PrRow['state'], Exclude<PrState, 'none'>> = {
 const ciFact = (ci: string | undefined): boolean | undefined =>
   ci === 'passing' ? true : ci === 'failing' ? false : undefined
 
+/**
+ * The board's step index, built once per board: a pass that gathers the facts of N records hands the
+ * same array of files to each, so the cards are parsed once, not once per record.
+ */
+const boards = new WeakMap<readonly CardFile[], ReturnType<typeof indexStepCards>>()
+function boardIndex(files: readonly CardFile[]): ReturnType<typeof indexStepCards> {
+  let index = boards.get(files)
+  if (!index) {
+    index = indexStepCards(files)
+    boards.set(files, index)
+  }
+  return index
+}
+
 // ---- The adapter ----------------------------------------------------------------------
 
 /**
@@ -131,15 +145,15 @@ export async function gatherStepFacts(
       files = []
     }
   }
-  const index = indexStepCards(files)
+  const index = boardIndex(files)
   const cardOf = (step: StepV4): { column?: CardColumn; branch?: string } => {
+    if (!step.card) return {}
     const ref = { missionId: record.id, stepId: step.id }
-    const named = step.card ? findCardByName(files, step.card) : undefined
-    const card = named
-      ? parseCard(named.content, named.slug)
-      : step.card
-        ? index.get(stepCardKey(ref))?.card
-        : undefined
+    // The card stamped for this step comes from the board's index (parsed once per board); a card the
+    // step names that carries no stamp for it is looked up by name and reads as no card.
+    const stamped = index.get(stepCardKey(ref))?.card
+    const named = stamped ? undefined : findCardByName(files, step.card)
+    const card = stamped ?? (named ? parseCard(named.content, named.slug) : undefined)
     const column = stepCardColumn(card, ref)
     if (column === undefined) return {}
     return { column, ...(card?.executedIn ? { branch: card.executedIn } : {}) }
