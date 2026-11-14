@@ -295,14 +295,15 @@ describe('AC-45 — the tree opens with chevrons, and only the current milestone
 
     await stepRow(w, 'stp-3').trigger('click')
     expect(stepRow(w, 'stp-3').attributes('aria-expanded')).toBe('true')
+    // S-19: the settled criterion folds into one line; only the open one is listed.
     const criteria = w.findAll('[data-test="criterion"]')
-    expect(criteria.map((c) => c.text())).toEqual([
-      'The run finishes on both test sets',
-      'The pull request is open and passes CI'
+    expect(criteria.map((c) => c.get('[data-test="criterion-text"]').text())).toEqual([
+      'The run finishes on both test sets'
     ])
+    expect(w.get('[data-test="criteria-verified"]').text()).toBe('1 criterion verified')
     // Nested: the criteria sit inside the open milestone's own box, after their step.
     const body = w.get('[data-test="milestone-body"][data-milestone="mls-2"]')
-    expect(body.findAll('[data-test="criterion"]')).toHaveLength(2)
+    expect(body.findAll('[data-test="criterion"]')).toHaveLength(1)
     expect(body.get('[data-step="stp-3"]').exists()).toBe(true)
   })
 
