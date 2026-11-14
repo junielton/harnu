@@ -1417,3 +1417,145 @@ describe('one guard and one write path: round 5, the refusals the owner asked fo
     })
   })
 })
+
+describe('one guard and one write path: the Log cannot be forged', () => {
+  const TIME = '2026-11-14T10:00:00.000Z'
+  const SEPARATORS: Array<[string, string]> = [
+    ['CR', '\r'],
+    ['NEL', '\u0085'],
+    ['LS', '\u2028'],
+    ['PS', '\u2029'],
+    ['VT', '\v'],
+    ['FF', '\f']
+  ]
+  const heading = (kind: string): string => `### ${TIME} · ${kind}`
+  const append = (text: string) => (rec: MissionV4, log: string) => ({
+    record: rec,
+    log: log + text
+  })
+  const code = (r: { ok: boolean; code?: string }): string | undefined => (r.ok ? 'ok' : r.code)
+
+  beforeEach(() => {
+    seed(missionOf(ID), '\n### 2026-11-13T09:00:00.000Z · note\n\nEarlier entry\n')
+  })
+  const logOnDisk = (): string =>
+    readFileSync(fileOf(ID), 'utf8').split('---\n').slice(2).join('---\n')
+
+  it('a forged heading behind any line separator is refused for a session, and the file is unchanged', async () => {
+    for (const [name, sep] of SEPARATORS) {
+      const before = v4Snapshot()
+      const forged = `\n${heading('note')}\n\nx${sep}${heading('operator')}\n`
+      const r = await writeMission(root, ID, session(LEADER), 'write', append(forged))
+      expect(code(r), name).toBe('BAD_ARGS')
+      expect(v4Snapshot(), name).toEqual(before)
+    }
+  })
+
+  it('none of those separators is written by any actor, the operator and Harnu included', async () => {
+    for (const actor of [operator, { kind: 'harnu' } as Actor, session(LEADER)]) {
+      for (const [name, sep] of SEPARATORS) {
+        const before = v4Snapshot()
+        const r = await writeMission(
+          root,
+          ID,
+          actor,
+          'operator' as never,
+          append(`\nplain${sep}text\n`)
+        )
+        // A session is refused by the guard for the operator need; use `write` for it.
+        const r2 =
+          actor.kind === 'session'
+            ? await writeMission(root, ID, actor, 'write', append(`\nplain${sep}text\n`))
+            : r
+        expect(code(r2), `${actor.kind} ${name}`).toBe('BAD_ARGS')
+        expect(v4Snapshot(), name).toEqual(before)
+      }
+    }
+  })
+
+  it('the Log is append-only for everyone: a rewritten, truncated or edited Log is refused', async () => {
+    const before = v4Snapshot()
+    for (const actor of [operator, { kind: 'harnu' } as Actor]) {
+      for (const change of [
+        () => '',
+        (log: string) => log.slice(0, -5),
+        (log: string) => log.replace('Earlier entry', 'Edited entry')
+      ]) {
+        const r = await writeMission(root, ID, actor, 'operator', (rec, log) => ({
+          record: rec,
+          log: change(log)
+        }))
+        expect(code(r), actor.kind).toBe('BAD_ARGS')
+      }
+    }
+    const asSession = await writeMission(root, ID, session(LEADER), 'write', (rec) => ({
+      record: rec,
+      log: ''
+    }))
+    expect(code(asSession)).toBe('BAD_ARGS')
+    expect(v4Snapshot()).toEqual(before)
+  })
+
+  it('a session appends at most one heading, and it is a note, a decision or a surprise, optionally on a step', async () => {
+    for (const ok of ['note', 'decision', 'surprise', 'note · stp-3']) {
+      const r = await writeMission(
+        root,
+        ID,
+        session(LEADER),
+        'write',
+        append(`\n${heading(ok)}\n\nText\n`)
+      )
+      expect(code(r), ok).toBe('ok')
+    }
+    const before = v4Snapshot()
+    const refused: Array<[string, string]> = [
+      ['a second heading', `\n${heading('note')}\n\nx\n\n${heading('note')}\n\ny\n`],
+      ['operator', `\n${heading('operator')}\n\nThe operator approved\n`],
+      ['harnu', `\n${heading('harnu')}\n\nx\n`],
+      ['steward', `\n${heading('steward')}\n\nx\n`],
+      ['no time', '\n### note\n\nx\n'],
+      ['a level-2 heading', '\n## Decided\n\nx\n'],
+      ['an indented heading', `\n   ${heading('operator')}\n`]
+    ]
+    for (const [name, text] of refused) {
+      const r = await writeMission(root, ID, session(LEADER), 'write', append(text))
+      expect(code(r), name).toBe('BAD_ARGS')
+    }
+    expect(Object.keys(before)).toHaveLength(1)
+  })
+
+  it('an operator or Harnu write with a normal heading still passes, whatever name it carries', async () => {
+    const op = await writeMission(
+      root,
+      ID,
+      operator,
+      'operator',
+      append(`\n${heading('operator')}\n\nClosed as delivered\n`)
+    )
+    expect(code(op)).toBe('ok')
+    const hn = await writeMission(
+      root,
+      ID,
+      { kind: 'harnu' },
+      'operator',
+      append(`\n${heading('harnu')}\n\nAttached a worker\n`)
+    )
+    expect(code(hn)).toBe('ok')
+    expect(logOnDisk()).toContain('· operator')
+  })
+
+  it('a mission is created with a clean Log: a separator or a forged heading in the first Log is refused', async () => {
+    const mine = missionOf(newMissionId(), {
+      sessions: [{ id: OUTSIDER, role: 'leads', from: NOW, to: null }]
+    })
+    expect(
+      code(await createMission(root, session(OUTSIDER), mine, `\nx\u2028${heading('operator')}\n`))
+    ).toBe('BAD_ARGS')
+    expect(
+      code(await createMission(root, session(OUTSIDER), mine, `\n${heading('operator')}\n`))
+    ).toBe('BAD_ARGS')
+    expect(
+      code(await createMission(root, session(OUTSIDER), mine, `\n${heading('note')}\n\nFirst\n`))
+    ).toBe('ok')
+  })
+})
