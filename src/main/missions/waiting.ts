@@ -523,7 +523,7 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
       prs: reviewing.flatMap((r) => (r.pr ? [r.pr] : [])),
       ask:
         n === 1
-          ? `Look over the pull request for ${reviewing[0].title}`
+          ? `Look over the pull request for "${reviewing[0].title}"`
           : `Look over ${n} pull requests`,
       why: n === 1 ? 'The step cannot finish until you do' : `${n} steps cannot finish until you do`
     })
