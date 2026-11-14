@@ -3051,6 +3051,13 @@ describe('Mission v3 — the you list and server-side progress (spec §3.1, §3.
         .missions as Array<Record<string, unknown>>
     expect((await list())[0].progress).toBeNull()
     const got = await get(missionId)
+    // A read does not remember its progress (AC-4); the observer pass over the same world does.
+    const { observeOpenMissions } = await import('../src/main/mission-ipc')
+    await observeOpenMissions(
+      [repo.main],
+      Date.parse((got.derived as { computedAt: string }).computedAt),
+      { scan: async () => [] }
+    )
     const row = (await list())[0]
     expect(row.progress).toEqual((got.derived as { progress: unknown }).progress)
     // The deprecated counts exclude a legacy fixed start.

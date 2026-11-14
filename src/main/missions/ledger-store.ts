@@ -206,25 +206,32 @@ export function bindMissionRoot(missionId: string, root: string): void {
 }
 
 /**
- * Read what the repo holds for a mission, merge it with what this process saw, and return the lot
- * (the whole file, not the tail memory keeps). Anything only memory held is stored.
+ * Read what the repo holds for a mission and merge it with what this process saw: the whole file,
+ * not the tail memory keeps. A READ — it binds nothing, loads nothing into memory and stores
+ * nothing, so looking at a mission leaves the world as it found it (AC-4). What only memory holds
+ * is stored by {@link hydrateMissionLedger}, which the observer pass calls.
  */
 export async function readObservedLedger(root: string, missionId: string): Promise<LedgerRow[]> {
   if (!MISSION_ID_RE.test(missionId)) return []
-  bindMissionRoot(missionId, root)
-  const stored = await readLedgerFile(root, missionId)
-  const held = memory.get(missionId) ?? []
-  const all = dedupe([...stored, ...held])
-  memory.set(missionId, keep(all))
-  hydrated.add(`${root}\u0000${missionId}`)
-  if (all.length > stored.length) markUnsaved(missionId)
-  return all
+  return dedupe([...(await readLedgerFile(root, missionId)), ...(memory.get(missionId) ?? [])])
 }
 
-/** Once per process and mission: load the stored rows into memory before the observer dedupes. */
+/**
+ * The observer pass's first move on a mission, once per process: bind it to its repo, load the
+ * stored rows into memory before the observer dedupes against it, and store whatever only memory
+ * holds — which is how the rows the userData cache carries are copied in (AC-6). It is a write,
+ * so no read calls it.
+ */
 export async function hydrateMissionLedger(root: string, missionId: string): Promise<void> {
-  if (hydrated.has(`${root}\u0000${missionId}`)) return
-  await readObservedLedger(root, missionId)
+  if (!MISSION_ID_RE.test(missionId)) return
+  const key = `${root}\u0000${missionId}`
+  if (hydrated.has(key)) return
+  hydrated.add(key)
+  bindMissionRoot(missionId, root)
+  const stored = await readLedgerFile(root, missionId)
+  const all = dedupe([...stored, ...(memory.get(missionId) ?? [])])
+  memory.set(missionId, keep(all))
+  if (all.length > stored.length) markUnsaved(missionId)
 }
 
 /**

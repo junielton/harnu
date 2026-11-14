@@ -1,8 +1,9 @@
 /**
  * Missions v4 S-3 (R-25, AC-4) — the observer: the one place a mission read is allowed to write.
  *
- * `deriveMission` (`./derive.ts`) only reads. What a read learned comes back as a
- * `MissionObservation`, and {@link observeMission} acts on it:
+ * `deriveMission` (`./derive.ts`) only reads, and so does every caller that looks at a mission.
+ * What a read learned comes back as a `MissionObservation`; {@link observeMission} acts on it,
+ * and only the observer pass does (`createMissionObserver`, started by `mission-ipc.ts`):
  *
  *  - the sticky last-known facts (Mission v3 §3.7) go into the link cache;
  *  - the progress it computed is remembered for `mission_list`;
@@ -10,12 +11,10 @@
  *    the sidecar ledger, once per new fact;
  *  - one wake goes to the mission's steward, named for the most specific thing seen.
  *
- * It never rewrites the mission file: `updatedAt` stays a pure evidence signal. A read that is
- * not observed leaves the world exactly as it found it.
+ * It never rewrites the mission file: `updatedAt` stays a pure evidence signal.
  */
 import { wakeStewardForMission } from '../scheduler-shell'
 import type { WakeReason } from '../steward-core'
-import type { MissionChildState } from '../mcp/fleet-snapshot'
 import type { LedgerRow, Mission } from '../mission-core'
 import {
   addObservedLedger,
@@ -25,14 +24,7 @@ import {
 } from '../mission-link-cache'
 import { hasLedgerRow, lastLedgerDetail, mergeLedger, type LedgerRowInput } from '../mission-ledger'
 import type { MissionProgress } from '../mission-progress'
-import {
-  deriveMission,
-  type DeriveDeps,
-  type MissionDerived,
-  type MissionObservation,
-  type MissionReading,
-  type MissionStepSignals
-} from './derive'
+import type { MissionObservation, MissionReading, MissionStepSignals } from './derive'
 
 /**
  * Mission v3 §3.10 — the last progress every observed read computed, per mission, so
@@ -180,21 +172,102 @@ export function observeMission(mission: Mission, reading: MissionReading, now: n
   observeLedger(mission, reading.derived.steps, reading.observation.prByStep, now)
 }
 
+// ---- What drives the observer (S-3 delta 1) ------------------------------------------------
+
+/** How often the observer looks at the open missions: the pull request cache's own lifetime. */
+export const OBSERVER_INTERVAL_MS = 60_000
+/** The first pass after start, so `mission_list` has progress soon after boot. */
+export const OBSERVER_FIRST_PASS_MS = 10_000
+/** A burst of ending sessions starts one pass, this long after the first of them. */
+export const OBSERVER_EVENT_DEBOUNCE_MS = 3_000
+
+export interface MissionObserverDeps {
+  /** The folders whose open missions are observed; empty = nothing to do. */
+  folders: () => Promise<readonly string[]>
+  /**
+   * One pass over the open missions of `folders` (only the ones linking `onlySessions`, when
+   * given): derive each, then {@link observeMission}. Returns how many it observed.
+   */
+  pass: (
+    folders: readonly string[],
+    opts: { onlySessions?: ReadonlySet<string> }
+  ) => Promise<number>
+  /** The task-state hook events Harnu already receives; returns the unsubscribe. */
+  onTaskEvent: (cb: (ev: { sessionId: string; taskState: string }) => void) => () => void
+  intervalMs?: number
+  firstPassMs?: number
+  eventDebounceMs?: number
+}
+
+export interface MissionObserver {
+  start(): void
+  stop(): void
+}
+
 /**
- * Derive a mission and observe the reading — what the verbs, the renderer IPC and the steward
- * do on every read. The two halves stay separate: a caller that wants a read with no effect
- * calls {@link deriveMission} alone.
+ * The observer's trigger — never a read. One pass shortly after start, then one every
+ * {@link OBSERVER_INTERVAL_MS}, and one a few seconds after a linked session ends (the task-state
+ * events Harnu already receives; a burst coalesces into one pass for the sessions in it).
+ * Passes never overlap: a tick that finds one running is dropped, the next tick covers it. With
+ * no folder known nothing runs; a pass that finds no open mission reads the mission files and
+ * stops there (no fleet scan, no derive).
  */
-export async function deriveAndObserve(
-  root: string,
-  mission: Mission,
-  log: string,
-  deps: DeriveDeps,
-  now: number,
-  /** `prWaitMs`: how long to wait for GitHub before reading the sticky last-known states. */
-  opts: { prWaitMs?: number; mainCiWaitMs?: number } = {}
-): Promise<{ derived: MissionDerived; children: MissionChildState[] }> {
-  const reading = await deriveMission(root, mission, log, deps, now, opts)
-  observeMission(mission, reading, now)
-  return { derived: reading.derived, children: reading.children }
+export function createMissionObserver(deps: MissionObserverDeps): MissionObserver {
+  const intervalMs = deps.intervalMs ?? OBSERVER_INTERVAL_MS
+  const firstPassMs = deps.firstPassMs ?? OBSERVER_FIRST_PASS_MS
+  const debounceMs = deps.eventDebounceMs ?? OBSERVER_EVENT_DEBOUNCE_MS
+  let interval: ReturnType<typeof setInterval> | null = null
+  let first: ReturnType<typeof setTimeout> | null = null
+  let soon: ReturnType<typeof setTimeout> | null = null
+  let unsubscribe: (() => void) | null = null
+  let running = false
+  let stopped = true
+  const ended = new Set<string>()
+
+  async function run(onlySessions?: ReadonlySet<string>): Promise<void> {
+    if (running || stopped) return
+    running = true
+    try {
+      const folders = await deps.folders()
+      if (folders.length === 0) return
+      await deps.pass(folders, onlySessions ? { onlySessions } : {})
+    } catch (err) {
+      console.warn('[mission-observer] pass failed:', err)
+    } finally {
+      running = false
+    }
+  }
+
+  return {
+    start(): void {
+      if (!stopped) return
+      stopped = false
+      first = setTimeout(() => void run(), firstPassMs)
+      first.unref?.()
+      interval = setInterval(() => void run(), intervalMs)
+      interval.unref?.()
+      unsubscribe = deps.onTaskEvent((ev) => {
+        if (!SESSION_DEATH_STATES.has(ev.taskState)) return
+        ended.add(ev.sessionId)
+        if (soon) return
+        soon = setTimeout(() => {
+          soon = null
+          const sessions = new Set(ended)
+          ended.clear()
+          void run(sessions)
+        }, debounceMs)
+        soon.unref?.()
+      })
+    },
+    stop(): void {
+      stopped = true
+      if (first) clearTimeout(first)
+      if (interval) clearInterval(interval)
+      if (soon) clearTimeout(soon)
+      first = interval = soon = null
+      unsubscribe?.()
+      unsubscribe = null
+      ended.clear()
+    }
+  }
 }

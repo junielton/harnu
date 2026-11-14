@@ -23,6 +23,9 @@
 
 import { retireStewardForClosedMission } from './steward-shell'
 import { ipcMain } from 'electron'
+import { addTaskEventObserver } from './hook-bridge'
+import { listStewards } from './scheduler-shell'
+import { readUserProjects } from './user-projects'
 import { scanFolders } from './claude-reader'
 import type { FolderEntry } from './folder-model'
 import { mapLimit } from './map-limit'
@@ -46,6 +49,7 @@ import type { MissionProgress } from './mission-progress'
 import { atomicWriteFile } from './mcp/atomic-write'
 import { recordMemoryDrafts, unknownDraftIds, type RecordResult } from './mission-record'
 import {
+  deriveMissionReading,
   deriveMissionSignals,
   missionTitle,
   youItems,
@@ -54,6 +58,9 @@ import {
   type ToolHandlerCtx
 } from './mcp/tool-handlers'
 import { loadMission, missionRoot, readMissionsDeduped, type RootedMission } from './missions/store'
+import { createMissionObserver, observeMission, type MissionObserver } from './missions/observer'
+import { ensureLinkCacheLoaded } from './mission-link-cache'
+import { hydrateMissionLedger } from './missions/ledger-store'
 
 /** One open mission as the renderer reads it (design.md §6 "Mission progress"). */
 export interface MissionView {
@@ -185,6 +192,36 @@ async function buildMissionView(
   }
 }
 
+/** One mission to derive: where its file lives, the mission and its Log. */
+interface MissionJob {
+  root: string
+  mission: Mission
+  log: string
+}
+
+/**
+ * The missions to derive, taken round-robin across repos (so every repo's first `gh` fetch starts
+ * in the first wave). `only`: just the missions one of these sessions owns or is linked to as a
+ * child; absent: every one.
+ */
+function pickJobs(missions: readonly RootedMission[], only?: ReadonlySet<string>): MissionJob[] {
+  const wanted = (m: Mission): boolean =>
+    only === undefined ||
+    only.has(m.owner.sessionId) ||
+    m.steps.some((s) => s.links.some((l) => l.kind === 'session' && only.has(l.ref)))
+  const perRoot = new Map<string, RootedMission[]>()
+  for (const m of missions) {
+    if (!wanted(m.mission)) continue
+    perRoot.set(m.root, [...(perRoot.get(m.root) ?? []), m])
+  }
+  const lists = [...perRoot.values()]
+  const jobs: MissionJob[] = []
+  for (let k = 0; lists.some((list) => k < list.length); k++) {
+    for (const list of lists) if (k < list.length) jobs.push(list[k])
+  }
+  return jobs
+}
+
 /**
  * Every open mission under the repos of `folders`, newest first. Missions are
  * derived {@link LIST_CONCURRENCY} at a time (Mission v3 §3.8), taken round-robin
@@ -209,22 +246,7 @@ export async function listMissionViews(
     scanFoldersMemo()
   ])
   const unreadable = read.unreadable.map((u) => u.name)
-  // One list per repo root, so the jobs below can be taken round-robin across repos.
-  const perRoot = new Map<string, RootedMission[]>()
-  const only = opts.onlySessions
-  const wanted = (m: Mission): boolean =>
-    only === undefined ||
-    only.has(m.owner.sessionId) ||
-    m.steps.some((s) => s.links.some((l) => l.kind === 'session' && only.has(l.ref)))
-  for (const m of read.missions) {
-    if (!wanted(m.mission)) continue
-    perRoot.set(m.root, [...(perRoot.get(m.root) ?? []), m])
-  }
-  const lists = [...perRoot.values()]
-  const jobs: Array<{ root: string; mission: Mission; log: string }> = []
-  for (let k = 0; lists.some((list) => k < list.length); k++) {
-    for (const list of lists) if (k < list.length) jobs.push(list[k])
-  }
+  const jobs = pickJobs(read.missions, opts.onlySessions)
   const views = await mapLimit(jobs, LIST_CONCURRENCY, ({ root, mission, log }) =>
     // The operator's own view: no folder is blocked from them (denyFolders is
     // an AGENT policy), and the fleet scan feeds the linked children's live state.
@@ -487,6 +509,103 @@ export async function runOperatorDoor(
   }
 }
 
+// ---- The observer pass (S-3 delta 1) -------------------------------------------------------
+
+/**
+ * One observer pass: derive every open mission of `folders` (or the ones linking `onlySessions`)
+ * and let the observer record what each reading saw. It does what one `mission:list` poll does
+ * — the same file read, the same fleet scan (memoized), one derive per mission, which joins the
+ * same single-flight pull request cache — and nothing more: no extra `git` or `gh` call. With no
+ * open mission it stops after reading the mission files. Returns how many missions it observed.
+ */
+export async function observeOpenMissions(
+  folders: readonly string[],
+  now = Date.now(),
+  opts: {
+    onlySessions?: ReadonlySet<string>
+    /** Test seam: the fleet scan that feeds the linked children's live state. */
+    scan?: () => Promise<FolderEntry[]>
+  } = {}
+): Promise<number> {
+  const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
+  if (roots.length === 0) return 0
+  const read = await readMissionsDeduped(roots, { includeClosed: false })
+  const jobs = pickJobs(read.missions, opts.onlySessions)
+  if (jobs.length === 0) return 0
+  const folderRows = await (opts.scan ?? scanFoldersMemo)()
+  await mapLimit(jobs, LIST_CONCURRENCY, async ({ root, mission, log }) => {
+    try {
+      const reading = await deriveMissionReading(
+        root,
+        mission,
+        log,
+        { folder: root, folders: folderRows, denyFolders: [], bridge: undefined },
+        now
+      )
+      // Missions v4 S-4: load the rows the repo already stores (and copy in what the userData
+      // cache carries) before the observer dedupes against them. Never under a read.
+      await ensureLinkCacheLoaded()
+      await hydrateMissionLedger(root, mission.id)
+      observeMission(mission, reading, now)
+    } catch (err) {
+      // One mission that cannot be read never stops the pass for the others.
+      console.warn(`[mission-observer] could not observe ${mission.id}:`, err)
+    }
+  })
+  return jobs.length
+}
+
+/** Folders the renderer asked about lately: where the observer looks when the app is open. */
+const askedFolders = new Set<string>()
+const ASKED_FOLDERS_MAX = 500
+
+function noteAskedFolders(folders: readonly string[]): void {
+  for (const f of folders) {
+    if (typeof f !== 'string' || askedFolders.has(f)) continue
+    askedFolders.add(f)
+    if (askedFolders.size > ASKED_FOLDERS_MAX) {
+      const oldest = askedFolders.values().next().value
+      if (oldest !== undefined) askedFolders.delete(oldest)
+    }
+  }
+}
+
+/** Where the observer looks for open missions: what the renderer asked about, the pinned folders, the stewards'. */
+async function observerFolders(): Promise<string[]> {
+  const out = new Set<string>(askedFolders)
+  for (const s of listStewards()) out.add(s.folder)
+  try {
+    for (const p of (await readUserProjects()).projects) out.add(p.path)
+  } catch {
+    // No projects file yet: the other two sources still stand.
+  }
+  return [...out]
+}
+
+let observer: MissionObserver | null = null
+
+/**
+ * Starts what drives the observer, once, from `src/main/index.ts`: a pass on a cadence over the
+ * open missions and one after a linked session ends. It is the only thing that records what the
+ * missions' links show (ledger rows, sticky facts, remembered progress) and wakes the stewards;
+ * the reads never do. Returns the stop.
+ */
+export function startMissionObserver(): () => void {
+  if (!observer) {
+    observer = createMissionObserver({
+      folders: observerFolders,
+      pass: (folders, opts) => observeOpenMissions(folders, Date.now(), opts),
+      onTaskEvent: (cb) =>
+        addTaskEventObserver((ev) => cb({ sessionId: ev.sessionId, taskState: ev.taskState }))
+    })
+    observer.start()
+  }
+  return () => {
+    observer?.stop()
+    observer = null
+  }
+}
+
 /** The one in-main observer of the polled list (Your move's mission source). */
 let missionListObserver: ((r: MissionListResult, roots: string[]) => void) | null = null
 
@@ -500,6 +619,7 @@ export function setMissionListObserver(
 export function registerMissionIpc(): void {
   ipcMain.handle('mission:list', async (_e, folders: unknown): Promise<MissionListResult> => {
     const asked = Array.isArray(folders) ? (folders as string[]) : []
+    noteAskedFolders(asked)
     const result = await listMissionViews(asked)
     // Your move reads the same poll the renderer makes: no extra read, no extra GitHub budget.
     if (missionListObserver) {
