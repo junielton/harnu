@@ -194,7 +194,8 @@ describe('MissionPopover — the steward line and the doors', () => {
 
   it('open green PRs add no merge row, button or dialog to the popover (T701)', async () => {
     const w = await popover(mergeView())
-    expect(w.text()).not.toMatch(/merge/i)
+    expect(w.text()).toContain('Nothing — you’re clear.')
+    expect(w.text()).not.toMatch(/in order|ready to merge/i)
     w.unmount()
   })
 })

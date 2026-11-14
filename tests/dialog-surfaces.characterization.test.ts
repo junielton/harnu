@@ -197,7 +197,7 @@ describe('characterization table — coverage (AC-2)', () => {
       .sort()
     // `ui/` primitives live in a subfolder and are not listed by this top-level read.
     expect(Object.keys(TABLE).sort()).toEqual(onDisk)
-    expect(Object.keys(TABLE)).toHaveLength(31)
+    expect(Object.keys(TABLE)).toHaveLength(30)
   })
 
   it('lists the two inline overlays with a reason instead of mounting them', () => {
