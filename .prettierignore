@@ -24,3 +24,7 @@ docs/specs/2026-11-03-links-shelf/spec.md
 # Your move: the frozen detector prompt. The recall numbers belong to these exact bytes, so
 # prettier must never reflow them (tests/your-move/gate.test.ts pins the hash).
 resources/your-move/gate-v1.md
+
+# Missions v4 compatibility fixtures (T705 S-1): files exactly as the v3 builders wrote them.
+# Their sha256 is pinned in tests/mission-v4-fixtures.test.ts, so prettier must never reflow them.
+tests/fixtures/missions-v4-compat
