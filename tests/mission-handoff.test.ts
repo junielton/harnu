@@ -810,3 +810,106 @@ describe('a hand-off on a mission born in v3 leaves the v3 file as it was', () =
     expect(existsSync(v4Dir())).toBe(false)
   })
 })
+
+// ---- Structural pins (they pin behaviour that already holds; added after the verification) -------------
+
+const MAIN_SRC = path.join(__dirname, '..', 'src', 'main')
+
+/** Every `.ts` file under `src/main`, as a path relative to it. */
+function mainSources(dir = MAIN_SRC, prefix = ''): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const full = path.join(dir, name)
+    const rel = path.join(prefix, name)
+    if (statSync(full).isDirectory()) return mainSources(full, rel)
+    return name.endsWith('.ts') ? [rel] : []
+  })
+}
+
+/** The code of a source file: block comments and `//` comments removed. */
+function codeOf(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
+}
+
+/** The files that call or import `endSession` or `releaseEntry`, other than their definition. */
+function releasers(read: (rel: string) => string, files: readonly string[]): string[] {
+  return files.filter(
+    (rel) =>
+      rel !== path.join('missions', 'sessions.ts') &&
+      /\b(endSession|releaseEntry)\b/.test(codeOf(read(rel)))
+  )
+}
+
+describe('nothing releases a session but the hand-off', () => {
+  const read = (rel: string): string => readFileSync(path.join(MAIN_SRC, rel), 'utf8')
+
+  it('no file in src/main other than handoff.ts calls or imports endSession or releaseEntry', () => {
+    expect(releasers(read, mainSources())).toEqual([path.join('missions', 'handoff.ts')])
+  })
+
+  it('the scan sees a release wired to a process or a PTY exit (a planted file turns it red)', () => {
+    const planted = path.join('pty.ts')
+    const fake = (rel: string): string =>
+      rel === planted
+        ? "import { endSession } from './missions/sessions'\npty.onExit(() => endSession(folder, id, { sessionId }))\n"
+        : read(rel)
+    expect(releasers(fake, [...mainSources(), planted])).toContain(planted)
+    // a mention in a comment is not a call
+    expect(
+      releasers(() => '// endSession is never called from here\n/* releaseEntry */\n', ['x.ts'])
+    ).toEqual([])
+  })
+
+  it('handoff.ts subscribes to no process or PTY exit, and imports nothing that could', () => {
+    const code = codeOf(read(path.join('missions', 'handoff.ts')))
+    expect(code).not.toMatch(
+      /\b(process\.(on|once)|onExit|onDidExit|addTaskEventObserver|SessionEnd|node-pty|killAllPtys)\b|['"`]exit['"`]|from\s+['"][^'"]*(pty|hook-bridge|detect\/|hibernation)/
+    )
+    const imports = [...code.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1])
+    for (const spec of imports) {
+      expect(spec, spec).toMatch(/^\.\.\/data-dir$|^\.\/[a-z-]+$/)
+    }
+  })
+})
+
+describe('the offer cannot reach the session starter', () => {
+  const offerSource = (): string => {
+    const text = readFileSync(path.join(MISSIONS_SRC, 'handoff.ts'), 'utf8')
+    const from = text.indexOf('export function handoffOffer(')
+    const to = text.indexOf('\n}\n', from)
+    expect(from).toBeGreaterThan(-1)
+    return codeOf(text.slice(from, to + 3))
+  }
+
+  it('is called with a starter spy on every reading and the spy is never called', () => {
+    const spy = spyStart(ok())
+    const offer = handoffOffer as unknown as (...args: unknown[]) => unknown
+    for (const reading of [0, 50, 79, 80, 81, 95, 99, 100, 120, null, undefined, Number.NaN]) {
+      for (const dismissed of [null, undefined, 0, 60, 82, 99]) {
+        offer(reading, dismissed, spy.start, { start: spy.start }, root)
+      }
+    }
+    expect(spy.calls).toHaveLength(0)
+  })
+
+  it('has no way to call anything: its code names no starter, bridge, door or write', () => {
+    const forbidden =
+      /\b(start|dispatch|awaitMaterialization|bridge|handOff|runHandOff|bridgeStarter|applyChange|writeMission|deps|arguments)\b|\.call\(|\.apply\(|await\b|import\(/
+    const code = offerSource()
+    expect(code.length).toBeGreaterThan(50)
+    expect(code).not.toMatch(forbidden)
+    // the same check turns red on an offer that is handed a starter, or reaches the door
+    expect('export function handoffOffer(reading, dismissedAt, start) { start() }').toMatch(
+      forbidden
+    )
+    expect(
+      'export function handoffOffer(reading) { return handOff(root, id, caller, deps) }'
+    ).toMatch(forbidden)
+  })
+
+  it('the only thing the offer calls is one small pure helper of this file', () => {
+    const calls = [...offerSource().matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)]
+      .map((m) => m[1])
+      .filter((name) => name !== 'handoffOffer' && name !== 'if')
+    expect(new Set(calls)).toEqual(new Set(['isReading']))
+  })
+})
