@@ -353,7 +353,8 @@ describe('get answers for attached sessions and bound workers only', () => {
       const got = await missionGet(v3Root, session(V3_LEADER), { missionId: V3_ID })
       expect(got.ok).toBe(true)
       const noId = await missionGet(v3Root, session(V3_LEADER), {})
-      expect(noId.ok).toBe(true)
+      // the fixture's leader leads six missions: no id is ambiguous, and still a read
+      expect(!noId.ok && noId.code).toBe('AMBIGUOUS_MISSION')
       const refused = await missionGet(v3Root, session(OUTSIDER), { missionId: V3_ID })
       expect(refused.ok).toBe(false)
       const listed = await missionList(v3Root, session(OUTSIDER))
