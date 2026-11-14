@@ -285,3 +285,11 @@ describe('the step result carries what the surfaces show', () => {
     expect(out.open.map((c) => c.id)).toEqual(['ac-2', 'ac-3'])
   })
 })
+
+describe('the mission state with milestones', () => {
+  it('a required milestone that is not done keeps the mission open, even with every step done', () => {
+    const open = { status: 'open' } as const
+    expect(deriveMissionState(open, ['done'], ['done', 'not-started'])).toBe('open')
+    expect(deriveMissionState(open, ['done'], ['done', 'done'])).toBe('ready-to-close')
+  })
+})
