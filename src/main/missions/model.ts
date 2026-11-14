@@ -77,27 +77,42 @@ export const ATTACH_DECISIONS = ['allowed', 'denied'] as const
 
 // ---- State vocabulary -----------------------------------------------------------
 
-/**
- * One state vocabulary, named once (spec "One state vocabulary"). A step is `to do`, `running`,
- * `waiting for review` or `done`; blocked is a mark on a step, never a fifth state. These are the
- * names every reader shows and every derive returns; `state.ts` (S-7) computes which one applies and
- * the card slice (S-10) maps the board's columns onto them, so both import the list from here.
+/*
+ * One state vocabulary (spec "One state vocabulary"), named once as IDENTIFIERS: kebab-case keys that
+ * `state.ts` (S-7) returns and the renderer translates through i18n, so a display word is never a key.
+ * A step is `todo`, `running`, `waiting-review` or `done`; blocked is a mark on a step, never a fifth
+ * state. The card slice (S-10) maps the board's columns onto these too, so both import them from here.
  */
-export const STEP_STATES = ['to do', 'running', 'waiting for review', 'done'] as const
+export const STEP_STATES = ['todo', 'running', 'waiting-review', 'done'] as const
 export type StepState = (typeof STEP_STATES)[number]
 
 /** A milestone's state, derived from its steps. */
-export const MILESTONE_STATES = [
-  'not started',
-  'in progress',
-  'waiting for review',
-  'done'
-] as const
+export const MILESTONE_STATES = ['not-started', 'in-progress', 'waiting-review', 'done'] as const
 export type MilestoneState = (typeof MILESTONE_STATES)[number]
 
-/** A mission is `open`, `ready to close` (every required step is done; derived) or `closed`. */
-export const MISSION_STATES = ['open', 'ready to close', 'closed'] as const
+/** A mission is `open`, `ready-to-close` (every required step is done; derived) or `closed`. */
+export const MISSION_STATES = ['open', 'ready-to-close', 'closed'] as const
 export type MissionState = (typeof MISSION_STATES)[number]
+
+/**
+ * The English words of the spec's vocabulary, for AGENT-FACING text only (a verb's ACK, a summary, a
+ * skill): the pane and the pill translate the identifier through i18n instead. Every identifier above
+ * has a word, and none is a word the writing contract refuses: "in review" and "driver" are never
+ * here. (`to do`, `running` and `done` are fine as a state; the contract only refuses a TITLE that is
+ * nothing but one.)
+ */
+export const STATE_WORDS: Readonly<Record<StepState | MilestoneState | MissionState, string>> =
+  Object.freeze({
+    todo: 'to do',
+    running: 'running',
+    'waiting-review': 'waiting for review',
+    done: 'done',
+    'not-started': 'not started',
+    'in-progress': 'in progress',
+    open: 'open',
+    'ready-to-close': 'ready to close',
+    closed: 'closed'
+  })
 
 // ---- Entities -----------------------------------------------------------------
 
