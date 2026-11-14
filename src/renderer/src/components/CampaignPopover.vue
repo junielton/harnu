@@ -8,13 +8,13 @@
  *
  * Read-only: every number is the server's (`CampaignView.progress`, each mission's own
  * `progress`), and there is no campaign door in main yet, so "End campaign…" is rendered disabled
- * with the reason in its tooltip. "Open map" (T607) opens the Campaign map takeover. The You lane
+ * with the reason in its tooltip. The You lane
  * carries the chapter missions' owed rows with their doors (T609): "Merge {n} in order…" opens the Merge
  * batch dialog, "Resume steward" lifts a pause; the Steward line itself stays in the chapter popover.
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Flag, GitMerge, Map as MapIcon, Play, TriangleAlert } from 'lucide-vue-next'
+import { Check, Flag, GitMerge, Play, TriangleAlert } from 'lucide-vue-next'
 import type { CampaignView } from '../../../main/campaign-ipc'
 import type { ChapterState } from '../../../main/campaign-progress'
 import type { CampaignChapterRow, CampaignModel } from '../lib/campaign-view'
@@ -31,7 +31,6 @@ import { sessionTitle } from '../lib/session-label'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
-import { useUiStore } from '../stores/ui'
 import Button from './ui/Button.vue'
 import MissionStepGlyph from './MissionStepGlyph.vue'
 import MergeBatchDialog from './MergeBatchDialog.vue'
@@ -42,7 +41,6 @@ const emit = defineEmits<{ openChapter: [missionId: string] }>()
 const { t } = useI18n()
 const sessions = useSessionsStore()
 const missions = useMissionsStore()
-const ui = useUiStore()
 
 const allRows = computed<CampaignChapterRow[]>(() => [
   ...props.model.main,
@@ -175,12 +173,6 @@ function resumeSteward(y: CampaignModel['you'][number]): void {
 function openMergeBatch(y: CampaignModel['you'][number]): void {
   const v = viewOf(y.missionId)
   if (v && y.row.prs) mergeBatch.value = { root: v.root, missionId: y.missionId, prs: y.row.prs }
-}
-
-/** T607: close the Topbar popover that hosts this one and open the map takeover for this campaign. */
-function openMap(): void {
-  ui.closePopover('missionProgress')
-  ui.openCampaignMap(props.view.campaign.id)
 }
 
 // An in-app popover: registers with the native-overlay freeze (a browser pane under it freezes).
@@ -568,9 +560,6 @@ useNativeOverlay('campaign-popover', rootEl)
           <Flag :size="14" :stroke-width="1.8" />{{ $t('campaign.end.open') }}
         </Button>
       </span>
-      <Button variant="primary" class="ml-auto" data-test="campaign-open-map" @click="openMap">
-        <MapIcon :size="14" :stroke-width="1.8" />{{ $t('campaign.map.open') }}
-      </Button>
     </div>
 
     <MergeBatchDialog

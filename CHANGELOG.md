@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-14
+
+### Changed
+
+- The **Campaign map** is gone. The Campaign popover no longer has an **Open map** button; its footer keeps only **End campaign…**. The map's Steward block was never wired, and the Mission pane covers the same ground.
+
 ## 2026-11-13
 
 ### Added

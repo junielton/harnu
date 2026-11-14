@@ -319,20 +319,9 @@ Click the pill to open the **campaign popover**, a wider panel with two sides. O
 
 **Open chapter →** shows that chapter's own mission popover, with a **‹ Campaign** link at the top to go back. That popover has two additions that every mission popover now has: **You** is a list with one row per thing you owe (with how long it has been waiting, wherever Harnu has a time for it), including a **Decide: …** row when a decision is waiting for you, and a **Ledger** section shows the last five things Harnu itself recorded for the mission (a dispatch, a pull request opened or merged, a CI result, a verdict), newest first.
 
-Two buttons sit at the bottom of the campaign popover. **End campaign…** is switched off for now (ending a campaign from the app isn't built yet; end its chapters' missions instead; hover it to see why). **Open map** opens the campaign map, described next.
+At the bottom of the campaign popover, **End campaign…** is switched off for now (ending a campaign from the app isn't built yet; end its chapters' missions instead; hover it to see why).
 
 After the label, the pill also draws a thin row of **ticks**, one per required chapter, so you can read the whole campaign at a glance: green for done, paler green for in review, wider and in the accent colour (amber while something waits on you) for the chapter the campaign is on, faint for locked ones. When a chapter repeats one template many times (say, one page each), the pill ends with how far along that is, such as **48/88**. Both come from the numbers Harnu computed.
-
-### The campaign map
-
-**Open map** in the campaign popover opens the whole campaign as a board in the main pane. It closes with Esc or the ✕ in its header.
-
-- **The board.** Every required chapter is a tile, in plan order, four to a row. Arrows join chapters by what they depend on: a chapter that needs something is entered from the chapters that produce it, a chapter waiting on another chapter from that chapter, and any other chapter follows the plan's order. The chapter the campaign is on carries **▼ You are here**; locked chapters are dashed with a padlock and say what they wait for; each tile shows the four gate dots of the step the chapter is on and its state. Side quests hang under the chapter they were found in.
-- **The strip on top** shows the campaign's title, "Chapter N of M", its finish line and, if some chapter repeats a template, how far along that is.
-- **The right column** has **You**, everything the campaign's open chapters owe you with how long each has waited (its **Open** button jumps to that chapter); the **Steward** feed, which says "No steward yet" until the steward lands; and the **Side quests** with where each was found and whether it is done.
-- **Click a tile** (or a side quest) to see that chapter's steps with the four gate dots and their names. The other tiles dim; **Back** returns.
-
-The map only reads: it can't merge, choose, tick or end anything, and every count on it is one Harnu already computed.
 
 ## A steward for every mission
 

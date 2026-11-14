@@ -250,12 +250,7 @@ const TAKEOVERS: { name: string; openerName: keyof UiStore; open: (ui: UiStore) 
   },
   { name: 'review', openerName: 'openReview', open: (ui) => ui.openReview('/repo/alpha') },
   { name: 'scheduler', openerName: 'openScheduler', open: (ui) => ui.openScheduler() },
-  { name: 'containers', openerName: 'openContainers', open: (ui) => ui.openContainers() },
-  {
-    name: 'campaign map',
-    openerName: 'openCampaignMap',
-    open: (ui) => ui.openCampaignMap('cmp-0000000a')
-  }
+  { name: 'containers', openerName: 'openContainers', open: (ui) => ui.openContainers() }
 ]
 
 describe('minting a session closes every open takeover (BUG-102 AC-3)', () => {
