@@ -849,12 +849,13 @@ describe('no state verb touches a v3 file', () => {
           })
         ).ok
       ).toBe(false)
-      expect((await askToAttach(root, session(OUTSIDER), { missionId: id })).ok, id).toBe(true)
-
       const read = await readMissionRecord(root, id)
       if (!read.ok) throw new Error(read.error)
+      // An open mission takes the request; a closed one refuses it, and writes nothing either way.
+      const asked = await askToAttach(root, session(OUTSIDER), { missionId: id })
+      expect(asked.ok, id).toBe(read.record.status === 'open')
       const leader = leaderOf(read.record)
-      if (leader === null) continue
+      if (leader === null || read.record.status !== 'open') continue
       const as = session(leader)
       const first = read.record.steps[0]
       const set = await setBlocker(root, as, { missionId: id, reason: REASON, owner: 'agent' })
