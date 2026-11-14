@@ -6,7 +6,18 @@
  * read from a file, git, `gh` or a clock, so every case here builds its input by hand.
  */
 import { describe, expect, it } from 'vitest'
-import type { AcceptanceCriterion, BlockerV4, StepV4 } from '../src/main/missions/model'
+import {
+  BlockerSchema,
+  CriterionSchema,
+  MILESTONE_STATES,
+  MISSION_STATES,
+  STEP_STATES,
+  StepSchema,
+  type AcceptanceCriterion,
+  type BlockerV4,
+  type StepState,
+  type StepV4
+} from '../src/main/missions/model'
 import {
   activeBlockers,
   criterionSettlement,
@@ -19,23 +30,24 @@ import {
 
 const AT = '2026-11-14T10:00:00Z'
 
+// Fixtures go through the model's schemas, so a misspelt field or a bad value fails here, not later.
 function ac(
   id: string,
   by: AcceptanceCriterion['by'],
   extra: Partial<AcceptanceCriterion> = {}
 ): AcceptanceCriterion {
-  return { id, text: `criterion ${id}`, by, ...extra } as AcceptanceCriterion
+  return CriterionSchema.parse({ id, text: `criterion ${id}`, by, ...extra })
 }
 
 function step(acs: AcceptanceCriterion[], extra: Partial<StepV4> = {}): StepV4 {
-  return { id: 'stp-1', title: 'A step', acs, links: [], blockers: [], ...extra } as StepV4
+  return StepSchema.parse({ id: 'stp-1', title: 'A step', acs, links: [], blockers: [], ...extra })
 }
 
 function blocker(extra: Partial<BlockerV4> = {}): BlockerV4 {
-  return { id: 'blk-1', reason: 'waiting', owner: 'operator', ...extra } as BlockerV4
+  return BlockerSchema.parse({ id: 'blk-1', reason: 'waiting', owner: 'operator', ...extra })
 }
 
-const state = (s: StepV4, input: StepInput = {}): string => deriveStepState(s, input).state
+const state = (s: StepV4, input: StepInput = {}): StepState => deriveStepState(s, input).state
 
 describe('step and milestone states', () => {
   it('a step is to do, running, waiting for review or done, first match wins', () => {
@@ -178,6 +190,24 @@ describe('criterion settlement', () => {
       settled: false,
       via: null
     })
+
+    // the model's `selfCheck` field is a builder's labelled check and is never proof: a criterion
+    // that carries only a self-check is open, whoever wrote it.
+    const checkOnly = ac('ac-8', 'session', {
+      selfCheck: { at: AT, by: 'sess-builder', evidence: 'I ran it myself' }
+    })
+    expect(criterionSettlement(checkOnly, s, {})).toEqual({ settled: false, via: null })
+    const checkByOther = ac('ac-9', 'session', {
+      selfCheck: { at: AT, by: 'sess-checker', evidence: 'looks right' }
+    })
+    expect(criterionSettlement(checkByOther, s, {})).toEqual({ settled: false, via: null })
+    expect(state(step([checkOnly]), { pr: 'open' })).toBe('waiting-review')
+    // beside a second session's stamp the self-check changes nothing: the stamp settles it.
+    const both = ac('ac-10', 'session', {
+      selfCheck: { at: AT, by: 'sess-builder', evidence: 'I ran it myself' },
+      settled: { at: AT, by: 'sess-checker', evidence: 'ran it again' }
+    })
+    expect(criterionSettlement(both, s, {})).toEqual({ settled: true, via: 'session' })
 
     // no stamp, no settlement.
     expect(criterionSettlement(ac('ac-6', 'session'), s, {})).toEqual({
@@ -365,5 +395,35 @@ describe('delta 1 · a re-queued card, a closed pull request, and unknown is not
     expect(unknown).toEqual(red)
     expect(unknown.state).toBe('waiting-review')
     expect(unknown.blocked).toBe(true)
+  })
+})
+
+describe('the state identifiers come from the model', () => {
+  it('every state the derivation returns is one the model names, and every one the model names is reachable', () => {
+    const sign = step([ac('ac-1', 'operator')])
+    const open = step([ac('ac-1', 'session')])
+    const doneStep = step([ac('ac-1', 'operator', { settled: { at: AT, by: 'operator' } })])
+    const steps = [
+      state(open),
+      state(open, { workerWorking: true }),
+      state(open, { pr: 'open' }),
+      state(doneStep),
+      state(sign)
+    ]
+    expect(new Set(steps)).toEqual(new Set(STEP_STATES))
+    const milestones = [
+      deriveMilestoneState([]),
+      deriveMilestoneState(['running', 'todo']),
+      deriveMilestoneState(['waiting-review']),
+      deriveMilestoneState(['done'])
+    ]
+    expect(new Set(milestones)).toEqual(new Set(MILESTONE_STATES))
+    const open4 = { status: 'open' } as const
+    const missions = [
+      deriveMissionState(open4, ['todo']),
+      deriveMissionState(open4, ['done']),
+      deriveMissionState({ status: 'closed' }, ['done'])
+    ]
+    expect(new Set(missions)).toEqual(new Set(MISSION_STATES))
   })
 })

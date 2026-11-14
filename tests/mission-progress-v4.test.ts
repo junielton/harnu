@@ -6,16 +6,25 @@
  * Named `-v4` because `tests/mission-progress.test.ts` pins the v3 progress derivation.
  */
 import { describe, expect, it } from 'vitest'
-import type { MissionV4, StepV4 } from '../src/main/missions/model'
+import {
+  MilestoneSchema,
+  MissionRecordSchema,
+  StepSchema,
+  type Milestone,
+  type MissionV4,
+  type StepV4
+} from '../src/main/missions/model'
 import { deriveProgress } from '../src/main/missions/progress'
 import type { StepInput } from '../src/main/missions/state'
 
 const AT = '2026-11-14T10:00:00Z'
 
+// Fixtures go through the model's schemas, so a misspelt field or a bad value fails here, not later.
+
 /** A step with one session criterion: open until `done` is passed, which stamps a second session. */
 function mkStep(id: string, extra: Partial<StepV4> & { done?: boolean } = {}): StepV4 {
   const { done, ...rest } = extra
-  return {
+  return StepSchema.parse({
     id,
     title: `Step ${id}`,
     acs: [
@@ -29,11 +38,11 @@ function mkStep(id: string, extra: Partial<StepV4> & { done?: boolean } = {}): S
     links: [],
     blockers: [],
     ...rest
-  } as StepV4
+  })
 }
 
 function mkMission(extra: Partial<MissionV4>): MissionV4 {
-  return {
+  return MissionRecordSchema.parse({
     schemaVersion: 4,
     id: 'mnt-1a2b3c4d',
     title: 'A mission',
@@ -45,17 +54,17 @@ function mkMission(extra: Partial<MissionV4>): MissionV4 {
     links: [],
     blockers: [],
     ...extra
-  } as MissionV4
+  })
 }
 
-const ms = (id: string, extra: Record<string, unknown> = {}): MissionV4['milestones'][number] =>
-  ({
+const ms = (id: string, extra: Partial<Milestone> = {}): Milestone =>
+  MilestoneSchema.parse({
     id,
     title: `Milestone ${id}`,
     optional: false,
     waitsFor: null,
     ...extra
-  }) as MissionV4['milestones'][number]
+  })
 
 describe('the unit follows the plan', () => {
   it('counts steps when the mission has no milestones, leaving optional steps outside the count', () => {

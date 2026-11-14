@@ -17,24 +17,28 @@
  * - **A fact replaces stale state**: a blocker that names the fact it waits for stops showing when the
  *   fact holds, and a criterion tied to a fact is never settled by a stamp.
  *
+ * The state identifiers (`todo`, `running`, `waiting-review`, `done`, the milestone and mission ones)
+ * are defined once in `model.ts` (`STEP_STATES`, `MILESTONE_STATES`, `MISSION_STATES`); this module
+ * returns them and defines none.
+ *
  * The card column is an input (owner's decision for AC-29): a card in `review` reads waiting for
  * review (rule 2), `backlog` and `ready` read to do, `in-progress` reads running, and the operator
  * closing the card (`done`) reads the step done. This module produces nothing from the board; the
  * caller hands the column over as a plain value.
  */
 
-import type { AcceptanceCriterion, BlockerV4, CriterionBy, Fact, StepV4 } from './model'
+import type {
+  AcceptanceCriterion,
+  BlockerV4,
+  CriterionBy,
+  Fact,
+  MilestoneState,
+  MissionState,
+  StepState,
+  StepV4
+} from './model'
 
-// ---- Vocabularies ---------------------------------------------------------------
-
-export const STEP_STATES = ['todo', 'running', 'waiting-review', 'done'] as const
-export type StepState = (typeof STEP_STATES)[number]
-
-export const MILESTONE_STATES = ['not-started', 'in-progress', 'waiting-review', 'done'] as const
-export type MilestoneState = (typeof MILESTONE_STATES)[number]
-
-export const MISSION_STATES = ['open', 'ready-to-close', 'closed'] as const
-export type MissionState = (typeof MISSION_STATES)[number]
+// ---- Input ------------------------------------------------------------------------
 
 /** The board column of a dispatched step's card; `null` or absent for a step that has no card. */
 export type CardColumn = 'backlog' | 'ready' | 'in-progress' | 'review' | 'done'
