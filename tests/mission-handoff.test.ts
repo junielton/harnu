@@ -353,14 +353,34 @@ describe('the hand-off door', () => {
     expect(log).toContain(LEADER)
   })
 
-  it('names who stopped and where, with no step open it says nothing of one', async () => {
+  it('names a step only when one is open: with every step still to do it names none', async () => {
+    const todo = missionOf().steps.map((s) => ({
+      ...s,
+      blockers: [],
+      acs: [
+        {
+          id: 'ac-1',
+          text: 'The pull request is merged',
+          by: 'fact' as const,
+          fact: 'pr-merged' as const
+        }
+      ]
+    }))
+    seed(missionOf({ steps: todo }))
+    const spy = spyStart(ok())
+    await handOff(root, ID, { kind: 'operator' }, { start: spy.start }, { at: AT })
+    const old = (await reread()).record.sessions.find((s) => s.id === LEADER)
+    expect(old?.stoppedAt?.step).toBeUndefined()
+    expect(old?.role).toBe('worked')
+  })
+
+  it('a step that waits for review is where the leader stopped, even with no facts read', async () => {
     seed(missionOf())
     const spy = spyStart(ok())
     await handOff(root, ID, { kind: 'operator' }, { start: spy.start }, { at: AT })
     const old = (await reread()).record.sessions.find((s) => s.id === LEADER)
-    // with no facts, every step reads to do: no step is open, so none is named
-    expect(old?.stoppedAt?.step).toBeUndefined()
-    expect(old?.role).toBe('worked')
+    // a sign-off step reads "waiting for review" from the record alone
+    expect(old?.stoppedAt?.step).toBe('stp-2')
   })
 
   it('replies with the outcome and the new session id, never the record or a path', async () => {
@@ -624,7 +644,7 @@ describe('bridgeStarter', () => {
       },
       awaitMaterialization: async (id: string, ms: number) => {
         waited.push([id, ms])
-        return (await over.wait?.(id, ms)) ?? { syntheticId: id, sessionId: NEW_ONE, folder: root }
+        return over.wait ? over.wait(id, ms) : { syntheticId: id, sessionId: NEW_ONE, folder: root }
       }
     }
     return { ops, waited, start: bridgeStarter(bridge, { timeoutMs: 4321 }) }
