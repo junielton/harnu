@@ -129,7 +129,18 @@ vi.mock('node:child_process', async (importOriginal) => {
     exec: counted(real.exec),
     execSync: counted(real.execSync),
     execFileSync: counted(real.execFileSync),
-    fork: counted(real.fork)
+    fork: counted(real.fork),
+    // A default import (`import cp from 'node:child_process'`) is counted too.
+    default: {
+      ...real.default,
+      execFile,
+      spawn: counted(real.spawn),
+      spawnSync: counted(real.spawnSync),
+      exec: counted(real.exec),
+      execSync: counted(real.execSync),
+      execFileSync: counted(real.execFileSync),
+      fork: counted(real.fork)
+    }
   }
 })
 
@@ -415,5 +426,7 @@ describe('v4 view cost (Missions v4 S-8, AC-20)', () => {
     const before = h.spawns
     cp.execFileSync('true')
     expect(h.spawns).toBe(before + 1)
+    cp.default.execFileSync('true') // through the default export
+    expect(h.spawns).toBe(before + 2)
   })
 })
