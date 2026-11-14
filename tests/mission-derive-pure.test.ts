@@ -7,6 +7,11 @@
  * read learned is handed back as a `MissionObservation`, and only the observer
  * (src/main/missions/observer.ts) acts on it.
  *
+ * Delta 1: the claim is about every READ, not one function. `mission_get`, `campaign_get`, the
+ * renderer list poll (`listMissionViews`, which the companion and Your move ride), the campaign
+ * list and the steward bridge's derive all write nothing; the observer pass
+ * (`observeOpenMissions`, started by `startMissionObserver`) records what they would have.
+ *
  * Run for real against a throwaway git repo; only the live sources are faked at their module
  * seams (the hook FSM, the PTY set, hibernation, the Approval Inbox, the `gh`-backed PR join and
  * the steward wake).
@@ -47,6 +52,11 @@ vi.mock('../src/main/hook-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/hook-bridge')>()),
   getTaskStates: () => new Map(),
   addTaskEventObserver: () => () => {}
+}))
+
+vi.mock('../src/main/claude-reader', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/claude-reader')>()),
+  scanFolders: async (): Promise<unknown[]> => []
 }))
 
 vi.mock('../src/main/pty', async (importOriginal) => ({
@@ -110,6 +120,9 @@ vi.mock('../src/main/pr-stack', async (importOriginal) => ({
     return { ghAvailable: true, worktrees: {}, branches: {}, numbers }
   }
 }))
+
+// The first import of the handlers pulls in most of the main process.
+vi.setConfig({ testTimeout: 30_000 })
 
 const OWNER = '11111111-2222-4333-8444-555555555555'
 const CHILD = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
@@ -281,3 +294,311 @@ async function loadDerive(): Promise<
   const mod = await import('../src/main/missions/derive')
   return { ...mod, derive: mod.deriveMission }
 }
+
+// ---- Delta 1: every read path is pure; the observer pass records ---------------------------------
+
+type ToolResult = { isError?: boolean; content: Array<{ type: string; text?: string }> }
+type Handler = (args: Record<string, unknown>, ctx: Record<string, unknown>) => Promise<ToolResult>
+
+const CAMPAIGN_ID = 'cmp-0000000b'
+
+/** The handler-facing context: a scanned fleet with no sessions in it. */
+const handlerCtx = (): Record<string, unknown> => ({
+  folder: root,
+  folders: [],
+  denyFolders: [],
+  bridge: undefined
+})
+
+async function seedCampaign(missionId: string): Promise<void> {
+  const { buildCampaignFileContent } = await import('../src/main/campaign-core')
+  const at = '2026-11-01T09:00:00.000Z'
+  const dir = path.join(root, '.harnu', 'campaigns')
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(
+    path.join(dir, `${CAMPAIGN_ID}-pure.md`),
+    buildCampaignFileContent(
+      {
+        id: CAMPAIGN_ID,
+        slug: 'pure',
+        folder: root,
+        owner: { sessionId: OWNER, folder: root },
+        title: 'Pure',
+        declaredEnd: { kind: 'code', target: 't', evidence: 'e' },
+        chapters: [{ id: 'chp-1', ordinal: 1, title: 'One', missionId, required: true }],
+        status: 'active',
+        createdAt: at,
+        updatedAt: at,
+        provenance: { author: 'agent', at }
+      },
+      '# Pure\n\n## Log\n'
+    )
+  )
+}
+
+interface ReadPath {
+  name: string
+  run: (mission: Mission, log: string) => Promise<void>
+}
+
+async function readPaths(): Promise<ReadPath[]> {
+  const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
+  const handlers = Object.fromEntries(
+    WIRED_TOOLS.map((t) => [t.op, t.handler as unknown as Handler])
+  )
+  const ok = (res: ToolResult): void => expect(res.isError, res.content[0]?.text).not.toBe(true)
+  const { deriveMissionSignals } = await import('../src/main/mcp/tool-handlers')
+  const ipc = await import('../src/main/mission-ipc')
+  const campaigns = await import('../src/main/campaign-ipc')
+  return [
+    {
+      name: 'mission_get',
+      run: async () =>
+        ok(await handlers.mission_get({ folder: root, missionId: MISSION_ID }, handlerCtx()))
+    },
+    {
+      name: 'campaign_get',
+      run: async () =>
+        ok(await handlers.campaign_get({ folder: root, campaignId: CAMPAIGN_ID }, handlerCtx()))
+    },
+    {
+      // What the steward bridge's `gatesFor` calls.
+      name: 'deriveMissionSignals',
+      run: async (mission, log) => {
+        await deriveMissionSignals(root, mission, log, handlerCtx() as never, Date.now())
+      }
+    },
+    {
+      // The 20-second `mission:list` poll, the companion poll and Your move's source.
+      name: 'listMissionViews',
+      run: async () => {
+        const r = await ipc.listMissionViews([root])
+        expect(r.views).toHaveLength(1)
+      }
+    },
+    {
+      name: 'listCampaignViews',
+      run: async () => {
+        const r = await campaigns.listCampaignViews([root])
+        expect(r.views).toHaveLength(1)
+      }
+    }
+  ]
+}
+
+const READ_PATHS = [
+  'mission_get',
+  'campaign_get',
+  'deriveMissionSignals',
+  'listMissionViews',
+  'listCampaignViews'
+]
+
+describe('every read path is a read with no side effects (AC-4, delta 1)', () => {
+  it.each(READ_PATHS)('a read has no side effects through %s', async (name) => {
+    const { mission, log, file } = await seed()
+    await seedCampaign(mission.id)
+    const before = await fs.readFile(file)
+    const beforeStat = await fs.stat(file)
+    const cache = await import('../src/main/mission-link-cache')
+    await cache.ensureLinkCacheLoaded()
+    const path_ = (await readPaths()).find((p) => p.name === name)!
+
+    await path_.run(mission, log)
+    await path_.run(mission, log)
+
+    expect(h.joinCalls).toBeGreaterThan(0)
+    expect((await fs.readFile(file)).equals(before)).toBe(true)
+    expect((await fs.stat(file)).mtimeMs).toBe(beforeStat.mtimeMs)
+    expect(h.wakes).toEqual([])
+    expect(cache.getObservedLedger(MISSION_ID)).toEqual([])
+    expect(cache.getLastKnown(root, 'pr', '8')).toBeNull()
+    expect(cache.getLastKnown(root, 'pr', '7')).toBeNull()
+    await new Promise((r) => setTimeout(r, cache.LINK_CACHE_WRITE_DEBOUNCE_MS + 200))
+    expect(await fs.readdir(h.userDataDir)).toEqual([])
+  })
+
+  it('the read modules do not import the observer', async () => {
+    const read = async (f: string): Promise<string> =>
+      fs.readFile(path.join(__dirname, '..', 'src', 'main', f), 'utf8')
+    expect(await read('missions/derive.ts')).not.toMatch(/from '\.\/observer'/)
+    // `mission_list` and the wake wiring are the observer's readers; no read verb derives through it.
+    const th = await read('mcp/tool-handlers.ts')
+    expect(th).not.toContain('deriveAndObserve')
+    expect(th).not.toMatch(/observeMission\(/)
+  })
+})
+
+describe('the observer pass records what a read would have (delta 1)', () => {
+  it('records the rows, the sticky facts and the progress, and wakes once', async () => {
+    const { mission, file } = await seed()
+    const before = await fs.readFile(file)
+    const ipc = await import('../src/main/mission-ipc')
+    const cache = await import('../src/main/mission-link-cache')
+    const { lastKnownProgress } = await import('../src/main/missions/observer')
+
+    const seen = await ipc.observeOpenMissions([root])
+
+    expect(seen).toBe(1)
+    const kinds = cache.getObservedLedger(MISSION_ID).map((r) => `${r.kind}:${r.ref}`)
+    expect(kinds).toEqual(expect.arrayContaining(['pr-opened:#7', 'pr-merged:#8', 'ci:#7']))
+    expect(cache.getLastKnown(root, 'pr', '8')?.state).toBe('MERGED')
+    expect(lastKnownProgress(mission.id)?.total).toBe(2)
+    expect(h.wakes).toEqual([[MISSION_ID, 'ci']])
+    expect((await fs.readFile(file)).equals(before)).toBe(true)
+    // The same world again records nothing and wakes nobody.
+    await ipc.observeOpenMissions([root])
+    expect(h.wakes).toHaveLength(1)
+  })
+
+  it('mission_list reports no progress until a pass has run, then the observed one', async () => {
+    await seed()
+    const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
+    const list = WIRED_TOOLS.find((t) => t.op === 'mission_list')!.handler as unknown as Handler
+    const progressOf = async (): Promise<unknown> => {
+      const res = await list({ folder: root }, handlerCtx())
+      return (JSON.parse(res.content[0].text!).missions as Array<{ progress: unknown }>)[0].progress
+    }
+    expect(await progressOf()).toBeNull()
+    const ipc = await import('../src/main/mission-ipc')
+    await ipc.observeOpenMissions([root])
+    expect(await progressOf()).not.toBeNull()
+  })
+
+  it('an observer pass costs one derive per open mission, like one read', async () => {
+    await seed()
+    const ipc = await import('../src/main/mission-ipc')
+    h.joinCalls = 0
+    await ipc.listMissionViews([root])
+    const oneRead = h.joinCalls
+    h.joinCalls = 0
+    await ipc.observeOpenMissions([root])
+    expect(h.joinCalls).toBe(oneRead)
+  })
+
+  it('does nothing when no mission is open: no fleet scan, no derive', async () => {
+    const ipc = await import('../src/main/mission-ipc')
+    h.joinCalls = 0
+    expect(await ipc.observeOpenMissions([root])).toBe(0)
+    expect(h.joinCalls).toBe(0)
+  })
+})
+
+describe('what triggers the observer (delta 1)', () => {
+  type Ev = { sessionId: string; taskState: string }
+  async function make(over: { open?: boolean } = {}): Promise<{
+    obs: ReturnType<typeof import('../src/main/missions/observer').createMissionObserver>
+    passes: Array<ReadonlySet<string> | undefined>
+    emit: (ev: Ev) => void
+  }> {
+    const { createMissionObserver } = await import('../src/main/missions/observer')
+    const passes: Array<ReadonlySet<string> | undefined> = []
+    let cb: ((ev: Ev) => void) | null = null
+    const obs = createMissionObserver({
+      folders: async () => (over.open === false ? [] : [root]),
+      pass: async (_folders, opts) => {
+        passes.push(opts.onlySessions)
+        return 1
+      },
+      onTaskEvent: (fn) => {
+        cb = fn
+        return () => {
+          cb = null
+        }
+      },
+      intervalMs: 60_000,
+      firstPassMs: 5_000,
+      eventDebounceMs: 3_000
+    })
+    return { obs, passes, emit: (ev) => cb?.(ev) }
+  }
+
+  it('runs a first pass soon after start, then one every interval, and none after stop', async () => {
+    vi.useFakeTimers()
+    try {
+      const { obs, passes } = await make()
+      obs.start()
+      await vi.advanceTimersByTimeAsync(4_999)
+      expect(passes).toHaveLength(0)
+      await vi.advanceTimersByTimeAsync(2)
+      expect(passes).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(passes).toHaveLength(2)
+      obs.stop()
+      await vi.advanceTimersByTimeAsync(180_000)
+      expect(passes).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('runs nothing when no folder is known', async () => {
+    vi.useFakeTimers()
+    try {
+      const { obs, passes } = await make({ open: false })
+      obs.start()
+      await vi.advanceTimersByTimeAsync(130_000)
+      expect(passes).toHaveLength(0)
+      obs.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a session ending starts one pass for its missions, coalescing a burst; other states do not', async () => {
+    vi.useFakeTimers()
+    try {
+      const { obs, passes, emit } = await make()
+      obs.start()
+      await vi.advanceTimersByTimeAsync(5_001) // the first pass
+      passes.length = 0
+      emit({ sessionId: CHILD, taskState: 'working' })
+      emit({ sessionId: CHILD, taskState: 'idle' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(passes).toHaveLength(0)
+      emit({ sessionId: CHILD, taskState: 'failed' })
+      emit({ sessionId: OWNER, taskState: 'completed' })
+      await vi.advanceTimersByTimeAsync(2_999)
+      expect(passes).toHaveLength(0)
+      await vi.advanceTimersByTimeAsync(2)
+      expect(passes).toHaveLength(1)
+      expect([...(passes[0] ?? [])].sort()).toEqual([CHILD, OWNER].sort())
+      obs.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never runs two passes at once', async () => {
+    vi.useFakeTimers()
+    try {
+      const { createMissionObserver } = await import('../src/main/missions/observer')
+      let running = 0
+      let peak = 0
+      let release: () => void = () => {}
+      const obs = createMissionObserver({
+        folders: async () => [root],
+        pass: () =>
+          new Promise<number>((resolve) => {
+            running++
+            peak = Math.max(peak, running)
+            release = () => {
+              running--
+              resolve(1)
+            }
+          }),
+        onTaskEvent: () => () => {},
+        intervalMs: 1_000,
+        firstPassMs: 100,
+        eventDebounceMs: 100
+      })
+      obs.start()
+      await vi.advanceTimersByTimeAsync(5_000) // many ticks while the first pass is still open
+      expect(peak).toBe(1)
+      release()
+      obs.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
