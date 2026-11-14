@@ -274,8 +274,8 @@ export interface MissionModel {
   addedCount: number
   youLook: YouLook
   /**
-   * T596 (campaign spec Amendments d/e) — what the operator owes as aged rows: the server's `you`
-   * items plus a "Decide" row per undecided decision node. `youLook` follows these rows.
+   * T596 (campaign spec Amendments d/e) — what the operator owes as aged rows: the server's waiting
+   * list, one row per item (a pending decision is an item). `youLook` follows the same list.
    */
   youRows: YouRow[]
   /** T596 (Amendment c) — the last {@link LEDGER_TAIL} ledger rows, newest first. */
@@ -379,14 +379,14 @@ export function ledgerTail(view: MissionView, n: number = LEDGER_TAIL): LedgerRo
 export type YouRisk = 'high' | 'mid' | 'low'
 
 /**
- * One row of the You lane (campaign spec Amendments d/e). `item` is the server's `you` item, or
- * `null` for a "Decide" row, which the renderer derives from an undecided decision node (the
- * server's `you` list has no such kind). `ageMs` is set only where the record holds a timestamp —
- * never guessed.
+ * One row of the You lane (campaign spec Amendments d/e): one item of the server's waiting list
+ * (`view.you`, missions/waiting.ts), nothing more. The renderer adds no row of its own: a pending
+ * decision is in the list. `stepId` is the decision step of a "Decide" row. `ageMs` is set only where
+ * the record holds a timestamp, never guessed.
  */
 export interface YouRow {
-  kind: MissionYouItem['kind'] | 'decide'
-  item: MissionYouItem | null
+  kind: MissionYouItem['kind']
+  item: MissionYouItem
   /** The decision step a "Decide" row is about. */
   stepId: string | null
   ageMs: number | null
@@ -406,15 +406,6 @@ const RISK: Record<YouRow['kind'], YouRisk> = {
   checks: 'low',
   'review-import': 'low'
 }
-
-/** Items that block others sit first; a "Decide" row goes right after the last of them. */
-const BLOCKING_FIRST: ReadonlySet<MissionYouItem['kind']> = new Set([
-  'rescope',
-  'close',
-  'steward-paused',
-  'blocker',
-  'main-red'
-])
 
 function ageSince(iso: string | undefined, now: number): number | null {
   const at = iso ? Date.parse(iso) : NaN
@@ -453,34 +444,15 @@ function itemAge(view: MissionView, item: MissionYouItem, now: number): number |
   }
 }
 
-/**
- * The You lane as rows (campaign spec Amendments d/e): the server's `you` items in the server's
- * order, with one "Decide" row per undecided decision node inserted after the blocking items.
- */
+/** The You lane as rows: the server's waiting list, in the server's order (missions/waiting.ts). */
 export function youRows(view: MissionView, now: number = Date.now()): YouRow[] {
-  const rows: YouRow[] = view.you.map((item) => ({
+  return view.you.map((item) => ({
     kind: item.kind,
     item,
-    stepId: null,
+    stepId: item.kind === 'decide' ? item.stepId : null,
     ageMs: itemAge(view, item, now),
     risk: RISK[item.kind]
   }))
-  const decide: YouRow[] = view.mission.steps
-    .filter((s) => s.decision !== undefined && s.decision.chosen === undefined)
-    .map((s) => ({
-      kind: 'decide' as const,
-      item: null,
-      stepId: s.id,
-      ageMs: null,
-      risk: RISK.decide
-    }))
-  const derived = decide
-  if (derived.length === 0) return rows
-  let at = 0
-  rows.forEach((r, i) => {
-    if (r.item && BLOCKING_FIRST.has(r.item.kind)) at = i + 1
-  })
-  return [...rows.slice(0, at), ...derived, ...rows.slice(at)]
 }
 
 /**
@@ -505,10 +477,6 @@ export function youRowText(
   const titles = (ids: readonly string[]): string =>
     ids.map((id) => view.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
   const item = row.item
-  if (!item) {
-    const title = view.mission.steps.find((s) => s.id === row.stepId)?.decision?.title ?? ''
-    return t('mission.you.decide', { title })
-  }
   switch (item.kind) {
     case 'rescope':
       return t('mission.you.rescope', { kind: item.end.kind, target: item.end.target })
@@ -516,6 +484,8 @@ export function youRowText(
       return t('mission.you.close', {})
     case 'blocker':
       return t('mission.you.blocker', { reason: item.reason, unblocks: item.unblocks })
+    case 'decide':
+      return t('mission.you.decide', { title: item.title })
     case 'checks':
       return t('mission.you.checks', { count: item.count, steps: titles(item.stepIds) }, item.count)
     case 'human-steps':
@@ -535,13 +505,6 @@ export function youRowText(
     case 'needs-input':
       return t('mission.you.needsInput', { session: sessionName(item.sessionId) })
   }
-}
-
-/** The You block's look from its rows: same rule as {@link youLook}, plus the derived "Decide" rows. */
-function rowsLook(view: MissionView, rows: readonly YouRow[]): YouLook {
-  if (rows.length === 0) return 'clear'
-  // The server has nothing for the operator but a derived "Decide" row does: that is a warning.
-  return view.you.length === 0 ? 'warning' : youLook(view)
 }
 
 /** A step is reached — its unticked checks are due (Mission v3 §3.6). */
@@ -674,7 +637,7 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
       steps: sideRows
     },
     addedCount: m.steps.filter((s) => s.addedReason).length,
-    youLook: rowsLook(view, youRowList),
+    youLook: youLook(view),
     youRows: youRowList,
     ledgerTail: ledgerTail(view),
     needsYou: view.you.length > 0,

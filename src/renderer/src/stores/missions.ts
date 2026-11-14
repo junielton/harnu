@@ -80,6 +80,8 @@ function owedWhat(view: MissionView): string {
   switch (item?.kind) {
     case 'blocker':
       return item.reason
+    case 'decide':
+      return t('mission.you.decide', { title: item.title })
     case 'rescope':
       return t('mission.state.rescopePending')
     case 'close':

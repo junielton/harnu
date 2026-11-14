@@ -94,6 +94,9 @@ function keyOf(item: MissionYouItem): [OwedKey, number] | null {
       return ['close', 1]
     case 'blocker':
       return [`blocker:${item.reason}`, 1]
+    // A pending decision is in the waiting list, so it cues (a standing key: it chimes once, then waits).
+    case 'decide':
+      return [`decide:${item.stepId}`, 1]
     case 'checks':
       return ['checks', item.count]
     case 'human-steps':
