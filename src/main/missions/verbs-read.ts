@@ -522,6 +522,16 @@ export type MissionCreate = MissionCreated | ReadRefusal
 function describe(error: z.ZodError): string {
   const dropped = new Set(['campaignId', 'chapterId', 'steward', 'declaredEnd'])
   return error.issues
+    .flatMap((top) => {
+      // A union (a criterion is a string or an object) hides the field that is wrong one level down:
+      // surface its unrecognized keys at the union's own place.
+      if (top.code !== 'invalid_union') return [top]
+      const nested = (top.errors as { code: string; keys?: string[] }[][]).flat()
+      const unknown = nested.filter((n) => n.code === 'unrecognized_keys')
+      return unknown.length > 0
+        ? unknown.map((n) => ({ ...n, path: top.path }) as unknown as z.core.$ZodIssue)
+        : [top]
+    })
     .map((i) => {
       const where = i.path.length > 0 ? i.path.join('.') : '(input)'
       if (i.code === 'unrecognized_keys') {
@@ -563,6 +573,12 @@ export async function missionCreate(
   input: MissionCreateInput,
   opts: MissionCreateOptions = {}
 ): Promise<MissionCreate> {
+  if (actor.kind === 'harnu') {
+    return refuse(
+      'OPERATOR_ONLY',
+      'Harnu never creates a mission: it is created by the session that leads it, or by the operator.'
+    )
+  }
   if (actor.kind === 'session' && actor.sessionId.trim() === '') {
     return refuse(
       'BAD_ARGS',
@@ -679,7 +695,19 @@ export async function missionCreate(
     links: given.links ?? [],
     blockers: []
   }
-  const log = `### ${now}\nMission created${actor.kind === 'session' ? ` by session ${actor.sessionId}, which leads it` : ' by the operator'}.\n`
+  // One heading, `### <time> · note`, the only shape a session may write; the event is in the body.
+  // Titles are flattened to one line, so a title can never forge a second heading or a separator.
+  const flat = (t: string): string => t.replace(/[\s\u0085]+/g, ' ').trim()
+  const quoted = (t: string): string => `"${flat(t)}"`
+  const log = [
+    `### ${now} · note`,
+    `Mission created: ${quoted(given.title)}.`,
+    actor.kind === 'session'
+      ? `Led by session ${actor.sessionId}.`
+      : 'Created by the operator, with no session leading it.',
+    ...(steps.length > 0 ? [`Steps: ${steps.map((s) => quoted(s.title)).join(', ')}.`] : []),
+    ''
+  ].join('\n')
 
   const created = await createMission(folder, actor, record, log)
   if (!created.ok) return { ok: false, code: created.code, error: created.error }
