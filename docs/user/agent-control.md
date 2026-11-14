@@ -284,7 +284,7 @@ These decisions stay yours, and no session can make any of them: **approving a n
 
 A mission is one piece of work with one finish line. A delivery that is really several of them, in an order, with detours along the way, is a **Campaign**: an ordered list of **chapters**, where each chapter is its own mission. A session keeps one so "chapter 9 of 12" is a record Harnu holds, not a picture someone drew by hand.
 
-Campaigns live in your repo's main checkout under `.harnu/campaigns/`, one file each, shared by every worktree and kept out of git, exactly like missions. Everything below happens directly, without asking you, and a folder you blocked for agents is off limits here too. (You see a campaign on screen too: see "Seeing a campaign in the top bar" and "The campaign map" below.)
+Campaigns live in your repo's main checkout under `.harnu/campaigns/`, one file each, shared by every worktree and kept out of git, exactly like missions. Everything below happens directly, without asking you, and a folder you blocked for agents is off limits here too. (You see a campaign on screen too: see "Seeing a campaign in the top bar" below.)
 
 What a session can do:
 

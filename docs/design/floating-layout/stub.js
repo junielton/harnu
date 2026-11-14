@@ -135,7 +135,7 @@
     'T604-boot-handoff',
     'T605-steward-pause',
     'T606-merge-batch',
-    'T607-campaign-rail',
+    'T607-campaign-map',
     'T608-gate-dots',
     'T609-ledger',
     'T610-recall',
