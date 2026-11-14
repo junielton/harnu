@@ -699,3 +699,37 @@ describe('Harnu writes what Harnu does, and the operator what the operator does'
     expect(lastHeading((await reread()).log)).toContain('on step "Show the score"')
   })
 })
+
+/** Who wrote is a fact of the result, not only of the Log wording: S-11's `standing` names it. */
+describe('every attach and end names who wrote it', () => {
+  const harnu = { kind: 'harnu' } as const
+
+  it('the end of a session and a dispatch by Harnu are written as harnu', async () => {
+    seed(missionOf())
+    const dispatched = await attachDispatchedWorker(root, ID, {
+      sessionId: DISPATCHED,
+      stepId: 'stp-1',
+      actor: harnu,
+      at: AT
+    })
+    const ended = await endSession(root, ID, { sessionId: DISPATCHED, at: LATER })
+    for (const r of [dispatched, ended]) {
+      expect(r.ok).toBe(true)
+      if (r.ok) expect(r.standing).toBe('harnu')
+    }
+  })
+
+  it('the picker and every decision are written as the operator', async () => {
+    seed(missionOf({ attachRequests: [pending('atr-1', ASKER)] }))
+    const picked = await attachFromPicker(root, ID, { sessionId: PICKED, at: AT })
+    const allowed = await decideAttachRequest(root, ID, {
+      requestId: 'atr-1',
+      decision: 'allowed',
+      at: AT
+    })
+    for (const r of [picked, allowed]) {
+      expect(r.ok).toBe(true)
+      if (r.ok) expect(r.standing).toBe('operator')
+    }
+  })
+})
