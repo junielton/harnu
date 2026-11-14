@@ -20,6 +20,7 @@
 import {
   buildNewCardContent,
   isCardMoveTarget,
+  isCardSubstrate,
   mintNextCardId,
   parseCard,
   planCardMove,
@@ -243,7 +244,7 @@ function isOneLine(value: string): boolean {
  * is the one thing Harnu must never do.
  */
 function checkInputs(input: PlanStepCardInput): StepCardPlan | null {
-  const { missionId, step, provenance } = input
+  const { missionId, step, provenance, dispatch } = input
   if (!MISSION_V4_ID_RE.test(missionId)) {
     return {
       action: 'refused',
@@ -253,13 +254,16 @@ function checkInputs(input: PlanStepCardInput): StepCardPlan | null {
   }
   const badStep = !STEP_V4_ID_RE.test(step.id)
   const badMilestone = step.milestone !== undefined && !MILESTONE_ID_RE.test(step.milestone)
+  // `dispatch.to` becomes the card's `substrate:` line, and a caller's type is not a run-time check.
+  const badDispatch = dispatch !== null && !isCardSubstrate(dispatch.to)
   const badProvenance =
     !isOneLine(provenance.at) || (provenance.branch !== undefined && !isOneLine(provenance.branch))
-  if (badStep || badMilestone || badProvenance) {
+  if (badStep || badMilestone || badProvenance || badDispatch) {
     return {
       action: 'refused',
       code: 'BAD_INPUT',
-      message: 'A step id, milestone or provenance is not one plain line, so no card is written.'
+      message:
+        'A step id, milestone, provenance or dispatch target is not a plain value, so no card is written.'
     }
   }
   return null
