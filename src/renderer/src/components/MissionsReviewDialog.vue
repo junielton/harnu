@@ -26,7 +26,8 @@ import {
   groupReviewMissions,
   headlineText,
   isBulkCloseable,
-  readyIds
+  readyIds,
+  youItemText
 } from '../lib/mission-view'
 import { firstOwed } from '../lib/mission-cue'
 import { useMissionsStore } from '../stores/missions'
@@ -77,41 +78,9 @@ useFocusTrap({
 })
 
 function owed(v: MissionView): string {
-  // What the first owed item is, in words — the same line the Activity row prints.
+  // What the first owed item is, in words — the one wording the You lane and the Activity row use.
   const item = firstOwed(v)
-  switch (item?.kind) {
-    case 'blocker':
-      return item.reason
-    case 'rescope':
-      return t('mission.state.rescopePending')
-    case 'close':
-      return t('mission.state.delivered')
-    case 'checks':
-      return t(
-        'mission.you.checks',
-        { count: item.count, steps: stepTitles(v, item.stepIds) },
-        item.count
-      )
-    case 'human-steps':
-      return t(
-        'mission.you.humanSteps',
-        { steps: stepTitles(v, item.stepIds) },
-        item.stepIds.length
-      )
-    case 'review-import':
-      return t('mission.you.reviewImport')
-    case 'main-red':
-      return t('mission.you.mainRed', { pr: item.pr, step: stepTitles(v, [item.stepId]) })
-    default:
-      // Nothing owed (a finished mission nobody asked to close): say where it stands.
-      return item === null
-        ? headlineText(t, progressHeadline(v.progress))
-        : t('mission.state.needsYou')
-  }
-}
-
-function stepTitles(v: MissionView, ids: readonly string[]): string {
-  return ids.map((id) => v.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
+  return item === null ? headlineText(t, progressHeadline(v.progress)) : youItemText(t, v, item)
 }
 
 function isSelected(id: string): boolean {

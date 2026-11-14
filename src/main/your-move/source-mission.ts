@@ -29,6 +29,8 @@ function mapping(item: MissionYouItem): { kind: CardKind; suffix: string } | nul
       return { kind: 'do', suffix: 'steward-paused' }
     case 'blocker':
       return { kind: 'do', suffix: `blocker:${item.reason}` }
+    case 'decide':
+      return { kind: 'decide', suffix: `decide:${item.stepId}` }
     case 'checks':
       return { kind: 'check', suffix: 'checks' }
     case 'human-steps':

@@ -5,7 +5,7 @@
  * GROWS (never on a tick, a resolution or a decrease), approvals / needs-input
  * excluded, no draft kind (a dead legacy draft never cues). Standing kinds
  * (`close`, `checks`, `review-import`) never re-nudge; blocking kinds (`rescope`,
- * `blocker`, `human-steps`) re-nudge on {@link BLOCKING_NUDGE_MS} and then stop.
+ * `blocker`, `decide`, `human-steps`) re-nudge on {@link BLOCKING_NUDGE_MS} and then stop.
  * The memory is persisted, a missing one seeds silently, and an absent mission
  * keeps its entry for {@link ABSENT_TTL_MS}. Time is an injected `now`.
  */
@@ -66,6 +66,9 @@ function owedView(id: string, what: string): MissionView {
   if (what.startsWith('human-steps:'))
     return view({ id, you: [humanSteps(Number(what.slice(12)))] })
   if (what === 'review-import') return view({ id, you: [{ kind: 'review-import' }] })
+  if (what.startsWith('decide:')) {
+    return view({ id, you: [{ kind: 'decide', stepId: what.slice(7), title: 'Which store?' }] })
+  }
   throw new Error(`unknown owed kind ${what}`)
 }
 
@@ -86,6 +89,7 @@ describe('owedKeys', () => {
         checks(3),
         { kind: 'human-steps', stepIds: ['stp-4', 'stp-5'] },
         { kind: 'review-import' },
+        { kind: 'decide', stepId: 'stp-3', title: 'Which store?' },
         { kind: 'approvals', count: 2, sessionId: 's' }
       ]
     })
@@ -96,7 +100,8 @@ describe('owedKeys', () => {
       'blocker:merge #7': 1,
       checks: 3,
       'human-steps': 2,
-      'review-import': 1
+      'review-import': 1,
+      'decide:stp-3': 1
     })
   })
 
@@ -258,11 +263,20 @@ describe('decideCue — the per-kind policy table (spec §3.2)', () => {
   it.each([
     ['rescope', 'rescope:main'],
     ['blocker', 'blocker:merge #6'],
-    ['human-steps', 'human-steps:1']
+    ['human-steps', 'human-steps:1'],
+    ['decide', 'decide:stp-2']
   ])('%s is blocking: one cue, then 30 min, 1 h, 2 h, 4 h later, then silent', (_kind, what) => {
     // Cumulative: +30 min, +1 h, +2 h, +4 h after each previous cue.
     const expected = [0, 30 * MIN, 90 * MIN, 210 * MIN, 450 * MIN]
     expect(cueTimes(() => owedView('a', what), 48 * HOUR)).toEqual(expected)
+  })
+
+  it('a pending decision cues once when it appears, not again on the next poll, and then reminds', () => {
+    const first = decideCue([owedView('a', 'decide:stp-2')], empty(), T0)
+    expect(first.cue).toBe(true)
+    const next = decideCue([owedView('a', 'decide:stp-2')], first.memory, T0 + POLL)
+    expect(next.cue).toBe(false)
+    expect(decideCue([owedView('a', 'decide:stp-2')], next.memory, T0 + 30 * MIN).cue).toBe(true)
   })
 
   it('a re-nudge fires at exactly the scheduled age, not a poll before', () => {

@@ -192,7 +192,7 @@ describe('AC-4b.3 — MissionPopover additions', () => {
     expect(rows[1].find('[data-test="mission-you-age"]').exists()).toBe(false)
   })
 
-  it('an undecided decision node adds a "Decide: …" row', () => {
+  it('a pending decision the server lists is a "Decide: …" row', () => {
     const steps: MissionStep[] = [
       {
         id: 'stp-1',
@@ -216,7 +216,10 @@ describe('AC-4b.3 — MissionPopover additions', () => {
         blockers: []
       }
     ]
-    const w = mountMission({ mission: { steps } })
+    const w = mountMission({
+      mission: { steps },
+      view: { you: [{ kind: 'decide', stepId: 'stp-1', title: 'Standard vs Combined' }] }
+    })
     expect(w.get('[data-test="mission-you-first"]').text()).toBe('Decide: Standard vs Combined')
   })
 

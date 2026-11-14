@@ -14,6 +14,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- A decision that waits on you now shows in the sidebar chip, in Activity and in Your move, not only in the mission popover, and it reminds you like the other things a mission is blocked on. It is listed once, as a decision, instead of also as a step to confirm. Activity and the Missions review word what a mission owes the same way the popover does.
 - The **Campaign map** is gone. The Campaign popover no longer has an **Open map** button; its footer keeps only **End campaign…**. The map's Steward block was never wired, and the Mission pane covers the same ground.
 
 ### Removed
