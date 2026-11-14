@@ -7886,8 +7886,11 @@ this machine), then the rest, in the order they were written. Where they come fr
   `mission_link`;
 - **for a step the session is working** (running, or waiting for review), the links Harnu already
   collects from that session's transcript (the footer's Links shelf reads the same ones), **only the
-  ones the session wrote** (not the ones the operator pasted), newest eight at most. A link in both
-  places is listed once. A step that is **done** lists only what its record holds.
+  ones the session wrote** (not the ones the operator pasted), newest eight at most. The session works
+  one step after another, so a link is a step's **from the step's start until the next working step
+  starts** (a step with no start time takes every link); a pull request that is **another step's**
+  never lists here. A link in both places is listed once. A step that is **done** lists only what its
+  record holds.
 
 **The pull request number on a step row** is a link too, when Harnu has the address: the step's `pr`
 link when it is an address, else the pull request of that number in the session's links. It is a

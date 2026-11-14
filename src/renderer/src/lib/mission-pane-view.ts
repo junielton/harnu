@@ -234,6 +234,8 @@ export interface SessionLinkLike {
   label: string
   /** `agent` for a link the session wrote, `user` for one the operator did. Only the session's are shown. */
   source: 'user' | 'agent'
+  /** ISO time of the link's latest occurrence in the transcript. */
+  at?: string
 }
 
 /** What a step draws beyond the server's own fields. `now` is the clock of the caller (a pure module never reads it). */
@@ -308,9 +310,18 @@ const LINK_RANK: Record<StepLinkRow['kind'], number> = {
 export function stepLinkRows(
   links: StepView['links'],
   sessionLinks: readonly SessionLinkLike[],
-  /** The links an address is looked up in; the ones listed are `sessionLinks`. All of them by default. */
-  resolveIn: readonly SessionLinkLike[] = sessionLinks
+  opts: {
+    /** The links an address is looked up in; the ones listed are `sessionLinks`. All of them by default. */
+    resolveIn?: readonly SessionLinkLike[]
+    /** When the step started (ms): a session link written before it belongs to an earlier step. */
+    since?: number | null
+    /** When the next step the session works started (ms): a link written from then on is that step's. */
+    until?: number | null
+    /** Pull request numbers that are another step's: the session's link to one is that step's, not this one's. */
+    otherPrs?: ReadonlySet<string>
+  } = {}
 ): StepLinkRow[] {
+  const resolveIn = opts.resolveIn ?? sessionLinks
   const rows: StepLinkRow[] = []
   const seen = new Set<string>()
   const add = (row: StepLinkRow, dedupe: string): void => {
@@ -358,7 +369,16 @@ export function stepLinkRows(
     if (l.source !== 'agent' || extra >= SESSION_LINK_CAP) continue
     const address = httpAddress(l.url)
     if (address === null) continue
+    if (opts.since != null && l.at !== undefined) {
+      const at = Date.parse(l.at)
+      if (Number.isFinite(at) && at < opts.since) continue
+    }
+    if (opts.until != null && l.at !== undefined) {
+      const at = Date.parse(l.at)
+      if (Number.isFinite(at) && at >= opts.until) continue
+    }
     const number = l.kind === 'pr' ? PULL_NUMBER_RE.exec(address)?.[1] : undefined
+    if (number && opts.otherPrs?.has(number) && !seen.has(`pr:${number}`)) continue
     if (number && seen.has(`pr:${number}`)) continue
     if (seen.has(address)) continue
     const local = isLocalHost(new URL(address).hostname)
@@ -515,12 +535,33 @@ export interface PaneTree {
 export function buildPaneTree(detail: Detail, ctx: StepContext = {}): PaneTree {
   const owed = owedStepIds(detail)
   const sessionLinks = ctx.sessionLinks ?? []
+  // When each step the session is working on started: the windows its links are shared out by.
+  const workingStarts = detail.steps.flatMap((x) => {
+    const t = x.startedAt !== null ? Date.parse(x.startedAt) : Number.NaN
+    return (x.state === 'running' || x.state === 'waiting-review') && Number.isFinite(t) ? [t] : []
+  })
+  const prNumbers = detail.steps.flatMap((x) => {
+    const number = prNumberOf(x.links)
+    return number ? [{ step: x.id, number }] : []
+  })
   const rowOf = (s: StepView): PaneStepRow => {
     const pr = prNumberOf(s.links)
     const split = splitCriteria(s.criteria)
     // The session's own links belong to the steps it is working on: a running one, or one waiting for review.
     const working = s.state === 'running' || s.state === 'waiting-review'
-    const links = stepLinkRows(s.links, working ? sessionLinks : [], sessionLinks)
+    const started = s.startedAt !== null ? Date.parse(s.startedAt) : Number.NaN
+    const otherPrs = new Set(prNumbers.filter((p) => p.step !== s.id).map((p) => p.number))
+    // The session works on one step after another: its links are the step's from the step's start until
+    // the next working step starts.
+    const next = Number.isFinite(started)
+      ? Math.min(...workingStarts.filter((t) => t > started), Number.POSITIVE_INFINITY)
+      : Number.POSITIVE_INFINITY
+    const links = stepLinkRows(s.links, working ? sessionLinks : [], {
+      resolveIn: sessionLinks,
+      since: Number.isFinite(started) ? started : null,
+      until: Number.isFinite(next) ? next : null,
+      otherPrs
+    })
     return {
       id: s.id,
       title: s.title,

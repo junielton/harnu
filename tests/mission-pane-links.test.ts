@@ -47,6 +47,7 @@ interface StepSeed {
   id: string
   title: string
   state: 'todo' | 'running' | 'waiting-review' | 'done'
+  startedAt?: string
   criteria?: CriterionSeed[]
   blockers?: BlockerSeed[]
   links?: Array<{ kind: 'pr' | 'url' | 'doc' | 'worktree' | 'session'; ref: string }>
@@ -66,7 +67,7 @@ function reply(
     stateLabel: 'ZZZ server words',
     blocked: (s.blockers ?? []).length > 0,
     card: null,
-    startedAt: null,
+    startedAt: s.startedAt ?? null,
     waitsFor: null,
     criteria: (s.criteria ?? []).map((c) => ({
       id: c.id,
@@ -155,6 +156,7 @@ interface SessionLinkSeed {
   kind: 'pr' | 'issue' | 'task' | 'figma' | 'doc' | 'web'
   label: string
   source: 'user' | 'agent'
+  at?: string
 }
 
 let current: MissionV4ViewReply
@@ -179,7 +181,7 @@ async function mountPane(
     missionOperatorDoor: vi.fn(),
     requestAttention: vi.fn(),
     sessionLinksList: vi.fn(async () =>
-      links.map((l) => ({ ...l, detail: '', at: '2026-11-14T10:00:00.000Z', excerpt: '' }))
+      links.map((l) => ({ detail: '', at: '2026-11-14T10:00:00.000Z', excerpt: '', ...l }))
     ),
     shellOpenExternal: openExternal,
     foldersLoad: vi.fn(async () => []),
@@ -593,6 +595,48 @@ describe('AC-52 — step links open and come from the session’s links', () => 
     expect(row.text()).toBe('#12')
     expect(row.attributes('role')).toBeUndefined()
     expect(done.text()).not.toContain('scoring-notes')
+  })
+
+  it('a link the session wrote before a step started, or to another step’s pull request, is not that step’s', async () => {
+    const w = await mountPane(
+      reply([
+        {
+          id: 'stp-1',
+          title: 'The first step',
+          state: 'running',
+          startedAt: '2026-11-14T08:00:00.000Z',
+          links: [{ kind: 'pr', ref: '256' }]
+        },
+        {
+          id: 'stp-2',
+          title: 'The second step',
+          state: 'running',
+          startedAt: '2026-11-14T12:00:00.000Z'
+        }
+      ]),
+      [
+        // Written at 10:00, between the two starts: the first step's, never the second's.
+        ...SESSION_LINKS,
+        // Written at 13:00, after the second step started: the second step's.
+        {
+          url: 'https://example.com/second-steps-page',
+          kind: 'web',
+          label: 'example.com/second-steps-page',
+          source: 'agent',
+          at: '2026-11-14T13:00:00.000Z'
+        }
+      ]
+    )
+    await openStep(w, 'stp-1')
+    await openStep(w, 'stp-2')
+    const first = w.get('[data-test="step-links"][data-step="stp-1"]').text()
+    const second = w.get('[data-test="step-links"][data-step="stp-2"]').text()
+    expect(first).toContain('example.com/scoring-notes')
+    expect(first).not.toContain('second-steps-page')
+    expect(second).toContain('example.com/second-steps-page')
+    expect(second).not.toContain('scoring-notes')
+    // The pull request of the first step is not listed under the second, though the session wrote it.
+    expect(second).not.toContain('#256')
   })
 
   it('a pull request link written as an address opens that address', async () => {
