@@ -110,10 +110,23 @@ const sessionOnly = (verb: string): StateRefusal =>
 
 // ---- Small helpers -----------------------------------------------------------------
 
-/** A Log entry: a heading with the time and the kind, then one line. The Log is append-only. */
-function appendLog(log: string, at: string, kind: string, text: string): string {
+/** One line of plain text: every run of white space (and U+0085) becomes one space. */
+const oneLine = (text: string): string => text.replace(/[\s\u0085]+/g, ' ').trim()
+
+/** A step as a reader names it: its title, in quotes. */
+const quoted = (step: Pick<StepV4, 'title'>): string => `"${oneLine(step.title)}"`
+
+/**
+ * A Log entry, in the one shape a session may write (S-11's Log rule): a single heading
+ * `### <ISO time> · note`, with `· stp-<n>` when it is about a step, then ONE plain line. The line says
+ * what happened in words a reader understands (the step by its quoted title, "another session" for a
+ * second session, never an id), and it is squeezed to one line so text a session handed in can never
+ * add a heading or a line break. Who did it is never in the heading: that is Harnu's to write. The Log
+ * is append-only.
+ */
+function appendLog(log: string, at: string, text: string, stepId?: string): string {
   const gap = log === '' || log.endsWith('\n') ? '' : '\n'
-  return `${log}${gap}\n### ${at} · ${kind}\n\n${text}\n`
+  return `${log}${gap}\n### ${at} · note${stepId ? ` · ${stepId}` : ''}\n\n${oneLine(text)}\n`
 }
 
 const trimmed = (text: unknown): string => (typeof text === 'string' ? text.trim() : '')
@@ -258,15 +271,15 @@ export async function setBlocker(
       const next = step
         ? replaceStep(record, { ...step, blockers: [...step.blockers, blocker] })
         : { ...record, blockers: [...record.blockers, blocker] }
-      const where = step ? `step ${step.id}` : 'the mission'
+      const where = step ? quoted(step) : 'the mission'
       return {
         next: {
           record: next,
           log: appendLog(
             log,
             at,
-            'blocker',
-            `${blocker.id} raised on ${where}, owned by ${args.owner === 'operator' ? 'the operator' : 'the agent'}: ${reason}`
+            `Blocker raised on ${where}: ${reason} (${blocker.id}).`,
+            step?.id
           )
         },
         report: { blockerId: blocker.id, ...(step ? { stepId: step.id } : {}), deduped: false }
@@ -300,7 +313,7 @@ export async function clearBlocker(
         `${record.id} has no open blocker ${args.blockerId}; it may already be cleared.`
       )
     }
-    if (found.blocker.owner === 'operator' && actor.kind === 'session') {
+    if (found.blocker.owner === 'operator' && actor.kind !== 'operator') {
       throw new Refusal(
         'OPERATOR_ONLY',
         `${args.blockerId} is the operator's to clear: they do it in the Mission pane, or a fact it waits for ends it.`
@@ -313,11 +326,12 @@ export async function clearBlocker(
       blockers: without(record.blockers),
       steps: record.steps.map((s) => ({ ...s, blockers: without(s.blockers) }))
     }
-    const where = found.stepId ? `step ${found.stepId}` : 'the mission'
+    const onStep = found.stepId ? record.steps.find((s) => s.id === found.stepId) : undefined
+    const where = onStep ? quoted(onStep) : 'the mission'
     return {
       next: {
         record: next,
-        log: appendLog(log, at, 'blocker', `${args.blockerId} cleared on ${where}.`)
+        log: appendLog(log, at, `Blocker cleared on ${where} (${args.blockerId}).`, found.stepId)
       },
       report: { blockerId: args.blockerId, ...(found.stepId ? { stepId: found.stepId } : {}) }
     }
@@ -339,7 +353,7 @@ export interface PendingDoneWhen {
   /** Why it changes. */
   reason: string
   at: string
-  /** The session that proposed it. */
+  /** Who proposed it, by name: the session's id, or `harnu` / `operator`. */
   by: string
 }
 
@@ -360,7 +374,8 @@ export async function stageDoneWhen(
   args: StageDoneWhenArgs
 ): Promise<StateResult<{ staged: PendingDoneWhen; deduped: boolean }>> {
   const at = new Date().toISOString()
-  const by = actor.kind === 'session' ? actor.sessionId : 'operator'
+  // By name: a session's id, `operator` or `harnu`. Harnu's own write is never recorded as the operator's.
+  const by = actor.kind === 'session' ? actor.sessionId : actor.kind
   return run<{ staged: PendingDoneWhen; deduped: boolean }>(
     folder,
     args.missionId,
@@ -384,12 +399,7 @@ export async function stageDoneWhen(
       return {
         next: {
           record: { ...record, [PENDING_DONE_WHEN_KEY]: staged } as MissionV4,
-          log: appendLog(
-            log,
-            at,
-            'Done when',
-            `A new Done when is waiting for the operator: ${reason}`
-          )
+          log: appendLog(log, at, `A new Done when is waiting for the operator: ${reason}`)
         },
         report: { staged, deduped: false }
       }
@@ -468,10 +478,10 @@ export async function settleCriterion(
       acs: step.acs.map((c) => (c.id === ac.id ? updated : c))
     })
     const line = settled
-      ? `${step.id} ${ac.id} settled by a second session.`
-      : `${step.id} ${ac.id} self-checked by the session that built it; it stays open.`
+      ? `${quoted(step)}: a criterion was settled by another session.`
+      : `${quoted(step)}: a criterion was checked by the session that built it; it stays open.`
     return {
-      next: { record: next, log: appendLog(log, at, 'criterion', line) },
+      next: { record: next, log: appendLog(log, at, line, step.id) },
       report: {
         outcome: settled ? 'settled' : 'self-check',
         stepId: step.id,
@@ -513,7 +523,10 @@ export async function requestClose(
       if (open.length > 0) {
         const shown = open
           .slice(0, 5)
-          .map((s) => `${s.id} (${STATE_LABELS[s.state]})`)
+          .map((s) => {
+            const step = record.steps.find((x) => x.id === s.id)
+            return `${step ? quoted(step) : s.id} (${STATE_LABELS[s.state]})`
+          })
           .join(', ')
         const more = open.length > 5 ? ` and ${open.length - 5} more` : ''
         throw new Refusal(
@@ -530,12 +543,7 @@ export async function requestClose(
       return {
         next: {
           record: { ...record, closeRequested: { at } },
-          log: appendLog(
-            log,
-            at,
-            'close request',
-            'Every step is done: the agent asks the operator to close.'
-          )
+          log: appendLog(log, at, 'Every step is done: the agent asks the operator to close.')
         },
         report: { closeRequested: { at }, deduped: false }
       }
