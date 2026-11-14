@@ -384,7 +384,6 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Campaign store + IPC (§6 — T596)                   | `stores/campaigns.ts` + `src/main/campaign-ipc.ts`                               |
 | Mission close confirm (§6 — T370 AC-S9-8)          | `src/renderer/src/components/MissionCloseConfirmDialog.vue`                      |
 | Pause steward dialog (§6 — T609)                   | `src/renderer/src/components/StewardPauseDialog.vue`                             |
-| Merge batch dialog (§6 — T609)                     | `src/renderer/src/components/MergeBatchDialog.vue` + `src/main/merge-batch-*.ts` |
 | Scheduler Stewards section (§6 — T609)             | `src/renderer/src/components/SchedulerStewards.vue` + `lib/steward-view.ts`      |
 | Missions review dialog (§6 — BUG-173 S5)           | `src/renderer/src/components/MissionsReviewDialog.vue`                           |
 | Bulk close confirm (§6 — BUG-173 S5)               | `src/renderer/src/components/MissionBulkCloseConfirmDialog.vue`                  |

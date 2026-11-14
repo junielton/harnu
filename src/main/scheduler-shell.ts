@@ -1249,34 +1249,6 @@ export async function wakeStewardForMission(
 }
 
 /**
- * Campaign ch.5b (spec §4, Merge batch): wake the steward of `missionId` and wait for its tick to
- * end, so the operator's batch merges the next PR only after the steward rebased the stack and the
- * gates were re-read. `skipped` when there is nothing to wait for — no steward, a paused or blocked
- * one, or a wake coalesced into a later tick (the honest answer: the steward did not run NOW);
- * `timeout` when its tick was still running at `timeoutMs`.
- */
-export async function runStewardTurn(
-  missionId: string,
-  timeoutMs: number
-): Promise<'ran' | 'skipped' | 'timeout'> {
-  const out = await wakeStewardForMission(missionId, 'ledger')
-  if (!out.woke) return 'skipped'
-  const w = workersCache.find((x) => x.category === 'steward' && x.missionId === missionId)
-  if (!w) return 'skipped'
-  const deadline = Date.now() + timeoutMs
-  // A tick registers itself a moment after the wake (it awaits the kill-switch gate first).
-  const appearBy = Date.now() + 5000
-  while (!liveTicks.has(w.id) && Date.now() < Math.min(appearBy, deadline)) {
-    await new Promise((r) => setTimeout(r, 200))
-  }
-  while (liveTicks.has(w.id)) {
-    if (Date.now() >= deadline) return 'timeout'
-    await new Promise((r) => setTimeout(r, 500))
-  }
-  return 'ran'
-}
-
-/**
  * Register the scheduler's IPC surface and start its ticker. Call once at
  * boot, alongside the other `register*` calls in `index.ts`.
  */

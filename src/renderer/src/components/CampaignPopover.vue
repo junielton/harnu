@@ -9,12 +9,12 @@
  * Read-only: every number is the server's (`CampaignView.progress`, each mission's own
  * `progress`), and there is no campaign door in main yet, so "End campaign…" is rendered disabled
  * with the reason in its tooltip. The You lane
- * carries the chapter missions' owed rows with their doors (T609): "Merge {n} in order…" opens the Merge
- * batch dialog, "Resume steward" lifts a pause; the Steward line itself stays in the chapter popover.
+ * carries the chapter missions' owed rows with their doors (T609): "Resume steward" lifts a pause; the
+ * Steward line itself stays in the chapter popover.
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Flag, GitMerge, Play, TriangleAlert } from 'lucide-vue-next'
+import { Check, Flag, Play, TriangleAlert } from 'lucide-vue-next'
 import type { CampaignView } from '../../../main/campaign-ipc'
 import type { ChapterState } from '../../../main/campaign-progress'
 import type { CampaignChapterRow, CampaignModel } from '../lib/campaign-view'
@@ -33,7 +33,6 @@ import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import Button from './ui/Button.vue'
 import MissionStepGlyph from './MissionStepGlyph.vue'
-import MergeBatchDialog from './MergeBatchDialog.vue'
 
 const props = defineProps<{ view: CampaignView; model: CampaignModel }>()
 const emit = defineEmits<{ openChapter: [missionId: string] }>()
@@ -156,23 +155,10 @@ const youLook = computed<'clear' | 'warning' | 'success'>(() => {
 })
 const ageText = (row: YouRow): string | null => youRowAge(row)
 
-/**
- * T609 (campaign spec §4): the Merge batch door. A `merge-batch` row belongs to one chapter's mission
- * (its PRs are that mission's steps'); the dialog runs the door for it.
- */
-const mergeBatch = ref<{
-  root: string
-  missionId: string
-  prs: NonNullable<YouRow['prs']>
-} | null>(null)
 /** T609: Resume steward, from the paused row — the same operator door the chapter popover fires. */
 function resumeSteward(y: CampaignModel['you'][number]): void {
   const v = viewOf(y.missionId)
   if (v) void missions.runDoor({ door: 'resumeSteward', root: v.root, missionId: y.missionId })
-}
-function openMergeBatch(y: CampaignModel['you'][number]): void {
-  const v = viewOf(y.missionId)
-  if (v && y.row.prs) mergeBatch.value = { root: v.root, missionId: y.missionId, prs: y.row.prs }
 }
 
 // An in-app popover: registers with the native-overlay freeze (a browser pane under it freezes).
@@ -483,18 +469,6 @@ useNativeOverlay('campaign-popover', rootEl)
                 <Play :size="14" :stroke-width="1.8" />{{ $t('mission.steward.resume') }}
               </Button>
             </div>
-            <div v-if="firstYou?.row.kind === 'merge-batch'" style="margin-top: 7px">
-              <Button
-                variant="primary"
-                :disabled="missions.mergeBatchInFlight"
-                data-test="campaign-merge-batch"
-                @click="openMergeBatch(firstYou)"
-              >
-                <GitMerge :size="14" :stroke-width="1.8" />{{
-                  $t('mission.mergeBatch.action', { n: firstYou.row.prs?.length ?? 0 })
-                }}
-              </Button>
-            </div>
           </div>
         </div>
         <div v-if="restYou.length" style="margin-top: 6px">
@@ -524,17 +498,6 @@ useNativeOverlay('campaign-popover', rootEl)
             >
               {{ $t('mission.steward.resume') }}
             </button>
-            <button
-              v-else-if="y.row.kind === 'merge-batch'"
-              type="button"
-              class="shrink-0 cursor-pointer text-accent hover:underline"
-              style="font-size: 11px"
-              :disabled="missions.mergeBatchInFlight"
-              data-test="campaign-merge-batch"
-              @click="openMergeBatch(y)"
-            >
-              {{ $t('mission.mergeBatch.action', { n: y.row.prs?.length ?? 0 }) }}
-            </button>
             <span class="shrink-0 text-text-4" style="font-size: 10.5px">{{
               $t('campaign.you.chapterTag', { n: y.chapterOrdinal })
             }}</span>
@@ -561,13 +524,5 @@ useNativeOverlay('campaign-popover', rootEl)
         </Button>
       </span>
     </div>
-
-    <MergeBatchDialog
-      v-if="mergeBatch"
-      :root="mergeBatch.root"
-      :mission-id="mergeBatch.missionId"
-      :prs="mergeBatch.prs"
-      @close="mergeBatch = null"
-    />
   </div>
 </template>

@@ -45,14 +45,13 @@ describe('no direct gh spawn outside the shared runner (AC-1)', () => {
     ).toEqual([])
   })
 
-  it('each of the six known call sites imports runGh and tags consumer + resource', () => {
+  it('each of the five known call sites imports runGh and tags consumer + resource', () => {
     const sites: Array<[string, RegExp]> = [
       ['pr-stack.ts', /consumer: 'pr-stack'|consumer,|consumer: 'missions'/],
       ['reaper/scanner-shell.ts', /consumer: 'cleanup'/],
       ['review-ipc.ts', /consumer: 'review'/],
       ['review-viewed-store.ts', /consumer: 'review'/],
-      ['gc/gc-remote-shell.ts', /consumer: 'cleanup'/],
-      ['merge-batch-ipc.ts', /consumer: 'merge-batch'/]
+      ['gc/gc-remote-shell.ts', /consumer: 'cleanup'/]
     ]
     for (const [rel, tag] of sites) {
       const src = readFileSync(path.join(SRC, rel), 'utf8')
@@ -62,12 +61,9 @@ describe('no direct gh spawn outside the shared runner (AC-1)', () => {
     }
   })
 
-  it('the steward and the merge batch re-attribute the shared mission derive', () => {
+  it('the steward re-attributes the shared mission derive', () => {
     expect(readFileSync(path.join(SRC, 'steward-bridge.ts'), 'utf8')).toMatch(
       /withGhConsumer\('steward'/
-    )
-    expect(readFileSync(path.join(SRC, 'merge-batch-ipc.ts'), 'utf8')).toMatch(
-      /withGhConsumer\('merge-batch'/
     )
   })
 

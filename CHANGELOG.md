@@ -16,6 +16,14 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - The **Campaign map** is gone. The Campaign popover no longer has an **Open map** button; its footer keeps only **End campaign…**. The map's Steward block was never wired, and the Mission pane covers the same ground.
 
+### Removed
+
+- The **Merge {n} in order…** door is gone. Mission and Campaign popovers no longer offer to merge a
+  stack of PRs, a mission whose steps have open PRs with green CI shows nothing extra in its **You**
+  list, and the "Merge batch" row of the GitHub budget table is removed with it. Merging a stack in
+  order will come back as its own engine rather than as a button on the popovers. The steward still
+  rebases a branch onto its new base after you merge its parent.
+
 ### Fixed
 
 - A step whose pull request is still a draft now reads "PR #7 · draft" (or "rascunho" in Portuguese) in the mission step rail, instead of printing the raw text `mission.pr.state.isDraft`.

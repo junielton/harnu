@@ -72,7 +72,7 @@ const consumerScope = new AsyncLocalStorage<GhConsumer>()
 
 /**
  * Attribute every `gh` call made inside `fn` to `consumer`, whatever tag the call site carries.
- * The mission derive is shared by the pill, the steward and the merge batch; the caller that
+ * The mission derive is shared by the pill and the steward; the caller that
  * started the work is the one that spent the budget.
  */
 export function withGhConsumer<T>(consumer: GhConsumer, fn: () => Promise<T>): Promise<T> {
