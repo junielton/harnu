@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { i18n } from '../src/renderer/src/i18n'
 import MissionPane from '../src/renderer/src/components/MissionPane.vue'
 import { buildPaneTree } from '../src/renderer/src/lib/mission-pane-view'
+import ptBR from '../src/renderer/src/i18n/pt-BR.json'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import type { MissionV4ViewReply } from '../src/main/mission-ipc'
 
@@ -316,6 +317,12 @@ describe('AC-47 — the milestone summary line', () => {
   it('reads in Portuguese too', async () => {
     i18n.global.locale.value = 'pt-BR'
     const w = await mountPane(reply(STEPS, OWED))
-    expect(summary(w)).toBe('3 em andamento · 2 aguardando revisão · 1 bloqueado')
+    // Expected text comes from the locale file, so this stays a locale test without Portuguese prose here.
+    const tree = ptBR.missionPane.tree
+    const fill = (message: string, n: number): string =>
+      message.split('|')[0].trim().replace('{n}', String(n))
+    expect(summary(w)).toBe(
+      [fill(tree.running, 3), fill(tree.waitingReview, 2), fill(tree.blocked, 1)].join(' · ')
+    )
   })
 })
