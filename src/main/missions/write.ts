@@ -45,7 +45,7 @@ import {
   type ContractCode,
   type ContractResult
 } from './contract'
-import { guardMission, type Actor, type GuardCode, type Need } from './guard'
+import { guardMission, isBuilderOf, type Actor, type GuardCode, type Need } from './guard'
 import {
   AttachRequestSchema,
   buildMissionRecordContent,
@@ -71,6 +71,7 @@ export type WriteCode =
   | 'UNKNOWN_MILESTONE'
   | 'STEP_WITHOUT_MILESTONE'
   | 'MISSION_BLOCKER_FACT'
+  | 'SETTLE_NOT_ALLOWED'
   | 'LEADER_NOT_CALLER'
   | 'MISSION_EXISTS'
   | 'BAD_ARGS'
@@ -148,12 +149,55 @@ function checkOperatorFields(before: MissionV4, after: MissionV4): void {
     if (!same(key))
       throw new Refusal('OPERATOR_ONLY', `${what} is the operator's door, not a session's.`)
   }
-  const requests = (r: MissionV4): unknown => (r as { attachRequests?: unknown }).attachRequests
-  if (!isDeepStrictEqual(requests(before), requests(after))) {
+  if (!isDeepStrictEqual(before.attachRequests, after.attachRequests)) {
     throw new Refusal(
       'OPERATOR_ONLY',
       "deciding an attach request is the operator's door; a session asks with mission_attach."
     )
+  }
+}
+
+/**
+ * Who settles a criterion (spec "What settles a criterion"). A session writes a `settled` stamp only
+ * on a criterion a second session settles (`by: session`), in its own name, and only on a step it did
+ * not build: a builder's check is a `selfCheck`, labelled and never proof, which carries the builder's
+ * own id and settles nothing. A fact settles itself, and the operator marks the other two; no session
+ * writes a stamp for either. Judged only on stamps the write added or changed.
+ */
+function checkSettlements(before: MissionV4, after: MissionV4, sessionId: string): void {
+  for (const step of after.steps) {
+    const prev = before.steps.find((p) => p.id === step.id)
+    for (const ac of step.acs) {
+      const old = prev?.acs.find((p) => p.id === ac.id)
+      const at = `step ${step.id} criterion ${ac.id}`
+      if (ac.settled && !isDeepStrictEqual(ac.settled, old?.settled)) {
+        if (ac.by !== 'session') {
+          throw new Refusal(
+            'SETTLE_NOT_ALLOWED',
+            `${at} is settled by a fact or by the operator, not by a session.`
+          )
+        }
+        if (ac.settled.by !== sessionId) {
+          throw new Refusal('SETTLE_NOT_ALLOWED', `${at}: a session settles in its own name only.`)
+        }
+        if (isBuilderOf(after, sessionId, step.id)) {
+          throw new Refusal(
+            'SETTLE_NOT_ALLOWED',
+            `${at}: this session built the step, so what it says of it is a self-check, which settles nothing. A second session settles it.`
+          )
+        }
+      }
+      if (
+        ac.selfCheck &&
+        !isDeepStrictEqual(ac.selfCheck, old?.selfCheck) &&
+        ac.selfCheck.by !== sessionId
+      ) {
+        throw new Refusal(
+          'SETTLE_NOT_ALLOWED',
+          `${at}: a self-check carries the id of the session that wrote it.`
+        )
+      }
+    }
   }
 }
 
@@ -168,7 +212,7 @@ function checkAskOnly(
   sessionId: string
 ): void {
   const strip = (r: MissionV4): Record<string, unknown> => {
-    const { attachRequests: _ignored, ...rest } = r as MissionV4 & { attachRequests?: unknown }
+    const { attachRequests: _ignored, ...rest } = r
     return rest
   }
   if (next.log !== beforeLog || !isDeepStrictEqual(strip(before), strip(next.record))) {
@@ -177,8 +221,7 @@ function checkAskOnly(
       'a session that is not attached writes only its request to attach, and nothing else.'
     )
   }
-  const asked = (r: MissionV4): unknown[] =>
-    ((r as { attachRequests?: unknown[] }).attachRequests ?? []) as unknown[]
+  const asked = (r: MissionV4): unknown[] => (r.attachRequests ?? []) as unknown[]
   const prior = asked(before)
   const now = asked(next.record)
   if (now.length < prior.length || !prior.every((p, i) => isDeepStrictEqual(p, now[i]))) {
@@ -325,6 +368,7 @@ export async function writeMission(
         else {
           checkOperatorFields(record, next.record)
           checkSessionsUntouched(record, next.record, access.standing)
+          checkSettlements(record, next.record, actor.sessionId)
         }
       }
       checkReferences(record, next.record)
@@ -380,7 +424,7 @@ export async function createMission(
       throw new Refusal('BAD_ARGS', `${record.id} is not a mission id.`)
     if (actor.kind === 'session') {
       const [only, ...rest] = record.sessions
-      const asked = (record as { attachRequests?: unknown[] }).attachRequests ?? []
+      const asked = record.attachRequests ?? []
       if (
         !only ||
         rest.length > 0 ||
