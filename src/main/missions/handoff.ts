@@ -27,10 +27,10 @@
  */
 
 import { repoRoot } from '../data-dir'
-import { guardMission, leaderOf, openEntry, type Actor } from './guard'
+import { guardMission, leaderOf, openEntry, type Actor, type Standing } from './guard'
 import type { MissionV4, StoppedAt } from './model'
 import { readMissionRecord } from './record-store'
-import { applyChange, logEntry, releaseEntry } from './sessions'
+import { applyChange, logEntry, releaseEntry, stoppedAtOf } from './sessions'
 import type { StepInput } from './state'
 import { buildMissionSummary } from './summary'
 import { deriveStepResults, waitingListV4 } from './waiting'
@@ -208,6 +208,8 @@ export type HandoffResult =
       sessionId: string
       /** The session that led until now, or `null` when the mission had no open leader. */
       previousLeader: string | null
+      /** Who wrote, by name: the door is the operator's. */
+      standing: Standing
       record: MissionV4
       file: string
     }
@@ -238,7 +240,8 @@ function stoppedAtFor(record: MissionV4, inputs: Readonly<Record<string, StepInp
   const ask = waitingListV4(record, { inputs, results }).next?.ask
   return {
     ...(step !== undefined ? { step: step.id } : {}),
-    ...(ask !== undefined && ask !== '' ? { waitingFor: ask } : {})
+    // what a session wrote reaches the record and the summary on ONE line
+    ...(ask !== undefined && ask !== '' ? { waitingFor: ask.replace(LINE_BREAKS, ' ') } : {})
   }
 }
 
@@ -342,9 +345,13 @@ export async function handOff(
         const released =
           index < 0
             ? [...rec.sessions]
-            : releaseEntry(rec.sessions, rec.sessions[index].id, at, stoppedAtFor(rec, facts)).map(
-                (s, i) => (i === index ? { ...s, role: 'worked' as const } : s)
-              )
+            : releaseEntry(
+                rec.sessions,
+                rec.sessions[index].id,
+                at,
+                // the leader's own stop first; a step that links it when the plan names none
+                stoppedAtOf(rec, rec.sessions[index].id, stoppedAtFor(rec, facts))
+              ).map((s, i) => (i === index ? { ...s, role: 'worked' as const } : s))
         return {
           record: {
             ...rec,
@@ -357,8 +364,8 @@ export async function handOff(
             log,
             at,
             index < 0
-              ? `operator handed the mission to session ${newId}`
-              : `operator handed the mission to session ${newId}; session ${rec.sessions[index].id} now worked`
+              ? `operator handed the mission to session ${newId}; Harnu started it`
+              : `operator handed the mission to session ${newId}; Harnu started it and released session ${rec.sessions[index].id}, now worked`
           )
         }
       }
@@ -369,6 +376,7 @@ export async function handOff(
       changed: true,
       sessionId: newId,
       previousLeader: expectedLeader,
+      standing: written.standing,
       record: written.record,
       file: written.file
     }
@@ -381,7 +389,13 @@ export async function handOff(
 
 /** What the renderer gets back: the outcome and the new session id, never the record or a file path. */
 export type HandOffReply =
-  | { ok: true; changed: true; sessionId: string; previousLeader: string | null }
+  | {
+      ok: true
+      changed: true
+      sessionId: string
+      previousLeader: string | null
+      standing: Standing
+    }
   | { ok: false; code: string; error: string }
 
 export function handOffReply(result: HandoffResult): HandOffReply {
