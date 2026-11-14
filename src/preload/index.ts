@@ -68,7 +68,15 @@ import type {
   BudgetSnapshot as GithubBudgetSnapshot
 } from '../main/github-budget-core'
 import type { QuitDialogStrings, QuitGuardPrefs } from '../main/quit-guard'
-import type { MissionDoor, MissionDoorResult, MissionListResult } from '../main/mission-ipc'
+import type {
+  MissionDoor,
+  MissionDoorResult,
+  MissionListResult,
+  MissionV4Door,
+  MissionV4DoorReply,
+  MissionV4ViewReply,
+  MissionV4ViewRequest
+} from '../main/mission-ipc'
 import type { CampaignListResult } from '../main/campaign-ipc'
 import type {
   ReviewSnapshot,
@@ -2937,6 +2945,20 @@ const api = {
     stepId: string
     index: number
   }): Promise<MissionDoorResult> => ipcRenderer.invoke('mission:choose', args),
+  // ---- Missions v4 (S-16a; UI-only, read by the Mission pane from S-17 on — nothing calls these yet) --
+  /**
+   * The view of one mission for the Mission pane: the detail, the close warnings, the staged Done when
+   * and the session history, for the mission a session is attached to or one named by id. It reads and
+   * never writes. Send the answered `missionId` back on later calls: a call that names it reads one record.
+   */
+  missionV4View: (args: MissionV4ViewRequest): Promise<MissionV4ViewReply> =>
+    ipcRenderer.invoke('mission:v4View', args),
+  /**
+   * The operator's doors on a v4 record (mark, clear a blocker, approve a Done when, close, allow or deny
+   * a join, attach from the picker). The only writes the Mission pane makes; no MCP verb reaches them.
+   */
+  missionV4Door: (door: MissionV4Door): Promise<MissionV4DoorReply> =>
+    ipcRenderer.invoke('mission:v4Door', door),
   // ---- Campaign progress (T596; UI-only, read-only — no campaign door exists in main yet) --
   /** Every open campaign in the repos of `folders`, with the server's chapter progress. */
   campaignList: (folders: string[]): Promise<CampaignListResult> =>

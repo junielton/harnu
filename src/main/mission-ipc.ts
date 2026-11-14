@@ -21,6 +21,8 @@
  * `mission_request_close`) or add a check, never apply.
  */
 
+import { promises as fs } from 'node:fs'
+import * as path from 'node:path'
 import { retireStewardForClosedMission } from './steward-shell'
 import { ipcMain } from 'electron'
 import { addTaskEventObserver } from './hook-bridge'
@@ -65,8 +67,34 @@ import {
 import { waitingList, type WaitingItem } from './missions/waiting'
 import { doorReply, runDoor } from './missions/doors'
 import { createMissionObserver, observeMission, type MissionObserver } from './missions/observer'
-import { ensureLinkCacheLoaded } from './mission-link-cache'
+import { ensureLinkCacheLoaded, getLastKnown, rememberResolved } from './mission-link-cache'
 import { hydrateMissionLedger, observedRows } from './missions/ledger-store'
+import { getTaskState } from './detect/task-state-hub'
+import { findMainCi, findPrsForWorktrees } from './pr-stack'
+import { repoRoot } from './data-dir'
+import { resolveRoadmap } from './roadmap-ipc'
+import { openEntry, leaderOf as v4LeaderOf, type Actor } from './missions/guard'
+import {
+  listMissionRecords,
+  readMissionRecord,
+  v4RecordsDir,
+  type MissionRecordView,
+  type RecordSource
+} from './missions/record-store'
+import {
+  missionGet,
+  missionList,
+  type ListedMission,
+  type MissionDetail
+} from './missions/verbs-read'
+import {
+  closeWarningsOf,
+  stagedDoneWhenOf,
+  type CloseWarning as V4CloseWarning
+} from './missions/doors'
+import { sessionHistory, type SessionHistoryRow } from './missions/sessions'
+import { attachFoundPrs } from './missions/verbs-plan'
+import { gatherStepFacts, gatherStepInputs, type FactsDeps } from './missions/facts'
 
 /** One open mission as the renderer reads it (design.md §6 "Mission progress"). */
 export interface MissionView {
@@ -553,11 +581,29 @@ export async function observeOpenMissions(
     onlySessions?: ReadonlySet<string>
     /** Test seam: the fleet scan that feeds the linked children's live state. */
     scan?: () => Promise<FolderEntry[]>
+    /** Test seam: the sources the v4 leg gathers a step's facts from (default: the real ones). */
+    v4Facts?: (root: string) => FactsDeps
   } = {}
 ): Promise<number> {
   const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
   if (roots.length === 0) return 0
-  const read = await readMissionsDeduped(roots, { includeClosed: true })
+  const observed = await observeV3Missions(roots, now, opts)
+  // Missions v4 S-16a (V-4): the v4 leg runs after the v3 loop and can never fail it.
+  try {
+    await observeV4Records(roots, opts)
+  } catch (err) {
+    console.warn('[mission-observer] the v4 leg failed:', err)
+  }
+  return observed
+}
+
+/** The v3 loop of the pass: unchanged from chapter 2. Returns how many missions it observed. */
+async function observeV3Missions(
+  roots: readonly string[],
+  now: number,
+  opts: { onlySessions?: ReadonlySet<string>; scan?: () => Promise<FolderEntry[]> }
+): Promise<number> {
+  const read = await readMissionsDeduped([...roots], { includeClosed: true })
   await copyClosedMissionLedgers(read.missions)
   const jobs = pickJobs(
     read.missions.filter((m) => m.mission.status !== 'closed'),
@@ -585,6 +631,272 @@ export async function observeOpenMissions(
     }
   })
   return jobs.length
+}
+
+// ---- Missions v4 S-16a: the facts' real sources, the view channel and the observer's v4 leg ----------
+
+/** How long the view waits for GitHub; past it a step reads its sticky last-known state (like a door). */
+const VIEW_PR_WAIT_MS = 1500
+
+/**
+ * The real sources of {@link FactsDeps} for one repo: the board's files, chapter 2's pull request join
+ * (which shares the single-flight cache a `mission:list` poll already warms), its last-known cache, the
+ * filesystem and the task-state hub. `waitMs` bounds how long the join waits for GitHub.
+ */
+async function realFactsDeps(root: string, waitMs?: number): Promise<FactsDeps> {
+  await ensureLinkCacheLoaded()
+  return {
+    board: async () => {
+      const { roadmapDir } = await resolveRoadmap(root)
+      const names = (await fs.readdir(roadmapDir)).filter((n) => n.endsWith('.md'))
+      return Promise.all(
+        names.map(async (n) => ({
+          slug: n.slice(0, -3),
+          content: await fs.readFile(path.join(roadmapDir, n), 'utf8')
+        }))
+      )
+    },
+    findPrs: (refs) => findPrsForWorktrees(root, refs, { waitMs }),
+    findMainCi: (numbers) => findMainCi(root, numbers, { waitMs }),
+    lastKnown: (kind, ref) => getLastKnown(root, kind, ref),
+    pathExists: async (abs) => {
+      try {
+        await fs.stat(abs)
+        return true
+      } catch {
+        return false
+      }
+    },
+    taskState: (id) => getTaskState(id)
+  }
+}
+
+/** What the view channel is asked: the folder the caller works in, who asks, and optionally which mission. */
+export interface MissionV4ViewRequest {
+  folder: string
+  sessionId: string
+  missionId?: string
+}
+
+/**
+ * What the view channel answers. `mission`: everything the pane reads about one mission (`detail` is
+ * S-12's `missionGet`; the rest is what its detail does not carry). `none`: the session is attached to
+ * no open mission, here are the folder's missions to pick from. `refused`: a typed reason.
+ */
+export type MissionV4ViewReply =
+  | {
+      state: 'mission'
+      /** Send it back on later calls: a call that names the id reads one record. */
+      missionId: string
+      source: RecordSource
+      detail: MissionDetail
+      /** What the end dialog warns about, counted with the facts (the close door's own reply has none). */
+      closeWarnings: V4CloseWarning[]
+      /** The Done when a session staged for the operator to approve, or `null`. */
+      pendingDoneWhen: { text: string; at?: string } | null
+      sessions: SessionHistoryRow[]
+    }
+  | { state: 'none'; missions: ListedMission[] }
+  | { state: 'refused'; code: string; error: string }
+
+/**
+ * Missions v4 S-15 — what `mission:v4Door` is asked: the folder the caller works in, the mission and
+ * one door. The time is always the app's own (a caller never sets `at`). An unknown door or a missing
+ * field is refused `BAD_ARGS`.
+ */
+export type MissionV4Door = { folder: string; missionId: string } & (
+  | { door: 'mark'; stepId: string; criterionId: string; evidence?: string }
+  | { door: 'clearBlocker'; blockerId: string; stepId?: string }
+  | { door: 'approveDoneWhen' }
+  | { door: 'close'; closedAs: 'delivered' | 'discarded'; reason?: string }
+  | { door: 'decideAttach'; requestId: string; decision: 'allowed' | 'denied' }
+  | { door: 'attach'; sessionId: string }
+)
+
+/**
+ * What `mission:v4Door` answers: the outcome and what the dialog needs, never the record or a file
+ * path (the view channel serves the refreshed mission). `changed: false` means the target was already
+ * as asked. A close carries the warnings counted without the facts: the view's own `closeWarnings`
+ * (with them) is what the dialog shows before the operator confirms.
+ */
+export type MissionV4DoorReply =
+  | {
+      ok: true
+      changed: boolean
+      stepId?: string | null
+      criterionId?: string
+      blockerId?: string
+      warnings?: V4CloseWarning[]
+    }
+  | { ok: false; code: string; error: string }
+
+const refusedView = (code: string, message: string): MissionV4ViewReply => ({
+  state: 'refused',
+  code,
+  error: `${code}: ${message}`
+})
+
+/**
+ * The open mission a session is attached to when it names none: the one it leads, else the only one.
+ * (The unnamed lookup lists every record of the repo and converts each unconverted v3 file in memory:
+ * the channel answers `missionId`, and a call that names it reads one record.)
+ */
+async function missionOfSession(
+  root: string,
+  sessionId: string
+): Promise<
+  | { ok: true; view: MissionRecordView }
+  | { ok: false; code: string; error: string }
+  | { ok: 'none' }
+> {
+  const { records } = await listMissionRecords(root)
+  const mine = records.filter(
+    (v) => v.record.status === 'open' && openEntry(v.record, sessionId) !== undefined
+  )
+  if (mine.length === 0) return { ok: 'none' }
+  if (mine.length === 1) return { ok: true, view: mine[0] }
+  const leading = mine.filter((v) => v4LeaderOf(v.record) === sessionId)
+  if (leading.length === 1) return { ok: true, view: leading[0] }
+  return {
+    ok: false,
+    code: 'AMBIGUOUS_MISSION',
+    error: `this session is attached to ${mine.length} open missions (${mine
+      .map((v) => v.record.id)
+      .join(', ')}); name one with missionId.`
+  }
+}
+
+/**
+ * Missions v4 S-16a (V-1, V-3) — the view of one mission for the Mission pane. It READS and never
+ * writes, even for a mission that exists only as a v3 file: no v4 record, no sidecar, no ledger row,
+ * no steward wake, no sticky sighting (the observer remembers; a view does not). The caller is the
+ * app's interface, not a session, so the guard lets it read everything. It adds no wording of its own:
+ * `detail` is S-12's, `closeWarnings` and `pendingDoneWhen` are S-15's, `sessions` is S-15's history.
+ *
+ * The record is read twice (once to find the facts to gather, once inside `missionGet`): S-12 has no
+ * detail builder from a record already read. Nothing is derived twice. Never throws.
+ */
+export async function buildMissionV4View(
+  raw: unknown,
+  opts: { facts?: (root: string) => FactsDeps } = {}
+): Promise<MissionV4ViewReply> {
+  const a = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
+  if (
+    typeof a.folder !== 'string' ||
+    a.folder === '' ||
+    typeof a.sessionId !== 'string' ||
+    a.sessionId === '' ||
+    (a.missionId !== undefined && (typeof a.missionId !== 'string' || a.missionId === ''))
+  ) {
+    return refusedView(
+      'BAD_ARGS',
+      'the view needs a folder, a session id and, optionally, a mission id.'
+    )
+  }
+  const folder = a.folder
+  const sessionId = a.sessionId
+  try {
+    const root = repoRoot(folder)
+    let view: MissionRecordView
+    if (typeof a.missionId === 'string') {
+      const read = await readMissionRecord(root, a.missionId)
+      if (!read.ok) return { state: 'refused', code: read.code, error: read.error }
+      view = read
+    } else {
+      const found = await missionOfSession(root, sessionId)
+      if (found.ok === 'none') {
+        const list = await missionList(folder, { kind: 'operator' })
+        return list.ok
+          ? { state: 'none', missions: list.missions }
+          : { state: 'refused', code: list.code, error: list.error }
+      }
+      if (found.ok === false) return refusedView(found.code, found.error)
+      view = found.view
+    }
+    const { record } = view
+    // The id a later call reads the record back by. A v3 campaign that was never converted reads as a
+    // mission whose own id exists nowhere yet: it is found again by the campaign's id.
+    const lookupId = view.source === 'v3-campaign' ? (view.sourceIds[0] ?? record.id) : record.id
+    const deps = opts.facts ? opts.facts(root) : await realFactsDeps(root, VIEW_PR_WAIT_MS)
+    const inputs = await gatherStepInputs(root, record, deps)
+    const detail = await missionGet(
+      folder,
+      { kind: 'operator' },
+      { missionId: lookupId },
+      { inputs }
+    )
+    if (!detail.ok) return { state: 'refused', code: detail.code, error: detail.error }
+    return {
+      state: 'mission',
+      missionId: lookupId,
+      source: detail.source,
+      detail,
+      closeWarnings: closeWarningsOf(record, inputs),
+      pendingDoneWhen: stagedDoneWhenOf(record),
+      sessions: sessionHistory(record)
+    }
+  } catch (err) {
+    return refusedView('UNREADABLE', (err as Error).message)
+  }
+}
+
+/**
+ * Who the observer's v4 leg writes as. ONE constant: the app attaching what it found, on the operator's
+ * behalf. S-11's final head adds the actor `{ kind: 'harnu' }` for exactly this; until it is merged
+ * here the code allows only the operator.
+ */
+const OBSERVER_ACTOR: Actor = { kind: 'operator' }
+
+async function isDirectory(p: string): Promise<boolean> {
+  try {
+    return (await fs.stat(p)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Missions v4 S-16a (V-4) — the observer's v4 leg. For each open record whose source is `v4`: gather
+ * the facts, remember the sticky sightings (the only place that may) and attach the pull requests
+ * found for its steps through S-13's `attachFoundPrs`, once. **It touches ONLY `v4` records and never
+ * makes the first v4 write of a v3 mission**: `attachFoundPrs` on a record read from v3 would convert
+ * it by copy, which is the format switch and belongs to a v4-shaped verb or a door. A repo with no
+ * `.harnu/missions-v4/` costs one directory check. It adds no timer and no spawn: the pass is the
+ * existing one, and the join shares the pull request cache a chapter 2 poll warms.
+ * Returns how many v4 records it observed.
+ */
+async function observeV4Records(
+  roots: readonly string[],
+  opts: { onlySessions?: ReadonlySet<string>; v4Facts?: (root: string) => FactsDeps }
+): Promise<number> {
+  let observed = 0
+  for (const root of roots) {
+    if (!(await isDirectory(v4RecordsDir(root)))) continue
+    const { records } = await listMissionRecords(root)
+    const open = records.filter(
+      (v) =>
+        v.source === 'v4' &&
+        v.record.status === 'open' &&
+        (opts.onlySessions === undefined ||
+          [...opts.onlySessions].some((id) => openEntry(v.record, id) !== undefined))
+    )
+    for (const { record } of open) {
+      try {
+        const deps = opts.v4Facts ? opts.v4Facts(root) : await realFactsDeps(root)
+        const { sightings, found } = await gatherStepFacts(root, record, deps)
+        for (const s of sightings) rememberResolved(root, s.kind, s.ref, s.seen)
+        if (found.some((f) => f.state !== 'closed')) {
+          const result = await attachFoundPrs(root, OBSERVER_ACTOR, record.id, found)
+          if (!result.ok)
+            console.warn(`[mission-observer] could not attach to ${record.id}:`, result.error)
+        }
+        observed++
+      } catch (err) {
+        console.warn(`[mission-observer] could not observe ${record.id}:`, err)
+      }
+    }
+  }
+  return observed
 }
 
 /** Folders the renderer asked about lately: where the observer looks when the app is open. */
@@ -673,6 +985,13 @@ export function registerMissionIpc(): void {
   // preload entry until S-16, so the renderer cannot reach it yet. The reply carries the outcome and the
   // close warnings, never the record or a file path.
   ipcMain.handle('mission:v4Door', async (_e, door: unknown) => doorReply(await runDoor(door)))
+  // Missions v4 S-16a — the view of one mission for the Mission pane. It reads and never writes. No
+  // renderer calls it until S-17. It also notes the folder, so the observer's v4 leg looks there.
+  ipcMain.handle('mission:v4View', async (_e, args: unknown): Promise<MissionV4ViewReply> => {
+    const folder = (args as { folder?: unknown } | null)?.folder
+    if (typeof folder === 'string') noteAskedFolders([folder])
+    return buildMissionV4View(args)
+  })
   // Campaign spec §4 — the Choose door has its own channel; it is the same door.
   ipcMain.handle('mission:choose', async (_e, args: unknown): Promise<MissionDoorResult> => {
     const a = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
