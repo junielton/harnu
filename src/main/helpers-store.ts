@@ -22,6 +22,9 @@ export type HelperPaneType =
   // T564 U1: a browser pane. Persistable since T574 (spec §10.3): it reopens DISCARDED after a restart; its
   // `payload` carries the address, zoom, emulation, network switch, scroll and pins.
   | 'browser'
+  // Missions v4 S-17: the Mission pane. Non-PTY and reproducible from nothing but the selected session, so it
+  // persists like the Memory pane: it reopens on boot and follows whichever session is selected.
+  | 'mission'
 
 export interface HelperPane {
   /** Stable id; format: `h-<random>`. Used as the PTY identifier too. */

@@ -12,6 +12,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-14
 
+### Added
+
+- A new **Mission pane** in the helper stack, for the next kind of mission (version 4). The mission pill at the top now toggles it: click the pill to open the pane beside your session and again to close it. The pane follows the session you have selected and shows only that session's mission. For now it shows the mission's title, how many steps (or milestones) are done and whether it is ready to close; the rest of the pane arrives in the next updates. The pill reads like "4/21 · 3 for you" (done out of total, then how many things wait on you), and "21/21 · ready to close" when everything is done. Missions you already have keep their popover exactly as before. Agents cannot create the new kind of mission yet, so the pane only has something to show once one exists; until then it says "This session has no mission."
+
 ### Changed
 
 - A decision that waits on you now shows in the sidebar chip, in Activity and in Your move, not only in the mission popover, and it reminds you like the other things a mission is blocked on. It is listed once, as a decision, instead of also as a step to confirm. Activity and the Missions review word what a mission owes the same way the popover does.

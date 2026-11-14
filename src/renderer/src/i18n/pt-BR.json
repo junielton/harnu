@@ -363,6 +363,37 @@
     "copyCode": "Copiar código",
     "copied": "Copiado"
   },
+  "missionPane": {
+    "label": "Missão",
+    "title": "Missão",
+    "loading": "Lendo a missão…",
+    "pill": {
+      "count": "{done}/{total}",
+      "forYou": "{n} para você",
+      "readyToClose": "pronta para fechar",
+      "joined": "{count} · {tail}",
+      "title": "{title} — {label}"
+    },
+    "progress": {
+      "steps": "{done} de {total} passo concluído | {done} de {total} passos concluídos",
+      "milestones": "{done} de {total} marco concluído | {done} de {total} marcos concluídos"
+    },
+    "state": {
+      "open": "Aberta",
+      "ready-to-close": "Pronta para fechar",
+      "closed": "Fechada"
+    },
+    "none": {
+      "title": "Esta sessão não tem missão."
+    },
+    "refused": {
+      "title": "Não foi possível ler esta missão agora."
+    },
+    "v3": {
+      "title": "Esta missão ainda é uma missão v3.",
+      "body": "Abra-a pela pílula da missão no topo."
+    }
+  },
   "memoryPane": {
     "label": "Memória do projeto",
     "reload": "Recarregar memória",

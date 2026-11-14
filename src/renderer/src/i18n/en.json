@@ -363,6 +363,37 @@
     "copyCode": "Copy code",
     "copied": "Copied"
   },
+  "missionPane": {
+    "label": "Mission",
+    "title": "Mission",
+    "loading": "Reading the mission…",
+    "pill": {
+      "count": "{done}/{total}",
+      "forYou": "{n} for you",
+      "readyToClose": "ready to close",
+      "joined": "{count} · {tail}",
+      "title": "{title} — {label}"
+    },
+    "progress": {
+      "steps": "{done} of {total} step done | {done} of {total} steps done",
+      "milestones": "{done} of {total} milestone done | {done} of {total} milestones done"
+    },
+    "state": {
+      "open": "Open",
+      "ready-to-close": "Ready to close",
+      "closed": "Closed"
+    },
+    "none": {
+      "title": "This session has no mission."
+    },
+    "refused": {
+      "title": "This mission cannot be read right now."
+    },
+    "v3": {
+      "title": "This mission is still a v3 mission.",
+      "body": "Open it from the mission pill at the top."
+    }
+  },
   "memoryPane": {
     "label": "Project memory",
     "reload": "Reload memory",

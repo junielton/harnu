@@ -553,7 +553,7 @@ describe('the preload entries', () => {
     expect(preload).toMatch(/ipcRenderer\.invoke\('mission:choose', args\)/)
   })
 
-  it('is called by nothing in the renderer yet: the pane arrives with S-17', () => {
+  it('the view is asked by the missions store only (S-17) and no renderer calls a door yet', () => {
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
         e.isDirectory()
@@ -562,10 +562,15 @@ describe('the preload entries', () => {
             ? [path.join(dir, e.name)]
             : []
       )
-    const callers = walk(path.join(__dirname, '..', 'src', 'renderer')).filter((f) =>
-      /missionV4(View|Door)/.test(readFileSync(f, 'utf8'))
-    )
-    expect(callers).toEqual([])
+    const renderer = path.join(__dirname, '..', 'src', 'renderer', 'src')
+    const callers = (name: RegExp): string[] =>
+      walk(path.join(__dirname, '..', 'src', 'renderer'))
+        .filter((f) => name.test(readFileSync(f, 'utf8')))
+        .map((f) => path.relative(renderer, f))
+    // S-17: the Mission pane and the pill READ the view through the missions store, the one loop that asks.
+    expect(callers(/missionV4View/)).toEqual(['stores/missions.ts'])
+    // No renderer code calls a door until S-19.
+    expect(callers(/missionV4Door/)).toEqual([])
   })
 })
 

@@ -30,8 +30,13 @@
  * quietly ({@link syncMissionActivity}).
  */
 import { defineStore } from 'pinia'
-import { computed, ref, shallowRef } from 'vue'
-import type { MissionDoor, MissionDoorResult, MissionView } from '../../../main/mission-ipc'
+import { computed, ref, shallowRef, watch } from 'vue'
+import type {
+  MissionDoor,
+  MissionDoorResult,
+  MissionV4ViewReply,
+  MissionView
+} from '../../../main/mission-ipc'
 import { i18n } from '../i18n'
 import { progressHeadline } from '../../../main/mission-progress'
 import {
@@ -45,6 +50,7 @@ import {
   type CueMemory,
   type PersistedCueMemory
 } from '../lib/mission-cue'
+import { isStaleNamedRead, v4MissionOf, type MissionV4Reply } from '../lib/mission-pane-view'
 import {
   buildMissionModel,
   headlineText,
@@ -63,6 +69,14 @@ import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
 
 const POLL_MS = 20_000
+
+/** What the view channel last answered for one session (Missions v4, S-17). */
+export interface V4Entry {
+  sessionId: string
+  reply: MissionV4ViewReply
+  /** Wall clock of the answer. */
+  at: number
+}
 
 /** How long an open-the-popover request stays claimable (BUG-173, spec §3.4). */
 export const POPOVER_REQUEST_TTL_MS = 5_000
@@ -207,6 +221,93 @@ export const useMissionsStore = defineStore('missions', () => {
   /** Bumped by every door that took effect: a list read started before it is stale. */
   let writeSeq = 0
 
+  // ---- Missions v4 (S-17): the view of the SELECTED session's mission ------------------------------
+  /**
+   * What `mission:v4View` last answered for the selected session. The pill and the pane both read it.
+   * There is no push event: it is asked when the selected session changes and on the same 20 s clock as
+   * the list above. Asking has a side effect (it adds the folder to the observer's list), so this store
+   * is the one loop that asks.
+   */
+  const v4 = shallowRef<V4Entry | null>(null)
+  /** The `missionId` each session's last answer carried: sent back so the next call reads one record. */
+  const v4Ids = new Map<string, string>()
+  let v4Seq = 0
+  let v4Flight: { sessionId: string; promise: Promise<void> } | null = null
+  let started = false
+
+  /** One call of the view; `null` when the build has no such channel or it threw. */
+  async function askV4(
+    sessionId: string,
+    folder: string,
+    missionId?: string
+  ): Promise<MissionV4ViewReply | null> {
+    const ask = window.api.missionV4View
+    if (typeof ask !== 'function') return null
+    try {
+      return await ask({ folder, sessionId, ...(missionId ? { missionId } : {}) })
+    } catch {
+      return null
+    }
+  }
+
+  async function loadV4(): Promise<void> {
+    const selected = sessions.selectedSession
+    // A synthetic session has no id the record can know yet.
+    if (!selected || selected.sessionId.startsWith('synthetic-')) {
+      v4.value = null
+      return
+    }
+    const sessionId = selected.sessionId
+    const folder = selected.projectPath
+    const seq = ++v4Seq
+    const named = v4Ids.get(sessionId)
+    let reply = await askV4(sessionId, folder, named)
+    // The id read back may no longer be this session's (a hand-off closed its row, the operator closed
+    // the mission): ask by session again, so the view never shows another session's mission.
+    if (named && reply && isStaleNamedRead(reply, sessionId)) {
+      v4Ids.delete(sessionId)
+      reply = await askV4(sessionId, folder)
+    }
+    // The selected session changed while this was in flight: its answer is not news.
+    if (seq !== v4Seq) return
+    if (reply && reply.state === 'mission') v4Ids.set(sessionId, reply.missionId)
+    else v4Ids.delete(sessionId)
+    if (reply) v4.value = { sessionId, reply, at: Date.now() }
+    else if (v4.value?.sessionId !== sessionId) v4.value = null
+  }
+
+  /** Ask the view for the selected session now; concurrent callers for one session share a round-trip. */
+  function refreshV4(): Promise<void> {
+    const id = sessions.selectedSession?.sessionId ?? null
+    if (v4Flight && v4Flight.sessionId === id) return v4Flight.promise
+    const flight = {
+      sessionId: id ?? '',
+      promise: loadV4().finally(() => {
+        if (v4Flight === flight) v4Flight = null
+      })
+    }
+    v4Flight = flight
+    return flight.promise
+  }
+
+  watch(
+    () => sessions.selectedSession?.sessionId ?? null,
+    () => {
+      if (started) void refreshV4()
+    }
+  )
+
+  /** What the view last answered for `sessionId`, or `null` while it has not answered for it yet. */
+  function v4ReplyForSession(sessionId: string | null | undefined): MissionV4ViewReply | null {
+    const entry = v4.value
+    return entry && sessionId && entry.sessionId === sessionId ? entry.reply : null
+  }
+
+  /** The v4 mission this session is attached to, or `null` (none, v3, refused, closed or not answered yet). */
+  function v4MissionForSession(sessionId: string | null | undefined): MissionV4Reply | null {
+    return sessionId ? v4MissionOf(v4ReplyForSession(sessionId), sessionId) : null
+  }
+
   async function load(): Promise<void> {
     const folders = sessions.folders.map((f) => f.path)
     const startedAt = writeSeq
@@ -309,8 +410,13 @@ export const useMissionsStore = defineStore('missions', () => {
   /** Start polling once; later calls are no-ops. */
   function ensureStarted(): void {
     if (timer) return
+    started = true
     void refresh()
-    timer = setInterval(() => void refresh(), POLL_MS)
+    void refreshV4()
+    timer = setInterval(() => {
+      void refresh()
+      void refreshV4()
+    }, POLL_MS)
   }
 
   const models = computed(() => {
@@ -449,6 +555,9 @@ export const useMissionsStore = defineStore('missions', () => {
     ensureStarted,
     viewForSession,
     modelForSession,
+    refreshV4,
+    v4ReplyForSession,
+    v4MissionForSession,
     runDoor,
     runDoors,
     popoverRequest,

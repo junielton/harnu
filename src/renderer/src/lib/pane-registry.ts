@@ -125,5 +125,11 @@ export const paneRegistry: Record<AnyHelperPane['type'], PaneRegistryEntry> = {
   // the verb handler (`browser/verbs-core.ts`) and the plan layer, not here.
   browser: {
     persistable: true
+  },
+  // Missions v4 S-17 — the Mission pane. Non-PTY, follows the selected session, persists like the memory pane.
+  // `dedupKey` is a constant: ONE per worktree, so the pill's toggle and a restored pane can never double.
+  mission: {
+    persistable: true,
+    dedupKey: () => 'mission'
   }
 }

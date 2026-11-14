@@ -378,6 +378,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Roadmap WIP chip + limit stepper (§6 — BUG-197)    | `src/renderer/src/components/RoadmapWipChip.vue`                                 |
 | Mission progress pill (Topbar, §6 — T370)          | `src/renderer/src/components/MissionPill.vue` + `lib/mission-view.ts`            |
 | Mission progress popover (§6 — T370)               | `src/renderer/src/components/MissionPopover.vue` + `stores/missions.ts`          |
+| Mission pane (helper stack, §6 — S-17)             | `components/MissionPane.vue` + `lib/mission-pane-view.ts`                        |
 | Mission step rail (§6 — T370)                      | `src/renderer/src/components/MissionStepRail.vue`                                |
 | Mission step glyph (§6 — T596)                     | `src/renderer/src/components/MissionStepGlyph.vue`                               |
 | Campaign popover (§6 — T596)                       | `src/renderer/src/components/CampaignPopover.vue` + `lib/campaign-view.ts`       |
