@@ -467,6 +467,7 @@ _another_ folder.
 | `volume-2`                               | Preview a voice (Settings → Voice → VOICES row — speaks the phrase in the voice already in use)                                                                                                                                        |
 | `volume-x`                               | Nothing was spoken (Settings → Voice — the `dropped` / `stopped` outcome of a Test or a per-voice preview)                                                                                                                             |
 | `list-checks`                            | Mission progress — the Topbar "Step N of M" pill's leading glyph (T370, Mission v3, §6 "Mission progress"); swaps to `check` once the headline is done or the mission delivered                                                        |
+| `target`                                 | Mission pane — the v4 Topbar pill's leading glyph, the pane header's glyph and the "no mission" empty state (Missions v4 S-17, §6 "Mission pane"); the pill swaps to `check` when the mission is ready to close                        |
 | `log-in`                                 | Mission progress — a child session row's in-app "Go to session" action (Mission v3, §6 "Mission progress"; replaces `external-link` there)                                                                                             |
 | `contrast`                               | Mission progress — the step rail's `waiting` glyph (◐, Mission v3)                                                                                                                                                                     |
 | `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                                                                                 |
@@ -7591,6 +7592,96 @@ Non-interactive: the popover is reached from the Topbar pill.
   warning.
 - ❌ Show a draft state, an Approve button or an approval callout.
 - ❌ Show the mission's stored `status: 'stale'` — there is none; stale is derived.
+
+### Mission pane (helper stack — Missions v4, S-17 shell)
+
+**Missions v4, S-17 (spec `docs/specs/2026-11-14-missions-v4/spec.md`, "The surfaces"; draft
+mockup `docs/design/missions-v4/`, screen `mission-pane`).** The Mission pane is the one
+surface of a **v4** mission: a pane in the helper stack that the Topbar pill opens and
+closes. It follows the **selected session** and shows only that session's mission. This
+section is the shell (the pill, the pane chrome and the states around a mission); the
+glance (progress bar, next step, tree, timeline) and the open step, sessions and hand-off
+land in later slices and add their own sections here.
+
+**Until the cut-over** a **v3** record is served by the v3 stack unchanged: its pill
+(§6 "Mission progress") opens the popover, its doors are the popover's, and no v4 code
+writes it. v4 records cannot be created by an agent yet (the verbs land in chapter 5), so
+the pane has a v4 mission to show only when a v4 record already exists on disk.
+
+**Data.** `window.api.missionV4View({ folder, sessionId, missionId? })` (channel
+`mission:v4View`); the reply is `{ state: 'mission' | 'none' | 'refused' }`. There is **no
+push event**: the missions store (`stores/missions.ts`) asks for the **selected session**
+when it changes and on its own 20 s poll (the same clock as the v3 list), and the pill and
+the pane both read that one answer. The `missionId` the view **answered** is sent back on
+later calls (it reads one record); `detail.id` never is. A named read that no longer lists
+the session as an open row (a hand-off closed it), or that reads a closed mission, is
+dropped and the session is asked again by itself, so the pane never shows a mission the
+session is not in. Asking the view is a side effect (it adds the folder to the observer's
+list): only the store's own loop asks. The pane renders what the server said; it never
+recounts a step.
+
+#### Topbar pill — v4 (`MissionPill.vue`)
+
+The same anatomy as the pill in "Mission progress" (height `18px`, padding `1px 7px`,
+`rounded`, `10.5px / 500`, `tabular-nums`, a 10px leading icon), with the **mockup's**
+tinted look: `border` in the tone's `-line` token, the tone's `-soft` background and its
+text colour. Label, all from the server's `progress` and `waiting`: **"{done}/{total} ·
+{n} for you"**, e.g. "4/21 · 3 for you". The count is milestones when the mission has
+milestones ("1/10 · 5 for you") and steps otherwise; "· {n} for you" is the length of the
+waiting list and is left out when it is empty ("4/21"); a mission that is ready to close
+says "21/21 · ready to close". No campaign or chapter wording, no tick rail, no radiant.
+
+| Tone    | Classes                                            | When                             |
+| ------- | -------------------------------------------------- | -------------------------------- |
+| warning | `border-warning-line bg-warning-soft text-warning` | something waits on the operator  |
+| accent  | `border-accent-line bg-accent-soft text-accent`    | nothing waits                    |
+| success | `border-green-line bg-green-soft text-green`       | ready to close (icon is `check`) |
+
+It is a **toggle button** (`aria-pressed`): pressed while the pane is open in the
+selected session's stack, drawn with a `ring-2` in the tone's `-line` token. The title is
+the mission's title and its count, with the `view.missionProgress` chord appended. The
+chord toggles the same pane. A session with no v4 mission and no v3 mission renders **no
+pill**; a v3 mission renders the v3 pill and popover, unchanged.
+
+#### Pane chrome
+
+A non-PTY pane like the Memory pane: the standard 24px header (`h-6`, `bg-surface`,
+`border-b border-border`; it doubles as the resize handle), `target` glyph (12px,
+`text-text-3`), the title **Mission**, then **expand**, **maximize** and **close** (18×18
+targets, the chords of every other pane). There is no reload button: the pane polls. The
+header is 24px and not the mockup's 32px, because every pane header in a stack is 24px
+and "maximize" collapses the other panes to a 24px strip (`HelperStack.vue`). The pane
+type is `mission`, **persisted** with the other helper panes, **one per worktree**, and
+opens at the bottom of the stack like any pane. The body is `bg-bg`, scrolls, and follows
+the "Pane focus" ring (F6).
+
+#### States
+
+All on the pane's `data-state`. Copy follows §8 and the Missions v4 writing contract.
+
+| `data-state` | When                                                 | Draws                                                                                                                                |
+| ------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `loading`    | the first answer has not come yet                    | "Reading the mission…" (`12px`, `text-text-3`)                                                                                       |
+| `mission`    | `state: 'mission'`, source `v4`, open, session in it | the head section (`padding: 14px 16px`): the title (`13.5px / 600`), the count line, the state tag                                   |
+| `none`       | `state: 'none'`, or a closed mission                 | the mockup's empty state: `target` (14px, `text-text-4`) and **"This session has no mission."** (`12.5px / 500`, `text-text`)        |
+| `refused`    | `state: 'refused'`                                   | the same empty layout: **"This mission cannot be read right now."** and the server's reason below it (`11.5px`, `text-text-3`, mono) |
+| `v3`         | the answer is a v3 record                            | the same empty layout: **"This mission is still a v3 mission."** and "Open it from the mission pill at the top." below it            |
+
+The **count line** is `11.5px`, `tabular-nums`, `text-text-3`: "{done} of {total} steps done" or
+"{done} of {total} milestones done" (the server's `progress.unit`), written by the
+renderer from the server's numbers. The **state tag** is the state's identifier translated
+through i18n (`open` shows nothing, `ready-to-close` reads "Ready to close"): the English
+words in the reply (`stateLabel`) are never copy, never a key. The mockup's progress bar
+replaces the count line when the glance lands (S-18).
+
+The **narrow pane**: the body is a single column and wraps; the title wraps to as many
+lines as it needs (never `truncate`: it is the one thing the operator opens the pane to
+read), the count line and the tag wrap under it, and the empty states keep their padding
+(`40px 24px`) and centre their text. Nothing in the shell has a fixed width.
+
+**Don'ts.** ❌ Show a v3 mission in the pane, or write a v3 record from it. ❌ Open the pane
+for a v3 pill. ❌ Print `stateLabel`, `progress.headline` or any English word from the
+reply. ❌ Poll from a loop the store does not own. ❌ Draw a Done when paragraph.
 
 ### Campaign progress (pill, popover)
 
