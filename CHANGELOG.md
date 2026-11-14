@@ -15,7 +15,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Changed
 
 - A decision that waits on you now shows in the sidebar chip, in Activity and in Your move, not only in the mission popover, and it reminds you like the other things a mission is blocked on. It is listed once, as a decision, instead of also as a step to confirm. Activity and the Missions review word what a mission owes the same way the popover does.
-- A mission's history — the pull requests, CI results and finished sessions Harnu notices — and the progress shown in the mission and campaign lists now update within about a minute of the event, rather than at the instant something opens the mission. Opening or listing a mission no longer wakes its steward; the steward wakes when Harnu notices the change itself.
+- A mission's history — the pull requests, CI results and finished sessions Harnu notices — and the progress a session reads when it lists missions or campaigns now update within about a minute of the event, rather than at the instant something opens the mission. Opening or listing a mission no longer wakes its steward; the steward wakes when Harnu notices the change itself.
 - Closing a mission now cites merge times and pull requests, in the outcome and in the memory drafts, from the history Harnu recorded for it, not only from what was written into the mission file.
 - The **Campaign map** is gone. The Campaign popover no longer has an **Open map** button; its footer keeps only **End campaign…**. The map's Steward block was never wired, and the Mission pane covers the same ground.
 

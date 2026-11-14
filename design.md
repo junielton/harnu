@@ -866,7 +866,8 @@ give fires the same pair as a safety confirm: the **chime**
 warning`, bell only — no toast). Like a safety confirm it is independent of
 the per-state "OS notifications"/"Sound" switches. The owed things are the
 server's ordered `you` list: a **staged re-scope**, a **requested close**, an
-**operator-owned blocker** (a merge, a key, a credential, a decision), **due
+**operator-owned blocker** (a merge, a key, a credential, a decision), a
+**pending decision** (an undecided decision step), **due
 checks** (unticked checks on a reached step), **human steps** to confirm, and an
 **imported end** to review. Rules (`lib/mission-cue.ts`, driven by the missions
 store's existing 20 s poll — no per-mission timer):
