@@ -1030,6 +1030,7 @@ describe('the Log cannot be forged: one entry is one heading, whatever line brea
     await addStep(root, leader, { ...A_STEP, reason: text })
     const { log } = await load()
     const body = log
+      // eslint-disable-next-line no-control-regex
       .split(/\r\n|[\n\r\u0085\u2028\u2029\u000b\u000c]/)
       .filter((line) => !/^### \S+ · (note|decision|surprise)( · stp-\d+)?$/.test(line))
     expect(body.filter((line) => /^\s*#/.test(line))).toEqual([])

@@ -161,6 +161,15 @@ function checkAddOnly(before: MissionV4, after: MissionV4): void {
         refuse(`criterion ${c.id}`, `step ${s.id} criterion ${c.id}`)
       }
     }
+    if (
+      now &&
+      !keepsOrder(
+        s.acs.map((c) => c.id),
+        now.acs.map((c) => c.id)
+      )
+    ) {
+      refuse(`the order of the criteria of step ${s.id}`, `step ${s.id} criteria`)
+    }
   }
   if (
     !keepsOrder(
@@ -315,45 +324,56 @@ const SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/
 const CONTROL_RE = /[\u0000-\u001f\u007f]/
 
 const pageRuleMessage = (kind: string): string =>
-  `a ${kind} link is an http(s) address or a path inside the repo (docs/specs/x/spec.md): not another scheme, an absolute path, a path that leaves the repo with .. or through a symlink.`
+  `a ${kind} link is an http(s) address or a path inside the repo, not another scheme, an absolute path, or a path that leaves the repo with .. or through a symlink. Pass an address like https://example.com/report or a path like docs/specs/x/spec.md.`
 
-/** Whether `candidate` is the repo root or lies under it. */
-function within(rootReal: string, candidate: string): boolean {
+const offLimitsMessage = (kind: string): string =>
+  `a ${kind} link never points into .git, .harnu or node_modules. Pass the document or page itself: a path like docs/specs/x/spec.md, or an http(s) address.`
+
+/** The folders a page or report link never points into, whatever the case or the spelling. */
+const OFF_LIMITS = new Set(['.git', '.harnu', 'node_modules'])
+const touchesOffLimits = (p: string): boolean =>
+  p.split(/[\\/]/).some((segment) => OFF_LIMITS.has(segment.toLowerCase()))
+
+/** `candidate` relative to the repo root (`''` for the root itself), or null when it lies outside. */
+function relativeInside(rootReal: string, candidate: string): string | null {
   const rel = path.relative(rootReal, candidate)
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+  const inside =
+    rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+  return inside ? rel : null
 }
 
 /**
- * Whether a repo-relative path stays inside the repo once every symlink and `..` is resolved
- * physically. A path that does not exist yet is judged by its deepest existing ancestor, and one that
- * cannot be proven inside (it holds `..` and is not there, or it is a dangling symlink) is refused.
+ * Where a repo-relative path really is, relative to the repo, once every symlink and `..` is resolved
+ * physically; null when it leaves the repo. A path that does not exist yet is judged by its deepest
+ * existing ancestor, and one that cannot be proven inside (it holds `..` and is not there, or it is a
+ * dangling symlink) is null.
  */
-function pathStaysInside(root: string, ref: string): boolean {
+function resolveInsideRepo(root: string, ref: string): string | null {
   let rootReal: string
   try {
     rootReal = realpathSync(root)
   } catch {
-    return false
+    return null
   }
   const normalized = ref.replace(/\\/g, '/')
   const full = path.resolve(rootReal, normalized)
   try {
-    return within(rootReal, realpathSync(full))
+    return relativeInside(rootReal, realpathSync(full))
   } catch {
     // not there, or a symlink that leads nowhere: fall through
   }
-  if (normalized.split('/').includes('..')) return false
+  if (normalized.split('/').includes('..')) return null
   for (let cur = full; ; cur = path.dirname(cur)) {
     try {
       lstatSync(cur)
     } catch {
-      if (path.dirname(cur) === cur) return false
+      if (path.dirname(cur) === cur) return null
       continue
     }
     try {
-      return within(rootReal, realpathSync(cur))
+      return relativeInside(rootReal, realpathSync(cur))
     } catch {
-      return false
+      return null
     }
   }
 }
@@ -383,7 +403,11 @@ function checkPageRef(root: string, kind: string, ref: string): void {
     return
   }
   if (/^[/\\~]/.test(ref)) refuse()
-  if (!pathStaysInside(root, ref)) refuse()
+  if (touchesOffLimits(ref)) throw new PlanError('BAD_LINK', offLimitsMessage(kind))
+  const real = resolveInsideRepo(root, ref)
+  if (real === null) refuse()
+  // A symlink inside the repo can lead into .git as well: judge where the path really is.
+  if (touchesOffLimits(real as string)) throw new PlanError('BAD_LINK', offLimitsMessage(kind))
 }
 
 /** Judge one link; returns it as it is stored (a pull request is its number). */
@@ -391,32 +415,45 @@ function checkLink(root: string, kind: unknown, ref: unknown): MissionLink {
   if (kind === 'card') {
     throw new PlanError(
       'BAD_LINK',
-      "card is not a link kind: a step's card is written only when the step is dispatched."
+      "card is not a link kind: a step's card is written only when the step is dispatched, so dispatch the step instead."
     )
   }
   if (typeof kind !== 'string' || !(LINK_KINDS as readonly string[]).includes(kind)) {
-    throw new PlanError('BAD_LINK', `a link is one of ${LINK_KINDS.join(', ')}.`)
+    throw new PlanError(
+      'BAD_LINK',
+      `a link is one of ${LINK_KINDS.join(', ')}: pass one of ${LINK_KINDS.join(', ')} as kind.`
+    )
   }
   if (typeof ref !== 'string' || ref === '' || ref.length > MAX_REF || CONTROL_RE.test(ref)) {
     throw new PlanError(
       'BAD_LINK',
-      `a ${kind} link names where it points, on one line, in at most ${MAX_REF} characters.`
+      `a ${kind} link names where it points: pass it on one line, in at most ${MAX_REF} characters.`
     )
   }
   switch (kind as LinkKind) {
     case 'pr': {
       const m = /^#?([1-9]\d{0,8})$/.exec(ref)
-      if (!m) throw new PlanError('BAD_LINK', 'a pr link is the pull request number, like 256.')
+      if (!m)
+        throw new PlanError(
+          'BAD_LINK',
+          'a pr link is the number of a pull request: pass the pull request number, like 256.'
+        )
       return { kind: 'pr', ref: m[1] }
     }
     case 'session':
       if (!/^[A-Za-z0-9._:-]{1,128}$/.test(ref)) {
-        throw new PlanError('BAD_LINK', 'a session link is a session id.')
+        throw new PlanError(
+          'BAD_LINK',
+          'a session link is the id of a Claude session: pass the id of the session (like 3f1c9a52-7d4e-4b8a-9c21-5e6a0b7d8f10), not its name.'
+        )
       }
       return { kind: 'session', ref }
     case 'worktree':
       if (SCHEME_RE.test(ref) && !/^[A-Za-z]:/.test(ref)) {
-        throw new PlanError('BAD_LINK', 'a worktree link is a path, not an address.')
+        throw new PlanError(
+          'BAD_LINK',
+          'a worktree link is a path: pass the folder of the checkout, not an address.'
+        )
       }
       return { kind: 'worktree', ref }
     case 'url':
@@ -427,7 +464,25 @@ function checkLink(root: string, kind: unknown, ref: unknown): MissionLink {
   }
 }
 
-const sameLink = (a: MissionLink, b: MissionLink): boolean => a.kind === b.kind && a.ref === b.ref
+/**
+ * The number of the pull request a `pr` link names, however it was written: `302`, `#302`,
+ * `owner/repo#302` (what a v3 mission kept) or a pull request address. Null when it names none.
+ */
+function prNumberOf(ref: string): string | null {
+  const m =
+    /^(?:[\w.-]+\/[\w.-]+)?#?(\d+)$/.exec(ref.trim()) ??
+    /^https?:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/pull\/(\d+)\/?(?:[?#].*)?$/i.exec(ref.trim())
+  return m ? String(Number(m[1])) : null
+}
+
+const sameLink = (a: MissionLink, b: MissionLink): boolean => {
+  if (a.kind !== b.kind) return false
+  if (a.kind === 'pr') {
+    const [x, y] = [prNumberOf(a.ref), prNumberOf(b.ref)]
+    if (x !== null && y !== null) return x === y
+  }
+  return a.ref === b.ref
+}
 
 // ---- The Log -------------------------------------------------------------------------------
 
@@ -439,9 +494,10 @@ export type LogKind = (typeof LOG_KINDS)[number]
 export const MAX_LOG_NOTE = 4000
 
 /**
- * The Log with one entry appended: `### <time> · <kind>[ · <step>]` and the text. A line of the text
- * that would read as a heading is escaped, so a note can never forge an entry of another kind (the
- * summary's Decided part reads the headings).
+ * The Log with one entry appended: `### <time> · <kind>[ · <step>]` and the text. Every line break a
+ * reader may recognise is made a plain one first, and a line that starts with `#` is escaped, so the
+ * text of a note or a reason can never forge an entry of another kind (the summary's Decided part and
+ * the stall reader read the headings).
  */
 function appendLogEntry(
   log: string,
@@ -451,9 +507,13 @@ function appendLogEntry(
 ): string {
   const lead = log === '' || log.endsWith('\n') ? '' : '\n'
   const body = text
+    // Every character a reader may take for a line break becomes one, so no line hides after a bare
+    // CR, U+0085, U+2028, U+2029, VT or FF where the escape below would not see it.
+    // eslint-disable-next-line no-control-regex
+    .replace(/\r\n?|[\u0085\u2028\u2029\u000b\u000c]/g, '\n')
     .trimEnd()
     .split('\n')
-    .map((line) => (/^\s{0,3}#{1,6}(\s|$)/.test(line) ? `\\${line.trimStart()}` : line))
+    .map((line) => (/^\s*#/.test(line) ? `\\${line.trimStart()}` : line))
     .join('\n')
   const heading = `### ${new Date().toISOString()} · ${kind}${stepId ? ` · ${stepId}` : ''}`
   return `${log}${lead}\n${heading}\n\n${body}\n`
@@ -548,6 +608,12 @@ export function addStep(
 
     const started = workStarted(record, args.inputs)
     const reason = typeof args.reason === 'string' ? args.reason.trim() : ''
+    if (reason.length > MAX_LOG_NOTE) {
+      throw new PlanError(
+        'BAD_ARGS',
+        `a reason is at most ${MAX_LOG_NOTE} characters (this one is ${reason.length}): say why in a few lines and link the document.`
+      )
+    }
     if (started && reason === '') {
       throw new PlanError(
         'REASON_REQUIRED',
@@ -747,7 +813,7 @@ export function planPrLinks(
   const plan: PrLinkPlan = { add: [], skipped: [] }
   const carried = new Set<string>(
     record.steps.flatMap((s) =>
-      s.links.filter((l) => l.kind === 'pr').map((l) => `${s.id}#${l.ref.replace(/^#/, '')}`)
+      s.links.filter((l) => l.kind === 'pr').map((l) => `${s.id}#${prNumberOf(l.ref) ?? l.ref}`)
     )
   )
   const byBranch = new Map<string, string[]>()
