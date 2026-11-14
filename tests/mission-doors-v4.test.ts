@@ -664,7 +664,8 @@ describe('the Log cannot be forged', () => {
     await approveDoneWhen(root, ID, { at: AT })
     const { log } = await reread()
     expect(headings(log)).toHaveLength(1)
-    expect(log).not.toMatch(/^### .*closed the mission/m)
+    // No line starts with the forged stamp: its text is inside the one real heading.
+    expect(log).not.toMatch(/^### 2026-11-14T12:30/m)
   })
 
   it('declining, closing with a reason, and allowing a request with a forged id are one line too', async () => {
@@ -679,7 +680,10 @@ describe('the Log cannot be forged', () => {
     await closeMission(root, ID, { closedAs: 'discarded', reason: `not needed${FORGED}`, at: AT })
     const { log } = await reread()
     expect(headings(log)).toHaveLength(3)
-    expect(headings(log).filter((h) => h.includes('closed the mission'))).toHaveLength(1)
+    expect(
+      headings(log).filter((h) => h.startsWith(`### ${AT} · operator closed the mission`))
+    ).toHaveLength(1)
+    expect(log).not.toMatch(/^### 2026-11-14T12:30/m)
   })
 
   it('logEntry collapses every line break and no text starts a line', () => {

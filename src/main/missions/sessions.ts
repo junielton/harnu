@@ -75,10 +75,20 @@ export async function applyChange(
 
 // ---- Small shared helpers -------------------------------------------------------------
 
-/** The Log with one more heading: `### <at> · <what>`. The Log is append-only. */
+/** Every character a reader may take for the end of a line. */
+const LINE_BREAKS = /[\r\n\u2028\u2029\u0085\u000b\u000c]+/g
+
+/**
+ * The Log with one more heading: `### <at> · <what>`. The Log is append-only, and the summary reads its
+ * `### ` headings, so the heading is ONE line: a text a session staged (a Done when, a request's session
+ * id) may hold a line break, and it must not be able to start a line that reads as the operator's.
+ * Every line break in `at` and `what` (`\r`, `\n`, U+2028, U+2029, U+0085, vertical tab, form feed)
+ * becomes a single space, so no text starts a line.
+ */
 export function logEntry(log: string, at: string, what: string): string {
   const base = log === '' || log.endsWith('\n') ? log : `${log}\n`
-  return `${base}${base === '' ? '' : '\n'}### ${at} · ${what}\n`
+  const line = (text: string): string => text.replace(LINE_BREAKS, ' ')
+  return `${base}${base === '' ? '' : '\n'}### ${line(at)} · ${line(what)}\n`
 }
 
 /**
