@@ -77,7 +77,13 @@ function bigMission(): { mission: MissionV4; inputs: Record<string, StepInput>; 
     if (n <= 4) {
       steps.push(doneStep(id, { milestone }))
     } else if (n <= 6) {
-      steps.push(mkStep(id, { milestone, startedAt: AT })) // running: started, no pull request
+      steps.push(
+        mkStep(id, {
+          milestone,
+          startedAt: AT, // running: started, no pull request
+          acs: [crit('ac-1', 'session', { text: `The work of ${id} runs end to end` })]
+        })
+      )
     } else if (n <= 15) {
       steps.push(
         mkStep(id, {
@@ -190,6 +196,7 @@ describe('AC-19 · the summary', () => {
 
     // Open criteria of the open steps only; done steps' and to-do steps' are not there
     expect(parts.openCriteria).toContain('You read the page for stp-9')
+    expect(parts.openCriteria).toContain('The work of stp-5 runs end to end') // a running step is open
     expect(parts.openCriteria).not.toContain('Criterion ac-1 holds')
 
     // Links: the mission's and those of the open steps

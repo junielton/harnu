@@ -400,7 +400,11 @@ describe('AC-18 · one next step, the rest in a fixed order', () => {
 describe('what each kind needs before it shows', () => {
   it('main-failing needs a merged step and a red main: an unread main is not a failing one', () => {
     const m = mkMission({
-      steps: [mkStep('stp-1', { acs: [crit('ac-1', 'fact', { fact: 'main-green' })] })]
+      // A second, untouched step keeps the mission open: a mission whose steps are all done is ready to close.
+      steps: [
+        mkStep('stp-1', { acs: [crit('ac-1', 'fact', { fact: 'main-green' })] }),
+        mkStep('stp-2')
+      ]
     })
     const kinds = (inputs: Record<string, StepInput>): string[] =>
       waiting.waitingListV4(m, { inputs }).items.map((i) => i.kind)
@@ -409,7 +413,8 @@ describe('what each kind needs before it shows', () => {
     ])
     expect(kinds({ 'stp-1': { pr: 'merged' } })).toEqual([]) // never read
     expect(kinds({ 'stp-1': { pr: 'merged', facts: { 'main-green': true } } })).toEqual([])
-    expect(kinds({ 'stp-1': { pr: 'open', facts: { 'main-green': false } } })).toEqual([]) // not merged
+    // An open pull request is waiting for review, and a red main says nothing about it yet.
+    expect(kinds({ 'stp-1': { pr: 'open', facts: { 'main-green': false } } })).toEqual(['review'])
   })
 
   it('main-failing names the pull request when the step links one', () => {
@@ -489,7 +494,10 @@ describe('what each kind needs before it shows', () => {
 
   it('a done step owes nothing, whatever its leftovers', () => {
     const m = mkMission({
-      steps: [mkStep('stp-1', { blockers: [blocker('blk-1')], acs: [crit('ac-1', 'operator')] })]
+      steps: [
+        mkStep('stp-1', { blockers: [blocker('blk-1')], acs: [crit('ac-1', 'operator')] }),
+        mkStep('stp-2') // keeps the mission open
+      ]
     })
     expect(waiting.waitingListV4(m, { inputs: { 'stp-1': { card: 'done' } } }).items).toEqual([])
   })
