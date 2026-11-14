@@ -13,7 +13,7 @@
  * Two classes of kind:
  * - **standing** (`close`, `checks`, `review-import`): a to-do nobody is waiting
  *   on. Cue once, never re-nudge — the pill and the bell still show it.
- * - **blocking** (`rescope`, `blocker`, `human-steps`): something an agent or a
+ * - **blocking** (`rescope`, `blocker`, `decide`, `human-steps`): something an agent or a
  *   later step waits on. Re-nudge on {@link BLOCKING_NUDGE_MS} after the last
  *   cue, then go silent.
  *
@@ -94,6 +94,9 @@ function keyOf(item: MissionYouItem): [OwedKey, number] | null {
       return ['close', 1]
     case 'blocker':
       return [`blocker:${item.reason}`, 1]
+    // A pending decision blocks the steps it names until the operator chooses: it is a blocking key.
+    case 'decide':
+      return [`decide:${item.stepId}`, 1]
     case 'checks':
       return ['checks', item.count]
     case 'human-steps':
@@ -111,7 +114,12 @@ function keyOf(item: MissionYouItem): [OwedKey, number] | null {
 
 /** Blocking keys re-nudge on the back-off; every other key is standing. */
 function isBlocking(key: OwedKey): boolean {
-  return key.startsWith('rescope:') || key.startsWith('blocker:') || key === 'human-steps'
+  return (
+    key.startsWith('rescope:') ||
+    key.startsWith('blocker:') ||
+    key.startsWith('decide:') ||
+    key === 'human-steps'
+  )
 }
 
 /** Everything this mission owes that deserves a sound, as key → count (empty = nothing). */

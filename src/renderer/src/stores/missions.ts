@@ -33,6 +33,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 import type { MissionDoor, MissionDoorResult, MissionView } from '../../../main/mission-ipc'
 import { i18n } from '../i18n'
+import { progressHeadline } from '../../../main/mission-progress'
 import {
   decideCue,
   deserializeCueMemory,
@@ -44,7 +45,13 @@ import {
   type CueMemory,
   type PersistedCueMemory
 } from '../lib/mission-cue'
-import { buildMissionModel, missionForSession, type MissionModel } from '../lib/mission-view'
+import {
+  buildMissionModel,
+  headlineText,
+  missionForSession,
+  youItemText,
+  type MissionModel
+} from '../lib/mission-view'
 import { playNotificationSound } from '../lib/notification-sound'
 import {
   useNotificationsStore,
@@ -73,47 +80,23 @@ export interface ReviewRequest {
   at: number
 }
 
-/** What the operator owes, as the cue's `{what}`: the first owed item in words. */
+/**
+ * What the operator owes, as the cue's `{what}`: the first owed item in the one wording the You lane
+ * uses ({@link youItemText}), or where a finished mission nobody asked to close stands.
+ */
 function owedWhat(view: MissionView): string {
   const { t } = i18n.global
   const item = firstOwed(view)
-  switch (item?.kind) {
-    case 'blocker':
-      return item.reason
-    case 'rescope':
-      return t('mission.state.rescopePending')
-    case 'close':
-      return t('mission.state.delivered')
-    case 'checks':
-      return t(
-        'mission.you.checks',
-        { count: item.count, steps: stepTitles(view, item.stepIds) },
-        item.count
-      )
-    case 'human-steps':
-      return t(
-        'mission.you.humanSteps',
-        { steps: stepTitles(view, item.stepIds) },
-        item.stepIds.length
-      )
-    case 'review-import':
-      return t('mission.you.reviewImport')
-    case 'main-red':
-      return t('mission.you.mainRed', { pr: item.pr, step: stepTitles(view, [item.stepId]) })
-    default:
-      return t('mission.state.needsYou')
-  }
-}
-
-function stepTitles(view: MissionView, ids: readonly string[]): string {
-  return ids.map((id) => view.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
+  return item === null
+    ? headlineText(t, progressHeadline(view.progress))
+    : youItemText(t, view, item)
 }
 
 /** Upsert key of the cue's one Activity entry — at most one mission record in the bell. */
 const CUE_GROUP = 'mission-cue'
 
 /** Kinds an agent or a later step waits on — they sort ahead of standing to-dos. */
-const BLOCKING_KINDS: ReadonlySet<string> = new Set(['rescope', 'blocker', 'human-steps'])
+const BLOCKING_KINDS: ReadonlySet<string> = new Set(['rescope', 'blocker', 'decide', 'human-steps'])
 
 /** Every mission that owes the operator something the cue speaks about, once per id. */
 function owedViews(views: readonly MissionView[]): MissionView[] {

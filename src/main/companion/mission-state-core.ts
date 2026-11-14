@@ -25,7 +25,7 @@ import {
 } from './contract'
 import type { Mission, MissionStep } from '../mission-core'
 import type { MissionProgress } from '../mission-progress'
-import type { MissionYouItem } from '../mcp/tool-handlers'
+import { describeWaiting, type WaitingItem } from '../missions/waiting'
 
 /** The cause `mission.state` is sent under; the gate row accepts nothing else. */
 export const MISSION_STATE_SUBSYSTEM = 'missionState'
@@ -47,7 +47,7 @@ export interface MissionViewIn {
       >)[]
     }[]
   }
-  you: MissionYouItem[]
+  you: WaitingItem[]
 }
 
 // A pushed string is one printable line: C0 controls, DEL, C1 and the Unicode line separators go.
@@ -68,37 +68,6 @@ export function relationOf(v: MissionViewIn, sid: string): 'owner' | 'child' | n
     s.links.some((l) => l.kind === 'session' && l.ref === sid)
   )
   return linked ? 'child' : null
-}
-
-const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`
-
-/** What the operator owes, in the host's words. The mod draws them as the `⚑` rows. */
-function youText(y: MissionYouItem): { kind: string; text: string } {
-  switch (y.kind) {
-    case 'rescope':
-      return { kind: y.kind, text: 'approve the re-scope' }
-    case 'close':
-      return { kind: y.kind, text: 'close the mission' }
-    case 'steward-paused':
-      return { kind: y.kind, text: line(`steward paused — ${y.reason}`) }
-    case 'blocker':
-      return { kind: y.kind, text: line(y.reason) }
-    case 'checks':
-      return {
-        kind: y.kind,
-        text: line(`${plural(y.count, 'due check')} on ${y.stepIds.join(', ')}`)
-      }
-    case 'human-steps':
-      return { kind: y.kind, text: line(`tick ${y.stepIds.join(', ')}`) }
-    case 'review-import':
-      return { kind: y.kind, text: 'review the imported end' }
-    case 'main-red':
-      return { kind: y.kind, text: `main is red after #${y.pr}` }
-    case 'approvals':
-      return { kind: y.kind, text: `${plural(y.count, 'approval')} parked` }
-    case 'needs-input':
-      return { kind: y.kind, text: 'a child needs input' }
-  }
 }
 
 const PR_STATES = new Set(['OPEN', 'MERGED', 'CLOSED'])
@@ -197,7 +166,10 @@ function project(v: MissionViewIn, role: 'owner' | 'child'): MissionStateEntry {
     },
     steps,
     blockers,
-    you: v.you.slice(0, MISSION_STATE_MAX_YOU).map(youText)
+    // The waiting list's own words (`describeWaiting`): the mod keeps no vocabulary of Harnu's.
+    you: v.you
+      .slice(0, MISSION_STATE_MAX_YOU)
+      .map((y) => ({ kind: y.kind, text: line(describeWaiting(y).ask) }))
   }
 }
 

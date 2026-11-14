@@ -422,11 +422,38 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     const activity = useNotificationsStore()
     current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #6')]
     await store.refresh()
-    expect(activity.list[0].title).toBe('Mission “Ship T373” needs you: merge PR #6')
+    expect(activity.list[0].title).toBe(
+      'Mission “Ship T373” needs you: Unblock: merge PR #6 — unblocks when merged.'
+    )
     current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #7')]
     await store.refresh()
     expect(playNotificationSound).toHaveBeenCalledTimes(2)
-    expect(activity.list[0].title).toBe('Mission “Ship T373” needs you: merge PR #7')
+    expect(activity.list[0].title).toBe(
+      'Mission “Ship T373” needs you: Unblock: merge PR #7 — unblocks when merged.'
+    )
+  })
+
+  it('words a pending decision and a re-scope with the one wording the You lane uses', async () => {
+    const store = useMissionsStore()
+    const activity = useNotificationsStore()
+    current = [
+      owed('mnt-00000001', 'Ship T373', {
+        you: [{ kind: 'decide', stepId: 'stp-2', title: 'Which store?' }]
+      })
+    ]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(activity.list[0].title).toBe('Mission “Ship T373” needs you: Decide: Which store?')
+    expect(activity.list[0].items?.[0].description).toBe('Decide: Which store?')
+    current = [
+      owed('mnt-00000002', 'Other', {
+        you: [{ kind: 'rescope', end: { kind: 'code', target: 'a memo', evidence: 'e' } }]
+      })
+    ]
+    await store.refresh()
+    expect(activity.list[0].items?.map((i) => i.description)).toContain(
+      'Approve the new declared end (code: a memo).'
+    )
   })
 
   it('gives ONE combined cue when a start finds several missions already owed', async () => {

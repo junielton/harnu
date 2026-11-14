@@ -323,7 +323,7 @@ describe('AC-4b.3 — the You lane as aged rows (Amendment d) and the Decide row
     expect(youRows(view, NOW)[0]).toMatchObject({ kind: 'main-red', ageMs: 3 * HOUR })
   })
 
-  it('an undecided decision node becomes a "Decide" row (high risk), after the blockers', () => {
+  it('an undecided decision node the server lists is a "Decide" row (high risk), in the server\'s place', () => {
     const steps = [
       step(1, { proof: 'verified' }),
       step(2, {
@@ -336,13 +336,14 @@ describe('AC-4b.3 — the You lane as aged rows (Amendment d) and the Decide row
       view: {
         you: [
           { kind: 'blocker', reason: 'r', unblocks: 'u' },
+          { kind: 'decide', stepId: 'stp-2', title: 'Standard vs Combined' },
           { kind: 'human-steps', stepIds: ['stp-2'] }
         ]
       }
     })
     const rows = youRows(view, NOW)
     expect(rows.map((r) => r.kind)).toEqual(['blocker', 'decide', 'human-steps'])
-    expect(rows[1]).toMatchObject({ kind: 'decide', stepId: 'stp-2', item: null, risk: 'high' })
+    expect(rows[1]).toMatchObject({ kind: 'decide', stepId: 'stp-2', risk: 'high' })
   })
 
   it('a decided decision node adds no row, and a clear mission has no rows', () => {
@@ -363,7 +364,13 @@ describe('AC-4b.3 — the You lane as aged rows (Amendment d) and the Decide row
       step(2, { decision: { title: 'Pick', options: ['A', 'B'], blocks: [] } }),
       step(3, { kind: 'fixed-end', title: 'Delivered and verified' })
     ]
-    const model = buildMissionModel(fixtureView('faq-like', { mission: { steps } }), NOW)
+    const model = buildMissionModel(
+      fixtureView('faq-like', {
+        mission: { steps },
+        view: { you: [{ kind: 'decide', stepId: 'stp-2', title: 'Pick' }] }
+      }),
+      NOW
+    )
     expect(model.youRows.map((r) => r.kind)).toEqual(['decide'])
     expect(model.youLook).toBe('warning')
   })
