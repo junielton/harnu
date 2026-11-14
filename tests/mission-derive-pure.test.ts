@@ -602,3 +602,17 @@ describe('what triggers the observer (delta 1)', () => {
     }
   })
 })
+
+describe('a cancelled quit leaves the observer running (delta 2)', () => {
+  it('stops the observer only after the quit guard let the quit through', async () => {
+    const index = await fs.readFile(path.join(__dirname, '..', 'src', 'main', 'index.ts'), 'utf8')
+    const quit = index.slice(index.indexOf("app.on('before-quit'"))
+    const cancelled = quit.indexOf('if (event.defaultPrevented) return')
+    const stop = quit.indexOf('stopMissionObserver?.()')
+    expect(cancelled).toBeGreaterThan(-1)
+    expect(stop).toBeGreaterThan(-1)
+    // Cancel keeps everything alive: nothing that stops a service may run above that return.
+    expect(stop).toBeGreaterThan(cancelled)
+    expect(quit.indexOf('stopHibernationSweep()')).toBeLessThan(stop)
+  })
+})
