@@ -153,12 +153,12 @@ describe('the projection', () => {
     expect(m.steps.find((x) => x.id === 'stp-2')!.children).toEqual([]) // not current: none
   })
 
-  it('carries open blockers with their owner, and words what the operator owes', () => {
+  it("carries open blockers with their owner, and words what the operator owes in the waiting list's words", () => {
     expect(m.blockers).toEqual([{ reason: 'waiting for the vendor export', owner: 'agent' }])
     expect(m.you).toEqual([
-      { kind: 'blocker', text: 'cloud credentials (stp-4)' },
-      { kind: 'checks', text: '2 due checks on stp-2, stp-3' },
-      { kind: 'close', text: 'close the mission' }
+      { kind: 'blocker', text: 'Unblock: cloud credentials (stp-4)' },
+      { kind: 'checks', text: 'Tick 2 due checks on stp-2, stp-3' },
+      { kind: 'close', text: 'Close the mission: its end is verified' }
     ])
   })
 

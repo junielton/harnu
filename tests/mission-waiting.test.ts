@@ -12,6 +12,7 @@ import type { Mission } from '../src/main/mission-core'
 import {
   WAITING_ASK_MAX,
   WAITING_WHY_MAX,
+  describeWaiting,
   waitingList,
   type WaitingItem
 } from '../src/main/missions/waiting'
@@ -85,15 +86,16 @@ describe('one list feeds every reader (AC-7)', () => {
   it('a pending decision is in the list, typed with a v4 kind, with the ask and the why', () => {
     const decide = list.find((i) => i.kind === 'decide')
     expect(decide).toMatchObject({ kind: 'decide', stepId: 'stp-2', title: 'Which store?' })
-    expect(decide?.rank).toBe('unblock')
-    expect(decide?.ask).toContain('Which store?')
+    expect(describeWaiting(decide!).rank).toBe('unblock')
+    expect(describeWaiting(decide!).ask).toContain('Which store?')
     // Every item has a v4 kind, an ask of at most 90 characters and a why of at most 60.
     for (const i of list) {
-      expect(['main-failing', 'unblock', 'settle', 'review', 'close', 'attach']).toContain(i.rank)
-      expect(i.ask.length).toBeGreaterThan(0)
-      expect(i.ask.length).toBeLessThanOrEqual(WAITING_ASK_MAX)
-      expect(i.why.length).toBeGreaterThan(0)
-      expect(i.why.length).toBeLessThanOrEqual(WAITING_WHY_MAX)
+      const w = describeWaiting(i)
+      expect(['main-failing', 'unblock', 'settle', 'review', 'close', 'attach']).toContain(w.rank)
+      expect(w.ask.length).toBeGreaterThan(0)
+      expect(w.ask.length).toBeLessThanOrEqual(WAITING_ASK_MAX)
+      expect(w.why.length).toBeGreaterThan(0)
+      expect(w.why.length).toBeLessThanOrEqual(WAITING_WHY_MAX)
     }
   })
 
@@ -112,13 +114,8 @@ describe('one list feeds every reader (AC-7)', () => {
   })
 
   it('the MCP read is that list: same items in the same order, the same line', () => {
-    const { rank: _r, ask: _a, why: _w, ...first } = list[0]
-    void _r
-    void _a
-    void _w
     const mcp = youItems(m, [], progressOf(m))
-    expect(mcp.map((i) => i.kind)).toEqual(list.map((i) => i.kind))
-    expect(mcp[0]).toEqual(first)
+    expect(mcp).toEqual(list)
     expect(youLine(mcp)).toBe(youLine(list))
     expect(mcp).toContainEqual({ kind: 'decide', stepId: 'stp-2', title: 'Which store?' })
   })
@@ -135,7 +132,7 @@ describe('one list feeds every reader (AC-7)', () => {
   it('the companion draws the list as given, in the list’s own words', () => {
     const [entry] = projectMissions([viewIn(list)], OWNER)
     expect(entry.you.map((y) => y.kind)).toEqual(list.map((i) => i.kind))
-    expect(entry.you.map((y) => y.text)).toEqual(list.map((i) => i.ask))
+    expect(entry.you.map((y) => y.text)).toEqual(list.map((i) => describeWaiting(i).ask))
   })
 
   it('Your move files a card per item the list carries, with the list’s wording, and the decision too', () => {
