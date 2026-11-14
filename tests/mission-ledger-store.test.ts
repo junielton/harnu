@@ -359,58 +359,84 @@ describe('what the pass records, as on main (AC-5)', () => {
   })
 })
 
-describe('append by row identity (AC-5)', () => {
-  const row = (over: Partial<LedgerRow>): LedgerRow => ({
-    at: '2026-11-12T10:00:00.000Z',
+describe('every observed fact is stored, none is dropped for looking like another (AC-5)', () => {
+  const ci = (at: string, detail: string, ref = '#3'): LedgerRow => ({
+    at,
     kind: 'ci',
     stepId: 'stp-1',
-    ref: '#7',
-    pr: 7,
-    detail: 'passing',
-    ...over
+    ref,
+    pr: Number(ref.slice(1)),
+    detail
+  })
+  const details = (rows: LedgerRow[], ref: string): Array<string | undefined> =>
+    rows.filter((r) => r.kind === 'ci' && r.ref === ref).map((r) => r.detail)
+
+  it('a cache holding the same CI state twice in a row: both rows are copied and counted', async () => {
+    await seed()
+    await fs.writeFile(
+      path.join(h.userDataDir, 'mission-link-cache.json'),
+      JSON.stringify({
+        version: 1,
+        entries: {},
+        ledger: {
+          [MISSION_ID]: [
+            ci('2026-10-20T08:00:00.000Z', 'passing'),
+            ci('2026-10-20T09:00:00.000Z', 'passing')
+          ]
+        }
+      })
+    )
+    await boot()
+    await observe()
+    await settle()
+
+    const stored = await storedRows()
+    expect(details(stored, '#3')).toEqual(['passing', 'passing'])
+    // The count is the file's rows plus every observed row, cached ones included, as on main.
+    const ack = payloadOf(await read())
+    expect(ack.ledgerCount).toBe(stored.length)
+    const list = payloadOf(await handlers.mission_list({ folder: root }, ctx()))
+    const row = (list.missions as Array<{ id: string; ledgerCount: number }>).find(
+      (m) => m.id === MISSION_ID
+    )
+    expect(row?.ledgerCount).toBe(stored.length)
   })
 
-  async function appendFromAnotherInstance(rows: LedgerRow[]): Promise<void> {
+  it('a CI state that returns is three rows, and the newest is the real one', async () => {
+    await seed()
+    for (const state of ['failing', 'passing', 'failing']) {
+      h.pr = { state: 'OPEN', ci: state }
+      await observe()
+    }
+    await settle()
+    expect(details(await storedRows(), '#7')).toEqual(['failing', 'passing', 'failing'])
+
+    // Another process reads the same repo: it stores nothing more, and the newest is still `failing`.
+    await boot()
+    await observe()
+    await settle()
+    const rows = (payloadOf(await read()).ledger as LedgerRow[]).filter((r) => r.kind === 'ci')
+    expect(rows.map((r) => r.detail)).toEqual(['failing', 'passing', 'failing'])
+    expect(rows[rows.length - 1].detail).toBe('failing')
+  })
+
+  it('a row stored by another instance does not hide a real change of this one', async () => {
+    await seed()
     await fs.mkdir(path.dirname(ledgerFile()), { recursive: true })
-    await fs.writeFile(ledgerFile(), rows.map((r) => `${JSON.stringify(r)}\n`).join(''))
-  }
-
-  it('a CI change another instance already stored is not stored again at a later time', async () => {
-    await seed()
-    await appendFromAnotherInstance([
-      row({ at: '2026-11-12T10:00:00.000Z', detail: 'pending' }),
-      row({ at: '2026-11-12T10:05:00.000Z', detail: 'passing' })
-    ])
+    await fs.writeFile(
+      ledgerFile(),
+      [
+        ci('2026-11-12T10:00:00.000Z', 'failing', '#7'),
+        ci('2026-11-12T10:05:00.000Z', 'passing', '#7')
+      ]
+        .map((r) => `${JSON.stringify(r)}\n`)
+        .join('')
+    )
     const store = await import('../src/main/missions/ledger-store')
     store.bindMissionRoot(MISSION_ID, root)
-    store.recordObserved(MISSION_ID, [row({ at: '2026-11-12T10:05:07.000Z', detail: 'passing' })])
+    store.recordObserved(MISSION_ID, [ci('2026-11-12T10:09:00.000Z', 'failing', '#7')])
     await store.flushLedgerStore()
-    expect((await storedRows()).map((r) => r.detail)).toEqual(['pending', 'passing'])
-
-    // A real change is still a new row, and so is going back to an earlier state.
-    store.recordObserved(MISSION_ID, [
-      row({ at: '2026-11-12T10:09:00.000Z', detail: 'failing' }),
-      row({ at: '2026-11-12T10:12:00.000Z', detail: 'passing' })
-    ])
-    await store.flushLedgerStore()
-    expect((await storedRows()).map((r) => r.detail)).toEqual([
-      'pending',
-      'passing',
-      'failing',
-      'passing'
-    ])
-  })
-
-  it('a pr-merged another instance stored from GitHub is not stored again as an observation', async () => {
-    await seed()
-    await appendFromAnotherInstance([row({ kind: 'pr-merged', at: MERGED_AT, detail: undefined })])
-    const store = await import('../src/main/missions/ledger-store')
-    store.bindMissionRoot(MISSION_ID, root)
-    store.recordObserved(MISSION_ID, [
-      row({ kind: 'pr-merged', at: '2026-11-14T08:00:00.000Z', detail: 'observed' })
-    ])
-    await store.flushLedgerStore()
-    expect(kinds(await storedRows())).toEqual(['pr-merged:#7'])
+    expect(details(await storedRows(), '#7')).toEqual(['failing', 'passing', 'failing'])
   })
 })
 
