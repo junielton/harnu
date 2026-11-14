@@ -34,10 +34,8 @@
  */
 
 import { randomBytes } from 'node:crypto'
-import { promises as fs } from 'node:fs'
-import * as path from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { dataDirReady, mkdirDataDir, repoRoot } from '../data-dir'
+import { repoRoot } from '../data-dir'
 import {
   checkAsk,
   checkBlockerReason,
@@ -50,17 +48,11 @@ import {
   type ContractResult
 } from './contract'
 import { guardMission, isBuilderOf, type Actor, type GuardCode, type Need } from './guard'
+import { AttachRequestSchema, MISSION_V4_ID_RE, type BlockerV4, type MissionV4 } from './model'
 import {
-  AttachRequestSchema,
-  buildMissionRecordContent,
-  MISSION_V4_ID_RE,
-  type BlockerV4,
-  type MissionV4
-} from './model'
-import {
+  createMissionRecord,
   readMissionRecord,
   updateMissionRecord,
-  v4RecordsDir,
   type RecordChange
 } from './record-store'
 
@@ -113,9 +105,9 @@ class Refusal extends Error {
 
 const refusalOf = (e: Refusal): WriteRefusal => ({ ok: false, code: e.code, error: e.message })
 
-/** The code at the front of a store error (`MISSION_NOT_FOUND: …`). */
-function codeOfError(error: string): WriteCode {
-  return (/^([A-Z_]+):/.exec(error)?.[1] as WriteCode | undefined) ?? 'WRITE_REFUSED'
+/** A store refusal as this module's: the store already gives it a typed `code` and a `CODE: …` error. */
+function typed(refusal: { code: string; error: string }): WriteRefusal {
+  return { ok: false, code: refusal.code as WriteCode, error: refusal.error }
 }
 
 // ---- What a session may never do -------------------------------------------------
@@ -361,32 +353,35 @@ export async function writeMission(
   need: Exclude<Need, 'read'>,
   change: (record: MissionV4, log: string) => RecordChange | Promise<RecordChange>
 ): Promise<MissionWrite> {
-  let refusal: WriteRefusal | null = null
-  const result = await updateMissionRecord(repoRoot(folder), missionId, async (record, log) => {
-    try {
-      const access = guardMission(record, actor, need)
-      if (!access.ok) throw new Refusal(access.code, access.error.replace(/^[A-Z_]+: /, ''))
-      const next = await change(record, log)
-      if (actor.kind === 'session') {
-        if (need === 'ask-to-attach') checkAskOnly(record, log, next, actor.sessionId)
-        else {
-          checkOperatorFields(record, next.record)
-          checkSessionsUntouched(record, next.record, access.standing)
-          checkSettlements(record, next.record, actor.sessionId)
-        }
+  const root = repoRoot(folder)
+
+  // The guard first, before the store takes its lock: a session that is refused takes no lock and
+  // creates no directory. It is judged again inside the lock, on the record being written.
+  const peek = await readMissionRecord(root, missionId)
+  if (!peek.ok) return typed(peek)
+  const early = guardMission(peek.record, actor, need)
+  if (!early.ok) return early
+
+  // `change` of the store may run more than once (a compare-and-swap that lost retries it): this one
+  // keeps no state outside the record it is given, so each run is the same function of it.
+  const result = await updateMissionRecord(root, missionId, async (record, log) => {
+    const access = guardMission(record, actor, need)
+    if (!access.ok) throw new Refusal(access.code, access.error.replace(/^[A-Z_]+: /, ''))
+    const next = await change(record, log)
+    if (actor.kind === 'session') {
+      if (need === 'ask-to-attach') checkAskOnly(record, log, next, actor.sessionId)
+      else {
+        checkOperatorFields(record, next.record)
+        checkSessionsUntouched(record, next.record, access.standing)
+        checkSettlements(record, next.record, actor.sessionId)
       }
-      checkReferences(record, next.record)
-      if (!(actor.kind === 'session' && need === 'ask-to-attach'))
-        checkContract(record, next.record)
-      return next
-    } catch (e) {
-      // The store reports a throw as WRITE_REFUSED and writes nothing; keep the real code.
-      if (e instanceof Refusal) refusal = refusalOf(e)
-      throw e
     }
+    checkReferences(record, next.record)
+    if (!(actor.kind === 'session' && need === 'ask-to-attach')) checkContract(record, next.record)
+    return next
   })
-  if (result.ok) return result
-  return refusal ?? { ok: false, error: result.error, code: codeOfError(result.error) }
+  // A throw inside `change` comes back from the store as a typed refusal that keeps its `code`.
+  return result.ok ? result : typed(result)
 }
 
 // ---- Creating a mission --------------------------------------------------------------
@@ -446,39 +441,13 @@ export async function createMission(
     }
     checkReferences(null, record)
     checkContract(null, record)
-    let content: string
-    try {
-      content = buildMissionRecordContent(record, log)
-    } catch (e) {
-      throw new Refusal('BAD_ARGS', (e as Error).message)
-    }
-
-    const root = repoRoot(folder)
-    await dataDirReady(root)
-    const existing = await readMissionRecord(root, record.id)
-    if (existing.ok)
-      throw new Refusal('MISSION_EXISTS', `${record.id} already exists; ids are never reused.`)
-    if (!existing.error.startsWith('MISSION_NOT_FOUND:')) {
-      return { ok: false, error: existing.error, code: codeOfError(existing.error) }
-    }
-    await mkdirDataDir(v4RecordsDir(root))
-    const file = path.join(v4RecordsDir(root), `${record.id}-${slugOfTitle(record.title)}.md`)
-    const tmp = path.join(
-      path.dirname(file),
-      `.${path.basename(file)}.${randomBytes(4).toString('hex')}.tmp`
+    const result = await createMissionRecord(
+      repoRoot(folder),
+      record,
+      log,
+      slugOfTitle(record.title)
     )
-    await fs.writeFile(tmp, content, 'utf8')
-    try {
-      await fs.link(tmp, file) // fails with EEXIST when another writer was first: never an overwrite
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Refusal('MISSION_EXISTS', `${record.id} already exists; ids are never reused.`)
-      }
-      throw err
-    } finally {
-      await fs.unlink(tmp).catch(() => undefined)
-    }
-    return { ok: true, record, file }
+    return result.ok ? { ok: true, record, file: result.file } : typed(result)
   } catch (e) {
     if (e instanceof Refusal) return refusalOf(e)
     throw e

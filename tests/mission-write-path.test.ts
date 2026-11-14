@@ -1002,3 +1002,122 @@ describe('one guard and one write path: every worktree of a repo shares one reco
     expect(existsSync(path.join(worktree, '.harnu'))).toBe(false)
   })
 })
+
+describe('one guard and one write path: every refusal is typed, and a change may run twice', () => {
+  const link = (ref: string) => (rec: MissionV4, log: string) => ({
+    record: { ...rec, links: [...rec.links, { kind: 'doc' as const, ref }] },
+    log
+  })
+
+  /** Every refusal carries its code both as `code` and at the front of `error`. */
+  const expectCode = (r: { ok: boolean; code?: string; error?: string }, code: string): void => {
+    expect(r.ok).toBe(false)
+    expect(r.code).toBe(code)
+    expect(r.error).toMatch(new RegExp(`^${code}:`))
+  }
+
+  it('the codes the earlier tests do not pin: READ_ONLY, MISSION_CLOSED, INTERNAL_WORD, BAD_ARGS, WRITE_REFUSED, MISSION_NOT_FOUND, MISSION_UNREADABLE', async () => {
+    seed(missionOf(ID))
+    seed(missionOf(OTHER, { status: 'closed', closedAs: 'delivered' }))
+    expectCode(
+      await writeMission(root, ID, { kind: 'worker' }, 'write', link('docs/a.md')),
+      'READ_ONLY'
+    )
+    expectCode(
+      await writeMission(root, OTHER, session(LEADER), 'write', link('docs/a.md')),
+      'MISSION_CLOSED'
+    )
+    expectCode(
+      await writeMission(root, ID, session(LEADER), 'write', (rec, log) => ({
+        record: { ...rec, steps: [{ ...rec.steps[0], title: 'Fix the self-verified step' }] },
+        log
+      })),
+      'INTERNAL_WORD'
+    )
+    expectCode(
+      await writeMission(root, ID, session(LEADER), 'write', (rec, log) => ({
+        record: { ...rec, id: 'mnt-bb000009' },
+        log
+      })),
+      'BAD_ARGS'
+    )
+    expectCode(
+      await writeMission(root, ID, session(LEADER), 'write', () => {
+        throw new Error('the verb gave up')
+      }),
+      'WRITE_REFUSED'
+    )
+    expectCode(
+      await writeMission(root, 'mnt-ffffffff', session(LEADER), 'write', link('docs/a.md')),
+      'MISSION_NOT_FOUND'
+    )
+    writeFileSync(path.join(v4Dir(), 'mnt-aa0000ff-broken.md'), 'not a mission')
+    expectCode(
+      await writeMission(root, 'mnt-aa0000ff', session(LEADER), 'write', link('docs/a.md')),
+      'MISSION_UNREADABLE'
+    )
+  })
+
+  it('create: LEADER_NOT_CALLER, MISSION_EXISTS and BAD_ARGS', async () => {
+    const mine = missionOf(newMissionId(), {
+      sessions: [{ id: OUTSIDER, role: 'leads', from: NOW, to: null }]
+    })
+    expectCode(await createMission(root, session(LEADER), mine, ''), 'LEADER_NOT_CALLER')
+    expectCode(
+      await createMission(root, session(OUTSIDER), { ...mine, id: 'not-an-id' }, ''),
+      'BAD_ARGS'
+    )
+    expect((await createMission(root, session(OUTSIDER), mine, '')).ok).toBe(true)
+    expectCode(await createMission(root, session(OUTSIDER), mine, ''), 'MISSION_EXISTS')
+  })
+
+  it('a record that keeps changing under a write is WRITE_CONFLICT, and nothing is lost', async () => {
+    const file = seed(missionOf(ID))
+    let runs = 0
+    const r = await writeMission(root, ID, session(LEADER), 'write', (rec, log) => {
+      runs += 1
+      // Another process rewrites the record while this change is being computed, every time.
+      writeFileSync(
+        file,
+        buildMissionRecordContent(
+          { ...rec, links: [{ kind: 'doc', ref: `docs/other-${runs}.md` }] },
+          log
+        )
+      )
+      return link('docs/mine.md')(rec, log)
+    })
+    expectCode(r, 'WRITE_CONFLICT')
+    expect(runs).toBeGreaterThan(1)
+  })
+
+  it('a change is a pure function of the record it is given: it runs again on the fresh record and both writers land', async () => {
+    const file = seed(missionOf(ID))
+    let runs = 0
+    const r = await writeMission(root, ID, session(LEADER), 'write', (rec, log) => {
+      runs += 1
+      if (runs === 1) {
+        // The first run is overtaken by another writer.
+        writeFileSync(
+          file,
+          buildMissionRecordContent(
+            { ...rec, links: [{ kind: 'doc', ref: 'docs/theirs.md' }] },
+            log
+          )
+        )
+      }
+      return link('docs/mine.md')(rec, log)
+    })
+    expect(r.ok).toBe(true)
+    expect(runs).toBe(2)
+    const stored = parseMissionRecordFile(readFileSync(file, 'utf8')) as MissionV4
+    expect(stored.links.map((l) => l.ref)).toEqual(['docs/theirs.md', 'docs/mine.md'])
+  })
+
+  it('a refusal on one run does not leak into the next call (no state is kept between calls)', async () => {
+    seed(missionOf(ID))
+    const bad = await writeMission(root, ID, session(OUTSIDER), 'write', link('docs/a.md'))
+    expectCode(bad, 'NOT_ATTACHED')
+    const good = await writeMission(root, ID, session(LEADER), 'write', link('docs/a.md'))
+    expect(good.ok).toBe(true)
+  })
+})
