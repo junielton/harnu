@@ -705,7 +705,10 @@ describe('one guard and one write path: cross-references and the builder', () =>
     const ok = await refused((rec) => ({
       ...rec,
       milestones: [{ id: 'mls-1', title: 'Load the data', optional: false, waitsFor: null }],
-      steps: [{ ...rec.steps[0], milestone: 'mls-1' }, stepTwo]
+      steps: [
+        { ...rec.steps[0], milestone: 'mls-1' },
+        { ...stepTwo, milestone: 'mls-1' }
+      ]
     }))
     expect(ok.ok).toBe(true)
   })
@@ -753,5 +756,77 @@ describe('one guard and one write path: cross-references and the builder', () =>
     const lead = await ask({ ...base, role: 'leads' })
     expect(lead.ok).toBe(false)
     if (!lead.ok) expect(lead.code).toBe('LEADER_IS_OPERATORS')
+  })
+})
+
+describe('one guard and one write path: two more references', () => {
+  beforeEach(() => {
+    seed(missionOf(ID))
+  })
+  const milestone = { id: 'mls-1', title: 'Load the data', optional: false, waitsFor: null }
+  const write = async (change: (r: MissionV4) => MissionV4) =>
+    writeMission(root, ID, session(LEADER), 'write', (rec, log) => ({ record: change(rec), log }))
+
+  it('in a mission that has milestones, every step names one', async () => {
+    const before = v4Snapshot()
+    const r = await write((rec) => ({ ...rec, milestones: [milestone] }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.code).toBe('STEP_WITHOUT_MILESTONE')
+    expect(v4Snapshot()).toEqual(before)
+    const ok = await write((rec) => ({
+      ...rec,
+      milestones: [milestone],
+      steps: rec.steps.map((s) => ({ ...s, milestone: 'mls-1' }))
+    }))
+    expect(ok.ok).toBe(true)
+    const added = await write((rec) => ({
+      ...rec,
+      steps: [
+        ...rec.steps,
+        { id: 'stp-2', title: 'Write the report', acs: [], links: [], blockers: [] }
+      ]
+    }))
+    expect(added.ok).toBe(false)
+    if (!added.ok) expect(added.code).toBe('STEP_WITHOUT_MILESTONE')
+  })
+
+  it('a mission with no milestones keeps steps with none', async () => {
+    const r = await write((rec) => ({ ...rec, links: [{ kind: 'doc', ref: 'docs/x.md' }] }))
+    expect(r.ok).toBe(true)
+  })
+
+  it('a mission-level blocker carries no clearsWhen; a step blocker may', async () => {
+    const blocker = {
+      id: 'blk-1',
+      reason: 'Waiting for the key HARNU_CORPUS_DIR to be set',
+      owner: 'operator' as const,
+      clearsWhen: 'pr-merged' as const
+    }
+    const before = v4Snapshot()
+    const onMission = await write((rec) => ({ ...rec, blockers: [blocker] }))
+    expect(onMission.ok).toBe(false)
+    if (!onMission.ok) expect(onMission.code).toBe('MISSION_BLOCKER_FACT')
+    expect(v4Snapshot()).toEqual(before)
+    const onStep = await write((rec) => ({
+      ...rec,
+      steps: rec.steps.map((s) => ({ ...s, blockers: [blocker] }))
+    }))
+    expect(onStep.ok).toBe(true)
+    const noFact = await write((rec) => ({
+      ...rec,
+      blockers: [{ ...blocker, id: 'blk-2', clearsWhen: undefined }]
+    }))
+    expect(noFact.ok).toBe(true)
+  })
+
+  it('a record that already breaks either is not refused for it by an unrelated change', async () => {
+    seed(
+      missionOf(ID, {
+        milestones: [milestone],
+        blockers: [{ id: 'blk-1', reason: 'Old reason', owner: 'operator', clearsWhen: 'ci-green' }]
+      })
+    )
+    const r = await write((rec) => ({ ...rec, links: [{ kind: 'doc', ref: 'docs/x.md' }] }))
+    expect(r.ok).toBe(true)
   })
 })
