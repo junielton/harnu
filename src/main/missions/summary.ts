@@ -214,7 +214,10 @@ function wherePart(
   } else {
     lines.push('Nothing is planned yet')
   }
-  if (progress.total > 0) lines.push(`${progress.done} of ${progress.total} ${unit}s done`)
+  if (progress.total > 0)
+    lines.push(
+      `${progress.done} of ${progress.total} ${unit}${progress.total === 1 ? '' : 's'} done`
+    )
 
   // Each count says what it counts: blocked is a mark on a step, so it is counted on its own.
   const c = progress.counts
@@ -413,7 +416,7 @@ export function missionListRow(mission: MissionV4, opts: MissionSummaryInput = {
     mission.status === 'closed'
       ? STATE_LABELS.closed
       : progress.total > 0
-        ? `${progress.done} of ${progress.total} ${unit}s done`
+        ? `${progress.done} of ${progress.total} ${unit}${progress.total === 1 ? '' : 's'} done`
         : 'nothing planned yet'
   return oneLine(`${mission.title} · ${words} · ${list.next?.ask ?? WAITING_EMPTY_LINE}`)
 }

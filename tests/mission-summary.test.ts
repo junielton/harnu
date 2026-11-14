@@ -483,6 +483,17 @@ describe('a one-line row for mission_list', () => {
     expect(missionListRow(m)).toBe(`${m.title} · 1 of 2 steps done · ${WAITING_EMPTY_LINE}`)
   })
 
+  it('says "1 of 1 milestone done", not "milestones", for a single milestone', () => {
+    const m = mkMission({
+      milestones: [
+        { id: 'mls-1', title: 'Every page is on the new site', optional: false, waitsFor: null }
+      ],
+      steps: [doneStep('stp-1', { milestone: 'mls-1' })]
+    })
+    expect(missionListRow(m)).toContain(' · 1 of 1 milestone done · ')
+    expect(buildMissionSummary(m, '').parts.whereItIs).toContain('1 of 1 milestone done')
+  })
+
   it('says closed for a closed mission', () => {
     const m = mkMission({ status: 'closed', closedAs: 'delivered', steps: [doneStep('stp-1')] })
     expect(missionListRow(m)).toBe(`${m.title} · closed · ${WAITING_EMPTY_LINE}`)
