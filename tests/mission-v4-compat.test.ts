@@ -583,8 +583,8 @@ describe('a campaign reads as one mission', () => {
     const ledger = (record as Record<string, unknown>).ledger as Array<{ stepId?: string }>
     expect(ledger.map((r) => r.stepId)).toEqual(['stp-2'])
     // The map from the old step ids is kept so a caller can still find a step by its old id.
-    const legacy = record.legacyV3 as { steps: Array<Record<string, unknown>> }
-    expect(legacy.steps).toContainEqual({ mission: CHAPTER_2, step: 'stp-1', id: 'stp-2' })
+    const legacy = record.legacyV3 as { stepIds: Array<Record<string, unknown>> }
+    expect(legacy.stepIds).toContainEqual({ mission: CHAPTER_2, step: 'stp-1', id: 'stp-2' })
   })
 
   it('reads a chapter mission closed as delivered as a done milestone: only facts are left to derive', () => {
@@ -826,7 +826,7 @@ describe('v4 modules import v3 code only through v3-read', () => {
     expect(relative('record-store.ts')).toContain('./compat')
     expect(relative('record-store.ts')).toContain('./model')
     for (const spec of relative('record-store.ts')) {
-      expect(['./v3-read', './compat', './model', '../data-dir', '../roadmap-core']).toContain(spec)
+      expect(['./v3-read', './compat', './model', '../data-dir']).toContain(spec)
     }
   })
 })
