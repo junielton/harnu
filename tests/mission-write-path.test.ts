@@ -8,6 +8,7 @@
  * spec amendment C3-32).
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   cpSync,
@@ -36,6 +37,7 @@ import {
   type Need
 } from '../src/main/missions/guard'
 import { createMission, newMissionId, writeMission } from '../src/main/missions/write'
+import { clearRootCache } from '../src/main/data-dir'
 import { readMissionRecord } from '../src/main/missions/record-store'
 
 const FIXTURES = path.join(__dirname, 'fixtures', 'missions-v4-compat')
@@ -919,5 +921,84 @@ describe('one guard and one write path: who settles a criterion', () => {
       log
     }))
     expect(again.ok).toBe(true)
+  })
+})
+
+describe('one guard and one write path: every worktree of a repo shares one record', () => {
+  let main = ''
+  let worktree = ''
+  const git = (cwd: string, ...args: string[]): void => {
+    execFileSync('git', ['-c', 'user.email=t@example.test', '-c', 'user.name=t', ...args], {
+      cwd,
+      stdio: 'ignore'
+    })
+  }
+  const mainV4 = (): string => path.join(main, '.harnu', 'missions-v4')
+  const storedAt = (dir: string): string[] =>
+    existsSync(dir) ? readdirSync(dir).filter((n) => n.endsWith('.md')) : []
+
+  beforeEach(() => {
+    clearRootCache()
+    main = mkdtempSync(path.join(os.tmpdir(), 'harnu-main-'))
+    worktree = `${main}-wt`
+    git(main, 'init', '-q')
+    git(main, 'commit', '-q', '--allow-empty', '-m', 'init')
+    git(main, 'worktree', 'add', '-q', worktree, '-b', 'feature')
+    mkdirSync(mainV4(), { recursive: true })
+    writeFileSync(
+      path.join(mainV4(), `${ID}-score-report.md`),
+      buildMissionRecordContent(missionOf(ID))
+    )
+  })
+  afterEach(() => {
+    rmSync(worktree, { recursive: true, force: true })
+    rmSync(main, { recursive: true, force: true })
+  })
+
+  const link = (ref: string) => (rec: MissionV4, log: string) => ({
+    record: { ...rec, links: [...rec.links, { kind: 'doc' as const, ref }] },
+    log
+  })
+
+  it('a write from a worktree and a write from the main checkout land in the same record', async () => {
+    const sub = path.join(worktree, 'src')
+    mkdirSync(sub)
+    expect((await writeMission(worktree, ID, session(LEADER), 'write', link('docs/a.md'))).ok).toBe(
+      true
+    )
+    expect((await writeMission(main, ID, session(LEADER), 'write', link('docs/b.md'))).ok).toBe(
+      true
+    )
+    expect((await writeMission(sub, ID, session(LEADER), 'write', link('docs/c.md'))).ok).toBe(true)
+    const stored = parseMissionRecordFile(
+      readFileSync(path.join(mainV4(), storedAt(mainV4())[0]), 'utf8')
+    ) as MissionV4
+    expect(stored.links.map((l) => l.ref)).toEqual(['docs/a.md', 'docs/b.md', 'docs/c.md'])
+    expect(storedAt(mainV4())).toHaveLength(1)
+    expect(existsSync(path.join(worktree, '.harnu', 'missions-v4'))).toBe(false)
+  })
+
+  it('a read and a list from either folder see the same mission, and a mission created in a worktree is in the main checkout', async () => {
+    for (const folder of [main, worktree]) {
+      expect((await readMissionAs(folder, ID, session(LEADER))).ok, folder).toBe(true)
+      expect((await listMissionRows(folder, session(OUTSIDER))).map((r) => r.id)).toEqual([ID])
+    }
+    const fresh = missionOf(newMissionId(), {
+      sessions: [{ id: OUTSIDER, role: 'leads', from: NOW, to: null }]
+    })
+    expect((await createMission(worktree, session(OUTSIDER), fresh, '')).ok).toBe(true)
+    expect(storedAt(mainV4())).toHaveLength(2)
+    expect(existsSync(path.join(worktree, '.harnu', 'missions-v4'))).toBe(false)
+    expect((await readMissionAs(main, fresh.id, session(OUTSIDER))).ok).toBe(true)
+    expect((await listMissionRows(worktree, session(OUTSIDER))).map((r) => r.id).sort()).toEqual(
+      [ID, fresh.id].sort()
+    )
+  })
+
+  it('a refusal from a worktree writes nothing in either folder', async () => {
+    const r = await writeMission(worktree, ID, session(OUTSIDER), 'write', link('docs/x.md'))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.code).toBe('NOT_ATTACHED')
+    expect(existsSync(path.join(worktree, '.harnu'))).toBe(false)
   })
 })
