@@ -6,35 +6,48 @@
  * read from a file, git, `gh` or a clock, so every case here builds its input by hand.
  */
 import { describe, expect, it } from 'vitest'
-import type { AcceptanceCriterion, BlockerV4, StepV4 } from '../src/main/missions/model'
+import {
+  BlockerSchema,
+  CriterionSchema,
+  MILESTONE_STATES,
+  MISSION_STATES,
+  STEP_STATES,
+  StepSchema,
+  type AcceptanceCriterion,
+  type BlockerV4,
+  type StepState,
+  type StepV4
+} from '../src/main/missions/model'
 import {
   activeBlockers,
   criterionSettlement,
   deriveMilestoneState,
   deriveMissionState,
   deriveStepState,
+  factReading,
   type StepInput
 } from '../src/main/missions/state'
 
 const AT = '2026-11-14T10:00:00Z'
 
+// Fixtures go through the model's schemas, so a misspelt field or a bad value fails here, not later.
 function ac(
   id: string,
   by: AcceptanceCriterion['by'],
   extra: Partial<AcceptanceCriterion> = {}
 ): AcceptanceCriterion {
-  return { id, text: `criterion ${id}`, by, ...extra } as AcceptanceCriterion
+  return CriterionSchema.parse({ id, text: `criterion ${id}`, by, ...extra })
 }
 
 function step(acs: AcceptanceCriterion[], extra: Partial<StepV4> = {}): StepV4 {
-  return { id: 'stp-1', title: 'A step', acs, links: [], blockers: [], ...extra } as StepV4
+  return StepSchema.parse({ id: 'stp-1', title: 'A step', acs, links: [], blockers: [], ...extra })
 }
 
 function blocker(extra: Partial<BlockerV4> = {}): BlockerV4 {
-  return { id: 'blk-1', reason: 'waiting', owner: 'operator', ...extra } as BlockerV4
+  return BlockerSchema.parse({ id: 'blk-1', reason: 'waiting', owner: 'operator', ...extra })
 }
 
-const state = (s: StepV4, input: StepInput = {}): string => deriveStepState(s, input).state
+const state = (s: StepV4, input: StepInput = {}): StepState => deriveStepState(s, input).state
 
 describe('step and milestone states', () => {
   it('a step is to do, running, waiting for review or done, first match wins', () => {
@@ -178,6 +191,24 @@ describe('criterion settlement', () => {
       via: null
     })
 
+    // the model's `selfCheck` field is a builder's labelled check and is never proof: a criterion
+    // that carries only a self-check is open, whoever wrote it.
+    const checkOnly = ac('ac-8', 'session', {
+      selfCheck: { at: AT, by: 'sess-builder', evidence: 'I ran it myself' }
+    })
+    expect(criterionSettlement(checkOnly, s, {})).toEqual({ settled: false, via: null })
+    const checkByOther = ac('ac-9', 'session', {
+      selfCheck: { at: AT, by: 'sess-checker', evidence: 'looks right' }
+    })
+    expect(criterionSettlement(checkByOther, s, {})).toEqual({ settled: false, via: null })
+    expect(state(step([checkOnly]), { pr: 'open' })).toBe('waiting-review')
+    // beside a second session's stamp the self-check changes nothing: the stamp settles it.
+    const both = ac('ac-5', 'session', {
+      selfCheck: { at: AT, by: 'sess-builder', evidence: 'I ran it myself' },
+      settled: { at: AT, by: 'sess-checker', evidence: 'ran it again' }
+    })
+    expect(criterionSettlement(both, s, {})).toEqual({ settled: true, via: 'session' })
+
     // no stamp, no settlement.
     expect(criterionSettlement(ac('ac-6', 'session'), s, {})).toEqual({
       settled: false,
@@ -244,6 +275,21 @@ describe('a fact replaces stale state', () => {
     expect(deriveStepState(s, { pr: 'open' }).blocked).toBe(true)
     expect(deriveStepState(s, { pr: 'merged' }).blocked).toBe(false)
     expect(deriveStepState(s, { pr: 'merged' }).blockers).toEqual([])
+
+    // a fact replaces stale state on the criterion side too: a hand tick on a criterion tied to a
+    // fact never settles it. Open while the pull request is open, settled by the fact once merged.
+    const handTicked = ac('ac-9', 'fact', {
+      fact: 'pr-merged',
+      settled: { at: AT, by: 'operator' }
+    })
+    expect(criterionSettlement(handTicked, step([]), { pr: 'open' })).toEqual({
+      settled: false,
+      via: null
+    })
+    expect(criterionSettlement(handTicked, step([]), { pr: 'merged' })).toEqual({
+      settled: true,
+      via: 'fact'
+    })
   })
 
   it('a criterion tied to a fact is never ticked by hand', () => {
@@ -291,5 +337,93 @@ describe('the mission state with milestones', () => {
     const open = { status: 'open' } as const
     expect(deriveMissionState(open, ['done'], ['done', 'not-started'])).toBe('open')
     expect(deriveMissionState(open, ['done'], ['done', 'done'])).toBe('ready-to-close')
+  })
+})
+
+describe('delta 1 · a re-queued card, a closed pull request, and unknown is not false', () => {
+  it('a card in Backlog or Ready reads to do unless a pull request exists, whatever startedAt says', () => {
+    const started = step([ac('ac-1', 'session')], { startedAt: AT })
+    // the card was re-queued: the board column wins over the leader's old start stamp.
+    expect(state(started, { card: 'backlog' })).toBe('todo')
+    expect(state(started, { card: 'ready' })).toBe('todo')
+    // with no card, or a card already in progress, a started step is still running.
+    expect(state(started)).toBe('running')
+    expect(state(started, { card: 'in-progress' })).toBe('running')
+    // a pull request still wins by rule 2.
+    expect(state(started, { card: 'backlog', pr: 'open' })).toBe('waiting-review')
+    expect(state(started, { card: 'ready', pr: 'merged' })).toBe('waiting-review')
+  })
+
+  it('a pull request closed without merging counts as no pull request', () => {
+    const started = step([ac('ac-1', 'session')], { startedAt: AT })
+    // the work does not exist: a started step is back to running, not waiting for review.
+    expect(state(started, { pr: 'closed' })).toBe('running')
+    expect(state(step([ac('ac-1', 'session')]), { pr: 'closed' })).toBe('todo')
+    // a sign-off step reads waiting for review by the no-pull-request rule, as it does with none.
+    expect(state(step([ac('ac-1', 'operator')]), { pr: 'closed' })).toBe('waiting-review')
+    // no fact reads a closed pull request as opened or merged.
+    const reads = (fact: AcceptanceCriterion['fact']): boolean =>
+      criterionSettlement(ac('ac-1', 'fact', { fact }), step([]), { pr: 'closed' }).settled
+    expect(reads('pr-opened')).toBe(false)
+    expect(reads('pr-merged')).toBe(false)
+  })
+
+  it('a fact that is absent is not read yet and false is read and does not hold', () => {
+    // main-green absent: nothing was read. main-green false: it was read and main is red.
+    expect(factReading('main-green', {})).toBe('unknown')
+    expect(factReading('main-green', { facts: {} })).toBe('unknown')
+    expect(factReading('main-green', { facts: { 'main-green': false } })).toBe('does-not-hold')
+    expect(factReading('main-green', { facts: { 'main-green': true } })).toBe('holds')
+    expect(factReading('ci-green', {})).toBe('unknown')
+    expect(factReading('link-exists', { facts: { 'link-exists': false } })).toBe('does-not-hold')
+    // the pull request facts follow `pr`: absent is unknown, anything given was read.
+    expect(factReading('pr-merged', {})).toBe('unknown')
+    expect(factReading('pr-merged', { pr: 'none' })).toBe('does-not-hold')
+    expect(factReading('pr-merged', { pr: 'closed' })).toBe('does-not-hold')
+    expect(factReading('pr-merged', { pr: 'open' })).toBe('does-not-hold')
+    expect(factReading('pr-merged', { pr: 'merged' })).toBe('holds')
+    expect(factReading('pr-opened', { pr: 'merged' })).toBe('holds')
+    expect(factReading('pr-opened', { pr: 'closed' })).toBe('does-not-hold')
+  })
+
+  it('an unknown fact is never a failure: it settles nothing and clears nothing, as a false one does', () => {
+    const fact = step([ac('ac-1', 'fact', { fact: 'main-green' })], {
+      blockers: [blocker({ clearsWhen: 'main-green' })]
+    })
+    const unknown = deriveStepState(fact, { pr: 'merged' })
+    const red = deriveStepState(fact, { pr: 'merged', facts: { 'main-green': false } })
+    expect(unknown).toEqual(red)
+    expect(unknown.state).toBe('waiting-review')
+    expect(unknown.blocked).toBe(true)
+  })
+})
+
+describe('the state identifiers come from the model', () => {
+  it('every state the derivation returns is one the model names, and every one the model names is reachable', () => {
+    const sign = step([ac('ac-1', 'operator')])
+    const open = step([ac('ac-1', 'session')])
+    const doneStep = step([ac('ac-1', 'operator', { settled: { at: AT, by: 'operator' } })])
+    const steps = [
+      state(open),
+      state(open, { workerWorking: true }),
+      state(open, { pr: 'open' }),
+      state(doneStep),
+      state(sign)
+    ]
+    expect(new Set(steps)).toEqual(new Set(STEP_STATES))
+    const milestones = [
+      deriveMilestoneState([]),
+      deriveMilestoneState(['running', 'todo']),
+      deriveMilestoneState(['waiting-review']),
+      deriveMilestoneState(['done'])
+    ]
+    expect(new Set(milestones)).toEqual(new Set(MILESTONE_STATES))
+    const open4 = { status: 'open' } as const
+    const missions = [
+      deriveMissionState(open4, ['todo']),
+      deriveMissionState(open4, ['done']),
+      deriveMissionState({ status: 'closed' }, ['done'])
+    ]
+    expect(new Set(missions)).toEqual(new Set(MISSION_STATES))
   })
 })
