@@ -13,13 +13,15 @@
  * the copy on first write); the verbs and doors of S-12 to S-15 extend `no v4 write path touches a
  * v3 file` with their own writes.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  promises as fsp,
   readdirSync,
   readFileSync,
   rmSync,
@@ -43,6 +45,7 @@ import {
 } from '../src/main/missions/v3-read'
 import { campaignMissionId, convertV3Campaign, convertV3Mission } from '../src/main/missions/compat'
 import {
+  createMissionRecord,
   listMissionRecords,
   readMissionRecord,
   updateMissionRecord
@@ -322,16 +325,18 @@ describe('v3 concepts map to v4', () => {
       { kind: 'doc', ref: 'docs/adr/0001-sample-import.md' }
     ])
 
-    // ledger, outcome and memoryDrafts are kept as they are.
-    expect((record as Record<string, unknown>).ledger).toEqual(v3.ledger)
-
-    // stewardPause, legacy, legacyRaw and openQuestions are kept under legacyV3, not shown.
+    // stewardPause, legacy, legacyRaw and openQuestions are kept under legacyV3, not shown. So are the
+    // ledger, the outcome and the memory drafts: v3 values the closed v4 model does not hold.
     const legacy = record.legacyV3 as Record<string, unknown>
+    expect(legacy.ledger).toEqual(v3.ledger)
+    expect(record).not.toHaveProperty('ledger')
+    expect(record).not.toHaveProperty('outcome')
+    expect(record).not.toHaveProperty('memoryDrafts')
     expect(legacy.openQuestions).toEqual(['Should the importer keep the original row order?'])
     expect(legacy.stewardPause).toEqual(v3.stewardPause)
     expect(legacy.slug).toBe('modern-active')
-    expect(record as Record<string, unknown>).not.toHaveProperty('openQuestions')
-    expect(record as Record<string, unknown>).not.toHaveProperty('stewardPause')
+    expect(record).not.toHaveProperty('openQuestions')
+    expect(record).not.toHaveProperty('stewardPause')
   })
 
   it('maps verification levels and proofs to criteria, and checks to operator criteria', () => {
@@ -466,8 +471,11 @@ describe('v3 concepts map to v4', () => {
     expect(delivered.doneWhenVerified).toEqual({ by: VERIFIER, at: '2026-10-22T11:50:00.000Z' })
     const v3 = parseMissionFile(readFixture('missions/mnt-5c0de003-delivered-pending-close.md'))
     if ('error' in v3) throw new Error(v3.error)
-    expect((delivered as Record<string, unknown>).outcome).toEqual(v3.outcome)
-    expect((delivered as Record<string, unknown>).memoryDrafts).toEqual(v3.memoryDrafts)
+    const deliveredLegacy = delivered.legacyV3 as Record<string, unknown>
+    expect(deliveredLegacy.outcome).toEqual(v3.outcome)
+    expect(deliveredLegacy.memoryDrafts).toEqual(v3.memoryDrafts)
+    expect(delivered).not.toHaveProperty('outcome')
+    expect(delivered).not.toHaveProperty('memoryDrafts')
     expect(delivered.steps.map((s) => s.title)).toEqual(['Build the parser'])
 
     // closed keeps closedAs and closeReason.
@@ -587,12 +595,18 @@ describe('a campaign reads as one mission', () => {
     for (const m of ['mls-3', 'mls-4', 'mls-5']) {
       expect(record.steps.filter((s) => s.milestone === m)).toEqual([])
     }
-    // Chapter 2 is still running: its session links and ledger carry over, ledger ids renumbered.
+    // Chapter 2 is still running: its session links carry over; its ledger sits under its chapter's
+    // legacy entry, with the v3 step ids the rows were written with.
     expect(record.sessions.map((s) => s.id)).toEqual(
       expect.arrayContaining([LEADER, BUILDER, CHECKER])
     )
-    const ledger = (record as Record<string, unknown>).ledger as Array<{ stepId?: string }>
-    expect(ledger.map((r) => r.stepId)).toEqual(['stp-2'])
+    expect(record).not.toHaveProperty('ledger')
+    const chapters = (record.legacyV3 as { chapters: Array<{ id: string; mission?: unknown }> })
+      .chapters
+    const ch2 = chapters.find((c) => c.id === 'chp-2')?.mission as {
+      ledger: Array<{ stepId: string }>
+    }
+    expect(ch2.ledger.map((r) => r.stepId)).toEqual(['stp-1'])
     // The map from the old step ids is kept so a caller can still find a step by its old id.
     const legacy = record.legacyV3 as { stepIds: Array<Record<string, unknown>> }
     expect(legacy.stepIds).toContainEqual({ mission: CHAPTER_2, step: 'stp-1', id: 'stp-2' })
@@ -932,5 +946,392 @@ describe('conversion is idempotent', () => {
     const { records } = await listMissionRecords(root)
     expect(records.filter((r) => r.record.id === read.record.id)).toHaveLength(1)
     expect(records.some((r) => r.record.id === CHAPTER_1)).toBe(false)
+  })
+})
+
+// Delta 1 · item 2 — the fixed end keeps what it held ----------------------------------------------
+
+describe('the fixed end keeps what it held', () => {
+  /** The delivered fixture with checks and more links on its fixed end, which no fixture carries. */
+  function withFixedEnd(): { record: MissionV4 } {
+    const raw = readFixture('missions/mnt-5c0de003-delivered-pending-close.md')
+    const v3 = parseV3MissionFile(raw)
+    if ('error' in v3) throw new Error(v3.error)
+    const steps = v3.steps.map((s) =>
+      s.kind !== 'fixed-end'
+        ? s
+        : {
+            ...s,
+            links: [
+              ...s.links,
+              { kind: 'pr' as const, ref: '399' },
+              { kind: 'card' as const, ref: 'evidence-card' }
+            ],
+            checks: [
+              {
+                id: 'chk-1',
+                label: 'The designer has read the release note',
+                source: 'operator' as const,
+                createdAt: '2026-10-22T11:55:00.000Z'
+              },
+              {
+                id: 'chk-2',
+                label: 'Layout signed off',
+                source: 'verifier' as const,
+                createdAt: '2026-10-22T11:56:00.000Z',
+                ticked: { at: '2026-10-22T11:57:00.000Z' }
+              }
+            ]
+          }
+    )
+    return convertV3Mission({ ...v3, steps }, readV3MissionLog(raw))
+  }
+
+  it('turns an unticked check into a mission-level blocker the operator owns', () => {
+    const { record } = withFixedEnd()
+    const blocker = record.blockers.find(
+      (b) => b.reason === 'The designer has read the release note'
+    )
+    expect(blocker).toMatchObject({
+      ask: 'The designer has read the release note',
+      unblocks: 'Closing the mission',
+      owner: 'operator'
+    })
+    expect(blocker?.clearsWhen).toBeUndefined()
+    // The ticked check is not owed, so it is not a blocker.
+    expect(record.blockers.map((b) => b.reason)).not.toContain('Layout signed off')
+    expect(record.blockers.map((b) => b.id)).toEqual(['blk-1'])
+  })
+
+  it('keeps every check, with its id, source, creation time and tick, under legacyV3.fixedEnd', () => {
+    const { record } = withFixedEnd()
+    const fixedEnd = (record.legacyV3 as { fixedEnd: Record<string, unknown> }).fixedEnd
+    expect(fixedEnd.checks).toEqual([
+      {
+        id: 'chk-1',
+        label: 'The designer has read the release note',
+        source: 'operator',
+        createdAt: '2026-10-22T11:55:00.000Z'
+      },
+      {
+        id: 'chk-2',
+        label: 'Layout signed off',
+        source: 'verifier',
+        createdAt: '2026-10-22T11:56:00.000Z',
+        ticked: { at: '2026-10-22T11:57:00.000Z' }
+      }
+    ])
+    // Its proof is still there, as before.
+    expect(fixedEnd).toMatchObject({ id: 'stp-2', proof: 'verified' })
+  })
+
+  it('joins the pr and worktree links of the fixed end to the mission links, and keeps a card link under legacyV3', () => {
+    const { record } = withFixedEnd()
+    expect(record.links).toContainEqual({ kind: 'pr', ref: '399' })
+    expect(record.links).toContainEqual({
+      kind: 'worktree',
+      ref: '.harnu/evidence/mnt-5c0de003/stp-2'
+    })
+    expect(record.links.map((l) => l.kind)).not.toContain('card')
+    const fixedEnd = (record.legacyV3 as { fixedEnd: { links: unknown[] } }).fixedEnd
+    expect(fixedEnd.links).toEqual([{ kind: 'card', ref: 'evidence-card' }])
+    // The documents keep coming first.
+    expect(record.links[0]).toEqual({
+      kind: 'doc',
+      ref: 'docs/specs/2026-10-20-sample-import/spec.md'
+    })
+  })
+
+  it('does the same for the fixed end of every chapter mission of a campaign, under that chapter', () => {
+    const raw = readFixture('campaigns/cmp-ca0001aa-sample-import-campaign.md')
+    const campaign = parseV3CampaignFile(raw)
+    if ('error' in campaign) throw new Error(campaign.error)
+    const chapterRaw = readFixture('missions/mnt-ca000002-chapter-2-report.md')
+    const chapter = parseV3MissionFile(chapterRaw)
+    if ('error' in chapter) throw new Error(chapter.error)
+    const steps = chapter.steps.map((s) =>
+      s.kind !== 'fixed-end'
+        ? s
+        : {
+            ...s,
+            links: [{ kind: 'pr' as const, ref: '401' }],
+            checks: [
+              {
+                id: 'chk-1',
+                label: 'Report reviewed by a person',
+                source: 'agent' as const,
+                createdAt: '2026-10-21T09:00:00.000Z'
+              }
+            ]
+          }
+    )
+    const { record } = convertV3Campaign(campaign, readV3CampaignLog(raw), [
+      { mission: { ...chapter, steps }, log: readV3MissionLog(chapterRaw) }
+    ])
+    expect(record.blockers).toEqual([
+      expect.objectContaining({
+        id: 'blk-1',
+        reason: 'Report reviewed by a person',
+        owner: 'operator',
+        unblocks: 'Closing the mission'
+      })
+    ])
+    expect(record.links).toContainEqual({ kind: 'pr', ref: '401' })
+    const legacy = record.legacyV3 as {
+      chapters: Array<{ id: string; mission?: { fixedEnd: { checks: unknown[] } } }>
+    }
+    expect(legacy.chapters.find((c) => c.id === 'chp-2')?.mission?.fixedEnd.checks).toHaveLength(1)
+  })
+})
+
+// Delta 1 · item 3 — a campaign never gets a second record ------------------------------------------
+
+describe('a campaign never gets a second v4 record', () => {
+  /** What the installed v3 build does after the copy: bind a NEW chapter mission to the campaign. */
+  function bindNewChapter(): string {
+    const NEW_CHAPTER = 'mnt-ca000009'
+    const chapter = readFixture('missions/mnt-ca000002-chapter-2-report.md')
+      .replace(/mnt-ca000002/g, NEW_CHAPTER)
+      .replace('chp-2', 'chp-3')
+      .replace('slug: chapter-2-report', 'slug: chapter-3-migrate')
+    writeFileSync(
+      path.join(root, '.harnu', 'missions', `${NEW_CHAPTER}-chapter-3-migrate.md`),
+      chapter
+    )
+    const campaignFile = path.join(
+      root,
+      '.harnu',
+      'campaigns',
+      'cmp-ca0001aa-sample-import-campaign.md'
+    )
+    const text = readFileSync(campaignFile, 'utf8')
+    writeFileSync(
+      campaignFile,
+      text.replace(
+        '    title: Migrate the pages\n',
+        `    title: Migrate the pages\n    missionId: ${NEW_CHAPTER}\n`
+      )
+    )
+    return NEW_CHAPTER
+  }
+
+  it('resolves a chapter bound after the copy to the record that already exists, on read and on write', async () => {
+    const first = await updateMissionRecord(root, CAMPAIGN_ID, (record, log) => ({
+      record,
+      log: `${log}\nbefore\n`
+    }))
+    if (!first.ok) throw new Error(first.error)
+    const sidecars = readdirSync(path.join(v4Dir(root), '.migrated')).sort()
+    const sidecarBytes = sidecars.map((n) =>
+      readFileSync(path.join(v4Dir(root), '.migrated', n), 'utf8')
+    )
+
+    const added = bindNewChapter()
+
+    // A read through the new chapter id, and through the campaign id, serve the same record.
+    const viaChapter = await readMissionRecord(root, added)
+    if (!viaChapter.ok) throw new Error(viaChapter.error)
+    expect(viaChapter.source).toBe('v4')
+    expect(viaChapter.record.id).toBe(first.record.id)
+    const viaCampaign = await readMissionRecord(root, CAMPAIGN_ID)
+    if (!viaCampaign.ok) throw new Error(viaCampaign.error)
+    expect(viaCampaign.record.id).toBe(first.record.id)
+
+    // A write through the new chapter id lands on that record: no second one, no sidecar repointed.
+    const second = await updateMissionRecord(root, added, (record, log) => ({
+      record,
+      log: `${log}\nafter\n`
+    }))
+    if (!second.ok) throw new Error(second.error)
+    expect(second.created).toBe(false)
+    expect(second.record.id).toBe(first.record.id)
+    expect(v4RecordFiles(root)).toHaveLength(1)
+    expect(readFileSync(second.file, 'utf8')).toContain('before')
+    expect(readFileSync(second.file, 'utf8')).toContain('after')
+    expect(readdirSync(path.join(v4Dir(root), '.migrated')).sort()).toEqual(sidecars)
+    for (const [n, name] of sidecars.entries()) {
+      expect(readFileSync(path.join(v4Dir(root), '.migrated', name), 'utf8')).toBe(sidecarBytes[n])
+    }
+
+    // The list shows the one record, and not the new chapter mission on its own.
+    const ids = (await listMissionRecords(root)).records.map((r) => r.record.id)
+    expect(ids.filter((id) => id === first.record.id)).toHaveLength(1)
+    expect(ids).not.toContain(added)
+  })
+
+  it('does not convert the campaign again when the first write is aimed at the new chapter', async () => {
+    const first = await updateMissionRecord(root, CAMPAIGN_ID, (record, log) => ({ record, log }))
+    if (!first.ok) throw new Error(first.error)
+    const added = bindNewChapter()
+    const results = await Promise.all(
+      [added, CAMPAIGN_ID, CHAPTER_1].map((id) =>
+        updateMissionRecord(root, id, (record, log) => ({ record, log: `${log}\nvia ${id}\n` }))
+      )
+    )
+    for (const r of results) expect(r.ok).toBe(true)
+    expect(v4RecordFiles(root)).toHaveLength(1)
+  })
+})
+
+// Delta 1 · item 4 — the store's writes -----------------------------------------------------------------
+
+describe('the store never loses an update and never leaves a half-written record', () => {
+  it('re-reads and re-applies the change when the record changed under it (compare and swap)', async () => {
+    await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({ record, log }))
+    const file = path.join(v4Dir(root), 'mnt-5c0de001-modern-active.md')
+    let calls = 0
+    const result = await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => {
+      calls++
+      if (calls === 1) {
+        // Another process appends a line after we read, before we swap.
+        writeFileSync(file, `${readFileSync(file, 'utf8')}\nfrom the other writer\n`)
+      }
+      return { record, log: `${log}\nmine ${calls}\n` }
+    })
+    if (!result.ok) throw new Error(result.error)
+    expect(calls).toBe(2)
+    const text = readFileSync(file, 'utf8')
+    expect(text).toContain('from the other writer')
+    expect(text).toContain('mine 2')
+    expect(text).not.toContain('mine 1')
+  })
+
+  it('gives up with a typed refusal when the record keeps changing', async () => {
+    await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({ record, log }))
+    const file = path.join(v4Dir(root), 'mnt-5c0de001-modern-active.md')
+    let n = 0
+    const result = await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => {
+      writeFileSync(file, `${readFileSync(file, 'utf8')}\nchurn ${++n}\n`)
+      return { record, log }
+    })
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.code).toBe('WRITE_CONFLICT')
+  })
+
+  it('keeps every line when two processes write one record at the same time', async () => {
+    await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({ record, log }))
+    const script = path.join(root, 'writer.mts')
+    writeFileSync(
+      script,
+      `import { updateMissionRecord } from ${JSON.stringify(
+        path.resolve(__dirname, '..', 'src', 'main', 'missions', 'record-store')
+      )}
+const [root, tag, count] = process.argv.slice(2)
+for (let i = 0; i < Number(count); i++) {
+  const r = await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({ record, log: log + '\\n' + tag + ' ' + i + '\\n' }))
+  if (!r.ok) { console.error(r.error); process.exit(1) }
+}
+`
+    )
+    const viteNode = path.resolve(__dirname, '..', 'node_modules', 'vite-node', 'vite-node.mjs')
+    const run = (tag: string): Promise<void> =>
+      new Promise((resolve, reject) => {
+        execFile(process.execPath, [viteNode, script, root, tag, '12'], (err, _out, errOut) =>
+          err ? reject(new Error(`${tag}: ${errOut || err.message}`)) : resolve()
+        )
+      })
+    await Promise.all([run('alpha'), run('beta')])
+
+    const text = readFileSync(path.join(v4Dir(root), 'mnt-5c0de001-modern-active.md'), 'utf8')
+    for (const tag of ['alpha', 'beta']) {
+      for (let i = 0; i < 12; i++) expect(text, `${tag} ${i}`).toContain(`\n${tag} ${i}\n`)
+    }
+    expect(readdirSync(v4Dir(root)).filter((n) => n.endsWith('.lock'))).toEqual([])
+  }, 60_000)
+
+  it('flushes the temporary file to disk before it renames it into place', async () => {
+    const handle = await fsp.open(path.join(root, 'probe'), 'w')
+    const proto = Object.getPrototypeOf(handle) as { sync: () => Promise<void> }
+    await handle.close()
+    const sync = vi.spyOn(proto, 'sync')
+    const rename = vi.spyOn(fsp, 'rename')
+    try {
+      await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({ record, log })) // the copy
+      await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({
+        record,
+        log: `${log}\nx\n`
+      }))
+      expect(sync.mock.calls.length).toBeGreaterThanOrEqual(2)
+      // The overwrite renames; the sync before it comes first.
+      expect(rename).toHaveBeenCalled()
+      expect(Math.min(...sync.mock.invocationCallOrder)).toBeLessThan(
+        Math.min(...rename.mock.invocationCallOrder)
+      )
+    } finally {
+      sync.mockRestore()
+      rename.mockRestore()
+    }
+  })
+
+  it('does not let an empty or unparsable v4 file hide a good v3 one silently', async () => {
+    mkdirSync(v4Dir(root), { recursive: true })
+    const broken = path.join(v4Dir(root), 'mnt-5c0de001-modern-active.md')
+    writeFileSync(broken, '')
+    const read = await readMissionRecord(root, 'mnt-5c0de001')
+    expect(read.ok).toBe(false)
+    expect(!read.ok && read.code).toBe('MISSION_UNREADABLE')
+    expect(!read.ok && read.error).toContain(broken) // which file to remove
+    expect(!read.ok && read.error).toMatch(/remove/i)
+    // A write refuses the same way and leaves both files as they were.
+    const write = await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({
+      record,
+      log
+    }))
+    expect(!write.ok && write.code).toBe('MISSION_UNREADABLE')
+    expect(readFileSync(broken, 'utf8')).toBe('')
+    // The list reports it, never silently serves the v3 twin as if nothing happened.
+    const listed = await listMissionRecords(root)
+    expect(listed.unreadable).toContain('mnt-5c0de001-modern-active.md')
+    expect(listed.records.map((r) => r.record.id)).not.toContain('mnt-5c0de001')
+  })
+
+  it('passes a typed refusal thrown inside the change back with its code intact', async () => {
+    const coded = await updateMissionRecord(root, 'mnt-5c0de001', () => {
+      throw Object.assign(new Error('this verb is not allowed here'), { code: 'NOT_ATTACHED' })
+    })
+    expect(coded.ok).toBe(false)
+    expect(!coded.ok && coded.code).toBe('NOT_ATTACHED')
+    expect(!coded.ok && coded.error).toContain('this verb is not allowed here')
+
+    const plain = await updateMissionRecord(root, 'mnt-5c0de001', () => {
+      throw new Error('plain')
+    })
+    expect(!plain.ok && plain.code).toBe('WRITE_REFUSED')
+
+    const missing = await updateMissionRecord(root, 'mnt-00000000', (record, log) => ({
+      record,
+      log
+    }))
+    expect(!missing.ok && missing.code).toBe('MISSION_NOT_FOUND')
+    expect(v4RecordFiles(root)).toEqual([])
+  })
+
+  it('exports an exclusive create for a brand-new v4 mission, written the same atomic way', async () => {
+    const { record } = convertFixture('mnt-5c0de001-modern-active')
+    const fresh: MissionV4 = { ...record, id: 'mnt-0badc0de', title: 'A fresh one' }
+    const made = await createMissionRecord(root, fresh, '# A fresh one\n', 'a-fresh-one')
+    if (!made.ok) throw new Error(made.error)
+    expect(path.basename(made.file)).toBe('mnt-0badc0de-a-fresh-one.md')
+    const read = await readMissionRecord(root, 'mnt-0badc0de')
+    expect(read.ok && read.source).toBe('v4')
+
+    // The same id twice, under any slug, is refused; so is an id a v3 file already holds.
+    const again = await createMissionRecord(root, fresh, '', 'another-slug')
+    expect(!again.ok && again.code).toBe('MISSION_EXISTS')
+    const taken = await createMissionRecord(root, { ...fresh, id: 'mnt-5c0de002' }, '', 'x')
+    expect(!taken.ok && taken.code).toBe('MISSION_EXISTS')
+    expect(v4RecordFiles(root)).toEqual(['mnt-0badc0de-a-fresh-one.md'])
+
+    // Two creates at once: exactly one wins.
+    const race = await Promise.all(
+      [1, 2, 3].map(() => createMissionRecord(root, { ...fresh, id: 'mnt-0badc0df' }, '', 'race'))
+    )
+    expect(race.filter((r) => r.ok)).toHaveLength(1)
+    expect(race.filter((r) => !r.ok).every((r) => !r.ok && r.code === 'MISSION_EXISTS')).toBe(true)
+
+    // A record the v4 schema refuses is refused before any file exists.
+    const bad = await createMissionRecord(root, { ...fresh, id: 'nope' }, '', 'bad')
+    expect(bad.ok).toBe(false)
+    expect(v4RecordFiles(root)).not.toContain('nope-bad.md')
   })
 })
