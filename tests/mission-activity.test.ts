@@ -103,14 +103,14 @@ describe('postMissionActivity — one grouped entry with a row per owed mission'
       {
         id: 'mnt-1',
         title: 'Ship it',
-        description: 'merge PR #6',
+        description: 'Unblock: merge PR #6 — unblocks when merged.',
         sessionId: 'owner-mnt-1',
         target: { view: 'mission', missionId: 'mnt-1' }
       },
       {
         id: 'mnt-2',
         title: 'Docs pass',
-        description: 'delivered, awaiting your close',
+        description: 'Close the mission when you’re satisfied — its end is verified.',
         sessionId: 'owner-mnt-2',
         target: { view: 'mission', missionId: 'mnt-2' }
       }
@@ -121,7 +121,9 @@ describe('postMissionActivity — one grouped entry with a row per owed mission'
     const store = mountStore()
     current = [blocker('mnt-1', 'Ship it', 'merge PR #6')]
     await store.refresh()
-    expect(entry()?.title).toBe('Mission “Ship it” needs you: merge PR #6')
+    expect(entry()?.title).toBe(
+      'Mission “Ship it” needs you: Unblock: merge PR #6 — unblocks when merged.'
+    )
     expect(entry()?.items).toHaveLength(1)
   })
 
@@ -193,7 +195,9 @@ describe('syncMissionActivity — quiet rewrite after every poll', () => {
     current = [closing('mnt-3', 'C')] // two were closed
     await store.refresh()
     expect(entry()).toMatchObject({ id: before.id, ts: before.ts })
-    expect(entry()?.title).toBe('Mission “C” needs you: delivered, awaiting your close')
+    expect(entry()?.title).toBe(
+      'Mission “C” needs you: Close the mission when you’re satisfied — its end is verified.'
+    )
     expect(entry()?.items?.map((i) => i.id)).toEqual(['mnt-3'])
     expect(playNotificationSound).not.toHaveBeenCalled()
   })
