@@ -7662,7 +7662,7 @@ All on the pane's `data-state`. Copy follows §8 and the Missions v4 writing con
 | `data-state` | When                                                 | Draws                                                                                                                                |
 | ------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `loading`    | the first answer has not come yet                    | "Reading the mission…" (`12px`, `text-text-3`)                                                                                       |
-| `mission`    | `state: 'mission'`, source `v4`, open, session in it | the head section (`padding: 14px 16px`): the title (`13.5px / 600`), the count line, the state tag                                   |
+| `mission`    | `state: 'mission'`, source `v4`, open, session in it | the head section (`padding: 14px 16px`): the title (`13.5px / 600`), the progress bar, the state tag, then "The glance" below        |
 | `none`       | `state: 'none'`, or a closed mission                 | the mockup's empty state: `target` (14px, `text-text-4`) and **"This session has no mission."** (`12.5px / 500`, `text-text`)        |
 | `refused`    | `state: 'refused'`                                   | the same empty layout: **"This mission cannot be read right now."** and the server's reason below it (`11.5px`, `text-text-3`, mono) |
 | `v3`         | the answer is a v3 record                            | the same empty layout: **"This mission is still a v3 mission."** and "Open it from the mission pill at the top." below it            |
@@ -7671,17 +7671,155 @@ The **count line** is `11.5px`, `tabular-nums`, `text-text-3`: "{done} of {total
 "{done} of {total} milestones done" (the server's `progress.unit`), written by the
 renderer from the server's numbers. The **state tag** is the state's identifier translated
 through i18n (`open` shows nothing, `ready-to-close` reads "Ready to close"): the English
-words in the reply (`stateLabel`) are never copy, never a key. The mockup's progress bar
-replaces the count line when the glance lands (S-18).
+words in the reply (`stateLabel`) are never copy, never a key. S-18 moves the count line
+**into the progress bar** (see "The glance" below); it is the same text.
 
 The **narrow pane**: the body is a single column and wraps; the title wraps to as many
 lines as it needs (never `truncate`: it is the one thing the operator opens the pane to
 read), the count line and the tag wrap under it, and the empty states keep their padding
 (`40px 24px`) and centre their text. Nothing in the shell has a fixed width.
 
+#### The glance (Missions v4, S-18)
+
+**S-18 (`MissionPane.vue`, `MissionPaneNext.vue`, `MissionPaneTree.vue`; draft mockup
+`docs/design/missions-v4/`, screen `mission-pane`, states `default`, `big`, `big-waiting`,
+`waiting`, `all-steps`).** What the operator reads at a glance: what the mission is, how far it
+is, the one thing to do next, and the tree of what is done and what is coming. Top to bottom, all
+from the server's `detail`; the pane **computes no state** (a step's state, a milestone's state and
+the progress are the server's numbers — the tree only sorts, counts steps by the state the server
+gave them, and folds). **Tokens only; no new colour, radius, easing or row height.** The few pixel
+sizes below are the mockup's, recorded here so the code has nothing off-system.
+
+**Progress bar** (replaces the count line; the title stays above it, no Done when paragraph — the
+mission's `doneWhen` is not drawn). `role="progressbar"` with `aria-valuemin 0`, `aria-valuemax`
+the server's `total`, `aria-valuenow` its `done`. Track: `margin-top: 10px`, `height: 24px`,
+`rounded-sm border border-border bg-surface-2`, `overflow: hidden`. Fill: `bg-green-soft`, an
+absolute box from the left, `width` = `done / total` (0 when `total` is 0), with a `2px`
+`border-green` right edge (no edge at 100%). The label sits **inside** the track, `padding: 0 9px`,
+`11.5px`, `tabular-nums`, `text-text-2` — the count line, "{done} of {total} steps done" or
+"{done} of {total} milestones done" (the same text the shell wrote). At 100% the label is
+`text-green`. The mockup bolds the number; the pane does not (one translated sentence).
+
+**Your next step (`MissionPaneNext.vue`).** One box under the bar (`margin-top: 10px`, `rounded`,
+`border`, `padding: 10px 12px`, `gap: 8px`, a column) from `detail.waiting`. Looks:
+
+| Look | When                                       | Border / background                   | Eyebrow            |
+| ---- | ------------------------------------------ | ------------------------------------- | ------------------ |
+| you  | `waiting.next` is a step the operator owes | `border-warning-line bg-warning-soft` | **Your next step** |
+| ok   | the next item is `close` (ready to close)  | `border-green-line bg-green-soft`     | **Your next step** |
+| calm | `waiting.next` is `null`                   | `border-border-2 bg-surface-2`        | **Next step**      |
+
+The eyebrow is `10px / 700`, uppercase, `0.07em`, `text-text-4` (`text-warning` in the `you` look,
+`text-green` in `ok`). Then **the ask** (`13px`, `text-text`, `line-height 1.4`) and **the why**
+(`11.5px`, `text-text-3`, pulled up `4px`): both are the server's wording and are shown as the
+server wrote them (`ask` and `why` are capped by the writing contract on write; the pane never
+cuts or rewrites them). The `calm` look has one sentence in place of the ask: "{n} steps are
+running. Nothing for you right now." (or "Nothing is running. Nothing for you right now."), counted
+from the server's `progress.counts.running`.
+
+The action row is `flex`, `gap: 10px`: **one button** (`ui/Button`, variant `primary`), and the
+**"{n} more waiting on you"** link at the right (`11.5px`, `text-text-3`, hover `text-text`; `n` is
+the length of `waiting.more`, written by the renderer, never `waiting.moreLine`). The link expands
+**in place** (it never navigates): under the action row, a `border-t border-border` list, one row
+per other item, `Show less` replacing the link's text. A row is a two-column grid (`1fr auto`,
+`gap: 2px 10px`, `padding: 8px 0`, `border-t border-border` between rows): the kind in an eyebrow
+(`9.5px / 700`, uppercase, `0.06em`, `margin-right: 6px`) then the ask (`12px`); under it the why
+(`10.5px`, `text-text-4`); the row's button on the right, spanning both lines.
+
+| Kind (`waiting` identifier) | Eyebrow word | Eyebrow colour |
+| --------------------------- | ------------ | -------------- |
+| `main-failing`              | Fix          | `text-red`     |
+| `unblock`                   | Unblock      | `text-red`     |
+| `settle`                    | Check        | `text-warning` |
+| `review`                    | Review       | `text-text-3`  |
+| `close`                     | Close        | `text-green`   |
+| `attach`                    | Join         | `text-accent`  |
+
+The eyebrow words are translated **by the kind's identifier**, never taken from the reply.
+
+**The button.** This slice has no door, so the button is **Open step** and it only opens: it
+unfolds the step in the tree (and its milestone) and scrolls it into view, for an item that names
+one step (`main-failing`, `unblock`, `settle`, and a `review` of one step). An item with no single
+step to open (`close`, `attach`, a `review` of several) draws **no button** until the slice that
+owns its door lands (**Close mission…**, **Allow** / **Deny**, **Mark done**, **Approve**); the
+row still shows its ask and why. The row's small button is the dense per-row pill (`rounded-sm
+border border-border-2 px-2 py-0.5 text-[11px]`, hover `bg-surface-2`).
+
+**The tree (`MissionPaneTree.vue`).** Below the next-step box, in its own section
+(`padding: 14px 16px`, `border-t border-border`), a column with `gap: 1px`. Milestone ▸ step ▸
+criteria, every level behind a **chevron** (`ChevronRight` closed, `ChevronDown` open, `10px`,
+`text-text-4`), every row a `<button>` with `aria-expanded`.
+
+- **Milestone row** (`grid`, columns `12px 12px 1fr auto`, `gap: 8px`, `padding: 7px 6px`,
+  `margin: 0 -6px`, `rounded-sm`, `12.5px`, `text-text-3`, hover `bg-surface-2`): chevron, glyph,
+  title, then the right cell (`10.5px`, `text-text-4`, `tabular-nums`): **"{done}/{total}"**. The
+  current milestone's title is `text-text` / 500. A `done` milestone's count has no emphasis.
+  A milestone that **waits for** another that is not the one just before it in plan order adds a
+  **second line** under its title (`11px`, `text-text-4`): **Waits for “{title}”**, naming the
+  milestone it waits on. The line shows only while that milestone is not done, and never for the
+  milestone right before (plan order already says it).
+- **Open milestone.** **Only the current milestone opens by itself** ("current" is the server's
+  `progress.current`: the first milestone in plan order that is neither done nor optional). Any
+  other opens when the operator clicks its chevron row; an operator's choice stays while the pane
+  lives. Under an open milestone: its **summary line** (`11px`, `text-text-4`, `padding: 0 0 4px`):
+  the counts of **running**, **waiting for review** and **blocked** steps ("4 running · 9 waiting
+  for review · 1 blocked"; the blocked part is `text-red`; a zero part is left out; **to do is
+  never counted**; with nothing running it opens with "Nothing running"; with all three at zero it
+  reads "Nothing running", or "Every step is done" for a done milestone). Then its steps.
+- **Order inside a milestone.** Steps the operator owes first (a step named by a `waiting` item),
+  then steps that are running, **in plan order inside each group**; **every other step is folded**
+  behind a text link **"{n} more steps"** (`11px`, `text-text-4`, hover `text-text`, padding-left
+  to the title column); it expands in place, in plan order, and reads **"Show less"**.
+- **Step row** (`grid`, columns `10px 12px 1fr auto`, `gap: 7px`, `padding: 5px 6px`, `12px`,
+  `text-text-2`): chevron, glyph, title (wraps to at most **two lines**, then cuts), then the right cell (`10.5px`, `text-text-4`):
+  the pull request number **`#256`** in `font-mono`, `text-accent` (the step's `pr` link; nothing
+  when it has none), a **Blocked** chip when the step carries the blocked mark (`rounded-sm border
+border-red-line bg-red-soft text-red`, `10.5px`) and a **Yours** chip when the operator owes it
+  (`border-warning-line bg-warning-soft text-warning`).
+- **Criteria** (an open step): a column under the step row (`margin: 2px 0 8px 29px`, `gap: 5px`),
+  one line per criterion, `grid 12px 1fr`, `11.5px`: a settled criterion is a green check
+  (`Check`, 10px, `text-green`) and `text-text-2`; an open one a hollow `10px` box (`border
+border-text-4`, `rounded-sm`) and `text-text`. This slice draws the criteria as a plain list;
+  who settles each, the collapse of verified ones, a blocker and the links are S-19.
+- **Optional milestones** sit **under one collapsed line** at the end of the tree: "{n} optional
+  milestones" (`11px`, `text-text-4`); clicking it unfolds them as ordinary milestone rows.
+- **A mission with no milestones** draws its steps directly under the next-step box as one list
+  (the same step rows, the same order, the same fold) with no milestone row.
+
+**Glyphs** (`12px` slot, a circle, centred): `done` — `bg-green` with a `Check` (8px, stroke 3,
+`text-bg`); `running` — an `8px` `bg-accent` dot; `waiting-review` — an `8px` ring
+(`border-[1.5px] border-accent`); `todo` — an `8px` ring (`border-[1.5px] border-text-4`);
+**blocked** — a `Flag` (12px, `text-red`) in place of the state's glyph. The **current** milestone's
+glyph carries a `3px` `ring-accent-soft` halo. The milestone's glyph is its state: `done`,
+`in-progress` (as `running`), `waiting-review`, `not-started` (as `todo`).
+
+**The timeline line.** A vertical line (`1.5px` wide, `bg-border-2`) joins the milestone glyphs:
+each milestone row draws the half above and the half below its glyph, and an **open milestone
+carries the line down through its steps** (the line runs in the open milestone's own left rail,
+aligned with the glyph's centre). The line **above and below a `done` milestone is `bg-green` at
+`opacity-60`**: green behind what is finished, grey ahead. It stops at the first and the last row
+of the tree (nothing above the first, nothing below the last). The line is drawn by a rail cell
+in each row, not by a pixel offset from the row's edge, so it follows the glyph at any width.
+
+**Narrow pane.** The tree wraps: titles wrap in a milestone row, a step title wraps to two lines
+and then cuts, the "Waits for" line wraps. The tree is a **container** (`@container`): below
+**340px** of tree width a step's chips and pull request number move **under its title** (they
+wrap inside their own cell) instead of beside it, so they never squeeze the title down to one
+letter. The summary line's `·` separators **trail** their part (`3 running ·`) and a part never
+breaks inside itself, so no `·` opens a wrapped line. The summary line wraps under itself.
+
+**Not in this slice** (drawn in the mockup, built later, so absent from the pane today): **Ask**
+on a milestone, the **Sessions** row and the hand-off, **Close mission…**, the attach picker and
+request, an open step's who-settles, blocker and links, the sample mission. v4 missions cannot be
+created by an agent yet (the verbs land in chapter 5), so the glance has something to show only
+when a v4 record already exists on disk.
+
 **Don'ts.** ❌ Show a v3 mission in the pane, or write a v3 record from it. ❌ Open the pane
-for a v3 pill. ❌ Print `stateLabel`, `progress.headline` or any English word from the
-reply. ❌ Poll from a loop the store does not own. ❌ Draw a Done when paragraph.
+for a v3 pill. ❌ Print `stateLabel`, `progress.headline`, `waiting.moreLine` or any English word
+from the reply (the `ask` and the `why` are the one wording the server owns, shown as written).
+❌ Poll from a loop the store does not own. ❌ Draw a Done when paragraph. ❌ Open more than the
+current milestone by itself. ❌ Count to do steps in a milestone's summary. ❌ Draw a button whose
+door is not built yet.
 
 ### Campaign progress (pill, popover)
 

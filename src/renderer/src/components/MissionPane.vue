@@ -8,12 +8,17 @@ import { useKeybindingsStore } from '../stores/keybindings'
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import {
+  buildPaneTree,
   classifyReply,
+  missionNumbers,
   missionProgressLine,
   missionStateKey,
+  progressPercent,
   v4MissionOf,
   type PaneKind
 } from '../lib/mission-pane-view'
+import MissionPaneNext from './MissionPaneNext.vue'
+import MissionPaneTree from './MissionPaneTree.vue'
 
 /**
  * The Mission pane (Missions v4 S-17, design.md §6 "Mission pane"): the one surface of a v4 mission, a
@@ -58,6 +63,22 @@ const progressLine = computed(() =>
   mission.value ? missionProgressLine(t, mission.value.detail) : ''
 )
 const stateKey = computed(() => (mission.value ? missionStateKey(mission.value.detail) : null))
+
+// The glance: the bar's width and aria values are the server's numbers; the tree is the server's steps
+// ordered and folded (no state is computed here).
+const numbers = computed(() => (mission.value ? missionNumbers(mission.value.detail) : null))
+const percent = computed(() =>
+  numbers.value ? progressPercent(numbers.value.done, numbers.value.total) : 0
+)
+const tree = computed(() => (mission.value ? buildPaneTree(mission.value.detail) : null))
+const hasTree = computed(
+  () =>
+    tree.value !== null &&
+    (tree.value.milestones.length > 0 ||
+      tree.value.optional.length > 0 ||
+      (tree.value.loose?.shown.length ?? 0) + (tree.value.loose?.folded.length ?? 0) > 0)
+)
+const treeRef = ref<InstanceType<typeof MissionPaneTree> | null>(null)
 
 function onClose(): void {
   helpers.removeHelper(props.worktreePath, props.pane.id)
@@ -168,35 +189,59 @@ useFocusRegion(props.pane.id, rootEl, {
         {{ $t('missionPane.loading') }}
       </div>
 
-      <!-- A v4 mission: the head section. The glance (bar, next step, tree) lands in S-18. -->
-      <section
-        v-else-if="kind === 'mission' && mission"
-        class="border-b border-border"
-        style="padding: 14px 16px"
-        data-dsqa-part="mission-head"
-      >
-        <h2
-          class="m-0 break-words text-text"
-          style="font-size: 13.5px; font-weight: 600; line-height: 1.35"
-          data-test="mission-title"
+      <!-- A v4 mission: the glance. The head (title, bar with the count inside, the next step), then the tree. -->
+      <template v-else-if="kind === 'mission' && mission && numbers">
+        <section
+          class="border-b border-border"
+          style="padding: 14px 16px"
+          data-dsqa-part="mission-head"
         >
-          {{ mission.detail.title }}
-        </h2>
-        <div
-          class="tabular-nums text-text-3"
-          style="margin-top: 4px; font-size: 11.5px"
-          data-test="mission-count"
-        >
-          {{ progressLine }}
-        </div>
-        <span
-          v-if="stateKey"
-          class="mt-2 inline-block rounded-sm border border-green-line bg-green-soft text-green"
-          style="padding: 1px 7px; font-size: 10.5px; font-weight: 500"
-          data-test="mission-state"
-          >{{ $t(stateKey) }}</span
-        >
-      </section>
+          <h2
+            class="m-0 break-words text-text"
+            style="font-size: 13.5px; font-weight: 600; line-height: 1.35"
+            data-test="mission-title"
+          >
+            {{ mission.detail.title }}
+          </h2>
+          <!-- The count is INSIDE the bar (design.md §6 "Mission pane" → The glance). -->
+          <div
+            class="relative overflow-hidden rounded-sm border border-border bg-surface-2"
+            style="margin-top: 10px; height: 24px"
+            role="progressbar"
+            :aria-label="$t('missionPane.bar.label')"
+            aria-valuemin="0"
+            :aria-valuemax="numbers.total"
+            :aria-valuenow="numbers.done"
+            data-test="mission-progress"
+          >
+            <i
+              class="absolute inset-y-0 left-0 bg-green-soft"
+              :class="percent < 100 ? 'border-r-2 border-green' : ''"
+              :style="{ width: `${percent}%` }"
+              data-test="mission-bar-fill"
+            />
+            <span
+              class="relative flex h-full items-center tabular-nums"
+              :class="percent >= 100 ? 'text-green' : 'text-text-2'"
+              style="padding: 0 9px; font-size: 11.5px"
+              data-test="mission-count"
+              >{{ progressLine }}</span
+            >
+          </div>
+          <span
+            v-if="stateKey"
+            class="mt-2 inline-block rounded-sm border border-green-line bg-green-soft text-green"
+            style="padding: 1px 7px; font-size: 10.5px; font-weight: 500"
+            data-test="mission-state"
+            >{{ $t(stateKey) }}</span
+          >
+          <MissionPaneNext :detail="mission.detail" @open-step="treeRef?.openStep($event)" />
+        </section>
+        <section v-if="hasTree && tree" style="padding: 14px 16px" data-dsqa-part="tree">
+          <!-- Keyed by the mission the reply was answered for: another mission starts with its own folds. -->
+          <MissionPaneTree ref="treeRef" :key="mission.missionId" :tree="tree" />
+        </section>
+      </template>
 
       <!-- No mission, a refusal, or a v3 record: the same empty layout (design.md §6 "Mission pane" → States). -->
       <div
