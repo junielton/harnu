@@ -24,7 +24,7 @@ import {
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { buildMissionRecordContent, type MissionV4, type StepV4 } from '../src/main/missions/model'
-import type { Actor } from '../src/main/missions/guard'
+import { guardMission, type Actor } from '../src/main/missions/guard'
 import { readMissionRecord } from '../src/main/missions/record-store'
 import { addLink, attachFoundPrs, planPrLinks, type FoundPr } from '../src/main/missions/verbs-plan'
 
@@ -577,5 +577,65 @@ describe('a link refusal says what to pass instead', () => {
       ref: 'x'
     })
     expect(r.ok ? '' : r.error).toMatch(/pass one of session, pr, worktree, url, doc/)
+  })
+})
+
+// ---- Delta 1, item 5: Harnu's own call is { kind: 'harnu' } ----------------------------------------
+
+describe("Harnu's own call attaches the pull requests as harnu", () => {
+  const harnu: Actor = { kind: 'harnu' }
+  const found: FoundPr[] = [
+    { stepId: 'stp-1', number: 11, state: 'open' },
+    { branch: 'card/T9-score', number: 12, state: 'merged' }
+  ]
+
+  it('attaches, once, and a second pass over the same pull requests writes nothing', async () => {
+    seed()
+    const first = await attachFoundPrs(root, harnu, ID, found, { 'stp-2': 'card/T9-score' })
+    expect(first).toMatchObject({ ok: true })
+    expect(first.ok && first.added).toEqual([
+      { stepId: 'stp-1', ref: '11' },
+      { stepId: 'stp-2', ref: '12' }
+    ])
+    const record = await load()
+    expect(record.steps[0].links).toEqual([{ kind: 'pr', ref: '11' }])
+    expect(record.steps[1].links).toEqual([{ kind: 'pr', ref: '12' }])
+    const bytes = readFileSync(v4File())
+    const second = await attachFoundPrs(root, harnu, ID, found, { 'stp-2': 'card/T9-score' })
+    expect(second).toMatchObject({ ok: true, added: [] })
+    expect(readFileSync(v4File()).equals(bytes)).toBe(true)
+  })
+
+  it('is judged as harnu, never as the operator: the guard names its standing', () => {
+    const access = guardMission(missionOf(), harnu, 'write')
+    expect(access).toEqual({ ok: true, standing: 'harnu' })
+    expect(access).not.toMatchObject({ standing: 'operator' })
+  })
+
+  it('a closed mission refuses it, and a mission it does not know is MISSION_NOT_FOUND', async () => {
+    seed(missionOf({ status: 'closed', closedAs: 'delivered' }))
+    const bytes = readFileSync(v4File())
+    expect(await attachFoundPrs(root, harnu, ID, found)).toMatchObject({
+      ok: false,
+      code: 'MISSION_CLOSED'
+    })
+    expect(readFileSync(v4File()).equals(bytes)).toBe(true)
+    expect(await attachFoundPrs(root, harnu, 'mnt-00000000', found)).toMatchObject({
+      ok: false,
+      code: 'MISSION_NOT_FOUND'
+    })
+  })
+
+  it('on a mission that exists only as v3 it attaches into the v4 copy and leaves every v3 file whole', async () => {
+    const dirV3 = path.join(root, '.harnu', 'missions')
+    cpSync(path.join(FIXTURES, 'missions'), dirV3, { recursive: true })
+    const hashes = (): Record<string, string> =>
+      Object.fromEntries(readdirSync(dirV3).map((n) => [n, sha(readFileSync(path.join(dirV3, n)))]))
+    const before = hashes()
+    const r = await attachFoundPrs(root, harnu, 'mnt-5c0de001', [
+      { stepId: 'stp-1', number: 778, state: 'open' }
+    ])
+    expect(r).toMatchObject({ ok: true, added: [{ stepId: 'stp-1', ref: '778' }] })
+    expect(hashes()).toEqual(before)
   })
 })

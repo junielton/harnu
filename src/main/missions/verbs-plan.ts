@@ -859,8 +859,10 @@ export function planPrLinks(
 }
 
 /**
- * Attach the found pull requests to their steps, once. The caller is the app (the observer pass), so
- * the actor is the operator's hand or a session the mission knows; a system worker is read only. A pass
+ * Attach the found pull requests to their steps, once. The caller is Harnu itself (the observer pass),
+ * and Harnu's own call is `{ kind: 'harnu' }`: S-11's guard treats it as it treats the operator, and
+ * only its name differs, so nothing records that the operator did what Harnu did. A session the
+ * mission knows may call it too; a system worker is read only. A pass
  * with nothing to add writes nothing, and so never creates the v4 copy of a mission that exists only as
  * v3. Idempotent: a second pass over the same pull requests adds none.
  */
