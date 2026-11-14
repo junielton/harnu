@@ -17,12 +17,51 @@ import { createMissionFile, type Mission, type MissionStep } from '../src/main/m
 import type { MissionV4, StepV4 } from '../src/main/missions/model'
 import { deriveProgress } from '../src/main/missions/progress'
 import type { StepInput } from '../src/main/missions/state'
-import { buildMissionSummary } from '../src/main/missions/summary'
-import { waitingListV4 } from '../src/main/missions/waiting'
+import { buildMissionSummary, missionListRow } from '../src/main/missions/summary'
+import { deriveStepResults, waitingListV4 } from '../src/main/missions/waiting'
 
 const GH_MS = 5000
 
-const h = vi.hoisted(() => ({ userDataDir: '', ghCalls: 0, spawns: 0 }))
+const h = vi.hoisted(() => ({
+  userDataDir: '',
+  ghCalls: 0,
+  spawns: 0,
+  /** Every call into `node:fs` and `node:fs/promises`, sync or async, by name (AC-20 asserts none). */
+  fsCalls: [] as string[],
+  wrapFs: (
+    obj: Record<string, unknown>,
+    prefix: string,
+    calls: string[]
+  ): Record<string, unknown> =>
+    Object.fromEntries(
+      Object.entries(obj).map(([k, v]) =>
+        typeof v === 'function' && !/^[A-Z]/.test(k)
+          ? [
+              k,
+              (...a: unknown[]): unknown => {
+                calls.push(`${prefix}.${k}`)
+                return (v as (...x: unknown[]) => unknown)(...a)
+              }
+            ]
+          : [k, v]
+      )
+    )
+}))
+
+// Count every file-system call, synchronous ones included: the real-path tests below still run through
+// the real `fs`, the wrapper only records and delegates.
+vi.mock('node:fs', async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>()
+  return {
+    ...h.wrapFs(real, 'fs', h.fsCalls),
+    promises: h.wrapFs(real.promises as Record<string, unknown>, 'fs.promises', h.fsCalls),
+    default: real
+  }
+})
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>()
+  return { ...h.wrapFs(real, 'fs/promises', h.fsCalls), default: real }
+})
 
 vi.mock('electron', () => ({
   app: {
@@ -309,18 +348,24 @@ describe('v4 view cost (Missions v4 S-8, AC-20)', () => {
 
     const spawnsBefore = h.spawns
     const ghBefore = h.ghCalls
+    h.fsCalls.length = 0
     const PASSES = 200
     const t0 = performance.now()
     let nextAsk = ''
     for (let i = 0; i < PASSES; i++) {
+      // One view: every step is derived once for progress and once for its criteria, then shared.
       const progress = deriveProgress(mission, inputs)
-      const list = waitingListV4(mission, { inputs, progress })
-      const { text } = buildMissionSummary(mission, log, { inputs })
+      const results = deriveStepResults(mission, inputs)
+      const list = waitingListV4(mission, { inputs, progress, results })
+      const { text } = buildMissionSummary(mission, log, { inputs, progress, results })
+      const row = missionListRow(mission, { inputs, progress, results })
       nextAsk = list.next?.ask ?? ''
       expect(text.length).toBeLessThanOrEqual(8000)
+      expect(row.endsWith(nextAsk)).toBe(true)
     }
     const ms = performance.now() - t0
     vi.unstubAllGlobals()
+    const syncAndAsyncFsCalls = [...h.fsCalls]
     const reads = readSpies.reduce((n, s) => n + s.mock.calls.length, 0)
     readSpies.forEach((s) => s.mockRestore())
     console.info(
@@ -332,8 +377,17 @@ describe('v4 view cost (Missions v4 S-8, AC-20)', () => {
     expect(h.spawns - spawnsBefore).toBe(0) // no git, no gh, no other process
     expect(h.ghCalls - ghBefore).toBe(0)
     expect(reads).toBe(0)
+    expect(syncAndAsyncFsCalls).toEqual([]) // no file read or write at all, sync or async
     expect(clockReads).toBe(0)
     expect(ms / PASSES).toBeLessThan(50) // a pure derive, not a fetch: milliseconds, not seconds
+  })
+
+  it('the file-system counter sees a synchronous read when one is made', async () => {
+    const fsMod = await import('node:fs')
+    h.fsCalls.length = 0
+    fsMod.readFileSync('package.json', 'utf8')
+    expect(h.fsCalls).toContain('fs.readFileSync')
+    h.fsCalls.length = 0
   })
 
   it('the spawn counter sees a process when one is started', async () => {

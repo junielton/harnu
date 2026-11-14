@@ -137,11 +137,16 @@ const request = (id: string, extra: Record<string, unknown> = {}): AttachRequest
     id,
     missionId: MID,
     sessionId: 'aaaa1111-2222-4333-8444-555555555555',
-    role: 'worked',
     at: AT,
     decision: null,
     ...extra
   }) as AttachRequest
+
+/** The mission with these attach requests in its record: that is where they live. */
+const withAttach = (m: MissionV4, ...requests: AttachRequest[]): MissionV4 => ({
+  ...m,
+  attachRequests: requests
+})
 
 // ---- AC-17 ----------------------------------------------------------------------
 
@@ -274,7 +279,7 @@ describe('AC-18 · one next step, the rest in a fixed order', () => {
   it('five waiting items give one next step', () => {
     const { mission, inputs } = bigWaiting()
     expect(progressMod.deriveProgress(mission, inputs).counts.running).toBe(0) // nothing runs
-    const list = waiting.waitingListV4(mission, { inputs, attachRequests: [request('atr-1')] })
+    const list = waiting.waitingListV4(withAttach(mission, request('atr-1')), { inputs })
     expect(list.items.map((i) => i.kind)).toEqual([
       'main-failing',
       'unblock',
@@ -296,7 +301,7 @@ describe('AC-18 · one next step, the rest in a fixed order', () => {
 
   it('says "1 more" for a single follower', () => {
     const m = mkMission({ steps: [mkStep('stp-1', { blockers: [blocker('blk-1')] })] })
-    const list = waiting.waitingListV4(m, { attachRequests: [request('atr-1')] })
+    const list = waiting.waitingListV4(withAttach(m, request('atr-1')))
     expect(list.moreLine).toBe('1 more waiting on you')
   })
 
@@ -326,7 +331,7 @@ describe('AC-18 · one next step, the rest in a fixed order', () => {
       steps: [doneStep('stp-1'), doneStep('stp-2')],
       blockers: [blocker('blk-1', { ask: 'Pick the folder for the output files' })]
     })
-    const list = waiting.waitingListV4(m, { attachRequests: [request('atr-1')] })
+    const list = waiting.waitingListV4(withAttach(m, request('atr-1')))
     expect(list.items.map((i) => i.kind)).toEqual(['unblock', 'close', 'attach'])
   })
 
@@ -372,7 +377,7 @@ describe('AC-18 · one next step, the rest in a fixed order', () => {
   it('gives every item a key that is unique within the list', () => {
     const { mission, inputs } = bigWaiting()
     const ids = waiting
-      .waitingListV4(mission, { inputs, attachRequests: [request('atr-1'), request('atr-2')] })
+      .waitingListV4(withAttach(mission, request('atr-1'), request('atr-2')), { inputs })
       .items.map((i) => i.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
@@ -421,7 +426,7 @@ describe('what each kind needs before it shows', () => {
     const { mission, inputs } = bigWaiting()
     const item = waiting.waitingListV4(mission, { inputs }).items[0]
     expect(item).toMatchObject({ kind: 'main-failing', stepId: 'stp-1', pr: '256' })
-    expect(item.ask).toBe('Fix main: Load the test files fails CI after #256 merged')
+    expect(item.ask).toBe('Fix the main branch: it broke after "Load the test files"')
   })
 
   it('unblock shows an operator blocker and hides one whose fact holds (clearsWhen)', () => {
@@ -454,7 +459,7 @@ describe('what each kind needs before it shows', () => {
       ]
     })
     const item = waiting.waitingListV4(converted).items[0]
-    expect(item.ask).toBe('Unblock: Waiting for the key from ops')
+    expect(item.ask).toBe('Waiting for the key from ops') // the reason, whole, with no prefix
     expect(item.why.length).toBeGreaterThan(0)
   })
 
@@ -502,28 +507,27 @@ describe('what each kind needs before it shows', () => {
     expect(waiting.waitingListV4(m, { inputs: { 'stp-1': { card: 'done' } } }).items).toEqual([])
   })
 
-  it('attach lists only a pending request for this mission', () => {
-    const list = waiting.waitingListV4(mkMission({ steps: [mkStep('stp-1')] }), {
-      attachRequests: [
-        request('atr-1'),
-        request('atr-2', { decision: 'allowed', decidedAt: AT }),
-        request('atr-3', { decision: 'denied', decidedAt: AT }),
-        request('atr-4', { missionId: 'mnt-ffffffff' })
-      ]
-    })
+  it('attach lists only a pending request, read from the record', () => {
+    const m = withAttach(
+      mkMission({ steps: [mkStep('stp-1')] }),
+      request('atr-1'),
+      request('atr-2', { decision: 'allowed', decidedAt: AT }),
+      request('atr-3', { decision: 'denied', decidedAt: AT })
+    )
+    const list = waiting.waitingListV4(m)
     expect(list.items.map((i) => [i.kind, i.id])).toEqual([['attach', 'attach:atr-1']])
+    // A record with no requests at all (the key is absent until a session first asks) lists none.
+    expect(waiting.waitingListV4(mkMission({ steps: [mkStep('stp-1')] })).items).toEqual([])
   })
 
-  it('nobody asks to lead: the attach item says join, whatever role the request names', () => {
-    const list = waiting.waitingListV4(mkMission({ steps: [mkStep('stp-1')] }), {
-      attachRequests: [
-        request('atr-1', { role: 'leads', sessionId: 'bbbb2222-2222-4333-8444-555555555555' })
-      ]
-    })
-    const item = list.items[0]
-    expect(item).toMatchObject({ kind: 'attach', requestId: 'atr-1' })
-    expect(item.ask).toBe('Let session bbbb2222 join the mission')
-    expect(`${item.ask} ${item.why}`).not.toMatch(/lead/i)
+  it('attach asks to let another session join; the session id is the door target, never in the text', () => {
+    const sessionId = 'bbbb2222-2222-4333-8444-555555555555'
+    const m = withAttach(mkMission({ steps: [mkStep('stp-1')] }), request('atr-1', { sessionId }))
+    const item = waiting.waitingListV4(m).items[0]
+    expect(item).toMatchObject({ kind: 'attach', requestId: 'atr-1', sessionId })
+    expect(item.ask).toBe('Let another session join this mission')
+    expect(item.why).toBe('It asked to work on it and waits for your answer')
+    expect(`${item.ask} ${item.why}`).not.toMatch(/bbbb2222|lead/i)
   })
 
   it('the module no longer says a session asks to lead', () => {
@@ -561,12 +565,11 @@ describe('the wording', () => {
         mkStep('stp-4', { title: title50, links: [{ kind: 'pr', ref: '1235' }] })
       ]
     })
-    const list = waiting.waitingListV4(m, {
+    const list = waiting.waitingListV4(withAttach(m, request('atr-1')), {
       inputs: {
         'stp-1': { pr: 'merged', facts: { 'main-green': false } },
         'stp-4': { pr: 'open' }
-      },
-      attachRequests: [request('atr-1')]
+      }
     })
     expect(list.items.map((i) => i.kind)).toEqual([
       'main-failing',
@@ -607,6 +610,133 @@ describe('the wording', () => {
   })
 })
 
+// ---- Delta 1 · the words the operator reads -------------------------------------------
+
+describe('S-8 delta 1 · the words the operator reads', () => {
+  it('main-failing quotes the step title, has no jargon and no number at an edge', () => {
+    const { mission, inputs } = bigWaiting()
+    const item = waiting.waitingListV4(mission, { inputs }).items[0]
+    expect(item).toMatchObject({ kind: 'main-failing', stepId: 'stp-1', pr: '256' })
+    expect(item.ask).toBe('Fix the main branch: it broke after "Load the test files"')
+    expect(item.why).toBe('Everything that merges next starts from a broken base')
+    expect(`${item.ask} ${item.why}`).not.toMatch(/\bCI\b|#\d|\bmain\b(?! branch)/)
+  })
+
+  it('settle says what is true about the step: the last thing open, or how many more', () => {
+    const one = mkMission({
+      steps: [mkStep('stp-1', { acs: [crit('ac-1', 'operator', { text: 'The copy reads well' })] })]
+    })
+    expect(waiting.waitingListV4(one).items[0].why).toBe('It is the last thing open on this step')
+
+    const many = mkMission({
+      steps: [
+        mkStep('stp-1', {
+          acs: [
+            crit('ac-1', 'operator', { text: 'The copy reads well' }),
+            crit('ac-2', 'fact', { fact: 'pr-merged' }),
+            crit('ac-3', 'session')
+          ]
+        })
+      ]
+    })
+    const settle = waiting.waitingListV4(many, { inputs: { 'stp-1': { pr: 'open' } } }).items[0]
+    expect(settle.kind).toBe('settle')
+    expect(settle.why).toBe('2 more things are open on this step')
+
+    const two = mkMission({
+      steps: [
+        mkStep('stp-1', {
+          acs: [crit('ac-1', 'operator', { text: 'The copy reads well' }), crit('ac-2', 'session')]
+        })
+      ]
+    })
+    const first = waiting.waitingListV4(two, { inputs: { 'stp-1': { pr: 'open' } } }).items[0]
+    expect(first.why).toBe('1 more thing is open on this step')
+  })
+
+  it('review counts only a pull request the operator can look over', () => {
+    const open = (id: string, extra: Record<string, unknown> = {}): StepV4 =>
+      mkStep(id, {
+        title: `Step ${id}`,
+        links: [{ kind: 'pr', ref: id.slice(-1) + '00' }],
+        ...extra
+      })
+    const m = mkMission({
+      steps: [
+        open('stp-1'), // counts
+        open('stp-2', { blockers: [blocker('blk-1', { owner: 'agent' })] }), // blocked: not yet
+        open('stp-3'), // its checks are red: not yet
+        open('stp-4'), // checks green: counts
+        open('stp-5') // checks never read: counts
+      ]
+    })
+    const inputs: Record<string, StepInput> = {
+      'stp-1': { pr: 'open' },
+      'stp-2': { pr: 'open' },
+      'stp-3': { pr: 'open', facts: { 'ci-green': false } },
+      'stp-4': { pr: 'open', facts: { 'ci-green': true } },
+      'stp-5': { pr: 'open' }
+    }
+    const review = waiting.waitingListV4(m, { inputs }).items.find((i) => i.kind === 'review')
+    expect(review).toMatchObject({ stepIds: ['stp-1', 'stp-4', 'stp-5'] })
+    expect(review?.ask).toBe('Look over 3 pull requests')
+  })
+
+  it('words the empty line once, and gives one line per person', () => {
+    expect(waiting.WAITING_EMPTY_LINE).toBe('Nothing waits on the operator.')
+    expect(waiting.WAITING_OTHERS_LINE).toBe('Waiting for other people')
+    expect(waiting.waitingForLine('the designer')).toBe('Waiting for the designer')
+
+    const two = mkMission({
+      steps: [
+        mkStep('stp-1', { acs: [crit('ac-1', 'person', { person: 'the designer' })] }),
+        mkStep('stp-2', { acs: [crit('ac-1', 'person', { person: 'legal' })] }),
+        mkStep('stp-3', { acs: [crit('ac-1', 'person', { person: 'legal' })] })
+      ]
+    })
+    const list = waiting.waitingListV4(two)
+    expect(list.peopleLine).toBe('Waiting for other people')
+    expect(list.peopleLines).toEqual(['Waiting for the designer', 'Waiting for legal'])
+    expect(waiting.waitingListV4(mkMission({ steps: [mkStep('stp-1')] })).peopleLines).toEqual([])
+  })
+
+  it('keeps every fixed text inside ask 90 and why 60 at the longest title the contract allows', () => {
+    const title50 = 'Run the scoring tool on the whole test set of specs'.slice(0, 50)
+    const m = mkMission({
+      steps: [
+        mkStep('stp-1', {
+          title: title50,
+          acs: [crit('ac-1', 'fact', { fact: 'main-green' })],
+          links: [{ kind: 'pr', ref: '1234' }]
+        }),
+        mkStep('stp-2', { title: title50, links: [{ kind: 'pr', ref: '1235' }] })
+      ]
+    })
+    const list = waiting.waitingListV4(withAttach(m, request('atr-1')), {
+      inputs: {
+        'stp-1': { pr: 'merged', facts: { 'main-green': false } },
+        'stp-2': { pr: 'open' }
+      }
+    })
+    expect(list.items.map((i) => i.kind)).toEqual(['main-failing', 'review', 'attach'])
+    for (const i of list.items) {
+      expect(i.ask.length).toBeLessThanOrEqual(waiting.WAITING_ASK_MAX)
+      expect(i.why.length).toBeLessThanOrEqual(waiting.WAITING_WHY_MAX)
+    }
+  })
+
+  it('shares one derive of every step: given the results and the progress, it derives none', () => {
+    const { mission, inputs } = bigWaiting()
+    const results = waiting.deriveStepResults(mission, inputs)
+    expect(Object.keys(results)).toHaveLength(mission.steps.length)
+    const progress = progressMod.deriveProgress(mission, inputs)
+    const shared = waiting.waitingListV4(mission, { inputs, progress, results })
+    expect(shared.items.map((i) => i.id)).toEqual(
+      waiting.waitingListV4(mission, { inputs }).items.map((i) => i.id)
+    )
+  })
+})
+
 // ---- AC-20 (the pure half): no spawn, no read, no clock --------------------------
 
 describe('AC-20 · the v4 waiting list reads nothing', () => {
@@ -634,8 +764,25 @@ describe('AC-20 · the v4 waiting list reads nothing', () => {
     const { mission, inputs } = bigWaiting()
     stubClock()
     spy.calls.length = 0
-    const list = waiting.waitingListV4(mission, { inputs, attachRequests: [request('atr-1')] })
+    const list = waiting.waitingListV4(withAttach(mission, request('atr-1')), { inputs })
     expect(list.items).toHaveLength(5)
+    expect(spy.calls).toEqual([])
+    expect(clockReads).toBe(0)
+  })
+
+  it('the summary reads nothing either: no spawn, no file read (sync or async), no clock read', async () => {
+    const { buildMissionSummary } = await import('../src/main/missions/summary')
+    const { mission, inputs } = bigWaiting()
+    stubClock()
+    spy.calls.length = 0
+    const { text } = buildMissionSummary(
+      mission,
+      '### 2026-11-14T10:00:00Z · decision\n\nWe chose it.\n',
+      {
+        inputs
+      }
+    )
+    expect(text.length).toBeGreaterThan(0)
     expect(spy.calls).toEqual([])
     expect(clockReads).toBe(0)
   })

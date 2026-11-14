@@ -10,8 +10,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AttachRequest, MissionV4, StepV4 } from '../src/main/missions/model'
 import { deriveProgress } from '../src/main/missions/progress'
 import type { StepInput } from '../src/main/missions/state'
-import { MISSION_SUMMARY_MAX, buildMissionSummary } from '../src/main/missions/summary'
-import { waitingListV4 } from '../src/main/missions/waiting'
+import {
+  MISSION_SUMMARY_MAX,
+  buildMissionSummary,
+  missionListRow
+} from '../src/main/missions/summary'
+import { WAITING_EMPTY_LINE, deriveStepResults, waitingListV4 } from '../src/main/missions/waiting'
+
+/** Counts every `deriveStepState` call, delegating to the real one (state.ts is what progress.ts calls). */
+const derive = vi.hoisted(() => ({ calls: 0 }))
+vi.mock('../src/main/missions/state', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/main/missions/state')>()
+  return {
+    ...real,
+    deriveStepState: (...args: Parameters<typeof real.deriveStepState>) => {
+      derive.calls++
+      return real.deriveStepState(...args)
+    }
+  }
+})
 
 const AT = '2026-11-14T10:00:00Z'
 const MID = 'mnt-1a2b3c4d'
@@ -252,18 +269,18 @@ describe('AC-19 · the summary', () => {
     expect(parts.nextStep).toContain('Close the mission')
   })
 
-  it('lists a pending attach request as the next step when nothing else waits', () => {
-    const m = mkMission({ steps: [mkStep('stp-1', { startedAt: AT })] })
+  it('lists a pending attach request, read from the record, as the next step when nothing else waits', () => {
     const req = {
       id: 'atr-1',
       missionId: MID,
       sessionId: 'bbbb2222-2222-4333-8444-555555555555',
-      role: 'worked',
       at: AT,
       decision: null
     } as AttachRequest
-    const { parts } = buildMissionSummary(m, '', { attachRequests: [req] })
-    expect(parts.nextStep).toContain('Let session bbbb2222 join the mission')
+    const m = mkMission({ steps: [mkStep('stp-1', { startedAt: AT })], attachRequests: [req] })
+    const { parts } = buildMissionSummary(m, '')
+    expect(parts.nextStep).toContain('Let another session join this mission')
+    expect(parts.nextStep).not.toContain('bbbb2222') // the id is the door target, not the text
   })
 
   it('does not read the clock', () => {
@@ -294,5 +311,212 @@ describe('the summary agrees with progress', () => {
     const p = deriveProgress(mission, inputs)
     const { parts } = buildMissionSummary(mission, log, { inputs })
     expect(parts.whereItIs).toContain(`${p.current?.ordinal ?? 0} of ${p.total}`)
+  })
+})
+
+// ---- Delta 1 · AC-19's cap clause must be able to fail -----------------------------------
+
+describe('the cap clause: a record that does not fit loses whole lines, never the five parts', () => {
+  /** 60 open steps, five criteria and three links each: far more than 8,000 characters unfitted. */
+  function crowded(): { mission: MissionV4; inputs: Record<string, StepInput> } {
+    const steps: StepV4[] = []
+    const inputs: Record<string, StepInput> = {}
+    for (let n = 1; n <= 60; n++) {
+      const id = `stp-${n}`
+      steps.push(
+        mkStep(id, {
+          title: `Build the part number ${n} of the reporting pipeline`,
+          acs: [1, 2, 3, 4, 5].map((k) =>
+            crit(`ac-${k}`, 'session', {
+              text: `Check ${k} of part ${n} passes on the full data set`
+            })
+          ),
+          links: [
+            { kind: 'pr', ref: String(500 + n) },
+            { kind: 'url', ref: `http://localhost:5173/report/part-${n}` },
+            { kind: 'worktree', ref: `.claude/worktrees/part-${n}` }
+          ]
+        })
+      )
+      inputs[id] = { pr: 'open' }
+    }
+    return { mission: mkMission({ steps }), inputs }
+  }
+
+  it('stays at most 8,000 characters, keeps the five headings in order and says what it left out', () => {
+    const { mission, inputs } = crowded()
+    // What it would take unfitted: every open step, criterion and link, one line each.
+    const unfitted = mission.steps.reduce(
+      (n, s) =>
+        n +
+        s.title.length +
+        s.acs.reduce((k, c) => k + c.text.length + 6, 0) +
+        s.links.reduce((k, l) => k + l.ref.length + 20, 0),
+      0
+    )
+    expect(unfitted).toBeGreaterThan(MISSION_SUMMARY_MAX)
+
+    const { text, parts } = buildMissionSummary(mission, '', { inputs })
+    expect(text.length).toBeLessThanOrEqual(MISSION_SUMMARY_MAX)
+    const at = [...HEADINGS, '## Open criteria', '## Links'].map((h) => text.indexOf(h))
+    expect(at.every((i) => i >= 0)).toBe(true)
+    expect([...at].sort((a, b) => a - b)).toEqual(at)
+    expect(parts.openCriteria).toMatch(/…and \d+ more lines? not shown/)
+    expect(parts.links).toMatch(/…and \d+ more links? not shown/)
+    // What is shown is whole: every criterion line ends with who settles it.
+    for (const line of parts.openCriteria.split('\n').filter((l) => l.startsWith('  - '))) {
+      expect(line).toMatch(/\(a second session\)$/)
+    }
+  })
+})
+
+// ---- Delta 1 · the summary a fresh session reads --------------------------------------------
+
+describe('the summary never cuts mid-sentence', () => {
+  const sentence = (n: number): string =>
+    `Sentence ${n} explains the choice we made and why the other option lost.`
+
+  it('ends a long decision at a sentence and says the rest is in the Log', () => {
+    const { mission, log } = bigMission()
+    const long = [1, 2, 3, 4, 5, 6].map(sentence).join(' ')
+    expect(long.length).toBeGreaterThan(260)
+    const bigLog = log + logEntry('2026-11-14T12:00:00Z', 'decision', long, 'stp-2')
+    const { parts } = buildMissionSummary(mission, bigLog)
+    const last = parts.decided.split('\n').at(-1) ?? ''
+    expect(last).toMatch(
+      /Sentence \d explains the choice we made and why the other option lost\. \(more in the Log\)$/
+    )
+    expect(last).not.toContain('…')
+    // A decision that fits is shown whole, with no marker.
+    expect(parts.decided).toContain('Decision number 6: we chose option 6.')
+    expect(parts.decided).not.toMatch(/Decision number 6[^\n]*more in the Log/)
+  })
+
+  it('never shortens the mission title, and ends Done when at a sentence', () => {
+    const { mission, log } = bigMission()
+    mission.title = `${'A mission title that a legacy record wrote far too long to fit anywhere '.repeat(6)}end`
+    mission.doneWhen = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(sentence).join(' ')
+    const { parts } = buildMissionSummary(mission, log)
+    expect(parts.goal).toContain(mission.title)
+    expect(parts.goal).toMatch(
+      /Sentence \d explains the choice we made and why the other option lost\. \(more in the Log\)$/
+    )
+  })
+
+  it('keeps a criterion indented under its step, and ends a long one at a sentence', () => {
+    const { mission, inputs, log } = bigMission()
+    const step = mission.steps.find((s) => s.id === 'stp-9') as StepV4
+    step.acs[1].text = [1, 2, 3, 4].map(sentence).join(' ')
+    const { parts } = buildMissionSummary(mission, log, { inputs })
+    const lines = parts.openCriteria.split('\n')
+    const at = lines.findIndex((l) => l.startsWith('- stp-9 '))
+    expect(at).toBeGreaterThanOrEqual(0)
+    // The step starts at the margin, its criteria are indented two spaces, none is trimmed.
+    expect(lines[at + 1]).toMatch(/^ {2}- /)
+    expect(lines[at + 2]).toMatch(
+      /^ {2}- Sentence \d explains .* \(more in the Log\) \(the operator\)$/
+    )
+  })
+})
+
+describe('what a fresh session reads at a hand-off', () => {
+  it('counts what it says it counts: blocked is its own count, never a share of another', () => {
+    const { mission, inputs, log } = bigMission()
+    const { parts } = buildMissionSummary(mission, log, { inputs })
+    expect(parts.whereItIs).toContain(
+      'Steps: 4 done · 2 running · 9 waiting for review · 6 to do · 1 blocked'
+    )
+    expect(parts.whereItIs).not.toMatch(/\(\d+ blocked\)/)
+  })
+
+  it('names each blocked step with its blocker’s ask, or its reason when it has none', () => {
+    const { mission, inputs, log } = bigMission()
+    const withReason = mission.steps.find((s) => s.id === 'stp-8') as StepV4
+    withReason.blockers = [
+      {
+        id: 'blk-1',
+        reason: 'Waiting for the key from ops',
+        owner: 'agent'
+      } as StepV4['blockers'][number]
+    ]
+    const { parts } = buildMissionSummary(mission, log, { inputs })
+    expect(parts.whereItIs).toContain(
+      'stp-7 Open step 7: Set HARNU_CORPUS_DIR to the folder with the test files'
+    )
+    expect(parts.whereItIs).toContain('stp-8 Open step 8: Waiting for the key from ops')
+  })
+
+  it('lists by title the steps that wait for review', () => {
+    const { mission, inputs, log } = bigMission()
+    const { parts } = buildMissionSummary(mission, log, { inputs })
+    expect(parts.whereItIs).toContain('Waiting for review:')
+    for (const n of [7, 8, 9, 15]) expect(parts.whereItIs).toContain(`Open step ${n}`)
+    expect(parts.whereItIs).not.toContain('Open step 16') // a to do step is not waiting for review
+  })
+
+  it('keeps the next step the operator’s first waiting item, as the spec says', () => {
+    const { mission, inputs, log } = bigMission()
+    const { parts } = buildMissionSummary(mission, log, { inputs })
+    const next = waitingListV4(mission, { inputs }).next
+    expect(parts.nextStep.split('\n')[0]).toBe(`${next?.ask} — ${next?.why}`)
+  })
+
+  it('uses the one empty line the waiting list words', () => {
+    const { parts } = buildMissionSummary(mkMission({ steps: [mkStep('stp-1')] }), '')
+    expect(parts.nextStep).toBe(WAITING_EMPTY_LINE)
+  })
+})
+
+// ---- Delta 1 · additive exports ------------------------------------------------------------------
+
+describe('a one-line row for mission_list', () => {
+  it('is title · progress words · the next ask', () => {
+    const { mission, inputs } = bigMission()
+    const next = waitingListV4(mission, { inputs }).next
+    expect(missionListRow(mission, { inputs })).toBe(
+      `${mission.title} · 2 of 10 milestones done · ${next?.ask}`
+    )
+  })
+
+  it('counts steps when there is no milestone, and says the empty line when nothing waits', () => {
+    const m = mkMission({ steps: [mkStep('stp-1'), doneStep('stp-2')] })
+    expect(missionListRow(m)).toBe(`${m.title} · 1 of 2 steps done · ${WAITING_EMPTY_LINE}`)
+  })
+
+  it('says closed for a closed mission', () => {
+    const m = mkMission({ status: 'closed', closedAs: 'delivered', steps: [doneStep('stp-1')] })
+    expect(missionListRow(m)).toBe(`${m.title} · closed · ${WAITING_EMPTY_LINE}`)
+  })
+
+  it('is one line even when a text has line breaks', () => {
+    const m = mkMission({ title: 'A title\nwith a break', steps: [mkStep('stp-1')] })
+    expect(missionListRow(m)).not.toContain('\n')
+  })
+})
+
+describe('one derive of every step, shared', () => {
+  it('a view derives each step twice at most: once for progress, once for the criteria', () => {
+    const { mission, inputs, log } = bigMission()
+    const n = mission.steps.length
+
+    derive.calls = 0
+    const progress = deriveProgress(mission, inputs)
+    const results = deriveStepResults(mission, inputs)
+    expect(derive.calls).toBe(2 * n)
+
+    // Given both, the list and the summary derive nothing again.
+    derive.calls = 0
+    waitingListV4(mission, { inputs, progress, results })
+    buildMissionSummary(mission, log, { inputs, progress, results })
+    missionListRow(mission, { inputs, progress, results })
+    expect(derive.calls).toBe(0)
+
+    // Given nothing, each of them still derives each step twice, not three or five times.
+    derive.calls = 0
+    buildMissionSummary(mission, log, { inputs })
+    expect(derive.calls).toBe(2 * n)
+    derive.calls = 0
+    waitingListV4(mission, { inputs })
+    expect(derive.calls).toBe(2 * n)
   })
 })
