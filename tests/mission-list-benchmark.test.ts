@@ -183,7 +183,10 @@ describe('mission:list read latency (Mission v3 §3.8, AC-8)', () => {
   })
 
   it('doors return within 2 s on a COLD PR cache too: sticky last-known proof, marked stale', async () => {
-    // A fresh process: empty PR cache, but the sidecar remembers what resolved.
+    // A fresh process: empty PR cache, but the sidecar remembers what resolved — the observer
+    // pass remembers it (a read does not, AC-4), as it does every minute in the app.
+    const warm = await import('../src/main/mission-ipc')
+    await warm.observeOpenMissions(roots)
     const { flushLinkCache } = await import('../src/main/mission-link-cache')
     await flushLinkCache()
     vi.resetModules()
