@@ -218,9 +218,10 @@ describe('facts come from what Harnu holds', () => {
       facts: { 'ci-green': true, 'link-exists': true },
       workerWorking: true
     })
+    // The merged pull request's own CI was green too: both facts were read.
     expect(inputs['stp-2']).toEqual({
       pr: 'merged',
-      facts: { 'main-green': true, 'link-exists': true }
+      facts: { 'ci-green': true, 'main-green': true, 'link-exists': true }
     })
     // Nothing to read: every key is absent, none is false.
     expect(inputs['stp-3']).toEqual({})
@@ -465,7 +466,10 @@ describe('what the observer needs beyond the inputs', () => {
             20: pr({ number: 20, state: 'MERGED' })
           },
           branches: {
-            'feat/x': [pr({ number: 12 }), pr({ number: 13, state: 'CLOSED', branch: 'feat/x' })]
+            'feat/x': [
+              pr({ number: 12, ci: 'failing' }),
+              pr({ number: 13, state: 'CLOSED', branch: 'feat/x' })
+            ]
           }
         }),
       findMainCi: async () => ({ ghAvailable: true, byNumber: { 20: 'passing' } })
