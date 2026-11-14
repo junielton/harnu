@@ -303,13 +303,16 @@ export async function listMissionRecords(
   for (const entry of v4) take(await readV4(root, entry), entry.name)
   const v4Ids = new Set(v4.map((e) => e.id))
 
-  let migrated = new Set<string>()
+  // A v3 id is superseded only when the record its sidecar names exists: a sidecar left by a write that
+  // stopped before the record was linked points at nothing, and a read ignores it, so the list must too.
+  const migrated = new Set<string>()
   try {
-    migrated = new Set(
-      (await fs.readdir(migratedDir(root)))
-        .filter((n) => n.endsWith('.json'))
-        .map((n) => n.slice(0, -5))
-    )
+    for (const n of await fs.readdir(migratedDir(root))) {
+      if (!n.endsWith('.json')) continue
+      const oldId = n.slice(0, -5)
+      const target = await supersededBy(root, oldId)
+      if (target && v4Ids.has(target)) migrated.add(oldId)
+    }
   } catch {
     /* no sidecars yet */
   }

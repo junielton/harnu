@@ -23,7 +23,8 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync
+  statSync,
+  writeFileSync
 } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -902,5 +903,24 @@ describe('conversion is idempotent', () => {
     if (!again.ok) throw new Error(again.error)
     expect(again.created).toBe(false)
     expect(again.log).toContain('kept')
+  })
+
+  it('lists a campaign whose sidecars point at a record that was never written', async () => {
+    // A crash (or a failed link) between the sidecars and the record leaves sidecars that point at
+    // nothing: a read ignores them, so the list must too, or the campaign vanishes from it.
+    const migrated = path.join(v4Dir(root), '.migrated')
+    mkdirSync(migrated, { recursive: true })
+    for (const old of [CAMPAIGN_ID, CHAPTER_1, CHAPTER_2]) {
+      writeFileSync(
+        path.join(migrated, `${old}.json`),
+        `${JSON.stringify({ supersededBy: 'mnt-deadbeef', from: 'chapter', campaign: CAMPAIGN_ID })}\n`
+      )
+    }
+    const read = await readMissionRecord(root, CAMPAIGN_ID)
+    if (!read.ok) throw new Error(read.error)
+    expect(read.source).toBe('v3-campaign')
+    const { records } = await listMissionRecords(root)
+    expect(records.filter((r) => r.record.id === read.record.id)).toHaveLength(1)
+    expect(records.some((r) => r.record.id === CHAPTER_1)).toBe(false)
   })
 })
