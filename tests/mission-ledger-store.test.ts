@@ -134,14 +134,16 @@ function step(id: string, over: Partial<MissionStep> = {}): MissionStep {
 }
 
 /** A mission whose end is verified, so the agent may ask to close it, with one PR on step 1. */
-async function seed(): Promise<string> {
+async function seed(over: { id?: string; status?: Mission['status'] } = {}): Promise<string> {
   const at = '2026-11-01T09:00:00.000Z'
+  const id = over.id ?? MISSION_ID
   const mission: Mission = {
-    id: MISSION_ID,
+    id,
     slug: 'ledger',
     folder: root,
     owner: { sessionId: OWNER, folder: root },
-    status: 'active',
+    status: over.status ?? 'active',
+    ...(over.status === 'closed' ? { closedAs: 'delivered' as const } : {}),
     declaredEnd: { kind: 'code', target: 'ship it', evidence: 'the PR merged' },
     steps: [
       step('stp-1', {
@@ -165,7 +167,7 @@ async function seed(): Promise<string> {
     updatedAt: at,
     provenance: { author: 'agent', at }
   }
-  const file = missionFilePath(root, MISSION_ID, mission.slug)
+  const file = missionFilePath(root, id, mission.slug)
   await fs.mkdir(path.dirname(file), { recursive: true })
   await fs.writeFile(file, buildMissionFileContent(mission, '# Ledger\n\n## Log\n'))
   return file
@@ -189,7 +191,8 @@ async function boot(): Promise<void> {
 
 const read = (): Promise<ToolResult> =>
   handlers.mission_get({ folder: root, missionId: MISSION_ID }, ctx())
-const ledgerFile = (): string => path.join(missionsDir(root), `${MISSION_ID}.ledger.jsonl`)
+const ledgerFileOf = (id: string): string => path.join(missionsDir(root), `${id}.ledger.jsonl`)
+const ledgerFile = (): string => ledgerFileOf(MISSION_ID)
 const kinds = (rows: LedgerRow[]): string[] => rows.map((r) => `${r.kind}:${r.ref}`)
 
 async function storedRows(): Promise<LedgerRow[]> {
@@ -319,6 +322,169 @@ describe('the ledger store (AC-5)', () => {
   })
 })
 
+describe('what the pass records, as on main (AC-5)', () => {
+  it('an open pull request gets a pr-opened row, and the consolidator reads openedAt from it', async () => {
+    const OPENED_AT = '2026-11-10T10:00:00.000Z'
+    const file = await seed()
+    h.pr = { state: 'OPEN', ci: 'pending', createdAt: OPENED_AT }
+    await observe()
+    h.pr = { state: 'MERGED', ci: 'passing', createdAt: OPENED_AT, mergedAt: MERGED_AT }
+    await observe()
+    await settle()
+
+    const stored = await storedRows()
+    expect(stored).toContainEqual(
+      expect.objectContaining({ kind: 'pr-opened', ref: '#7', at: OPENED_AT })
+    )
+    await boot()
+    payloadOf(
+      await handlers.mission_request_close(
+        { folder: root, missionId: MISSION_ID, sessionId: OWNER },
+        ctx()
+      )
+    )
+    const parsed = parseMissionFile(await fs.readFile(file, 'utf8'))
+    if ('error' in parsed) throw new Error(parsed.error)
+    const perStep = parsed.outcome?.perStep.find((s) => s.stepId === 'stp-1')
+    expect(perStep?.openedAt).toBe(OPENED_AT)
+    expect(perStep?.mergedAt).toBe(MERGED_AT)
+  })
+
+  it('a pull request first seen already merged gets pr-merged and no pr-opened, as on main', async () => {
+    await seed()
+    await observe()
+    await settle()
+    expect(kinds(await storedRows())).toContain('pr-merged:#7')
+    expect(kinds(await storedRows())).not.toContain('pr-opened:#7')
+  })
+})
+
+describe('append by row identity (AC-5)', () => {
+  const row = (over: Partial<LedgerRow>): LedgerRow => ({
+    at: '2026-11-12T10:00:00.000Z',
+    kind: 'ci',
+    stepId: 'stp-1',
+    ref: '#7',
+    pr: 7,
+    detail: 'passing',
+    ...over
+  })
+
+  async function appendFromAnotherInstance(rows: LedgerRow[]): Promise<void> {
+    await fs.mkdir(path.dirname(ledgerFile()), { recursive: true })
+    await fs.writeFile(ledgerFile(), rows.map((r) => `${JSON.stringify(r)}\n`).join(''))
+  }
+
+  it('a CI change another instance already stored is not stored again at a later time', async () => {
+    await seed()
+    await appendFromAnotherInstance([
+      row({ at: '2026-11-12T10:00:00.000Z', detail: 'pending' }),
+      row({ at: '2026-11-12T10:05:00.000Z', detail: 'passing' })
+    ])
+    const store = await import('../src/main/missions/ledger-store')
+    store.bindMissionRoot(MISSION_ID, root)
+    store.recordObserved(MISSION_ID, [row({ at: '2026-11-12T10:05:07.000Z', detail: 'passing' })])
+    await store.flushLedgerStore()
+    expect((await storedRows()).map((r) => r.detail)).toEqual(['pending', 'passing'])
+
+    // A real change is still a new row, and so is going back to an earlier state.
+    store.recordObserved(MISSION_ID, [
+      row({ at: '2026-11-12T10:09:00.000Z', detail: 'failing' }),
+      row({ at: '2026-11-12T10:12:00.000Z', detail: 'passing' })
+    ])
+    await store.flushLedgerStore()
+    expect((await storedRows()).map((r) => r.detail)).toEqual([
+      'pending',
+      'passing',
+      'failing',
+      'passing'
+    ])
+  })
+
+  it('a pr-merged another instance stored from GitHub is not stored again as an observation', async () => {
+    await seed()
+    await appendFromAnotherInstance([row({ kind: 'pr-merged', at: MERGED_AT, detail: undefined })])
+    const store = await import('../src/main/missions/ledger-store')
+    store.bindMissionRoot(MISSION_ID, root)
+    store.recordObserved(MISSION_ID, [
+      row({ kind: 'pr-merged', at: '2026-11-14T08:00:00.000Z', detail: 'observed' })
+    ])
+    await store.flushLedgerStore()
+    expect(kinds(await storedRows())).toEqual(['pr-merged:#7'])
+  })
+})
+
+describe('a close request before the cache was read in this process (AC-5)', () => {
+  it('sees the rows only the userData cache holds', async () => {
+    const file = await seed()
+    await fs.writeFile(
+      path.join(h.userDataDir, 'mission-link-cache.json'),
+      JSON.stringify({
+        version: 1,
+        entries: {},
+        ledger: {
+          [MISSION_ID]: [{ at: MERGED_AT, kind: 'pr-merged', stepId: 'stp-1', ref: '#9', pr: 9 }]
+        }
+      })
+    )
+    await boot() // a fresh process: nothing has read the cache, no pass has run
+    payloadOf(
+      await handlers.mission_request_close(
+        { folder: root, missionId: MISSION_ID, sessionId: OWNER },
+        ctx()
+      )
+    )
+    const parsed = parseMissionFile(await fs.readFile(file, 'utf8'))
+    if ('error' in parsed) throw new Error(parsed.error)
+    expect(parsed.outcome?.perStep.find((s) => s.stepId === 'stp-1')?.mergedAt).toBe(MERGED_AT)
+  })
+})
+
+describe('the polled list does not read a ledger file per closed mission (hot path)', () => {
+  const CLOSED = 'mnt-0000000b'
+
+  async function seedClosedWithFile(): Promise<void> {
+    await seed({ id: CLOSED, status: 'closed' })
+    await fs.writeFile(
+      ledgerFileOf(CLOSED),
+      `${JSON.stringify({ at: MERGED_AT, kind: 'pr-merged', stepId: 'stp-1', ref: '#7', pr: 7 })}\n`
+    )
+  }
+
+  const ledgerReads = (spy: ReturnType<typeof vi.spyOn>): number =>
+    spy.mock.calls.filter((c) => String(c[0]).endsWith('.ledger.jsonl')).length
+
+  it('mission_list counts a closed mission once, then answers from memory', async () => {
+    await seedClosedWithFile()
+    await seed()
+    const spy = vi.spyOn(fs, 'readFile')
+    const count = async (): Promise<number | undefined> => {
+      const list = payloadOf(await handlers.mission_list({ folder: root }, ctx()))
+      return (list.missions as Array<{ id: string; ledgerCount: number }>).find(
+        (m) => m.id === CLOSED
+      )?.ledgerCount
+    }
+    expect(await count()).toBe(1)
+    const afterFirst = ledgerReads(spy)
+    expect(await count()).toBe(1)
+    expect(await count()).toBe(1)
+    // Only the open mission's file is read on the later calls; the closed one is not.
+    expect(ledgerReads(spy) - afterFirst).toBe(2)
+    spy.mockRestore()
+  })
+
+  it('the renderer poll (mission:list) reads no ledger file at all', async () => {
+    await seedClosedWithFile()
+    await seed()
+    const spy = vi.spyOn(fs, 'readFile')
+    const ipc = await import('../src/main/mission-ipc')
+    await ipc.listMissionViews([root])
+    await ipc.listMissionViews([root])
+    expect(ledgerReads(spy)).toBe(0)
+    spy.mockRestore()
+  })
+})
+
 describe('importing the userData cache (AC-6)', () => {
   const cached: LedgerRow[] = [
     { at: '2026-10-20T08:00:00.000Z', kind: 'pr-opened', stepId: 'stp-1', ref: '#3', pr: 3 },
@@ -379,6 +545,48 @@ describe('importing the userData cache (AC-6)', () => {
     await expect(fs.stat(ledgerFile())).rejects.toThrow()
     // ...and the cache file is byte-for-byte what it was.
     expect((await fs.readFile(sidecar)).equals(before)).toBe(true)
+  })
+
+  it('a closed mission is covered too: the pass copies its cached rows without deriving or observing it', async () => {
+    const CLOSED = 'mnt-0000000b'
+    await seed({ id: CLOSED, status: 'closed' })
+    const sidecar = path.join(h.userDataDir, 'mission-link-cache.json')
+    await fs.writeFile(
+      sidecar,
+      JSON.stringify({ version: 1, entries: {}, ledger: { [CLOSED]: cached } }, null, 1)
+    )
+    await boot()
+
+    const { observeOpenMissions } = await import('../src/main/mission-ipc')
+    // The mission is closed: nothing is derived or observed, so the pass counts none.
+    expect(await observeOpenMissions([root])).toBe(0)
+    await settle()
+
+    // Copied into the repo store, and only the cached rows (a derive would have added PR #7's).
+    const text = await fs.readFile(ledgerFileOf(CLOSED), 'utf8')
+    expect(
+      text
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
+    ).toEqual(cached)
+    // The cache is kept, and the mission reads the same rows once the cache is gone.
+    expect(JSON.parse(await fs.readFile(sidecar, 'utf8')).ledger[CLOSED]).toEqual(cached)
+    await fs.rm(sidecar)
+    await boot()
+    const ack = payloadOf(await handlers.mission_get({ folder: root, missionId: CLOSED }, ctx()))
+    expect(kinds(ack.ledger as LedgerRow[])).toEqual(['pr-opened:#3', 'pr-merged:#3'])
+    expect(ack.ledgerCount).toBe(2)
+  })
+
+  it('a closed mission with nothing in the cache costs the pass no ledger read', async () => {
+    await seed({ id: 'mnt-0000000b', status: 'closed' })
+    const spy = vi.spyOn(fs, 'readFile')
+    const { observeOpenMissions } = await import('../src/main/mission-ipc')
+    await observeOpenMissions([root])
+    await observeOpenMissions([root])
+    expect(spy.mock.calls.filter((c) => String(c[0]).endsWith('.ledger.jsonl'))).toHaveLength(0)
+    spy.mockRestore()
   })
 
   it('copying twice, across restarts, stores each cached row once', async () => {
