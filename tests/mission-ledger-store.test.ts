@@ -103,7 +103,6 @@ const OWNER = '11111111-2222-4333-8444-555555555555'
 const BUILDER = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 const VERIFIER = 'cccccccc-dddd-4eee-8fff-000000000000'
 const MISSION_ID = 'mnt-0000000a'
-const OPENED_AT = '2026-11-10T10:00:00.000Z'
 const MERGED_AT = '2026-11-11T12:30:00.000Z'
 
 let root = ''
@@ -206,7 +205,7 @@ beforeEach(async () => {
   root = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-ledger-store-repo-')), 'main')
   await fs.mkdir(root)
   execFileSync('git', ['init', '-q', '-b', 'main', root])
-  h.pr = { state: 'MERGED', ci: 'passing', createdAt: OPENED_AT, mergedAt: MERGED_AT }
+  h.pr = { state: 'MERGED', ci: 'passing', mergedAt: MERGED_AT }
   await boot()
 })
 
@@ -219,11 +218,9 @@ describe('the ledger store (AC-5)', () => {
     await settle()
 
     expect(kinds(ack.ledger as LedgerRow[])).toEqual(
-      expect.arrayContaining(['pr-opened:#7', 'pr-merged:#7', 'ci:#7'])
+      expect.arrayContaining(['pr-merged:#7', 'ci:#7'])
     )
-    expect(kinds(await storedRows())).toEqual(
-      expect.arrayContaining(['pr-opened:#7', 'pr-merged:#7', 'ci:#7'])
-    )
+    expect(kinds(await storedRows())).toEqual(expect.arrayContaining(['pr-merged:#7', 'ci:#7']))
     // Beside the mission file, and the mission file itself is untouched by the read.
     expect(path.dirname(ledgerFile())).toBe(path.dirname(file))
     expect((await fs.readFile(file)).equals(before)).toBe(true)
@@ -254,7 +251,6 @@ describe('the ledger store (AC-5)', () => {
     // The consolidator drew the step's merge time from a row only the observer wrote.
     const perStep = parsed.outcome?.perStep.find((s) => s.stepId === 'stp-1')
     expect(perStep?.mergedAt).toBe(MERGED_AT)
-    expect(perStep?.openedAt).toBe(OPENED_AT)
   })
 
   it('a restart records a row once: the same world read again adds nothing', async () => {
@@ -278,7 +274,7 @@ describe('the ledger store (AC-5)', () => {
     await settle()
     const text = await fs.readFile(ledgerFile(), 'utf8')
 
-    h.pr = { state: 'MERGED', ci: 'failing', createdAt: OPENED_AT, mergedAt: MERGED_AT }
+    h.pr = { state: 'MERGED', ci: 'failing', mergedAt: MERGED_AT }
     payloadOf(await read())
     await settle()
 

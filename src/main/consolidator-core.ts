@@ -80,6 +80,11 @@ export interface ConsolidatorInput {
    */
   endState?: 'verified' | 'unverified'
   log: LogEntry[]
+  /**
+   * The whole ledger: the rows written into the mission file AND the rows Harnu observed
+   * (a PR opened or merged, CI, a builder ending), which `missions/ledger-store.ts` keeps beside
+   * the mission. The caller reads both; this module only reads what it is given.
+   */
   ledger: LedgerRow[]
   /** Commits beyond the PR base, per step (from the step's linked worktrees). */
   commits?: Record<string, number>

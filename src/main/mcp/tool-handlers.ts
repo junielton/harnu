@@ -149,6 +149,7 @@ import {
   STEP_ID_RE,
   type Blocker,
   type DeclaredEnd,
+  type LedgerRow,
   type Mission,
   type MissionStep,
   type StepDecision,
@@ -156,7 +157,12 @@ import {
   type StepLink
 } from '../mission-core'
 import { probeGitMeta } from '../git-probe'
-import { getObservedLedger } from '../mission-link-cache'
+import { ensureLinkCacheLoaded } from '../mission-link-cache'
+import {
+  hydrateMissionLedger,
+  readMissionLedger,
+  readObservedLedger
+} from '../missions/ledger-store'
 import { deriveAndObserve, lastKnownProgress, wakeSteward } from '../missions/observer'
 import {
   MAIN_CI_GET_WAIT_MS,
@@ -3814,7 +3820,9 @@ async function readHotBody(folder: string): Promise<string | undefined> {
 const missionConsolidatorInput = (
   m: Mission,
   log: string,
-  currentHot: string | undefined
+  currentHot: string | undefined,
+  /** The whole ledger: the rows in the file and the rows Harnu observed. */
+  ledger: readonly LedgerRow[]
 ): ConsolidatorInput => ({
   kind: 'mission',
   id: m.id,
@@ -3841,7 +3849,7 @@ const missionConsolidatorInput = (
       : {})
   })),
   log: parseLogEntries(log),
-  ledger: m.ledger ?? [],
+  ledger: [...ledger],
   ...(currentHot ? { currentHot } : {})
 })
 
@@ -4401,6 +4409,10 @@ export async function deriveMissionSignals(
   /** `prWaitMs`: how long to wait for GitHub before reading the sticky last-known states. */
   opts: { prWaitMs?: number; mainCiWaitMs?: number } = {}
 ): Promise<{ derived: MissionDerived; children: MissionChildState[] }> {
+  // The observer dedupes against the rows it holds: load the ones the repo already stores (and
+  // copy in what the userData cache carries) before it looks (Missions v4 S-4).
+  await ensureLinkCacheLoaded()
+  await hydrateMissionLedger(root, mission.id)
   return deriveAndObserve(
     root,
     mission,
@@ -4409,6 +4421,19 @@ export async function deriveMissionSignals(
     now,
     opts
   )
+}
+
+/**
+ * A mission's ledger as a reader sees it: the rows written into the mission file and the rows
+ * observed, stored beside it (`missions/ledger-store.ts`). The close-out consolidator, `mission_get`
+ * and `mission_list` all read it through here.
+ */
+async function missionLedgerOf(
+  root: string,
+  mission: Pick<Mission, 'id' | 'ledger'>
+): Promise<LedgerRow[]> {
+  await ensureLinkCacheLoaded()
+  return readMissionLedger(root, mission)
 }
 
 /** The mission title — the `# <title>` heading its Log body opens with (no Mission field holds it). */
@@ -4545,7 +4570,7 @@ const missionGetHandler: Handler = async (args, ctx) => {
   // ledger is left out too: the tail below is the read (campaign spec §3.2).
   const { legacyRaw, ledger: _ledger, ...projected } = mission
   void _ledger
-  const ledger = mergeLedger(mission.ledger, getObservedLedger(mission.id))
+  const ledger = await missionLedgerOf(root, mission)
   return textResult({
     ok: true,
     op: 'mission_get',
@@ -4582,6 +4607,15 @@ const missionListHandler: Handler = async (_args, ctx) => {
   }
   const read = await readMissionsDeduped(roots, { includeClosed: true })
   const unreadable = read.unreadable.map((u) => path.join(missionsDir(u.root), u.name))
+  // The ledger of each mission is read from the repo store, beside its file.
+  const ledgerCounts = new Map<string, number>(
+    await Promise.all(
+      read.missions.map(async ({ mission: m, root }): Promise<[string, number]> => [
+        m.id,
+        (await missionLedgerOf(root, m)).length
+      ])
+    )
+  )
   const missions: Record<string, unknown>[] = read.missions.map(({ mission: m, log }) => ({
     id: m.id,
     slug: m.slug,
@@ -4601,7 +4635,7 @@ const missionListHandler: Handler = async (_args, ctx) => {
     },
     blocked: m.blockers.length > 0 || m.steps.some((s) => s.blockers.length > 0),
     // Campaign spec §3.2: how many rows the ledger holds; mission_get returns the tail.
-    ledgerCount: mergeLedger(m.ledger, getObservedLedger(m.id)).length,
+    ledgerCount: ledgerCounts.get(m.id) ?? 0,
     updatedAt: m.updatedAt
   }))
   return textResult({
@@ -5471,6 +5505,10 @@ const missionRequestCloseHandler: Handler = async (args, ctx) => {
     return errorResult(badSessionIdMessage('sessionId', requestedBy))
   }
   const currentHot = ctx.folder ? await readHotBody(ctx.folder) : undefined
+  // Missions v4 S-4: the consolidator reads the observed rows too, from the repo store.
+  const observed = ctx.folder
+    ? await readObservedLedger(missionRoot(ctx.folder), strField(args, 'missionId') ?? '')
+    : []
   return editMission(args, ctx, (m, log) => {
     // The same checks mission_get reports as `closeReadiness` (Mission v2 §3.5).
     const refused = requestCloseRefusal(m)
@@ -5482,7 +5520,7 @@ const missionRequestCloseHandler: Handler = async (args, ctx) => {
     // Campaign ch.6 (AC-6.1): one consolidation pass over the structured record. It stores the
     // outcome and the drafts; writing any of them to memory is the operator's tick (AC-6.2).
     const c = consolidate(
-      missionConsolidatorInput(m, log, currentHot),
+      missionConsolidatorInput(m, log, currentHot, mergeLedger(m.ledger, observed)),
       new Date().toISOString().slice(0, 10)
     )
     m.outcome = c.outcome
@@ -6553,7 +6591,10 @@ const campaignRequestCloseHandler: Handler = async (args, ctx) => {
         proof: delivered ? 'verified' : 'unproven',
         required: ch.required
       })
-      for (const row of mission?.ledger ?? []) ledger.push({ ...row, stepId: ch.id })
+      if (mission) {
+        for (const row of await missionLedgerOf(root, mission))
+          ledger.push({ ...row, stepId: ch.id })
+      }
     }
     const consolidated = consolidate(
       {

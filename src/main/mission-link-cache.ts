@@ -19,7 +19,14 @@ import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { app } from 'electron'
 import { atomicWriteFile } from './mcp/atomic-write'
-import { LEDGER_KINDS, type LedgerRow } from './mission-core'
+import type { LedgerRow } from './mission-core'
+import {
+  OBSERVED_LEDGER_MAX,
+  adoptCachedRows,
+  isLedgerRow,
+  observedRows,
+  recordObserved
+} from './missions/ledger-store'
 
 /**
  * `pr` / `worktree` — the link's own state. `pr-ci` — the last CI state of a PR's head
@@ -52,14 +59,18 @@ const VERSION = 1
 
 const entries = new Map<string, LinkResolution>()
 /**
- * Campaign spec §3.2 — ledger rows Harnu OBSERVED while reading a mission (a PR
- * opened / merged, a CI change, a linked session ending), per mission id. They live
- * here, beside the other last-known facts, and not in the mission file: a read never
- * rewrites it (Mission v3 §3.7), so `updatedAt` stays a pure evidence signal.
+ * Missions v4 S-4 — ledger rows Harnu OBSERVED while reading a mission (a PR opened / merged, a
+ * CI change, a linked session ending) now live beside the mission, in the repo
+ * (`missions/ledger-store.ts`). The functions below keep their names and shapes and hand over to
+ * it.
+ *
+ * What an older build kept in this file's `ledger` key is still here and still written back
+ * exactly as it was read: it is copied into the repo store (AC-6) and never edited or dropped, so
+ * the cache stays a valid fallback for a build that reads it.
  */
-const observedLedger = new Map<string, LedgerRow[]>()
-/** Bound on one mission's observed rows; past it the oldest are dropped. */
-export const OBSERVED_LEDGER_MAX = 500
+const legacyLedger = new Map<string, LedgerRow[]>()
+/** Bound on one mission's observed rows held in memory; past it the oldest are dropped. */
+export { OBSERVED_LEDGER_MAX }
 let loading: Promise<void> | null = null
 let dirty = false
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -74,17 +85,6 @@ function keyOf(root: string, kind: LinkCacheKind, ref: string): string {
 function sidecarPath(): string {
   if (file === null) file = path.join(app.getPath('userData'), FILE_NAME)
   return file
-}
-
-function isLedgerRow(v: unknown): v is LedgerRow {
-  const r = v as Partial<LedgerRow> | null
-  return (
-    !!r &&
-    typeof r === 'object' &&
-    typeof r.at === 'string' &&
-    typeof r.ref === 'string' &&
-    (LEDGER_KINDS as readonly unknown[]).includes(r.kind)
-  )
 }
 
 function isResolution(v: unknown): v is LinkResolution {
@@ -124,12 +124,11 @@ export function ensureLinkCacheLoaded(): Promise<void> {
       if (body.ledger && typeof body.ledger === 'object') {
         for (const [missionId, rows] of Object.entries(body.ledger as Record<string, unknown>)) {
           if (!Array.isArray(rows)) continue
-          // Disk first, then what was observed in memory meanwhile (newer).
-          const memory = observedLedger.get(missionId) ?? []
-          observedLedger.set(
-            missionId,
-            [...rows.filter(isLedgerRow), ...memory].slice(-OBSERVED_LEDGER_MAX)
-          )
+          const valid = rows.filter(isLedgerRow)
+          if (valid.length === 0) continue
+          legacyLedger.set(missionId, valid)
+          // Copied into the repo store, which puts them in front of anything observed meanwhile.
+          adoptCachedRows(missionId, valid)
         }
       }
     })()
@@ -198,17 +197,14 @@ export function rememberResolved(
   scheduleWrite()
 }
 
-/** The rows observed so far for a mission, oldest first. */
+/** The rows observed so far for a mission, oldest first (held by the repo ledger store). */
 export function getObservedLedger(missionId: string): readonly LedgerRow[] {
-  return observedLedger.get(missionId) ?? []
+  return observedRows(missionId)
 }
 
 /** Append observed rows for a mission (the only operation on them). */
 export function addObservedLedger(missionId: string, rows: readonly LedgerRow[]): void {
-  if (rows.length === 0) return
-  const next = [...(observedLedger.get(missionId) ?? []), ...rows].slice(-OBSERVED_LEDGER_MAX)
-  observedLedger.set(missionId, next)
-  scheduleWrite()
+  recordObserved(missionId, rows)
 }
 
 /** Drop a link's last-known state — only on a contrary observation (a PR closed unmerged). */
@@ -230,7 +226,8 @@ export async function flushLinkCache(): Promise<void> {
       {
         version: VERSION,
         entries: Object.fromEntries(entries),
-        ...(observedLedger.size > 0 ? { ledger: Object.fromEntries(observedLedger) } : {})
+        // What an older build kept here, written back as it was read (AC-6: the cache stays).
+        ...(legacyLedger.size > 0 ? { ledger: Object.fromEntries(legacyLedger) } : {})
       },
       null,
       1
