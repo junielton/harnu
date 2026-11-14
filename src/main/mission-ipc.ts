@@ -47,16 +47,13 @@ import { atomicWriteFile } from './mcp/atomic-write'
 import { recordMemoryDrafts, unknownDraftIds, type RecordResult } from './mission-record'
 import {
   deriveMissionSignals,
-  loadMission,
-  missionRoot,
   missionTitle,
-  readMissionsDeduped,
   youItems,
   type MissionDerived,
   type MissionYouItem,
-  type RootedMission,
   type ToolHandlerCtx
 } from './mcp/tool-handlers'
+import { loadMission, missionRoot, readMissionsDeduped, type RootedMission } from './missions/store'
 
 /** One open mission as the renderer reads it (design.md §6 "Mission progress"). */
 export interface MissionView {

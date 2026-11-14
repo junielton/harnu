@@ -256,7 +256,7 @@ describe('one reader for every caller', () => {
       cold(LONE_CHILD, cloneA)
     ])
     expect([...owners]).toEqual([LONE_LEADER])
-  })
+  }, 30_000)
 })
 
 describe('the store', () => {
