@@ -30,7 +30,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { buildMissionRecordContent, STATE_LABELS, type MissionV4 } from '../src/main/missions/model'
 import type { Actor } from '../src/main/missions/guard'
-import { missionListRow } from '../src/main/missions/summary'
+import * as guardModule from '../src/main/missions/guard'
 import { clearRootCache } from '../src/main/data-dir'
 import { missionCreate, missionGet, missionList } from '../src/main/missions/verbs-read'
 import * as recordStore from '../src/main/missions/record-store'
@@ -45,6 +45,10 @@ vi.mock('../src/main/missions/record-store', async (orig) => {
     readMissionRecord: vi.fn(m.readMissionRecord),
     listMissionRecords: vi.fn(m.listMissionRecords)
   }
+})
+vi.mock('../src/main/missions/guard', async (orig) => {
+  const m = await orig<typeof import('../src/main/missions/guard')>()
+  return { ...m, listMissionRows: vi.fn(m.listMissionRows) }
 })
 vi.mock('../src/main/missions/progress', async (orig) => {
   const m = await orig<typeof import('../src/main/missions/progress')>()
@@ -149,6 +153,7 @@ beforeEach(() => {
   root = mkdtempSync(path.join(os.tmpdir(), 'harnu-verbs-read-'))
   vi.mocked(recordStore.readMissionRecord).mockClear()
   vi.mocked(recordStore.listMissionRecords).mockClear()
+  vi.mocked(guardModule.listMissionRows).mockClear()
   vi.mocked(progressModule.deriveProgress).mockClear()
   vi.mocked(waitingModule.deriveStepResults).mockClear()
 })
@@ -504,20 +509,55 @@ describe('list gives one-line rows and never steps, criteria, links or history',
     for (const secret of SECRETS) expect(text, secret).not.toContain(secret)
   })
 
-  it('the row of a mission the caller may read carries S-8 one-line row too, and still no step, criterion, link or history key', async () => {
-    const read = await recordStore.readMissionRecord(root, ID)
-    if (!read.ok) throw new Error('seed failed')
+  it('a row has the same four fields for a session that may read the mission: no one-line text, no step, criterion, link or history key', async () => {
     const r = await missionList(root, session(LEADER))
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.missions[0].line).toBe(missionListRow(read.record))
-    expect(Object.keys(r.missions[0]).sort()).toEqual([...ROW_KEYS, 'line'].sort())
-    for (const key of ['steps', 'milestones', 'criteria', 'acs', 'links', 'sessions', 'log']) {
+    // the next-step line can quote a step or a criterion ("Mark done: ..."): it is not in a row for anyone
+    expect(Object.keys(r.missions[0]).sort()).toEqual(ROW_KEYS)
+    expect(JSON.stringify(r)).not.toContain('Mark done')
+    for (const key of [
+      'line',
+      'steps',
+      'milestones',
+      'criteria',
+      'acs',
+      'links',
+      'sessions',
+      'log'
+    ]) {
       expect(r.missions[0]).not.toHaveProperty(key)
     }
-    // the same line is what the rows of another mission the caller may not read must not carry
-    const text = JSON.stringify(await missionList(root, session(OUTSIDER)))
-    expect(text).not.toContain('Mark done')
+  })
+
+  it("the rows are S-11's rows as they are: one construction, in the guard module", async () => {
+    seed(missionOf('mnt-aa000003', { title: 'Second mission', sessions: [] }))
+    for (const who of [session(OUTSIDER), session(LEADER), worker(), operator]) {
+      const mine = await missionList(root, who)
+      const theirs = await guardModule.listMissionRows(root, who)
+      expect(mine).toEqual({ ok: true, missions: theirs })
+    }
+    // and it follows S-11's row when that changes shape: a field added there reaches the caller
+    vi.mocked(guardModule.listMissionRows).mockImplementationOnce(async () => [
+      { id: ID, title: 'T', headline: 'H', leads: null, marker: 'from-s11' } as never
+    ])
+    const changed = await missionList(root, session(OUTSIDER))
+    expect(changed).toEqual({
+      ok: true,
+      missions: [{ id: ID, title: 'T', headline: 'H', leads: null, marker: 'from-s11' }]
+    })
+  })
+
+  it('the caller-supplied facts reach the headline through the same rows', async () => {
+    const inputs = {
+      [ID]: { 'stp-1': { pr: 'merged' as const }, 'stp-2': { pr: 'merged' as const } }
+    }
+    await missionList(root, session(OUTSIDER), { inputs })
+    expect(vi.mocked(guardModule.listMissionRows)).toHaveBeenCalledWith(
+      root,
+      session(OUTSIDER),
+      inputs
+    )
   })
 
   it('lists open missions only, in the order the store gives', async () => {
