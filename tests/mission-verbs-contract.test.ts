@@ -497,7 +497,9 @@ const CONTRACT: ContractRow[] = [
             kind: z.enum([
               'rescope',
               'close',
+              'steward-paused',
               'blocker',
+              'decide',
               'checks',
               'human-steps',
               'review-import',
