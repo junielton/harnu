@@ -51,6 +51,32 @@ import {
   updateMissionRecord
 } from '../src/main/missions/record-store'
 import { writeMission } from '../src/main/missions/write'
+import { missionCreate } from '../src/main/missions/verbs-read'
+import {
+  addCriterion,
+  addLink,
+  addMilestone,
+  addStep,
+  attachFoundPrs,
+  logMission
+} from '../src/main/missions/verbs-plan'
+import {
+  askToAttach,
+  clearBlocker as clearBlockerVerb,
+  requestClose,
+  setBlocker,
+  settleCriterion,
+  stageDoneWhen
+} from '../src/main/missions/verbs-state'
+import {
+  approveDoneWhen,
+  clearBlocker as clearBlockerDoor,
+  closeMission,
+  decideAttachRequest,
+  markCriterion,
+  runDoor
+} from '../src/main/missions/doors'
+import { attachDispatchedWorker, attachFromPicker, endSession } from '../src/main/missions/sessions'
 
 const FIXTURES = path.join(__dirname, 'fixtures', 'missions-v4-compat')
 
@@ -312,6 +338,303 @@ describe('no v4 write path touches a v3 file', () => {
     expect(result.ok).toBe(false)
     expect(snapshot(path.join(root, '.harnu', 'missions'))).toEqual(before)
     expect(v4RecordFiles(root)).toEqual([])
+  })
+
+  // Missions v4 S-16a (V-5) — the roll-up: every v4 write path of S-12, S-13, S-14 and S-15 (each verb
+  // and each door), run as the FIRST write on a v3 mission, leaves the v3 files' bytes and sha256 as
+  // they were. A path that merely refused would prove nothing, so each case also asserts that the write
+  // landed: the v4 copy exists. Each path runs in its own fresh repo, so each one is a first write.
+  describe('the verbs and doors of S-12 to S-15 (V-5)', () => {
+    const ID = 'mnt-5c0de001'
+    const AS_LEADER = { kind: 'session', sessionId: LEADER } as const
+    const AS_STRANGER = {
+      kind: 'session',
+      sessionId: 'e0e0e0e0-0000-4000-8000-0000000000ff'
+    } as const
+    const OPERATOR = { kind: 'operator' } as const
+
+    /** Every v3 file under the repo: path, sha256 and bytes. */
+    const v3Bytes = (r: string): Record<string, { sha: string; bytes: string }> => {
+      const out: Record<string, { sha: string; bytes: string }> = {}
+      for (const dir of ['missions', 'campaigns']) {
+        for (const n of readdirSync(path.join(r, '.harnu', dir)).sort()) {
+          const raw = readFileSync(path.join(r, '.harnu', dir, n))
+          out[`${dir}/${n}`] = { sha: sha(raw), bytes: raw.toString('utf8') }
+        }
+      }
+      return out
+    }
+    const ok = (what: string, result: { ok: boolean }): void => {
+      expect(result.ok, `${what}: ${JSON.stringify(result)}`).toBe(true)
+    }
+
+    // Each path, as a function of the repo it writes in. A chain is one path that needs an earlier write.
+    const PATHS: Array<[string, (r: string) => Promise<void>]> = [
+      [
+        'mission_create',
+        async (r) =>
+          ok(
+            'create',
+            await missionCreate(r, AS_LEADER, {
+              title: 'Score report',
+              doneWhen: 'Every candidate sees a score report',
+              steps: [{ title: 'Load the test files', criteria: ['The files load'] }]
+            })
+          )
+      ],
+      [
+        'mission_add_milestone (a campaign, which has milestones)',
+        async (r) =>
+          ok(
+            'milestone',
+            await addMilestone(r, AS_LEADER, { missionId: 'cmp-ca0001aa', title: 'Wave two' })
+          )
+      ],
+      [
+        'mission_add_step',
+        async (r) =>
+          ok(
+            'step',
+            await addStep(r, AS_LEADER, {
+              missionId: ID,
+              title: 'Check the layout with the designer',
+              acs: [{ text: 'The layout is confirmed', by: 'operator' }],
+              reason: 'The first slice reported nothing back to the caller'
+            })
+          )
+      ],
+      [
+        'mission_add_ac',
+        async (r) =>
+          ok(
+            'criterion',
+            await addCriterion(r, AS_LEADER, {
+              missionId: ID,
+              stepId: 'stp-1',
+              text: 'The designer signed off',
+              by: 'operator'
+            })
+          )
+      ],
+      [
+        'mission_link',
+        async (r) =>
+          ok(
+            'link',
+            await addLink(r, AS_LEADER, {
+              missionId: ID,
+              stepId: 'stp-1',
+              kind: 'doc',
+              ref: 'docs/a.md'
+            })
+          )
+      ],
+      [
+        'mission_log',
+        async (r) =>
+          ok(
+            'log',
+            await logMission(r, AS_LEADER, { missionId: ID, note: 'Started on the parser.' })
+          )
+      ],
+      [
+        'attachFoundPrs (the observer)',
+        async (r) =>
+          ok(
+            'attach pr',
+            await attachFoundPrs(r, OPERATOR, ID, [{ stepId: 'stp-2', number: 413, state: 'open' }])
+          )
+      ],
+      [
+        'mission_set_blocker',
+        async (r) =>
+          ok(
+            'set blocker',
+            await setBlocker(r, AS_LEADER, {
+              missionId: ID,
+              reason: 'The staging key `STAGING_KEY` is missing from the vault',
+              ask: 'Add the staging key to the vault',
+              unblocks: 'The deploy',
+              owner: 'operator'
+            })
+          )
+      ],
+      [
+        'mission_clear_blocker (after a set)',
+        async (r) => {
+          const set = await setBlocker(r, AS_LEADER, {
+            missionId: ID,
+            reason: 'The build waits on `CORPUS_DIR` being set',
+            ask: 'Set CORPUS_DIR in the shell',
+            unblocks: 'The parser tests',
+            owner: 'agent'
+          })
+          if (!set.ok) throw new Error(JSON.stringify(set))
+          ok(
+            'clear blocker',
+            await clearBlockerVerb(r, AS_LEADER, { missionId: ID, blockerId: set.blockerId })
+          )
+        }
+      ],
+      [
+        'mission_stage_done_when',
+        async (r) =>
+          ok(
+            'stage',
+            await stageDoneWhen(r, AS_LEADER, {
+              missionId: ID,
+              doneWhen: 'The importer reports every skipped row too',
+              reason: 'The first end did not name the skipped rows'
+            })
+          )
+      ],
+      [
+        'mission_settle_ac',
+        async (r) => {
+          const read = await readMissionRecord(r, ID)
+          if (!read.ok) throw new Error(read.error)
+          const open = read.record.steps.flatMap((st) =>
+            st.acs
+              .filter((a) => a.by === 'session' && !(a as { settled?: unknown }).settled)
+              .map((a) => [st.id, a.id] as const)
+          )
+          expect(open.length).toBeGreaterThan(0)
+          const [stepId, criterionId] = open[0]
+          ok(
+            'settle',
+            await settleCriterion(r, AS_LEADER, {
+              missionId: ID,
+              stepId,
+              criterionId,
+              evidence: 'Ran the suite: 41 passed.'
+            })
+          )
+        }
+      ],
+      [
+        'mission_request_close (a mission whose steps are all done)',
+        async (r) =>
+          ok(
+            'request close',
+            await requestClose(r, AS_LEADER, {
+              missionId: 'mnt-5c0de003',
+              inputs: { 'stp-1': { pr: 'merged', facts: { 'link-exists': true } } }
+            })
+          )
+      ],
+      [
+        'mission_attach',
+        async (r) => ok('ask to attach', await askToAttach(r, AS_STRANGER, { missionId: ID }))
+      ],
+      [
+        'door: mark',
+        async (r) =>
+          ok('mark', await markCriterion(r, ID, { stepId: 'stp-3', criterionId: 'ac-2' }))
+      ],
+      [
+        'door: clearBlocker',
+        async (r) => ok('clear', await clearBlockerDoor(r, ID, { blockerId: 'blk-1' }))
+      ],
+      [
+        'door: approveDoneWhen (after a staging)',
+        async (r) => {
+          ok(
+            'stage',
+            await stageDoneWhen(r, AS_LEADER, {
+              missionId: ID,
+              doneWhen: 'The importer reports every skipped row too',
+              reason: 'The first end did not name the skipped rows'
+            })
+          )
+          ok('approve', await approveDoneWhen(r, ID))
+        }
+      ],
+      [
+        'door: close',
+        async (r) => ok('close', await closeMission(r, ID, { closedAs: 'delivered' }))
+      ],
+      [
+        'door: decideAttach (after a request)',
+        async (r) => {
+          const asked = await askToAttach(r, AS_STRANGER, { missionId: ID })
+          if (!asked.ok) throw new Error(JSON.stringify(asked))
+          ok(
+            'decide',
+            await decideAttachRequest(r, ID, { requestId: asked.requestId, decision: 'allowed' })
+          )
+        }
+      ],
+      [
+        'door: attach (the picker)',
+        async (r) =>
+          ok('attach', await attachFromPicker(r, ID, { sessionId: AS_STRANGER.sessionId }))
+      ],
+      [
+        'attachDispatchedWorker',
+        async (r) =>
+          ok(
+            'dispatched',
+            await attachDispatchedWorker(r, ID, {
+              sessionId: AS_STRANGER.sessionId,
+              stepId: 'stp-1',
+              actor: OPERATOR
+            })
+          )
+      ],
+      [
+        'endSession',
+        async (r) => ok('end session', await endSession(r, ID, { sessionId: BUILDER }))
+      ],
+      [
+        'runDoor (the IPC entry): mark, clearBlocker, attach',
+        async (r) => {
+          ok(
+            'mark',
+            await runDoor({
+              door: 'mark',
+              folder: r,
+              missionId: ID,
+              stepId: 'stp-3',
+              criterionId: 'ac-2'
+            })
+          )
+          ok(
+            'clear',
+            await runDoor({ door: 'clearBlocker', folder: r, missionId: ID, blockerId: 'blk-1' })
+          )
+          ok(
+            'attach',
+            await runDoor({
+              door: 'attach',
+              folder: r,
+              missionId: ID,
+              sessionId: AS_STRANGER.sessionId
+            })
+          )
+        }
+      ]
+    ]
+
+    for (const [name, run] of PATHS) {
+      it(`leaves every v3 byte and sha256 unchanged: ${name}`, async () => {
+        const fresh = mkdtempSync(path.join(os.tmpdir(), 'harnu-v4-rollup-'))
+        try {
+          cpSync(path.join(FIXTURES, 'missions'), path.join(fresh, '.harnu', 'missions'), {
+            recursive: true
+          })
+          cpSync(path.join(FIXTURES, 'campaigns'), path.join(fresh, '.harnu', 'campaigns'), {
+            recursive: true
+          })
+          const before = v3Bytes(fresh)
+          await run(fresh)
+          // The write landed (a v4 record exists), and no v3 file moved.
+          expect(v4RecordFiles(fresh).length, name).toBeGreaterThan(0)
+          expect(v3Bytes(fresh)).toEqual(before)
+        } finally {
+          rmSync(fresh, { recursive: true, force: true })
+        }
+      })
+    }
   })
 })
 

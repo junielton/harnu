@@ -219,6 +219,14 @@ describe('the view writes nothing', () => {
         { facts: factsDeps({ numbers: { 412: pr({ number: 412, state: 'MERGED' }) } }) }
       )
       expect(reply.state, missionId).toBe('mission')
+      // The id it answers reads the record back, a v3 campaign included.
+      if (reply.state === 'mission') {
+        const again = await ipc.buildMissionV4View(
+          { folder: root, sessionId: LEADER, missionId: reply.missionId },
+          { facts: factsDeps() }
+        )
+        expect(again.state, `${missionId} again`).toBe('mission')
+      }
     }
     const none = await ipc.buildMissionV4View(
       { folder: root, sessionId: STRANGER },
@@ -272,7 +280,7 @@ describe("the view carries the pane's data", () => {
     expect(reply.detail.progress.headline).toBe('1 of 2 steps done')
     expect(reply.detail.steps.map((s) => [s.id, s.state])).toEqual([
       ['stp-1', 'done'],
-      ['stp-2', 'todo']
+      ['stp-2', 'waiting-review']
     ])
     expect(reply.detail.steps[0].criteria[0]).toMatchObject({ settled: true, via: 'fact' })
     expect(reply.detail.next).not.toBeNull()
@@ -507,5 +515,41 @@ describe('the observer never converts a v3 mission', () => {
     const before = tree(root)
     await ipc.observeOpenMissions([root], Date.now(), { v4Facts: found })
     expect(tree(root)).toEqual(before)
+  })
+})
+
+// V-6 ---------------------------------------------------------------------------------------------
+
+describe('the preload entries', () => {
+  const preload = readFileSync(path.join(__dirname, '..', 'src', 'preload', 'index.ts'), 'utf8')
+
+  it('exposes the view channel and the v4 door channel, typed, and keeps every existing mission entry as it was', () => {
+    expect(preload).toMatch(
+      /missionV4View: \(args: MissionV4ViewRequest\): Promise<MissionV4ViewReply> =>\s*ipcRenderer\.invoke\('mission:v4View', args\)/
+    )
+    expect(preload).toMatch(
+      /missionV4Door: \(door: MissionV4Door\): Promise<MissionV4DoorReply> =>\s*ipcRenderer\.invoke\('mission:v4Door', door\)/
+    )
+    // Chapter 2's entries keep their names and channels.
+    expect(preload).toMatch(
+      /missionList: \(folders: string\[\]\): Promise<MissionListResult> =>\s*ipcRenderer\.invoke\('mission:list', folders\)/
+    )
+    expect(preload).toMatch(/ipcRenderer\.invoke\('mission:operatorDoor', door\)/)
+    expect(preload).toMatch(/ipcRenderer\.invoke\('mission:choose', args\)/)
+  })
+
+  it('is called by nothing in the renderer yet: the pane arrives with S-17', () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory()
+          ? walk(path.join(dir, e.name))
+          : /\.(ts|vue|tsx)$/.test(e.name)
+            ? [path.join(dir, e.name)]
+            : []
+      )
+    const callers = walk(path.join(__dirname, '..', 'src', 'renderer')).filter((f) =>
+      /missionV4(View|Door)/.test(readFileSync(f, 'utf8'))
+    )
+    expect(callers).toEqual([])
   })
 })

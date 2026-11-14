@@ -616,7 +616,8 @@ describe('registerMissionIpc — the v4 door channel (S-15)', () => {
       'mission:choose',
       'mission:list',
       'mission:operatorDoor',
-      'mission:v4Door'
+      'mission:v4Door',
+      'mission:v4View'
     ])
 
     const { buildMissionRecordContent } = await import('../src/main/missions/model')
