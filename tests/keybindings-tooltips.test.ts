@@ -120,6 +120,7 @@ const TOOLTIP_SITES: Record<string, string[]> = {
   'HelperPane.vue': ['pane.toggleMaximize', 'pane.close'],
   'MarkdownPane.vue': ['pane.toggleMaximize', 'pane.close'],
   'MemoryPane.vue': ['pane.toggleMaximize', 'pane.close'],
+  'MissionPane.vue': ['pane.toggleMaximize', 'pane.close'],
   'ExplorerPane.vue': ['pane.toggleMaximize', 'pane.close'],
   'DiagramPane.vue': ['pane.toggleMaximize', 'pane.close']
 }
