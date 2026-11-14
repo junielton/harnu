@@ -1,5 +1,5 @@
 /**
- * The renderer's You-lane rows after the Merge batch door was removed (T701):
+ * The renderer's You-lane rows after the merge-in-order door was removed (T701):
  *  - open green PRs are NOT an owed item any more (no merge row, whatever the PR count);
  *  - `steward-paused`: the server's item, whose age is part of its sentence.
  */
