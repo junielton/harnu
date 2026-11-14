@@ -241,10 +241,10 @@ describe('AC-50 — an open step lists its criteria, who settles each, and folds
     state: 'running',
     criteria: [
       ...NINETEEN,
-      { id: 'ac-20', text: 'The plan names the test files', by: 'fact' },
-      { id: 'ac-21', text: 'Every reviewer question has an answer', by: 'session' },
-      { id: 'ac-22', text: 'You approved the plan', by: 'operator' },
-      { id: 'ac-23', text: 'The designer likes the layout', by: 'person', person: 'Dana' }
+      { id: 'ac-fact', text: 'The plan names the test files', by: 'fact' },
+      { id: 'ac-second', text: 'Every reviewer question has an answer', by: 'session' },
+      { id: 'ac-you', text: 'You approved the plan', by: 'operator' },
+      { id: 'ac-person', text: 'The designer likes the layout', by: 'person', person: 'Dana' }
     ]
   }
 
@@ -271,10 +271,10 @@ describe('AC-50 — an open step lists its criteria, who settles each, and folds
 
     const by = (id: string) =>
       w.get(`[data-test="criterion"][data-criterion="${id}"] [data-test="criterion-by"]`).text()
-    expect(by('ac-20')).toBe('Checked automatically')
-    expect(by('ac-21')).toBe('Checked by a second session')
-    expect(by('ac-22')).toBe('You')
-    expect(by('ac-23')).toBe('Waiting for Dana')
+    expect(by('ac-fact')).toBe('Checked automatically')
+    expect(by('ac-second')).toBe('Checked by a second session')
+    expect(by('ac-you')).toBe('You')
+    expect(by('ac-person')).toBe('Waiting for Dana')
     // The settler is an identifier translated by i18n: the pane never prints the English word it was sent.
     expect(w.text()).not.toContain('ZZZ')
   })
