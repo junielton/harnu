@@ -300,7 +300,7 @@ function shapeProblems({ skill }: Docs): string[] {
     /mission_\w+/,
     /open_file/,
     /spec-check\.mjs/,
-    /memory_append/,
+    /memory_(?!query\b)\w+/,
     /Agent tool|sub-agent spawn/i
   ]) {
     if (leak.test(triage)) problems.push(`the triage section names ${leak}`)
@@ -666,7 +666,7 @@ it('authoring looks facts up and leaves unanswered decisions open', () => {
   expectCheck('authoringOrder', authoringOrderProblems)
 })
 
-it('authoring runs the builder-check and the complex lens critics', () => {
+it('authoring runs the Goldfish review and the complex lens critics', () => {
   expectCheck('review', reviewProblems)
 })
 
@@ -1086,11 +1086,23 @@ function awarenessProblems({ features }: Docs): string[] {
 /** "the PRD and the ADR" with no "when … architectural decision" later in the same sentence. */
 const ADR_ALWAYS = /PRD and the ADR(?![^.]*\bwhen\b[^.]*architectural decision)/
 
-/** The one `## YYYY-MM-DD` changelog bullet that introduces the skill, and the bullets naming it. */
+/**
+ * The changelog bullets that introduce the skill. A bullet counts when it names `spec` /
+ * `harnu:spec` in backticks and either sits under an `### Added` heading, leads with the skill's
+ * name in its bold headline, or calls itself a bundled skill, so a duplicate does not escape by
+ * rewording. The `### Changed` bullet that only mentions the skill is not an introduction.
+ */
 function specChangelogBullets(changelog: string): string[] {
-  return changelog
-    .split('\n')
-    .filter((l) => /^- \*\*/.test(l) && /`spec`|`harnu:spec`/.test(l) && /bundled skill/.test(l))
+  const out: string[] = []
+  let heading = ''
+  for (const l of changelog.split('\n')) {
+    if (/^#{2,3} /.test(l)) heading = l
+    if (!/^- \*\*/.test(l) || !/`spec`|`harnu:spec`/.test(l)) continue
+    const lead = /^- \*\*(.*?)\*\*/.exec(l)?.[1] ?? ''
+    if (/^### Added\b/.test(heading) || /`spec`|`harnu:spec`/.test(lead) || /bundled skill/.test(l))
+      out.push(l)
+  }
+  return out
 }
 
 /** AC-29: the user guide has a `spec` section; the changelog has one entry naming the skill. */
@@ -1204,6 +1216,20 @@ const S8_MUTATIONS: Record<string, Mutation[]> = {
       replace:
         '## 2026-11-07\n\n- **A second bundled skill entry, `spec`, duplicated.** Switch it on in **Settings → Skills**.\n',
       why: 'the changelog introduces the skill once'
+    },
+    {
+      target: 'changelog',
+      find: '### Added\n\n- **A new bundled skill, `spec`,',
+      replace:
+        '### Added\n\n- **Every entry gets sized up first by `spec`.** Turn it on in **Settings → Skills**.\n- **A new bundled skill, `spec`,',
+      why: 'a duplicate introduction under Added is counted whatever its wording (S-8)'
+    },
+    {
+      target: 'changelog',
+      find: '### Changed\n\n- **`orchestrate-delivery` picks up',
+      replace:
+        '### Changed\n\n- **The `spec` skill sizes up work, again.** Turn it on in **Settings → Skills**.\n- **`orchestrate-delivery` picks up',
+      why: 'a duplicate whose headline names the skill is counted under any heading (S-8)'
     },
     {
       target: 'changelog',

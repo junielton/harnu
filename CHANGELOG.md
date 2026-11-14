@@ -128,6 +128,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **`orchestrate-delivery` picks up the mission a spec started.** When the delivery comes from a spec written by the `spec` skill, the orchestrating session adopts that mission instead of opening a second one, adds one step per slice, makes the cards with the skill's own planner, and turns each open decision into a decision step that holds back only the slices it gates. The other slices are dispatched as usual. With the `spec` skill switched off it derives the cards by hand, as before, and says so.
 
+### Fixed
+
+- **Small gaps in the spec skill's guards and in `orchestrate-delivery`, found while verifying it.** The test that keeps the triage section free of delivery steps now rejects every memory verb except `memory_query` (it only caught `memory_append`), and the check that the changelog introduces the skill exactly once now counts a duplicate however it is worded. `orchestrate-delivery` now says what to do with an open decision that has only one option (it cannot become a decision node; settle it with `one-by-one` and hold the slices it gates out of the manifest), and warns that editing a card that was already approved for dispatch voids that approval, so it needs a fresh manifest.
+
 ## 2026-11-06
 
 ### Added

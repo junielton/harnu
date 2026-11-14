@@ -488,6 +488,13 @@ function decisionProblems(skill: string): string[] {
   if (!/\*\*Choose…\*\*/.test(f) || !/never write `chosen`/.test(f))
     problems.push("the choice is not left to the operator's Choose door")
   if (!/`submit_manifest`/.test(f)) problems.push('the held slices are not dispatched once chosen')
+  // S-7: a row with one option cannot be a node (`options` takes 2 to 10), and an edit voids a stamp.
+  if (!/single option/.test(f) || !/2 to 10/.test(f))
+    problems.push('a row with a single option is not covered (mission_add_step takes 2 to 10)')
+  if (!/hold those slices/.test(f))
+    problems.push('the slices gated by a single-option row are not held out of the manifest')
+  if (!/voids its stamp/.test(f) || !/fresh `submit_manifest`/.test(f))
+    problems.push('an `update_card` on a stamped ready card is not warned to void its stamp')
   return problems
 }
 
@@ -512,6 +519,16 @@ it('open decisions become decision nodes that gate only their slices', () => {
       find: '"options": [',
       replace: '"chosen": 0, "options": [',
       why: 'the payload never writes chosen'
+    },
+    {
+      find: 'single option',
+      replace: 'lone choice',
+      why: 'a single-option row must be covered (S-7)'
+    },
+    {
+      find: 'voids its stamp',
+      replace: 'is fine',
+      why: 'editing a stamped ready card voids its manifest stamp (S-7)'
     }
   ])
 
