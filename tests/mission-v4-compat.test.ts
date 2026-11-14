@@ -581,7 +581,7 @@ describe('a campaign reads as one mission', () => {
     })
     expect(legacy.chapters[3]).toMatchObject({ discoveredFrom: { chapterId: 'chp-2' } })
     expect(legacy.chapters[1]).toMatchObject({ produces: ['report'], missionId: CHAPTER_2 })
-    expect(record.milestones[0] as Record<string, unknown>).not.toHaveProperty('produces')
+    expect(record.milestones[0]).not.toHaveProperty('produces')
   })
 
   it("makes the chapter missions' steps its steps, and a chapter with no mission a milestone with no steps", () => {
@@ -1211,12 +1211,17 @@ describe('the store never loses an update and never leaves a half-written record
   it('keeps every line when two processes write one record at the same time', async () => {
     await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({ record, log }))
     const script = path.join(root, 'writer.mts')
+    const COUNT = 25
     writeFileSync(
       script,
-      `import { updateMissionRecord } from ${JSON.stringify(
+      `import { existsSync, writeFileSync } from 'node:fs'
+import { updateMissionRecord } from ${JSON.stringify(
         path.resolve(__dirname, '..', 'src', 'main', 'missions', 'record-store')
       )}
 const [root, tag, count] = process.argv.slice(2)
+// Both processes are up before either writes: they start together, so their writes overlap.
+writeFileSync(root + '/ready-' + tag, '')
+while (!existsSync(root + '/go')) await new Promise((r) => setTimeout(r, 2))
 for (let i = 0; i < Number(count); i++) {
   const r = await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({ record, log: log + '\\n' + tag + ' ' + i + '\\n' }))
   if (!r.ok) { console.error(r.error); process.exit(1) }
@@ -1226,15 +1231,26 @@ for (let i = 0; i < Number(count); i++) {
     const viteNode = path.resolve(__dirname, '..', 'node_modules', 'vite-node', 'vite-node.mjs')
     const run = (tag: string): Promise<void> =>
       new Promise((resolve, reject) => {
-        execFile(process.execPath, [viteNode, script, root, tag, '12'], (err, _out, errOut) =>
-          err ? reject(new Error(`${tag}: ${errOut || err.message}`)) : resolve()
+        execFile(
+          process.execPath,
+          [viteNode, script, root, tag, String(COUNT)],
+          (err, _o, errOut) =>
+            err ? reject(new Error(`${tag}: ${errOut || err.message}`)) : resolve()
         )
       })
-    await Promise.all([run('alpha'), run('beta')])
+    const both = Promise.all([run('alpha'), run('beta')])
+    while (
+      !existsSync(path.join(root, 'ready-alpha')) ||
+      !existsSync(path.join(root, 'ready-beta'))
+    ) {
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    writeFileSync(path.join(root, 'go'), '')
+    await both
 
     const text = readFileSync(path.join(v4Dir(root), 'mnt-5c0de001-modern-active.md'), 'utf8')
     for (const tag of ['alpha', 'beta']) {
-      for (let i = 0; i < 12; i++) expect(text, `${tag} ${i}`).toContain(`\n${tag} ${i}\n`)
+      for (let i = 0; i < COUNT; i++) expect(text, `${tag} ${i}`).toContain(`\n${tag} ${i}\n`)
     }
     expect(readdirSync(v4Dir(root)).filter((n) => n.endsWith('.lock'))).toEqual([])
   }, 60_000)
@@ -1246,17 +1262,30 @@ for (let i = 0; i < Number(count); i++) {
     const sync = vi.spyOn(proto, 'sync')
     const rename = vi.spyOn(fsp, 'rename')
     try {
-      await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({ record, log })) // the copy
+      const copy = await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({
+        record,
+        log
+      }))
+      // The copy is linked into place: its temporary file is flushed first too.
+      expect(copy.ok && copy.created).toBe(true)
+      expect(sync.mock.calls.length).toBeGreaterThanOrEqual(1)
+      sync.mockClear()
+      rename.mockClear()
+
+      // The overwrite renames: a flush of the temporary file must come before that rename.
       await updateMissionRecord(root, 'mnt-5c0de001', (record, log) => ({
         record,
         log: `${log}\nx\n`
       }))
-      expect(sync.mock.calls.length).toBeGreaterThanOrEqual(2)
-      // The overwrite renames; the sync before it comes first.
-      expect(rename).toHaveBeenCalled()
-      expect(Math.min(...sync.mock.invocationCallOrder)).toBeLessThan(
-        Math.min(...rename.mock.invocationCallOrder)
-      )
+      expect(rename).toHaveBeenCalledTimes(1)
+      const renamedAt = rename.mock.invocationCallOrder[0]
+      expect(
+        sync.mock.invocationCallOrder.filter((n) => n < renamedAt).length
+      ).toBeGreaterThanOrEqual(1)
+      // And the directory is flushed after it, where the platform allows.
+      expect(
+        sync.mock.invocationCallOrder.filter((n) => n > renamedAt).length
+      ).toBeGreaterThanOrEqual(1)
     } finally {
       sync.mockRestore()
       rename.mockRestore()
