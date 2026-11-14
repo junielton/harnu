@@ -55,12 +55,23 @@ vi.mock('node:fs', async (importOriginal) => {
   return {
     ...h.wrapFs(real, 'fs', h.fsCalls),
     promises: h.wrapFs(real.promises as Record<string, unknown>, 'fs.promises', h.fsCalls),
-    default: real
+    // A default import (`import fs from 'node:fs'`) is counted too, and so is `fs.promises` through it.
+    default: {
+      ...h.wrapFs(real.default as Record<string, unknown>, 'fs.default', h.fsCalls),
+      promises: h.wrapFs(
+        (real.default as { promises: Record<string, unknown> }).promises,
+        'fs.default.promises',
+        h.fsCalls
+      )
+    }
   }
 })
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>()
-  return { ...h.wrapFs(real, 'fs/promises', h.fsCalls), default: real }
+  return {
+    ...h.wrapFs(real, 'fs/promises', h.fsCalls),
+    default: h.wrapFs(real.default as Record<string, unknown>, 'fs/promises.default', h.fsCalls)
+  }
 })
 
 vi.mock('electron', () => ({
@@ -118,7 +129,18 @@ vi.mock('node:child_process', async (importOriginal) => {
     exec: counted(real.exec),
     execSync: counted(real.execSync),
     execFileSync: counted(real.execFileSync),
-    fork: counted(real.fork)
+    fork: counted(real.fork),
+    // A default import (`import cp from 'node:child_process'`) is counted too.
+    default: {
+      ...real.default,
+      execFile,
+      spawn: counted(real.spawn),
+      spawnSync: counted(real.spawnSync),
+      exec: counted(real.exec),
+      execSync: counted(real.execSync),
+      execFileSync: counted(real.execFileSync),
+      fork: counted(real.fork)
+    }
   }
 })
 
@@ -390,11 +412,21 @@ describe('v4 view cost (Missions v4 S-8, AC-20)', () => {
     h.fsCalls.length = 0
   })
 
+  it('the file-system counter sees a read through a default import too', async () => {
+    const fsDefault = (await import('node:fs')).default
+    h.fsCalls.length = 0
+    fsDefault.readFileSync('package.json', 'utf8')
+    expect(h.fsCalls).toContain('fs.default.readFileSync')
+    h.fsCalls.length = 0
+  })
+
   it('the spawn counter sees a process when one is started', async () => {
     // The proof above is only worth anything if the counter can fail.
     const cp = await import('node:child_process')
     const before = h.spawns
     cp.execFileSync('true')
     expect(h.spawns).toBe(before + 1)
+    cp.default.execFileSync('true') // through the default export
+    expect(h.spawns).toBe(before + 2)
   })
 })
