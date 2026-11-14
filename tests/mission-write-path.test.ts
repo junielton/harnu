@@ -1455,18 +1455,8 @@ describe('one guard and one write path: the Log cannot be forged', () => {
     for (const actor of [operator, { kind: 'harnu' } as Actor, session(LEADER)]) {
       for (const [name, sep] of SEPARATORS) {
         const before = v4Snapshot()
-        const r = await writeMission(
-          root,
-          ID,
-          actor,
-          'operator' as never,
-          append(`\nplain${sep}text\n`)
-        )
-        // A session is refused by the guard for the operator need; use `write` for it.
-        const r2 =
-          actor.kind === 'session'
-            ? await writeMission(root, ID, actor, 'write', append(`\nplain${sep}text\n`))
-            : r
+        const need = actor.kind === 'session' ? 'write' : 'operator'
+        const r2 = await writeMission(root, ID, actor, need, append(`\nplain${sep}text\n`))
         expect(code(r2), `${actor.kind} ${name}`).toBe('BAD_ARGS')
         expect(v4Snapshot(), name).toEqual(before)
       }

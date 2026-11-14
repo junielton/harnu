@@ -376,6 +376,48 @@ function checkContract(before: MissionV4 | null, after: MissionV4): void {
   checkBlockers(before?.blockers ?? [], after.blockers, 'mission blocker')
 }
 
+// ---- The Log -----------------------------------------------------------------------
+
+/** Characters some reader treats as a line break and `split('\n')` does not: `\r`, NEL, LS, PS, VT, FF. */
+const LOG_SEPARATORS = /[\r\u0085\u2028\u2029\v\f]/
+/** A line that a Markdown or summary reader takes as a heading. */
+const HEADING_SHAPED = /^\s{0,3}#{1,6}(\s|$)/
+/** The only heading a session writes: `### <ISO time> · note|decision|surprise`, optionally `· stp-<n>`. */
+const SESSION_HEADING =
+  /^### \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z · (?:note|decision|surprise)(?: · stp-\d+)?[ \t]*$/
+
+/**
+ * The Log is append-only for every writer: what it holds after a write starts with what it held before,
+ * byte for byte, and the appended text carries none of the characters that some reader takes for a line
+ * break (`\r`, U+0085, U+2028, U+2029, VT, FF). Harnu's own text and the operator's pass through the same
+ * check: it costs them nothing and catches a bug. A session also writes at most one heading, and it is
+ * `### <time> · note|decision|surprise`, so it can never write a heading that names `operator`, `harnu`
+ * or `steward`: a Log line that says who did something is written by Harnu, not by a session.
+ */
+function checkLog(before: string, after: string, actor: Actor): void {
+  if (!after.startsWith(before)) {
+    throw new Refusal(
+      'BAD_ARGS',
+      'the Log is append-only: it keeps everything it held, byte for byte.'
+    )
+  }
+  const added = after.slice(before.length)
+  if (LOG_SEPARATORS.test(added)) {
+    throw new Refusal(
+      'BAD_ARGS',
+      'the Log text holds a line separator other than a newline (CR, NEL, U+2028, U+2029, VT or FF); write plain lines.'
+    )
+  }
+  if (actor.kind !== 'session') return
+  const headings = added.split('\n').filter((line) => HEADING_SHAPED.test(line))
+  if (headings.length > 1 || (headings[0] !== undefined && !SESSION_HEADING.test(headings[0]))) {
+    throw new Refusal(
+      'BAD_ARGS',
+      'a session writes at most one Log heading, and it reads "### <time> · note", "decision" or "surprise" (optionally "· stp-<n>"); Harnu writes the others.'
+    )
+  }
+}
+
 // ---- Writing an existing mission ----------------------------------------------------
 
 /**
@@ -406,6 +448,7 @@ export async function writeMission(
     const access = guardMission(record, actor, need)
     if (!access.ok) throw new Refusal(access.code, access.error.replace(/^[A-Z_]+: /, ''))
     const next = await change(record, log)
+    checkLog(log, next.log, actor)
     if (actor.kind === 'session') {
       if (need === 'ask-to-attach') checkAskOnly(record, log, next, actor.sessionId)
       else {
@@ -490,6 +533,7 @@ export async function createMission(
       }
     }
     checkReferences(null, record)
+    checkLog('', log, actor)
     checkContract(null, record)
     const result = await createMissionRecord(
       repoRoot(folder),
