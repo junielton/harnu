@@ -55,12 +55,23 @@ vi.mock('node:fs', async (importOriginal) => {
   return {
     ...h.wrapFs(real, 'fs', h.fsCalls),
     promises: h.wrapFs(real.promises as Record<string, unknown>, 'fs.promises', h.fsCalls),
-    default: real
+    // A default import (`import fs from 'node:fs'`) is counted too, and so is `fs.promises` through it.
+    default: {
+      ...h.wrapFs(real.default as Record<string, unknown>, 'fs.default', h.fsCalls),
+      promises: h.wrapFs(
+        (real.default as { promises: Record<string, unknown> }).promises,
+        'fs.default.promises',
+        h.fsCalls
+      )
+    }
   }
 })
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>()
-  return { ...h.wrapFs(real, 'fs/promises', h.fsCalls), default: real }
+  return {
+    ...h.wrapFs(real, 'fs/promises', h.fsCalls),
+    default: h.wrapFs(real.default as Record<string, unknown>, 'fs/promises.default', h.fsCalls)
+  }
 })
 
 vi.mock('electron', () => ({
@@ -387,6 +398,14 @@ describe('v4 view cost (Missions v4 S-8, AC-20)', () => {
     h.fsCalls.length = 0
     fsMod.readFileSync('package.json', 'utf8')
     expect(h.fsCalls).toContain('fs.readFileSync')
+    h.fsCalls.length = 0
+  })
+
+  it('the file-system counter sees a read through a default import too', async () => {
+    const fsDefault = (await import('node:fs')).default
+    h.fsCalls.length = 0
+    fsDefault.readFileSync('package.json', 'utf8')
+    expect(h.fsCalls).toContain('fs.default.readFileSync')
     h.fsCalls.length = 0
   })
 

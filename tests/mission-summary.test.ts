@@ -171,6 +171,32 @@ function bigMission(): { mission: MissionV4; inputs: Record<string, StepInput>; 
 
 const HEADINGS = ['## Goal', '## Where it is', '## Decided', '## Stopped at', '## Next step']
 
+/** 60 open steps, five criteria and three links each: far more than 8,000 characters unfitted. */
+function crowded(): { mission: MissionV4; inputs: Record<string, StepInput> } {
+  const steps: StepV4[] = []
+  const inputs: Record<string, StepInput> = {}
+  for (let n = 1; n <= 60; n++) {
+    const id = `stp-${n}`
+    steps.push(
+      mkStep(id, {
+        title: `Build the part number ${n} of the reporting pipeline`,
+        acs: [1, 2, 3, 4, 5].map((k) =>
+          crit(`ac-${k}`, 'session', {
+            text: `Check ${k} of part ${n} passes on the full data set`
+          })
+        ),
+        links: [
+          { kind: 'pr', ref: String(500 + n) },
+          { kind: 'url', ref: `http://localhost:5173/report/part-${n}` },
+          { kind: 'worktree', ref: `.claude/worktrees/part-${n}` }
+        ]
+      })
+    )
+    inputs[id] = { pr: 'open' }
+  }
+  return { mission: mkMission({ steps }), inputs }
+}
+
 describe('AC-19 · the summary', () => {
   it('the summary has five parts and a cap', () => {
     const { mission, inputs, log } = bigMission()
@@ -223,6 +249,19 @@ describe('AC-19 · the summary', () => {
     // The cap
     expect(text.length).toBeLessThanOrEqual(MISSION_SUMMARY_MAX)
     expect(MISSION_SUMMARY_MAX).toBe(8000)
+
+    // The cap clause, on a record that does not fit: whole lines go, the five parts stay. The named
+    // proof carries it, so it goes red when `fitLines` stops dropping lines.
+    const full = crowded()
+    const crowdedSummary = buildMissionSummary(full.mission, '', { inputs: full.inputs })
+    expect(crowdedSummary.text.length).toBeLessThanOrEqual(MISSION_SUMMARY_MAX)
+    const order = [...HEADINGS, '## Open criteria', '## Links'].map((h) =>
+      crowdedSummary.text.indexOf(h)
+    )
+    expect(order.every((i) => i >= 0)).toBe(true)
+    expect([...order].sort((x, y) => x - y)).toEqual(order)
+    expect(crowdedSummary.parts.openCriteria).toMatch(/…and \d+ more lines? not shown/)
+    expect(crowdedSummary.parts.links).toMatch(/…and \d+ more links? not shown/)
   })
 
   it('stays under the cap on a record whose texts are all huge, keeping the five parts', () => {
@@ -317,32 +356,6 @@ describe('the summary agrees with progress', () => {
 // ---- Delta 1 · AC-19's cap clause must be able to fail -----------------------------------
 
 describe('the cap clause: a record that does not fit loses whole lines, never the five parts', () => {
-  /** 60 open steps, five criteria and three links each: far more than 8,000 characters unfitted. */
-  function crowded(): { mission: MissionV4; inputs: Record<string, StepInput> } {
-    const steps: StepV4[] = []
-    const inputs: Record<string, StepInput> = {}
-    for (let n = 1; n <= 60; n++) {
-      const id = `stp-${n}`
-      steps.push(
-        mkStep(id, {
-          title: `Build the part number ${n} of the reporting pipeline`,
-          acs: [1, 2, 3, 4, 5].map((k) =>
-            crit(`ac-${k}`, 'session', {
-              text: `Check ${k} of part ${n} passes on the full data set`
-            })
-          ),
-          links: [
-            { kind: 'pr', ref: String(500 + n) },
-            { kind: 'url', ref: `http://localhost:5173/report/part-${n}` },
-            { kind: 'worktree', ref: `.claude/worktrees/part-${n}` }
-          ]
-        })
-      )
-      inputs[id] = { pr: 'open' }
-    }
-    return { mission: mkMission({ steps }), inputs }
-  }
-
   it('stays at most 8,000 characters, keeps the five headings in order and says what it left out', () => {
     const { mission, inputs } = crowded()
     // What it would take unfitted: every open step, criterion and link, one line each.
@@ -452,6 +465,14 @@ describe('what a fresh session reads at a hand-off', () => {
     expect(parts.whereItIs).toContain('Waiting for review:')
     for (const n of [7, 8, 9, 15]) expect(parts.whereItIs).toContain(`Open step ${n}`)
     expect(parts.whereItIs).not.toContain('Open step 16') // a to do step is not waiting for review
+  })
+
+  it('quotes a step title that follows "stopped at", so it never reads as an order', () => {
+    const { mission, inputs, log } = bigMission()
+    const { parts } = buildMissionSummary(mission, log, { inputs })
+    expect(parts.stoppedAt).toContain(
+      'stopped at stp-5 "Step stp-5", waiting for the private test files'
+    )
   })
 
   it('keeps the next step the operator’s first waiting item, as the spec says', () => {
