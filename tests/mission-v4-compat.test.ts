@@ -398,15 +398,25 @@ describe('v3 concepts map to v4', () => {
     expect(open?.by).toBe('operator')
     expect(open?.settled).toBeUndefined()
 
-    // self-verified and claimed leave the criterion open and note the self-check.
-    for (const [id, proof] of [
-      ['stp-4', 'self-verified'],
-      ['stp-5', 'claimed']
-    ] as const) {
-      const c = step(id).acs.find((a) => a.by === 'session')
-      expect(c?.settled, id).toBeUndefined()
-      expect(c, id).toMatchObject({ selfCheck: { proof } })
-    }
+    // self-verified and claimed leave the criterion open and note the self-check in the model's
+    // shape { at, by, evidence }: the v3 word stays under legacyV3.steps[].proof.
+    const selfVerified = step('stp-4').acs.find((a) => a.by === 'session')
+    expect(selfVerified?.settled).toBeUndefined()
+    expect(selfVerified?.selfCheck).toEqual({
+      at: '2026-10-21T09:50:00.000Z',
+      by: BUILDER,
+      evidence: 'Self-verified in v3 (verdict met)'
+    })
+    const claimed = step('stp-5').acs.find((a) => a.by === 'session')
+    expect(claimed?.settled).toBeUndefined()
+    expect(claimed?.selfCheck).toEqual({
+      at: '2026-10-21T10:00:00.000Z', // the mission's updatedAt
+      by: CHECKER, // the step's first session link
+      evidence: 'Claimed done in v3, never checked'
+    })
+    const legacySteps = (record.legacyV3 as { steps: Array<{ id: string; proof: string }> }).steps
+    expect(legacySteps.find((s) => s.id === 'stp-4')?.proof).toBe('self-verified')
+    expect(legacySteps.find((s) => s.id === 'stp-5')?.proof).toBe('claimed')
 
     // human + verified → an operator criterion, settled; human + unproven → open.
     expect(step('stp-6').acs.find((a) => a.by === 'operator')?.settled).toMatchObject({
