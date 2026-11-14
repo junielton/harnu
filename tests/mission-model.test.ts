@@ -17,6 +17,14 @@ import {
   BlockerSchema,
   FACTS,
   LINK_KINDS,
+  LinkSchema,
+  MILESTONE_STATES,
+  MISSION_STATES,
+  STEP_STATES,
+  SettledSchema,
+  StoppedAtSchema,
+  type StepV4,
+  type WithUnknownKeys,
   buildMissionRecordContent,
   parseMissionRecordFile,
   readMissionRecordLog
@@ -296,7 +304,6 @@ describe('the attach request', () => {
     id: 'atr-1',
     missionId: 'mnt-1a2b3c4d',
     sessionId: '99999999-2222-4333-8444-555555555555',
-    role: 'worked',
     at: AT,
     decision: null
   }
@@ -311,9 +318,12 @@ describe('the attach request', () => {
     }
   })
 
-  it('may ask to lead or to join, and nothing else', () => {
-    expect(AttachRequestSchema.safeParse({ ...request, role: 'leads' }).success).toBe(true)
-    expect(AttachRequestSchema.safeParse({ ...request, role: 'observer' }).success).toBe(false)
+  it('is a request to JOIN: nobody asks to lead, so the record names no role', () => {
+    // The operator's decision of 2026-11-14 (spec amendment C3-32): a session that creates a mission
+    // leads it; every other session asks to join. A request is who, which mission, when, the decision.
+    const parsed = AttachRequestSchema.parse(request)
+    expect(Object.keys(parsed).sort()).toEqual(['at', 'decision', 'id', 'missionId', 'sessionId'])
+    expect('role' in parsed).toBe(false)
   })
 
   it('refuses an unknown decision, a bad mission id and a missing asker', () => {
@@ -490,7 +500,6 @@ describe('the v4 record keeps what it does not name (delta 1)', () => {
       id: 'atr-1',
       missionId: 'mnt-1a2b3c4d',
       sessionId: '99999999-2222-4333-8444-555555555555',
-      role: 'worked',
       at: AT,
       decision: null,
       futureKey: 'kept'
@@ -539,5 +548,119 @@ describe('the v4 record keeps what it does not name (delta 1)', () => {
     expect(MissionRecordSchema.safeParse({ ...m, doneWhenVerified: { by: 'x' } }).success).toBe(
       false
     )
+  })
+})
+
+/**
+ * Delta 1 · the owner's calls on the shape. Ten slices import this module, so what they need is
+ * exported once, here: the state names, the nested schemas, a place for a self-check, an attach
+ * request that nobody uses to lead, and entity types that do not accept a misspelt field.
+ */
+describe('what the other slices import (delta 1)', () => {
+  it('exports the state vocabulary once: step, milestone and mission', () => {
+    expect([...STEP_STATES]).toEqual(['to do', 'running', 'waiting for review', 'done'])
+    expect([...MILESTONE_STATES]).toEqual([
+      'not started',
+      'in progress',
+      'waiting for review',
+      'done'
+    ])
+    expect([...MISSION_STATES]).toEqual(['open', 'ready to close', 'closed'])
+  })
+
+  it('exports the nested schemas: a link, a settled stamp, a stoppedAt', () => {
+    expect(LinkSchema.safeParse({ kind: 'pr', ref: '256' }).success).toBe(true)
+    expect(LinkSchema.safeParse({ kind: 'card', ref: 'T685' }).success).toBe(false)
+    expect(SettledSchema.safeParse({ at: AT, by: 'operator' }).success).toBe(true)
+    expect(SettledSchema.safeParse({ by: 'operator' }).success).toBe(false)
+    expect(StoppedAtSchema.safeParse({ step: 'stp-2', waitingFor: 'a review' }).success).toBe(true)
+    expect(StoppedAtSchema.safeParse({}).success).toBe(true)
+    expect(StoppedAtSchema.safeParse({ step: 7 }).success).toBe(false)
+  })
+
+  describe('a self-check has a place and never settles', () => {
+    const text = 'Every reviewer question has an answer'
+    const selfCheck = {
+      at: AT,
+      by: '11111111-2222-4333-8444-555555555555',
+      evidence: 'Ran the suite: 41 passed'
+    }
+
+    it('a criterion may carry selfCheck { at, by, evidence } beside settled', () => {
+      const parsed = CriterionSchema.parse({ id: 'ac-1', text, by: 'session', selfCheck })
+      expect(parsed.selfCheck).toEqual(selfCheck)
+      // It is not a stamp: nothing in it makes the criterion settled.
+      expect(parsed.settled).toBeUndefined()
+      const both = CriterionSchema.parse({
+        id: 'ac-1',
+        text,
+        by: 'session',
+        selfCheck,
+        settled: { at: AT, by: '99999999-2222-4333-8444-555555555555', evidence: 'Checked by hand' }
+      })
+      expect(both.selfCheck).toEqual(selfCheck)
+      expect(both.settled?.by).toBe('99999999-2222-4333-8444-555555555555')
+    })
+
+    it('needs all three of its fields, and survives the file round trip', () => {
+      for (const missing of ['at', 'by', 'evidence']) {
+        const partial: Record<string, unknown> = { ...selfCheck }
+        delete partial[missing]
+        expect(
+          CriterionSchema.safeParse({ id: 'ac-1', text, by: 'session', selfCheck: partial }).success
+        ).toBe(false)
+      }
+      const m = smallRecord()
+      ;(m.steps as Record<string, unknown>[])[0].acs = [
+        { id: 'ac-1', text, by: 'session', selfCheck }
+      ]
+      const record = MissionRecordSchema.parse(m)
+      expect(parseMissionRecordFile(buildMissionRecordContent(record))).toEqual(record)
+    })
+  })
+
+  describe('the attach request, on the mission', () => {
+    const request = {
+      id: 'atr-1',
+      missionId: 'mnt-0a0b0c0d',
+      sessionId: '99999999-2222-4333-8444-555555555555',
+      at: AT,
+      decision: null
+    }
+
+    it('a mission may hold an optional attachRequests list, and a record without one stays without', () => {
+      const without = MissionRecordSchema.parse(smallRecord())
+      expect('attachRequests' in without).toBe(false)
+      const decided = {
+        ...request,
+        id: 'atr-2',
+        decision: 'denied',
+        decidedAt: '2026-11-14T10:05:00Z'
+      }
+      const m = { ...smallRecord(), attachRequests: [request, decided] }
+      const record = MissionRecordSchema.parse(m)
+      expect(record.attachRequests).toEqual([request, decided])
+      expect(parseMissionRecordFile(buildMissionRecordContent(record))).toEqual(record)
+    })
+
+    it('every request in the list is an attach request, and an unknown key on one survives', () => {
+      const bad = { ...smallRecord(), attachRequests: [{ ...request, decision: 'maybe' }] }
+      expect(MissionRecordSchema.safeParse(bad).success).toBe(false)
+      const planted = { ...smallRecord(), attachRequests: [{ ...request, futureKey: 'kept' }] }
+      const record = MissionRecordSchema.parse(planted)
+      expect(record).toEqual(planted)
+      expect(parseMissionRecordFile(buildMissionRecordContent(record))).toEqual(planted)
+    })
+  })
+
+  it('reads an unknown key on purpose through WithUnknownKeys, the one way a caller may', () => {
+    const m = smallRecord()
+    ;(m.steps as Record<string, unknown>[])[0].futureKey = 'kept'
+    const record = MissionRecordSchema.parse(m)
+    // The entity types are closed, so `step.futureKey` does not compile; this is how a reader
+    // (the compatibility reader, a later build's field) names a key the schema does not.
+    const step = record.steps[0] as WithUnknownKeys<StepV4>
+    expect(step.futureKey).toBe('kept')
+    expect(step.title).toBe('Find why the test flakes')
   })
 })
