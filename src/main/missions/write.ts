@@ -69,6 +69,8 @@ export type WriteCode =
   | 'TWO_LEADERS'
   | 'DUPLICATE_ID'
   | 'UNKNOWN_MILESTONE'
+  | 'STEP_WITHOUT_MILESTONE'
+  | 'MISSION_BLOCKER_FACT'
   | 'LEADER_NOT_CALLER'
   | 'MISSION_EXISTS'
   | 'BAD_ARGS'
@@ -223,6 +225,14 @@ function breaches(record: MissionV4): string[] {
       out.push(`UNKNOWN_MILESTONE:${s.id} ${s.milestone}`)
     }
   }
+  if (record.milestones.length > 0) {
+    for (const s of record.steps) {
+      if (s.milestone === undefined) out.push(`STEP_WITHOUT_MILESTONE:${s.id}`)
+    }
+  }
+  for (const b of record.blockers) {
+    if (b.clearsWhen !== undefined) out.push(`MISSION_BLOCKER_FACT:${b.id}`)
+  }
   if (record.sessions.filter((s) => s.role === 'leads' && s.to === null).length > 1) {
     out.push('TWO_LEADERS:')
   }
@@ -238,6 +248,8 @@ function checkReferences(before: MissionV4 | null, after: MissionV4): void {
   const message: Record<string, string> = {
     DUPLICATE_ID: `${what} is used twice; an id is never reused.`,
     UNKNOWN_MILESTONE: `step ${what.split(' ')[0]} names milestone ${what.split(' ')[1]}, which the mission does not have.`,
+    STEP_WITHOUT_MILESTONE: `step ${what} names no milestone, and a mission that has milestones places every step in one.`,
+    MISSION_BLOCKER_FACT: `blocker ${what} is on the mission and names a fact to clear on; a fact belongs to a step's blocker.`,
     TWO_LEADERS: 'a mission has at most one leader.'
   }
   throw new Refusal(code, message[code])
