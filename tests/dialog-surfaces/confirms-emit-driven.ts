@@ -26,7 +26,6 @@ import DehydrateConfirmDialog from '../../src/renderer/src/components/DehydrateC
 import SweepConfirmDialog from '../../src/renderer/src/components/SweepConfirmDialog.vue'
 import MissionBulkCloseConfirmDialog from '../../src/renderer/src/components/MissionBulkCloseConfirmDialog.vue'
 import MissionCloseConfirmDialog from '../../src/renderer/src/components/MissionCloseConfirmDialog.vue'
-import MergeBatchDialog from '../../src/renderer/src/components/MergeBatchDialog.vue'
 import StewardPauseDialog from '../../src/renderer/src/components/StewardPauseDialog.vue'
 import MissionsReviewDialog from '../../src/renderer/src/components/MissionsReviewDialog.vue'
 import HarnuModExternal from '../../src/renderer/src/components/HarnuModExternal.vue'
@@ -379,7 +378,7 @@ const missionClose: SurfaceSpec = {
   }
 }
 
-// ---- StewardPauseDialog / MergeBatchDialog (T609) ----------------------------------------------------------
+// ---- StewardPauseDialog (T609) ----------------------------------------------------------
 
 const stewardPause: SurfaceSpec = {
   file: 'StewardPauseDialog.vue',
@@ -393,30 +392,6 @@ const stewardPause: SurfaceSpec = {
       input: () => q('[data-test="steward-pause-reason"]'),
       cancel: () => q('[data-test="steward-pause-cancel"]'),
       confirm: () => q('[data-test="steward-pause-go"]'),
-      close: () => q('[role="dialog"] header button')
-    })
-  }
-}
-
-const mergeBatch: SurfaceSpec = {
-  file: 'MergeBatchDialog.vue',
-  async open(): Promise<OpenedSurface> {
-    missionWorld()
-    const w = mount(MergeBatchDialog, {
-      props: {
-        root: '/repo',
-        missionId: 'mnt-00000001',
-        prs: [
-          { number: 305, stepId: 'stp-1', title: 'Partners' },
-          { number: 306, stepId: 'stp-2', title: 'images' }
-        ]
-      },
-      global: { plugins: [i18n] },
-      attachTo: document.body
-    })
-    return emitSurface(w, ['close'], {
-      cancel: () => q('[data-test="merge-batch-cancel"]'),
-      confirm: () => q('[data-test="merge-batch-go"]'),
       close: () => q('[role="dialog"] header button')
     })
   }
@@ -537,6 +512,5 @@ export const SURFACES_B: SurfaceSpec[] = [
   missionClose,
   missionsReview,
   stewardPause,
-  mergeBatch,
   sweepConfirm
 ]

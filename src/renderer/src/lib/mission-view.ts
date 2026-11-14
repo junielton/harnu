@@ -385,43 +385,12 @@ export type YouRisk = 'high' | 'mid' | 'low'
  * never guessed.
  */
 export interface YouRow {
-  kind: MissionYouItem['kind'] | 'decide' | 'merge-batch'
+  kind: MissionYouItem['kind'] | 'decide'
   item: MissionYouItem | null
   /** The decision step a "Decide" row is about. */
   stepId: string | null
   ageMs: number | null
   risk: YouRisk
-  /** A `merge-batch` row: the PRs ready to merge, in step order (campaign spec §4, T609). */
-  prs?: MergeReadyPr[]
-}
-
-/** One PR that is ready to merge: its step's open PR, CI green. */
-export interface MergeReadyPr {
-  number: number
-  stepId: string
-  /** The step's title — what the dialog names the PR by. */
-  title: string
-}
-
-/** Two or more PRs make a batch; one is just a merge. */
-export const MERGE_BATCH_MIN = 2
-
-/**
- * The PRs a Merge batch would merge: every counted step whose PR is open (`pr` gate running) with a
- * green `ci` gate, in step order — the stack order the operator confirms. Read off the derived gates,
- * never recounted. A step the server reads as `locked` is left out: its blocker is not done.
- */
-export function mergeReadyPrs(view: MissionView): MergeReadyPr[] {
-  const counted = view.mission.steps.filter((s) => view.progress.states[s.id] !== undefined)
-  const out: MergeReadyPr[] = []
-  for (const step of counted) {
-    const d = view.derived.steps.find((x) => x.stepId === step.id)
-    if (!d || d.prNumber === null) continue
-    if (d.gates.pr !== 'running' || d.gates.ci !== 'green') continue
-    if (view.progress.states[step.id] === 'locked') continue
-    out.push({ number: d.prNumber, stepId: step.id, title: step.title })
-  }
-  return out
 }
 
 const RISK: Record<YouRow['kind'], YouRisk> = {
@@ -432,7 +401,6 @@ const RISK: Record<YouRow['kind'], YouRisk> = {
   close: 'mid',
   'human-steps': 'mid',
   'steward-paused': 'mid',
-  'merge-batch': 'mid',
   approvals: 'mid',
   'needs-input': 'mid',
   checks: 'low',
@@ -506,22 +474,7 @@ export function youRows(view: MissionView, now: number = Date.now()): YouRow[] {
       ageMs: null,
       risk: RISK.decide
     }))
-  // Campaign spec §4: two or more green PRs are one owed decision — merge them in order.
-  const ready = mergeReadyPrs(view)
-  const batch: YouRow[] =
-    ready.length >= MERGE_BATCH_MIN
-      ? [
-          {
-            kind: 'merge-batch',
-            item: null,
-            stepId: null,
-            ageMs: null,
-            risk: RISK['merge-batch'],
-            prs: ready
-          }
-        ]
-      : []
-  const derived = [...decide, ...batch]
+  const derived = decide
   if (derived.length === 0) return rows
   let at = 0
   rows.forEach((r, i) => {
@@ -552,13 +505,6 @@ export function youRowText(
   const titles = (ids: readonly string[]): string =>
     ids.map((id) => view.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
   const item = row.item
-  if (row.kind === 'merge-batch') {
-    const prs = row.prs ?? []
-    return t('mission.you.mergeBatch', {
-      n: prs.length,
-      chain: prs.map((p) => `#${p.number}`).join(' → ')
-    })
-  }
   if (!item) {
     const title = view.mission.steps.find((s) => s.id === row.stepId)?.decision?.title ?? ''
     return t('mission.you.decide', { title })

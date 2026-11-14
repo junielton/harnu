@@ -164,7 +164,7 @@ describe('runGh — exhausted budget (AC-6)', () => {
   it('never throttles a write: an operator gesture still reaches GitHub', async () => {
     exhaust()
     await r.runGh(['pr', 'merge', '9', '--squash'], {
-      consumer: 'merge-batch',
+      consumer: 'missions',
       resource: 'graphql',
       write: true
     })
@@ -264,7 +264,7 @@ describe('runGh — a rate-limit message (AC-9, amended)', () => {
   it('(d) writes are never throttled by a secondary pause', async () => {
     t.githubBudget.markRateLimited()
     await r.runGh(['pr', 'merge', '9'], {
-      consumer: 'merge-batch',
+      consumer: 'missions',
       resource: 'graphql',
       write: true
     })
@@ -274,7 +274,7 @@ describe('runGh — a rate-limit message (AC-9, amended)', () => {
   it('(d) a failing WRITE with a rate-limit message also starts the pause (information), not exhaustion', async () => {
     sp.next = { kind: 'fail', stderr: 'gh: You have exceeded a secondary rate limit' }
     await expect(
-      r.runGh(['pr', 'merge', '1'], { consumer: 'merge-batch', resource: 'graphql', write: true })
+      r.runGh(['pr', 'merge', '1'], { consumer: 'missions', resource: 'graphql', write: true })
     ).rejects.toBeDefined()
     expect(t.githubBudget.state()).toBe('normal')
     expect(t.githubBudget.readsPaused()).toBe(true)

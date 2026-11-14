@@ -222,7 +222,6 @@ import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
 import { registerGithubBudget, stopGithubBudget } from './github-budget'
 import { registerMissionIpc } from './mission-ipc'
-import { registerMergeBatchIpc } from './merge-batch-ipc'
 import { registerCampaignIpc } from './campaign-ipc'
 import { registerReviewHandlers } from './review-ipc'
 import { resolveCliFolderArg } from './cli-folder-arg'
@@ -648,7 +647,6 @@ app.whenReady().then(async () => {
   registerGithubBudget()
   // T370 (T358 S9): mission progress read + the operator doors.
   registerMissionIpc()
-  registerMergeBatchIpc()
   registerCampaignIpc()
   // T164 U2: branch-vs-base diff + the evidence header's receipts, plus the
   // per-repo blast-radius list (operator-owned, never reachable from an MCP verb).
