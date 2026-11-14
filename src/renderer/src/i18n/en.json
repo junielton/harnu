@@ -375,8 +375,8 @@
       "title": "{title} — {label}"
     },
     "progress": {
-      "steps": "{done} of {total} steps done",
-      "milestones": "{done} of {total} milestones done"
+      "steps": "{done} of {total} step done | {done} of {total} steps done",
+      "milestones": "{done} of {total} milestone done | {done} of {total} milestones done"
     },
     "state": {
       "open": "Open",

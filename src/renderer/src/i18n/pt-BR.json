@@ -375,8 +375,8 @@
       "title": "{title} — {label}"
     },
     "progress": {
-      "steps": "{done} de {total} passos concluídos",
-      "milestones": "{done} de {total} marcos concluídos"
+      "steps": "{done} de {total} passo concluído | {done} de {total} passos concluídos",
+      "milestones": "{done} de {total} marco concluído | {done} de {total} marcos concluídos"
     },
     "state": {
       "open": "Aberta",

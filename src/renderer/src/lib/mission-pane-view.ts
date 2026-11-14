@@ -10,7 +10,7 @@
  */
 import type { MissionV4ViewReply } from '../../../main/mission-ipc'
 
-type Translate = (key: string, values?: Record<string, unknown>) => string
+type Translate = (key: string, values?: Record<string, unknown>, plural?: number) => string
 
 /** The `state: 'mission'` branch of the view's reply. */
 export type MissionV4Reply = Extract<MissionV4ViewReply, { state: 'mission' }>
@@ -115,12 +115,11 @@ export const V4_PILL_RING_CLASS: Record<V4PillTone, string> = {
 /** The count line under the title: "4 of 21 steps done" / "1 of 10 milestones done", from the server's numbers. */
 export function missionProgressLine(t: Translate, detail: MissionV4Reply['detail']): string {
   const n = missionNumbers(detail)
+  // The unit agrees with the TOTAL ("0 of 1 step done", "4 of 21 steps done"): the plural form follows it.
   return t(
     n.unit === 'milestones' ? 'missionPane.progress.milestones' : 'missionPane.progress.steps',
-    {
-      done: n.done,
-      total: n.total
-    }
+    { done: n.done, total: n.total },
+    n.total
   )
 }
 
