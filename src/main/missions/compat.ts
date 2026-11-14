@@ -13,7 +13,8 @@
  * - **No writing-contract rule is applied.** A converted title may be longer than today's cap; caps
  *   live on the write verbs, never on read (spec "The writing contract").
  * - **Nothing a v3 file held is lost silently:** what v4 has no place for is kept under `legacyV3`;
- *   `ledger`, `outcome` and `memoryDrafts` are kept as they are, on the record itself.
+ *   `ledger`, `outcome` and `memoryDrafts` are v3 values the closed v4 model does not hold, so they
+ *   go under `legacyV3` too (a campaign's chapter ones under that chapter).
  *
  * Choices the spec leaves open, each pinned by `tests/mission-v4-compat.test.ts`:
  *
@@ -123,12 +124,39 @@ function closing(source: {
   }
 }
 
-/** Mission-level blockers of a v3 mission: its own, then those of a fixed start or end. */
-function missionLevelBlockers(mission: V3Mission): V3Mission['blockers'] {
+/** A blocker before it has an id. */
+type BlockerDraft = Omit<BlockerV4, 'id'>
+
+/**
+ * Mission-level blockers of a v3 mission: its own, those of a fixed start or end, then one for every
+ * unticked check on the fixed end. The mapping table has no row for the fixed end, so an unticked
+ * check there becomes an operator-owned blocker, texts passed through whole (caps are never applied on
+ * conversion): the operator must not lose something they owe, and a false alarm beats a miss.
+ */
+function missionLevelBlockers(mission: V3Mission): BlockerDraft[] {
+  const fixedEnd = mission.steps.find((s) => s.kind === 'fixed-end')
   return [
-    ...mission.blockers,
-    ...mission.steps.filter((s) => s.kind !== 'custom').flatMap((s) => s.blockers)
+    ...mission.blockers.map(draftOf),
+    ...mission.steps.filter((s) => s.kind !== 'custom').flatMap((s) => s.blockers.map(draftOf)),
+    ...(fixedEnd?.checks ?? [])
+      .filter((c) => !c.ticked)
+      .map((c): BlockerDraft => ({
+        reason: c.label,
+        ask: c.label,
+        unblocks: 'Closing the mission',
+        owner: 'operator',
+        raisedAt: c.createdAt
+      }))
   ]
+}
+
+function draftOf(b: {
+  reason: string
+  unblocks: string
+  owner: 'agent' | 'operator'
+  raisedAt: string
+}): BlockerDraft {
+  return { reason: b.reason, unblocks: b.unblocks, owner: b.owner, raisedAt: b.raisedAt }
 }
 
 /** A counter that hands out `blk-1`, `blk-2`, … for one record. */
@@ -137,11 +165,27 @@ function blockerCounter(): () => string {
   return () => `blk-${++n}`
 }
 
-function toBlocker(
-  b: { reason: string; unblocks: string; owner: 'agent' | 'operator'; raisedAt: string },
-  id: string
-): BlockerV4 {
-  return { id, reason: b.reason, unblocks: b.unblocks, owner: b.owner, raisedAt: b.raisedAt }
+function toBlocker(b: BlockerDraft, id: string): BlockerV4 {
+  return { id, ...b }
+}
+
+/** The `pr` and `worktree` links of a mission's fixed end: v4 link kinds, so they join the mission's links. */
+function fixedEndLinks(mission: V3Mission): MissionLink[] {
+  const end = mission.steps.find((s) => s.kind === 'fixed-end')
+  return (end?.links ?? [])
+    .filter((l) => l.kind === 'pr' || l.kind === 'worktree')
+    .map((l) => ({ kind: l.kind as 'pr' | 'worktree', ref: l.ref }))
+}
+
+/** Mission links: the documents first, then the fixed ends' own links, none twice. */
+function missionLinks(docs: MissionLink[], fixedEnds: MissionLink[]): MissionLink[] {
+  const seen = new Set<string>()
+  return [...docs, ...fixedEnds].filter((l) => {
+    const key = `${l.kind}\u0000${l.ref}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 // ---- Steps ---------------------------------------------------------------------
@@ -296,7 +340,7 @@ function convertSteps(ctx: StepContext): StepV4[] {
       .filter((l) => l.kind === 'pr' || l.kind === 'worktree')
       .map((l) => ({ kind: l.kind as 'pr' | 'worktree', ref: l.ref }))
 
-    const blockers: BlockerV4[] = step.blockers.map((b) => toBlocker(b, ctx.nextBlocker()))
+    const blockers: BlockerV4[] = step.blockers.map((b) => toBlocker(draftOf(b), ctx.nextBlocker()))
     if (step.decision && step.decision.chosen === undefined) {
       const { title, options, blocks } = step.decision
       blockers.push({
@@ -347,13 +391,17 @@ function workedSessionsOf(mission: V3Mission): Array<{ id: string; from: string 
 function missionLegacy(mission: V3Mission, withSteps: boolean): Record<string, unknown> {
   const fixed = (kind: 'fixed-start' | 'fixed-end'): Record<string, unknown> | undefined => {
     const s = mission.steps.find((x) => x.kind === kind)
-    return s
-      ? {
-          id: s.id,
-          proof: s.proof,
-          ...(s.verifiedBy ? { verifiedBy: s.verifiedBy } : {})
-        }
-      : undefined
+    if (!s) return undefined
+    const cards = s.links.filter((l) => l.kind === 'card')
+    return {
+      id: s.id,
+      proof: s.proof,
+      ...(s.verifiedBy ? { verifiedBy: s.verifiedBy } : {}),
+      // Every check, ticked or not, with its id, source, creation time and tick stamp.
+      ...(s.checks && s.checks.length > 0 ? { checks: s.checks } : {}),
+      // A card link is not a v4 link kind; the pr and worktree links joined the mission's own.
+      ...(cards.length > 0 ? { links: cards } : {})
+    }
   }
   const stepsLegacy = mission.steps
     .filter((s) => s.kind === 'custom')
@@ -394,6 +442,10 @@ function missionLegacy(mission: V3Mission, withSteps: boolean): Record<string, u
     provenance: mission.provenance,
     ...(fixed('fixed-start') ? { fixedStart: fixed('fixed-start') } : {}),
     ...(fixed('fixed-end') ? { fixedEnd: fixed('fixed-end') } : {}),
+    // v3 values the closed v4 model does not hold: kept here, as they were.
+    ...(mission.ledger ? { ledger: mission.ledger } : {}),
+    ...(mission.outcome ? { outcome: mission.outcome } : {}),
+    ...(mission.memoryDrafts ? { memoryDrafts: mission.memoryDrafts } : {}),
     ...(withSteps ? { steps: stepsLegacy } : {})
   }
 }
@@ -455,11 +507,11 @@ export function convertV3Mission(mission: V3Mission, log: string): Converted {
     milestones: [],
     steps,
     sessions,
-    links: docLinks([mission.scope, mission.steps.find((s) => s.kind === 'fixed-start')?.links]),
+    links: missionLinks(
+      docLinks([mission.scope, mission.steps.find((s) => s.kind === 'fixed-start')?.links]),
+      fixedEndLinks(mission)
+    ),
     blockers,
-    ...(mission.ledger ? { ledger: mission.ledger } : {}),
-    ...(mission.outcome ? { outcome: mission.outcome } : {}),
-    ...(mission.memoryDrafts ? { memoryDrafts: mission.memoryDrafts } : {}),
     legacyV3: missionLegacy(mission, true)
   }
   return { record, log, slug: mission.slug }
@@ -561,14 +613,6 @@ export function convertV3Campaign(
     }
   }
 
-  // The chapter missions' ledgers, in chapter order, with their step ids renumbered.
-  const ledger = parts.flatMap(({ mission }) =>
-    (mission.ledger ?? []).map((row) => {
-      const mapped = row.stepId ? idMaps.get(mission.id)?.get(row.stepId) : undefined
-      return mapped ? { ...row, stepId: mapped } : row
-    })
-  )
-
   // The chapter logs follow the campaign's own, each marked with the mission it came from.
   const log = parts.reduce((acc, { mission, log: chapterLog }) => {
     const text = chapterLog.trim()
@@ -586,11 +630,11 @@ export function convertV3Campaign(
     milestones,
     steps,
     sessions,
-    links: docLinks([campaign.scope, ...parts.map(({ mission }) => mission.scope)]),
+    links: missionLinks(
+      docLinks([campaign.scope, ...parts.map(({ mission }) => mission.scope)]),
+      parts.flatMap(({ mission }) => fixedEndLinks(mission))
+    ),
     blockers,
-    ...(ledger.length > 0 ? { ledger } : {}),
-    ...(campaign.outcome ? { outcome: campaign.outcome } : {}),
-    ...(campaign.memoryDrafts ? { memoryDrafts: campaign.memoryDrafts } : {}),
     legacyV3: {
       campaign: campaign.id,
       slug: campaign.slug,
@@ -603,6 +647,10 @@ export function convertV3Campaign(
       provenance: campaign.provenance,
       sourceIds,
       stepIds,
+      // The campaign's own outcome and memory drafts; each chapter's sit under its chapter, with its
+      // ledger, whose rows keep the v3 step ids they were written with (`stepIds` maps them).
+      ...(campaign.outcome ? { outcome: campaign.outcome } : {}),
+      ...(campaign.memoryDrafts ? { memoryDrafts: campaign.memoryDrafts } : {}),
       chapters: campaign.chapters.map((chapter) => {
         const found = chapter.missionId ? byMissionId.get(chapter.missionId) : undefined
         return {
@@ -619,10 +667,8 @@ export function convertV3Campaign(
             ? {
                 mission: {
                   ...missionLegacy(found.mission, true),
-                  closedAs: found.mission.closedAs,
-                  closeReason: found.mission.closeReason,
-                  outcome: found.mission.outcome,
-                  memoryDrafts: found.mission.memoryDrafts
+                  ...(found.mission.closedAs ? { closedAs: found.mission.closedAs } : {}),
+                  ...(found.mission.closeReason ? { closeReason: found.mission.closeReason } : {})
                 }
               }
             : {})
