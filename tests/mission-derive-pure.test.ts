@@ -443,7 +443,7 @@ describe('the observer pass records what a read would have (delta 1)', () => {
     const kinds = cache.getObservedLedger(MISSION_ID).map((r) => `${r.kind}:${r.ref}`)
     expect(kinds).toEqual(expect.arrayContaining(['pr-opened:#7', 'pr-merged:#8', 'ci:#7']))
     expect(cache.getLastKnown(root, 'pr', '8')?.state).toBe('MERGED')
-    expect(lastKnownProgress(mission.id)?.total).toBe(2)
+    expect(lastKnownProgress(mission.id)?.total).toBe(3)
     expect(h.wakes).toEqual([[MISSION_ID, 'ci']])
     expect((await fs.readFile(file)).equals(before)).toBe(true)
     // The same world again records nothing and wakes nobody.

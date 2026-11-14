@@ -157,14 +157,16 @@ import {
 } from '../mission-core'
 import { probeGitMeta } from '../git-probe'
 import { getObservedLedger } from '../mission-link-cache'
-import { deriveAndObserve, lastKnownProgress, wakeSteward } from '../missions/observer'
+import { lastKnownProgress, wakeSteward } from '../missions/observer'
 import {
   MAIN_CI_GET_WAIT_MS,
   isInside,
   pathExists,
   scopeTargetProblem,
+  deriveMission,
   linkPath,
   type MissionDerived,
+  type MissionReading,
   type MissionStepSignals,
   type ScopeTargetProblem
 } from '../missions/derive'
@@ -4388,11 +4390,11 @@ async function missionChildren(
 }
 
 /**
- * What every read of a mission does: derive it, then let the observer act on what the read saw
- * (`missions/observer.ts`). The scoped session projection is the one live source that belongs to
- * this layer, so it is injected.
+ * A mission's live reading: the derived view, the sessions it read, and what the read saw
+ * ({@link MissionReading.observation}). Writes nothing (AC-4). The scoped session projection is
+ * the one live source that belongs to this layer, so it is injected into the derive.
  */
-export async function deriveMissionSignals(
+export async function deriveMissionReading(
   root: string,
   mission: Mission,
   log: string,
@@ -4400,8 +4402,8 @@ export async function deriveMissionSignals(
   now: number,
   /** `prWaitMs`: how long to wait for GitHub before reading the sticky last-known states. */
   opts: { prWaitMs?: number; mainCiWaitMs?: number } = {}
-): Promise<{ derived: MissionDerived; children: MissionChildState[] }> {
-  return deriveAndObserve(
+): Promise<MissionReading> {
+  return deriveMission(
     root,
     mission,
     log,
@@ -4409,6 +4411,24 @@ export async function deriveMissionSignals(
     now,
     opts
   )
+}
+
+/**
+ * What every read of a mission calls (`mission_get`, `campaign_get`, the list polls, the steward
+ * bridge): the pure derive, and nothing else. Looking at a mission never writes a file, a sidecar
+ * row or the sticky cache and never wakes a steward; the observer pass does that
+ * (`missions/observer.ts`, started by `mission-ipc.ts`).
+ */
+export async function deriveMissionSignals(
+  root: string,
+  mission: Mission,
+  log: string,
+  ctx: ToolHandlerCtx,
+  now: number,
+  opts: { prWaitMs?: number; mainCiWaitMs?: number } = {}
+): Promise<{ derived: MissionDerived; children: MissionChildState[] }> {
+  const { derived, children } = await deriveMissionReading(root, mission, log, ctx, now, opts)
+  return { derived, children }
 }
 
 /** The mission title — the `# <title>` heading its Log body opens with (no Mission field holds it). */

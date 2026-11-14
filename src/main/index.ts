@@ -221,7 +221,7 @@ import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
 import { registerGithubBudget, stopGithubBudget } from './github-budget'
-import { registerMissionIpc } from './mission-ipc'
+import { registerMissionIpc, startMissionObserver } from './mission-ipc'
 import { registerCampaignIpc } from './campaign-ipc'
 import { registerReviewHandlers } from './review-ipc'
 import { resolveCliFolderArg } from './cli-folder-arg'
@@ -294,6 +294,8 @@ function isAllowedExternalProtocol(url: string): boolean {
 }
 
 let mainWindow: BrowserWindow | null = null
+/** Stops the mission observer's cadence (Missions v4 S-3); `null` until it starts. */
+let stopMissionObserver: (() => void) | null = null
 
 /**
  * Singleton watcher handle, lazily started on the first `folders:load` call.
@@ -647,6 +649,10 @@ app.whenReady().then(async () => {
   registerGithubBudget()
   // T370 (T358 S9): mission progress read + the operator doors.
   registerMissionIpc()
+  // Missions v4 S-3: reading a mission writes nothing. This is what records what the missions' links
+  // show (ledger rows, remembered progress) and wakes the stewards: a pass on a cadence, and one
+  // after a linked session ends.
+  stopMissionObserver = startMissionObserver()
   registerCampaignIpc()
   // T164 U2: branch-vs-base diff + the evidence header's receipts, plus the
   // per-repo blast-radius list (operator-owned, never reachable from an MCP verb).
@@ -1253,6 +1259,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', async (event) => {
   stopGithubBudget()
+  stopMissionObserver?.()
   // T579: ask first when agents are mid-turn. Cancel keeps everything alive (nothing below runs).
   guardQuit(event, () => mainWindow)
   if (event.defaultPrevented) return
