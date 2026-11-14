@@ -344,6 +344,41 @@ describe('the pane type persists like the other helper panes', () => {
   })
 })
 
+describe('the count line agrees with its number', () => {
+  const lineFor = async (
+    unit: 'steps' | 'milestones',
+    total: number,
+    done: number
+  ): Promise<string> => {
+    replies = {
+      A: [
+        mission({
+          missionId: 'mnt-a',
+          title: 'Measure the spec',
+          progress: { unit, total, done },
+          sessionIds: ['A']
+        })
+      ]
+    }
+    seed(['A'], 'A')
+    const w = await mountPane()
+    return w.get('[data-test="mission-count"]').text()
+  }
+
+  it('says "1 step" and "1 milestone", not "1 steps"', async () => {
+    expect(await lineFor('steps', 1, 0)).toBe('0 of 1 step done')
+  })
+
+  it('keeps the plural for every other number', async () => {
+    expect(await lineFor('steps', 21, 4)).toBe('4 of 21 steps done')
+  })
+
+  it('agrees in Portuguese too', async () => {
+    i18n.global.locale.value = 'pt-BR'
+    expect(await lineFor('milestones', 1, 1)).toBe('1 de 1 marco concluído')
+  })
+})
+
 /** Run the store's refresh once more, as the poll would. */
 async function useMissionsRefresh(): Promise<void> {
   const { useMissionsStore } = await import('../src/renderer/src/stores/missions')
