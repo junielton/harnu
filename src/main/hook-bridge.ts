@@ -62,6 +62,9 @@ export {
   type HookPayload
 } from './detect/task-state-hub'
 
+/** Missions v4 S-16b: the path prefix of the summary route, `/mission/<token>/summary`. */
+const MISSION_ROUTE = 'mission'
+
 /** Internal dispatch deadline. STRICTLY < HOOK_TIMEOUT_S*1000 (hook-installer.ts:22 = 5s). */
 const RESPONDER_DEADLINE_MS = 3500
 
@@ -110,6 +113,11 @@ export function startHookServer(
      * `PreToolUse` output JSON. Absent = the route answers `{}` (allow).
      */
     docRead?: (minLines: number, body: Record<string, unknown>) => Promise<string>
+    /**
+     * Missions v4 S-16b: the answer to the summary hook (`POST /mission/<token>/summary`), the text the
+     * hook prints after a compaction. Plain text. Absent, or a throw = the route prints nothing.
+     */
+    missionSummary?: (body: Record<string, unknown>) => Promise<string>
   } = {}
 ): Promise<StartedServer> {
   // Defaults preserve pure-observer behavior, so existing call-sites/tests that
@@ -129,7 +137,8 @@ export function startHookServer(
       const parts = (req.url ?? '').split('/').filter(Boolean) // ['hook', token, event, tag]
       const isSteward = parts[0] === 'steward' // ['steward', token, route]
       const isDocRead = parts[0] === DOC_READER_ROUTE // ['docread', token, minLines]
-      if (req.method !== 'POST' || (parts[0] !== 'hook' && !isSteward && !isDocRead))
+      const isMission = parts[0] === MISSION_ROUTE // ['mission', token, 'summary']
+      if (req.method !== 'POST' || (parts[0] !== 'hook' && !isSteward && !isDocRead && !isMission))
         return respond(404)
       // http-guard parity (lesson 004): DNS-rebind guard on Host + Origin, and a
       // constant-time token compare (no early-exit timing side-channel). The
@@ -161,6 +170,37 @@ export function startHookServer(
             out = '{}'
           }
           respond(200, out)
+        })
+        req.on('error', () => respond(400))
+        return
+      }
+
+      if (isMission) {
+        // S-16b: the mission summary a `SessionStart` (compact) command hook fetches. Fails soft in
+        // everything: a bad body, a throwing handler or no handler prints nothing.
+        if (parts[2] !== 'summary' || parts.length !== 3) return respond(404)
+        let rawBody = ''
+        req.on('data', (c) => {
+          rawBody += c
+          if (rawBody.length > 1 << 20) req.destroy()
+        })
+        req.on('end', async () => {
+          let payload: Record<string, unknown> = {}
+          try {
+            const parsed = JSON.parse(rawBody || '{}')
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+              payload = parsed as Record<string, unknown>
+          } catch {
+            payload = {}
+          }
+          let text = ''
+          try {
+            text = (await opts.missionSummary?.(payload)) ?? ''
+          } catch (err) {
+            console.warn('[mission] summary route failed (answering empty):', err)
+          }
+          res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+          res.end(text)
         })
         req.on('error', () => respond(400))
         return
@@ -461,6 +501,18 @@ export function setStewardRouteHandler(
   stewardRouteHandler = fn
 }
 
+/**
+ * Missions v4 S-16b: who answers the summary hook. Set from `index.ts`, so this file imports no mission
+ * code. Null = the route prints nothing.
+ */
+let missionSummaryHandler: ((body: Record<string, unknown>) => Promise<string>) | null = null
+
+export function setMissionSummaryHandler(
+  fn: ((body: Record<string, unknown>) => Promise<string>) | null
+): void {
+  missionSummaryHandler = fn
+}
+
 export async function registerHookBridge(getWindow: () => BrowserWindow | null): Promise<void> {
   currentToken = randomUUID()
   // Register the zero-risk demo resolver + load the persisted mode before the
@@ -476,7 +528,8 @@ export async function registerHookBridge(getWindow: () => BrowserWindow | null):
     getMode,
     registry: responderRegistry,
     steward: async (route, body) => (await stewardRouteHandler?.(route, body)) ?? '',
-    docRead: (minLines, body) => answerDocReadHook(minLines, body)
+    docRead: (minLines, body) => answerDocReadHook(minLines, body),
+    missionSummary: async (body) => (await missionSummaryHandler?.(body)) ?? ''
   })
   serverClose = started.close
   currentPort = started.port
