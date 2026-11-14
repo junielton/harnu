@@ -98,10 +98,10 @@ export type MissionState = (typeof MISSION_STATES)[number]
  * The English words of the spec's vocabulary, for AGENT-FACING text only (a verb's ACK, a summary, a
  * skill): the pane and the pill translate the identifier through i18n instead. Every identifier above
  * has a word, and none is a word the writing contract refuses: "in review" and "driver" are never
- * here. (`to do`, `running` and `done` are fine as a state; the contract only refuses a TITLE that is
+ * here. Not to be confused with `STATE_WORDS` in `contract.ts`, the six words a title may not be. (`to do`, `running` and `done` are fine as a state; the contract only refuses a TITLE that is
  * nothing but one.)
  */
-export const STATE_WORDS: Readonly<Record<StepState | MilestoneState | MissionState, string>> =
+export const STATE_LABELS: Readonly<Record<StepState | MilestoneState | MissionState, string>> =
   Object.freeze({
     todo: 'to do',
     running: 'running',
