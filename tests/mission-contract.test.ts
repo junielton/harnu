@@ -98,6 +98,24 @@ describe('the caps', () => {
       ])
       expect(JSON.stringify(result)).not.toContain(over.slice(0, 20))
     }
+
+    // The same, with the spec's numbers written out here (not read from CAPS): the proof must fail if
+    // a cap moves. Each is accepted at its number and refused one character past it.
+    const LITERAL: Array<[(text: string) => ContractResult, number]> = [
+      [checkMissionTitle, 60],
+      [checkMilestoneTitle, 45],
+      [checkStepTitle, 50],
+      [checkAsk, 90],
+      [checkWhy, 60],
+      [checkCriterion, 70],
+      [checkButtonLabel, 16]
+    ]
+    for (const [check, cap] of LITERAL) {
+      expect(check(words(cap))).toEqual({ ok: true })
+      const r = check(words(cap + 1))
+      refusedWith(r, 'OVER_CAP')
+      if (!r.ok) expect([r.cap, r.length]).toEqual([cap, cap + 1])
+    }
   })
 
   it('count characters, not UTF-16 units: a long text of emoji is measured as typed', () => {
@@ -166,6 +184,32 @@ describe('the checkable rules', () => {
     refusedWith(checkMilestoneTitle('In review'), 'STATE_WORD_TITLE')
     expect(checkStepTitle('Review the scoring plan')).toEqual({ ok: true })
     expect(checkMilestoneTitle('Review the scoring plan')).toEqual({ ok: true })
+
+    // The exact lists and thresholds the table gives, written out again: a list that moves fails here.
+    expect([...INTERNAL_WORDS]).toEqual([
+      'needs-human',
+      'self-verified',
+      'radiant',
+      'declared end',
+      'fixed end'
+    ])
+    expect([...STATE_WORDS]).toEqual(['in review', 'blocked', 'done', 'running', 'to do', 'driver'])
+    for (const word of INTERNAL_WORDS)
+      refusedWith(checkAsk(`Check the ${word} here`), 'INTERNAL_WORD')
+    for (const word of STATE_WORDS) refusedWith(checkStepTitle(word), 'STATE_WORD_TITLE')
+    refusedWith(checkCriterion('Two words'), 'CRITERION_TOO_SHORT')
+    expect(checkCriterion('Exactly three words')).toEqual({ ok: true })
+    refusedWith(checkBlockerReason('Set HARNU_CORPUS_DIR to continue now'), 'BLOCKER_REASON_VAGUE')
+    expect(checkBlockerReason('Set HARNU_CORPUS_DIR to the folder now')).toEqual({ ok: true })
+    refusedWith(
+      checkBlockerReason('The run cannot start until you set DIR'),
+      'BLOCKER_REASON_VAGUE'
+    )
+    expect(checkBlockerReason('The run cannot start until you set HOME')).toEqual({ ok: true })
+    for (const id of ['T685', '#256', 'PROJ-231', 'stp-3', 'mls-2']) {
+      refusedWith(checkTitleEdge(`${id} Load the files`), 'TITLE_EDGE_ID')
+      refusedWith(checkTitleEdge(`Load the files (${id})`), 'TITLE_EDGE_ID')
+    }
   })
 
   describe('row 1: an id or number is not the start or end of a title', () => {
@@ -214,7 +258,10 @@ describe('the checkable rules', () => {
     it('needs at least 6 words', () => {
       expect(BLOCKER_REASON_MIN_WORDS).toBe(6)
       // Five words, with a reference: still too short.
-      refusedWith(checkBlockerReason('Set HARNU_CORPUS_DIR to continue'), 'BLOCKER_REASON_VAGUE')
+      refusedWith(
+        checkBlockerReason('Set HARNU_CORPUS_DIR to continue now'),
+        'BLOCKER_REASON_VAGUE'
+      )
       expect(checkBlockerReason('Set HARNU_CORPUS_DIR to the folder now')).toEqual({ ok: true })
     })
 
