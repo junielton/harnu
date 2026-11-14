@@ -464,6 +464,27 @@ export function youRowAge(row: YouRow): string | null {
 }
 
 /**
+ * ONE owed item in the operator's words, outside the You lane (the Activity cue, the review dialog):
+ * the same {@link youRowText} the lane uses, so an item has one wording in the renderer. No age is
+ * known here, so a steward-paused sentence carries none.
+ */
+export function youItemText(
+  t: PluralTranslate,
+  view: MissionView,
+  item: MissionYouItem,
+  sessionName: (sessionId: string) => string = (id) => id
+): string {
+  const row: YouRow = {
+    kind: item.kind,
+    item,
+    stepId: item.kind === 'decide' ? item.stepId : null,
+    ageMs: null,
+    risk: RISK[item.kind]
+  }
+  return youRowText(t, view, row, sessionName)
+}
+
+/**
  * One You-lane row in the operator's words — never the English `mission_get` sentence. Shared by
  * the chapter popover and the Campaign popover's aggregated lane. `sessionName` resolves a child
  * session's display name (the caller owns the sessions store).

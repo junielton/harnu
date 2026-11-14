@@ -204,8 +204,9 @@ export function waitingList(
     .filter((s, i) => {
       if (s.verification !== 'human') return false
       if (s.proof === 'verified' && s.verifiedBy?.sessionId === OPERATOR_VERIFIER) return false
-      // A decision the operator has made is finished — nothing left to confirm.
-      if (s.decision?.chosen !== undefined) return false
+      // A decision node is listed once, as `decide` (below), whether or not the operator has
+      // chosen: a pending one is not a second thing to confirm, a decided one has nothing left.
+      if (s.decision !== undefined) return false
       const isCurrent = current !== null && i + 1 >= current.from && i + 1 <= current.to
       return reached(s.id) || isCurrent || progress.leftBehind.includes(s.id)
     })

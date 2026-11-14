@@ -5408,10 +5408,13 @@ const missionRequestCloseHandler: Handler = async (args, ctx) => {
     // The same checks mission_get reports as `closeReadiness` (Mission v2 §3.5).
     const refused = requestCloseRefusal(m)
     if (refused) return { ok: false, error: `${refused.code}: ${refused.reason}` }
+    // The store says who leads a mission (null once closed, which the refusal above already caught).
+    const leader = leaderOf(m)
+    if (leader === null) return { ok: false, error: 'MISSION_CLOSED: the mission is closed.' }
     // design §3: the agent's request lands on `delivered` + `pendingClose`; only
     // the operator's UI (`applyOperatorEnd`) reaches `closed`.
     m.status = 'delivered'
-    m.pendingClose = { at: new Date().toISOString(), requestedBy: requestedBy ?? m.owner.sessionId }
+    m.pendingClose = { at: new Date().toISOString(), requestedBy: requestedBy ?? leader }
     // Campaign ch.6 (AC-6.1): one consolidation pass over the structured record. It stores the
     // outcome and the drafts; writing any of them to memory is the operator's tick (AC-6.2).
     const c = consolidate(
