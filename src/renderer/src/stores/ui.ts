@@ -47,7 +47,6 @@ export type ViewId =
   | 'review'
   | 'scheduler'
   | 'containers'
-  | 'campaignMap'
 
 /**
  * The params each `ViewId` needs to render, keyed so that opening a view with
@@ -69,8 +68,6 @@ export interface ViewParams {
   scheduler: Record<string, never>
   /** T331 — global, like `cleanup`: every docker stack on the machine, not one folder's. */
   containers: Record<string, never>
-  /** T607 — global like `scheduler`: the campaign names its own folder; the map reads it by id. */
-  campaignMap: { campaignId: string }
 }
 
 /**
@@ -478,8 +475,6 @@ export const useUiStore = defineStore('ui', () => {
     systemMonitor: { scope: 'global', titleKey: 'systemMonitor.title' },
     scheduler: { scope: 'global', titleKey: 'scheduler.title' },
     containers: { scope: 'global', titleKey: 'containers.title' },
-    // T607: `campaign.map.title` / `campaign.map.close` (the shell derives the close key).
-    campaignMap: { scope: 'global', titleKey: 'campaign.map.title' },
     // T245 AC-6: the review companion is scoped to the review, so the review
     // ending is what disposes it — see `fireReviewClosed` below.
     review: { scope: 'folder', titleKey: 'review.title', onClose: () => fireReviewClosed() }
@@ -629,14 +624,6 @@ export const useUiStore = defineStore('ui', () => {
   const cleanupOpen = computed(() => activeView.value?.id === 'cleanup')
   const schedulerOpen = computed(() => activeView.value?.id === 'scheduler')
   const containersOpen = computed(() => activeView.value?.id === 'containers')
-
-  /** T607: the Campaign map takeover and the campaign it shows. */
-  const campaignMap = computed<{ open: boolean; campaignId: string | null }>(() => {
-    const v = activeView.value
-    return v?.id === 'campaignMap'
-      ? { open: true, campaignId: v.params.campaignId }
-      : { open: false, campaignId: null }
-  })
 
   /**
    * Repo path to scroll `CleanupView` to on open (Reaper PR4, repo-group
@@ -974,18 +961,6 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /**
-   * Open the Campaign map takeover (T607) for one campaign, by id. Global scope like Cleanup:
-   * the map reads the campaign from the campaigns store, so there is no folder to compare.
-   */
-  function openCampaignMap(campaignId: string): void {
-    openView('campaignMap', { campaignId })
-  }
-
-  function closeCampaignMap(): void {
-    closeView('campaignMap')
-  }
-
-  /**
    * Open the PR Stack Canvas for a folder (T198). Per repo, like `openRoadmap`
    * — `folderPath` anchors it to a folder whose repo owns the PRs, `repoLabel`
    * is the header title. Any worktree of the repo opens the same canvas.
@@ -1213,7 +1188,6 @@ export const useUiStore = defineStore('ui', () => {
     cleanupOpen,
     schedulerOpen,
     containersOpen,
-    campaignMap,
     prStack,
     review,
     anyTakeoverOpen,
@@ -1264,8 +1238,6 @@ export const useUiStore = defineStore('ui', () => {
     closeCleanup,
     openContainers,
     closeContainers,
-    openCampaignMap,
-    closeCampaignMap,
     openPrStack,
     closePrStack,
     openReview,

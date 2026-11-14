@@ -5,7 +5,7 @@
  *
  *   AC-4b.2  Main quest / Side quests / Locked on the left, the open chapter's objectives with
  *            gate dots on the right, the You lane, the footer ("End campaign…" disabled with a
- *            reason because no campaign end door exists in main yet; "Open map" enabled by T607)
+ *            reason because no campaign end door exists in main yet)
  *   AC-4b.3  the chapter popover: the back link, the You lane as aged rows (no "+N more"), the
  *            "Decide: …" row, the ledger tail
  */
@@ -125,13 +125,12 @@ describe('AC-4b.2 — CampaignPopover', () => {
     expect(w.find('[data-test="campaign-steward"]').exists()).toBe(false)
   })
 
-  it('"End campaign…" is rendered disabled with a tooltip saying why; "Open map" is enabled (T607)', () => {
+  it('"End campaign…" is rendered disabled with a tooltip saying why; there is no map button (T704)', () => {
     const w = mountIt()
     const end = w.get('[data-test="campaign-end"]')
     expect(end.attributes('disabled')).toBeDefined()
     expect(end.attributes('title')).toBeTruthy()
-    const map = w.get('[data-test="campaign-open-map"]')
-    expect(map.attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-test="campaign-open-map"]').exists()).toBe(false)
   })
 
   it('"Open chapter" emits the chapter’s mission id', async () => {
