@@ -273,7 +273,7 @@ function stoppedPart(m: MissionV4): string {
     if (s.to === null && !s.stoppedAt) return `- ${who}: working now`
     const at = s.stoppedAt
     const where = at?.step
-      ? ` at ${at.step}${titleOf(at.step) ? ` ${shorten(titleOf(at.step), 60)}` : ''}`
+      ? ` at ${at.step}${titleOf(at.step) ? ` "${shorten(titleOf(at.step), 60)}"` : ''}`
       : ''
     const waiting = at?.waitingFor ? `, waiting for ${shorten(at.waitingFor, MAX.waitingFor)}` : ''
     return `- ${who}: ${s.to === null ? 'working' : `stopped${where}`}${waiting}`
