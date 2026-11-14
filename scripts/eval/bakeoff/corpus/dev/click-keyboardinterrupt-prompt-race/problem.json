@@ -1,0 +1,26 @@
+{
+  "id": "click-keyboardinterrupt-prompt-race",
+  "split": "dev",
+  "kind": "bug",
+  "language": "python",
+  "target": {
+    "repo": "https://github.com/pallets/click",
+    "commit": "b47c0529e99129d4785fecc2cb39a8ec8b4aa5f8"
+  },
+  "setup": ["python3 -m venv .venv", ".venv/bin/pip install -e . pytest"],
+  "versions": "python3 --version",
+  "test": ".venv/bin/python -m pytest -q",
+  "hidden": {
+    "cmd": ".venv/bin/python -m pytest -q tests/test_hidden_bakeoff.py --junitxml=\"$BAKEOFF_JUNIT\"",
+    "files": ["test_hidden_bakeoff.py"],
+    "dest": "tests",
+    "compileErrorPattern": "(ImportError|ModuleNotFoundError|SyntaxError)"
+  },
+  "provenance": {
+    "authoredAt": "2026-11-09T23:51:23.158Z",
+    "authoredBy": "bake-off author sandbox session",
+    "reviewedAt": "2026-11-13T16:41:40.647Z",
+    "reviewedBy": "junielton",
+    "sandbox": true
+  }
+}

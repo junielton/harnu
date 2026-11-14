@@ -9,7 +9,7 @@
  */
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 
 const ID_RE = /^[a-z0-9-]+$/
 const ATOM_ID_RE = /^[A-Z]+-\d+$/
@@ -141,6 +141,11 @@ function fileDefects(dir, parsed) {
   }
 
   if (parsed) {
+    const dest = parsed.hidden?.dest
+    if (isText(dest) && (isAbsolute(dest) || normalize(dest).split(sep)[0] === '..')) {
+      // Checked here because the build copies the hidden files to this path in its clone.
+      out.push(['FILE_MISSING', 'problem.json', 'hidden.dest', 'hidden.dest leaves the checkout'])
+    }
     const hiddenDir = join(dir, 'hidden')
     for (const f of Array.isArray(parsed.hidden?.files) ? parsed.hidden.files : []) {
       const rel = `hidden/${f}`

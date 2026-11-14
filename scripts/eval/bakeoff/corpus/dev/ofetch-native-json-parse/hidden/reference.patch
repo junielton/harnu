@@ -1,0 +1,94 @@
+diff --git a/README.md b/README.md
+index cb47fb5..978c70b 100644
+--- a/README.md
++++ b/README.md
+@@ -33,7 +33,7 @@ import { ofetch } from "ofetch";
+ 
+ ## ✔️ Parsing Response
+ 
+-`ofetch` will smartly parse JSON and native values using [destr](https://github.com/unjs/destr), falling back to the text if it fails to parse.
++`ofetch` smartly parse JSON responses.
+ 
+ ```js
+ const { users } = await ofetch("/api/users");
+@@ -41,7 +41,7 @@ const { users } = await ofetch("/api/users");
+ 
+ For binary content types, `ofetch` will instead return a `Blob` object.
+ 
+-You can optionally provide a different parser than `destr`, or specify `blob`, `arrayBuffer`, `text` or `stream` to force parsing the body with the respective `FetchResponse` method.
++You can optionally provide a different parser than `JSON.parse`, or specify `blob`, `arrayBuffer`, `text` or `stream` to force parsing the body with the respective `FetchResponse` method.
+ 
+ ```js
+ // Use JSON.parse
+@@ -398,9 +398,9 @@ myFetch("/foo", { requiresAuth: true });
+ 
+ ## 📦 Bundler Notes
+ 
+-- All targets are exported with Module and CommonJS format and named exports
++- All targets are exported with ESM format and named exports
+ - No export is transpiled for the sake of modern syntax
+-  - You probably need to transpile `ofetch`, `destr`, and `ufo` packages with Babel for ES5 support
++  - You probably need to transpile `ofetch` for ES5 support
+ - You need to polyfill `fetch` global for supporting legacy browsers like using [unfetch](https://github.com/developit/unfetch)
+ 
+ ## ❓ FAQ
+diff --git a/package.json b/package.json
+index 577bf82..d04bc1a 100644
+--- a/package.json
++++ b/package.json
+@@ -23,10 +23,6 @@
+     "release": "pnpm test && pnpm build && changelogen --release --prerelease --publish --publishTag alpha --push",
+     "test": "pnpm lint && vitest run --coverage"
+   },
+-  "dependencies": {
+-    "destr": "^2.0.5",
+-    "ufo": "^1.6.1"
+-  },
+   "devDependencies": {
+     "@types/node": "^24.9.1",
+     "@vitest/coverage-v8": "^4.0.4",
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 130238d..badaaed 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -7,13 +7,6 @@ settings:
+ importers:
+ 
+   .:
+-    dependencies:
+-      destr:
+-        specifier: ^2.0.5
+-        version: 2.0.5
+-      ufo:
+-        specifier: ^1.6.1
+-        version: 1.6.1
+     devDependencies:
+       '@types/node':
+         specifier: ^24.9.1
+diff --git a/src/fetch.ts b/src/fetch.ts
+index 8e2fe43..10c9158 100644
+--- a/src/fetch.ts
++++ b/src/fetch.ts
+@@ -1,5 +1,4 @@
+ import type { Readable } from "node:stream";
+-import destr from "destr";
+ import { withBase, withQuery } from "./utils.url.ts";
+ import { createFetchError } from "./error.ts";
+ import {
+@@ -213,12 +212,13 @@ export function createFetch(globalOptions: CreateFetchOptions = {}): $Fetch {
+           : context.options.responseType) ||
+         detectResponseType(context.response.headers.get("content-type") || "");
+ 
+-      // We override the `.json()` method to parse the body more securely with `destr`
+       switch (responseType) {
+         case "json": {
+           const data = await context.response.text();
+-          const parseFunction = context.options.parseResponse || destr;
+-          context.response._data = parseFunction(data);
++          if (data) {
++            const parseFunction = context.options.parseResponse || JSON.parse;
++            context.response._data = parseFunction(data);
++          }
+           break;
+         }
+         case "stream": {
