@@ -344,10 +344,15 @@ describe('the you list with decisions and side steps (§3.2)', () => {
   }
 
   it('an undecided decision node is owed to the operator; a decided one is not', async () => {
+    // Listed once, as a decision (S-5): not a second time as a human step.
     expect(await owed(decisionCurrent())).toContainEqual({
-      kind: 'human-steps',
-      stepIds: ['stp-2']
+      kind: 'decide',
+      stepId: 'stp-2',
+      title: 'Which store?'
     })
+    expect(await owed(decisionCurrent())).not.toContainEqual(
+      expect.objectContaining({ kind: 'human-steps' })
+    )
     expect(await owed(decisionCurrent(0))).not.toContainEqual(
       expect.objectContaining({ kind: 'human-steps' })
     )
