@@ -6,16 +6,25 @@
  * Named `-v4` because `tests/mission-progress.test.ts` pins the v3 progress derivation.
  */
 import { describe, expect, it } from 'vitest'
-import type { MissionV4, StepV4 } from '../src/main/missions/model'
+import {
+  MilestoneSchema,
+  MissionRecordSchema,
+  StepSchema,
+  type Milestone,
+  type MissionV4,
+  type StepV4
+} from '../src/main/missions/model'
 import { deriveProgress } from '../src/main/missions/progress'
 import type { StepInput } from '../src/main/missions/state'
 
 const AT = '2026-11-14T10:00:00Z'
 
+// Fixtures go through the model's schemas, so a misspelt field or a bad value fails here, not later.
+
 /** A step with one session criterion: open until `done` is passed, which stamps a second session. */
 function mkStep(id: string, extra: Partial<StepV4> & { done?: boolean } = {}): StepV4 {
   const { done, ...rest } = extra
-  return {
+  return StepSchema.parse({
     id,
     title: `Step ${id}`,
     acs: [
@@ -29,11 +38,11 @@ function mkStep(id: string, extra: Partial<StepV4> & { done?: boolean } = {}): S
     links: [],
     blockers: [],
     ...rest
-  } as StepV4
+  })
 }
 
 function mkMission(extra: Partial<MissionV4>): MissionV4 {
-  return {
+  return MissionRecordSchema.parse({
     schemaVersion: 4,
     id: 'mnt-1a2b3c4d',
     title: 'A mission',
@@ -45,17 +54,17 @@ function mkMission(extra: Partial<MissionV4>): MissionV4 {
     links: [],
     blockers: [],
     ...extra
-  } as MissionV4
+  })
 }
 
-const ms = (id: string, extra: Record<string, unknown> = {}): MissionV4['milestones'][number] =>
-  ({
+const ms = (id: string, extra: Partial<Milestone> = {}): Milestone =>
+  MilestoneSchema.parse({
     id,
     title: `Milestone ${id}`,
     optional: false,
     waitsFor: null,
     ...extra
-  }) as MissionV4['milestones'][number]
+  })
 
 describe('the unit follows the plan', () => {
   it('counts steps when the mission has no milestones, leaving optional steps outside the count', () => {
@@ -209,6 +218,27 @@ describe('more than one milestone can be open', () => {
     expect(p.openMilestones).toEqual(['mls-1', 'mls-2', 'mls-3'])
     // the first one in plan order is still the one the headline names.
     expect(p.current).toEqual({ id: 'mls-1', ordinal: 1 })
+
+    // a second fixture: one milestone holding one step of each kind. The summary shows running,
+    // waiting for review and blocked, and has no `todo` key at all.
+    const one = mkMission({
+      milestones: [ms('mls-1')],
+      steps: [
+        mkStep('stp-1', { milestone: 'mls-1' }), // running
+        mkStep('stp-2', { milestone: 'mls-1' }), // waiting for review
+        mkStep('stp-3', {
+          milestone: 'mls-1',
+          blockers: [{ id: 'blk-1', reason: 'needs a key', owner: 'operator' }]
+        }), // to do, blocked
+        mkStep('stp-4', { milestone: 'mls-1' }) // to do
+      ]
+    })
+    const [mls] = deriveProgress(one, {
+      'stp-1': { workerWorking: true },
+      'stp-2': { pr: 'open' }
+    }).milestones
+    expect(mls.counts).toEqual({ running: 1, waitingReview: 1, blocked: 1 })
+    expect('todo' in mls.counts).toBe(false)
   })
 
   it('the milestone summary counts running, waiting for review and blocked steps, never to do', () => {

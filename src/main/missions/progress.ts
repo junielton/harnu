@@ -19,16 +19,8 @@
  * it still appears in {@link MissionProgress.steps}.
  */
 
-import type { MissionV4, StepV4 } from './model'
-import {
-  deriveMilestoneState,
-  deriveMissionState,
-  deriveStepState,
-  type MilestoneState,
-  type MissionState,
-  type StepInput,
-  type StepState
-} from './state'
+import type { MilestoneState, MissionState, MissionV4, StepState, StepV4 } from './model'
+import { deriveMilestoneState, deriveMissionState, deriveStepState, type StepInput } from './state'
 
 /** What the milestone summary shows: running, waiting for review and blocked. Never to do. */
 export interface MilestoneCounts {

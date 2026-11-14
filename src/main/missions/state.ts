@@ -17,37 +17,51 @@
  * - **A fact replaces stale state**: a blocker that names the fact it waits for stops showing when the
  *   fact holds, and a criterion tied to a fact is never settled by a stamp.
  *
+ * The state identifiers (`todo`, `running`, `waiting-review`, `done`, the milestone and mission ones)
+ * are defined once in `model.ts` (`STEP_STATES`, `MILESTONE_STATES`, `MISSION_STATES`); this module
+ * returns them and defines none.
+ *
  * The card column is an input (owner's decision for AC-29): a card in `review` reads waiting for
  * review (rule 2), `backlog` and `ready` read to do, `in-progress` reads running, and the operator
  * closing the card (`done`) reads the step done. This module produces nothing from the board; the
  * caller hands the column over as a plain value.
  */
 
-import type { AcceptanceCriterion, BlockerV4, CriterionBy, Fact, StepV4 } from './model'
+import type {
+  AcceptanceCriterion,
+  BlockerV4,
+  CriterionBy,
+  Fact,
+  MilestoneState,
+  MissionState,
+  StepState,
+  StepV4
+} from './model'
 
-// ---- Vocabularies ---------------------------------------------------------------
-
-export const STEP_STATES = ['todo', 'running', 'waiting-review', 'done'] as const
-export type StepState = (typeof STEP_STATES)[number]
-
-export const MILESTONE_STATES = ['not-started', 'in-progress', 'waiting-review', 'done'] as const
-export type MilestoneState = (typeof MILESTONE_STATES)[number]
-
-export const MISSION_STATES = ['open', 'ready-to-close', 'closed'] as const
-export type MissionState = (typeof MISSION_STATES)[number]
+// ---- Input ------------------------------------------------------------------------
 
 /** The board column of a dispatched step's card; `null` or absent for a step that has no card. */
 export type CardColumn = 'backlog' | 'ready' | 'in-progress' | 'review' | 'done'
 
-/** The state of the step's pull request: none yet, open, or merged. */
-export type PrState = 'none' | 'open' | 'merged'
+/**
+ * The state of the step's pull request: none yet, open, closed without merging, or merged. A closed
+ * pull request counts as none everywhere: the work it carried does not exist.
+ */
+export type PrState = 'none' | 'open' | 'closed' | 'merged'
 
 /** The facts a pull request's state does not already carry. */
 export type ReadFact = 'ci-green' | 'main-green' | 'link-exists'
 
 /**
  * Everything the derivation needs to know about one step that the record does not hold. All optional:
- * an empty input is a step with no card, no pull request, no worker and no readable fact.
+ * an empty input is a step with no card, no pull request, no worker and no fact read yet.
+ *
+ * **Unknown is not false.** A fact that is absent (no `pr`, or no entry in `facts`) is "not read yet":
+ * the caller could not or did not read it, which is never a failure. `false` is "read, and it does not
+ * hold". Both settle nothing and clear nothing, so a step reads the same either way; the difference
+ * is for the surfaces that must tell them apart, as the waiting list's `main-failing` item does:
+ * `main-green: false` means main is red, absent means nothing. Ask {@link factReading} for the three
+ * values instead of testing the input yourself.
  */
 export interface StepInput {
   /** The step's card column, when it has a card. */
@@ -67,19 +81,36 @@ export interface StepInput {
 
 // ---- Facts ------------------------------------------------------------------------
 
-/** Whether `fact` holds now, from the step's input. A missing reading does not hold. */
-export function factHolds(fact: Fact, input: StepInput): boolean {
-  const pr = input.pr ?? 'none'
+/** What the input says about one fact: it holds, it was read and does not hold, or it was not read. */
+export type FactReading = 'holds' | 'does-not-hold' | 'unknown'
+
+/**
+ * Read one fact from the step's input. The pull request facts follow `pr` (absent is `unknown`; any
+ * given value was read, and `none` and `closed` hold neither fact; a merged pull request was opened);
+ * the others follow `facts` (absent is `unknown`, `true` holds, `false` does not).
+ */
+export function factReading(fact: Fact, input: StepInput): FactReading {
   switch (fact) {
     case 'pr-opened':
-      return pr === 'open' || pr === 'merged' // a merged pull request was opened
-    case 'pr-merged':
-      return pr === 'merged'
+    case 'pr-merged': {
+      const pr = input.pr
+      if (pr === undefined) return 'unknown'
+      const holds = fact === 'pr-merged' ? pr === 'merged' : pr === 'open' || pr === 'merged'
+      return holds ? 'holds' : 'does-not-hold'
+    }
     case 'ci-green':
     case 'main-green':
-    case 'link-exists':
-      return input.facts?.[fact] === true
+    case 'link-exists': {
+      const read = input.facts?.[fact]
+      if (read === undefined) return 'unknown'
+      return read ? 'holds' : 'does-not-hold'
+    }
   }
+}
+
+/** Whether `fact` holds now. An unknown fact does not hold, and is never a failure. */
+export function factHolds(fact: Fact, input: StepInput): boolean {
+  return factReading(fact, input) === 'holds'
 }
 
 // ---- Criteria ---------------------------------------------------------------------
@@ -173,7 +204,8 @@ export interface StepStateResult {
  *    while a criterion is open; or no pull request exists and only operator or person criteria are
  *    still open, which is how a sign-off step reads.
  * 3. `running`: a session other than the leader works on it, its card is in progress, or the leader
- *    started it (`startedAt`) and no pull request exists yet.
+ *    started it (`startedAt`) and no pull request exists yet, unless its card sits in Backlog or Ready
+ *    (re-queued: it reads to do, whatever `startedAt` says).
  * 4. `todo`: otherwise (Backlog and Ready both read to do, D-6).
  */
 export function deriveStepState(step: StepV4, input: StepInput = {}): StepStateResult {
@@ -185,7 +217,8 @@ export function deriveStepState(step: StepV4, input: StepInput = {}): StepStateR
     if (!s.settled) open.push(c)
   }
 
-  const pr = input.pr ?? 'none'
+  // A pull request closed without merging counts as none: the work does not exist.
+  const pr = input.pr === undefined || input.pr === 'closed' ? 'none' : input.pr
   const card = input.card ?? null
   const allSettled = criteria.length > 0 && open.length === 0
 
@@ -203,7 +236,8 @@ export function deriveStepState(step: StepV4, input: StepInput = {}): StepStateR
   } else if (
     input.workerWorking === true ||
     card === 'in-progress' ||
-    (step.startedAt !== undefined && pr === 'none')
+    // A card in Backlog or Ready was re-queued: it reads to do whatever `startedAt` says.
+    (step.startedAt !== undefined && pr === 'none' && card !== 'backlog' && card !== 'ready')
   ) {
     state = 'running'
   } else {
