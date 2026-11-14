@@ -129,6 +129,8 @@ function summaryText(part: SummaryPart): string {
   }
 }
 
+const summaryLength = (m: PaneMilestoneRow): number => milestoneSummary(m).length
+
 const stepStateLabel = (s: PaneStepRow): string =>
   t(`missionPane.tree.state.${s.blocked ? 'running' : s.state}`)
 
@@ -209,7 +211,7 @@ defineExpose({ openStep })
 
 <template>
   <div
-    class="flex flex-col"
+    class="@container flex flex-col"
     style="gap: 1px"
     :aria-label="$t('missionPane.tree.label')"
     data-test="tree"
@@ -333,10 +335,17 @@ defineExpose({ openStep })
               data-test="milestone-summary"
             >
               <template v-for="(part, pi) in milestoneSummary(block.milestone)" :key="part.kind">
-                <span v-if="pi > 0" aria-hidden="true">{{ ' · ' }}</span>
-                <span :class="part.kind === 'blocked' ? 'text-red' : ''">{{
-                  summaryText(part)
-                }}</span>
+                <span v-if="pi > 0">{{ ' ' }}</span>
+                <!-- The separator trails its part and the pair never breaks: no "·" opens a wrapped line. -->
+                <span
+                  class="whitespace-nowrap"
+                  :class="part.kind === 'blocked' ? 'text-red' : ''"
+                  >{{
+                    pi < summaryLength(block.milestone) - 1
+                      ? `${summaryText(part)} ·`
+                      : summaryText(part)
+                  }}</span
+                >
               </template>
             </div>
 
@@ -363,8 +372,12 @@ defineExpose({ openStep })
                   <ChevronRight v-else :size="10" :stroke-width="1.5" />
                 </span>
                 <Glyph :kind="stepGlyph(s.state, s.blocked)" :label="stepStateLabel(s)" />
-                <span class="truncate">{{ s.title }}</span>
-                <span class="flex items-center" style="gap: 6px; font-size: 10.5px">
+                <span class="line-clamp-2 break-words">{{ s.title }}</span>
+                <span
+                  class="flex flex-wrap items-center @max-[340px]:col-start-3 @max-[340px]:row-start-2 @max-[340px]:justify-self-start"
+                  style="gap: 6px; font-size: 10.5px"
+                  data-test="step-meta"
+                >
                   <span
                     v-if="s.blocked"
                     class="rounded-sm border border-red-line bg-red-soft text-red"

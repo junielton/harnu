@@ -7771,7 +7771,7 @@ criteria, every level behind a **chevron** (`ChevronRight` closed, `ChevronDown`
   behind a text link **"{n} more steps"** (`11px`, `text-text-4`, hover `text-text`, padding-left
   to the title column); it expands in place, in plan order, and reads **"Show less"**.
 - **Step row** (`grid`, columns `10px 12px 1fr auto`, `gap: 7px`, `padding: 5px 6px`, `12px`,
-  `text-text-2`): chevron, glyph, title (truncated), then the right cell (`10.5px`, `text-text-4`):
+  `text-text-2`): chevron, glyph, title (wraps to at most **two lines**, then cuts), then the right cell (`10.5px`, `text-text-4`):
   the pull request number **`#256`** in `font-mono`, `text-accent` (the step's `pr` link; nothing
   when it has none), a **Blocked** chip when the step carries the blocked mark (`rounded-sm border
 border-red-line bg-red-soft text-red`, `10.5px`) and a **Yours** chip when the operator owes it
@@ -7801,8 +7801,12 @@ aligned with the glyph's centre). The line **above and below a `done` milestone 
 of the tree (nothing above the first, nothing below the last). The line is drawn by a rail cell
 in each row, not by a pixel offset from the row's edge, so it follows the glyph at any width.
 
-**Narrow pane.** The tree wraps: titles wrap in a milestone row (a step title truncates), the
-"Waits for" line wraps, the right cell never shrinks. The summary line wraps under itself.
+**Narrow pane.** The tree wraps: titles wrap in a milestone row, a step title wraps to two lines
+and then cuts, the "Waits for" line wraps. The tree is a **container** (`@container`): below
+**340px** of tree width a step's chips and pull request number move **under its title** (they
+wrap inside their own cell) instead of beside it, so they never squeeze the title down to one
+letter. The summary line's `·` separators **trail** their part (`3 running ·`) and a part never
+breaks inside itself, so no `·` opens a wrapped line. The summary line wraps under itself.
 
 **Not in this slice** (drawn in the mockup, built later, so absent from the pane today): **Ask**
 on a milestone, the **Sessions** row and the hand-off, **Close mission…**, the attach picker and
