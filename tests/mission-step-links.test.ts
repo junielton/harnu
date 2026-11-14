@@ -430,3 +430,152 @@ describe('a page or report link is an http(s) address or a path inside the repo'
     }
   })
 })
+
+// ---- Delta 3: a pull request is one pull request however it is written; hardened doc paths ---------
+
+describe('a pull request is the same pull request however its link was written', () => {
+  const converted = (ref: string): MissionV4 =>
+    missionOf({ steps: [step('stp-1', { links: [{ kind: 'pr', ref }] }), step('stp-2')] })
+
+  for (const ref of ['owner/repo#302', '#302', '302', 'https://github.com/owner/repo/pull/302']) {
+    it(`a step that carries ${ref} gains no second link for pull request 302`, () => {
+      const plan = planPrLinks(converted(ref), [{ stepId: 'stp-1', number: 302, state: 'open' }])
+      expect(plan.add).toEqual([])
+      expect(plan.skipped).toEqual([{ number: 302, reason: 'already-linked' }])
+    })
+  }
+
+  it('a pull request 3020 is not 302, and 302 on another step is its own link', () => {
+    const plan = planPrLinks(converted('owner/repo#302'), [
+      { stepId: 'stp-1', number: 30, state: 'open' },
+      { stepId: 'stp-2', number: 302, state: 'open' }
+    ])
+    expect(plan.add.map((a) => `${a.stepId}#${a.link.ref}`)).toEqual(['stp-1#30', 'stp-2#302'])
+  })
+
+  it('attachFoundPrs on a step converted with owner/repo#302 writes nothing', async () => {
+    seed(converted('owner/repo#302'))
+    const bytes = readFileSync(v4File())
+    const r = await attachFoundPrs(root, operator, ID, [
+      { stepId: 'stp-1', number: 302, state: 'merged' }
+    ])
+    expect(r).toMatchObject({ ok: true, added: [] })
+    expect(readFileSync(v4File()).equals(bytes)).toBe(true)
+  })
+
+  it('mission_link of 302 on a step that carries owner/repo#302 is the same link: added is false', async () => {
+    seed(converted('owner/repo#302'))
+    const r = await addLink(root, leader, {
+      missionId: ID,
+      stepId: 'stp-1',
+      kind: 'pr',
+      ref: '302'
+    })
+    expect(r).toMatchObject({ ok: true, added: false })
+    expect((await load()).steps[0].links).toEqual([{ kind: 'pr', ref: 'owner/repo#302' }])
+  })
+})
+
+describe('a page or report link never points into .git, .harnu or node_modules', () => {
+  const refusedBy = async (kind: 'url' | 'doc', ref: string): Promise<string> => {
+    const r = await addLink(root, leader, { missionId: ID, stepId: 'stp-1', kind, ref })
+    return r.ok ? 'ok' : r.code
+  }
+
+  beforeEach(() => {
+    seed()
+    mkdirSync(path.join(root, 'docs'), { recursive: true })
+    writeFileSync(path.join(root, 'docs', 'real.md'), '# real\n')
+    mkdirSync(path.join(root, '.git'), { recursive: true })
+    writeFileSync(path.join(root, '.git', 'config'), '[core]\n')
+  })
+
+  it('refuses a repo path with a .git, a .harnu or a node_modules segment, in any case and any spelling', async () => {
+    for (const kind of ['doc', 'url'] as const) {
+      for (const ref of [
+        '.git/config',
+        '.GIT/config',
+        'docs/.git/config',
+        './.git/config',
+        'docs/../.git/config',
+        '.harnu/../.git/config',
+        'docs\\.git\\config',
+        '.harnu/missions-v4/mnt-aa000001-x.md',
+        '.Harnu/memory/hot.md',
+        'docs/.harnu/x.md',
+        'node_modules/left-pad/readme.md',
+        'docs/node_modules/x.md',
+        'Node_Modules/x'
+      ]) {
+        expect(await refusedBy(kind, ref), `${kind} ${ref}`).toBe('BAD_LINK')
+      }
+    }
+  })
+
+  it('refuses a symlink inside the repo that leads into .git', async () => {
+    symlinkSync(path.join(root, '.git'), path.join(root, 'docs', 'to-git'))
+    expect(await refusedBy('doc', 'docs/to-git/config')).toBe('BAD_LINK')
+    expect(await refusedBy('doc', 'docs/to-git')).toBe('BAD_LINK')
+  })
+
+  it('still accepts a name that only starts like one, and an address that has .git in it', async () => {
+    for (const ref of [
+      'docs/real.md',
+      '.gitignore',
+      'docs/.github/workflow.md',
+      'docs/git-notes.md',
+      'docs/node_modules_notes.md',
+      'https://github.com/owner/repo.git',
+      'https://example.com/node_modules/x'
+    ]) {
+      expect(await refusedBy('doc', ref), ref).toBe('ok')
+    }
+  })
+
+  it('a worktree link is a path of a checkout or an evidence folder, and is not held to this', async () => {
+    const r = await addLink(root, leader, {
+      missionId: ID,
+      stepId: 'stp-1',
+      kind: 'worktree',
+      ref: '.harnu/evidence/mnt-cc000001/stp-1'
+    })
+    expect(r).toMatchObject({ ok: true })
+  })
+})
+
+describe('a link refusal says what to pass instead', () => {
+  it('a session link that is not a session id says to pass the id of the session', async () => {
+    seed()
+    const r = await addLink(root, leader, {
+      missionId: ID,
+      stepId: 'stp-1',
+      kind: 'session',
+      ref: 'the builder session'
+    })
+    expect(r).toMatchObject({ ok: false, code: 'BAD_LINK' })
+    expect(r.ok ? '' : r.error).toMatch(/pass the id of the session/i)
+    expect(r.ok ? '' : r.error).not.toContain('the builder session')
+  })
+
+  it('a pr link that is not a number says to pass the number', async () => {
+    seed()
+    const r = await addLink(root, leader, {
+      missionId: ID,
+      stepId: 'stp-1',
+      kind: 'pr',
+      ref: 'my pull request'
+    })
+    expect(r.ok ? '' : r.error).toMatch(/pass the pull request number/i)
+  })
+
+  it('an unknown kind says which five to pass', async () => {
+    seed()
+    const r = await addLink(root, leader, {
+      missionId: ID,
+      stepId: 'stp-1',
+      kind: 'steward',
+      ref: 'x'
+    })
+    expect(r.ok ? '' : r.error).toMatch(/pass one of session, pr, worktree, url, doc/)
+  })
+})
