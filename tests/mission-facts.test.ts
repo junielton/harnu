@@ -11,8 +11,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const spies = vi.hoisted(() => ({
   spawn: vi.fn(),
-  sync: vi.fn()
+  sync: vi.fn(),
+  parse: vi.fn()
 }))
+
+vi.mock('../src/main/roadmap-core', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/main/roadmap-core')>()
+  return {
+    ...real,
+    parseCard: (...a: Parameters<typeof real.parseCard>) => {
+      spies.parse()
+      return real.parseCard(...a)
+    }
+  }
+})
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>()
@@ -165,6 +177,7 @@ function deps(over: Partial<FactsDeps> = {}): FactsDeps & {
 beforeEach(() => {
   spies.spawn.mockClear()
   spies.sync.mockClear()
+  spies.parse.mockClear()
 })
 
 describe('facts come from what Harnu holds', () => {
@@ -511,5 +524,22 @@ describe('what the observer needs beyond the inputs', () => {
       ])
     )
     expect(spies.spawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('the board is parsed once however many records ask', () => {
+  it('parses each card file once across N gathers over the same board', async () => {
+    const board = [
+      cardFile('T1-a', { status: 'review', step: 'stp-1' }),
+      cardFile('T2-b', { status: 'ready', step: 'stp-2' })
+    ]
+    const shared = async (): Promise<CardFile[]> => board
+    const records = [1, 2, 3].map(() => record([{ card: 'T1-a' }, { card: 'T2-b' }]))
+    spies.parse.mockClear()
+    for (const rec of records) {
+      const inputs = await gatherStepInputs(ROOT, rec, deps({ board: shared }))
+      expect([inputs['stp-1'].card, inputs['stp-2'].card]).toEqual(['review', 'ready'])
+    }
+    expect(spies.parse).toHaveBeenCalledTimes(board.length)
   })
 })

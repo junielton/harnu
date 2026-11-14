@@ -866,7 +866,8 @@ give fires the same pair as a safety confirm: the **chime**
 warning`, bell only — no toast). Like a safety confirm it is independent of
 the per-state "OS notifications"/"Sound" switches. The owed things are the
 server's ordered `you` list: a **staged re-scope**, a **requested close**, an
-**operator-owned blocker** (a merge, a key, a credential, a decision), **due
+**operator-owned blocker** (a merge, a key, a credential, a decision), a
+**pending decision** (an undecided decision step), **due
 checks** (unticked checks on a reached step), **human steps** to confirm, and an
 **imported end** to review. Rules (`lib/mission-cue.ts`, driven by the missions
 store's existing 20 s poll — no per-mission timer):
@@ -881,10 +882,12 @@ store's existing 20 s poll — no per-mission timer):
   `close`, `checks`, `review-import` — are a to-do nobody is waiting on: they
   cue once when they appear (or `checks` grows) and **never re-nudge**; the
   pill, the bell entry and the review dialog keep showing them. _Blocking_
-  kinds — `rescope`, `blocker`, `human-steps` — are something an agent or a
-  later step waits on: they re-nudge with **back-off**, **30 min, 1 h, 2 h,
-  4 h** after the key's last cue, then go **silent** until the key changes (one
-  fixed constant, `BLOCKING_NUDGE_MS`, no Setting). Each key keeps its own clock.
+  kinds — `rescope`, `blocker`, `decide` (a pending decision, one key per
+  decision step), `human-steps` — are something an agent or a later step waits
+  on: they cue when they appear, then re-nudge with **back-off**, **30 min, 1 h,
+  2 h, 4 h** after the key's last cue (five cues in all), then go **silent**
+  until the key changes (one fixed constant, `BLOCKING_NUDGE_MS`, no Setting).
+  Each key keeps its own clock.
 - **One sound per poll.** Every key that cues in the same poll, across all
   missions, produces ONE chime, ONE `requestAttention()` and ONE Activity
   post.
@@ -910,8 +913,10 @@ store's existing 20 s poll — no per-mission timer):
 - **Copy** (`mission.cue.*`): the cue posts **one** Activity entry, in place —
   a snapshot of everything currently owed (see _Activity bell → Grouped
   entry_). One mission owed → "Mission “{title}” needs you: {what}", where
-  `{what}` is the first owed item in words (the blocker's reason, "re-scope
-  awaiting your approval", "delivered, awaiting your close", "2 due checks", …);
+  `{what}` is the first owed item in the one wording the You lane uses
+  (`youItemText` → `youRowText`, `mission.you.*`: "Unblock: {reason} — unblocks
+  when {unblocks}.", "Decide: {title}", "Close the mission when you’re satisfied —
+  its end is verified.", "Tick 2 due checks on {steps}.", …);
   several → "{n} missions need you". Each owed mission is its own clickable row
   inside the entry.
 
@@ -7649,8 +7654,8 @@ selected chapter's **objectives**: its mission's counted steps as compact rows
 chapters, each row tagged "ch. {n}") and a footer (`padding: 8px 14px`,
 `border-t border-border`): **End campaign…** (Ghost, left-aligned, the footer's only
 control) — rendered **disabled with a tooltip** until main exposes a campaign end door.
-There is no map takeover (removed by T704; the Mission pane replaces it), and no merge-batch
-row or dialog (removed by T701). The **Steward** line stays with the chapter popover, where its Pause door lives.
+There is no map takeover (removed by T704; the Mission pane replaces it), and no merge
+row or dialog (T701). The **Steward** line stays with the chapter popover, where its Pause door lives.
 
 States (mockup `v6--campaign`): `default`; `side` (a side quest selected —
 eyebrow "Side quest · not required for the end", its origin chapter and gates);

@@ -95,6 +95,7 @@ import {
 import type { MissionV4 } from './missions/model'
 import { sessionHistory, type SessionHistoryRow } from './missions/sessions'
 import { attachFoundPrs } from './missions/verbs-plan'
+import type { CardFile } from './missions/cards'
 import { gatherStepFacts, gatherStepInputs, type FactsDeps } from './missions/facts'
 import {
   handoffOffer,
@@ -731,6 +732,7 @@ export type MissionV4Door = { folder: string; missionId: string } & (
   | { door: 'mark'; stepId: string; criterionId: string; evidence?: string }
   | { door: 'clearBlocker'; blockerId: string; stepId?: string }
   | { door: 'approveDoneWhen' }
+  | { door: 'declineDoneWhen' }
   | { door: 'close'; closedAs: 'delivered' | 'discarded'; reason?: string }
   | { door: 'decideAttach'; requestId: string; decision: 'allowed' | 'denied' }
   | { door: 'attach'; sessionId: string }
@@ -906,11 +908,10 @@ export function answerMissionSummaryHook(body: Record<string, unknown>): Promise
 }
 
 /**
- * Who the observer's v4 leg writes as. ONE constant: the app attaching what it found, on the operator's
- * behalf. S-11's final head adds the actor `{ kind: 'harnu' }` for exactly this; until it is merged
- * here the code allows only the operator.
+ * Who the observer's v4 leg writes as. ONE constant: Harnu's own call, `{ kind: 'harnu' }` (S-11): the
+ * guard judges it as it judges the operator, but nothing records that the operator did what Harnu did.
  */
-const OBSERVER_ACTOR: Actor = { kind: 'operator' }
+const OBSERVER_ACTOR: Actor = { kind: 'harnu' }
 
 async function isDirectory(p: string): Promise<boolean> {
   try {
@@ -945,9 +946,15 @@ async function observeV4Records(
         (opts.onlySessions === undefined ||
           [...opts.onlySessions].some((id) => openEntry(v.record, id) !== undefined))
     )
+    if (open.length === 0) continue
+    // The sources are built once per repo, and the board is read once per pass however many records
+    // name a card: every record's gather shares the one answer (and the one parse of it).
+    const base = opts.v4Facts ? opts.v4Facts(root) : await realFactsDeps(root)
+    let board: Promise<readonly CardFile[]> | undefined
+    const readBoard = base.board
+    const deps: FactsDeps = readBoard ? { ...base, board: () => (board ??= readBoard()) } : base
     for (const { record } of open) {
       try {
-        const deps = opts.v4Facts ? opts.v4Facts(root) : await realFactsDeps(root)
         const { sightings, found } = await gatherStepFacts(root, record, deps)
         for (const s of sightings) rememberResolved(root, s.kind, s.ref, s.seen)
         if (found.some((f) => f.state !== 'closed')) {

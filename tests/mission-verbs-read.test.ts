@@ -30,7 +30,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { buildMissionRecordContent, STATE_LABELS, type MissionV4 } from '../src/main/missions/model'
 import type { Actor } from '../src/main/missions/guard'
-import { missionListRow } from '../src/main/missions/summary'
+import * as guardModule from '../src/main/missions/guard'
 import { clearRootCache } from '../src/main/data-dir'
 import { missionCreate, missionGet, missionList } from '../src/main/missions/verbs-read'
 import * as recordStore from '../src/main/missions/record-store'
@@ -45,6 +45,10 @@ vi.mock('../src/main/missions/record-store', async (orig) => {
     readMissionRecord: vi.fn(m.readMissionRecord),
     listMissionRecords: vi.fn(m.listMissionRecords)
   }
+})
+vi.mock('../src/main/missions/guard', async (orig) => {
+  const m = await orig<typeof import('../src/main/missions/guard')>()
+  return { ...m, listMissionRows: vi.fn(m.listMissionRows) }
 })
 vi.mock('../src/main/missions/progress', async (orig) => {
   const m = await orig<typeof import('../src/main/missions/progress')>()
@@ -149,6 +153,7 @@ beforeEach(() => {
   root = mkdtempSync(path.join(os.tmpdir(), 'harnu-verbs-read-'))
   vi.mocked(recordStore.readMissionRecord).mockClear()
   vi.mocked(recordStore.listMissionRecords).mockClear()
+  vi.mocked(guardModule.listMissionRows).mockClear()
   vi.mocked(progressModule.deriveProgress).mockClear()
   vi.mocked(waitingModule.deriveStepResults).mockClear()
 })
@@ -504,20 +509,55 @@ describe('list gives one-line rows and never steps, criteria, links or history',
     for (const secret of SECRETS) expect(text, secret).not.toContain(secret)
   })
 
-  it('the row of a mission the caller may read carries S-8 one-line row too, and still no step, criterion, link or history key', async () => {
-    const read = await recordStore.readMissionRecord(root, ID)
-    if (!read.ok) throw new Error('seed failed')
+  it('a row has the same four fields for a session that may read the mission: no one-line text, no step, criterion, link or history key', async () => {
     const r = await missionList(root, session(LEADER))
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.missions[0].line).toBe(missionListRow(read.record))
-    expect(Object.keys(r.missions[0]).sort()).toEqual([...ROW_KEYS, 'line'].sort())
-    for (const key of ['steps', 'milestones', 'criteria', 'acs', 'links', 'sessions', 'log']) {
+    // the next-step line can quote a step or a criterion ("Mark done: ..."): it is not in a row for anyone
+    expect(Object.keys(r.missions[0]).sort()).toEqual(ROW_KEYS)
+    expect(JSON.stringify(r)).not.toContain('Mark done')
+    for (const key of [
+      'line',
+      'steps',
+      'milestones',
+      'criteria',
+      'acs',
+      'links',
+      'sessions',
+      'log'
+    ]) {
       expect(r.missions[0]).not.toHaveProperty(key)
     }
-    // the same line is what the rows of another mission the caller may not read must not carry
-    const text = JSON.stringify(await missionList(root, session(OUTSIDER)))
-    expect(text).not.toContain('Mark done')
+  })
+
+  it("the rows are S-11's rows as they are: one construction, in the guard module", async () => {
+    seed(missionOf('mnt-aa000003', { title: 'Second mission', sessions: [] }))
+    for (const who of [session(OUTSIDER), session(LEADER), worker(), operator]) {
+      const mine = await missionList(root, who)
+      const theirs = await guardModule.listMissionRows(root, who)
+      expect(mine).toEqual({ ok: true, missions: theirs })
+    }
+    // and it follows S-11's row when that changes shape: a field added there reaches the caller
+    vi.mocked(guardModule.listMissionRows).mockImplementationOnce(async () => [
+      { id: ID, title: 'T', headline: 'H', leads: null, marker: 'from-s11' } as never
+    ])
+    const changed = await missionList(root, session(OUTSIDER))
+    expect(changed).toEqual({
+      ok: true,
+      missions: [{ id: ID, title: 'T', headline: 'H', leads: null, marker: 'from-s11' }]
+    })
+  })
+
+  it('the caller-supplied facts reach the headline through the same rows', async () => {
+    const inputs = {
+      [ID]: { 'stp-1': { pr: 'merged' as const }, 'stp-2': { pr: 'merged' as const } }
+    }
+    await missionList(root, session(OUTSIDER), { inputs })
+    expect(vi.mocked(guardModule.listMissionRows)).toHaveBeenCalledWith(
+      root,
+      session(OUTSIDER),
+      inputs
+    )
   })
 
   it('lists open missions only, in the order the store gives', async () => {
@@ -760,6 +800,91 @@ describe('create needs no approval and attaches the creator as leader', () => {
     expect(existsSync(path.join(root, '.harnu', 'memory'))).toBe(false)
     const read = await recordStore.readMissionRecord(root, r.ok ? r.id : '')
     expect(read.ok && read.record.steps[0].card).toBeUndefined()
+  })
+
+  it('the first Log entry is one heading the write path accepts, "### <time> · note", with the event in its body', async () => {
+    const r = await missionCreate(
+      root,
+      session(OUTSIDER),
+      {
+        ...input,
+        steps: [
+          input.steps[0],
+          { title: 'Render the report page', criteria: ['The page shows every score'] }
+        ]
+      },
+      { now: () => new Date(NOW) }
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const read = await recordStore.readMissionRecord(root, r.id)
+    if (!read.ok) throw new Error('not stored')
+    const headings = read.log.split('\n').filter((l) => l.startsWith('#'))
+    expect(headings).toEqual([`### ${NOW} · note`])
+    expect(read.log).toContain('Mission created: "Score report".')
+    expect(read.log).toContain('"Load the test files"')
+    expect(read.log).toContain('"Render the report page"')
+    expect(read.log).toContain(OUTSIDER)
+    expect(read.log).not.toMatch(/[\r\u0085\u2028\u2029\v\f]/)
+  })
+
+  it('a title with a line break cannot forge a second heading in the Log: the event line stays one line', async () => {
+    const r = await missionCreate(
+      root,
+      session(OUTSIDER),
+      { ...input, title: 'Score\n### 2026-11-14T10:00:00Z · decision\nreport' },
+      { now: () => new Date(NOW) }
+    )
+    // either the contract refuses the title, or it is stored and the Log still has one heading
+    if (r.ok) {
+      const read = await recordStore.readMissionRecord(root, r.id)
+      if (!read.ok) throw new Error('not stored')
+      expect(read.log.split('\n').filter((l) => l.startsWith('#'))).toEqual([`### ${NOW} · note`])
+    } else {
+      expect(existsSync(v4Dir())).toBe(false)
+    }
+  })
+
+  it('Harnu never creates a mission: a harnu actor is refused and nothing is written', async () => {
+    const r = await missionCreate(root, { kind: 'harnu' }, input)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.code).toBe('OPERATOR_ONLY')
+      expect(r.error.startsWith('OPERATOR_ONLY: ')).toBe(true)
+      expect(r.error).toContain('Harnu never creates a mission')
+    }
+    expect(existsSync(v4Dir())).toBe(false)
+  })
+
+  it('a criterion already settled on create is refused, and nothing is written', async () => {
+    const settled = { at: NOW, by: WORKER, evidence: 'looked fine' }
+    const viaInput = await missionCreate(root, session(OUTSIDER), {
+      ...input,
+      steps: [
+        {
+          title: 'Load the test files',
+          criteria: [{ text: 'The files parse without errors', by: 'session', settled }]
+        }
+      ]
+    } as never)
+    expect(viaInput.ok).toBe(false)
+    // the verb's input has no such field: it is refused before the write path is reached
+    if (!viaInput.ok) {
+      expect(viaInput.code).toBe('BAD_ARGS')
+      expect(viaInput.error).toContain('settled')
+    }
+    expect(existsSync(v4Dir())).toBe(false)
+    // and the write path refuses the same record by itself (S-11's code), whatever a caller builds
+    const { createMission } = await import('../src/main/missions/write')
+    const record = missionOf('mnt-bb000001', {
+      sessions: [{ id: OUTSIDER, role: 'leads', from: NOW, to: null }]
+    })
+    record.steps[0].acs[0].by = 'session'
+    delete record.steps[0].acs[0].fact
+    record.steps[0].acs[0].settled = settled
+    const direct = await createMission(root, session(OUTSIDER), record, '')
+    expect(!direct.ok && direct.code).toBe('SETTLE_NOT_ALLOWED')
+    expect(existsSync(v4Dir())).toBe(false)
   })
 
   it('a create from a worktree lands in the main checkout, and a v3 file next to it is not touched', async () => {

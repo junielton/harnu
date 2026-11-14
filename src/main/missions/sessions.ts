@@ -24,7 +24,7 @@
  */
 
 import type { RecordChange } from './record-store'
-import { openEntry, type Actor, type Need } from './guard'
+import { openEntry, type Actor, type Need, type Standing } from './guard'
 import type { MissionV4, SessionEntry, StepV4, StoppedAt, WithUnknownKeys } from './model'
 import { writeMission, type WriteCode } from './write'
 
@@ -42,7 +42,15 @@ export interface DoorRefusal {
 
 /** A door that landed. `changed: false` means the target was already in the state asked for. */
 export type DoorResult<X extends object = object> =
-  ({ ok: true; changed: boolean; record: MissionV4; file: string } & X) | DoorRefusal
+  | ({
+      ok: true
+      changed: boolean
+      record: MissionV4
+      file: string
+      /** Who wrote, by name (S-11): `harnu` for Harnu's own writes, never `operator`. */
+      standing: Standing
+    } & X)
+  | DoorRefusal
 
 /** An error the store turns into a typed refusal with this code. */
 export function doorError(code: DoorCode, message: string): Error {
@@ -69,16 +77,58 @@ export async function applyChange(
     return next ?? { record, log }
   })
   return written.ok
-    ? { ok: true, changed, record: written.record, file: written.file }
+    ? { ok: true, changed, record: written.record, file: written.file, standing: written.standing }
     : { ok: false, code: written.code, error: written.error }
 }
 
 // ---- Small shared helpers -------------------------------------------------------------
 
-/** The Log with one more heading: `### <at> · <what>`. The Log is append-only. */
+/** Every character a reader may take for the end of a line: LF, CR, VT, FF, NEL, LS and PS. */
+const LINE_BREAK_CODES = new Set([0x0a, 0x0d, 0x0b, 0x0c, 0x85, 0x2028, 0x2029])
+
+/** `text` on one line: each run of line breaks becomes a single space. */
+function oneLine(text: string): string {
+  let out = ''
+  let inBreak = false
+  for (const ch of text) {
+    if (LINE_BREAK_CODES.has(ch.codePointAt(0) as number)) {
+      if (!inBreak) out += ' '
+      inBreak = true
+    } else {
+      out += ch
+      inBreak = false
+    }
+  }
+  return out
+}
+
+/**
+ * The Log with one more heading: `### <at> · <what>`. The Log is append-only, and the summary reads its
+ * `### ` headings, so the heading is ONE line: a text a session staged (a Done when, a request's session
+ * id) may hold a line break, and it must not be able to start a line that reads as the operator's.
+ * Every line break in `at` and `what` (`\r`, `\n`, U+2028, U+2029, U+0085, vertical tab, form feed)
+ * becomes a single space, so no text starts a line.
+ */
 export function logEntry(log: string, at: string, what: string): string {
   const base = log === '' || log.endsWith('\n') ? log : `${log}\n`
-  return `${base}${base === '' ? '' : '\n'}### ${at} · ${what}\n`
+  return `${base}${base === '' ? '' : '\n'}### ${oneLine(at)} · ${oneLine(what)}\n`
+}
+
+/** `"<title>"` of a step, the way a reader sees it in the Log; its id only when the record lost the step. */
+export function quotedTitle(record: MissionV4, stepId: string): string {
+  const step = record.steps.find((s) => s.id === stepId)
+  return step ? `"${step.title}"` : stepId
+}
+
+/**
+ * The Log line for what a dispatch or Harnu did, by who wrote it. Harnu's own writes say `Harnu` and the
+ * operator's say `operator`, so a Log never says the operator did what Harnu did. A SESSION may append
+ * only `### <time> · note` (the write path refuses any other heading from it), so the text goes under
+ * that heading.
+ */
+function entryBy(log: string, at: string, actor: Actor, what: string): string {
+  if (actor.kind === 'session') return `${logEntry(log, at, 'note')}${oneLine(what)}\n`
+  return logEntry(log, at, `${actor.kind === 'harnu' ? 'Harnu' : 'operator'} ${what}`)
 }
 
 /**
@@ -222,7 +272,12 @@ export async function attachDispatchedWorker(
           s.id === stepId && !linked ? { ...s, links: [...s.links, link] } : s
         )
       },
-      log: logEntry(log, at, `attached session ${args.sessionId} as a worker on step ${stepId}`)
+      log: entryBy(
+        log,
+        at,
+        args.actor,
+        `attached session ${args.sessionId} as a worker on step ${quotedTitle(record, stepId)}`
+      )
     }
   })
   return result.ok
@@ -247,7 +302,7 @@ export async function endSession(
   }
 ): Promise<DoorResult> {
   const at = args.at ?? new Date().toISOString()
-  return applyChange(folder, missionId, { kind: 'operator' }, 'operator', (record, log) => {
+  return applyChange(folder, missionId, { kind: 'harnu' }, 'operator', (record, log) => {
     if (!openEntry(record, args.sessionId)) return null
     const hint: StoppedAt = {
       ...(args.step !== undefined ? { step: resolveStepId(record, args.step) ?? args.step } : {}),
@@ -263,7 +318,7 @@ export async function endSession(
           stoppedAtOf(record, args.sessionId, hint)
         )
       },
-      log: logEntry(log, at, `session ${args.sessionId} ${args.how ?? 'ended'}`)
+      log: logEntry(log, at, `Harnu recorded that session ${args.sessionId} ${args.how ?? 'ended'}`)
     }
   })
 }

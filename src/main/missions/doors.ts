@@ -15,7 +15,9 @@
  * nothing and says `changed: false`, so a double click is harmless.
  *
  * The staged Done when is the record's `pendingDoneWhen { text, at }`, written by `mission_set_done_when`
- * (S-14); approving it replaces `doneWhen` and drops the old verification, because the end changed.
+ * (S-14); approving it replaces `doneWhen` and drops the old verification, because the end changed;
+ * declining it removes the staging and nothing else. Closing as delivered confirms Done when
+ * (`doneWhenVerified`, spec decision D-21).
  *
  * Nothing on main calls these until the doors are registered (S-24 for the verbs, S-16 for the view):
  * {@link runDoor} is the entry the IPC channel `mission:v4Door` routes to. Electron-free.
@@ -30,6 +32,7 @@ import {
   attachFromPicker,
   doorError,
   logEntry,
+  quotedTitle,
   resolveStepId,
   type DoorRefusal,
   type DoorResult
@@ -92,7 +95,7 @@ export async function markCriterion(
       log: logEntry(
         log,
         at,
-        `operator marked step ${step.id} criterion ${criterion.id} done${
+        `operator marked "${criterion.text}" done on "${step.title}"${
           settled.person ? ` for ${settled.person}` : ''
         }`
       )
@@ -151,7 +154,7 @@ export async function clearBlocker(
       log: logEntry(
         log,
         at,
-        `operator cleared blocker ${args.blockerId}${stepId !== null ? ` on step ${stepId}` : ''}`
+        `operator cleared the blocker on ${stepId !== null ? quotedTitle(record, stepId) : 'the mission'}`
       )
     }
   })
@@ -190,6 +193,27 @@ export async function approveDoneWhen(
     return {
       record: { ...(rest as MissionV4), doneWhen: staged.text },
       log: logEntry(log, at, `operator approved a new Done when: ${staged.text}`)
+    }
+  })
+}
+
+/**
+ * The operator declines the Done when a session staged: the staged change is removed, `doneWhen` and its
+ * verification stay as they were. With nothing staged it changes nothing.
+ */
+export async function declineDoneWhen(
+  folder: string,
+  missionId: string,
+  args: { at?: string } = {}
+): Promise<DoorResult> {
+  const at = now(args.at)
+  return applyChange(folder, missionId, OPERATOR, 'operator', (record, log) => {
+    const staged = stagedDoneWhenOf(record)
+    if (!staged) return null
+    const { pendingDoneWhen: _staged, ...rest } = record as WithUnknownKeys<MissionV4>
+    return {
+      record: rest as MissionV4,
+      log: logEntry(log, at, `operator declined the new Done when: ${staged.text}`)
     }
   })
 }
@@ -282,7 +306,9 @@ export async function closeMission(
         ...record,
         status: 'closed',
         closedAs: args.closedAs,
-        ...(reason ? { closeReason: reason } : {})
+        ...(reason ? { closeReason: reason } : {}),
+        // Done when is confirmed at the close (spec decision D-21); a discard confirms nothing.
+        ...(args.closedAs === 'delivered' ? { doneWhenVerified: { by: 'operator', at } } : {})
       },
       log: logEntry(
         log,
@@ -375,6 +401,8 @@ export async function runDoor(raw: unknown): Promise<DoorResult<object>> {
     }
     case 'approveDoneWhen':
       return approveDoneWhen(folder, missionId)
+    case 'declineDoneWhen':
+      return declineDoneWhen(folder, missionId)
     case 'close': {
       if (a.closedAs !== 'delivered' && a.closedAs !== 'discarded') {
         return bad('close is delivered or discarded')
@@ -408,6 +436,6 @@ export async function runDoor(raw: unknown): Promise<DoorResult<object>> {
  */
 export function doorReply(result: DoorResult<object>): Record<string, unknown> {
   if (!result.ok) return { ok: false, code: result.code, error: result.error }
-  const { record: _record, file: _file, ...rest } = result
+  const { record: _record, file: _file, standing: _standing, ...rest } = result
   return rest
 }

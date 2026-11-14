@@ -9,7 +9,7 @@
  * The purity test at the bottom instruments `child_process`, `fs`, `fs/promises` and the clock, and
  * proves the instrumentation itself fails when something does read them.
  */
-import { readFileSync } from 'node:fs'
+import fsDefault, { readFileSync } from 'node:fs'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { AttachRequest, MissionV4, StepV4 } from '../src/main/missions/model'
 import type { StepInput } from '../src/main/missions/state'
@@ -36,19 +36,33 @@ const spy = vi.hoisted(() => {
 
 vi.mock('node:child_process', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>()
-  return { ...spy.wrapFns(real, 'child_process'), default: real }
+  return {
+    ...spy.wrapFns(real, 'child_process'),
+    // A default import (`import cp from 'node:child_process'`) is counted too.
+    default: spy.wrapFns(real.default as Record<string, unknown>, 'child_process.default')
+  }
 })
 vi.mock('node:fs', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>()
   return {
     ...spy.wrapFns(real, 'fs'),
     promises: spy.wrapFns(real.promises as Record<string, unknown>, 'fs.promises'),
-    default: real
+    // A default import (`import fs from 'node:fs'`) is counted too, and so is `fs.promises` through it.
+    default: {
+      ...spy.wrapFns(real.default as Record<string, unknown>, 'fs.default'),
+      promises: spy.wrapFns(
+        (real.default as { promises: Record<string, unknown> }).promises,
+        'fs.default.promises'
+      )
+    }
   }
 })
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>()
-  return { ...spy.wrapFns(real, 'fs/promises'), default: real }
+  return {
+    ...spy.wrapFns(real, 'fs/promises'),
+    default: spy.wrapFns(real.default as Record<string, unknown>, 'fs/promises.default')
+  }
 })
 
 type Waiting = typeof import('../src/main/missions/waiting')
@@ -322,7 +336,7 @@ describe('AC-18 · one next step, the rest in a fixed order', () => {
     })
     const review = waiting.waitingListV4(m, { inputs: { 'stp-1': { pr: 'open' } } }).items[0]
     expect(review.kind).toBe('review')
-    expect(review.ask).toBe('Look over the pull request for Score one spec')
+    expect(review.ask).toBe('Look over the pull request for "Score one spec"')
   })
 
   it('puts close after review and before attach, and unblock before close', () => {
@@ -700,6 +714,49 @@ describe('S-8 delta 1 · the words the operator reads', () => {
     expect(waiting.waitingListV4(mkMission({ steps: [mkStep('stp-1')] })).peopleLines).toEqual([])
   })
 
+  it('a step title is always quoted, never placed where it reads as an order', () => {
+    const m = mkMission({
+      steps: [
+        mkStep('stp-1', {
+          title: 'Load the test files',
+          acs: [crit('ac-1', 'fact', { fact: 'main-green' })],
+          links: [{ kind: 'pr', ref: '301' }]
+        }),
+        mkStep('stp-2', {
+          title: 'Show the score in a report page',
+          links: [{ kind: 'pr', ref: '302' }]
+        })
+      ]
+    })
+    const list = waiting.waitingListV4(m, {
+      inputs: {
+        'stp-1': { pr: 'merged', facts: { 'main-green': false } },
+        'stp-2': { pr: 'open' }
+      }
+    })
+    expect(list.items.map((i) => i.kind)).toEqual(['main-failing', 'review'])
+    expect(list.items[1].ask).toBe(
+      'Look over the pull request for "Show the score in a report page"'
+    )
+    for (const item of list.items) {
+      for (const title of ['Load the test files', 'Show the score in a report page']) {
+        const unquoted = `${item.ask} ${item.why}`.split(`"${title}"`).join('')
+        expect(unquoted).not.toContain(title)
+      }
+    }
+    // The grouped form names no title at all.
+    const two = waiting.waitingListV4(
+      mkMission({
+        steps: [
+          mkStep('stp-1', { title: 'Load the test files' }),
+          mkStep('stp-2', { title: 'Show the score in a report page' })
+        ]
+      }),
+      { inputs: { 'stp-1': { pr: 'open' }, 'stp-2': { pr: 'open' } } }
+    )
+    expect(two.items[0].ask).toBe('Look over 2 pull requests')
+  })
+
   it('keeps every fixed text inside ask 90 and why 60 at the longest title the contract allows', () => {
     const title50 = 'Run the scoring tool on the whole test set of specs'.slice(0, 50)
     const m = mkMission({
@@ -785,6 +842,21 @@ describe('AC-20 · the v4 waiting list reads nothing', () => {
     expect(text.length).toBeGreaterThan(0)
     expect(spy.calls).toEqual([])
     expect(clockReads).toBe(0)
+  })
+
+  it('counts a read through a default import too, for fs, fs.promises and child_process', async () => {
+    const cpDefault = (await import('node:child_process')).default
+    spy.calls.length = 0
+    fsDefault.readFileSync('package.json', 'utf8')
+    void fsDefault.promises.readFile('package.json', 'utf8')
+    cpDefault.execFileSync('true')
+    expect(spy.calls).toEqual(
+      expect.arrayContaining([
+        'fs.default.readFileSync',
+        'fs.default.promises.readFile',
+        'child_process.default.execFileSync'
+      ])
+    )
   })
 
   it('the instrumentation fails when something does spawn, read a file or read the clock', () => {

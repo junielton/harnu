@@ -35,20 +35,24 @@ import { listMissionRecords, readMissionRecord, type MissionRecordRead } from '.
 /**
  * Who is calling. A session is self-declared (S-25 makes it a credential for the sessions Harnu
  * spawns). `operator` is the app's own interface acting on the operator's hand: it is not a session,
- * reads everything and holds the doors. A `worker` is a Harnu system worker: with `missionId` it is
+ * reads everything and holds the doors. `harnu` is Harnu's own write (a dispatch attaching a worker,
+ * recording where a session stopped, attaching a pull request it found): the guard treats it as it
+ * treats the operator, and only its NAME differs, so a Log or an audit never says the operator did
+ * what Harnu did. A `worker` is a Harnu system worker: with `missionId` it is
  * bound to that mission, without it to the folder whose records are being read (the caller has already
  * read them from that folder); it reads and never writes.
  */
 export type Actor =
   | { kind: 'session'; sessionId: string }
   | { kind: 'operator' }
+  | { kind: 'harnu' }
   | { kind: 'worker'; missionId?: string }
 
 /** What a call needs: see the module comment. */
 export type Need = 'read' | 'ask-to-attach' | 'write' | 'lead' | 'operator'
 
 /** Where the caller stands on this mission. */
-export type Standing = SessionRole | 'operator' | 'worker' | 'unattached'
+export type Standing = SessionRole | 'operator' | 'harnu' | 'worker' | 'unattached'
 
 export type GuardCode =
   'NOT_ATTACHED' | 'NOT_LEADER' | 'OPERATOR_ONLY' | 'READ_ONLY' | 'MISSION_CLOSED'
@@ -79,7 +83,9 @@ const refuse = (code: GuardCode, error: string): Access => ({
  * the mission is closed (a session writes to an open mission only; the operator is never refused).
  */
 export function guardMission(record: MissionV4, actor: Actor, need: Need): Access {
-  if (actor.kind === 'operator') return { ok: true, standing: 'operator' }
+  if (actor.kind === 'operator' || actor.kind === 'harnu') {
+    return { ok: true, standing: actor.kind }
+  }
 
   if (actor.kind === 'worker') {
     if (need !== 'read') {
