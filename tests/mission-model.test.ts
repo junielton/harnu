@@ -20,7 +20,7 @@ import {
   LinkSchema,
   MILESTONE_STATES,
   MISSION_STATES,
-  STATE_WORDS,
+  STATE_LABELS,
   STEP_STATES,
   SettledSchema,
   StoppedAtSchema,
@@ -246,6 +246,21 @@ describe('the v4 record', () => {
     expect(BlockerSchema.safeParse(noId).success).toBe(false)
   })
 
+  it('a blocker accepts raisedAt, the time a reminder counts its age from', () => {
+    const blocker = {
+      id: 'blk-3',
+      reason: 'The staging key is missing from STAGING_KEY',
+      owner: 'operator',
+      raisedAt: AT
+    }
+    const parsed = BlockerSchema.safeParse(blocker)
+    expect(parsed.success).toBe(true)
+    if (parsed.success) expect(parsed.data).toEqual(blocker)
+    expect(BlockerSchema.safeParse({ ...blocker, raisedAt: 12 }).success).toBe(false)
+    const { raisedAt: _drop, ...without } = blocker
+    expect(BlockerSchema.safeParse(without).success).toBe(true)
+  })
+
   it('a session entry keeps role, from, to and where it stopped', () => {
     const lead = {
       id: '11111111-2222-4333-8444-555555555555',
@@ -335,6 +350,16 @@ describe('the attach request', () => {
     )
     const { sessionId: _drop, ...noAsker } = request
     expect(AttachRequestSchema.safeParse(noAsker).success).toBe(false)
+  })
+
+  it('requires an id, a time and a non-empty asker', () => {
+    expect(AttachRequestSchema.safeParse(request).success).toBe(true)
+    for (const missing of ['id', 'at', 'sessionId']) {
+      const partial: Record<string, unknown> = { ...request }
+      delete partial[missing]
+      expect(AttachRequestSchema.safeParse(partial).success, `without ${missing}`).toBe(false)
+    }
+    expect(AttachRequestSchema.safeParse({ ...request, sessionId: '' }).success).toBe(false)
   })
 
   it('survives a JSON round trip unchanged', () => {
@@ -468,6 +493,11 @@ describe('the v4 record keeps what it does not name (delta 1)', () => {
       waitingFor: 'a review of pull request 256'
     }
     m.doneWhenVerified = { by: '99999999-2222-4333-8444-555555555555', at: AT }
+    ;((m.steps as Record<string, unknown>[])[0].acs as Record<string, unknown>[])[1].selfCheck = {
+      at: AT,
+      by: '11111111-2222-4333-8444-555555555555',
+      evidence: 'Ran the suite: 41 passed'
+    }
     return m
   }
 
@@ -477,7 +507,13 @@ describe('the v4 record keeps what it does not name (delta 1)', () => {
       'a session stoppedAt',
       (m) => (m.sessions as Record<string, unknown>[])[0].stoppedAt as Record<string, unknown>
     ],
-    ['doneWhenVerified', (m) => m.doneWhenVerified as Record<string, unknown>]
+    ['doneWhenVerified', (m) => m.doneWhenVerified as Record<string, unknown>],
+    [
+      'a criterion selfCheck',
+      (m) =>
+        ((m.steps as Record<string, unknown>[])[0].acs as Record<string, unknown>[])[1]
+          .selfCheck as Record<string, unknown>
+    ]
   ]
 
   for (const [where, locate] of ALL_PLACES) {
@@ -567,11 +603,11 @@ describe('what the other slices import (delta 1)', () => {
     expect([...MISSION_STATES]).toEqual(['open', 'ready-to-close', 'closed'])
   })
 
-  describe('STATE_WORDS: the English words, for agent-facing text only', () => {
+  describe('STATE_LABELS: the English words, for agent-facing text only', () => {
     const ALL = [...new Set([...STEP_STATES, ...MILESTONE_STATES, ...MISSION_STATES])]
 
     it('maps every identifier to the words the spec vocabulary uses, and nothing else', () => {
-      expect({ ...STATE_WORDS }).toEqual({
+      expect({ ...STATE_LABELS }).toEqual({
         todo: 'to do',
         running: 'running',
         'waiting-review': 'waiting for review',
@@ -582,20 +618,20 @@ describe('what the other slices import (delta 1)', () => {
         'ready-to-close': 'ready to close',
         closed: 'closed'
       })
-      for (const id of ALL) expect(typeof STATE_WORDS[id]).toBe('string')
-      expect(Object.keys(STATE_WORDS).sort()).toEqual([...ALL].sort())
+      for (const id of ALL) expect(typeof STATE_LABELS[id]).toBe('string')
+      expect(Object.keys(STATE_LABELS).sort()).toEqual([...ALL].sort())
     })
 
     it('is frozen', () => {
-      expect(typeof STATE_WORDS).toBe('object')
-      expect(Object.isFrozen(STATE_WORDS)).toBe(true)
+      expect(typeof STATE_LABELS).toBe('object')
+      expect(Object.isFrozen(STATE_LABELS)).toBe(true)
       expect(() => {
-        ;(STATE_WORDS as Record<string, string>).todo = 'in review'
+        ;(STATE_LABELS as Record<string, string>).todo = 'in review'
       }).toThrow()
     })
 
     it('holds no word the writing contract refuses: no internal word, never "in review" or "driver"', () => {
-      for (const word of Object.values(STATE_WORDS)) {
+      for (const word of Object.values(STATE_LABELS)) {
         // The contract's own check accepts it as agent-facing text ...
         expect(checkAsk(word), word).toEqual({ ok: true })
         // ... and it is not one of the words the spec says people do not say for a state.
