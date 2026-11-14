@@ -8,7 +8,8 @@
  *
  * Five parts, in this order, then the open criteria of the open steps and the links:
  *
- * 1. **Goal**: the title (never shortened) and the Done when.
+ * 1. **Goal**: the title (never shortened) and the Done when. The mission's own title is the one bare
+ *    title: it starts the Goal and the list row. A step or milestone title anywhere else is quoted.
  * 2. **Where it is**: the milestone (or step) position, the counts, each blocked step with what its
  *    blocker needs, and the steps that wait for review, by title.
  * 3. **Decided**: the last five Log entries of kind `decision`.
@@ -206,7 +207,7 @@ function wherePart(
         : m.steps.find((x) => x.id === progress.current?.id)?.title
     lines.push(
       `${capitalize(unit)} ${progress.current.ordinal} of ${progress.total}${
-        title ? `: ${shorten(title, MAX.position)}` : ''
+        title ? `: "${shorten(title, MAX.position)}"` : ''
       }`
     )
   } else if (progress.total > 0) {
@@ -238,7 +239,7 @@ function wherePart(
     ...blockedTopLevel,
     ...m.steps.flatMap((step) =>
       (results[step.id]?.blockers ?? []).map(
-        (b) => `- ${step.id} ${oneLine(step.title)}: ${shorten(b.ask ?? b.reason, MAX.blocker)}`
+        (b) => `- ${step.id} "${oneLine(step.title)}": ${shorten(b.ask ?? b.reason, MAX.blocker)}`
       )
     )
   ]
@@ -247,7 +248,7 @@ function wherePart(
   }
   const reviewing = m.steps
     .filter((step) => results[step.id]?.state === 'waiting-review')
-    .map((step) => `- ${oneLine(step.title)}`)
+    .map((step) => `- "${oneLine(step.title)}"`)
   if (reviewing.length > 0) {
     lines.push('Waiting for review:', fitLines(reviewing, WHERE_REVIEW_ROOM, 'step'))
   }
@@ -356,7 +357,7 @@ export function buildMissionSummary(
   for (const step of open) {
     const result = results[step.id]
     // A step starts at the margin; its criteria are indented under it, never trimmed.
-    criteria.push(`- ${step.id} ${oneLine(step.title)}${result.blocked ? ' (blocked)' : ''}`)
+    criteria.push(`- ${step.id} "${oneLine(step.title)}"${result.blocked ? ' (blocked)' : ''}`)
     for (const c of result.open) {
       criteria.push(`  - ${shorten(c.text, MAX.criterion)} (${who(c)})`)
     }
