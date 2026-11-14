@@ -217,6 +217,10 @@ describe('observer pass → wake reason', () => {
     await read()
     expect(h.wakes).toEqual([])
     h.pr = { state: 'OPEN', ci: 'passing' }
+    // A read sees the new CI and wakes nobody (AC-4); the observer pass is what wakes the steward.
+    const res = await handlers.mission_get({ folder: root, missionId: MISSION }, ctx())
+    expect(res.isError, res.content[0]?.text).not.toBe(true)
+    expect(h.wakes).toEqual([])
     await read()
     expect(h.wakes).toEqual([[MISSION, 'ci']])
   })
