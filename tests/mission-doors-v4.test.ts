@@ -132,6 +132,17 @@ async function reread(id = ID): Promise<{ record: MissionV4; log: string }> {
   return { record: r.record, log: r.log }
 }
 
+/** The lines of a text as ANY reader could see them: LF, CR, VT, FF, NEL, LS and PS all end one. */
+function anyLines(text: string): string[] {
+  const ends = new Set([0x0a, 0x0d, 0x0b, 0x0c, 0x85, 0x2028, 0x2029])
+  const out: string[] = ['']
+  for (const ch of text) {
+    if (ends.has(ch.codePointAt(0) as number)) out.push('')
+    else out[out.length - 1] += ch
+  }
+  return out
+}
+
 const headings = (log: string): string[] => log.split('\n').filter((l) => l.startsWith('### '))
 
 beforeEach(() => {
@@ -650,9 +661,7 @@ describe('the Log cannot be forged', () => {
       expect(r.ok, JSON.stringify(brk)).toBe(true)
       const { log } = await reread()
       expect(headings(log).length, JSON.stringify(brk)).toBe(before + 1)
-      expect(
-        log.split(/\r|\n|\u2028|\u2029|\u0085|\u000b|\u000c/).filter((l) => l.startsWith('#'))
-      ).toEqual([
+      expect(anyLines(log).filter((l) => l.startsWith('#'))).toEqual([
         '# Log',
         expect.stringMatching(/^### 2026-11-14T12:00:00\.000Z · operator approved a new Done when/)
       ])
@@ -689,7 +698,7 @@ describe('the Log cannot be forged', () => {
   it('logEntry collapses every line break and no text starts a line', () => {
     for (const brk of BREAKS) {
       const out = logEntry('# Log\n', AT, `a${brk}# b${brk}${brk}### c`)
-      const lines = out.split(/\r|\n|\u2028|\u2029|\u0085|\u000b|\u000c/).filter((l) => l !== '')
+      const lines = anyLines(out).filter((l) => l !== '')
       expect(lines, JSON.stringify(brk)).toEqual(['# Log', `### ${AT} · a # b ### c`])
     }
   })
