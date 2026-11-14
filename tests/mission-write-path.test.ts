@@ -225,7 +225,6 @@ describe('one guard and one write path', () => {
       id: 'atr-1',
       missionId: ID,
       sessionId: OUTSIDER,
-      role: 'worked',
       at: NOW,
       decision: null,
       ...over
@@ -828,5 +827,97 @@ describe('one guard and one write path: two more references', () => {
     )
     const r = await write((rec) => ({ ...rec, links: [{ kind: 'doc', ref: 'docs/x.md' }] }))
     expect(r.ok).toBe(true)
+  })
+})
+
+describe('one guard and one write path: who settles a criterion', () => {
+  const ac = { id: 'ac-1', text: 'Every reviewer question has an answer', by: 'session' as const }
+  const stepWith = (criterion: Record<string, unknown>, by = 'session') => ({
+    id: 'stp-1',
+    title: 'Load the test files',
+    acs: [{ ...ac, by, ...criterion }],
+    links: [{ kind: 'session' as const, ref: WORKER }],
+    blockers: []
+  })
+  beforeEach(() => {
+    seed(missionOf(ID, { steps: [stepWith({}) as never] }))
+  })
+  const settle = (actor: Actor, stamp: Record<string, unknown>, by = 'session') =>
+    writeMission(root, ID, actor, 'write', (rec, log) => ({
+      record: { ...rec, steps: [stepWith({ settled: stamp }, by) as never] },
+      log
+    }))
+  const stored = (): MissionV4 =>
+    parseMissionRecordFile(readFileSync(fileOf(ID), 'utf8')) as MissionV4
+
+  it('a session that built the step only self-checks it: its own settle is refused, its self-check lands and settles nothing', async () => {
+    const before = v4Snapshot()
+    const r = await settle(session(WORKER), { at: NOW, by: WORKER, evidence: 'I checked' })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.code).toBe('SETTLE_NOT_ALLOWED')
+    expect(v4Snapshot()).toEqual(before)
+    const check = await writeMission(root, ID, session(WORKER), 'write', (rec, log) => ({
+      record: {
+        ...rec,
+        steps: [stepWith({ selfCheck: { at: NOW, by: WORKER, evidence: 'I checked' } }) as never]
+      },
+      log
+    }))
+    expect(check.ok).toBe(true)
+    const criterion = stored().steps[0].acs[0]
+    expect(criterion.selfCheck?.by).toBe(WORKER)
+    expect(criterion.settled).toBeUndefined()
+  })
+
+  it('a second session settles a session criterion with evidence, in its own name', async () => {
+    const r = await settle(session(LEADER), { at: NOW, by: LEADER, evidence: 'Read the replies' })
+    expect(r.ok).toBe(true)
+    expect(stored().steps[0].acs[0].settled?.by).toBe(LEADER)
+  })
+
+  it("a session never settles in another's name, as the operator, or a criterion that is not a second session's", async () => {
+    const before = v4Snapshot()
+    const attempts: Array<[Record<string, unknown>, string]> = [
+      [{ at: NOW, by: OUTSIDER, evidence: 'x' }, 'session'],
+      [{ at: NOW, by: 'operator' }, 'session'],
+      [{ at: NOW, by: LEADER, evidence: 'x' }, 'operator'],
+      [{ at: NOW, by: LEADER, evidence: 'x' }, 'person'],
+      [{ at: NOW, by: LEADER, evidence: 'x' }, 'fact']
+    ]
+    for (const [stamp, by] of attempts) {
+      const extra = by === 'fact' ? { fact: 'pr-merged' } : {}
+      const r = await writeMission(root, ID, session(LEADER), 'write', (rec, log) => ({
+        record: { ...rec, steps: [stepWith({ settled: stamp, ...extra }, by) as never] },
+        log
+      }))
+      expect(r.ok, `${by} ${JSON.stringify(stamp)}`).toBe(false)
+      if (!r.ok) expect(r.code).toBe('SETTLE_NOT_ALLOWED')
+    }
+    expect(v4Snapshot()).toEqual(before)
+  })
+
+  it("a self-check carries its own author's id", async () => {
+    const r = await writeMission(root, ID, session(WORKER), 'write', (rec, log) => ({
+      record: {
+        ...rec,
+        steps: [stepWith({ selfCheck: { at: NOW, by: LEADER, evidence: 'x' } }) as never]
+      },
+      log
+    }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.code).toBe('SETTLE_NOT_ALLOWED')
+  })
+
+  it('the operator settles any criterion, and a settled criterion written back unchanged is not judged again', async () => {
+    const r = await writeMission(root, ID, operator, 'operator', (rec, log) => ({
+      record: { ...rec, steps: [stepWith({ settled: { at: NOW, by: 'operator' } }) as never] },
+      log
+    }))
+    expect(r.ok).toBe(true)
+    const again = await writeMission(root, ID, session(WORKER), 'write', (rec, log) => ({
+      record: { ...rec, links: [{ kind: 'doc', ref: 'docs/x.md' }] },
+      log
+    }))
+    expect(again.ok).toBe(true)
   })
 })
