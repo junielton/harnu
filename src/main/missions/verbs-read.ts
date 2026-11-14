@@ -18,9 +18,8 @@
  *   a mission that exists only as a v3 file is read through S-9's compatibility reader and no v4 record
  *   is created.
  * - **`mission_list`** gives any session in the folder one row per open mission: id, title, headline,
- *   who leads, and never steps, criteria, links or history. A caller that may read a mission's detail
- *   also gets S-8's one-line row for it (`line`); that line names the next thing the operator owes,
- *   which can quote a step or a criterion, so a session that cannot read the mission never gets it.
+ *   who leads, and never steps, criteria, links or history. The rows are S-11's `listMissionRows`,
+ *   returned as they are; this module builds none of its own.
  *
  * **What one `mission_list` costs.** S-9's store has no cache. A list parses every record of the repo
  * once: one directory listing per store directory, then N file reads and N parses for N v4 records, plus
@@ -36,7 +35,15 @@ import { promises as fs, statSync } from 'node:fs'
 import * as path from 'node:path'
 import { z } from 'zod'
 import { repoRoot } from '../data-dir'
-import { guardMission, headlineOf, leaderOf, openEntry, type Actor } from './guard'
+import {
+  guardMission,
+  headlineOf,
+  leaderOf,
+  listMissionRows,
+  openEntry,
+  type Actor,
+  type MissionRow
+} from './guard'
 import {
   CRITERION_BY,
   FACTS,
@@ -58,7 +65,7 @@ import {
   type MissionRecordView
 } from './record-store'
 import { type StepInput } from './state'
-import { buildMissionSummary, missionListRow } from './summary'
+import { buildMissionSummary } from './summary'
 import { deriveStepResults, waitingListV4, type WaitingItemV4, type WaitingListV4 } from './waiting'
 import { createMission, newMissionId, type WriteCode } from './write'
 
@@ -408,49 +415,27 @@ export async function missionGet(
 
 // ---- mission_list --------------------------------------------------------------------
 
-/** One line per open mission. No step, criterion, link or history, ever. */
-export interface ListedMission {
-  id: string
-  title: string
-  /** "4 of 21 steps done", or "1 of 10 milestones done". */
-  headline: string
-  /** The session id that leads it, or null. */
-  leads: string | null
-  /**
-   * S-8's one-line row (title, progress in words, the next thing the operator owes). Present only for a
-   * caller that may read this mission's detail: the next thing can quote a step or a criterion.
-   */
-  line?: string
-}
+/**
+ * One line per open mission: S-11's row (`guard.ts`), the one place its shape is built. No step,
+ * criterion, link or history, ever, and no one-line next-step text either: S-8's `missionListRow` can
+ * quote a step or a criterion, so it is not part of a row for anyone (the pane gets its text through
+ * the view channel).
+ */
+export type ListedMission = MissionRow
 
 export type MissionList = { ok: true; missions: ListedMission[] } | ReadRefusal
 
 /**
- * The folder's open missions as one-line rows, for any session in the folder, attached or not. One
- * store pass for the whole list; see the module comment for its cost.
+ * The folder's open missions as one-line rows, for any session in the folder, attached or not. It
+ * returns S-11's `listMissionRows` as it is, so the rows are worded and shaped once. One store pass
+ * for the whole list; see the module comment for its cost.
  */
 export async function missionList(
   folder: string,
   actor: Actor,
   opts: { inputs?: Readonly<Record<string, Readonly<Record<string, StepInput>>>> } = {}
 ): Promise<MissionList> {
-  const { records } = await listMissionRecords(repoRoot(folder))
-  const missions = records
-    .filter((v) => v.record.status === 'open')
-    .map(({ record }): ListedMission => {
-      const stepInputs = opts.inputs?.[record.id] ?? {}
-      const row: ListedMission = {
-        id: record.id,
-        title: record.title,
-        headline: headlineOf(deriveProgress(record, stepInputs)),
-        leads: leaderOf(record)
-      }
-      if (guardMission(record, actor, 'read').ok) {
-        row.line = missionListRow(record, { inputs: stepInputs })
-      }
-      return row
-    })
-  return { ok: true, missions }
+  return { ok: true, missions: await listMissionRows(folder, actor, opts.inputs) }
 }
 
 // ---- mission_create ------------------------------------------------------------------
