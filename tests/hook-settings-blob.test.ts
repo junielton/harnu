@@ -47,17 +47,45 @@ describe('buildHookSettingsBlob', () => {
     expect(blob.hooks.PostToolUse).toBeUndefined()
   })
 
-  it('every handler is an http hook at the bridge URL with the 5s timeout', () => {
-    const handlers = Object.values(blob.hooks).flatMap((entries) => entries.flatMap((e) => e.hooks))
+  it('every observer handler is an http hook at the bridge URL with the 5s timeout', () => {
+    const handlers = Object.values(blob.hooks)
+      .flatMap((entries) => entries.flatMap((e) => e.hooks))
+      .filter((h) => h.type === 'http')
     expect(handlers.length).toBeGreaterThan(0)
     for (const h of handlers) {
-      expect(h.type).toBe('http')
       expect(h.timeout).toBe(HOOK_TIMEOUT_S)
       expect(h.timeout).toBe(5)
       expect(String(h.url)).toMatch(
         new RegExp(`^http://127\\.0\\.0\\.1:${PORT}/hook/${TOKEN}/[A-Za-z]+/[A-Za-z_]+$`)
       )
     }
+  })
+
+  it('has exactly one handler that is not an observer: the summary after a compaction', () => {
+    const others = Object.entries(blob.hooks).flatMap(([event, entries]) =>
+      entries.flatMap((e) =>
+        e.hooks.filter((h) => h.type !== 'http').map((h) => ({ event, matcher: e.matcher, h }))
+      )
+    )
+    expect(others).toHaveLength(1)
+    expect(others[0].event).toBe('SessionStart')
+    expect(others[0].matcher).toBe('compact')
+    expect(others[0].h.type).toBe('command')
+    expect(others[0].h.timeout).toBe(HOOK_TIMEOUT_S)
+  })
+
+  it('the summary hook posts the hook body to the mission route and can never fail a session', () => {
+    const entry = blob.hooks.SessionStart.find((e) => e.matcher === 'compact')
+    const command = String(entry?.hooks[0].command)
+    expect(command).toBe(
+      `curl -s --max-time 4 -X POST --data-binary @- http://127.0.0.1:${PORT}/mission/${TOKEN}/summary || true`
+    )
+    // `|| true`: Harnu down, a stale token or a slow bridge fails no session
+    expect(command.endsWith(' || true')).toBe(true)
+    // the observer's own SessionStart entry stays, before it, with no matcher
+    expect(blob.hooks.SessionStart).toHaveLength(2)
+    expect(blob.hooks.SessionStart[0].matcher).toBeUndefined()
+    expect(blob.hooks.SessionStart[0].hooks[0].type).toBe('http')
   })
 
   it('routes each blocking notification type on its own matcher entry', () => {
