@@ -5105,32 +5105,6 @@
     "end": {
       "open": "Encerrar campanha…",
       "unavailable": "Ainda não dá para encerrar a campanha por aqui — encerre as missões dos capítulos."
-    },
-    "map": {
-      "title": "Mapa da campanha",
-      "close": "Fechar mapa da campanha",
-      "open": "Abrir mapa",
-      "here": "▼ Você está aqui",
-      "missing": "Esta campanha não está disponível — talvez tenha sido encerrada.",
-      "tileLabel": "Capítulo {n}: {title} — {state}",
-      "dockLabel": "Missão paralela: {title} — {state}",
-      "waitsFor": "Aguarda {what}",
-      "waitsForChapter": "o capítulo {n}",
-      "gatesLegend": "gates: PR · CI · main · verificador",
-      "ledger": {
-        "owed": "{n} pendentes",
-        "open": "Abrir"
-      },
-      "steward": {
-        "title": "Steward",
-        "empty": "Ainda sem steward"
-      },
-      "side": {
-        "meta": "{total} · {done} concluídas · {open} abertas"
-      },
-      "focus": {
-        "back": "Voltar"
-      }
     }
   },
   "harnuMod": {
