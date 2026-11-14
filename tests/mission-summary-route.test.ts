@@ -317,7 +317,7 @@ describe('the route never throws and never blocks', () => {
         title: `Step number ${i + 1} of the long mission`,
         acs: [
           { id: 'ac-1', text: long.slice(0, 160), by: 'operator' as const },
-          { id: 'ac-2', text: long.slice(0, 160), by: 'session' as const }
+          { id: 'ac-2', text: long.slice(0, 160), by: 'operator' as const }
         ],
         links: [],
         blockers: []
@@ -329,6 +329,10 @@ describe('the route never throws and never blocks', () => {
         `### 2026-11-14T09:${String(i).padStart(2, '0')}:00Z · decision · stp-${i + 1}\n${long}\n`
     ).join('\n')
     expect(SUMMARY_ROUTE_MAX).toBeLessThan(10_000)
+    // each summary is big enough that two of them cannot both fit: the cap has to act
+    const one = buildMissionSummary(big, log).text
+    expect(one.length).toBeGreaterThan(SUMMARY_ROUTE_MAX / 2)
+    expect(one.length).toBeLessThanOrEqual(8000)
     const records = [
       { record: big, log, source: 'v4' as const },
       { record: { ...big, id: ID2 }, log, source: 'v4' as const }
@@ -336,6 +340,8 @@ describe('the route never throws and never blocks', () => {
     const out = await summaryRoute(body(LEADER), { records: async () => records })
     expect(out.length).toBeGreaterThan(0)
     expect(out.length).toBeLessThan(10_000)
+    // the second summary did not fit whole, so it is left out whole: the answer is the first one
+    expect(out).toBe(one)
   })
 
   it('a leader of two open missions gets both summaries when they fit, and whole ones only', async () => {

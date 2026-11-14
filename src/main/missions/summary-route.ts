@@ -52,7 +52,7 @@ export interface SummaryRouteDeps {
   inputsMs?: number
 }
 
-/** `promise`, or `fallback` when it does not settle in `ms` or rejects. The timer never keeps the process up. */
+/** `promise`, or `fallback` when it does not settle in `ms`. The timer never keeps the process up. */
 async function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const late = new Promise<T>((resolve) => {
@@ -60,7 +60,7 @@ async function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<
     timer.unref?.()
   })
   try {
-    return await Promise.race([promise.catch(() => fallback), late])
+    return await Promise.race([promise, late])
   } finally {
     if (timer) clearTimeout(timer)
   }
@@ -108,7 +108,10 @@ async function answer(body: unknown, deps: SummaryRouteDeps): Promise<string> {
       deps.inputsFor === undefined
         ? {}
         : await within(
-            deps.inputsFor(cwd, record).then((x) => x ?? {}),
+            deps.inputsFor(cwd, record).then(
+              (x) => x ?? {},
+              () => ({})
+            ),
             deps.inputsMs ?? SUMMARY_INPUTS_MS,
             {}
           )

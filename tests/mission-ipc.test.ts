@@ -785,6 +785,28 @@ describe('the hand-off and the summary route on the app (S-16b)', () => {
     ipc.setMissionHandoffStarter(null)
   })
 
+  it('a last-known (stale) reading never produces an offer: only a live one does', async () => {
+    await seedV4()
+    vi.resetModules()
+    vi.doMock('../src/main/telemetry-store', () => ({
+      getTelemetryPayload: () => ({
+        perSession: [],
+        lastKnown: [{ sessionId: LEADER, contextPercent: 97 }]
+      })
+    }))
+    try {
+      const fresh = await import('../src/main/mission-ipc')
+      const view = (await fresh.buildMissionV4View({
+        folder: root,
+        sessionId: 'app',
+        missionId: ID
+      })) as { handoff?: unknown }
+      expect(view.handoff).toEqual({ offer: false, percent: null })
+    } finally {
+      vi.doUnmock('../src/main/telemetry-store')
+    }
+  })
+
   it('answerMissionSummaryHook serves the open leader after a compaction, and prints nothing for anyone else', async () => {
     await seedV4()
     const body = (sessionId: string, source = 'compact'): Record<string, unknown> => ({
