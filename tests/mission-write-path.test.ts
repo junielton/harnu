@@ -1549,3 +1549,36 @@ describe('one guard and one write path: the Log cannot be forged', () => {
     ).toBe('ok')
   })
 })
+
+describe('one guard and one write path: a session stamps only a criterion a session settles', () => {
+  const criteria: Array<[string, Record<string, unknown>]> = [
+    ['operator', { by: 'operator' }],
+    ['fact', { by: 'fact', fact: 'pr-merged' }],
+    ['person', { by: 'person', person: 'the designer' }]
+  ]
+  const step = (ac: Record<string, unknown>) =>
+    ({
+      id: 'stp-1',
+      title: 'Load the test files',
+      acs: [{ id: 'ac-1', text: 'The designer signed off on it', ...ac }],
+      links: [{ kind: 'session', ref: WORKER }],
+      blockers: []
+    }) as never
+
+  for (const [name, ac] of criteria) {
+    it(`a second session stamping a by-${name} criterion in its own name, with by, fact and person unchanged, is SETTLE_NOT_ALLOWED`, async () => {
+      seed(missionOf(ID, { steps: [step(ac)] }))
+      const before = v4Snapshot()
+      const r = await writeMission(root, ID, session(LEADER), 'write', (rec, log) => ({
+        record: {
+          ...rec,
+          steps: [step({ ...ac, settled: { at: NOW, by: LEADER, evidence: 'I read it' } })]
+        },
+        log
+      }))
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.code).toBe('SETTLE_NOT_ALLOWED')
+      expect(v4Snapshot()).toEqual(before)
+    })
+  }
+})
