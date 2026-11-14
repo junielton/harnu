@@ -35,10 +35,41 @@ import {
 const DIR = path.join(__dirname, 'fixtures', 'missions-v4-compat')
 
 /** The frozen files and the sha256 of each one's bytes. */
-const PINS: Record<string, string> = {}
+const PINS: Record<string, string> = {
+  'campaigns/cmp-ca0001aa-sample-import-campaign.md':
+    '8a49ecc45109e7ea4e566ae971200ed89b2e0cda7e355977674fb94079591543',
+  'campaigns/cmp-ca0002bb-finished-campaign.md':
+    '68995fd1fdc86dd0a1fdaa3363d8473069eaaaaec4f0cd725fb27534c2d1b7c0',
+  'campaigns/cmp-ca0003cc-dropped-campaign.md':
+    '5d81ea0cb72a3f4245679e930d288dd0b04333d4135785b18ee472c36940e027',
+  'missions/mnt-5c0de001-modern-active.md':
+    'd34d82b816315e06c9e90b4c9d5a1dee9fb38a8793dd206b992ca8ce6f5eecad',
+  'missions/mnt-5c0de002-legacy-fixed-start.md':
+    'f4869a76417e03176d696dc724801ccf0fde7f58247289856aacc04367aa0826',
+  'missions/mnt-5c0de003-delivered-pending-close.md':
+    '6383217f2ce171b592ff07f65da470d57fdd466d310f0832cb7095c0f9794f08',
+  'missions/mnt-5c0de004-closed-delivered.md':
+    'adeb4be350338a1b3bbb90404894035b55c4b139e0920bb603dbad72b87dab2a',
+  'missions/mnt-5c0de005-closed-discarded.md':
+    'f66e870f2b51220eaf0ab35561328386d25a31bd1596f7a56e0d9a032de60610',
+  'missions/mnt-5c0de006-legacy-import.md':
+    '2240dd9d7a8c2d67232a67ca54d7c8375d6a66861b10a2a76af165461c1e96c4',
+  'missions/mnt-5c0de007-stored-stale.md':
+    '5fce965580cc2891e29b4c14543d6a0b095fecef89d04cdfacc821eda2c9156a',
+  'missions/mnt-ca000001-chapter-1-import-core.md':
+    'daee9f3da911e65517619e92cf00b68d9b278164c876714b3f66073dac044e85',
+  'missions/mnt-ca000002-chapter-2-report.md':
+    '11977cc6d4d4ead59342fcdd0e5b1bf3b539687ec6ca22a2ea961dfec2e6704f'
+}
 
 const sha256 = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex')
 const list = (sub: string): string[] => readdirSync(path.join(DIR, sub)).sort()
+/**
+ * The `status` the file stores. The v3 parser reads a legacy `draft` as `active`, so a
+ * round trip must put the stored value back before it rebuilds the file.
+ */
+const storedStatus = (raw: string): Mission['status'] =>
+  /^status: (\w+)$/m.exec(raw)?.[1] as Mission['status']
 const read = (rel: string): string => readFileSync(path.join(DIR, rel), 'utf8')
 
 function missions(): { file: string; mission: Mission; raw: string }[] {
@@ -64,7 +95,7 @@ describe('fixtures are frozen v3', () => {
       ...list('missions').map((n) => `missions/${n}`),
       ...list('campaigns').map((n) => `campaigns/${n}`)
     ]
-    expect(found).toEqual(Object.keys(PINS).sort())
+    expect(found.sort()).toEqual(Object.keys(PINS).sort())
   })
 
   it('keep the bytes they were frozen with (sha256 pinned)', () => {
@@ -85,7 +116,10 @@ describe('fixtures are frozen v3', () => {
 
   it('are what the v3 builders write: parse then build gives the same bytes back', () => {
     for (const { file, mission, raw } of missions()) {
-      expect(buildMissionFileContent(mission, readMissionLog(raw)), file).toBe(raw)
+      expect(
+        buildMissionFileContent({ ...mission, status: storedStatus(raw) }, readMissionLog(raw)),
+        file
+      ).toBe(raw)
     }
     for (const { file, campaign, raw } of campaigns()) {
       expect(buildCampaignFileContent(campaign, readCampaignLog(raw)), file).toBe(raw)
@@ -107,14 +141,15 @@ describe('fixtures are frozen v3', () => {
   })
 
   it('carry every v3 shape of the spec table "How v3 concepts map to v4"', () => {
-    const ms = missions().map((m) => m.mission)
+    const mr = missions()
+    const ms = mr.map((m) => m.mission)
     const steps = ms.flatMap((m) => m.steps.map((s) => ({ m, s })))
     const has = (name: string, ok: boolean): void => expect(ok, name).toBe(true)
 
     for (const status of ['draft', 'active', 'stale', 'delivered', 'closed'] as const) {
       has(
         `status ${status}`,
-        ms.some((m) => m.status === status)
+        mr.some(({ raw }) => storedStatus(raw) === status)
       )
     }
     has(
