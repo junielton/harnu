@@ -13,7 +13,7 @@ describe('docs/harnu-features.md (AC-4)', () => {
   const para = at < 0 ? '' : doc.slice(at, doc.indexOf('\n\n', at))
 
   it('is marker v128', () => {
-    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v144 /)
+    expect(doc.split('\n')[0]).toMatch(/^<!-- harnu-features v145 /)
   })
 
   it('has the capacity paragraph', () => {

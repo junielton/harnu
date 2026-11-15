@@ -662,6 +662,19 @@ const MISSION_STEP_RELATIONS_SHAPE = {
     )
 }
 
+/**
+ * Missions v4 S-34: the optional `sessionId` of `create_session`, `create_worktree` and `submit_manifest`.
+ * It only lets Harnu say whether the caller already leads a mission, for the `missionHint` in the ACK; it
+ * changes nothing the call does.
+ */
+const HINT_SESSION_ID_SCHEMA = z
+  .string()
+  .min(1)
+  .optional()
+  .describe(
+    'Optional: your own Claude session UUID (the transcript id get_fleet reports, never a synthetic-… id). Self-declared, not authenticated. With it, Harnu knows whether you already lead or work on a mission; without it you are counted as one anonymous caller of the repo. A value that is not a session UUID is refused BAD_SESSION_ID.'
+  )
+
 export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'get_fleet',
@@ -725,7 +738,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'create_session',
     description:
-      'Start a new Claude session in a folder, optionally with an initial prompt. `ok:true` means the session actually MATERIALIZED (a real process + an on-disk transcript) — this call blocks (up to ~60s) waiting for that before ACKing. A timed-out/failed spawn returns `ok:false` with a steerable error (SPAWN_NOT_MATERIALIZED) and refunds any reserved grant budget unit; a second call for a folder that already has one in flight is refused (SESSION_ALREADY_IN_FLIGHT) rather than risking two processes in the same working tree.',
+      'Start a new Claude session in a folder, optionally with an initial prompt. `ok:true` means the session actually MATERIALIZED (a real process + an on-disk transcript) — this call blocks (up to ~60s) waiting for that before ACKing. A timed-out/failed spawn returns `ok:false` with a steerable error (SPAWN_NOT_MATERIALIZED) and refunds any reserved grant budget unit; a second call for a folder that already has one in flight is refused (SESSION_ALREADY_IN_FLIGHT) rather than risking two processes in the same working tree. When you lead no mission and this is your second session (or a worktree you cut, or a manifest of two cards), the ACK carries `missionHint`, one sentence telling you to call mission_create: once per session, never a mission made for you, and never on a session started for a step.',
     inputSchema: z
       .object({
         folder: z.string().min(1).describe('Absolute path of the folder to launch in.'),
@@ -760,7 +773,8 @@ export const MCP_TOOLS: McpToolDef[] = [
           .string()
           .min(1)
           .optional()
-          .describe('The step of `missionId` the session is for (stp-<n>).')
+          .describe('The step of `missionId` the session is for (stp-<n>).'),
+        sessionId: HINT_SESSION_ID_SCHEMA
       })
       .refine((v) => (v.missionId === undefined) === (v.stepId === undefined), {
         message:
@@ -778,7 +792,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'create_worktree',
     description:
-      "Create a git worktree for a repo and register it with Harnu. By default creates a new branch off the remote default branch (origin/main); pass `base` to fork it from another existing ref instead (stacking one branch on top of another). Pass `ref` to check out an EXISTING local or remote branch instead (e.g. to review a PR). The ACK carries a non-blocking `existingWork` array when a local branch or worktree already embeds this create's slug — a signal, not a refusal, that the same card may already have work in progress; the create still succeeds.",
+      "Create a git worktree for a repo and register it with Harnu. By default creates a new branch off the remote default branch (origin/main); pass `base` to fork it from another existing ref instead (stacking one branch on top of another). Pass `ref` to check out an EXISTING local or remote branch instead (e.g. to review a PR). The ACK carries a non-blocking `existingWork` array when a local branch or worktree already embeds this create's slug — a signal, not a refusal, that the same card may already have work in progress; the create still succeeds. If you lead no mission, the ACK also carries `missionHint` (see create_session): one sentence telling you to call mission_create.",
     inputSchema: z.object({
       folder: z
         .string()
@@ -800,7 +814,8 @@ export const MCP_TOOLS: McpToolDef[] = [
         .optional()
         .describe(
           'Optional existing local/remote branch or commit-ish to CHECK OUT instead of creating a new branch (DWIM tracking; detaches if it is already checked out in another worktree).'
-        )
+        ),
+      sessionId: HINT_SESSION_ID_SCHEMA
     }),
     mutates: true,
     op: 'create_worktree',
@@ -1963,7 +1978,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'submit_manifest',
     description:
-      'Declare ONE dispatch batch — the go-door for auto-dispatch (T104/T187). Lists cards (in the order they should drain) with their resolved substrate/model/effort; the server builds the disclosure from disk (title/kind/complexity/gaps/body hash/boot prompt preview) — a card that doesn\'t exist, is already done, or looks like it contains a secret refuses the WHOLE batch, naming which slug. With "Ask before agent actions" OFF (the default) and the folder not blocked, every named card is stamped `approved` + a body fingerprint SERVER-SIDE (no verb can ever write these fields directly, `update_card` included) and the batch drains unattended in the declared order, respecting the WIP ceiling — no confirm, no partial-go, because there is no operator present to uncheck anything. With "Ask before agent actions" ON, this still parks the full checklist in the Approval Inbox and the operator can partial-go (uncheck cards; unchecked ones are left untouched, not denied). Editing a stamped card\'s title/spec/body voids the stamp at dispatch time (falls back to a confirm) — submit a fresh manifest after a real edit.',
+      'Declare ONE dispatch batch — the go-door for auto-dispatch (T104/T187). Lists cards (in the order they should drain) with their resolved substrate/model/effort; the server builds the disclosure from disk (title/kind/complexity/gaps/body hash/boot prompt preview) — a card that doesn\'t exist, is already done, or looks like it contains a secret refuses the WHOLE batch, naming which slug. With "Ask before agent actions" OFF (the default) and the folder not blocked, every named card is stamped `approved` + a body fingerprint SERVER-SIDE (no verb can ever write these fields directly, `update_card` included) and the batch drains unattended in the declared order, respecting the WIP ceiling — no confirm, no partial-go, because there is no operator present to uncheck anything. With "Ask before agent actions" ON, this still parks the full checklist in the Approval Inbox and the operator can partial-go (uncheck cards; unchecked ones are left untouched, not denied). Editing a stamped card\'s title/spec/body voids the stamp at dispatch time (falls back to a confirm) — submit a fresh manifest after a real edit. On the self-approved path, if you lead no mission, the ACK also carries `missionHint` (see create_session): one sentence telling you to call mission_create.',
     inputSchema: z.object({
       folder: z
         .string()
@@ -2009,7 +2024,8 @@ export const MCP_TOOLS: McpToolDef[] = [
         .string()
         .max(2_000)
         .optional()
-        .describe('Optional context for the operator, shown in the disclosure (ask mode only).')
+        .describe('Optional context for the operator, shown in the disclosure (ask mode only).'),
+      sessionId: HINT_SESSION_ID_SCHEMA
     }),
     mutates: true,
     op: 'submit_manifest',
