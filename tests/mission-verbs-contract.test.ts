@@ -708,3 +708,65 @@ describe('mission_* contract — a blocked repo refuses every verb, from any wor
     })
   }
 })
+
+// ---- Missions v4 S-24 (AC-66): both sets are registered, nothing is removed ----------------------
+
+/** Every `mission_*`, `campaign_*` and `rebase_stack` verb the catalog held before v4 (spec "Verb fate table"). */
+const V3_VERBS = [
+  'mission_create',
+  'mission_get',
+  'mission_list',
+  'mission_add_step',
+  'mission_update_step',
+  'mission_link_child',
+  'mission_log',
+  'mission_set_blocker',
+  'mission_clear_blocker',
+  'mission_set_end',
+  'mission_verify_step',
+  'mission_add_check',
+  'mission_request_close',
+  'mission_import_legacy',
+  'mission_transfer_owner',
+  'campaign_create',
+  'campaign_add_chapter',
+  'campaign_get',
+  'campaign_list',
+  'campaign_request_close',
+  'campaign_transfer_owner',
+  'rebase_stack'
+] as const
+
+/** The verbs v4 adds (S-24). The kept names take both shapes; these exist in v4 alone. */
+const V4_VERBS = [
+  'mission_add_milestone',
+  'mission_add_ac',
+  'mission_link',
+  'mission_set_done_when',
+  'mission_settle_ac',
+  'mission_attach'
+] as const
+
+describe('Missions v4 · the verbs registered beside the v3 ones', () => {
+  it('the catalog holds both sets', async () => {
+    const registered = new Set<string>(MCP_OPS)
+    for (const op of V3_VERBS) expect(registered.has(op), `${op} is still registered`).toBe(true)
+    for (const op of V4_VERBS) expect(registered.has(op), `${op} is registered`).toBe(true)
+
+    // Registered means wired: the catalog entry and a handler, on the array the server registers.
+    for (const op of [...V3_VERBS, ...V4_VERBS]) {
+      expect(toolByName(op as McpOp)?.name, op).toBe(op)
+      expect(typeof handlers[op], `${op} has a handler`).toBe('function')
+    }
+
+    // The awareness verb index names every one of them (the roster test asserts the whole catalog).
+    const doc = await fs.readFile(path.join(__dirname, '..', 'docs', 'harnu-features.md'), 'utf8')
+    const start = doc.indexOf('The core verbs are available from the first turn:')
+    const end = doc.indexOf('Resources:', start)
+    expect(start).toBeGreaterThan(-1)
+    const index = doc.slice(start, end)
+    for (const op of [...V3_VERBS, ...V4_VERBS]) {
+      expect(index.includes(`\`${op}\``), `${op} is in the awareness index`).toBe(true)
+    }
+  })
+})
