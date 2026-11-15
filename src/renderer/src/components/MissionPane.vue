@@ -721,8 +721,8 @@ useFocusRegion(props.pane.id, rootEl, {
         >
           <button
             type="button"
-            class="flex w-full items-center text-left text-text-3 transition hover:text-text"
-            style="gap: 8px; font-size: 12px"
+            class="flex w-full flex-wrap items-center text-left text-text-3 transition hover:text-text"
+            style="gap: 4px 8px; font-size: 12px"
             :aria-expanded="treeOpen"
             data-test="tree-toggle"
             @click="setSection('tree', !sections.tree)"
@@ -732,12 +732,12 @@ useFocusRegion(props.pane.id, rootEl, {
               <ChevronRight v-else :size="10" :stroke-width="1.8" />
             </span>
             <span
-              class="shrink-0 uppercase text-text-4"
+              class="min-w-0 break-words uppercase text-text-4"
               style="font-size: 10.5px; font-weight: 500; letter-spacing: 0.07em"
               >{{ $t('missionPane.tree.toggle') }}</span
             >
             <span
-              class="ml-auto min-w-0 truncate text-text-4"
+              class="ml-auto min-w-0 max-w-full truncate text-text-4"
               style="font-size: 11px"
               :title="treeMeta"
               data-test="tree-meta"

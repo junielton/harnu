@@ -46,6 +46,11 @@ function toggleMore(): void {
   if (props.moreOpen === undefined) localOpen.value = !localOpen.value
   emit('toggleMore')
 }
+// A button's text may wrap, and when the pane is narrow its padding gives the text the room.
+const btnStyle = computed(() => ({
+  whiteSpace: 'normal',
+  ...(props.compact ? { padding: '5px 8px' } : {})
+}))
 const words = (item: Parameters<typeof waitingText>[2]): ReturnType<typeof waitingText> =>
   waitingText(t, props.detail, item)
 
@@ -130,7 +135,7 @@ const KIND: Record<string, string> = {
       <Button
         v-if="primaryStep"
         variant="primary"
-        style="white-space: normal"
+        :style="btnStyle"
         data-test="next-open-step"
         @click="emit('openStep', primaryStep)"
       >
@@ -139,7 +144,7 @@ const KIND: Record<string, string> = {
       <Button
         v-if="nextIsClose"
         variant="primary"
-        style="white-space: normal"
+        :style="btnStyle"
         data-test="next-close"
         @click="emit('close')"
       >

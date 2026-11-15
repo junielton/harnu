@@ -109,8 +109,8 @@ function stopLine(r: SessionRowView): string {
   >
     <button
       type="button"
-      class="flex w-full items-center text-text-3 transition hover:text-text"
-      style="gap: 8px; font-size: 12px"
+      class="flex w-full flex-wrap items-center text-left text-text-3 transition hover:text-text"
+      style="gap: 4px 8px; font-size: 12px"
       :aria-expanded="open"
       data-test="sessions-toggle"
       @click="toggleOpen"
@@ -120,12 +120,12 @@ function stopLine(r: SessionRowView): string {
         <ChevronRight v-else :size="10" :stroke-width="1.8" />
       </span>
       <span
-        class="uppercase text-text-4"
+        class="min-w-0 break-words uppercase text-text-4"
         style="font-size: 10.5px; font-weight: 500; letter-spacing: 0.07em"
         >{{ $t('missionPane.sessions.label') }}</span
       >
       <span
-        class="ml-auto min-w-0 truncate text-text-4"
+        class="ml-auto min-w-0 max-w-full truncate text-text-4"
         style="font-size: 11px"
         :title="meta"
         data-test="sessions-meta"

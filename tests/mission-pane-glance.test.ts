@@ -169,6 +169,7 @@ describe('AC-8 — a narrow pane stays usable: no minimum width, a narrow layout
       const toggle = q(sel) as HTMLElement
       expect(toggle.className, sel).toContain('flex-wrap')
       for (const label of [...toggle.querySelectorAll<HTMLElement>('span')]) {
+        if (!label.textContent?.trim()) continue // the chevron keeps its size
         expect(label.className, `${sel}: ${label.textContent}`).not.toContain('shrink-0')
       }
     }
