@@ -20,6 +20,7 @@ import { missionGet } from '../src/main/missions/verbs-read'
 import { emptyState, type YourMoveState } from '../src/main/your-move/core'
 import {
   readRecordViews,
+  currentRecordViews,
   reconcileMissions,
   refreshRecordViews
 } from '../src/main/your-move/source-mission'
@@ -454,13 +455,21 @@ describe('readers use the v4 view', () => {
         const first = refreshRecordViews([repo], { readDetail })
         const second = refreshRecordViews([other], { readDetail })
         await Promise.all([first, second])
-        let s = reconcileMissions(emptyState(), NONE, [other], 'live', mint, 1)
+        let s = reconcileMissions(
+          emptyState(),
+          NONE,
+          [other],
+          'live',
+          mint,
+          1,
+          currentRecordViews()
+        )
         expect(asks(s)).toEqual(['Ask the other vendor'])
         // Asking again for the first root alone drops the other one.
         await refreshRecordViews([repo], { readDetail })
-        s = reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 2)
+        s = reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 2, currentRecordViews())
         expect(asks(s)).toEqual(['Ask the vendor for the export'])
-        s = reconcileMissions(emptyState(), NONE, [other], 'live', mint, 3)
+        s = reconcileMissions(emptyState(), NONE, [other], 'live', mint, 3, currentRecordViews())
         expect(asks(s)).toEqual([])
       } finally {
         rmSync(other, { recursive: true, force: true })

@@ -110,11 +110,14 @@ export function reconcileMissions(
   lane: CardLane,
   mintId: () => string,
   now: number,
-  records: RecordViews = lastRecordViews
+  explicit?: RecordViews
 ): YourMoveState {
   let next = s
   // The records are read after this pass and used by the next one (the list poll is the clock).
-  if (records === lastRecordViews) void refreshRecordViews(queriedRoots)
+  if (explicit === undefined) void refreshRecordViews(queriedRoots)
+  // Only the roots this pass is about: a root nobody queries now files no card, whatever the cache holds.
+  const asked = new Set(queriedRoots)
+  const records = new Map([...(explicit ?? lastRecordViews)].filter(([root]) => asked.has(root)))
   const present = new Set<string>()
   // A root the record store answered for is read from the records alone (one format at a time: a v3
   // snapshot beside a v4 copy says nothing). A root it has not answered for yet — the first poll —
@@ -185,6 +188,9 @@ export type RecordViews = ReadonlyMap<string, RecordRead>
 
 /** The last answer of {@link readRecordViews} {@link refreshRecordViews} kept, per root. */
 let lastRecordViews: RecordViews = new Map()
+
+/** The cache {@link refreshRecordViews} keeps: what the next pass reads (a test passes it back explicitly). */
+export const currentRecordViews = (): RecordViews => lastRecordViews
 
 type DetailRead = MissionDetail | { ok: false } | null
 
