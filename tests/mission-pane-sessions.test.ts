@@ -25,11 +25,12 @@ import { useMissionsStore } from '../src/renderer/src/stores/missions'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import {
   HANDOFF_CODES,
+  HANDOFF_NAME_PREFIX,
   buildSessionRows,
   handoffErrorKey,
   parseSummary
 } from '../src/renderer/src/lib/mission-pane-view'
-import { handoffOffer } from '../src/main/missions/handoff'
+import { HANDOFF_INSTRUCTION, handoffOffer } from '../src/main/missions/handoff'
 import type { MissionV4ViewReply } from '../src/main/mission-ipc'
 
 const FOLDER = '/repo'
@@ -434,6 +435,18 @@ describe('AC-53 — the Sessions row lists every session with role, from, to and
     expect(row.textContent).toMatch(/Nov 11 to Nov 12/)
   })
 
+  it('names the session a hand-off started after the mission, not after its first prompt', async () => {
+    // the new leader's name is its first prompt, which is the hand-off's instruction line
+    expect(HANDOFF_INSTRUCTION.startsWith(HANDOFF_NAME_PREFIX)).toBe(true)
+    const w = await mountPane(reply(FIVE), {
+      known: [{ sessionId: WORKER, summary: `${HANDOFF_INSTRUCTION} Work from the summary.` }]
+    })
+    await openSessions(w)
+    const name = rowOf(WORKER)!.querySelector('[data-test="session-name"]')!.textContent
+    expect(name).toBe('Took over “Score a spec”')
+    expect(name).not.toMatch(/You are taking over/)
+  })
+
   it('shows a short id when the session is not loaded, never a blank name', async () => {
     const w = await mountPane(reply(FIVE))
     await openSessions(w)
@@ -637,6 +650,100 @@ describe('AC-54 — "Continue in a new session…" shows the summary and asks be
       'Score a spec with a test set'
     )
     expect(text('[data-test="handoff-summary"]')).not.toContain('no summary')
+  })
+
+  describe('a session that was started but did not take over (delta 2)', () => {
+    const STARTED = 'synthetic-0a1b2c3d'
+
+    it('says what is true, never "nothing changed", and names the way to the new session', async () => {
+      const w = await mountPane(reply(FIVE), {
+        known: [{ sessionId: STARTED, summary: 'New session' }],
+        handOffReply: {
+          ok: false,
+          code: 'HANDOFF_START_FAILED',
+          error: 'HANDOFF_START_FAILED: x',
+          started: STARTED
+        }
+      })
+      await openDialog(w)
+      q('[data-test="handoff-confirm"]')!.click()
+      await flushPromises()
+      await flushPromises()
+      const words = text('[data-test="handoff-error"]')
+      expect(words).toMatch(/The new session was started, but it did not take over/)
+      expect(words).toMatch(/The same session still leads/)
+      expect(words).not.toMatch(/nothing changed|did not start/i)
+      // the new session is in the sidebar: open it from here, which selects it
+      q('[data-test="handoff-open-new"]')!.click()
+      await flushPromises()
+      expect(useSessionsStore().selectedSession?.sessionId).toBe(STARTED)
+    })
+
+    it('offers no button when that session is not loaded, and a start that never began keeps its own words', async () => {
+      const w = await mountPane(reply(FIVE), {
+        handOffReply: {
+          ok: false,
+          code: 'HANDOFF_START_FAILED',
+          error: 'HANDOFF_START_FAILED: x',
+          started: STARTED
+        }
+      })
+      await openDialog(w)
+      q('[data-test="handoff-confirm"]')!.click()
+      await flushPromises()
+      await flushPromises()
+      expect(q('[data-test="handoff-open-new"]')).toBeNull()
+      wrapper?.unmount()
+      await mountPane(reply(FIVE), {
+        handOffReply: { ok: false, code: 'HANDOFF_START_FAILED', error: 'HANDOFF_START_FAILED: x' }
+      })
+      await openDialog(wrapper as VueWrapper)
+      q('[data-test="handoff-confirm"]')!.click()
+      await flushPromises()
+      await flushPromises()
+      expect(text('[data-test="handoff-error"]')).toMatch(/did not start\. Nothing changed/)
+    })
+
+    it('a leader that changed under it also lets the operator open the session that is not attached', async () => {
+      const w = await mountPane(reply(FIVE), {
+        known: [{ sessionId: STARTED, summary: 'New session' }],
+        handOffReply: {
+          ok: false,
+          code: 'LEADER_CHANGED',
+          error: 'LEADER_CHANGED: x',
+          started: STARTED
+        }
+      })
+      await openDialog(w)
+      q('[data-test="handoff-confirm"]')!.click()
+      await flushPromises()
+      await flushPromises()
+      expect(q('[data-test="handoff-open-new"]')).not.toBeNull()
+    })
+
+    it('does not carry an earlier session over to the next try', async () => {
+      const w = await mountPane(reply(FIVE), {
+        known: [{ sessionId: STARTED, summary: 'New session' }],
+        handOffReply: {
+          ok: false,
+          code: 'HANDOFF_START_FAILED',
+          error: 'HANDOFF_START_FAILED: x',
+          started: STARTED
+        }
+      })
+      await openDialog(w)
+      q('[data-test="handoff-confirm"]')!.click()
+      await flushPromises()
+      await flushPromises()
+      q('[data-test="handoff-cancel"]')!.click()
+      await flushPromises()
+      // the Sessions row is still open: the same button opens the dialog again
+      await w.get('[data-test="handoff-open"]').trigger('click')
+      await flushPromises()
+      expect(q('[role="dialog"]')).not.toBeNull()
+      expect(q('[data-test="handoff-open-new"]')).toBeNull()
+      expect(q('[data-test="handoff-error"]')).toBeNull()
+    })
   })
 
   it('says the channel is missing the same way instead of throwing', async () => {
