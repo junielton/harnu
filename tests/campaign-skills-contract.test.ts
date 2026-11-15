@@ -4,11 +4,14 @@
  *
  * Prose assertions on model-facing files, like `mission-v3-skills.test.ts`: a SKILL.md
  * ships as-is, and a regression (an orchestrator that opens loose missions for a
- * three-chapter delivery, a tick that shells out to `gh pr view` for what `mission_get`
- * already carries, a status card that recounts chapters) is invisible at runtime. The
- * behavior itself is graded by the `campaign-declare`, `campaign-prereq-order` and
- * `tick-red-gate` eval scenarios; these guards keep the text those scenarios exercise
- * from drifting, and keep what T603 reworked (boot templates, done conditions) in place.
+ * three-chapter delivery) is invisible at runtime. The behavior itself is graded by the
+ * `campaign-declare` and `campaign-prereq-order` eval scenarios; these guards keep the text
+ * those scenarios exercise from drifting, and keep what T603 reworked (boot templates, done
+ * conditions) in place.
+ *
+ * Missions v4 S-28 rewrote `mission`, `status` and `report-back`: they no longer read gates, a
+ * ledger or a campaign, so their three describes moved to `tests/skill-mission-v4.test.ts`.
+ * What is left pins `orchestrate-delivery` only; S-29 rewrites that skill and deletes this suite.
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -65,56 +68,5 @@ describe('orchestrate-delivery declares a campaign for a multi-chapter objective
   it('keeps what T603 reworked: the done conditions and the per-role boot templates', () => {
     expect(raw).toContain('Done conditions — checkable by the worker alone')
     expect(raw).toContain('Boot templates by role')
-  })
-})
-
-describe('mission (tick) reads gates and the ledger, not gh or the fleet (AC-3b.2)', () => {
-  const raw = flat(readSkill('mission'))
-
-  it('reads gates and ledger from mission_get', () => {
-    expect(raw).toMatch(/derived\.steps\[\]\.gates|`gates`/)
-    expect(raw).toContain('ledger')
-  })
-
-  it('does not tell the tick to shell out for dispatch state', () => {
-    expect(raw).not.toMatch(/plus `gh` for what the mission does not link/)
-    expect(raw).toMatch(/zero `gh pr view`|never `gh pr view`|no `gh pr view`/i)
-  })
-
-  it('opens a side step on a red gate', () => {
-    expect(raw).toMatch(/red gate[^.]*(side step|required: false)/i)
-    expect(raw).toContain('discoveredFrom')
-  })
-
-  it('escalates to the You lane with age and risk, and never claims a verdict', () => {
-    expect(raw).toMatch(/age and (the )?risk/i)
-    expect(raw).toMatch(/never (claim|writes?) a verdict|gates? (are|is) facts?,? not a verdict/i)
-  })
-})
-
-describe('status renders the campaign headline and the first You item (AC-3b.3)', () => {
-  const raw = flat(readSkill('status'))
-
-  it('reads the campaign from campaign_get and renders Ch. N/M · Step a/b', () => {
-    expect(raw).toContain('campaign_get')
-    expect(raw).toMatch(/Ch\. \d+\/\d+ · Step \d+\/\d+/)
-  })
-
-  it('never recounts chapters', () => {
-    expect(raw).toMatch(/never recount (the )?chapters?/i)
-  })
-})
-
-describe('report-back reads outcome and the ledger, and links the campaign (AC-3b.3)', () => {
-  const raw = flat(readSkill('report-back'))
-
-  it('reads outcome and the ledger for the rail', () => {
-    expect(raw).toContain('`outcome`')
-    expect(raw).toMatch(/`ledger`|the ledger/)
-  })
-
-  it('links the campaign in the links block', () => {
-    expect(raw).toMatch(/campaign/i)
-    expect(raw).toMatch(/campaign_get/)
   })
 })

@@ -162,6 +162,24 @@ describe('the mission skill', () => {
     expect(all).toMatch(/`card` and `worker`/)
   })
 
+  it('the tick reads one mission_get, never gh or the fleet, and keeps the doors shut', () => {
+    const tick = flat(section(mission, 'One tick'))
+    expect(tick).toContain('mission_get({ folder, missionId, sessionId })')
+    expect(tick).toMatch(/Make no `gh pr view` call and no `get_fleet` call/)
+    // A second session settles; the builder only self-checks, and a self-check is never proof.
+    expect(tick).toMatch(/A second session settles each criterion \(`mission_settle_ac`/)
+    expect(tick).toMatch(/only self-checks, and that is never proof/)
+    expect(tick).toMatch(/twice unmet is the operator's decision/)
+    // A turn that ends waiting on the operator raises an operator-owned blocker first.
+    expect(tick).toMatch(/A turn that ends waiting on the operator/)
+    expect(tick).toContain("owner: 'operator'")
+    // A red gate is a side step; the doors stay the operator's; a closed mission stops the loop.
+    expect(tick).toMatch(/A red gate[^.]*optional step/)
+    expect(tick).toMatch(/Never cross the doors/)
+    expect(tick).toContain('MISSION_CLOSED')
+    expect(tick).toMatch(/stop the loop and report/)
+  })
+
   it('has no steward: the leader coordinates and rebases a step itself', () => {
     const all = flat(mission)
     expect(all).toMatch(/There is no steward/)
@@ -307,6 +325,14 @@ describe('status', () => {
     expect(all).toContain("— nothing, you're clear")
   })
 
+  it('never recounts the headline and prints no second count beside it', () => {
+    const all = flat(status)
+    expect(all).toMatch(/Never recount steps by their state/)
+    expect(all).toMatch(/never print a second count beside it/)
+    // The operator's line is Harnu's `next`, never an item the skill derived.
+    expect(all).toMatch(/never an item you derived yourself/)
+  })
+
   it('is shorter than before', () => {
     expect(status.split('\n').length).toBeLessThanOrEqual(260)
   })
@@ -325,7 +351,10 @@ describe('report-back', () => {
     expect(all).toContain("— nothing, you're clear")
     expect(all).toMatch(/at most 3 (plain )?(lines|sentences)/i)
     expect(reportBack).toContain('mission_get')
-    expect(all).toMatch(/`ledger`/)
+    // A v4 read carries `summary`, `steps` and `next`; it has no Harnu ledger, so the skill names none.
+    expect(all).toMatch(/`summary`/)
+    expect(all).toMatch(/`next`/)
+    expect(all).not.toMatch(/Harnu wrote itself|`ledger`/)
     // The headline of a mission is the one Harnu gives.
     expect(all).toMatch(/`headline`/)
   })

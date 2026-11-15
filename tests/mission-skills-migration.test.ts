@@ -13,8 +13,6 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 
-import { parseSkillFrontmatter } from '../src/main/bundled-skills-core'
-
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 
 function readSkill(name: string): string {
@@ -24,6 +22,9 @@ function readSkill(name: string): string {
   )
 }
 
+/** Collapse Prettier's line wrapping so a sentence matches whatever its breaks. */
+const flat = (s: string): string => s.replace(/\s+/g, ' ')
+
 /** The text of one `## ` section (heading line excluded), up to the next `## `. */
 function section(raw: string, heading: string): string {
   const start = raw.indexOf(`\n## ${heading}`)
@@ -32,88 +33,38 @@ function section(raw: string, heading: string): string {
   return raw.slice(start, next === -1 ? undefined : next)
 }
 
-describe('mission — rewired onto the mission_* verbs (AC-S8-1)', () => {
-  const raw = readSkill('mission')
-
-  it('still parses as the bundled `mission` skill', () => {
-    expect(parseSkillFrontmatter(raw, 'mission')?.name).toBe('mission')
-  })
-
-  it('maps every mission operation to its verb', () => {
-    for (const verb of [
-      'mission_create',
-      'mission_get',
-      'mission_add_step',
-      'mission_update_step',
-      'mission_link_child',
-      'mission_log',
-      'mission_set_blocker',
-      'mission_clear_blocker',
-      'mission_set_end',
-      'mission_verify_step',
-      'mission_request_close',
-      'mission_import_legacy',
-      'mission_add_check'
-    ]) {
-      expect(raw, verb).toContain(verb)
-    }
-  })
-
-  it('reads a tick from ONE mission_get instead of the four-source hand-assembly', () => {
-    const tick = section(raw, '`mission` — one tick')
-    expect(tick).toContain('mission_get({ folder, ownerSessionId')
-    // The old step 2 polled the fleet and every approval by hand; the projection
-    // carries both now. get_session survives only to prove a spawn in flight.
-    expect(tick).not.toMatch(/`get_fleet` \(executor sessions/)
-    expect(tick).not.toContain('`get_approval` for each pending approval id')
-  })
-
-  it('reads the stall flag instead of re-deriving it', () => {
-    expect(raw).toContain('derived.stale')
-    expect(raw).toMatch(/Do not re-derive a stall/)
-  })
-
-  it('never ends a mission itself — the operator does (Mission v3 §3.5)', () => {
-    expect(raw).toMatch(/Only the operator ends a mission/)
-    expect(raw).toMatch(/the close itself is theirs/)
-  })
-
-  it('passes the real session id, explicitly on an import', () => {
-    expect(raw).toMatch(/scratchpad directory you were given ends in it/)
-    expect(raw).toMatch(/mission_import_legacy\(\{ folder, legacyPath, sessionId: <your own/)
-    expect(raw).toMatch(/always pass your own `sessionId` explicitly/)
-  })
-
-  it('never lets a session verify its own step', () => {
-    expect(raw).toMatch(/The verifying session\s+must not be the step's author/)
-  })
-})
+// Missions v4 S-28: the `mission` skill speaks the v4 verbs now. Its verb mapping, its single
+// mission_get read, its session-id rules and its "never verify your own step" rule moved to
+// tests/skill-mission-v4.test.ts; the child-reporting rules below are pinned against the v4 text.
 
 describe('mission — child reporting is a hard rule (AC-S8-5)', () => {
-  const rules = section(readSkill('mission'), 'Child reporting — hard rules')
+  const rules = flat(section(readSkill('mission'), 'Child reporting'))
 
   it('is stated as rules, not suggestions', () => {
-    expect(rules).toMatch(/These rules are not advice/)
-    expect(rules).toMatch(/must hold, every send/)
+    expect(rules).toMatch(/they are rules, not advice/)
   })
 
-  it('addresses the owner by stable session id, resolved at send time', () => {
-    expect(rules).toMatch(/Your owner is a session id, not a name/)
-    expect(rules).toMatch(/Resolve the name at send time, every time/)
-    expect(rules).toMatch(/Call `ListAgents` immediately\s+before sending/)
-    expect(rules).toMatch(/Never reuse a name from an earlier turn/)
+  it('addresses the leader by stable session id, resolved at send time', () => {
+    expect(rules).toMatch(/A name is not an identity/)
+    expect(rules).toMatch(/your leader is a session id, not a name/)
+    expect(rules).toMatch(
+      /Call `ListAgents` right before every send and send only to a name you just saw listed/
+    )
   })
 
-  it('forbids broadcasting when the owner is unreachable', () => {
-    expect(rules).toMatch(/\*\*Never broadcast\.\*\*/)
-    expect(rules).toMatch(/to any session other than your owner/)
-    expect(rules).toMatch(/Owner unreachable → stop, do not spread/)
+  it('names the leader in the report itself, by id', () => {
+    expect(rules).toContain('Report for session <owner uuid> · mission <missionId> · step <stepId>')
   })
 
-  it('tells the owner to recognize reports by id, and to re-announce a changed name', () => {
-    expect(rules).toMatch(/A report is yours when it names your session id/)
-    expect(rules).toMatch(/Re-announce when your name changes/)
-    expect(rules).toContain('message_session({ sessionId')
+  it('forbids broadcasting when the leader is unreachable', () => {
+    expect(rules).toMatch(/If the leader is unreachable, write `\.harnu\/REPORT\.md` first/)
+    expect(rules).toMatch(/Never send the report to any other session/)
+  })
+
+  it('tells the leader to recognize reports by id, and to re-announce a changed name', () => {
+    expect(rules).toMatch(/A report that names your session id is yours/)
+    expect(rules).toMatch(/When your name changes/)
+    expect(rules).toContain('message_session')
   })
 })
 
@@ -126,17 +77,10 @@ describe('status — reads missions through mission_list / mission_get (AC-S8-1)
     expect(sources).toContain('mission_get({ folder,')
   })
 
-  it('takes the bar and the `you` line from the mission instead of re-deriving them', () => {
-    // Mission v3 §3.1: the bar is the server's `derived.progress`, not the
-    // deprecated `steps: { total, verified, claimed }` counts.
-    expect(raw).toContain('derived.progress')
-    expect(sources).toMatch(/`you` line, verbatim/)
-    expect(raw).toContain('derived.stale')
-  })
-
-  it('reads a legacy goal file only when no mission covers it', () => {
-    expect(sources).toMatch(/only the ones no mission covers/)
-    expect(sources).toMatch(/`mission: mnt-…`/)
+  it('takes the headline and the `you` line from the mission instead of re-deriving them', () => {
+    // Missions v4: the headline is `progress.headline`, and the operator's line is `next`.
+    expect(raw).toContain('progress.headline')
+    expect(flat(sources)).toMatch(/`next` from `mission_get`: its `ask`/)
   })
 })
 
