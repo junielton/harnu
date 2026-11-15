@@ -42,7 +42,8 @@ vi.mock('../src/main/claude-reader', async (importOriginal) => ({
 import { registerMcpServer, closeMcpServer, writeScopedMcpConfig } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
 import { _setStepInputsForTest, WIRED_TOOLS } from '../src/main/mcp/tool-handlers'
-import { toolByName } from '../src/main/mcp/tool-catalog'
+import { MCP_TOOLS, toolByName } from '../src/main/mcp/tool-catalog'
+import { OBSERVE_MCP_ALLOW } from '../src/main/scheduler-core'
 import {
   mintScopedBearer,
   dropPendingSpawn,
@@ -415,8 +416,10 @@ describe('spawned sessions hold scoped verbs', () => {
     const foreign = await newMission(otherRepo)
     const observer = await connectAs(bearerFor({ role: 'observer', folder: repo }))
 
-    const listed = (await observer.listTools()).tools.map((t) => t.name).sort()
-    expect(listed).toEqual(['mission_get', 'mission_list'])
+    // Owner's delta 1: the observer holds the observe allowlist's verbs (see the describe below), which
+    // include these two; what this test is about is that they read the folder's missions.
+    const listed = (await observer.listTools()).tools.map((t) => t.name)
+    expect(listed).toEqual(expect.arrayContaining(['mission_get', 'mission_list']))
 
     const rows = await okOn(observer, 'mission_list', { folder: repo })
     expect((rows.body.missions as Array<{ id: string }>).map((m) => m.id)).toEqual([id])
@@ -719,5 +722,85 @@ describe('the config a spawned session reads holds its credential and not ours',
     const worker = await connectAs(bearer)
     const got = await okOn(worker, 'mission_get', { folder: repo, missionId: id })
     expect(got.body.id).toBe(id)
+  })
+})
+
+describe("the observe worker's tick holds the observe allowlist's read verbs, bound to its folder (delta 1)", () => {
+  // The one source: what an observe tick may call today. Built from the allowlist the tick uses, so a
+  // verb added to it is expected here without touching this test.
+  const allowed = OBSERVE_MCP_ALLOW.filter((n) => n.startsWith('mcp__harnu__')).map((n) =>
+    n.slice('mcp__harnu__'.length)
+  )
+  const writes = MCP_TOOLS.map((t) => t.name).filter((n) => !allowed.includes(n))
+
+  it('is offered the observe allowlist and nothing else, from the same list the tick uses', async () => {
+    const observer = await connectAs(bearerFor({ role: 'observer', folder: repo }))
+    const listed = (await observer.listTools()).tools.map((t) => t.name).sort()
+    expect(listed).toEqual([...allowed].sort())
+    expect([...SCOPED_VERBS.observer].sort()).toEqual([...allowed].sort())
+    // The allowlist's own members are still there: nothing an existing observe worker used is lost.
+    for (const verb of [
+      'get_fleet',
+      'get_session',
+      'list_worktrees',
+      'memory_read',
+      'github_budget'
+    ]) {
+      expect(listed, verb).toContain(verb)
+    }
+  })
+
+  it('is refused every verb outside the allowlist, the mission and campaign writers included', async () => {
+    const observer = await connectAs(bearerFor({ role: 'observer', folder: repo }))
+    const id = await newMission(repo)
+    expect(writes).toEqual(
+      expect.arrayContaining(['mission_link', 'mission_log', 'create_session'])
+    )
+    const before = JSON.stringify(await readRecord(repo, id))
+    for (const verb of writes) {
+      const r = await callOn(observer, verb, { folder: repo, missionId: id })
+      expect(r.isError, verb).toBe(true)
+    }
+    expect(JSON.stringify(await readRecord(repo, id))).toBe(before)
+  })
+
+  it('calls the read verbs it could call before', async () => {
+    const observer = await connectAs(bearerFor({ role: 'observer', folder: repo }))
+    for (const [verb, args] of [
+      ['get_fleet', {}],
+      ['list_worktrees', { folder: repo }],
+      ['github_budget', {}],
+      ['list_terminals', {}],
+      ['mission_list', { folder: repo }]
+    ] as Array<[string, Record<string, unknown>]>) {
+      const r = await callOn(observer, verb, args)
+      expect(r.isError, `${verb}: ${r.text}`).toBe(false)
+    }
+  })
+
+  it("reads another folder's missions nowhere, a folder it leaves out being its own", async () => {
+    const mine = await newMission(repo)
+    const foreign = await newMission(otherRepo)
+    const observer = await connectAs(bearerFor({ role: 'observer', folder: repo }))
+
+    // A folder argument that is not its own is refused, for a mission verb and for any other.
+    for (const [verb, args] of [
+      ['mission_list', { folder: otherRepo }],
+      ['mission_get', { folder: otherRepo, missionId: foreign }],
+      ['list_worktrees', { folder: otherRepo }],
+      ['memory_read', { folder: otherRepo }]
+    ] as Array<[string, Record<string, unknown>]>) {
+      const r = await callOn(observer, verb, args)
+      expect(r.isError, verb).toBe(true)
+      expect(r.text, verb).toMatch(/SCOPE_FOLDER/)
+    }
+    // Left out, the folder is its own: the list is this repo's, never every repo's.
+    const rows = await okOn(observer, 'mission_list', {})
+    const ids = JSON.stringify(rows.body)
+    expect(ids).toContain(mine)
+    expect(ids).not.toContain(foreign)
+    // And a foreign mission id is not found in its own folder.
+    const got = await callOn(observer, 'mission_get', { missionId: foreign })
+    expect(got.isError).toBe(true)
   })
 })
