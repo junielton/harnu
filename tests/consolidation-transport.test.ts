@@ -335,13 +335,13 @@ describe('AC-6.3 — recall at create', () => {
       folder: main,
       page: 'decisions',
       entry: '## Poll the steward every minute',
-      watches: ['src/main/steward-core.ts']
+      watches: ['src/main/scheduler-core.ts']
     })
     const next = await ok('memory_append', {
       folder: main,
       page: 'decisions',
       entry: '## Wake the steward on events',
-      watches: ['src/main/steward-core.ts'],
+      watches: ['src/main/scheduler-core.ts'],
       supersedes: old.entryId
     })
     expect(next.entryId).toMatch(/^e-[0-9a-f]{8}$/)
@@ -350,7 +350,7 @@ describe('AC-6.3 — recall at create', () => {
       title: 'Steward work',
       declaredEnd: END,
       sessionId: OWNER,
-      scope: ['src/main/steward-core.ts'],
+      scope: ['src/main/scheduler-core.ts'],
       steward: false
     })
     expect((ack.recall as Array<{ text: string }>).map((r) => r.text)).toEqual([

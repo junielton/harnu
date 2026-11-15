@@ -50,6 +50,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **The old mission screens are gone.** The mission and campaign popovers, the step rail, the Missions review and bulk-close dialogs, the steward pause dialog and the **Stewards** block in the Scheduler are removed. Every mission, including the ones you started before this version, opens in the Mission pane, and nothing else lists your missions across a repo except the pane's own picker when a session has no mission.
 
+- **The mission steward is gone for good.** Harnu no longer contains the helper that used to wake on mission events, rebase a stack, start a verifier or nudge a session; the Scheduler keeps only your own **Observe** and **Act** workers. The first start after an upgrade still removes any steward an older version left (its Scheduler worker and its entries in the folder's `.claude/settings.local.json`, never your own hooks) and posts the one Activity notice. A session that was already open when you upgraded may still run the old steward hooks; they now answer with nothing. Closing a mission no longer looks for a steward to remove. The **Pause steward** and **Resume steward** actions are gone too. No mission or campaign file changes: a mission that was paused keeps that line in its file, and nothing reads it.
+
 ### Fixed
 
 - A leader that did a step itself, with no other session linked to it, no longer settles that step's criteria as if it were a second session: its check is recorded as a self-check and the criterion stays open.

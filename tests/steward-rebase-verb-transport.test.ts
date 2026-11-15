@@ -1,7 +1,7 @@
 /**
  * Campaign ch.5a (T597, AC-5a.2) — the `rebase_stack` VERB, through the real MCP transport and real
  * git repositories: which step's worktree it picks, what it refuses, the blocker it sets on a
- * conflict, and that it never pushes. (The git mechanics are pinned in `steward-rebase.test.ts`.)
+ * conflict, and that it never pushes. (The git mechanics are pinned in `steward-rebase.test.ts`, which now imports them from `tool-handlers`.)
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { promises as fs, realpathSync, writeFileSync } from 'node:fs'

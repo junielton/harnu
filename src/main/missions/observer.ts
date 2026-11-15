@@ -14,7 +14,7 @@
  * It never rewrites the mission file: `updatedAt` stays a pure evidence signal.
  */
 import { wakeStewardForMission } from '../scheduler-shell'
-import type { WakeReason } from '../steward-core'
+import type { WakeReason } from '../scheduler-core'
 import type { LedgerRow, Mission } from '../mission-core'
 import {
   addObservedLedger,

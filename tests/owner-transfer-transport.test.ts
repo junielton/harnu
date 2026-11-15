@@ -9,7 +9,7 @@
  * hook FSM) are stubbed at their seams.
  *
  * Covers AC-1 (owner lookup follows), AC-3 (campaign + `includeChapters`), AC-4 (Log entry + ledger
- * row), AC-5 (a steward is refused STEWARD_VERB_NOT_ALLOWED) and the refusal codes the card names.
+ * row), AC-5 (a bearer shaped like the retired steward's is refused at the door) and the refusal codes the card names.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
@@ -46,7 +46,7 @@ vi.mock('../src/main/hook-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/hook-bridge')>()),
   getTaskStates: () => new Map(),
   addTaskEventObserver: () => () => {},
-  getStewardHookEndpoint: () => ({ port: 4711, token: 'bridge-token' })
+  getHookBridgeEndpoint: () => ({ port: 4711, token: 'bridge-token' })
 }))
 vi.mock('../src/main/pty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/pty')>()),
@@ -73,14 +73,8 @@ vi.mock('../src/main/pr-stack', async (importOriginal) => ({
 
 import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
-import {
-  createStewardForMission,
-  registerScheduler,
-  stopSchedulerTicker,
-  setStewardTickStarter
-} from '../src/main/scheduler-shell'
+import { registerScheduler, stopSchedulerTicker } from '../src/main/scheduler-shell'
 import { runOperatorDoor } from '../src/main/mission-ipc'
-import { stewardBearer } from '../src/main/steward-core'
 
 const OLD = '11111111-2222-4333-8444-555555555555'
 const NEW = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
@@ -207,7 +201,6 @@ beforeAll(async () => {
   blockedMain = (await fakeRepo()).main
   h.denied = [blockedMain]
   registerScheduler(() => null, { dispatch: async () => ({}) } as never)
-  setStewardTickStarter(async () => {})
   await registerMcpServer(() => null, {
     bridge: { dispatch: async () => ({}) } as never,
     confirm: createConfirmCore({
@@ -449,8 +442,8 @@ describe('AC-3 / AC-4 — campaign_transfer_owner', () => {
   })
 })
 
-describe('AC-5 — a steward is refused both verbs by name', () => {
-  it('STEWARD_VERB_NOT_ALLOWED, and the owner on disk does not move', async () => {
+describe("AC-5 — a bearer shaped like the retired steward's is refused at the door", () => {
+  it('the control server no longer recognises it, and the owner on disk does not move', async () => {
     const created = await ok('mission_create', {
       folder: main,
       title: `Stewarded ${++titleSeq}`,
@@ -459,32 +452,10 @@ describe('AC-5 — a steward is refused both verbs by name', () => {
       steps: STEPS
     })
     const missionId = created.missionId as string
-    // Missions v4 S-27: mission_create makes no steward any more. Plant the worker an older Harnu left,
-    // so the server's refusal of its bearer (which stays until the steward files go) is still graded.
-    await createStewardForMission({ missionId, folder: main, title: `Stewarded ${titleSeq}` })
-    const workers = (await ok('list_workers', {})).workers as Array<Record<string, unknown>>
-    const row = workers.find((w) => w.category === 'steward' && w.missionId === missionId)!
-    const steward = await connectAs(stewardBearer(serverToken, row.id as string))
-    try {
-      const m = await callOn(steward, 'mission_transfer_owner', {
-        folder: main,
-        missionId,
-        toSessionId: NEW,
-        reason: REASON
-      })
-      expect(m.isError).toBe(true)
-      expect(m.text).toMatch(/STEWARD_VERB_NOT_ALLOWED/)
-      const c = await callOn(steward, 'campaign_transfer_owner', {
-        folder: main,
-        campaignId: 'cmp-0a0a0a0a',
-        toSessionId: NEW,
-        reason: REASON
-      })
-      expect(c.isError).toBe(true)
-      expect(c.text).toMatch(/STEWARD_VERB_NOT_ALLOWED/)
-      expect(ownerOf(await readRecord(main, 'missions', missionId))).toBe(OLD)
-    } finally {
-      await steward.close().catch(() => {})
-    }
+    // Missions v4 S-38: a steward's bearer (`stw_<workerId>_<mac>`) is no longer minted or checked.
+    // One shaped like it is just a wrong credential: the server turns it away before any verb runs.
+    const retiredShape = `${['stw', 'w-1'].join('_')}_${'0'.repeat(64)}`
+    await expect(connectAs(retiredShape)).rejects.toThrow()
+    expect(ownerOf(await readRecord(main, 'missions', missionId))).toBe(OLD)
   })
 })

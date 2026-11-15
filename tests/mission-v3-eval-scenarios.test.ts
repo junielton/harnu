@@ -31,7 +31,6 @@ import {
   replyAsks
 } from '../scripts/eval/mission-behavior/agent.mjs'
 import { MCP_TOOLS } from '../src/main/mcp/tool-catalog'
-import { STEWARD_ALLOW_VERBS } from '../src/main/steward-core'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 const SCENARIOS = path.join(REPO_ROOT, 'scripts', 'eval', 'mission-behavior', 'scenarios')
@@ -280,13 +279,9 @@ describe('the scenario set (Mission v3 §3.11, AC-11)', () => {
     expect([...CAMPAIGN_VERBS].sort()).toEqual([...catalog].sort())
   })
 
-  it('the steward verbs an eval turn may add are exactly the non-mission verbs a steward may call (T609)', () => {
+  it('every steward verb an eval turn may add is a catalog verb (T609)', () => {
     const catalog = new Set(MCP_TOOLS.map((t) => t.name))
     for (const v of STEWARD_VERBS) expect(catalog.has(v), v).toBe(true)
-    const stewardOnly = STEWARD_ALLOW_VERBS.filter(
-      (v) => !v.startsWith('mission_') && !v.startsWith('campaign_')
-    )
-    expect([...STEWARD_VERBS].sort()).toEqual([...stewardOnly].sort())
   })
 
   it('the shadow dual-write scenario is retired (closes T371)', () => {

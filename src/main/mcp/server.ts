@@ -56,13 +56,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import { parseMcpRequest, BODY_MAX } from './http-guard'
 import { type McpOp, type McpToolDef } from './tool-catalog'
-import {
-  WIRED_TOOLS,
-  appendStewardLog,
-  missionRoot,
-  type HandlerCaller,
-  type ToolHandlerCtx
-} from './tool-handlers'
+import { WIRED_TOOLS, type HandlerCaller, type ToolHandlerCtx } from './tool-handlers'
 import { getContainersService } from '../containers/containers-ipc'
 import { containersConfirmPrompt } from './containers-listing'
 import { planToolCall } from './plan-tool-call'
@@ -125,13 +119,7 @@ import {
 import { parsePlanMission } from './validate'
 import { parseAgentBootOverride } from './agent-boot'
 import { listInflightSessions } from './inflight-session-registry'
-import {
-  folderForWorkerId,
-  setObserverMcpConfigWriter,
-  stewardForWorkerId,
-  WorkerIsStewardError
-} from '../scheduler-shell'
-import { stewardCallRefusal, verifyStewardBearer } from '../steward-core'
+import { folderForWorkerId, setObserverMcpConfigWriter } from '../scheduler-shell'
 import {
   mintScopedBearer,
   SCOPED_VERBS,
@@ -223,21 +211,16 @@ let autoRegisterEnabled = true
 const transports = new Map<string, StreamableHTTPServerTransport>()
 
 /**
- * Campaign ch.5a: who a call comes from. Absent = an ordinary MCP client (the main bearer). A
- * steward's tick presents its own derived bearer, so the server — not the model's obedience to
- * argv — enforces its closed allowlist and its argument rules.
+ * Who a call comes from. Absent = an ordinary MCP client (the main bearer).
+ *
+ * Missions v4 S-25: a `scoped` caller is a session Harnu spawned (a worker or a verifier of one step)
+ * or the observe worker of one folder, recognised by its scoped bearer. `scope.sessionId` is the
+ * caller's id. The server — not the model's obedience to argv — enforces its role.
  */
-export type McpCaller =
-  | { kind: 'steward'; workerId: string }
-  /**
-   * Missions v4 S-25: a session Harnu spawned (a worker or a verifier of one step) or the observe
-   * worker of one folder, recognised by its scoped bearer. `scope.sessionId` is the caller's id.
-   */
-  | { kind: 'scoped'; scope: Scope }
+export type McpCaller = { kind: 'scoped'; scope: Scope }
 
-/** The key an MCP session is bound to: the steward's worker id, the scope's key, or '' (ordinary). */
-const callerKey = (caller?: McpCaller): string =>
-  !caller ? '' : caller.kind === 'steward' ? caller.workerId : scopeKey(caller.scope)
+/** The key an MCP session is bound to: the scope's key, or '' (ordinary). */
+const callerKey = (caller?: McpCaller): string => (!caller ? '' : scopeKey(caller.scope))
 
 /**
  * Missions v4 S-24: who is calling the tool call now in flight, as the transport proved it. Set in
@@ -1108,18 +1091,6 @@ export async function handleToolCall(
   caller?: McpCaller
 ): Promise<CallToolResult> {
   let args = asRecord(rawArgs)
-  // Campaign ch.5a: a steward is judged BEFORE the gate, the confirm or the queues — a refusal
-  // here parks nothing and spends nothing.
-  const steward = caller?.kind === 'steward' ? stewardForWorkerId(caller.workerId) : undefined
-  if (caller?.kind === 'steward') {
-    if (!steward) {
-      return errorResult(
-        'STEWARD_GONE: this steward no longer exists (its mission was closed) — stop.'
-      )
-    }
-    const refusal = stewardCallRefusal({ op: def.op, args, missionId: steward.missionId })
-    if (refusal) return errorResult(refusal)
-  }
   // Missions v4 S-25: a session Harnu spawned is judged the same way, before anything else: the verb
   // is in its role, the folder, mission and step are its own, and the arguments it runs with are the
   // scope's (a step it left out is its own). Its session id is the credential's, never an argument.
@@ -1136,13 +1107,6 @@ export async function handleToolCall(
     if (!judged.ok) return errorResult(judged.error)
     args = judged.args
   }
-  // A steward is a system worker: refuse an edit or delete of one before the gate can park a confirm.
-  if (
-    (def.op === 'update_worker' || def.op === 'delete_worker') &&
-    stewardForWorkerId(strField(args, 'id') ?? '')
-  ) {
-    return errorResult(new WorkerIsStewardError(strField(args, 'id') ?? '').message)
-  }
   // T482 F1: a send's place in its terminal's line is decided HERE, synchronously, before the
   // first `await` of the pipeline (prefs, project file, folder scan). Taken later, two sends could
   // swap order depending on which one's I/O finished first.
@@ -1152,20 +1116,9 @@ export async function handleToolCall(
   const browserPaneId = QUEUED_BROWSER_OPS.has(def.op) ? strField(args, 'paneId') : undefined
   if (browserPaneId) browserWriteQueue.reserve(args, browserPaneId)
   try {
-    const result = await (steward && caller?.kind === 'steward'
-      ? callerOfCall.run(
-          { kind: 'steward', workerId: caller.workerId, missionId: steward.missionId },
-          () => runToolCall(def, args)
-        )
-      : caller?.kind === 'scoped'
-        ? callerOfCall.run({ kind: 'scoped', scope: caller.scope }, () => runToolCall(def, args))
-        : runToolCall(def, args))
-    // Every action a steward takes is a `steward` Log entry on its mission — written here so it
-    // exists whether or not the model remembers to write one. Reads and `mission_log` itself are not actions.
-    if (steward && def.mutates && def.op !== 'mission_log' && ackIsSuccess(result)) {
-      await appendStewardLog(missionRoot(steward.folder), steward.missionId, def.op, args)
-    }
-    return result
+    return await (caller?.kind === 'scoped'
+      ? callerOfCall.run({ kind: 'scoped', scope: caller.scope }, () => runToolCall(def, args))
+      : runToolCall(def, args))
   } finally {
     browserWriteQueue.drop(args)
     // A call that never reached the handler (refused, parked for a confirm) must not hold the
@@ -1973,26 +1926,13 @@ function readBody(
 
 /** The loopback request handler: guard → route to a (new or existing) transport. */
 async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  // Campaign ch.5a: a steward tick presents `stw_<workerId>_<mac>`, derived from the server secret.
-  // The guard (Host/Origin/body cap/constant-time compare) is the SAME one, run with the secret
-  // substituted; what the bearer proves is WHICH worker is calling, bound to its MCP session below.
   const auth = req.headers.authorization
   const presented = typeof auth === 'string' ? auth.replace(/^Bearer\s+/i, '') : ''
-  const stewardWorkerId = presented ? verifyStewardBearer(token, presented) : null
-  if (stewardWorkerId && !stewardForWorkerId(stewardWorkerId)) {
-    res.writeHead(403)
-    res.end()
-    return
-  }
   // Missions v4 S-25: a session Harnu spawned presents `scp_<payload>.<mac>`, derived from the same
   // secret and checked the same way. What it proves is WHO is calling (the session id inside it) and
   // what that caller is bound to; both are enforced per call, not trusted from the arguments.
-  const scope = presented && !stewardWorkerId ? verifyScopedBearer(token, presented) : null
-  const caller: McpCaller | undefined = stewardWorkerId
-    ? { kind: 'steward', workerId: stewardWorkerId }
-    : scope
-      ? { kind: 'scoped', scope }
-      : undefined
+  const scope = presented ? verifyScopedBearer(token, presented) : null
+  const caller: McpCaller | undefined = scope ? { kind: 'scoped', scope } : undefined
   const guard = parseMcpRequest({
     method: req.method,
     url: req.url,
@@ -2017,7 +1957,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
   const sidHeader = req.headers['mcp-session-id']
   const sessionId = Array.isArray(sidHeader) ? sidHeader[0] : sidHeader
   let transport = sessionId ? transports.get(sessionId) : undefined
-  // A session belongs to the caller that opened it: a steward bearer on the main client's session id
+  // A session belongs to the caller that opened it: a scoped bearer on the main client's session id
   // (or the reverse) inherits nothing.
   if (transport && sessionId && (transportCallers.get(sessionId) ?? '') !== callerKey(caller)) {
     res.writeHead(403)

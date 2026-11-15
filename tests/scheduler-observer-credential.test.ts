@@ -1,6 +1,6 @@
 /**
  * Missions v4 S-25 (delta 1) — the Scheduler's observe tick presents the OBSERVER credential, bound to
- * its worker's folder. An `act` worker and a steward keep the config they had.
+ * its worker's folder. An `act` worker keeps the config it had, and a steward left by an older Harnu gets none.
  *
  * `tickMcpConfigFor` is where a tick's `--mcp-config` is chosen; the real control server is up so the
  * file it points at is the real one, and what is read back is what `claude` would read.
@@ -32,7 +32,6 @@ import { registerMcpServer, closeMcpServer, writeScopedMcpConfig } from '../src/
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
 import { setObserverMcpConfigWriter, tickMcpConfigFor } from '../src/main/scheduler-shell'
 import { verifyScopedBearer } from '../src/main/mcp/scope'
-import { verifyStewardBearer } from '../src/main/steward-core'
 import type { Worker } from '../src/main/scheduler-core'
 
 let serverToken = ''
@@ -98,14 +97,13 @@ describe("an observe worker's tick is on the observer credential", () => {
     expect(verifyScopedBearer(serverToken, b)).toMatchObject({ folder: '/work/b' })
   })
 
-  it('an act worker keeps the main config, and a steward keeps its own bearer', async () => {
+  it('an act worker keeps the main config, and a steward an older Harnu left gets no config', async () => {
     const act = await tickMcpConfigFor(worker({ mode: 'act' }))
     expect(act).toBe(path.join(h.userDataDir, 'harnu.mcp.json'))
     const steward = await tickMcpConfigFor(
       worker({ mode: 'steward', category: 'steward', missionId: 'mnt-aaaaaaaa' })
     )
-    expect(steward).toBe(path.join(h.userDataDir, 'steward-mcp', 'w-1.json'))
-    expect(verifyStewardBearer(serverToken, await bearerIn(steward as string))).toBe('w-1')
+    expect(steward).toBeUndefined()
   })
 
   it('when no credential can be written an observe tick gets no config, even with the main one on disk', async () => {
