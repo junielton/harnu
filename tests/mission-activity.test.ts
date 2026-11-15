@@ -659,7 +659,6 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
   }
 
   it('removing a mission-level blocker renumbers the step blocker and never chimes', async () => {
-    const store = mountStore()
     // Main's own memory for this mission: the keys it wrote (`blocker:<reason>`), cued long ago.
     const t = Date.now() - 10 * 60_000
     const k = (count: number): unknown => ({ count, firstOwedAt: t, lastCuedAt: t, nudges: 0 })
@@ -679,6 +678,7 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
       })
     )
     // The first read is for the upgrade: both blockers owed, as main saw them. No chime.
+    const store = mountStore()
     v3Views = [
       v3([
         { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' },
@@ -701,7 +701,6 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
   })
 
   it('updating Harnu chimes nothing for an owed item main already knew', async () => {
-    const store = mountStore()
     const t = Date.now() - 10 * 60_000
     localStorage.setItem(
       CUES_KEY,
@@ -724,6 +723,7 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
         }
       })
     )
+    const store = mountStore()
     v3Views = [
       v3([
         { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' },

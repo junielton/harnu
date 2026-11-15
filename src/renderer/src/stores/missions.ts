@@ -152,39 +152,25 @@ export type ReaderView = CueView & {
   mission: { id: string; owner: { sessionId: string }; updatedAt: string }
 }
 
+/** Whether a reader's record is a v3 file read through the record store (not a v4 record). */
+const isV3Source = (r: ReaderMission): boolean =>
+  r.detail.source !== undefined && r.detail.source !== 'v4'
+
 /**
- * A close request the v4 waiting list does not show. The list shows `close` only when every required step
- * is done (derived), so a session's request to close with a step still open (a v3 `pendingClose`, or a v4
- * `closeRequested`) reads as nothing there. The operator's rule is that a miss is worse than a false alarm,
- * so the cue and the Activity entry keep it: a v3 view the list poll still serves says the agent asked
- * (`you` holds `close`), and the reader of that mission gets a `close` item of its own (worded as the
- * waiting list words a request). A record the v3 list does not serve is not covered: its `closeRequested`
- * is not in the detail, so the waiting list owes that one (reported to the owner of `waiting.ts`).
+ * What the cue and the Activity entry read per mission. A v4 record is read as the v4 view serves it. A mission
+ * that is still a v3 file keeps what main did: its own v3 view (the list poll still serves it), so every key
+ * is main's key and an update changes nothing that chimes (an owed item main knew is the same key, a blocker
+ * renumbered by a neighbour's removal is the same `blocker:<reason>`, and a close request with a step still
+ * open stays `close`). The only thing a v3 file adds from the v4 view is a request to join, which main had no
+ * equivalent for. A v3 file the list does not serve (a campaign) is read as the v4 view serves it.
  */
-function withCloseRequests(
-  readers: readonly ReaderMission[],
-  v3: readonly MissionView[]
-): ReaderMission[] {
-  const asked = new Set(
-    v3.filter((v) => v.you.some((i) => i.kind === 'close')).map((v) => v.mission.id)
-  )
-  return readers.map((r) =>
-    asked.has(r.mission.id) && !r.you.some((i) => i.kind === 'close')
-      ? {
-          ...r,
-          you: [
-            ...r.you,
-            {
-              kind: 'close' as const,
-              id: 'close',
-              requested: true,
-              ask: 'Close the mission: the session says it is ready',
-              why: 'The mission is finished once you close it'
-            }
-          ]
-        }
-      : r
-  )
+function cueViewsFrom(readers: readonly ReaderMission[], v3: readonly MissionView[]): ReaderView[] {
+  const byId = new Map(v3.map((v) => [v.mission.id, v]))
+  return readers.map((r) => {
+    const v = isV3Source(r) ? byId.get(r.mission.id) : undefined
+    if (!v) return r
+    return { ...v, you: [...v.you, ...r.you.filter((i) => 'ask' in i && i.kind === 'attach')] }
+  })
 }
 
 /** One mission the readers know through the v4 view: what the cue reads, and the detail the chip is drawn from. */
@@ -739,29 +725,39 @@ export const useMissionsStore = defineStore('missions', () => {
       .filter((r) => !seen.has(r.mission.id) && !!seen.add(r.mission.id))
   }
 
-  /** The chip of `sessionId`: the leader of an open mission, in the pill's text and tone; `null` for anyone else. */
+  /** Whether `missionId` is a v3 file (not a v4 record) that the v3 list still serves: its pill and popover stay v3. */
+  function isV3Mission(missionId: string): boolean {
+    const r = readers.value?.find((m) => m.mission.id === missionId)
+    return r !== undefined && isV3Source(r) && views.value.some((v) => v.mission.id === missionId)
+  }
+
+  /**
+   * The chip of `sessionId`: the leader of an open mission. A **v3** mission shows exactly what its own Topbar
+   * pill shows (the v3 words and numbers, as on main) until the popover is retired; a **v4** record shows the
+   * pill's v4 text and tone. `null` for anyone else.
+   */
   function chipFor(sessionId: string | null | undefined): ChipModel | null {
     if (!sessionId) return null
     const { t } = i18n.global
-    if (readers.value !== null) {
-      const r = readers.value.find((m) => m.detail.leads === sessionId)
-      if (!r) return null
-      const text = missionPillText(t, r.detail)
+    const v3Chip = (): ChipModel | null => {
+      const m = modelForSession(sessionId)
+      if (!m || m.headline.kind === 'empty') return null
       return {
-        text,
-        compact: text,
-        tone: missionPillTone(r.detail),
-        needsYou: r.you.length > 0
+        text: headlineText(t, m.headline),
+        compact: headlineText(t, m.headline, true),
+        tone: m.tone,
+        needsYou: m.needsYou
       }
     }
-    const m = modelForSession(sessionId)
-    if (!m || m.headline.kind === 'empty') return null
-    return {
-      text: headlineText(t, m.headline),
-      compact: headlineText(t, m.headline, true),
-      tone: m.tone,
-      needsYou: m.needsYou
+    if (readers.value === null) return v3Chip()
+    const r = readers.value.find((m) => m.detail.leads === sessionId)
+    if (!r) return null
+    if (isV3Mission(r.mission.id)) {
+      const own = v3Chip()
+      if (own) return own
     }
+    const text = missionPillText(t, r.detail)
+    return { text, compact: text, tone: missionPillTone(r.detail), needsYou: r.you.length > 0 }
   }
 
   async function load(): Promise<void> {
@@ -786,9 +782,8 @@ export const useMissionsStore = defineStore('missions', () => {
       // build without the channel keeps the v3 list; a repo whose read fails keeps its last good missions.
       const read = await loadReaders(folders)
       if (startedAt !== writeSeq) return
-      const withAsks = read ? withCloseRequests(read, list) : null
-      readers.value = withAsks
-      const cueViews: readonly ReaderView[] = withAsks ?? list
+      readers.value = read
+      const cueViews: readonly ReaderView[] = read ? cueViewsFrom(read, list) : list
       const now = Date.now()
       if (!cueMemory) {
         // No memory: the backlog the operator already has on screen is not news.
@@ -1020,6 +1015,7 @@ export const useMissionsStore = defineStore('missions', () => {
     modelForSession,
     readers,
     chipFor,
+    isV3Mission,
     refreshV4,
     v4ReplyForSession,
     v4MissionForSession,
