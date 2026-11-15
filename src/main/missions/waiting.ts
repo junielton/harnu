@@ -530,7 +530,12 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
   }
 
   const close: WaitingItemV4[] = []
-  if (progress.missionState === 'ready-to-close') {
+  // A standing close request is owed to the operator even while a step is open (C4-29, S-35 delta 1): the
+  // agent said it is ready, and the pane must say what Your move says. A closed mission owes nothing.
+  if (
+    progress.missionState === 'ready-to-close' ||
+    (mission.status === 'open' && mission.closeRequested !== undefined)
+  ) {
     const requested = mission.closeRequested !== undefined
     close.push({
       kind: 'close',

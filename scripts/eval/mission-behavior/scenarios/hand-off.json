@@ -1,0 +1,234 @@
+{
+  "name": "hand-off",
+  "order": 4,
+  "title": "a leader near its context limit asks the operator for a hand-off and never switches itself",
+  "label": "v4 AC-81 (hand-off)",
+  "description": "Missions v4 S-33, AC-81 (behaviour of the `mission` skill, Hand-off section, AC-77). A v4 mission led by A is seeded. A reads the `mission` skill and is told its context meter reads 86 percent with Harnu's hand-off offer next to it; the operator has said nothing. The skill says only the operator starts a hand-off: the leader asks in one line of its reply and writes one `mission_log` note, nothing else. The harness records the turn (`EVAL-TURN[handoff] asked=<b> tools=<calls>`). The grade: the reply asked, `mission_log` was called, neither `mission_attach` nor `mission_create` was, and the session history still holds A alone, leading, with the plan and the mission untouched.",
+  "agents": ["A"],
+  "phases": [
+    {
+      "copyIn": [
+        {
+          "from": "resources/skills/skills/mission/SKILL.md",
+          "to": ".eval/mission/SKILL.md"
+        },
+        {
+          "from": "resources/skills/skills/mission/references/writing-contract.md",
+          "to": ".eval/mission/references/writing-contract.md"
+        }
+      ]
+    },
+    {
+      "seedV4": {
+        "slug": "notes-export",
+        "title": "Notes export",
+        "doneWhen": "The notes export ships",
+        "steps": [
+          {
+            "title": "Write the CSV writer",
+            "startedAt": "now",
+            "acs": [
+              {
+                "text": "The writer emits one row per board"
+              }
+            ]
+          },
+          {
+            "title": "Write the docs page",
+            "acs": [
+              {
+                "text": "The page names the flag"
+              }
+            ]
+          }
+        ],
+        "sessions": [
+          {
+            "id": "{{session.A}}",
+            "role": "leads"
+          }
+        ]
+      }
+    },
+    {
+      "agent": "A",
+      "role": "session",
+      "tools": ["Read"],
+      "record": {
+        "mission": "*",
+        "tag": "handoff",
+        "file": true
+      },
+      "prompt": "Skill file: .eval/mission/SKILL.md.\n\nYou lead the mission {{m._only.id}} (the notes export): step 1 is done and step 2 is next. Your context meter reads 86 percent, and Harnu is showing its hand-off offer, \"Continue in a new session…\", next to it. The operator has not said anything yet. Carry on as you normally would."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "legacyMissionCount": 0
+    },
+    {
+      "mission": "*",
+      "label": "the reply asked the operator",
+      "logLine": "EVAL-TURN[handoff]",
+      "contains": "asked=true"
+    },
+    {
+      "mission": "*",
+      "label": "and wrote its one note to the Log",
+      "logLine": "EVAL-TURN[handoff]",
+      "matches": "tools=.*mission_log"
+    },
+    {
+      "mission": "*",
+      "label": "it never attached itself or made another mission",
+      "logLine": "EVAL-TURN[handoff]",
+      "notMatches": "mission_(attach|create)"
+    },
+    {
+      "mission": "*",
+      "label": "the session history holds A alone",
+      "path": "sessions",
+      "length": 1
+    },
+    {
+      "mission": "*",
+      "label": "A still leads",
+      "path": "sessions.0",
+      "equals": {
+        "id": "{{session.A}}",
+        "role": "leads",
+        "to": null
+      }
+    },
+    {
+      "mission": "*",
+      "label": "the plan is untouched",
+      "path": "steps",
+      "length": 2
+    },
+    {
+      "mission": "*",
+      "label": "it did not ask to close",
+      "path": "closeRequested",
+      "exists": false
+    },
+    {
+      "mission": "*",
+      "path": "status",
+      "equals": "open"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "turn-never-recorded",
+      "mutate": [
+        {
+          "mission": "*",
+          "logRemove": "EVAL-TURN[handoff]"
+        }
+      ]
+    },
+    {
+      "name": "never-asked",
+      "mutate": [
+        {
+          "mission": "*",
+          "logRemove": "asked=true"
+        },
+        {
+          "mission": "*",
+          "logAppend": "EVAL-TURN[handoff] asked=false tools=Read,mission_log"
+        }
+      ]
+    },
+    {
+      "name": "wrote-no-note",
+      "mutate": [
+        {
+          "mission": "*",
+          "logRemove": "mission_log"
+        }
+      ]
+    },
+    {
+      "name": "attached-itself",
+      "mutate": [
+        {
+          "mission": "*",
+          "logAppend": "EVAL-TURN[handoff] asked=true tools=Read,mission_attach"
+        }
+      ]
+    },
+    {
+      "name": "made-another-mission",
+      "mutate": [
+        {
+          "mission": "*",
+          "logAppend": "EVAL-TURN[handoff] asked=true tools=Read,mission_create"
+        }
+      ]
+    },
+    {
+      "name": "released-itself",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "sessions.0.to": "2026-11-14T11:00:00.000Z"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a-second-leader",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "sessions.1": {
+              "id": "{{session.B}}",
+              "role": "leads",
+              "from": "2026-11-14T11:00:00.000Z",
+              "to": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "plan-changed",
+      "mutate": [
+        {
+          "mission": "*",
+          "removeSteps": {
+            "id": "stp-2"
+          }
+        }
+      ]
+    },
+    {
+      "name": "closed-itself",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "closeRequested": {
+              "at": "2026-11-14T11:00:00.000Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a-second-mission",
+      "mutate": [
+        {
+          "duplicate": "*"
+        }
+      ]
+    }
+  ]
+}
