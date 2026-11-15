@@ -17,7 +17,7 @@ import {
   waitingList,
   type WaitingItem
 } from '../src/main/missions/waiting'
-import { youItems, youLine, youSentence } from '../src/main/mcp/tool-handlers'
+import { youItems, youLine } from '../src/main/mcp/tool-handlers'
 import { missionDrafts } from '../src/main/your-move/source-mission'
 import { projectMissions, type MissionViewIn } from '../src/main/companion/mission-state-core'
 import { buildMissionModel, youRows, youRowText } from '../src/renderer/src/lib/mission-view'

@@ -202,7 +202,10 @@ export function missionViewInOf(detail: MissionDetail): MissionViewIn {
         ? { from: firstTodo, to: firstTodo }
         : null
   const done = detail.steps.filter((s) => s.state === 'done').length
-  const blockerOf = (b: { reason: string; owner: 'agent' | 'operator' }) => ({
+  const blockerOf = (b: {
+    reason: string
+    owner: 'agent' | 'operator'
+  }): { reason: string; owner: 'agent' | 'operator' } => ({
     reason: b.reason,
     owner: b.owner
   })
