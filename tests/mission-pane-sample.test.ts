@@ -281,3 +281,61 @@ describe('a small task is a mission with no milestones (Missions v4 S-22, AC-59)
     expect(body).toContain('1 criterion verified')
   })
 })
+
+describe('the sample never reaches a real door (Missions v4 S-22, delta 1)', () => {
+  const LEADER = 'sample-leader'
+
+  /** The selected session HAS a real mission (the view answers one); the doors are spies. */
+  async function realMissionWorld(): Promise<ReturnType<typeof useMissionsStore>> {
+    const real = sampleOf('default').reply
+    api = {
+      missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
+      campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
+      missionV4View: vi.fn(async () => real),
+      missionV4Door: vi.fn(async () => ({ ok: true, changed: true })),
+      missionHandOff: vi.fn(async () => ({ ok: true, sessionId: 'new-session' })),
+      sessionLinksList: vi.fn(async () => [])
+    }
+    ;(window as unknown as { api: unknown }).api = api
+    const sessions = useSessionsStore()
+    sessions.folders = [
+      { path: FOLDER, sessions: [{ sessionId: LEADER, projectPath: FOLDER, summary: 'Leader' }] }
+    ] as never
+    sessions.select(LEADER)
+    const missions = useMissionsStore()
+    await missions.refreshV4()
+    return missions
+  }
+
+  it('a press on the sample calls no door and changes nothing; a press on the real mission calls its door', async () => {
+    const missions = await realMissionWorld()
+    expect(missions.v4MissionForSession(LEADER)).not.toBeNull()
+    const viewCalls = api.missionV4View.mock.calls.length
+
+    missions.showSample('done')
+    // Every way a press reaches the main process: the selected mission's door, a named mission's door
+    // (the picker's Attach) and the hand-off.
+    const own = await missions.runV4Door({ door: 'close', closedAs: 'discarded' })
+    const named = await missions.runV4DoorOn('mnt-sample01', { door: 'attach', sessionId: LEADER })
+    const handOff = await missions.runHandOff()
+    expect(own).toEqual({ ok: true, changed: false })
+    expect(named).toEqual({ ok: true, changed: false })
+    expect(handOff).toMatchObject({ ok: false, code: 'SAMPLE' })
+    expect(api.missionV4Door).not.toHaveBeenCalled()
+    expect(api.missionHandOff).not.toHaveBeenCalled()
+    // ...and the view was not read again after a "door" that changed nothing.
+    expect(api.missionV4View.mock.calls.length).toBe(viewCalls)
+
+    // Leaving the sample: the same calls reach the real doors.
+    missions.showSample(null)
+    await missions.runV4Door({ door: 'close', closedAs: 'discarded' })
+    await missions.runV4DoorOn('mnt-sample01', { door: 'attach', sessionId: LEADER })
+    await missions.runHandOff()
+    expect(api.missionV4Door).toHaveBeenCalledTimes(2)
+    expect(api.missionV4Door.mock.calls[0][0]).toMatchObject({
+      door: 'close',
+      missionId: 'mnt-sample01'
+    })
+    expect(api.missionHandOff).toHaveBeenCalledTimes(1)
+  })
+})
