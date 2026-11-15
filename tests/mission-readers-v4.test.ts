@@ -14,6 +14,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { missionOwnersWithLiveChildren } from '../src/main/hibernation'
+import { readViewsFromRecords } from '../src/main/companion/mission-state'
+import { projectMissions } from '../src/main/companion/mission-state-core'
+import { missionGet } from '../src/main/missions/verbs-read'
 import { buildMissionRecordContent, type MissionV4 } from '../src/main/missions/model'
 import {
   buildMissionFileContent,
@@ -204,6 +207,68 @@ describe('readers use the v4 view', () => {
       mkdirSync(dir, { recursive: true })
       writeFileSync(path.join(dir, 'mnt-a7230001-bad.md'), 'not a record')
       expect(exempt(LEADER)).toEqual([])
+    })
+  })
+
+  describe('the companion mod: the missions of a session, read from the records', () => {
+    /** The detail the view channel serves, read from the real record store (no GitHub facts: none known). */
+    const readDetail = async (
+      folder: string,
+      missionId: string
+    ): Promise<Awaited<ReturnType<typeof missionGet>> | null> =>
+      missionGet(folder, { kind: 'operator' }, { missionId })
+
+    const operatorBlocker = {
+      id: 'blk-1',
+      reason: 'The vendor export is late',
+      ask: 'Ask the vendor for the export',
+      unblocks: 'Step 1 can load the files',
+      owner: 'operator' as const
+    }
+
+    it('a v4 record: the leader owns it, a worker is a child, a bystander has none; you carries the one wording', async () => {
+      seedV4(
+        v4Record({
+          sessions: [
+            { id: LEADER, role: 'leads', from: NOW, to: null },
+            { id: WORKER, role: 'worked', from: NOW, to: null }
+          ],
+          steps: [{ ...v4Record().steps[0], blockers: [operatorBlocker] }]
+        })
+      )
+      const { views, unreadable } = await readViewsFromRecords(
+        [repo],
+        [LEADER, WORKER, BYSTANDER],
+        {
+          readDetail
+        }
+      )
+      expect(unreadable).toEqual([])
+      const owner = projectMissions(views, LEADER)
+      expect(owner).toHaveLength(1)
+      expect(owner[0]).toMatchObject({ id: 'mnt-a7230001', title: 'Score report', role: 'owner' })
+      expect(owner[0].steps.map((s) => [s.id, s.state])).toEqual([['stp-1', 'blocked']])
+      expect(owner[0].you).toEqual([{ kind: 'unblock', text: 'Ask the vendor for the export' }])
+      expect(projectMissions(views, WORKER)[0].role).toBe('child')
+      expect(projectMissions(views, BYSTANDER)).toEqual([])
+    })
+
+    it('a v3 file reads the same way: converted in memory, never rewritten', async () => {
+      seedV3(v3Mission())
+      const { views } = await readViewsFromRecords([repo], [LEADER], { readDetail })
+      const owner = projectMissions(views, LEADER)
+      expect(owner).toHaveLength(1)
+      expect(owner[0].role).toBe('owner')
+      expect(owner[0].title).toBeTruthy()
+    })
+
+    it("a closed mission is not the session's; a mission ready to close says so in you", async () => {
+      seedV4(v4Record({ status: 'closed', closedAs: 'delivered' }, true))
+      expect((await readViewsFromRecords([repo], [LEADER], { readDetail })).views).toEqual([])
+      rmSync(path.join(repo, '.harnu', 'missions-v4'), { recursive: true, force: true })
+      seedV4(v4Record({}, true))
+      const { views } = await readViewsFromRecords([repo], [LEADER], { readDetail })
+      expect(projectMissions(views, LEADER)[0].you.map((y) => y.kind)).toEqual(['close'])
     })
   })
 })
