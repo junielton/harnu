@@ -627,6 +627,21 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
     expect(dialog()).not.toBeNull()
   })
 
+  it('the foot Close button is green when the mission is ready', async () => {
+    // design.md: text-green when ready. A static text-text-3 beside it always wins, so check the pair.
+    await mountPane(paneReply({ ready: true }))
+    const ready = q('[data-test="mission-close-open"]')!
+    expect(ready.classList.contains('text-green')).toBe(true)
+    expect(ready.classList.contains('text-text-3')).toBe(false)
+  })
+
+  it('the foot Close button is muted when the mission is not ready', async () => {
+    await mountPane(paneReply())
+    const open = q('[data-test="mission-close-open"]')!
+    expect(open.classList.contains('text-text-3')).toBe(true)
+    expect(open.classList.contains('text-green')).toBe(false)
+  })
+
   it('a mission that is not ready draws no Close button in the Next box', async () => {
     await mountPane(paneReply())
     expect(q('[data-test="next-close"]')).toBeNull()
