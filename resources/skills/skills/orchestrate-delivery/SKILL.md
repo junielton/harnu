@@ -97,8 +97,9 @@ join it, never open a second. Then `mission_create`, with the whole plan in one 
   never a step.** Add one later with `mission_add_ac`. A stage that gates the next on the operator's own act (a merge
   and a build, a credential) is a blocker raised when you reach it (`mission_set_blocker`, `owner: 'operator'`), and
   the plan says so now, in one line.
-- **The last step is "Check the whole mission against Done when"**, with a second session criterion. It is a
-  convention, not an engine rule: the operator confirms Done when at the close.
+- **The last step is "Check the whole mission against Done when"**, with a second session criterion. It lives in the
+  last milestone and stays last: create it with the plan, and insert every step added later before it (`afterStepId`
+  names the step it follows). It is a convention, not an engine rule: the operator confirms Done when at the close.
 - **Criteria are frozen at dispatch.** A criterion is never edited after dispatch: a change is a new criterion with
   the reason in `mission_log`. A criterion the spec lacks is a spec gap: amend the spec, never the card alone.
 - **The Done when is the operator's words.** Propose it in the same call. When they change it, call
@@ -145,8 +146,12 @@ the spec with `mission_link { link: { kind: 'doc', ref: '<spec path>' } }`.
 
 ## Phase 2 — Cards and dispatch
 
-Per unit, create a card (`create_card` with kind, complexity and `substrate: "worktree"`) whose body is a complete
-delegation packet. A packet an executor can misread is your defect, not theirs.
+Per unit, write a complete delegation packet and dispatch it by ONE of two paths, never both. **`create_session`**
+creates the step's card itself, so the packet is its `prePrompt` and you create no card first: `create_card` cannot
+stamp a step, so a card you made would become a second card for the step. **`submit_manifest` binds a card you made**:
+`create_card` (kind, complexity, `substrate: "worktree"`) with the packet as its body, `move_card` to `ready`, and the
+step on its manifest entry. Cards from a spec (below) always take the second path. A packet an executor can misread
+is your defect, not theirs.
 
 - **Objective** and the done criterion for the unit.
 - **Acceptance criteria with ids and a verification mode**, one line each:
@@ -284,13 +289,13 @@ blocker on exactly the steps of the slices whose `gated-by:` names it:
 
 ### Dispatching
 
-**One unit.** `create_session` with `missionId` and `stepId` (and the packet as `prePrompt`, a model hint in
-`bootOverride`): Harnu binds the step's card, attaches the new session as its worker with a credential scoped to that
-step, and links it. The ACK carries `card` and `worker`; a `bindError` means the session still runs and the binding
+**One unit, no card of yours.** `create_session` with `missionId` and `stepId` (the packet as `prePrompt`, a model
+hint in `bootOverride`): Harnu creates the step's card, attaches the new session as its worker with a credential
+scoped to that step, and links it. The ACK carries `card` and `worker`; a `bindError` means the session still runs and the binding
 failed, so fix it with `mission_link`. A step you do yourself is never dispatched, so it never gets a card.
 
-**Parallel units.** Move their cards to `ready` (`move_card`), then submit ONE batch with `submit_manifest`, each
-card entry carrying `missionId` and `stepId`, in drain order. The drain cuts one worktree per card, respects the
+**Parallel units, or any card you made.** Move the cards to `ready` (`move_card`), then submit ONE batch with
+`submit_manifest`, each card entry carrying `missionId` and `stepId`, in drain order (a batch of one is fine). The drain cuts one worktree per card, respects the
 board's WIP ceiling and bases on the default branch: with an integration branch, dispatch manually
 (`create_worktree { base: "feat/<epic>" }`, then `create_session`) or retarget each PR with
 `gh pr edit <n> --base feat/<epic>`, and say which.

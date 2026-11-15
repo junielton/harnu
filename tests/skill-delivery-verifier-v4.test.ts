@@ -110,7 +110,13 @@ const V3_NAMES = [
   /legacy|goal file/i
 ]
 
-function commonProblems(skill: string, name: string): string[] {
+/**
+ * S-30 delta 1: until the cut-over a stalled older mission still has to be judged, so the sweep may name the two
+ * v3 fields it reads (`derived.stale`, `derived.stall.lastEvidenceAt`). Nothing else of v3 is allowed.
+ */
+const OLDER_MISSION_FIELDS = /derived\.(?:stale|stall\.lastEvidenceAt)/g
+
+function commonProblems(skill: string, name: string, allowed?: RegExp): string[] {
   const out: string[] = []
   const parsed = parseSkillFrontmatter(skill, name)
   if (parsed?.name !== name) out.push(`the name is not ${name}`)
@@ -120,7 +126,8 @@ function commonProblems(skill: string, name: string): string[] {
   const named = new Set(skill.match(VERB_SHAPED) ?? [])
   for (const verb of named) if (!registered.has(verb)) out.push(`${verb} is not registered`)
   for (const verb of RETIRED_VERBS) if (named.has(verb)) out.push(`${verb} is named`)
-  for (const re of V3_NAMES) if (re.test(skill)) out.push(`names a retired v3 thing: ${re}`)
+  const judged = allowed ? skill.replace(allowed, '') : skill
+  for (const re of V3_NAMES) if (re.test(judged)) out.push(`names a retired v3 thing: ${re}`)
   if (/steward/i.test(skill)) out.push('names a steward: there is none')
   return out
 }
@@ -224,7 +231,7 @@ function verifierProblems(skill: string): string[] {
 }
 
 function watchdogProblems(skill: string): string[] {
-  const out = commonProblems(skill, 'delivery-watchdog')
+  const out = commonProblems(skill, 'delivery-watchdog', OLDER_MISSION_FIELDS)
   const all = flat(skill)
   const named = new Set(skill.match(VERB_SHAPED) ?? [])
 
@@ -673,5 +680,127 @@ describe('the watchdog writes to no card (the `## Watchdog` block is retired)', 
     const raw = readSkill('delivery-watchdog')
     expect(raw).not.toMatch(/update_card|create_card/)
     expect(raw).not.toMatch(/## Watchdog/)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// S-30 delta 1 (recall). Every mission the operator has today is an older one, and a sweep that names it
+// without judging it stays quiet about a stalled mission: a missed alarm is worse than a false one. Until the
+// cut-over an older mission is judged the way the older sweep judged it and raises the same one notification;
+// a v4 mission is judged the v4 way. The verifier also never touches the operator's Claude credentials.
+// Added to the pins above; the one change to them is the `OLDER_MISSION_FIELDS` allowance.
+// ---------------------------------------------------------------------------------------------------------
+
+/** The paragraph that starts with `lead`, up to the next blank line, line wrapping collapsed. */
+function paragraph(skill: string, lead: string): string {
+  const start = skill.indexOf(lead)
+  if (start === -1) return ''
+  const end = skill.indexOf('\n\n', start)
+  return flat(skill.slice(start, end === -1 ? undefined : end))
+}
+
+function olderMissionProblems(skill: string): string[] {
+  const out: string[] = []
+  const p = paragraph(skill, '**Older missions are judged too.**')
+  if (!p) return ['no rule for older missions']
+  if (!/whose `format` is not `v4`/.test(p)) out.push('older missions are not told apart by format')
+  if (!/`derived\.stale` is `true`/.test(p)) out.push('a stale older mission is not a finding')
+  if (!/operator-owned blocker/.test(p))
+    out.push('an older mission blocked on the operator is not read')
+  if (!/finished but parked/.test(p)) out.push('a finished-but-parked older unit is not read')
+  if (!/same one `notify`/.test(p))
+    out.push('an older mission does not raise the same one notification')
+  if (!/`older mission <title>`/.test(p)) out.push('an older mission is not named as one')
+  if (!/until older missions are converted/.test(p))
+    out.push('the rule does not say it is temporary')
+  const all = flat(skill)
+  if (/this sweep does not judge/.test(all)) out.push('an older mission is skipped')
+  if (!all.includes(':stale@<derived.stall.lastEvidenceAt>'))
+    out.push('an older stall has no dedup key')
+  if (!/A v4 mission is judged the v4 way/.test(p)) out.push('the two rules are not kept apart')
+  return out
+}
+
+describe('the watchdog still warns about a stalled older mission until the cut-over (S-30 delta 1)', () => {
+  it('tells the sweep to judge an older mission and notify on a stale one', () => {
+    expect(olderMissionProblems(readSkill('delivery-watchdog'))).toEqual([])
+  })
+
+  it('every older-mission pin fails on a text that says the opposite', () => {
+    const skill = readSkill('delivery-watchdog')
+    const mutations: Mutation[] = [
+      {
+        find: '`derived.stale` is `true`',
+        replace: '`derived.stale` is ignored',
+        reports: 'a stale older mission is not a finding'
+      },
+      {
+        find: 'raises the same one `notify`',
+        replace: 'is only named in the run result',
+        reports: 'does not raise the same one notification'
+      },
+      {
+        find: 'whose `format` is not `v4`',
+        replace: 'that looks old',
+        reports: 'not told apart by format'
+      },
+      {
+        find: 'until older missions are converted',
+        replace: 'forever',
+        reports: 'does not say it is temporary'
+      },
+      {
+        find: 'finished but parked',
+        replace: 'finished',
+        reports: 'finished-but-parked'
+      },
+      {
+        find: 'A v4 mission is judged the v4 way',
+        replace: 'Every mission is judged the same way',
+        reports: 'not kept apart'
+      }
+    ]
+    for (const m of mutations) {
+      const problems = olderMissionProblems(mutate(skill, m)).join('\n')
+      expect(problems, `an older-mission text that says "${m.replace}"`).toContain(m.reports)
+    }
+  })
+
+  it('still allows nothing else of v3: no progress, no you list, no steward', () => {
+    const withV3 = readSkill('delivery-watchdog') + '\nRead `derived.progress` and `youItems`.\n'
+    expect(watchdogProblems(withV3).join('\n')).toContain('names a retired v3 thing')
+  })
+})
+
+describe('the verifier never touches the operator credentials (S-30 delta 1)', () => {
+  const problems = (skill: string): string[] => {
+    const all = flat(skill)
+    const out: string[] = []
+    if (!/never use, copy or link the operator's Claude credentials/i.test(all))
+      out.push('the operator credentials are not forbidden')
+    if (!/a check that needs a logged-in Claude becomes an operator criterion/.test(all))
+      out.push('a check that needs a login is not an operator criterion')
+    return out
+  }
+
+  it('forbids using, copying or linking them, and turns such a check into an operator criterion', () => {
+    expect(problems(readSkill('delivery-verifier'))).toEqual([])
+  })
+
+  it('fails on a text that says the opposite', () => {
+    const skill = readSkill('delivery-verifier')
+    for (const m of [
+      {
+        find: "never use, copy or link the operator's Claude credentials",
+        replace: "borrow the operator's Claude credentials when a check needs a login",
+        reports: 'credentials are not forbidden'
+      },
+      {
+        find: 'becomes an operator criterion',
+        replace: 'is run with whatever login is at hand',
+        reports: 'not an operator criterion'
+      }
+    ] as Mutation[])
+      expect(problems(mutate(skill, m)).join('\n'), m.replace).toContain(m.reports)
   })
 })

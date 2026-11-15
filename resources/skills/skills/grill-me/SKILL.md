@@ -38,9 +38,8 @@ ADR, mockup). Then run `memory_query` on its main nouns: "why did we choose X?" 
 often already recorded, and asking the operator a question they answered last month
 is the worst kind of grilling.
 
-If the target is only in the conversation (there is no spec file yet), the placement
-rules below still apply to a spec that gets written later: keep the placed items in a
-list and hand them to whoever writes it; report that no file existed.
+A target only in the conversation (no spec file yet) still gets the placement rules: keep the
+placed items in a list for whoever writes the spec, and report that no file existed.
 
 Show a one-message map before the first question: the design tree as you see it, in
 5–10 lines, and which branches you will probe first. Then ask question 1.
@@ -82,17 +81,16 @@ Rules for the writes:
 
 - **Append-only on the spec.** New rows and new lines; never reword or delete an
   existing row. Touch no section outside the three above.
-- Rows go in the tables the spec already has. If the spec has no Open decisions or
-  Amendments table, add the table at the end with the standard header and say so; do
-  not invent another layout.
-- **The mission, only when a step is gated.** A `D-n` you wrote as resolved that gates a
-  step is one `mission_log` with `kind: 'decision'` and that `stepId`. One you wrote as
-  `open` that gates a step with no blocker yet is an operator blocker
-  (`mission_set_blocker`, `owner: 'operator'`, the `reason` is the question and its
-  options; load `../mission/references/writing-contract.md` first). The operator's blocker
-  is theirs to clear: you never call `mission_clear_blocker` on it (refused
-  `OPERATOR_ONLY`); tell them to say **Done, continue** in the Mission pane. A `D-n` that
-  gates no step, or a repo with no mission, gets neither.
+- Rows go in the tables the spec already has; with no Open decisions or Amendments table,
+  add it at the end with the standard header and say so. Invent no other layout.
+- **The mission, only when a step is gated.** Pass your own `sessionId` on every mission call.
+  A `D-n` you wrote as resolved is one `mission_log` (`kind: 'decision'`, that `stepId`, your
+  `sessionId`). One you wrote as `open` with no blocker yet is an operator blocker
+  (`mission_set_blocker`, `owner: 'operator'`): `mission_set_blocker { stepId, reason, ask, unblocks,
+owner: 'operator', sessionId }`, the `reason` the question and its options (load
+  `../mission/references/writing-contract.md`). The operator's blocker is theirs: you never call
+  `mission_clear_blocker` on it (refused `OPERATOR_ONLY`); tell them to say **Done, continue** in the
+  Mission pane. A `D-n` that gates no step, or a repo with no mission, gets neither.
 - If the target is not a file (no spec), nothing is written; every item goes on the
   closing list instead, with the exact row it would have been.
 
@@ -117,16 +115,13 @@ Owed by you: "Done, continue" on D-6's blocker in the Mission pane (if one exist
 ```
 
 "Written" lists only what the file now contains — re-read the spec before sending, so
-the list matches the rows. "Could not place" is never omitted; when empty, say `none`.
-Offer a board card for any unplaced item; only offer.
+the list matches the rows. "Could not place" is never omitted (say `none` when empty); offer a
+board card for any unplaced item, only offer.
 
 ## Red flags
 
-| Thought                                           | Reality                                                      |
-| ------------------------------------------------- | ------------------------------------------------------------ |
-| "Let me ask these four together, they're related" | Four questions, four messages.                               |
-| "I'll batch the spec edits at the end"            | A crash or a compaction loses them. Place after each answer. |
-| "I'll tidy the spec while I'm in there"           | Append-only. A tidy-up is a separate, requested change.      |
-| "This answer changes the AC, I'll just edit it"   | Amendments row; the operator sees the history.               |
-| "They agreed, so let's start building"            | A grilling enacts nothing.                                   |
-| "I'll just look at the final list in my head"     | Re-read the file; list what is actually there.               |
+| Thought                                         | Reality                                                      |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| "I'll batch the spec edits at the end"          | A crash or a compaction loses them. Place after each answer. |
+| "This answer changes the AC, I'll just edit it" | Amendments row; the operator sees the history.               |
+| "They agreed, so let's start building"          | A grilling enacts nothing.                                   |
