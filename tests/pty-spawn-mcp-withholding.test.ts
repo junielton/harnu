@@ -172,3 +172,86 @@ describe('pty:create — Harnu MCP withholding once mission_* exists (Review Foc
     expect(argv).toContain('--mcp-config')
   })
 })
+
+// ---- Missions v4 S-25 (BUG-253): the credential of a session Harnu spawns for a step -------------
+
+describe('pty:create — a session Harnu spawns for a step holds the scoped verbs of its role (S-25)', () => {
+  const SCOPED_CONFIG = '/tmp/harnu-test/scoped-mcp/session.json'
+  const STEP = { role: 'worker', missionId: 'mnt-aaaaaaaa', stepId: 'stp-1' } as const
+  const seen: Array<Record<string, unknown>> = []
+
+  beforeAll(async () => {
+    const pty = await import('../src/main/pty')
+    const { scopedAllowedTools } = await import('../src/main/mcp/scope')
+    pty.setScopedMcpArgsProvider(async (scope) => {
+      seen.push({ ...scope })
+      // What the server does: write the bearer into a 0600 file and hand back its PATH, never the bearer.
+      return ['--mcp-config', SCOPED_CONFIG, '--allowedTools', scopedAllowedTools(scope).join(',')]
+    })
+  })
+
+  const pendingFor = async (spawn: Record<string, unknown>): Promise<void> => {
+    const { registerPendingSpawn } = await import('../src/main/mcp/scope')
+    registerPendingSpawn(cwd, spawn as never)
+  }
+
+  it('a create_session for a step gets the scoped config, a session id Harnu minted, and not the full server', async () => {
+    seen.length = 0
+    await pendingFor(STEP)
+    const argv = await spawnArgv({ agentControlled: true, spawnedBy: 'agent' })
+
+    const at = argv.indexOf('--mcp-config')
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(argv[at + 1]).toBe(SCOPED_CONFIG)
+    expect(argv).not.toContain(MCP_CONFIG)
+
+    // The id is minted here and passed with --session-id, so the credential can carry it.
+    const sid = argv[argv.indexOf('--session-id') + 1]
+    expect(sid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ ...STEP, sessionId: sid, folder: cwd })
+
+    // The role's verbs are auto-allowed, and only those.
+    const allowed = argv[argv.indexOf('--allowedTools') + 1]
+    expect(allowed).toContain('mcp__harnu__mission_log')
+    expect(allowed).not.toContain('mcp__harnu__mission_attach')
+    // The model is told what it is bound to; the credential itself is nowhere on the command line.
+    expect(argv.join('\n')).toContain('mnt-aaaaaaaa')
+    expect(argv.join('\n')).not.toContain('scp_')
+  })
+
+  it('the credential is for one spawn: the next agent-controlled spawn in the folder gets nothing', async () => {
+    await pendingFor(STEP)
+    await spawnArgv({ agentControlled: true, spawnedBy: 'agent' })
+    const next = await spawnArgv({ agentControlled: true, spawnedBy: 'agent' })
+    expect(next).not.toContain('--mcp-config')
+  })
+
+  it('an agent-controlled spawn with no step stays withheld, as before', async () => {
+    const argv = await spawnArgv({ agentControlled: true, spawnedBy: 'agent' })
+    expect(argv).not.toContain('--mcp-config')
+  })
+
+  it('a read-only companion never takes a credential, even when one is waiting in its folder', async () => {
+    const { dropPendingSpawn } = await import('../src/main/mcp/scope')
+    await pendingFor(STEP)
+    const argv = await spawnArgv({ readOnly: true })
+    expect(argv).not.toContain('--mcp-config')
+    dropPendingSpawn(cwd)
+  })
+
+  it('a server that is off hands back no config: the session spawns without one', async () => {
+    const pty = await import('../src/main/pty')
+    pty.setScopedMcpArgsProvider(async () => [])
+    await pendingFor(STEP)
+    const argv = await spawnArgv({ agentControlled: true, spawnedBy: 'agent' })
+    expect(argv).not.toContain('--mcp-config')
+    const { scopedAllowedTools } = await import('../src/main/mcp/scope')
+    pty.setScopedMcpArgsProvider(async (scope) => [
+      '--mcp-config',
+      SCOPED_CONFIG,
+      '--allowedTools',
+      scopedAllowedTools(scope).join(',')
+    ])
+  })
+})
