@@ -28,6 +28,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - Adding a step to a version 4 mission after the agent has asked you to close it takes the close request back, so you are not told the mission is ready when a new step is still open.
 
+- **The bundled skills now speak version 4 missions.** `mission`, `status`, `report-back`, `orchestrate-delivery`, `delivery-verifier`, `delivery-watchdog`, `spec`, `one-by-one`, `grill-me`, `step-by-step`, `your-move` and `draft-to-prompt` were rewritten, and they are much shorter. A plan is milestones and steps, and every step carries criteria; a second session settles each criterion from evidence; there is no steward, so the session that leads a mission starts its own verifiers, nudges a stalled session and rebases a stack itself, and `delivery-watchdog` is only the read-only sweep. What is yours stays yours: you tick the criteria that only you can judge, answer a blocker with **Done, continue** in the Mission pane, and decide a hand-off to a fresh session (the leader never switches itself, and there is no prompt to paste). Skills are off until you switch them on in **Settings → Skills**, and the Skills user page says all of this in plain words. A new test now reads every bundled skill and fails on a retired word or a verb Harnu no longer has.
+
 ### Fixed
 
 - A leader that did a step itself, with no other session linked to it, no longer settles that step's criteria as if it were a second session: its check is recorded as a self-check and the criterion stays open.
