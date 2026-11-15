@@ -145,6 +145,8 @@ export interface MissionListResult {
 
 export type MissionDoor =
   | { door: 'approveRescope'; root: string; missionId: string }
+  // S-37 delta 1 — Decline: the operator drops a staged re-scope; the declared end stays as it was.
+  | { door: 'declineRescope'; root: string; missionId: string }
   // Mission v3 §3.5 — the ONE end door: close as delivered, or discard.
   | {
       door: 'end'
@@ -319,10 +321,30 @@ export async function listMissionViews(
   return { views, unreadable, shadowed: read.shadowed }
 }
 
+/**
+ * The operator declined a staged re-scope (S-37 delta 1): the staging is dropped and `declaredEnd`, its
+ * approval stamp and the fixed end's proof stay as they were. Throws when nothing is staged, and on a closed
+ * mission (a closed mission refuses every door).
+ */
+function applyDeclinedRescope(mission: Mission, op: { at: string }): Mission {
+  if (mission.status === 'closed') {
+    throw new Error(`MISSION_CLOSED: ${mission.id} is closed.`)
+  }
+  if (!mission.pendingRescope) {
+    throw new Error(`mission ${mission.id} has no pending re-scope to decline`)
+  }
+  const next = structuredClone(mission)
+  delete next.pendingRescope
+  next.updatedAt = op.at
+  return next
+}
+
 function applyDoor(door: MissionDoor, mission: Mission, at: string): Mission {
   switch (door.door) {
     case 'approveRescope':
       return applyApprovedRescope(mission, { at })
+    case 'declineRescope':
+      return applyDeclinedRescope(mission, { at })
     case 'end':
       return applyOperatorEnd(mission, {
         at,
@@ -361,6 +383,8 @@ function doorLogEntry(
     switch (door.door) {
       case 'approveRescope':
         return 'operator approved the re-scope'
+      case 'declineRescope':
+        return 'operator declined the re-scope'
       case 'end':
         return `operator ended (${door.closedAs})`
       case 'verifyStep':
@@ -410,6 +434,7 @@ function chosenOption(door: Extract<MissionDoor, { door: 'chooseDecision' }>, m:
 
 const DOORS: ReadonlySet<string> = new Set([
   'approveRescope',
+  'declineRescope',
   'end',
   'verifyStep',
   'addCheck',
@@ -801,8 +826,93 @@ async function missionOfSession(
   return { ok: true, view: written[0].view }
 }
 
+/**
+ * The folder's open missions, the most recently written first (the file's mtime, a v3 file included; the id
+ * breaks a tie): the order every reader of a session that leads several shares (S-35 delta 1), and the one
+ * {@link missionOfSession} picks from. The list is otherwise ordered by id, which says nothing.
+ */
+async function newestFirst(root: string, rows: readonly ListedMission[]): Promise<ListedMission[]> {
+  const { records } = await listMissionRecords(root)
+  const file = new Map(records.map((v) => [v.record.id, v.file]))
+  const written = await Promise.all(
+    rows.map(async (row) => ({
+      row,
+      at: await fs.stat(file.get(row.id) ?? '').then(
+        (st) => st.mtimeMs,
+        () => 0
+      )
+    }))
+  )
+  written.sort((a, b) => b.at - a.at || a.row.id.localeCompare(b.row.id))
+  return written.map((w) => w.row)
+}
+
 /** The status line's LIVE readings: one record per running session. The last-known ones are never used. */
 const liveContexts = (): readonly ContextReading[] => getTelemetryPayload().perSession
+
+/**
+ * The re-scope an older (v3) mission has staged, as the box the pane shows for a staged Done when (S-37
+ * delta 1): the new target and its proof, and the reason the owner gave when it asked (the Log's
+ * "re-scope requested" entry). `null` for a v4 record and for a v3 file with nothing staged. It reads the
+ * view and writes nothing. THIS is the function that carries the door's box: whoever removes the v3 readers
+ * keeps it (or its successor) so an owed re-scope never loses its Approve and Decline.
+ */
+export function stagedRescopeOf(view: MissionRecordView): { text: string; at?: string } | null {
+  if (view.source !== 'v3-mission') return null
+  const staged = (view.record as { legacyV3?: { pendingRescope?: unknown } }).legacyV3
+    ?.pendingRescope
+  if (typeof staged !== 'object' || staged === null) return null
+  const { target, evidence } = staged as { target?: unknown; evidence?: unknown }
+  if (typeof target !== 'string' || target.trim() === '') return null
+  const t = target.trim()
+  const sentence = /[.!?]$/.test(t) ? t : `${t}.`
+  const proof =
+    typeof evidence === 'string' && evidence.trim() !== '' ? ` Proof: ${evidence.trim()}` : ''
+  const asked = view.log
+    .split(/\n(?=### )/)
+    .filter((b) => /^### \S+ · re-scope requested/.test(b))
+    .at(-1)
+  const reason = asked ? /^Reason: (.+)$/m.exec(asked)?.[1]?.trim() : undefined
+  return { text: `${sentence}${proof}${reason ? ` (Reason: ${reason})` : ''}` }
+}
+
+/**
+ * What `mission:v4Door` runs (S-37 delta 1). A v4 record's door is the v4 door as ever. For an older (v3)
+ * mission with a staged re-scope, Approve and Decline are the v3 doors on its own file: Approve is the same
+ * `approveRescope` write and Log line the popover used, Decline is `declineRescope`, and neither creates a v4
+ * copy. Anything else goes to the v4 doors.
+ */
+export async function runPaneDoor(raw: unknown): Promise<Record<string, unknown>> {
+  const a = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
+  if (
+    (a.door === 'approveDoneWhen' || a.door === 'declineDoneWhen') &&
+    typeof a.folder === 'string' &&
+    a.folder !== '' &&
+    typeof a.missionId === 'string' &&
+    a.missionId !== ''
+  ) {
+    try {
+      const root = repoRoot(a.folder)
+      const read = await readMissionRecord(root, a.missionId)
+      if (read.ok && stagedRescopeOf(read) !== null) {
+        const res = await runOperatorDoor({
+          door: a.door === 'approveDoneWhen' ? 'approveRescope' : 'declineRescope',
+          root,
+          missionId: read.record.id
+        })
+        if (res.ok) return { ok: true, changed: true }
+        return {
+          ok: false,
+          code: /^([A-Z_]+):/.exec(res.error)?.[1] ?? 'DOOR_FAILED',
+          error: res.error
+        }
+      }
+    } catch (err) {
+      return { ok: false, code: 'UNREADABLE', error: `UNREADABLE: ${(err as Error).message}` }
+    }
+  }
+  return doorReply(await runDoor(raw))
+}
 
 /**
  * Missions v4 S-16a (V-1, V-3) — the view of one mission for the Mission pane. It READS and never
@@ -849,7 +959,7 @@ export async function buildMissionV4View(
       if (found.ok === 'none') {
         const list = await missionList(folder, { kind: 'operator' })
         return list.ok
-          ? { state: 'none', missions: list.missions }
+          ? { state: 'none', missions: await newestFirst(root, list.missions) }
           : { state: 'refused', code: list.code, error: list.error }
       }
       view = found.view
@@ -873,7 +983,7 @@ export async function buildMissionV4View(
       source: detail.source,
       detail,
       closeWarnings: closeWarningsOf(record, inputs),
-      pendingDoneWhen: stagedDoneWhenOf(record),
+      pendingDoneWhen: stagedDoneWhenOf(record) ?? stagedRescopeOf(view),
       sessions: sessionHistory(record),
       handoff: handoffOffer(
         leaderContextPercent((opts.contexts ?? liveContexts)(), v4LeaderOf(record)),
@@ -1065,7 +1175,7 @@ export function registerMissionIpc(): void {
   // close, allow or deny a join, attach from the picker). Additive: nothing above changes. It has no
   // preload entry until S-16, so the renderer cannot reach it yet. The reply carries the outcome and the
   // close warnings, never the record or a file path.
-  ipcMain.handle('mission:v4Door', async (_e, door: unknown) => doorReply(await runDoor(door)))
+  ipcMain.handle('mission:v4Door', async (_e, door: unknown) => runPaneDoor(door))
   // Missions v4 S-16a — the view of one mission for the Mission pane. It reads and never writes. No
   // renderer calls it until S-17. It also notes the folder, so the observer's v4 leg looks there.
   ipcMain.handle('mission:v4View', async (_e, args: unknown): Promise<MissionV4ViewReply> => {
