@@ -125,7 +125,12 @@ import {
 import { parsePlanMission } from './validate'
 import { parseAgentBootOverride } from './agent-boot'
 import { listInflightSessions } from './inflight-session-registry'
-import { folderForWorkerId, stewardForWorkerId, WorkerIsStewardError } from '../scheduler-shell'
+import {
+  folderForWorkerId,
+  setObserverMcpConfigWriter,
+  stewardForWorkerId,
+  WorkerIsStewardError
+} from '../scheduler-shell'
 import { stewardCallRefusal, verifyStewardBearer } from '../steward-core'
 import {
   mintScopedBearer,
@@ -2180,6 +2185,8 @@ export async function registerMcpServer(
   )
   // Missions v4 S-25: the argv of a session Harnu spawns for one step (its own credential, never ours).
   setScopedMcpArgsProvider(scopedMcpArgsFor)
+  // ...and the observe tick's: its observer credential, for its folder.
+  setObserverMcpConfigWriter(writeScopedMcpConfig)
 
   ipcMain.handle('mcp:status', async () => ({
     enabled: await readMcpEnabled(),

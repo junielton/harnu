@@ -16,7 +16,7 @@
  * | ---------- | ------------------------------------------------------------------------ | -------------------------- |
  * | `worker`   | `mission_get`, `mission_link`, `mission_log`, `mission_set_blocker`      | one session, mission, step |
  * | `verifier` | the worker's, plus `mission_settle_ac`                                   | one session, mission, step |
- * | `observer` | `mission_get`, `mission_list`                                            | one folder                 |
+ * | `observer` | the observe allowlist's read verbs (`OBSERVE_MCP_ALLOW`), `mission_get`, `mission_list` | one folder |
  *
  * **The session id comes from the credential, never from the call** (AC-65): a worker or verifier is the
  * session id minted into its bearer, so a verifier that built its step is a builder (its check reads as
@@ -35,6 +35,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import * as path from 'node:path'
 import { mcpToolName } from './config-file'
+import { OBSERVE_MCP_ALLOW } from '../scheduler-core'
 
 // ---- Roles and what each holds ---------------------------------------------------------
 
@@ -53,6 +54,15 @@ export type Scope =
     }
   | { role: 'observer'; folder: string }
 
+/**
+ * What an observe tick may call, by name: the allowlist the Scheduler's tick already uses
+ * (`OBSERVE_MCP_ALLOW`, the one source), with the server-name prefix taken off. A verb added to that
+ * allowlist is allowed to the observer in the same edit, and one that is not on it is refused to both.
+ */
+const OBSERVER_VERBS: readonly string[] = OBSERVE_MCP_ALLOW.filter((n) =>
+  n.startsWith(mcpToolName(''))
+).map((n) => n.slice(mcpToolName('').length))
+
 /** The verbs each role may call, by name. Everything else is refused, and is not even listed. */
 export const SCOPED_VERBS: Readonly<Record<ScopedRole, readonly string[]>> = {
   worker: ['mission_get', 'mission_link', 'mission_log', 'mission_set_blocker'],
@@ -63,7 +73,7 @@ export const SCOPED_VERBS: Readonly<Record<ScopedRole, readonly string[]>> = {
     'mission_set_blocker',
     'mission_settle_ac'
   ],
-  observer: ['mission_get', 'mission_list']
+  observer: OBSERVER_VERBS
 }
 
 /** The verbs that write a step: a worker's own step is theirs, and only theirs. */
@@ -175,7 +185,7 @@ export function scopeCallRefusal(input: {
     return refuse(
       'SCOPE_VERB_NOT_ALLOWED',
       scope.role === 'observer'
-        ? `this session may only read the missions of its folder (${allowed.join(', ')}); ${op} is outside that.`
+        ? `this is an observe tick, so it may call only the read verbs of the observe list; ${op} is outside it. It never writes: say what you found in your result.`
         : `this session was started for one step of ${scope.missionId}, so it may call only ${allowed.join(', ')}; ${op} is outside that. Leading, attaching and planning are the leader's and the operator's: say what you need in mission_log or mission_set_blocker.`
     )
   }
@@ -186,7 +196,11 @@ export function scopeCallRefusal(input: {
       `this session is bound to ${scope.folder}; ${folder} is another folder. Pass folder: ${scope.folder}.`
     )
   }
-  args.folder = scope.folder
+  // A mission verb reads the repo of the folder it is given, so a folder left out is the worker's own and
+  // never "every repo"; any other verb keeps what it was given (a folder it names must be its own).
+  if (op.startsWith('mission_') || op.startsWith('campaign_') || scope.role !== 'observer') {
+    args.folder = scope.folder
+  }
   if (scope.role === 'observer') return { ok: true, args }
 
   const missionId = args.missionId
