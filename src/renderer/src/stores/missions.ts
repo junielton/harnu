@@ -51,11 +51,14 @@ import {
   seedCueMemory,
   serializeCueMemory,
   type CueMemory,
+  type CueView,
   type PersistedCueMemory
 } from '../lib/mission-cue'
 import {
   attachRequestsOf,
   isStaleNamedRead,
+  missionPillText,
+  missionPillTone,
   v4MissionOf,
   type MissionV4Reply
 } from '../lib/mission-pane-view'
@@ -127,22 +130,60 @@ export interface ReviewRequest {
  * What the operator owes, as the cue's `{what}`: the first owed item in the one wording the You lane
  * uses ({@link youItemText}), or where a finished mission nobody asked to close stands.
  */
-function owedWhat(view: MissionView): string {
+function owedWhat(view: ReaderView): string {
   const { t } = i18n.global
   const item = firstOwed(view)
-  return item === null
-    ? headlineText(t, progressHeadline(view.progress))
-    : youItemText(t, view, item)
+  // A v4 item carries its own wording; a v3 view (a build without the view channel) keeps the v3 one.
+  if (item !== null && 'ask' in item) return item.ask
+  const v3 = view as unknown as MissionView
+  return item === null ? headlineText(t, progressHeadline(v3.progress)) : youItemText(t, v3, item)
 }
 
 /** Upsert key of the cue's one Activity entry — at most one mission record in the bell. */
 const CUE_GROUP = 'mission-cue'
 
+/**
+ * What the cue, the Activity entry and the chip read of one mission (Missions v4 S-23). A v3 view fits it
+ * as it is; a v4 reader view is built from the view channel's detail, for v3 and v4 records alike, so the
+ * waiting list inside is worded once by the server (`ask`).
+ */
+export type ReaderView = CueView & {
+  title: string
+  mission: { id: string; owner: { sessionId: string }; updatedAt: string }
+}
+
+/** One mission the readers know through the v4 view: what the cue reads, and the detail the chip is drawn from. */
+export interface ReaderMission extends ReaderView {
+  detail: Extract<MissionV4ViewReply, { state: 'mission' }>['detail']
+}
+
+/** The session id the readers ask the view as: no session's, so it answers for the mission, never for a member. */
+const READER_ID = 'harnu-readers'
+/** How many of a repo's open missions the readers read by name in one poll. */
+const READERS_MAX = 20
+
+/** What the sidebar chip shows for one session: the pill's text and tone, from one source. */
+export interface ChipModel {
+  text: string
+  /** The compact form the trailing cluster draws (the pill's own text for a v4 mission). */
+  compact: string
+  tone: 'neutral' | 'accent' | 'warning' | 'success'
+  needsYou: boolean
+}
+
 /** Kinds an agent or a later step waits on — they sort ahead of standing to-dos. */
 const BLOCKING_KINDS: ReadonlySet<string> = new Set(['rescope', 'blocker', 'decide', 'human-steps'])
+/** The v4 kinds that re-nudge (see `lib/mission-cue.ts`): they sort ahead of standing ones too. */
+const V4_BLOCKING: ReadonlySet<string> = new Set([
+  'unblock',
+  'attach',
+  'close',
+  'main-failing',
+  'settle'
+])
 
 /** Every mission that owes the operator something the cue speaks about, once per id. */
-function owedViews(views: readonly MissionView[]): MissionView[] {
+function owedViews(views: readonly ReaderView[]): ReaderView[] {
   const seen = new Set<string>()
   return views.filter((v) => {
     if (seen.has(v.mission.id) || owedKeys(v).size === 0) return false
@@ -152,29 +193,33 @@ function owedViews(views: readonly MissionView[]): MissionView[] {
 }
 
 /** Cued this poll first, then blocking kinds, then newest `updatedAt` (spec §3.3). */
-function orderOwed(owed: MissionView[], cuedIds: ReadonlySet<string>): MissionView[] {
-  const cued = (v: MissionView): number => (cuedIds.has(v.mission.id) ? 0 : 1)
-  const blocking = (v: MissionView): number =>
-    BLOCKING_KINDS.has(firstOwed(v)?.kind ?? '') ? 0 : 1
-  const updated = (v: MissionView): number => Date.parse(v.mission.updatedAt) || 0
+function orderOwed(owed: ReaderView[], cuedIds: ReadonlySet<string>): ReaderView[] {
+  const cued = (v: ReaderView): number => (cuedIds.has(v.mission.id) ? 0 : 1)
+  const blocking = (v: ReaderView): number => {
+    const item = firstOwed(v)
+    if (item === null) return 1
+    // `close` is standing in v3 and blocking in v4: tell the two lists apart by the item's own `ask`.
+    return ('ask' in item ? V4_BLOCKING : BLOCKING_KINDS).has(item.kind) ? 0 : 1
+  }
+  const updated = (v: ReaderView): number => Date.parse(v.mission.updatedAt) || 0
   return [...owed].sort(
     (a, b) => cued(a) - cued(b) || blocking(a) - blocking(b) || updated(b) - updated(a)
   )
 }
 
 /** One mission's row in the grouped entry: names itself, says what it owes, opens its owner. */
-function activityItem(view: MissionView): NotificationItem {
+function activityItem(view: ReaderView): NotificationItem {
   return {
     id: view.mission.id,
     title: view.title,
     description: owedWhat(view),
-    sessionId: view.mission.owner.sessionId,
+    sessionId: view.mission.owner.sessionId || undefined,
     target: { view: 'mission', missionId: view.mission.id }
   }
 }
 
 /** The entry's headline and rows for what is owed right now. */
-function cueEntry(owed: readonly MissionView[]): Pick<NotificationRecord, 'title' | 'items'> {
+function cueEntry(owed: readonly ReaderView[]): Pick<NotificationRecord, 'title' | 'items'> {
   const { t } = i18n.global
   return {
     title:
@@ -189,7 +234,7 @@ function cueEntry(owed: readonly MissionView[]): Pick<NotificationRecord, 'title
  * The cue's one Activity entry: replaces the `'mission-cue'` record in place (or
  * appends it) with everything owed now, and moves its `ts` — this poll is news.
  */
-function postMissionActivity(missionIds: readonly string[], views: readonly MissionView[]): void {
+function postMissionActivity(missionIds: readonly string[], views: readonly ReaderView[]): void {
   const cued = new Set(missionIds)
   const owed = orderOwed(owedViews(views), cued)
   if (owed.length === 0) return
@@ -208,7 +253,7 @@ function postMissionActivity(missionIds: readonly string[], views: readonly Miss
  * `updateGroup` finds nothing for an entry the operator dismissed, so a sync can
  * never bring it back.
  */
-export function syncMissionActivity(views: readonly MissionView[]): void {
+export function syncMissionActivity(views: readonly ReaderView[]): void {
   const activity = useNotificationsStore()
   const owed = orderOwed(owedViews(views), new Set())
   if (owed.length === 0) activity.removeGroup(CUE_GROUP)
@@ -609,6 +654,81 @@ export const useMissionsStore = defineStore('missions', () => {
     return sessionId ? v4MissionOf(v4ReplyForSession(sessionId), sessionId) : null
   }
 
+  // ---- Missions v4 (S-23): the readers' list -----------------------------------------------------------------
+  /**
+   * Every open mission of the sidebar's repos as the v4 view serves it (through the record store, v3 and v4
+   * records alike), or `null` while the build has no such channel or nothing was read yet. The sidebar chip,
+   * the cue and the Activity entry read this; the pill and the pane keep reading the selected session's reply.
+   * It rides the same 20 s poll as the list and adds no timer.
+   */
+  const readers = shallowRef<ReaderMission[] | null>(null)
+  /** The last good read per repo: a read that fails leaves the repo's missions as they were. */
+  const readerByRepo = new Map<string, ReaderMission[]>()
+
+  async function readRepo(folder: string): Promise<ReaderMission[] | null> {
+    const first = await askV4(READER_ID, folder)
+    if (!first) return null
+    if (first.state !== 'none') return first.state === 'refused' ? null : []
+    const out: ReaderMission[] = []
+    for (const row of first.missions.slice(0, READERS_MAX)) {
+      const named = await askV4(READER_ID, folder, row.id)
+      if (!named) return null
+      if (named.state !== 'mission') continue
+      const d = named.detail
+      out.push({
+        mission: { id: d.id, owner: { sessionId: d.leads ?? '' }, updatedAt: '' },
+        title: d.title,
+        you: d.waiting.items,
+        detail: d
+      })
+    }
+    return out
+  }
+
+  /** One read of every repo; `null` when the channel is absent (the caller keeps the v3 list). */
+  async function loadReaders(folders: readonly string[]): Promise<ReaderMission[] | null> {
+    if (typeof window.api.missionV4View !== 'function') return null
+    // One folder per repo: worktrees share their records.
+    const repoOf = new Map(sessions.folders.map((f) => [f.path, f.repoId ?? f.path]))
+    const perRepo = new Map<string, string>()
+    for (const f of folders)
+      if (!perRepo.has(repoOf.get(f) ?? f)) perRepo.set(repoOf.get(f) ?? f, f)
+    for (const key of [...readerByRepo.keys()]) if (!perRepo.has(key)) readerByRepo.delete(key)
+    for (const [key, folder] of perRepo) {
+      const read = await readRepo(folder)
+      if (read) readerByRepo.set(key, read)
+    }
+    const seen = new Set<string>()
+    return [...readerByRepo.values()]
+      .flat()
+      .filter((r) => !seen.has(r.mission.id) && !!seen.add(r.mission.id))
+  }
+
+  /** The chip of `sessionId`: the leader of an open mission, in the pill's text and tone; `null` for anyone else. */
+  function chipFor(sessionId: string | null | undefined): ChipModel | null {
+    if (!sessionId) return null
+    const { t } = i18n.global
+    if (readers.value !== null) {
+      const r = readers.value.find((m) => m.detail.leads === sessionId)
+      if (!r) return null
+      const text = missionPillText(t, r.detail)
+      return {
+        text,
+        compact: text,
+        tone: missionPillTone(r.detail),
+        needsYou: r.detail.waiting.items.length > 0
+      }
+    }
+    const m = modelForSession(sessionId)
+    if (!m || m.headline.kind === 'empty') return null
+    return {
+      text: headlineText(t, m.headline),
+      compact: headlineText(t, m.headline, true),
+      tone: m.tone,
+      needsYou: m.needsYou
+    }
+  }
+
   async function load(): Promise<void> {
     const folders = sessions.folders.map((f) => f.path)
     const startedAt = writeSeq
@@ -627,23 +747,29 @@ export const useMissionsStore = defineStore('missions', () => {
       // Sidebar folders not loaded yet: the list says nothing about reality, and a
       // decision now would rebuild the memory empty and re-cue the backlog later.
       if (folders.length === 0) return
+      // Missions v4 S-23: the cue and the Activity entry read the v4 view (v3 and v4 records alike). A
+      // build without the channel keeps the v3 list; a repo whose read fails keeps its last good missions.
+      const read = await loadReaders(folders)
+      if (startedAt !== writeSeq) return
+      readers.value = read
+      const cueViews: readonly ReaderView[] = read ?? list
       const now = Date.now()
       if (!cueMemory) {
         // No memory: the backlog the operator already has on screen is not news.
-        cueMemory = seedCueMemory(list, now)
+        cueMemory = seedCueMemory(cueViews, now)
         storedCues.value = serializeCueMemory(cueMemory)
-        syncMissionActivity(res.views)
+        syncMissionActivity(cueViews)
         return
       }
-      const decision = decideCue(list, cueMemory, now)
+      const decision = decideCue(cueViews, cueMemory, now)
       cueMemory = decision.memory
       storedCues.value = serializeCueMemory(cueMemory)
       if (decision.cue) {
         playNotificationSound()
         void window.api.requestAttention()
-        postMissionActivity(decision.missionIds, list)
+        postMissionActivity(decision.missionIds, cueViews)
       } else {
-        syncMissionActivity(list)
+        syncMissionActivity(cueViews)
       }
     } catch {
       // A failed read keeps the last good list — the surfaces never flash empty.
@@ -856,6 +982,8 @@ export const useMissionsStore = defineStore('missions', () => {
     ensureStarted,
     viewForSession,
     modelForSession,
+    readers,
+    chipFor,
     refreshV4,
     v4ReplyForSession,
     v4MissionForSession,
