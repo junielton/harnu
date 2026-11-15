@@ -8,8 +8,8 @@
  * (src/main/missions/observer.ts) acts on it.
  *
  * Delta 1: the claim is about every READ, not one function. `mission_get`, `campaign_get`, the
- * renderer list poll (`listMissionViews`, which the companion and Your move ride), the campaign
- * list and the steward bridge's derive all write nothing; the observer pass
+ * renderer list poll (`listMissionViews`, which the companion and Your move ride) and the steward
+ * bridge's derive all write nothing (the campaign list went with S-37); the observer pass
  * (`observeOpenMissions`, started by `startMissionObserver`) records what they would have.
  *
  * Run for real against a throwaway git repo; only the live sources are faked at their module
@@ -349,7 +349,6 @@ async function readPaths(): Promise<ReadPath[]> {
   const ok = (res: ToolResult): void => expect(res.isError, res.content[0]?.text).not.toBe(true)
   const { deriveMissionSignals } = await import('../src/main/mcp/tool-handlers')
   const ipc = await import('../src/main/mission-ipc')
-  const campaigns = await import('../src/main/campaign-ipc')
   return [
     {
       name: 'mission_get',
@@ -375,24 +374,11 @@ async function readPaths(): Promise<ReadPath[]> {
         const r = await ipc.listMissionViews([root])
         expect(r.views).toHaveLength(1)
       }
-    },
-    {
-      name: 'listCampaignViews',
-      run: async () => {
-        const r = await campaigns.listCampaignViews([root])
-        expect(r.views).toHaveLength(1)
-      }
     }
   ]
 }
 
-const READ_PATHS = [
-  'mission_get',
-  'campaign_get',
-  'deriveMissionSignals',
-  'listMissionViews',
-  'listCampaignViews'
-]
+const READ_PATHS = ['mission_get', 'campaign_get', 'deriveMissionSignals', 'listMissionViews']
 
 describe('every read path is a read with no side effects (AC-4, delta 1)', () => {
   it.each(READ_PATHS)('a read has no side effects through %s', async (name) => {

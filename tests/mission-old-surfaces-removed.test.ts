@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Missions v4 · S-37 · AC-86, AC-87 — the old surfaces are gone, and the pane is the only mission surface.
  *
@@ -16,6 +17,12 @@
  * changes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { i18n } from '@renderer/i18n'
+import SchedulerView from '../src/renderer/src/components/SchedulerView.vue'
+import { stubTakeoverShellTargets } from './helpers/takeover-shell-stub'
+import type { Worker } from '../src/preload'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
@@ -108,9 +115,10 @@ const REMOVED_STORE_MEMBERS = [
   join('popover', 'Request'),
   join('Popover', 'Request'),
   join('POPOVER_REQUEST', '_TTL_MS'),
-  join('open', 'Review'),
+  join('missions.open', 'Review'),
+  join('store.open', 'Review'),
   join('consume', 'ReviewRequest'),
-  join('review', 'Request'),
+  join('\\.review', 'Request'),
   join('Review', 'Request')
 ]
 
@@ -132,7 +140,6 @@ const REMOVED_KEY_PREFIXES = [
   'mission.bulk',
   'mission.checks',
   'mission.child',
-  'mission.chip',
   'mission.close',
   'mission.cue.reviewAll',
   'mission.decision',
@@ -140,7 +147,6 @@ const REMOVED_KEY_PREFIXES = [
   'mission.endCaption',
   'mission.gates',
   'mission.header',
-  'mission.headline',
   'mission.ledger',
   'mission.markVerified',
   'mission.now',
@@ -228,6 +234,25 @@ describe('nothing of the old surfaces is left', () => {
         REMOVED_KEY_PREFIXES.some((p) => k === p || k.startsWith(`${p}.`))
       )
       expect({ file, left }).toEqual({ file, left: [] })
+    }
+  })
+
+  it('the keys a live surface builds at run time are still in both locale files', () => {
+    // `headlineText` (the sidebar chip), the end dialog's warnings and its record panel assemble these keys
+    // from a template, so no literal in a source file names them: the removal must not take them.
+    const live = [
+      ...['single', 'range', 'done'].map((k) => `mission.chip.${k}`),
+      ...['single', 'range', 'done'].map((k) => `mission.headline.${k}`),
+      ...['endUnverified', 'leftBehind', 'checksOpen', 'blockersOpen', 'rescopeStaged'].map(
+        (k) => `mission.end.warnings.${k}`
+      ),
+      'mission.cue.ownerMissingTitle',
+      'mission.cue.ownerMissingBody',
+      'mission.cue.itemAria'
+    ]
+    for (const file of ['en.json', 'pt-BR.json']) {
+      const keys = new Set(leafKeys(JSON.parse(read(`src/renderer/src/i18n/${file}`))))
+      expect({ file, missing: live.filter((k) => !keys.has(k)) }).toEqual({ file, missing: [] })
     }
   })
 
@@ -466,5 +491,58 @@ describe('a v3 mission paused with a steward: the pause is not owed any more', (
     const without = owedKeys(view([{ kind: 'close' }]))
     // The pause was standing, never news: it never had a key, so no chime is lost by it leaving.
     expect(without).toEqual(withPause)
+  })
+})
+
+// ==========================================================================================================
+// The Scheduler: no steward block, and a steward an older build left behind is not one of the operator's workers
+// ==========================================================================================================
+
+describe('the Scheduler after the steward block is gone', () => {
+  const worker = (id: string, over: Partial<Worker> = {}): Worker =>
+    ({
+      id,
+      name: `worker-${id}`,
+      enabled: true,
+      prompt: 'p',
+      folder: '/org/alpha',
+      everyMinutes: 30,
+      runOnBoot: false,
+      model: 'haiku',
+      effort: 'low',
+      mode: 'observe',
+      timeoutSeconds: 300,
+      carryLastResult: false,
+      failureStreak: 0,
+      ...over
+    }) as Worker
+
+  it('draws no Stewards block, and a leftover steward worker is not a row of the list', async () => {
+    const state = [
+      worker('u1'),
+      worker('s1', { category: 'steward', mode: 'steward', missionId: 'mnt-00000001' } as never),
+      worker('s2', { category: 'steward', mode: 'steward', missionId: 'mnt-00000002' } as never)
+    ]
+    const api = {
+      schedulerList: vi.fn(async () => state),
+      schedulerRuns: vi.fn(async () => []),
+      bundledSkillsGet: vi.fn(async () => ({})),
+      bundledSkillsGetFolder: vi.fn(async () => ({})),
+      claudeConfigGetGlobal: vi.fn(async () => ({})),
+      claudeConfigListEndpoints: vi.fn(async () => [])
+    }
+    ;(window as unknown as { api: unknown }).api = new Proxy(api, {
+      get: (t: Record<string, unknown>, k: string) => (k in t ? t[k] : () => () => {})
+    })
+    setActivePinia(createPinia())
+    localStorage.clear()
+    stubTakeoverShellTargets()
+    const w = mount(SchedulerView, { global: { plugins: [i18n] }, attachTo: document.body })
+    for (let i = 0; i < 4; i++) await flushPromises()
+    const names = w.findAll('[data-worker-name]').map((n) => n.text())
+    expect(names).toEqual(['worker-u1'])
+    expect(w.find('[data-test="scheduler-stewards-toggle"]').exists()).toBe(false)
+    expect(w.find('[data-test="scheduler-steward-row"]').exists()).toBe(false)
+    w.unmount()
   })
 })

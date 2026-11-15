@@ -2,8 +2,7 @@
  * T460 batch 0 — headless `SurfaceSpec`s for the emit/local-driven confirm
  * dialogs (group B): CleanupBulkConfirm, CleanupDockerConfirm, CleanupExhaust,
  * CleanupGuided, CleanupTranscriptsConfirm, ContainersRemove, DehydrateConfirm,
- * SweepConfirm, MissionBulkCloseConfirm, MissionCloseConfirm, MissionsReview
- * and HarnuModExternal's confirm.
+ * SweepConfirm, MissionCloseConfirm, MissionHandoff and HarnuModExternal's confirm.
  *
  * Each spec mounts the REAL component (real pinia stores, real i18n, real
  * Teleport into `document.body`) and exposes how the component reports being
@@ -24,18 +23,12 @@ import CleanupTranscriptsConfirmDialog from '../../src/renderer/src/components/C
 import ContainersRemoveDialog from '../../src/renderer/src/components/ContainersRemoveDialog.vue'
 import DehydrateConfirmDialog from '../../src/renderer/src/components/DehydrateConfirmDialog.vue'
 import SweepConfirmDialog from '../../src/renderer/src/components/SweepConfirmDialog.vue'
-import MissionBulkCloseConfirmDialog from '../../src/renderer/src/components/MissionBulkCloseConfirmDialog.vue'
 import MissionCloseConfirmDialog from '../../src/renderer/src/components/MissionCloseConfirmDialog.vue'
 import MissionHandoffDialog from '../../src/renderer/src/components/MissionHandoffDialog.vue'
-import StewardPauseDialog from '../../src/renderer/src/components/StewardPauseDialog.vue'
-import MissionsReviewDialog from '../../src/renderer/src/components/MissionsReviewDialog.vue'
 import HarnuModExternal from '../../src/renderer/src/components/HarnuModExternal.vue'
 import { useReaperStore } from '../../src/renderer/src/stores/reaper'
-import { useMissionsStore } from '../../src/renderer/src/stores/missions'
-import { useSessionsStore } from '../../src/renderer/src/stores/sessions'
 import type { DialogRow } from '../../src/renderer/src/lib/gc-model'
 import type { OrphanTranscriptItem, StackLeftoverItem } from '../../src/main/gc/gc-wire'
-import type { MissionView } from '../../src/main/mission-ipc'
 import type { ReapItem, HydrationInfo, StackRow } from '../../src/preload'
 import { stack as stackFixture } from '../helpers/containers-fixtures'
 import type { OpenedSurface, SurfaceSpec } from './harness'
@@ -339,28 +332,6 @@ function missionWorld(): void {
   installApi({ requestAttention: vi.fn(async () => undefined) })
 }
 
-const missionBulkClose: SurfaceSpec = {
-  file: 'MissionBulkCloseConfirmDialog.vue',
-  async open(): Promise<OpenedSurface> {
-    missionWorld()
-    const w = mount(MissionBulkCloseConfirmDialog, {
-      props: {
-        items: [{ id: 'm1', title: 'Mission one', warnings: [] }],
-        busy: false,
-        progress: null
-      },
-      global: { plugins: [i18n] },
-      attachTo: document.body
-    })
-    return emitSurface(w, ['cancel', 'confirm'], {
-      cancel: () => q('[data-test="bulk-close-cancel"]'),
-      confirm: () => q('[data-test="bulk-close-go"]'),
-      close: () => q('[role="dialog"] header button'),
-      reason: () => q('[data-test="bulk-close-reason"]')
-    })
-  }
-}
-
 const missionClose: SurfaceSpec = {
   file: 'MissionCloseConfirmDialog.vue',
   async open(): Promise<OpenedSurface> {
@@ -402,83 +373,6 @@ const missionHandoff: SurfaceSpec = {
       confirm: () => q('[data-test="handoff-confirm"]'),
       close: () => q('[role="dialog"] header button')
     })
-  }
-}
-
-// ---- StewardPauseDialog (T609) ----------------------------------------------------------
-
-const stewardPause: SurfaceSpec = {
-  file: 'StewardPauseDialog.vue',
-  async open(): Promise<OpenedSurface> {
-    const w = mount(StewardPauseDialog, {
-      props: { busy: false },
-      global: { plugins: [i18n] },
-      attachTo: document.body
-    })
-    return emitSurface(w, ['cancel', 'confirm'], {
-      input: () => q('[data-test="steward-pause-reason"]'),
-      cancel: () => q('[data-test="steward-pause-cancel"]'),
-      confirm: () => q('[data-test="steward-pause-go"]'),
-      close: () => q('[role="dialog"] header button')
-    })
-  }
-}
-
-// ---- MissionsReviewDialog (local `open` ref, reflected in the DOM) -------------------------------------------
-
-function reviewView(id: string): MissionView {
-  return {
-    root: '/repo',
-    mission: {
-      id,
-      status: 'delivered',
-      updatedAt: '2026-10-09T10:00:00.000Z',
-      owner: { sessionId: `owner-${id}`, folder: '/repo' },
-      pendingClose: { at: '2026-10-09T09:00:00.000Z', requestedBy: 'x' },
-      blockers: [],
-      steps: [{ id: 'stp-9', kind: 'fixed-end', title: 'Delivered and verified', blockers: [] }]
-    },
-    title: `Mission ${id}`,
-    derived: { stale: false },
-    progress: { allDone: true, leftBehind: [] },
-    you: [{ kind: 'close' }],
-    closeWarnings: []
-  } as unknown as MissionView
-}
-
-const missionsReview: SurfaceSpec = {
-  file: 'MissionsReviewDialog.vue',
-  async open(): Promise<OpenedSurface> {
-    i18n.global.locale.value = 'en'
-    localStorage.setItem('om2tab.missionCues', JSON.stringify({ v: 1, owed: {} }))
-    setActivePinia(createPinia())
-    useSessionsStore().folders = [{ path: '/repo', sessions: [] }] as never
-    installApi({
-      missionList: vi.fn(async () => ({ views: [], unreadable: [] })),
-      missionOperatorDoor: vi.fn(async () => ({ ok: true, view: null })),
-      requestAttention: vi.fn(async () => undefined)
-    })
-    Element.prototype.scrollIntoView = vi.fn()
-    HTMLMediaElement.prototype.play = vi.fn(async () => undefined)
-    const store = useMissionsStore()
-    store.views = [reviewView('r1')]
-    const w = mount(MissionsReviewDialog, { attachTo: document.body, global: { plugins: [i18n] } })
-    store.openReview()
-    await nextTick()
-    return {
-      card: () => q('[role="dialog"]'),
-      scrim: () => q('[role="presentation"]'),
-      // The component keeps a local `open` ref; closing removes the card from the DOM.
-      isClosed: () => q('[data-test="missions-review"]') === null,
-      closeSignal: () => 'local open=false (card removed from DOM)',
-      teardown: () => w.unmount(),
-      named: {
-        close: () => q('[data-test="review-dismiss"]'),
-        cancel: () => q('footer button:not([data-test])'),
-        confirmSelected: () => q('[data-test="review-close-selected"]')
-      },
-      capEvidence: cardEvidence
-    }
   }
 }
 
@@ -535,10 +429,7 @@ export const SURFACES_B: SurfaceSpec[] = [
   containersRemove,
   dehydrateConfirm,
   harnuModExternal,
-  missionBulkClose,
   missionClose,
   missionHandoff,
-  missionsReview,
-  stewardPause,
   sweepConfirm
 ]

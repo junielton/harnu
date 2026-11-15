@@ -1,6 +1,6 @@
 /**
  * Missions v4 S-2 (AC-3) — one mission store. The verbs (`mission_list`, `mission_get`), the
- * renderer IPC (`listMissionViews`), the campaign reader (`listCampaignViews`) and hibernation
+ * renderer IPC (`listMissionViews`) and hibernation
  * (`missionOwnersWithLiveChildren`) all read mission files through `src/main/missions/store.ts`,
  * so one repo, with one fixture, gives the same answer to each of them: the shadow copy of a mission
  * in a second clone loses to the newer copy, and a delivered mission still has its leader.
@@ -180,7 +180,6 @@ describe('one reader for every caller', () => {
     const store = await import('../src/main/missions/store')
     const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
     const { listMissionViews } = await import('../src/main/mission-ipc')
-    const { listCampaignViews } = await import('../src/main/campaign-ipc')
     const { missionOwnersWithLiveChildren } = await import('../src/main/hibernation')
     const verbs: Record<string, Handler> = {}
     for (const t of WIRED_TOOLS) verbs[t.op] = t.handler as unknown as Handler
@@ -233,12 +232,6 @@ describe('one reader for every caller', () => {
       [M_SHADOW]: ['delivered', LEADER],
       [M_LONE]: ['active', LONE_LEADER]
     })
-
-    // Campaign reader: a chapter's mission is the store's winner, so a mission closed in the
-    // other clone is done even though this clone's copy still says active.
-    const campaigns = await listCampaignViews([cloneA, cloneB])
-    expect(campaigns.views).toHaveLength(1)
-    expect(campaigns.views[0].progress.states).toMatchObject({ 'chp-1': 'done', 'chp-2': 'done' })
 
     // Hibernation: only the winner of an id counts. The winner of M_SHADOW is delivered, which v4 reads
     // as ready to close, so its leader is pinned (S-23, AC-62: "ready to close included"; it was not

@@ -675,8 +675,8 @@ function onKeydown(e: KeyboardEvent): void {
           <Crown :size="10" :stroke-width="1.8" class="shrink-0" />
           {{ $t('topbar.orchestratorBadge') }}
         </span>
-        <!-- Mission "N of M done" pill (T370, Mission v2) — clickable, opens the progress
-             popover; renders nothing when this session owns no open mission. -->
+        <!-- Mission pill (T370; Missions v4) — clickable, toggles the Mission pane; renders
+             nothing when this session is in no open mission. -->
         <MissionPill
           v-if="!isTerminal && sessions.selectedSession"
           :session-id="sessions.selectedSession.sessionId"

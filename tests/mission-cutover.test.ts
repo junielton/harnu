@@ -337,7 +337,6 @@ let wrapper: VueWrapper | null = null
 function install(): void {
   ;(window as unknown as { api: unknown }).api = {
     missionList: vi.fn(async () => ({ views: v3Views, unreadable, shadowed: [] })),
-    campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
     missionV4View: vi.fn(async (a: { missionId?: string; sessionId?: string }) =>
       a.missionId || (a.sessionId !== 'harnu-readers' && viewReply.state !== 'none')
         ? viewReply
@@ -434,8 +433,6 @@ describe('the pill opens the pane for a v3 record', () => {
     await flushPromises()
     expect(panes()).toEqual(['mission'])
     expect(ui.popovers.missionProgress).toBe(false)
-    // `requestPopover` keeps its (inert, 5 s) request record until S-37 deletes it with the popover: what matters
-    // is that nothing opens a popover and the pane is open.
   })
 
   it('no live path reaches a popover any more', () => {

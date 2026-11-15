@@ -201,7 +201,6 @@ async function mountPane(opts: MountOpts): Promise<VueWrapper> {
   door = vi.fn(async () => opts.doorReply ?? { ok: true, changed: true })
   ;(window as unknown as { api: unknown }).api = {
     missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
-    campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
     missionV4View: view,
     missionV4Door: door,
     missionHandOff: vi.fn(),

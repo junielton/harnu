@@ -58,9 +58,7 @@ const HAND_ROLLED_SHELLS: readonly string[] = [
   'ImageLightbox.vue',
   'McpConfirmOverlay.vue',
   'MemoryLocationDialog.vue',
-  'MissionBulkCloseConfirmDialog.vue',
   'MissionCloseConfirmDialog.vue',
-  'MissionsReviewDialog.vue',
   'NewFolderDialog.vue',
   'NewSessionDialog.vue',
   'NewWorktreeDialog.vue',
@@ -69,8 +67,6 @@ const HAND_ROLLED_SHELLS: readonly string[] = [
   'ReviewPane.vue',
   'RoadmapBoard.vue',
   'SettingsDialog.vue',
-  // T609: the End dialog's anatomy, until `ui/Dialog.vue` exists.
-  'StewardPauseDialog.vue',
   'SweepConfirmDialog.vue',
   // T571: added while `ui/Dialog.vue` (batch 1) does not exist yet, so there is nothing to build on; migrate with the
   // rest and delete this line. Same anatomy as RenameFolderDialog.

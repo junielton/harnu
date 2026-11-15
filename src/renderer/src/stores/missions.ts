@@ -3,13 +3,13 @@
  *
  * Holds every open mission of the repos the sidebar knows, as `mission:list`
  * projects it, and derives one {@link MissionModel} per mission so the Topbar
- * pill, the popover and the sidebar chip read the same answer. Read-only
+ * pill and the sidebar chip read the same answer. Read-only
  * except {@link runDoor} — the operator's doors, the only writes the mission UI
  * makes.
  *
  * Polled, not pushed: the derived block (live children, the stall verdict) is
  * time-dependent, so a file watcher alone would still leave it stale. One poll
- * every {@link POLL_MS}, plus an immediate refresh on demand (popover open).
+ * every {@link POLL_MS}, plus an immediate refresh on demand.
  *
  * Doors answer with the view they changed (Mission v3 §3.2): the store patches
  * that one mission, or removes it when an end returns `view: null` — at once,
@@ -108,22 +108,6 @@ export interface V4Entry {
   sessionId: string
   reply: MissionV4ViewReply
   /** Wall clock of the answer. */
-  at: number
-}
-
-/** How long an open-the-popover request stays claimable (BUG-173, spec §3.4). */
-export const POPOVER_REQUEST_TTL_MS = 5_000
-
-/** "Open this mission's popover" — set by `openNavigableView('mission')`, consumed by `MissionPill`. */
-export interface PopoverRequest {
-  missionId: string
-  at: number
-}
-
-/** "Open the Missions review" — set by {@link useMissionsStore}`.openReview`, consumed by the review dialog (S5). */
-export interface ReviewRequest {
-  /** The mission the review opens focused on, or `null` for the whole pile. */
-  missionId: string | null
   at: number
 }
 
@@ -289,12 +273,6 @@ export const useMissionsStore = defineStore('missions', () => {
   const views = shallowRef<MissionView[]>([])
   /** Wall clock of the last refresh — the stale callout's "now". */
   const refreshedAt = ref(Date.now())
-  /**
-   * Bumped by every successful list read (T596): the campaigns store watches it, so a campaign
-   * refreshes whenever the missions it rolls up have just been re-read — `refreshedAt` alone can
-   * repeat within one millisecond.
-   */
-  const refreshSeq = ref(0)
   /** Doors awaiting their answer — a count, so overlapping doors keep the controls disabled. */
   const doorsInFlight = ref(0)
   const doorInFlight = computed(() => doorsInFlight.value > 0)
@@ -309,13 +287,6 @@ export const useMissionsStore = defineStore('missions', () => {
     validate: (v) => isPersistedCueMemory(v)
   })
   let cueMemory: CueMemory | null = storedCues.value ? deserializeCueMemory(storedCues.value) : null
-  /**
-   * A pending request to open a mission's popover. It lives for
-   * {@link POPOVER_REQUEST_TTL_MS}, so one that never finds a pill (owner not
-   * shown) cannot pop a popover open later at a surprising moment.
-   */
-  const popoverRequest = ref<PopoverRequest | null>(null)
-  let popoverTimer: ReturnType<typeof setTimeout> | null = null
   /** Bumped by every door that took effect: a list read started before it is stale. */
   let writeSeq = 0
 
@@ -821,7 +792,6 @@ export const useMissionsStore = defineStore('missions', () => {
       )
       views.value = list
       refreshedAt.value = Date.now()
-      refreshSeq.value++
       syncUnreadable(res.unreadable)
       // Sidebar folders not loaded yet: the list says nothing about reality, and a
       // decision now would rebuild the memory empty and re-cue the backlog later.
@@ -872,16 +842,11 @@ export const useMissionsStore = defineStore('missions', () => {
     await refresh()
   }
 
-  function clearPopoverRequest(): void {
-    if (popoverTimer) clearTimeout(popoverTimer)
-    popoverTimer = null
-    popoverRequest.value = null
-  }
-
   /**
    * Open the Mission pane in the selected session's stack (a no-op when it is open or no worktree is
    * selected). Every record lives there since the cut-over (S-35): the pane follows the selected session, so a
-   * caller selects the mission's leader first.
+   * caller selects the mission's leader first. An Activity row that names a mission reaches it through
+   * `openNavigableView('mission')`.
    */
   function openMissionPane(): void {
     const helpers = useHelpersStore()
@@ -889,46 +854,6 @@ export const useMissionsStore = defineStore('missions', () => {
     if (worktree && !helpers.panesForCurrentWorktree.some((p) => p.type === 'mission')) {
       helpers.toggleMissionHelper(worktree)
     }
-  }
-
-  /**
-   * "Open this mission" (an Activity row names it through `openNavigableView('mission')`): opens the pane. The
-   * name is the popover's, kept until S-37 deletes the popover and its request; the record of the request is
-   * still kept and expires on its own, but nothing consumes it any more.
-   */
-  function requestPopover(missionId: string): void {
-    clearPopoverRequest()
-    popoverRequest.value = { missionId, at: Date.now() }
-    popoverTimer = setTimeout(clearPopoverRequest, POPOVER_REQUEST_TTL_MS)
-    openMissionPane()
-  }
-
-  /**
-   * Claim the pending request: returns it and clears it, or `null` when there is
-   * none or it is older than the TTL (a throttled timer must not revive it).
-   */
-  function consumePopoverRequest(): PopoverRequest | null {
-    const req = popoverRequest.value
-    clearPopoverRequest()
-    return req && Date.now() - req.at < POPOVER_REQUEST_TTL_MS ? req : null
-  }
-
-  /**
-   * A pending request to open the Missions review, optionally focused on one
-   * mission. `MissionsReviewDialog` consumes it.
-   */
-  const reviewRequest = ref<ReviewRequest | null>(null)
-
-  /** Ask for the Missions review — focused on `missionId`, or the whole pile when omitted. */
-  function openReview(missionId?: string): void {
-    reviewRequest.value = { missionId: missionId ?? null, at: Date.now() }
-  }
-
-  /** Claim the pending review request: returns it and clears it, or `null` when there is none. */
-  function consumeReviewRequest(): ReviewRequest | null {
-    const req = reviewRequest.value
-    reviewRequest.value = null
-    return req
   }
 
   /** Start polling once; later calls are no-ops. */
@@ -1027,53 +952,9 @@ export const useMissionsStore = defineStore('missions', () => {
     return res
   }
 
-  /**
-   * Close several missions through the EXISTING end door, one after another
-   * (BUG-173 S5, spec §3.5). Never aborts on a failure: each door answers on its
-   * own. The in-flight counter is raised once for the batch, each answer is
-   * applied as it lands (rows vanish one by one), and ONE refresh follows at the
-   * end. `MISSION_CLOSED` counts as closed, as {@link runDoor} treats it. No
-   * toast here — the caller reports the batch once.
-   */
-  async function runDoors(
-    doors: readonly Extract<MissionDoor, { door: 'end' }>[],
-    onProgress?: (done: number, total: number) => void
-  ): Promise<{ closed: number; failed: { missionId: string; error: string }[] }> {
-    const failed: { missionId: string; error: string }[] = []
-    let closed = 0
-    doorsInFlight.value++
-    try {
-      for (const [i, door] of doors.entries()) {
-        let res: MissionDoorResult
-        try {
-          res = await window.api.missionOperatorDoor(door)
-        } catch (err) {
-          res = { ok: false, error: err instanceof Error ? err.message : String(err) }
-        }
-        if (res.ok) {
-          writeSeq++
-          applyDoorResult(door, res.view)
-          closed++
-        } else if (res.error.startsWith('MISSION_CLOSED')) {
-          writeSeq++
-          applyDoorResult(door, null)
-          closed++
-        } else {
-          failed.push({ missionId: door.missionId, error: res.error })
-        }
-        onProgress?.(i + 1, doors.length)
-      }
-    } finally {
-      doorsInFlight.value--
-    }
-    if (closed > 0) void refreshAfterWrite()
-    return { closed, failed }
-  }
-
   return {
     views,
     refreshedAt,
-    refreshSeq,
     doorInFlight,
     refresh,
     ensureStarted,
@@ -1098,12 +979,6 @@ export const useMissionsStore = defineStore('missions', () => {
     dismissHandoff,
     runHandOff,
     runDoor,
-    runDoors,
-    popoverRequest,
-    requestPopover,
-    consumePopoverRequest,
-    reviewRequest,
-    openReview,
-    consumeReviewRequest
+    openMissionPane
   }
 })

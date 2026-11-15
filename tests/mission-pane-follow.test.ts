@@ -106,7 +106,6 @@ function answer(args: { sessionId: string }): MissionV4ViewReply {
 function install(): void {
   ;(window as unknown as { api: unknown }).api = {
     missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
-    campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
     missionV4View: vi.fn(
       async (args: { folder: string; sessionId: string; missionId?: string }) => {
         viewCalls.push({ ...args })

@@ -17,7 +17,6 @@ import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
 import type { Blocker, Check, LedgerRow, MissionStep } from '../../../main/mission-core'
 import type { MissionYouItem } from '../../../main/mcp/tool-handlers'
 import type { GateState, StepGates } from '../../../main/mission-gates'
-import { owedKeys } from './mission-cue'
 
 /**
  * `verifiedBy.sessionId` on a step the operator ticked from the UI — mirrors
@@ -222,40 +221,7 @@ function stepPulse(
   }
 }
 
-/** A piece of the pulse line; the component maps `key` to `mission.pulse.<key>`. */
-export type PulsePart =
-  | { key: 'commits'; n: number }
-  | { key: 'active' | 'quiet'; age: string }
-  | { key: 'activeNow' | 'quietNever' }
-
 type PluralTranslate = (key: string, named: Record<string, unknown>, plural?: number) => string
-
-/** The pulse line as one string — "21 commits · active 2m ago" — for the rail and the pill tooltip. */
-export function pulseText(t: PluralTranslate, p: StepPulseModel): string {
-  return pulseParts(p)
-    .map((part) =>
-      part.key === 'commits'
-        ? t('mission.pulse.commits', { n: part.n }, part.n)
-        : t(`mission.pulse.${part.key}`, 'age' in part ? { age: part.age } : {})
-    )
-    .join(' · ')
-}
-
-/** What the pulse line prints, in order: commits, then activity (design.md §6 "Step pulse"). */
-export function pulseParts(p: StepPulseModel): PulsePart[] {
-  const parts: PulsePart[] = []
-  if (p.commits !== null && p.commits > 0) parts.push({ key: 'commits', n: p.commits })
-  if (p.ageMs === null) {
-    if (p.kind === 'quiet') parts.push({ key: 'quietNever' })
-  } else if (p.kind === 'moving') {
-    parts.push(
-      p.ageMs < 60_000 ? { key: 'activeNow' } : { key: 'active', age: formatDuration(p.ageMs) }
-    )
-  } else {
-    parts.push({ key: 'quiet', age: formatDuration(p.ageMs) })
-  }
-  return parts
-}
 
 export interface MissionModel {
   state: MissionState
@@ -746,80 +712,4 @@ export function endWarnings(view: MissionView): EndWarning[] {
         }
     }
   })
-}
-
-/** The review dialog's three groups (BUG-173 S5, spec §3.5). */
-export interface ReviewGroups {
-  /** `delivered` with a requested close: the owner verified the end and asked. */
-  ready: MissionView[]
-  /** `active` and every step done, close never requested: nobody verified the end. */
-  finished: MissionView[]
-  /** Everything else the operator owes — opened one by one, never closed in bulk. */
-  other: MissionView[]
-}
-
-/**
- * Split the open missions into the review's groups, keeping the input order. The
- * close groups come first and need no owed condition: a delivered mission whose
- * close was requested is `ready`, and an active mission with every step done is
- * `finished` whatever it owes (the finished-but-never-closed backlog is what the
- * bulk close exists to clear). Every other mission is listed only if it owes the
- * operator something (the cue's owed set). A repeated id keeps its first view
- * and a closed mission is never listed.
- */
-export function groupReviewMissions(views: readonly MissionView[]): ReviewGroups {
-  const out: ReviewGroups = { ready: [], finished: [], other: [] }
-  const seen = new Set<string>()
-  for (const v of views) {
-    if (seen.has(v.mission.id)) continue
-    seen.add(v.mission.id)
-    const { status } = v.mission
-    if (status === 'closed') continue
-    if (status === 'delivered' && v.mission.pendingClose) out.ready.push(v)
-    else if (status === 'active' && v.progress.allDone) out.finished.push(v)
-    else if (owedKeys(v).size > 0) out.other.push(v)
-  }
-  return out
-}
-
-/** A bulk close may touch this mission: it is in the ready or the finished group. */
-export function isBulkCloseable(view: MissionView): boolean {
-  const m = view.mission
-  if (m.status === 'delivered') return !!m.pendingClose
-  return m.status === 'active' && view.progress.allDone
-}
-
-/** The ids the review pre-selects: the ready group, nothing else. */
-export function readyIds(groups: ReviewGroups): string[] {
-  return groups.ready.map((v) => v.mission.id)
-}
-
-/** The reason every bulk door carries, so a mission's Log shows it was a batch decision. */
-export function bulkCloseReason(text?: string): string {
-  const why = text?.trim()
-  return why ? `bulk close: ${why}` : 'bulk close'
-}
-
-const END_WARNING_KEY: Record<EndWarning['kind'], string> = {
-  'end-unverified': 'endUnverified',
-  'left-behind': 'leftBehind',
-  'checks-open': 'checksOpen',
-  'blockers-open': 'blockersOpen',
-  'rescope-staged': 'rescopeStaged'
-}
-
-/** Kinds whose heading counts matters — the i18n plural takes `count`. */
-const COUNTED_END_WARNINGS: ReadonlySet<EndWarning['kind']> = new Set([
-  'left-behind',
-  'checks-open',
-  'blockers-open'
-])
-
-/** The heading of one end warning, in the `mission.end.warnings.*` copy the End dialog uses. */
-export function endWarningHeading(
-  t: (key: string, plural?: number) => string,
-  w: EndWarning
-): string {
-  const key = `mission.end.warnings.${END_WARNING_KEY[w.kind]}`
-  return COUNTED_END_WARNINGS.has(w.kind) ? t(key, w.count) : t(key)
 }

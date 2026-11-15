@@ -2,7 +2,7 @@
  * Missions v4 S-2 (R-25, AC-3) — the one reader of mission files.
  *
  * The verbs (`mcp/tool-handlers.ts`), the renderer IPC (`mission-ipc.ts`), the campaign
- * reader (`campaign-ipc.ts`) and hibernation (`hibernation.ts`) used to each walk
+ * reader (since removed) and hibernation (`hibernation.ts`) used to each walk
  * `.harnu/missions/` their own way. Two of them dedupe the copies of a mission that two clones
  * of one repo hold, the others did not, and each decided on its own who leads a mission. They
  * all read here now, so one repo gives the same answer to every caller.

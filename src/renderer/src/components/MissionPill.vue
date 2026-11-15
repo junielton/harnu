@@ -8,9 +8,9 @@
  * writing, and its first door use creates the v4 copy. Renders nothing when the selected session is in no
  * open mission (`no-mission` is a state, not a gap).
  *
- * The popover that used to open from here is no longer reachable; its files stay until S-37 deletes them.
- * The keyboard action (`view.missionProgress`) toggles the pane through this pill; an Activity row that names a
- * mission opens it through the store (`requestPopover`, kept until S-37).
+ * The popovers that used to open from here are gone (S-37). The keyboard action (`view.missionProgress`) toggles
+ * the pane through this pill; an Activity row that names a mission opens it through the store
+ * (`openMissionPane`, reached by `openNavigableView('mission')`).
  */
 import { computed, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
