@@ -74,13 +74,13 @@ your_move({
 - The ACK returns `cardId`. If the same item changes (new facts, a sharper question), call
   again with that `cardId` to refresh the card in place: its clock keeps running.
 - Without `cardId` a new card is filed. Do not re-file the same item; refresh it.
-- `YOUR_MOVE_OFF` means Your move is off for this install or this folder: nothing was filed
-  and retrying will not help. Say what you need in your reply instead.
-  `YOUR_MOVE_RATE_LIMIT` means you made 30 calls this hour (refreshes count): say it in your reply.
-- `your_move` cannot close a card, and no other verb closes one the operator can still see. A card leaves when the operator deals with it
-  (an answer typed in the session, a button on the card) or when its source resolves (a mission
-  card closes when the mission stops owing the item). `archive_session` and `remove_folder`
-  refuse a session or folder that still has an open card in the operator's queue. Do not tell the operator a card is closed.
+- `YOUR_MOVE_OFF` means Your move is off for this install or folder: nothing was filed, retrying
+  will not help, say what you need in your reply. `YOUR_MOVE_RATE_LIMIT`: 30 calls this hour (refreshes count), say it too.
+- `your_move` cannot close a card, and no other verb closes one the operator can still see. A card leaves when the
+  operator deals with it (an answer typed in the session, a button on the card) or when its source resolves (a mission
+  card closes when its operator criterion is ticked in the Mission pane or its operator blocker is cleared).
+  `archive_session` and `remove_folder` refuse a session or folder that still has an open card in the operator's queue. Do
+  not tell the operator a card is closed.
 
 ## Reply as well
 
@@ -91,7 +91,7 @@ too, so a person reading the transcript sees what you see.
 
 The judge, not this skill. Harnu inspects every turn that stops on its own: two detector
 runs plus an enrichment call read what the turn left behind and file a card for what only the
-operator can unblock, whether or not this skill is on or `your_move` is called. This skill
-and the verb improve the quality of the card — a better ask, the right kind, a recommendation,
-filed earlier — they are not what makes sure the operator hears about it. If you are unsure
-whether something is a card, say it clearly in your reply and let the judge decide.
+operator can unblock, whether or not this skill is on or `your_move` is called. This skill and
+the verb improve the card (a better ask, the right kind, a recommendation, filed earlier); they
+do not make sure the operator hears about it. If unsure whether something is a card, say it
+clearly in your reply and let the judge decide.
