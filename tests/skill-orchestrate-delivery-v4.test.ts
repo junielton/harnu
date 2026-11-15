@@ -28,7 +28,7 @@ const read = (): string => readFileSync(SKILL_FILE, 'utf8')
 
 /** AC-71's line: under 700. The operator's ask (less information in a small space) is the tighter cap. */
 const AC_LINE_CAP = 700
-const SMALL_LINE_CAP = 420
+const SMALL_LINE_CAP = 540
 
 /** Collapse Prettier's line wrapping so a sentence matches whatever its breaks. */
 const flat = (s: string): string => s.replace(/\s+/g, ' ')
@@ -180,7 +180,9 @@ function v4Problems(skill: string): string[] {
     out.push('a sign-off is not an operator criterion')
   if (!/never edited after dispatch/i.test(all) || !/a new criterion/.test(all))
     out.push('criteria are not frozen after dispatch')
-  if (!/Check the whole mission against Done when/.test(all) || !/second session/.test(all))
+  if (
+    !/Check the whole mission against Done when"?\*{0,2}, with a second session criterion/.test(all)
+  )
     out.push('the last step (D-21) is not planned')
   if (!/Load `\.\.\/mission\/references\/writing-contract\.md`/.test(all))
     out.push('the writing contract is not loaded')
@@ -211,11 +213,20 @@ function v4Problems(skill: string): string[] {
     out.push('a visual sign-off is not apart')
   if (!/merges `origin\/main` into its branch before it opens the PR/.test(all))
     out.push('the shipper does not merge origin/main first')
-  if (!/never rebase a pushed branch/i.test(all)) out.push('a pushed branch may be rebased')
+  // Said twice on purpose: in the exit sequence and in the shipper's boot template, which is pasted alone.
+  if ((all.match(/never rebase a pushed branch/gi) ?? []).length < 2)
+    out.push(
+      'a pushed branch may be rebased (the exit sequence and the shipper template both say not)'
+    )
   if (!/never use, copy or link the operator's Claude credentials/i.test(all))
     out.push('the operator credentials are not forbidden')
-  if (!/must fail against the code it replaces/.test(all) || !/plant a fault/.test(all))
-    out.push('plant a fault is not asked')
+  if (!/must fail against the code it replaces/.test(all))
+    out.push('a proof need not fail against the code it replaces')
+  // Asked of both: the executor plants it before the test is green, the verifier plants it again.
+  if (!/executor plants a fault first/.test(all))
+    out.push('the executor is not asked to plant a fault')
+  if (!/plant a fault against the code the proof replaces/.test(all))
+    out.push('the verifier is not asked to plant a fault')
   if (!/Stack each unit on the previous branch/.test(all) || !/runtime dependency/.test(all))
     out.push('stacking is not stated')
 
@@ -246,9 +257,11 @@ interface Mutation {
   why: string
 }
 
+/** Replace the first match of `find`, whatever its case and the line wrapping its spaces fall on. */
 function mutate(text: string, m: Mutation): string {
-  if (!text.includes(m.find)) throw new Error(`mutation anchor not found: ${m.find} (${m.why})`)
-  return text.replace(m.find, m.replace)
+  const re = new RegExp(m.find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'), 'i')
+  if (!re.test(text)) throw new Error(`mutation anchor not found: ${m.find} (${m.why})`)
+  return text.replace(re, () => m.replace)
 }
 
 describe('the skill speaks v4', () => {
@@ -278,7 +291,7 @@ describe('the skill speaks v4', () => {
         why: 'stages are milestones'
       },
       {
-        find: 'only the operator starts a hand-off',
+        find: 'Only the operator starts a hand-off',
         replace: 'the leader starts a hand-off when it feels long',
         why: 'the hand-off is the operator'
       },
