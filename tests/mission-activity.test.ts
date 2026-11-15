@@ -19,6 +19,7 @@ import { useNotificationsStore } from '../src/renderer/src/stores/notifications'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import { playNotificationSound } from '../src/renderer/src/lib/notification-sound'
 import { i18n } from '../src/renderer/src/i18n'
+import { fixtureView } from './helpers/mission-v3-view'
 
 vi.mock('../src/renderer/src/lib/notification-sound', () => ({ playNotificationSound: vi.fn() }))
 
@@ -604,5 +605,194 @@ describe('a delivered v3 mission with warnings, its leader not open here', () =>
     const items = entry()?.items ?? []
     expect(items).toHaveLength(1)
     expect(items[0].sessionId).toBe(ABSENT)
+  })
+})
+
+// ---- Missions v4 S-23 delta 3: a v3 mission keeps main's cue keys, its own chip words and its popover ---------
+
+describe('a v3 mission read through the v4 view keeps what main did', () => {
+  const OWNER = '8f2c1e4a-1111-4222-8333-944455556666'
+  const v3 = (you: unknown[]): unknown =>
+    fixtureView('parallel', {
+      mission: { id: 'mnt-0a1b2c3d', owner: { sessionId: OWNER, folder: '/repo' } } as never,
+      view: { you: you as never, title: 'Legacy rollout' }
+    })
+  const detailOf = (items: unknown[]): unknown => ({
+    ok: true,
+    id: 'mnt-0a1b2c3d',
+    title: 'Legacy rollout',
+    leads: OWNER,
+    source: 'v3-mission',
+    status: 'open',
+    state: 'open',
+    progress: { unit: 'steps', total: 5, done: 2, current: null, allDone: false },
+    waiting: { items },
+    sessions: []
+  })
+  const blockerItem = (n: number, stepId: string | null, ask: string): unknown => ({
+    kind: 'unblock',
+    id: `unblock:${stepId ?? 'mission'}:blk-${n}`,
+    stepId,
+    blockerId: `blk-${n}`,
+    ask,
+    why: 'It waits'
+  })
+  let v3Views: unknown[]
+  let v4Items: unknown[]
+
+  function wire(): void {
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      missionList: vi.fn(async () => ({ views: v3Views, unreadable: [] })),
+      missionV4View: vi.fn(async (a: { missionId?: string }) =>
+        a.missionId
+          ? { state: 'mission', missionId: a.missionId, detail: detailOf(v4Items) }
+          : {
+              state: 'none',
+              missions: [
+                { id: 'mnt-0a1b2c3d', title: 'Legacy rollout', headline: '', leads: OWNER }
+              ]
+            }
+      ),
+      missionOperatorDoor: vi.fn(),
+      requestAttention: vi.fn(async () => undefined)
+    }
+  }
+
+  it('removing a mission-level blocker renumbers the step blocker and never chimes', async () => {
+    const store = mountStore()
+    // Main's own memory for this mission: the keys it wrote (`blocker:<reason>`), cued long ago.
+    const t = Date.now() - 10 * 60_000
+    const k = (count: number): unknown => ({ count, firstOwedAt: t, lastCuedAt: t, nudges: 0 })
+    localStorage.setItem(
+      CUES_KEY,
+      JSON.stringify({
+        v: 1,
+        owed: {
+          'mnt-0a1b2c3d': {
+            lastSeenAt: t,
+            keys: {
+              'blocker:Waiting on the vendor key': k(1),
+              'blocker:Merge the pull request': k(1)
+            }
+          }
+        }
+      })
+    )
+    // The first read is for the upgrade: both blockers owed, as main saw them. No chime.
+    v3Views = [
+      v3([
+        { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' },
+        { kind: 'blocker', reason: 'Merge the pull request', unblocks: 'merged' }
+      ])
+    ]
+    v4Items = [
+      blockerItem(1, null, 'Waiting on the vendor key'),
+      blockerItem(3, 'stp-4', 'Merge the pull request')
+    ]
+    wire()
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    // The operator clears the mission-level one: the step blocker is renumbered (blk-3 to blk-2). Still no chime.
+    v3Views = [v3([{ kind: 'blocker', reason: 'Merge the pull request', unblocks: 'merged' }])]
+    v4Items = [blockerItem(2, 'stp-4', 'Merge the pull request')]
+    wire()
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+  })
+
+  it('updating Harnu chimes nothing for an owed item main already knew', async () => {
+    const store = mountStore()
+    const t = Date.now() - 10 * 60_000
+    localStorage.setItem(
+      CUES_KEY,
+      JSON.stringify({
+        v: 1,
+        owed: {
+          'mnt-0a1b2c3d': {
+            lastSeenAt: t,
+            keys: {
+              'blocker:Waiting on the vendor key': {
+                count: 1,
+                firstOwedAt: t,
+                lastCuedAt: t,
+                nudges: 0
+              },
+              checks: { count: 2, firstOwedAt: t, lastCuedAt: t, nudges: 0 },
+              'human-steps': { count: 1, firstOwedAt: t, lastCuedAt: t, nudges: 0 }
+            }
+          }
+        }
+      })
+    )
+    v3Views = [
+      v3([
+        { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' },
+        { kind: 'checks', count: 2, stepIds: ['stp-2'] },
+        { kind: 'human-steps', stepIds: ['stp-2'] }
+      ])
+    ]
+    v4Items = [
+      blockerItem(1, null, 'Waiting on the vendor key'),
+      {
+        kind: 'settle',
+        id: 'settle:stp-2:ac-1',
+        stepId: 'stp-2',
+        criterionId: 'ac-1',
+        ask: 'Mark done: a',
+        why: 'w'
+      },
+      {
+        kind: 'settle',
+        id: 'settle:stp-2:ac-2',
+        stepId: 'stp-2',
+        criterionId: 'ac-2',
+        ask: 'Mark done: b',
+        why: 'w'
+      },
+      {
+        kind: 'settle',
+        id: 'settle:stp-2:ac-3',
+        stepId: 'stp-2',
+        criterionId: 'ac-3',
+        ask: 'Mark done: c',
+        why: 'w'
+      }
+    ]
+    wire()
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+  })
+
+  it('the chip of a v3 mission is its own pill\u2019s words, and a v4 one keeps the v4 text', async () => {
+    const store = mountStore()
+    v3Views = [v3([{ kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }])]
+    v4Items = [blockerItem(1, null, 'Waiting on the vendor key')]
+    wire()
+    await store.refresh()
+    const model = store.modelForSession(OWNER)
+    expect(model).not.toBeNull()
+    const chip = store.chipFor(OWNER)
+    const { headlineText } = await import('../src/renderer/src/lib/mission-view')
+    expect(chip?.text).toBe(headlineText(i18n.global.t as never, model!.headline))
+    expect(chip?.compact).toBe(headlineText(i18n.global.t as never, model!.headline, true))
+    expect(chip?.text).not.toBe('2/5 · 1 for you')
+    expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(true)
+    // The same record once it is a v4 record (a v4 file exists): the v4 text, and the pane.
+    const detail = detailOf(v4Items) as { source: string }
+    detail.source = 'v4'
+    ;(window as unknown as { api: Record<string, unknown> }).api.missionV4View = vi.fn(
+      async (a: { missionId?: string }) =>
+        a.missionId
+          ? { state: 'mission', missionId: a.missionId, detail }
+          : {
+              state: 'none',
+              missions: [
+                { id: 'mnt-0a1b2c3d', title: 'Legacy rollout', headline: '', leads: OWNER }
+              ]
+            }
+    )
+    await store.refresh()
+    expect(store.chipFor(OWNER)?.text).toBe('2/5 · 1 for you')
+    expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(false)
   })
 })
