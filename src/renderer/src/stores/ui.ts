@@ -1102,7 +1102,7 @@ export const useUiStore = defineStore('ui', () => {
         // Not a takeover: select the owner first (the caller's job), then open the Mission pane, which
         // follows the selected session (S-35, S-37).
         if (!params?.missionId) return
-        useMissionsStore().openMissionPane()
+        useMissionsStore().openMissionPane(params.missionId)
         return
       }
     }

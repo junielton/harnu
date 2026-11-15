@@ -880,7 +880,7 @@ store's existing 20 s poll — no per-mission timer):
 - **Standing vs blocking kinds** (BUG-173, spec §3.2). _Standing_ kinds —
   `close`, `checks`, `review-import` — are a to-do nobody is waiting on: they
   cue once when they appear (or `checks` grows) and **never re-nudge**; the
-  pill, the bell entry and the review dialog keep showing them. _Blocking_
+  pill and the bell entry keep showing them. _Blocking_
   kinds — `rescope`, `blocker`, `decide` (a pending decision, one key per
   decision step), `human-steps` — are something an agent or a later step waits
   on: they cue when they appear, then re-nudge with **back-off**, **30 min, 1 h,
@@ -7000,7 +7000,7 @@ no virtualization dependency needed here.
   re-cueing (a mission) lives in ONE grouped entry that is replaced in place.
 - ❌ Dismiss a grouped entry on an item click, or give it a mission-specific
   branch in `ActivityBell.vue`: rows are generic `items`, and the click goes
-  through `openNavigableView` / the store's `openReview`.
+  through `openNavigableView`.
 
 ### Mission progress (sidebar chip, Activity cue and end dialog)
 
@@ -7398,8 +7398,7 @@ the hand-off are S-20; both are below.) (An open step's who-settles, blocker and
 mission with `mission_create` in the v4 shape (S-24), so the glance has something to show once a v4
 record exists on disk.
 
-**Don'ts.** ❌ Show a v3 mission in the pane, or write a v3 record from it. ❌ Open the pane
-for a v3 pill. ❌ Print `stateLabel`, `progress.headline`, `waiting.moreLine` or any English word
+**Don'ts.** ❌ Write a v3 record from the pane. ❌ Print `stateLabel`, `progress.headline`, `waiting.moreLine` or any English word
 from the reply (the `ask` and the `why` are the one wording the server owns, shown as written).
 ❌ Poll from a loop the store does not own. ❌ Draw a Done when paragraph. ❌ Open more than the
 current milestone by itself. ❌ Count to do steps in a milestone's summary. ❌ Draw a button whose
@@ -7506,7 +7505,10 @@ head, under "Your next step", not in a step): a box like the next-step box in th
 **"New Done when proposed"** (`10px / 700`, uppercase, `text-accent`), the proposed text (`13px`,
 `text-text`), one line saying what each button does (`11.5px`, `text-text-3`), then **Approve**
 (`ui/Button` primary) and **Decline** (`ui/Button` soft). It is drawn only while the view carries a
-staged Done when; the mission's own Done when is still not drawn.
+staged Done when; the mission's own Done when is still not drawn. An **older (v3) mission** that has a
+re-scope staged shows the same box (S-37): the new target and its proof, with the owner's reason in
+brackets; **Approve** applies it to the old file as the popover did and **Decline** drops it, and
+neither creates a v4 copy (`stagedRescopeOf`, `runPaneDoor` in `src/main/mission-ipc.ts`).
 
 **Narrow pane.** The open step is as narrow as its tree: the criteria's right cell moves under the
 text (above), the pills wrap and break long addresses (`break-all`), the blocker's text wraps, and
@@ -7910,12 +7912,12 @@ Scrim  (--color-scrim, fixed, inset 0, flex-centered)           z = layer
 Width is always `min(<size>, 90vw)` (written `w-(--dialog-w-<size>) max-w-[90vw]`). A dialog picks a
 size; it does not invent a width.
 
-| Size | Token           | Width | Use                                                            | Replaces (today)                                                                                                                                                                    |
-| ---- | --------------- | ----- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sm` | `--dialog-w-sm` | 480px | Confirms and one-field forms                                   | 440 (Mission close, mods confirm), 460 (Containers remove, Review confirm), 480 (Remove worktree, Rename ×2, Bulk close)                                                            |
-| `md` | `--dialog-w-md` | 560px | **Default.** Forms, plans, launch options                      | 520 (New folder, Memory location), 540 (New session, MCP confirm), 560 (Add folder, Claude Boot, New worktree, Open subfolder, Dehydrate, Sweep, Missions review, dispatch confirm) |
-| `lg` | `--dialog-w-lg` | 720px | Long lists with chips; the card dossier                        | 720 (Cleanup list — replaces `--gc-dialog-w`), 760 (Card create, Card detail)                                                                                                       |
-| `xl` | `--dialog-w-xl` | 940px | Tabbed/navigated surfaces. **Must pass `height`** (fixed size) | 940 (Settings)                                                                                                                                                                      |
+| Size | Token           | Width | Use                                                            | Replaces (today)                                                                                                                                                   |
+| ---- | --------------- | ----- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sm` | `--dialog-w-sm` | 480px | Confirms and one-field forms                                   | 440 (Mission close, mods confirm), 460 (Containers remove, Review confirm), 480 (Remove worktree, Rename ×2)                                                       |
+| `md` | `--dialog-w-md` | 560px | **Default.** Forms, plans, launch options                      | 520 (New folder, Memory location), 540 (New session, MCP confirm), 560 (Add folder, Claude Boot, New worktree, Open subfolder, Dehydrate, Sweep, dispatch confirm) |
+| `lg` | `--dialog-w-lg` | 720px | Long lists with chips; the card dossier                        | 720 (Cleanup list — replaces `--gc-dialog-w`), 760 (Card create, Card detail)                                                                                      |
+| `xl` | `--dialog-w-xl` | 940px | Tabbed/navigated surfaces. **Must pass `height`** (fixed size) | 940 (Settings)                                                                                                                                                     |
 
 #### Viewport cap (mandatory)
 
