@@ -257,3 +257,68 @@ describe('pty:create — a session Harnu spawns for a step holds the scoped verb
     ])
   })
 })
+
+// ---- Missions v4 S-26 (AC-68): the credential of a session a card's dispatch spawns for a step ----
+
+describe('pty:create — a card the drain or the board dispatches for a step holds the verbs of its step (S-26)', () => {
+  const SCOPED_CONFIG = '/tmp/harnu-test/scoped-mcp/card-session.json'
+  const STEP = { role: 'worker', missionId: 'mnt-bbbbbbbb', stepId: 'stp-2' } as const
+  const seen: Array<Record<string, unknown>> = []
+
+  beforeAll(async () => {
+    const pty = await import('../src/main/pty')
+    const { scopedAllowedTools } = await import('../src/main/mcp/scope')
+    pty.setScopedMcpArgsProvider(async (scope) => {
+      seen.push({ ...scope })
+      return ['--mcp-config', SCOPED_CONFIG, '--allowedTools', scopedAllowedTools(scope).join(',')]
+    })
+  })
+
+  const pendingFor = async (): Promise<void> => {
+    const { registerPendingSpawn } = await import('../src/main/mcp/scope')
+    registerPendingSpawn(cwd, STEP)
+  }
+
+  it('a manifest-dispatched spawn for a step gets the scoped config, a minted session id, and not the full server', async () => {
+    seen.length = 0
+    await pendingFor()
+    const argv = await spawnArgv({ spawnedBy: 'agent' })
+
+    const at = argv.indexOf('--mcp-config')
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(argv[at + 1]).toBe(SCOPED_CONFIG)
+    expect(argv).not.toContain(MCP_CONFIG)
+    const sid = argv[argv.indexOf('--session-id') + 1]
+    expect(sid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ ...STEP, sessionId: sid, folder: cwd })
+    const allowed = argv[argv.indexOf('--allowedTools') + 1]
+    expect(allowed).toContain('mcp__harnu__mission_log')
+    expect(allowed).not.toContain('mcp__harnu__mission_attach')
+  })
+
+  it('it is the operator’s own dispatch, so its permissions are not downgraded as an agent-controlled spawn’s are', async () => {
+    await pendingFor()
+    const scoped = await spawnArgv({ spawnedBy: 'agent' })
+    await pendingFor()
+    const withheld = await spawnArgv({ agentControlled: true, spawnedBy: 'agent' })
+    // Same note, two spawn shapes: only the agent-controlled one is rebuilt from the downgraded config.
+    expect(scoped).toContain('--mcp-config')
+    expect(withheld).toContain('--mcp-config')
+    expect(scoped.join(' ')).not.toBe(withheld.join(' '))
+  })
+
+  it('a card spawn with no step keeps the full server, as before', async () => {
+    const argv = await spawnArgv({ spawnedBy: 'agent' })
+    expect(argv[argv.indexOf('--mcp-config') + 1]).toBe(MCP_CONFIG)
+  })
+
+  it('an operator’s own new session never takes the credential waiting for a card’s spawn', async () => {
+    const { takePendingSpawn, dropPendingSpawn } = await import('../src/main/mcp/scope')
+    await pendingFor()
+    const argv = await spawnArgv({ spawnedBy: 'operator' })
+    expect(argv[argv.indexOf('--mcp-config') + 1]).toBe(MCP_CONFIG)
+    expect(takePendingSpawn(cwd)).toBeDefined()
+    dropPendingSpawn(cwd)
+  })
+})

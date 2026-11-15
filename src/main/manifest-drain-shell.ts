@@ -27,6 +27,7 @@ import { getFleetFolders } from './fleet-model'
 import { isHibernated } from './hibernation'
 import { liveSessionKeys, resolveSessionAlias } from './pty'
 import { getUserProjectWipLimit } from './user-projects'
+import { createDrainBinder, setBootWaiter } from './missions/dispatch'
 
 /**
  * T113 — the env-bound shell wiring the pure drain driver (`manifest-drain.ts`)
@@ -137,6 +138,12 @@ export function registerManifestDrain(
     return (await loadFolderWip(args?.folder ?? '')).verdict
   })
 
+  // Missions v4 S-26 (AC-68): a card that is the work of a step spawns a session with the scoped verbs of
+  // that step (see `createDrainBinder`), and is attached to it once it has booted: `bindSessionCore`, which
+  // the board and this drain both bind through, does that, waiting for the real session id over this bridge.
+  const binder = createDrainBinder()
+  setBootWaiter((syntheticId, timeoutMs) => bridge.awaitMaterialization(syntheticId, timeoutMs))
+
   const deps: DrainPassDeps = {
     loadState: async (folder) => {
       const { cards, verdict } = await loadFolderWip(folder)
@@ -154,6 +161,7 @@ export function registerManifestDrain(
       if (!isLabels(labels)) return { ok: false }
       const res = await planDispatchCore(folder, slug, labels)
       if (!res.ok) return { ok: false }
+      binder.planned(folder, slug)
       if (res.mode === 'auto') {
         return {
           ok: true,
@@ -187,6 +195,7 @@ export function registerManifestDrain(
           }
         )
         if (!created.path) return null
+        binder.cut(created.path, folder, slug)
         return {
           path: created.path,
           repoRoot: created.repoRoot,
@@ -204,6 +213,9 @@ export function registerManifestDrain(
     },
 
     spawnSession: async (folder, prompt, routing, adopted) => {
+      // A card that is the work of a step spawns a session with the scoped verbs of that step (and not the
+      // whole server): leave the note `pty:create` turns into its credential, keyed by where it spawns.
+      const undoNote = await binder.beforeSpawn(folder)
       try {
         const ack = await bridge.dispatch<{ sessionId?: string; error?: string }>(
           'session.dispatchCard',
@@ -220,6 +232,7 @@ export function registerManifestDrain(
         if (ack && typeof ack.sessionId === 'string' && ack.sessionId) {
           return { ok: true, sessionId: ack.sessionId }
         }
+        undoNote()
         // BUG-62: an ack without a sessionId is a NAMED failure (e.g.
         // `FOLDER_NOT_FOUND`), never a bare null — the reason must survive so
         // the drain result and the operator-facing event can show it.
@@ -229,6 +242,7 @@ export function registerManifestDrain(
             : 'session.dispatchCard returned no sessionId'
         return { ok: false, reason }
       } catch (err) {
+        undoNote()
         // A `CommandBridgeError` (`NO_WINDOW`/`TIMEOUT`) or any other throw —
         // its message IS the reason, never discarded (BUG-62).
         return { ok: false, reason: err instanceof Error ? err.message : String(err) }

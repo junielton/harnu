@@ -32,6 +32,7 @@ import {
   attachFromPicker,
   doorError,
   logEntry,
+  quotedMission,
   quotedTitle,
   resolveStepId,
   type DoorRefusal,
@@ -355,8 +356,8 @@ export async function decideAttachRequest(
         log,
         at,
         args.decision === 'allowed'
-          ? `operator allowed session ${request.sessionId} to join as a worker${attached ? '' : ' (already attached)'}`
-          : `operator denied session ${request.sessionId} the request to join`
+          ? `operator allowed a session to join ${quotedMission(record)} as a worker${attached ? '' : ' (already attached)'}`
+          : `operator denied a session the request to join ${quotedMission(record)}`
       )
     }
   })

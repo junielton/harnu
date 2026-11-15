@@ -754,7 +754,7 @@ export const MCP_TOOLS: McpToolDef[] = [
           .min(1)
           .optional()
           .describe(
-            "Start the session for one step of this v4 mission (mnt-<8 hex>); pass `stepId` with it. Harnu gives the session a credential of its own: a worker holds mission_get, mission_link, mission_log and mission_set_blocker on that step; a verifier also holds mission_settle_ac. Its session id is part of the credential, so it never passes one, and it can neither lead, attach itself, plan nor touch another mission or step. It is refused MISSION_NOT_FOUND, STEP_NOT_FOUND or MISSION_NOT_V4 before anything starts. Attaching the session to the step is the dispatch's job, not this call's."
+            "Start the session for one step of this v4 mission (mnt-<8 hex>); pass `stepId` with it. Harnu gives the session a credential of its own: a worker holds mission_get, mission_link, mission_log and mission_set_blocker on that step; a verifier also holds mission_settle_ac. Its session id is part of the credential, so it never passes one, and it can neither lead, attach itself, plan nor touch another mission or step. It is refused MISSION_NOT_FOUND, STEP_NOT_FOUND, MISSION_NOT_V4 or MISSION_CLOSED before anything starts. The dispatch binds the step once the session has started: a worker's step gets its board card (created in backlog, or the card the step already has, stamped with the mission, milestone and step and carrying the step's criteria in a block Harnu rewrites), and the session is attached to the mission as a worker and linked to the step. The ACK carries `card` ({ slug, id?, action: 'created' | 'bound' }, null for a verifier) and `worker` ({ sessionId, missionId, stepId, role }); if the binding failed the session still runs and the ACK carries `bindError` instead. A verifier is attached but gets no card and is not linked to the step it checks. A step you do yourself is never dispatched, so it never gets a card."
           ),
         stepId: z
           .string()
@@ -1971,18 +1971,35 @@ export const MCP_TOOLS: McpToolDef[] = [
         .describe('Absolute path of the folder/worktree whose board to dispatch from.'),
       cards: z
         .array(
-          z.object({
-            slug: z
-              .string()
-              .min(1)
-              .describe('The card slug/id to include (must be in Ready, not done).'),
-            substrate: z
-              .enum(CARD_SUBSTRATES)
-              .optional()
-              .describe("Override the card's stored substrate for this dispatch."),
-            model: z.string().min(1).max(64).optional().describe('Override the launch model.'),
-            effort: z.string().min(1).max(32).optional().describe('Override the launch effort.')
-          })
+          z
+            .object({
+              slug: z
+                .string()
+                .min(1)
+                .describe('The card slug/id to include (must be in Ready, not done).'),
+              substrate: z
+                .enum(CARD_SUBSTRATES)
+                .optional()
+                .describe("Override the card's stored substrate for this dispatch."),
+              model: z.string().min(1).max(64).optional().describe('Override the launch model.'),
+              effort: z.string().min(1).max(32).optional().describe('Override the launch effort.'),
+              missionId: z
+                .string()
+                .min(1)
+                .optional()
+                .describe(
+                  'With `stepId`: this card is the work of that step of a v4 mission. The card is stamped for the step when the manifest is stamped (its frontmatter only, so the approval still matches), and the session the drain starts for it is attached to the step as a worker with the scoped verbs of that step. Refused MISSION_NOT_FOUND, STEP_NOT_FOUND, MISSION_CLOSED, CARD_CLOSED or CARD_BOUND_ELSEWHERE, naming the card, before anything is stamped.'
+                ),
+              stepId: z
+                .string()
+                .min(1)
+                .optional()
+                .describe('The step of `missionId` this card is the work of (stp-<n>).')
+            })
+            .refine((c) => (c.missionId === undefined) === (c.stepId === undefined), {
+              message:
+                'pass missionId and stepId together: a card is the work of one step of one mission'
+            })
         )
         .min(1)
         .describe(

@@ -1616,7 +1616,11 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     // `claude-new` takes it, once; its session id is minted HERE so the credential can carry it.
     let scopedSpawn: PendingSpawn | undefined
     if (kind === 'claude-new') {
-      if (opts.agentControlled && !opts.readOnly) scopedSpawn = takePendingSpawn(opts.cwd ?? '')
+      // A card a manifest drain or the board dispatches for a step is `spawnedBy: 'agent'` without being
+      // `agentControlled`: it takes the note too (Missions v4 S-26), so it holds its step's verbs only.
+      if ((opts.agentControlled || opts.spawnedBy === 'agent') && !opts.readOnly) {
+        scopedSpawn = takePendingSpawn(opts.cwd ?? '')
+      }
       if (scopedSpawn) effectiveClaudeSessionId = effectiveClaudeSessionId ?? randomUUID()
     }
     if (kind === 'claude-new') {
@@ -1724,6 +1728,18 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
           : readOnlyCfg,
         harnuPreamble
       )
+    } else if (scopedSpawn && !opts.agentControlled) {
+      // Missions v4 S-26: a card the drain or the board dispatches for a step. It is the operator's own
+      // dispatch, so its boot config stands as it is, but it holds the scoped verbs of its step and not
+      // the whole server: the app-managed --mcp-config is replaced by the credential of its role.
+      const scopedArgs = effectiveClaudeSessionId
+        ? await scopedMcpArgsProvider({
+            ...scopedSpawn,
+            sessionId: effectiveClaudeSessionId,
+            folder: opts.cwd ?? ''
+          })
+        : []
+      args = orderMcpArgs(scopedArgs, spawnCfg.args)
     } else if (opts.agentControlled) {
       // MCP-spawned agent: untrusted. Re-resolve the merged boot cfg
       // (global ⊕ folder ⊕ override) and strip any permission-bypass flag the
