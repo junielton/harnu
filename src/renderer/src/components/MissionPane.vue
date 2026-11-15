@@ -420,10 +420,10 @@ useFocusRegion(props.pane.id, rootEl, {
               name: offerName || $t('missionPane.handoff.offer.leaderUnnamed')
             })
       }}</span>
-      <span class="flex" style="gap: 6px">
+      <span class="flex flex-wrap" style="gap: 6px">
         <button
           type="button"
-          class="inline-flex items-center rounded-sm bg-accent text-accent-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          class="inline-flex items-center whitespace-nowrap rounded-sm bg-accent text-accent-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           style="height: 20px; padding: 0 7px; gap: 4px; font-size: 11px; font-weight: 500"
           :disabled="missions.handOffPending"
           data-test="handoff-offer-open"
@@ -435,7 +435,7 @@ useFocusRegion(props.pane.id, rootEl, {
         </button>
         <button
           type="button"
-          class="inline-flex items-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
+          class="inline-flex items-center whitespace-nowrap rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
           style="height: 20px; padding: 0 7px; font-size: 11px; font-weight: 500"
           data-test="handoff-offer-later"
           @click="missions.dismissHandoff()"

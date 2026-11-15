@@ -7990,7 +7990,8 @@ session’s context is 82% full. You can continue the mission in a fresh session
 mission summary, so nothing is lost."** The mockup says "82% of its memory is used"; the spec wins: the
 offer speaks of the **session’s context**, never "memory". When the pane follows a session that is not the
 leader, the first sentence names the leader: **"The context of orch-1, the session that leads, is 90%
-full."** Two buttons: **"Continue in a new session…"** (primary pill, `bg-accent text-accent-ink`) opens the
+full."** Two buttons, which wrap onto a second line in a narrow pane (a label never wraps inside its pill):
+**"Continue in a new session…"** (primary pill, `bg-accent text-accent-ink`) opens the
 same confirmation, and **"Not now"** (ghost pill) keeps the offer quiet and **does nothing else**: it
 stores the percentage it was said at, per mission and per leader (kept across a restart), and sends it
 with the next read of the view (`dismissedPercent`). The view offers again only once the context has grown
@@ -8007,20 +8008,22 @@ Title **"Continue this mission in a new session"**; body, top to bottom:
    stopped." · "A new session opens with the summary below and leads the mission." · "The old session is
    released. It stays in the mission’s session history." (the mockup says "this session"; the leader may not
    be the session the pane follows);
-2. **the summary the new session starts with** — a box (`rounded border border-border bg-bg`, `padding: 10px
+2. **the status box**, between the list and the summary, only while the door waits or after it refused
+   (below): it is above the summary on purpose, because a long summary scrolls and would push it out of
+   sight;
+3. **the summary the new session starts with** — a box (`rounded border border-border bg-bg`, `padding: 10px
 12px`, `12px`): the eyebrow **"Mission summary — what the new session starts with"** (`10px / 700`,
    uppercase, `0.07em`, `text-text-4`) over a grid of the label (`82px`, `text-text-4`) and the section's text
    (`whitespace-pre-line`, wraps) for each section the server wrote (Goal, Where it is, Decided, Stopped
    at, Next step, and the open criteria and links when they fit). It is the text of `detail.summary`, so the
    operator can judge whether it is enough to start a session cold; a summary with no sections shows whole,
-   an empty one says **"Harnu has no summary of this mission to give the new session."**;
-3. the pending and error blocks below.
+   an empty one says **"Harnu has no summary of this mission to give the new session."**.
 
 Footer: **Cancel** (ghost) and **Start new session** (primary, a 14px `arrow-left-right`): the dialog's
 28px footer box. Nothing starts until **Start new session**.
 
 **Pending** (not drawn in the mockup): the door waits up to **90 seconds** for the new session to appear.
-The dialog stays open and says so: a box under the summary (`rounded border border-accent-line
+The dialog stays open and says so: a box above the summary (`rounded border border-accent-line
 bg-accent-soft`, `padding: 8px 10px`, `role="status"`) with a spinning `loader-2` (14px, `text-accent`), **"Starting
 the new session…"** (`12px / 500`) and **"This can take up to 90 seconds. Keep this window open."**
 (`11.5px`, `text-text-3`). Both buttons are off, the ✕ is gone and Esc and the scrim do nothing while it
@@ -8028,7 +8031,7 @@ waits (the shell's `dismissible=false`), so a second press starts nothing and th
 the only place that will say how it ended.
 
 **A hand-off that did not happen** (not drawn in the mockup): the dialog stays open, the buttons are back,
-and under the summary one box (`rounded border border-red-line bg-red-soft`, `padding: 8px 10px`, `12px`,
+and above the summary one box (`rounded border border-red-line bg-red-soft`, `padding: 8px 10px`, `12px`,
 `role="alert"`) says **what to do next, never the code**:
 
 | Code                                                                                      | Words                                                                                                                                                                                                |

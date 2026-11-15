@@ -176,7 +176,7 @@ function stopLine(r: SessionRowView): string {
 
       <button
         type="button"
-        class="inline-flex items-center self-start rounded-sm border border-border-2 bg-surface-2 text-text transition hover:border-text-4 disabled:cursor-not-allowed disabled:opacity-40"
+        class="inline-flex items-center self-start whitespace-nowrap rounded-sm border border-border-2 bg-surface-2 text-text transition hover:border-text-4 disabled:cursor-not-allowed disabled:opacity-40"
         style="
           height: 20px;
           padding: 0 7px;

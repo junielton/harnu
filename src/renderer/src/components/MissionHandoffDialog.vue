@@ -74,38 +74,7 @@ function onDialogClose(): void {
         <li data-test="handoff-step">{{ $t('missionPane.handoff.steps.three') }}</li>
       </ol>
 
-      <!-- The summary the new session starts with: labelled sections, as the server wrote them. -->
-      <div
-        class="rounded border border-border bg-bg"
-        style="padding: 10px 12px; font-size: 12px"
-        data-test="handoff-summary"
-      >
-        <span
-          class="block uppercase text-text-4"
-          style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em; margin-bottom: 6px"
-          >{{ $t('missionPane.handoff.summary.heading') }}</span
-        >
-        <div
-          v-if="parsed.sections.length > 0"
-          class="grid"
-          style="grid-template-columns: 82px 1fr; gap: 6px 10px"
-        >
-          <template v-for="s in parsed.sections" :key="s.heading">
-            <span class="text-text-4" data-test="handoff-heading">{{ s.heading }}</span>
-            <span
-              class="min-w-0 whitespace-pre-line break-words"
-              data-test="handoff-section"
-              :data-heading="s.heading"
-              >{{ s.body }}</span
-            >
-          </template>
-        </div>
-        <span v-else-if="summary.trim() !== ''" class="block whitespace-pre-line break-words">{{
-          summary.trim()
-        }}</span>
-        <span v-else class="block text-text-3">{{ $t('missionPane.handoff.summary.empty') }}</span>
-      </div>
-
+      <!-- Above the summary, so a long one can never push what happened out of sight. -->
       <!-- The door waits for the new session to appear, up to 90 seconds. -->
       <div
         v-if="pending"
@@ -137,6 +106,38 @@ function onDialogClose(): void {
         data-test="handoff-error"
       >
         {{ $t(`missionPane.handoff.error.${errorKey}`) }}
+      </div>
+
+      <!-- The summary the new session starts with: labelled sections, as the server wrote them. -->
+      <div
+        class="rounded border border-border bg-bg"
+        style="padding: 10px 12px; font-size: 12px"
+        data-test="handoff-summary"
+      >
+        <span
+          class="block uppercase text-text-4"
+          style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em; margin-bottom: 6px"
+          >{{ $t('missionPane.handoff.summary.heading') }}</span
+        >
+        <div
+          v-if="parsed.sections.length > 0"
+          class="grid"
+          style="grid-template-columns: 82px 1fr; gap: 6px 10px"
+        >
+          <template v-for="s in parsed.sections" :key="s.heading">
+            <span class="text-text-4" data-test="handoff-heading">{{ s.heading }}</span>
+            <span
+              class="min-w-0 whitespace-pre-line break-words"
+              data-test="handoff-section"
+              :data-heading="s.heading"
+              >{{ s.body }}</span
+            >
+          </template>
+        </div>
+        <span v-else-if="summary.trim() !== ''" class="block whitespace-pre-line break-words">{{
+          summary.trim()
+        }}</span>
+        <span v-else class="block text-text-3">{{ $t('missionPane.handoff.summary.empty') }}</span>
       </div>
     </div>
 
