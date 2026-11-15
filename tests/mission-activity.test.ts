@@ -399,3 +399,98 @@ describe('the store reads the v4 view for the cue, the Activity entry and the si
     expect(store.chipFor('someone-else')).toBeNull()
   })
 })
+
+// ---- Missions v4 S-23 delta 1: a v3 file with steps never reads 0/0 on the chip --------------------------------
+
+describe('the chip of a v3 mission with steps in several states', () => {
+  const LEAD = '8f2c1e4a-1111-4222-8333-944455556666'
+  let repo = ''
+
+  beforeEach(async () => {
+    const fs = await import('node:fs')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-chip-'))
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    const { buildMissionFileContent, missionFilePath, missionsDir } =
+      await import('../src/main/mission-core')
+    const at = '2026-11-14T09:00:00.000Z'
+    const step = (id: string, ordinal: number, over: Record<string, unknown>): unknown => ({
+      id,
+      ordinal,
+      kind: 'custom',
+      title: `Step ${ordinal}`,
+      verification: 'verifier',
+      proof: 'unproven',
+      links: [],
+      blockers: [],
+      ...over
+    })
+    const mission = {
+      id: 'mnt-0a1b2c3d',
+      slug: 'several-steps',
+      folder: repo,
+      owner: { sessionId: LEAD, folder: repo },
+      status: 'active',
+      declaredEnd: { kind: 'code', target: 'The slice is merged', evidence: 'green gates' },
+      steps: [
+        step('stp-1', 1, { kind: 'fixed-start', verification: 'existence', proof: 'verified' }),
+        step('stp-2', 2, { proof: 'verified' }),
+        step('stp-3', 3, { proof: 'verified' }),
+        step('stp-4', 4, {
+          links: [{ kind: 'session', ref: 'c7c7c7c7-0000-4000-8000-0000000000c7' }]
+        }),
+        step('stp-5', 5, {}),
+        step('stp-6', 6, {}),
+        step('stp-7', 7, { kind: 'fixed-end' })
+      ],
+      blockers: [],
+      openQuestions: [],
+      createdAt: at,
+      updatedAt: at,
+      provenance: { author: 'agent', at }
+    }
+    fs.mkdirSync(missionsDir(repo), { recursive: true })
+    fs.writeFileSync(
+      missionFilePath(repo, mission.id, mission.slug),
+      buildMissionFileContent(mission as never)
+    )
+  })
+
+  afterEach(async () => {
+    const fs = await import('node:fs')
+    fs.rmSync(repo, { recursive: true, force: true })
+  })
+
+  it('reads the same numbers as the v4 pill for it, and never 0/0', async () => {
+    const { missionGet } = await import('../src/main/missions/verbs-read')
+    const { missionPillText } = await import('../src/renderer/src/lib/mission-pane-view')
+    const detail = await missionGet(repo, { kind: 'operator' }, { missionId: 'mnt-0a1b2c3d' })
+    if (!detail.ok) throw new Error(detail.error)
+    const pill = missionPillText(i18n.global.t as never, detail as never)
+
+    const store = mountStore()
+    useSessionsStore().folders = [{ path: repo, sessions: [] }] as never
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      missionList: vi.fn(async () => ({ views: [], unreadable: [] })),
+      missionV4View: vi.fn(async (a: { missionId?: string }) =>
+        a.missionId
+          ? { state: 'mission', missionId: a.missionId, detail }
+          : {
+              state: 'none',
+              missions: [{ id: detail.id, title: detail.title, headline: '', leads: LEAD }]
+            }
+      ),
+      missionOperatorDoor: vi.fn(),
+      requestAttention: vi.fn(async () => undefined)
+    }
+    await store.refresh()
+    const chip = store.chipFor(LEAD)
+    expect(chip).not.toBeNull()
+    expect(chip!.text).toBe(pill)
+    expect(chip!.text).not.toMatch(/^0\/0/)
+    // The mission has steps, so the total is more than nothing.
+    expect(detail.progress.total).toBeGreaterThan(0)
+    expect(chip!.text).toMatch(new RegExp(`^\\d+/${detail.progress.total}\\b`))
+  })
+})
