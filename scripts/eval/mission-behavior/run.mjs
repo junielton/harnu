@@ -14,6 +14,12 @@
  * (grade.mjs) — never by a model's verdict. Every grade is then re-run against
  * the scenario's deliberately broken copies, which must fail.
  *
+ * Missions v4 (S-33): the state graded is the v4 records in `.harnu/missions-v4/`
+ * (plus the plain files a recorded turn leaves). The v3-only phases further down
+ * (`seed`, `operator`, `legacyFile`, `probe`, `precondition`, `burst`, `spawn`,
+ * `gateCache`) are kept as they were: no v4 scenario uses them, and they go, with
+ * the `mission-core` import, in S-40.
+ *
  * Runs under vite-node (see the `eval:mission` script) so the operator doors can
  * use the product's own `mission-core.ts` transitions instead of a copy of them.
  * Exit code: 0 when every non-skipped scenario passes, 1 otherwise.
@@ -42,15 +48,16 @@ import {
   readMissionLog
 } from '../../../src/main/mission-core.ts'
 import { buildApp, killAllLaunched, startHarnu } from './harnu.mjs'
-import { killAgents, replyAsks, runAgent } from './agent.mjs'
+import { killAgents, replyAsks, runAgent, turnRecord } from './agent.mjs'
 import {
-  campaignsDirOf,
   checkBreaks,
   fillTemplate,
   gradeFolder,
   loadMissionState,
-  missionsDirOf
+  missionsDirOf,
+  v3MissionsDirOf
 } from './grade.mjs'
+import { seedV4Record } from './seed-v4.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '..', '..', '..')
@@ -118,22 +125,16 @@ function freshRepo(folder) {
 }
 
 /**
- * Setup-only view of the mission ids the next phase's prompt needs (`m.<slug>.id`,
- * `.end`, `.custom.<n>`). This is read to ADDRESS the missions, not to grade them.
- * Mission v3 has no fixed start: the end is found by its kind, never by id.
+ * Setup-only view of the mission ids the next phase's prompt needs (`m.<slug>.id`, `.steps`). This is
+ * read to ADDRESS the missions, not to grade them. A v4 record's slug is its file name's.
  */
 function refreshMissionVars(vars) {
   const m = {}
-  for (const { data } of loadMissionState(vars.folder).missions) {
-    const steps = data.steps ?? []
-    m[data.slug] = {
-      id: data.id,
-      end: steps.find((s) => s.kind === 'fixed-end')?.id,
-      custom: steps.filter((s) => s.kind === 'custom').map((s) => s.id)
-    }
+  for (const { slug, data } of loadMissionState(vars.folder).missions) {
+    m[slug] = { id: data.id, steps: (data.steps ?? []).map((s) => s.id) }
   }
-  // An owner turn (Mission v2 S4) names its own mission, so the scenario cannot
-  // know the slug in advance: `m._only` addresses the repo's single mission.
+  // A session turn names its own mission, so the scenario cannot know the slug in advance:
+  // `m._only` addresses the repo's single mission.
   const all = Object.values(m)
   if (all.length === 1) m._only = all[0]
   vars.m = m
@@ -142,7 +143,7 @@ function refreshMissionVars(vars) {
 // ---- operator doors (UI-only in the product) -----------------------------------
 
 function missionFileBySlug(folder, slug) {
-  const dir = missionsDirOf(folder)
+  const dir = v3MissionsDirOf(folder)
   const file = readdirSync(dir).find(
     (n) => /^mnt-[0-9a-f]{8}-/.test(n) && n.slice(13) === `${slug}.md`
   )
@@ -191,7 +192,7 @@ function operatorDoor(folder, slug, action) {
  */
 function seedMission(vars, rawSpec) {
   const spec = fillTemplate(rawSpec, vars)
-  const dir = missionsDirOf(vars.folder)
+  const dir = v3MissionsDirOf(vars.folder)
   mkdirSync(dir, { recursive: true })
   const id = mintMissionId(readdirSync(dir).map((n) => n.slice(0, 12)))
   const at = new Date(Date.now() - (spec.ageMinutes ?? 0) * 60_000).toISOString()
@@ -382,9 +383,6 @@ async function runPhase(phase, ctx) {
     })
     const n = ++stats.agentRuns
     const logFile = path.join(scenarioDir, `agent-${n}-${phase.agent}.jsonl`)
-    // A steward turn may `create_session`: the session Harnu spawns into the sandbox asks for workspace
-    // trust like any spawn does, and `create_session` blocks until it materializes — so answer the dialog.
-    if (phase.stewardVerbs === true) harnu.startTrustWatcher()
     const r = await runAgent({
       sessionId,
       folder: vars.folder,
@@ -394,19 +392,9 @@ async function runPhase(phase, ctx) {
       logFile,
       timeoutMs: AGENT_TIMEOUT_MS,
       tools: phase.tools ?? [],
-      role: phase.role ?? 'scripted',
-      stewardVerbs: phase.stewardVerbs === true
+      role: phase.role ?? 'scripted'
     })
     stats.costUsd += r.costUsd
-    if (phase.stewardVerbs === true) {
-      // The dispatch is what is graded, not the verifier's own turn: keep what its screen showed, then
-      // kill it — nothing the scenario spawned keeps running (or billing) once the turn that started it ends.
-      writeFileSync(
-        path.join(scenarioDir, `agent-${n}-${phase.agent}-ptys.txt`),
-        await harnu.dumpPtys()
-      )
-      await harnu.killChildren(vars.folder)
-    }
     log(
       `    agent ${phase.agent} (#${n}, ${(r.ms / 1000).toFixed(1)}s): ${r.toolCalls.join(', ') || 'no tool calls'}` +
         (r.isError || r.code !== 0
@@ -444,6 +432,41 @@ async function runPhase(phase, ctx) {
         .map((x) => `${x.slug} (${x.status}, ${x.ageMinutes ?? 0} min old)`)
         .join(', ')}`
     )
+    return
+  }
+
+  if (phase.seedV4) {
+    // A v4 record written straight to `.harnu/missions-v4/` through the product's own writer, for a
+    // state a verb call does not reach cheaply (half done, a blocker, a decision, a built step).
+    for (const raw of [].concat(phase.seedV4)) {
+      const seeded = seedV4Record(vars.folder, fillTemplate(raw, vars))
+      vars.seeded[seeded.slug] = { id: seeded.id, at: seeded.at }
+      log(`    seedV4: ${seeded.slug} (${seeded.id})`)
+    }
+    return
+  }
+
+  if (phase.summary) {
+    // The text Harnu serves a fresh session (S-8): the HARNESS reads `mission_get`'s `summary` through
+    // the real transport, as the session that leads the mission, so no model transcribes it. A `cold`
+    // turn then gets it as its whole context (`{{summary.<name>}}`).
+    const { mission, as, name } = phase.summary
+    const target = vars.m[mission]
+    if (!target) throw new Error(`summary: no mission "${mission}"`)
+    const got = await harnu.call('mission_get', {
+      folder: vars.folder,
+      missionId: target.id,
+      sessionId: vars.session[as]
+    })
+    const text = got.payload?.summary
+    if (got.isError || typeof text !== 'string' || text.trim() === '') {
+      throw new Error(
+        `summary: mission_get gave no summary: ${JSON.stringify(got.payload).slice(0, 300)}`
+      )
+    }
+    vars.summary = { ...(vars.summary ?? {}), [name]: text }
+    writeFileSync(path.join(scenarioDir, `summary-${name}.txt`), text)
+    log(`    summary[${name}]: ${text.length} characters, read as ${as} through the transport`)
     return
   }
 
@@ -551,17 +574,28 @@ async function runPhase(phase, ctx) {
 }
 
 /**
- * Record what an owner turn did (Mission v2 S4) where the grader can read it:
- * the harness — never the model — `mission_log`s one line into the mission,
- * `EVAL-TURN[<tag>] asked=<b> tools=<calls in order>`, the same way `probe`
- * transcribes a derived signal. `asked` is true when the final reply puts a
- * question to the operator (a `?`, or the word "confirm"): `claude -p` has no
- * `AskUserQuestion`, so a headless owner asks in its reply and ends the turn.
- * `mission` is a slug or `*` (the repo's single mission). No mission → nothing
- * is recorded, and the scenario's own `missionCount` fails.
+ * Record what a behavior turn did where the grader can read it. The harness — never the model —
+ * writes it:
+ *
+ *  - `file: true` leaves the sandbox file `.eval/turn-<tag>.txt` (`turnRecord`: the tools called in
+ *    order, `asked=<b>`, then the reply). It needs no mission, so a turn that must create none (the
+ *    one-line question) and a cold turn (no tools at all) are graded on it.
+ *  - with a `mission` (a slug, or `*` for the repo's single mission) it also `mission_log`s one line
+ *    into that mission, `EVAL-TURN[<tag>] asked=<b> tools=<calls in order>`, the same way `probe`
+ *    transcribes a derived signal. `asked` is true when the final reply puts a question to the
+ *    operator (a `?`, or the word "confirm"): `claude -p` has no `AskUserQuestion`, so a headless
+ *    session asks in its reply and ends the turn. No such mission → nothing is logged, and the
+ *    scenario's own `missionCount` fails.
  */
 async function recordTurn(spec, r, ctx) {
   const { vars, harnu, log } = ctx
+  if (spec.file === true) {
+    const file = path.join(vars.folder, '.eval', `turn-${spec.tag}.txt`)
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(file, turnRecord(r))
+    log(`    record[${spec.tag}]: .eval/turn-${spec.tag}.txt`)
+  }
+  if (!spec.mission) return
   refreshMissionVars(vars)
   const target = spec.mission === '*' ? vars.m._only : vars.m[spec.mission]
   if (!target) {
@@ -572,6 +606,7 @@ async function recordTurn(spec, r, ctx) {
   const logged = await harnu.call('mission_log', {
     folder: vars.folder,
     missionId: target.id,
+    sessionId: vars.session[spec.as ?? 'A'],
     note: line
   })
   if (logged.isError) throw new Error(`record: mission_log: ${JSON.stringify(logged.payload)}`)
@@ -643,13 +678,11 @@ function gradeAndBreak(vars, assertions, breaks, dir) {
   mkdirSync(dir, { recursive: true })
   const graded = gradeFolder(vars.folder, assertions, vars)
   if (existsSync(missionsDirOf(vars.folder))) {
-    cpSync(missionsDirOf(vars.folder), path.join(dir, 'missions'), { recursive: true })
+    cpSync(missionsDirOf(vars.folder), path.join(dir, 'missions-v4'), { recursive: true })
   }
-  if (existsSync(campaignsDirOf(vars.folder))) {
-    cpSync(campaignsDirOf(vars.folder), path.join(dir, 'campaigns'), { recursive: true })
-  }
-  const goals = path.join(vars.folder, '.harnu', 'goals')
-  if (existsSync(goals)) cpSync(goals, path.join(dir, 'goals'), { recursive: true })
+  // The plain files a recorded turn leaves (`.eval/turn-<tag>.txt`) are graded too: keep them.
+  const evalFiles = path.join(vars.folder, '.eval')
+  if (existsSync(evalFiles)) cpSync(evalFiles, path.join(dir, 'eval'), { recursive: true })
   const breakResults = checkBreaks(vars.folder, assertions, breaks, vars, path.join(dir, 'breaks'))
   return { ...graded, breaks: breakResults }
 }
@@ -672,7 +705,7 @@ async function runScenario(scenario, harnu, model, runDir, log) {
   const folder = path.join(sandboxRoot(), scenario.name)
   freshRepo(folder)
   const session = Object.fromEntries((scenario.agents ?? ['A']).map((a) => [a, randomUUID()]))
-  const vars = { folder, repo: REPO_ROOT, session, m: {}, seeded: {}, legacy: {} }
+  const vars = { folder, repo: REPO_ROOT, session, m: {}, seeded: {}, legacy: {}, summary: {} }
   const ctx = {
     vars,
     harnu,

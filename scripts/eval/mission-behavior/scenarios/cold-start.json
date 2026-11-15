@@ -1,0 +1,245 @@
+{
+  "name": "cold-start",
+  "order": 7,
+  "title": "a fresh session started from the mission summary alone answers the five questions",
+  "label": "v4 AC-78 (cold start)",
+  "description": "Missions v4 S-33, AC-78. A half-done v4 mission is seeded: a goal, a blocked step (on a named thing), a step that waits for review, a decision in the Log, and a next step. The HARNESS (not a model) reads the summary Harnu serves for it, `mission_get`'s `summary`, through the real transport as the leader, and starts a fresh session whose prompt holds that text and nothing else: the `cold` role has no tool, no Harnu server and no memory. The session answers five numbered questions (the goal, the next step, what is blocked and on what, what waits for review, what was decided). The grade reads `.eval/turn-cold.txt` line by line, each answer against the words only the right part of the summary holds (and not the words of the others), so one line repeated five times does not pass. The summary's own content is proved offline (`tests/mission-v4-eval-scenarios.test.ts`): each answer sits in its own part of it.",
+  "agents": ["A", "B"],
+  "phases": [
+    {
+      "seedV4": {
+        "slug": "aurora-export",
+        "title": "Ship the Aurora export",
+        "doneWhen": "Aurora export writes CSV for every board and the docs page names the flag",
+        "milestones": [
+          {
+            "title": "Writer works"
+          },
+          {
+            "title": "Shipped with docs"
+          }
+        ],
+        "steps": [
+          {
+            "title": "Write the CSV writer",
+            "milestone": "mls-1",
+            "startedAt": "now",
+            "links": [
+              {
+                "kind": "session",
+                "ref": "{{session.A}}"
+              }
+            ],
+            "acs": [
+              {
+                "text": "The writer emits one row per board"
+              }
+            ]
+          },
+          {
+            "title": "Add the export flag",
+            "milestone": "mls-1",
+            "startedAt": "now",
+            "blockers": [
+              {
+                "reason": "This build has no staging API key. Get it from Ops and set STAGING_API_KEY, then the run starts.",
+                "ask": "Get the staging API key from Ops",
+                "owner": "agent"
+              }
+            ],
+            "acs": [
+              {
+                "text": "The flag shows in the help output"
+              }
+            ]
+          },
+          {
+            "title": "Write the docs page",
+            "milestone": "mls-2",
+            "startedAt": "now",
+            "links": [
+              {
+                "kind": "pr",
+                "ref": "41"
+              }
+            ],
+            "acs": [
+              {
+                "text": "The page names the flag",
+                "by": "operator"
+              }
+            ]
+          },
+          {
+            "title": "Announce the export",
+            "milestone": "mls-2",
+            "acs": [
+              {
+                "text": "The announcement is posted"
+              }
+            ]
+          }
+        ],
+        "sessions": [
+          {
+            "id": "{{session.A}}",
+            "role": "leads"
+          }
+        ],
+        "log": [
+          {
+            "kind": "decision",
+            "stepId": "stp-1",
+            "note": "Use CSV, not XLSX, so no new dependency is needed."
+          }
+        ]
+      }
+    },
+    {
+      "summary": {
+        "mission": "aurora-export",
+        "as": "A",
+        "name": "main"
+      }
+    },
+    {
+      "agent": "B",
+      "role": "cold",
+      "record": {
+        "tag": "cold",
+        "file": true
+      },
+      "prompt": "This is the mission summary Harnu gave you:\n\n{{summary.main}}\n\nAnswer five questions from it, one line each, numbered exactly like this:\n1. What is the goal?\n2. What is the next step?\n3. What is blocked, and on what?\n4. What waits for review?\n5. What was decided?"
+    }
+  ],
+  "assert": [
+    {
+      "file": ".eval/turn-cold.txt",
+      "label": "the cold session had no tool",
+      "matches": "^tools=$",
+      "flags": "m"
+    },
+    {
+      "file": ".eval/turn-cold.txt",
+      "label": "1: the goal",
+      "matches": "^1\\..*Aurora",
+      "flags": "im"
+    },
+    {
+      "file": ".eval/turn-cold.txt",
+      "label": "2: the next step",
+      "matches": "^2\\.(?=.*(names the flag|naming the flag|mark(ing)? .*done))(?!.*staging)",
+      "flags": "im"
+    },
+    {
+      "file": ".eval/turn-cold.txt",
+      "label": "3: what is blocked, and on what",
+      "matches": "^3\\.(?=.*staging)(?!.*XLSX)",
+      "flags": "im"
+    },
+    {
+      "file": ".eval/turn-cold.txt",
+      "label": "4: what waits for review",
+      "matches": "^4\\.(?=.*docs page)(?!.*staging)",
+      "flags": "im"
+    },
+    {
+      "file": ".eval/turn-cold.txt",
+      "label": "5: what was decided",
+      "matches": "^5\\.(?=.*XLSX)(?=.*CSV)(?!.*staging)",
+      "flags": "im"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "goal-missing",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=\nasked=false\n---\n1. I do not know the goal.\n2. Mark done the docs page criterion: the page names the flag.\n3. Add the export flag is blocked on the staging API key from Ops.\n4. Write the docs page waits for review.\n5. Use CSV, not XLSX, so no new dependency is needed.\n"
+        }
+      ]
+    },
+    {
+      "name": "next-step-missing",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=\nasked=false\n---\n1. Ship the Aurora export: a CSV export for every board, with a docs page naming the flag.\n2. Nothing is next.\n3. Add the export flag is blocked on the staging API key from Ops.\n4. Write the docs page waits for review.\n5. Use CSV, not XLSX, so no new dependency is needed.\n"
+        }
+      ]
+    },
+    {
+      "name": "blocker-missing",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=\nasked=false\n---\n1. Ship the Aurora export: a CSV export for every board, with a docs page naming the flag.\n2. Mark done the docs page criterion: the page names the flag.\n3. Nothing is blocked.\n4. Write the docs page waits for review.\n5. Use CSV, not XLSX, so no new dependency is needed.\n"
+        }
+      ]
+    },
+    {
+      "name": "review-missing",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=\nasked=false\n---\n1. Ship the Aurora export: a CSV export for every board, with a docs page naming the flag.\n2. Mark done the docs page criterion: the page names the flag.\n3. Add the export flag is blocked on the staging API key from Ops.\n4. Nothing waits for review.\n5. Use CSV, not XLSX, so no new dependency is needed.\n"
+        }
+      ]
+    },
+    {
+      "name": "decision-missing",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=\nasked=false\n---\n1. Ship the Aurora export: a CSV export for every board, with a docs page naming the flag.\n2. Mark done the docs page criterion: the page names the flag.\n3. Add the export flag is blocked on the staging API key from Ops.\n4. Write the docs page waits for review.\n5. Nothing was decided.\n"
+        }
+      ]
+    },
+    {
+      "name": "decision-without-the-choice",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=\nasked=false\n---\n1. Ship the Aurora export: a CSV export for every board, with a docs page naming the flag.\n2. Mark done the docs page criterion: the page names the flag.\n3. Add the export flag is blocked on the staging API key from Ops.\n4. Write the docs page waits for review.\n5. They decided to use CSV.\n"
+        }
+      ]
+    },
+    {
+      "name": "one-line-answers-all-five",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=\nasked=false\n---\n1. Aurora staging API key docs page names the flag CSV XLSX\n2. Aurora staging API key docs page names the flag CSV XLSX\n3. Aurora staging API key docs page names the flag CSV XLSX\n4. Aurora staging API key docs page names the flag CSV XLSX\n5. Aurora staging API key docs page names the flag CSV XLSX\n"
+        }
+      ]
+    },
+    {
+      "name": "numbering-lost",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=\nasked=false\n---\nShip the Aurora export. Mark done the page that names the flag. Blocked on the staging API key. The docs page waits. CSV not XLSX.\n"
+        }
+      ]
+    },
+    {
+      "name": "the-run-crashed",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=\nasked=false\n---\n(no result event)\n"
+        }
+      ]
+    },
+    {
+      "name": "the-cold-session-had-a-tool",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "write": "tools=mission_get\nasked=false\n---\n1. Ship the Aurora export: a CSV export for every board, with a docs page naming the flag.\n2. Mark done the docs page criterion: the page names the flag.\n3. Add the export flag is blocked on the staging API key from Ops.\n4. Write the docs page waits for review.\n5. Use CSV, not XLSX, so no new dependency is needed.\n"
+        }
+      ]
+    }
+  ]
+}

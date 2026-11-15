@@ -204,7 +204,7 @@ describe('scenarios are v4', () => {
   })
 
   it.each(ALL)('%s calls only verbs a v4 eval agent may call', (name) => {
-    const verbs = new Set(rawScenario(name).match(/mission_[a-z_]+/g) ?? [])
+    const verbs = new Set(rawScenario(name).match(/mission_[a-z]+(?:_[a-z]+)*/g) ?? [])
     for (const v of verbs) {
       expect(MISSION_VERBS, `${name} names ${v}`).toContain(v)
       expect(REMOVED_VERBS).not.toContain(v)
@@ -462,7 +462,9 @@ describe('proactive-creates: multi-step work makes the session create the missio
     const turn = sc.phases.find((p) => p.agent) as Json
     expect(turn.role).toBe('session')
     expect(JSON.stringify(sc.phases)).toContain('resources/skills/skills/mission/SKILL.md')
-    expect(String(turn.prompt)).not.toMatch(/mission_create|milestone|criteri|mission/i)
+    expect(String(turn.prompt).replaceAll('.eval/mission/SKILL.md', '')).not.toMatch(
+      /mission|milestone|criteri/i
+    )
   })
 
   it('passes on a created mission, before any Write, with no question', () => {
@@ -482,12 +484,20 @@ describe('proactive-creates: multi-step work makes the session create the missio
     expect((gradeState(state, sc.assert, v) as Graded).ok).toBe(false)
   })
 
-  it('does not pass when the session asked first', () => {
+  it('does not pass when the session asked first and created nothing', () => {
+    const state = stateOf([], {
+      '.eval/turn-proactive.txt': 'tools=Read,Read\nasked=true\n---\nShall I start?\n'
+    })
+    expect((gradeState(state, sc.assert, v) as Graded).ok).toBe(false)
+  })
+
+  it('a question after the mission exists is fine: AC-79 rules out asking FIRST', () => {
     const state = good() as { files: Json }
     state.files = {
-      '.eval/turn-proactive.txt': 'tools=Read,Read,mission_create\nasked=true\n---\nShall I?\n'
+      '.eval/turn-proactive.txt':
+        'tools=Read,mission_list,mission_create,Write\nasked=true\n---\nStarted. Want tests too?\n'
     }
-    expect((gradeState(state, sc.assert, v) as Graded).ok).toBe(false)
+    expect((gradeState(state, sc.assert, v) as Graded).ok).toBe(true)
   })
 })
 
@@ -593,10 +603,12 @@ function sandbox(): string {
 }
 
 const FIXTURE_DIR = path.join(FIXTURES, 'v4')
+/** Stored with a `.fixture` suffix so prettier leaves the bytes the product wrote alone. */
 const FIXTURE_FILE = 'mnt-5a1c0de4-notes-export.md'
 
 describe('the grader reads .harnu/missions-v4/, on a recorded v4 record', () => {
-  const fixtureRaw = (): string => readFileSync(path.join(FIXTURE_DIR, FIXTURE_FILE), 'utf8')
+  const fixtureRaw = (): string =>
+    readFileSync(path.join(FIXTURE_DIR, `${FIXTURE_FILE}.fixture`), 'utf8')
 
   /** A sandbox whose v4 directory holds the recorded fixture, as a run leaves it. */
   function withFixture(edit: (raw: string) => string = (r) => r): string {
@@ -642,13 +654,12 @@ describe('the grader reads .harnu/missions-v4/, on a recorded v4 record', () => 
   })
 
   it('rejects a planted fault: the builder settles its own criterion', () => {
-    const faulty = withFixture((raw) =>
-      raw
-        .replace(/selfCheck:\n(\s+)at:/, 'settled:\n$1at:')
-        .replace(/\n\s+by: 1{8}-/, '\n    by: 11111111-')
-    )
+    // Criterion 1 ends up settled by A, the session that built the step, instead of by B.
+    const faulty = withFixture((raw) => raw.replaceAll(B, A))
     const graded = gradeFolder(faulty, assertions, vars()) as Graded
     expect(graded.ok).toBe(false)
+    const failed = graded.results.filter((r) => !r.ok).map((r) => r.label)
+    expect(failed.join('\n')).toContain('settled')
   })
 
   it('rejects a planted fault: the record lost its milestones', () => {
