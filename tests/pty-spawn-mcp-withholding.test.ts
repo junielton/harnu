@@ -123,18 +123,24 @@ describe('pty:create — Harnu MCP withholding once mission_* exists (Review Foc
     const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
     const missionOps = WIRED_TOOLS.filter((t) => t.op.startsWith('mission_'))
     expect(missionOps.map((t) => t.op).sort()).toEqual([
+      'mission_add_ac',
       'mission_add_check',
+      'mission_add_milestone',
       'mission_add_step',
+      'mission_attach',
       'mission_clear_blocker',
       'mission_create',
       'mission_get',
       'mission_import_legacy',
+      'mission_link',
       'mission_link_child',
       'mission_list',
       'mission_log',
       'mission_request_close',
       'mission_set_blocker',
+      'mission_set_done_when',
       'mission_set_end',
+      'mission_settle_ac',
       'mission_transfer_owner',
       'mission_update_step',
       'mission_verify_step'

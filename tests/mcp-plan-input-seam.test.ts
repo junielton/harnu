@@ -256,6 +256,48 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     campaignId: 'cmp-0000abcd',
     sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
   },
+  // Missions v4 S-24: the six verbs that exist in v4 alone.
+  mission_add_milestone: {
+    folder: ALLOWED,
+    missionId: 'mnt-0000abcd',
+    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    title: 'A test set we can trust'
+  },
+  mission_add_ac: {
+    folder: ALLOWED,
+    missionId: 'mnt-0000abcd',
+    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    stepId: 'stp-1',
+    text: 'Every test file has a score',
+    by: 'session'
+  },
+  mission_link: {
+    folder: ALLOWED,
+    missionId: 'mnt-0000abcd',
+    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    stepId: 'stp-1',
+    link: { kind: 'pr', ref: '12' }
+  },
+  mission_set_done_when: {
+    folder: ALLOWED,
+    missionId: 'mnt-0000abcd',
+    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    doneWhen: 'A score report opens for every candidate',
+    reason: 'The first Done when missed the report'
+  },
+  mission_settle_ac: {
+    folder: ALLOWED,
+    missionId: 'mnt-0000abcd',
+    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    stepId: 'stp-1',
+    criterionId: 'ac-1',
+    evidence: 'Opened the report and read every score'
+  },
+  mission_attach: {
+    folder: ALLOWED,
+    missionId: 'mnt-0000abcd',
+    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+  },
   // T654
   mission_transfer_owner: {
     folder: ALLOWED,

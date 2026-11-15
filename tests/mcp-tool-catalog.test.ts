@@ -97,6 +97,13 @@ const MUTATE_TOOLS = [
   // T654: the owner-transfer recovery verbs.
   'mission_transfer_owner',
   'campaign_transfer_owner',
+  // Missions v4 S-24: the v4-only verbs run free like the other mission writes.
+  'mission_add_milestone',
+  'mission_add_ac',
+  'mission_link',
+  'mission_set_done_when',
+  'mission_settle_ac',
+  'mission_attach',
   // Campaign ch.5a (T597): a local write, free like the mission writes.
   'rebase_stack'
 ] as const
@@ -358,6 +365,13 @@ describe('T120 declarative gate fields — the def is the single source of truth
     // T654: the owner-transfer recovery verbs run free like the other mission writes.
     'mission_transfer_owner',
     'campaign_transfer_owner',
+    // Missions v4 S-24: the v4-only verbs run free like the other mission writes.
+    'mission_add_milestone',
+    'mission_add_ac',
+    'mission_link',
+    'mission_set_done_when',
+    'mission_settle_ac',
+    'mission_attach',
     // Campaign ch.5a (T597): a local write, free like the mission writes.
     'rebase_stack'
   ]

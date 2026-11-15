@@ -584,6 +584,12 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   campaign_request_close: translateMission,
   // T654: the gate folder IS the catalog `folder`.
   mission_transfer_owner: translateMission,
+  mission_add_milestone: translateMission,
+  mission_add_ac: translateMission,
+  mission_link: translateMission,
+  mission_set_done_when: translateMission,
+  mission_settle_ac: translateMission,
+  mission_attach: translateMission,
   campaign_transfer_owner: translateMission,
   // Campaign ch.5a: the gate folder IS the catalog `folder`.
   rebase_stack: translateMission

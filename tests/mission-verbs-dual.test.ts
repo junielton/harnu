@@ -25,6 +25,7 @@ import { toolByName } from '../src/main/mcp/tool-catalog'
 import { buildPlanInput } from '../src/main/mcp/plan-input'
 import { parseToolInput } from '../src/main/mcp/validate'
 import { readMissionRecord } from '../src/main/missions/record-store'
+import { runV4 } from '../src/main/missions/verbs'
 import type { StepInput } from '../src/main/missions/state'
 
 const h = vi.hoisted(() => ({ userDataDir: '' }))
@@ -304,7 +305,7 @@ describe('the names both formats share serve the record in the format it is in',
     const blocked = ok(
       await call('mission_set_blocker', {
         missionId: id,
-        reason: 'the staging key is missing',
+        reason: 'The STAGING_API_KEY is missing from the shared vault',
         ask: 'Add the staging key',
         unblocks: 'the export can run',
         owner: 'operator',
@@ -423,6 +424,43 @@ describe('the caller is built from the transport, and the facts on the server', 
       await call('mission_get', { missionId: id, sessionId: LEADER, siblingRoots: [other] })
     )
     expect(get.json.title).toBe('Export the report as CSV')
+  })
+
+  it('the dispatch itself never reads inputs or siblingRoots from its arguments', async () => {
+    // The catalog schema drops unknown keys on the way in; this is the second line, one level down:
+    // `runV4` is handed the keys anyway and must not read them.
+    const id = await createV4()
+    const home = await readMissionRecord(repo, id)
+    if (!home.ok) throw new Error(home.error)
+    const dirOther = path.join(other, '.harnu', 'missions-v4')
+    await fs.mkdir(dirOther, { recursive: true })
+    await fs.writeFile(
+      path.join(dirOther, path.basename(home.file)),
+      readFileSync(home.file, 'utf8')
+        .replace('title: Export the report as CSV', 'title: A copy in a sibling clone')
+        .concat('\n### 2099-01-01T00:00:00Z · note\n\nThe newest entry of all.\n')
+    )
+    const deps = { inputsFor: async (): Promise<Record<string, StepInput>> => ({}) }
+    const actor = { kind: 'session' as const, sessionId: LEADER }
+
+    const close = await runV4(
+      'mission_request_close',
+      repo,
+      actor,
+      { missionId: id, inputs: { 'stp-1': { pr: 'merged' } } },
+      deps
+    )
+    expect(close.ok).toBe(false)
+    expect(close.ok === false && close.code).toBe('STEPS_OPEN')
+
+    const get = await runV4(
+      'mission_get',
+      repo,
+      actor,
+      { missionId: id, siblingRoots: [other] },
+      deps
+    )
+    expect(get.ok && get.title).toBe('Export the report as CSV')
   })
 
   it('a step added after a close request clears the request, so the operator is not told the session is ready', async () => {

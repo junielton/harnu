@@ -186,7 +186,15 @@ describe('mission_* catalog entries (design §4)', () => {
     // Mission v3 §3.6
     mission_add_check: { mutates: true },
     // T654
-    mission_transfer_owner: { mutates: true }
+    mission_transfer_owner: { mutates: true },
+    // Missions v4 S-24: the verbs that exist in v4 alone (their own suites: mission-verbs-dual and
+    // mission-verbs-contract).
+    mission_add_milestone: { mutates: true },
+    mission_add_ac: { mutates: true },
+    mission_link: { mutates: true },
+    mission_set_done_when: { mutates: true },
+    mission_settle_ac: { mutates: true },
+    mission_attach: { mutates: true }
   }
 
   it('declares exactly the S3 + S4 verbs, each op matching its name', () => {
