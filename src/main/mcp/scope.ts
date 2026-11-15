@@ -36,6 +36,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import * as path from 'node:path'
 import { mcpToolName } from './config-file'
 import { OBSERVE_MCP_ALLOW } from '../scheduler-core'
+import { MCP_TOOLS } from './tool-catalog'
 
 // ---- Roles and what each holds ---------------------------------------------------------
 
@@ -159,6 +160,32 @@ export function scopeKey(scope: Scope): string {
 
 const samePath = (a: string, b: string): boolean => path.resolve(a) === path.resolve(b)
 
+/**
+ * Which folder a pane or a terminal belongs to, as the registries know it (the server supplies them: this
+ * module stays free of electron). `undefined` is "no such pane": the verb answers that itself.
+ */
+export interface ScopeLookups {
+  paneFolder?: (paneId: string) => string | undefined
+  terminalFolder?: (terminalId: string) => string | undefined
+}
+
+/** The keys a verb's catalog schema takes (looking through a refine), so "addresses a pane" is read, not listed. */
+function schemaKeys(op: string): Set<string> {
+  let schema = MCP_TOOLS.find((t) => t.name === op)?.inputSchema as unknown as
+    { _def?: { schema?: unknown }; shape?: Record<string, unknown> } | undefined
+  while (schema?._def?.schema) schema = schema._def.schema as typeof schema
+  return new Set(Object.keys(schema?.shape ?? {}))
+}
+
+/** The list verbs that take an optional `folder`: left out, it is the observer's own, never "every folder". */
+const OBSERVER_DEFAULT_FOLDER: ReadonlySet<string> = new Set([
+  'browser_list',
+  'list_terminals',
+  'list_worktrees',
+  'list_containers',
+  'list_cleanup'
+])
+
 export type ScopeCall = { ok: true; args: Record<string, unknown> } | { ok: false; error: string }
 
 const refuse = (code: string, message: string): ScopeCall => ({
@@ -177,6 +204,7 @@ export function scopeCallRefusal(input: {
   op: string
   args: Record<string, unknown>
   scope: Scope
+  lookups: ScopeLookups
 }): ScopeCall {
   const { op, scope } = input
   const args = { ...input.args }
@@ -198,10 +226,41 @@ export function scopeCallRefusal(input: {
   }
   // A mission verb reads the repo of the folder it is given, so a folder left out is the worker's own and
   // never "every repo"; any other verb keeps what it was given (a folder it names must be its own).
-  if (op.startsWith('mission_') || op.startsWith('campaign_') || scope.role !== 'observer') {
+  if (
+    op.startsWith('mission_') ||
+    op.startsWith('campaign_') ||
+    scope.role !== 'observer' ||
+    OBSERVER_DEFAULT_FOLDER.has(op)
+  ) {
     args.folder = scope.folder
   }
-  if (scope.role === 'observer') return { ok: true, args }
+  if (scope.role === 'observer') {
+    // A pane or a terminal is addressed by id and carries its own folder: the observer reaches only those of
+    // its folder (readers too), whatever `folder` it passes. An id the registry does not know is the
+    // verb's own PANE_NOT_FOUND / TERMINAL_NOT_FOUND.
+    const keys = schemaKeys(op)
+    for (const [key, lookup, noun] of [
+      ['paneId', input.lookups.paneFolder, 'pane'],
+      ['terminalId', input.lookups.terminalFolder, 'terminal']
+    ] as const) {
+      const id = args[key]
+      if (!keys.has(key) || typeof id !== 'string' || id === '') continue
+      const owner = lookup ? lookup(id) : scope.folder
+      if (lookup === undefined) {
+        return refuse(
+          'SCOPE_FOLDER',
+          `this session cannot tell which folder ${noun} ${id} belongs to, so it does not reach it.`
+        )
+      }
+      if (owner !== undefined && !samePath(owner, scope.folder)) {
+        return refuse(
+          'SCOPE_FOLDER',
+          `${noun} ${id} belongs to another folder; this session reaches only the ${noun}s of ${scope.folder}.`
+        )
+      }
+    }
+    return { ok: true, args }
+  }
 
   const missionId = args.missionId
   if (typeof missionId === 'string' && missionId !== '' && missionId !== scope.missionId) {
