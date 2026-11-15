@@ -206,6 +206,37 @@ function v4Problems(skill: string): string[] {
     out.push('the leader does not own what the steward did')
   if (!/never pushes/i.test(all)) out.push('rebase_stack is not said to never push')
 
+  // Delta 1 · one card per step: `create_card` cannot stamp a step, so a card made by hand and then dispatched
+  // with `create_session` becomes a SECOND card. Two paths, never both.
+  if (!/dispatch it by ONE of two paths, never both/.test(all))
+    out.push('the two dispatch paths are not stated')
+  if (
+    !/`create_session` creates the step's card itself/.test(all) ||
+    !/you create no card first/.test(all)
+  )
+    out.push('create_session is not said to create the card, with no card made first')
+  if (!/`create_card` cannot stamp a step/.test(all) || !/a second card for the step/.test(all))
+    out.push('the second card a hand-made card would cause is not explained')
+  if (!/`submit_manifest` binds a card you made/.test(all))
+    out.push('submit_manifest is not the way to bind a card')
+  if (!/Cards from a spec \(below\) always take the second path/.test(all))
+    out.push('cards from a spec do not take the manifest path')
+  // Delta 1 · the last step has a home.
+  if (
+    !/lives in the last milestone and stays last/.test(all) ||
+    !/insert every step added later before it/.test(all)
+  )
+    out.push('the last step has no placement rule')
+  // Delta 1 · new work never opens a campaign. Built from parts so this guard does not contain the retired word.
+  const retiredWord = ['cam', 'paign'].join('')
+  const opens = new RegExp(
+    `\\b(?:open|opens|opening|declare|declares|create|creates|start|starts|begin|begins)\\b[^.]{0,40}\\b${retiredWord}`,
+    'i'
+  )
+  const perStage = new RegExp(`\\b(?:each|every) chapter\\b[^.]{0,40}${retiredWord}`, 'i')
+  if (opens.test(all) || perStage.test(all))
+    out.push('tells an orchestrator to open a ' + retiredWord + ' for new work')
+
   // What this delivery learned.
   if (!/change of instructions[^.]*delta file the message names/i.test(all))
     out.push('a change of instructions is not a delta file')
