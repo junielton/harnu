@@ -705,7 +705,7 @@ describe('a board dispatch binds the step like the drain does (S-26 delta 1)', (
   beforeAll(() => {
     registerRoadmapHandlers(() => null)
   })
-  const ipc = async (channel: string, args: unknown): Promise<any> => {
+  const ipc = async (channel: string, args: unknown): Promise<Record<string, unknown>> => {
     const fn = h.handlers.get(channel)
     if (!fn) throw new Error(`${channel} was not registered`)
     return fn({}, args)
