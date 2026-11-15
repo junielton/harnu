@@ -93,7 +93,7 @@ describe('the awareness doc mission text (AC-84)', () => {
     expect(flat).toMatch(
       /only the operator (starts|decides)[^.]*hand-off|hand-off[^.]*(is|belongs to) the operator/i
     )
-    expect(flat).toMatch(/never switches itself/i)
+    expect(flat).toMatch(/never switch (yourself|itself)|never switches itself/i)
     expect(flat).not.toMatch(/operator blocker, not a hand-?off/i)
 
     // Decision 11: an ordinary session's id is a claim, and the kind of caller comes from the transport.
@@ -104,7 +104,8 @@ describe('the awareness doc mission text (AC-84)', () => {
 
   it('the section names the sixteen v4 verbs and none the v4 model removed', () => {
     const section = missionSection(DOC)
-    for (const verb of V4_VERBS) expect(section, verb).toContain(`\`${verb}\``)
+    // A verb is named bare or with its arguments: `mission_link` or `mission_link({ … })`.
+    for (const verb of V4_VERBS) expect(section, verb).toMatch(new RegExp(`\`${verb}[\`({]`))
     // The v3-only verbs are in the verb index until the catalog drops them, never in the mission text.
     for (const verb of [
       'mission_link_child',
