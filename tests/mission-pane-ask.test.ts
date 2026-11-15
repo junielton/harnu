@@ -480,6 +480,21 @@ describe('AC-56 — a session with no mission', () => {
     expect(qa('[data-test="attach-row"]')).toHaveLength(2)
   })
 
+  it('keeps the failure on screen when the refused mission has left the list', async () => {
+    let gone = false
+    await mountPane({
+      answer: () => noneReply(gone ? ROWS.slice(1) : ROWS)
+    })
+    door.mockImplementation(async () => {
+      gone = true
+      return { ok: false, code: 'NOT_FOUND', error: 'NOT_FOUND: gone' }
+    })
+    await click(`[data-test="attach-row"][data-mission="${MISSION}"] [data-test="attach-open"]`)
+    await click('[data-test="attach-confirm-yes"]')
+    expect(qa('[data-test="attach-row"]')).toHaveLength(1)
+    expect(text('[data-test="attach-error"]')).toMatch(/no longer|could not/i)
+  })
+
   it('Start a new mission writes no record: it puts the instruction into this session', async () => {
     liveWriter(SESSION)
     await mountPane({ answer: () => noneReply() })
@@ -540,6 +555,13 @@ describe('AC-57 — a session asks to join', () => {
     expect(card?.textContent).toContain('Measure the spec skill, then fix what the numbers show')
     expect(q('[data-test="attach-allow"]')).not.toBeNull()
     expect(q('[data-test="attach-deny"]')).not.toBeNull()
+  })
+
+  it('draws the request without the picker, as the mockup does, until it is answered', async () => {
+    await mountPane({ selected: ASKING, answer: askedBy(ASKING) })
+    expect(q('[data-test="attach-request"]')).not.toBeNull()
+    expect(qa('[data-test="attach-row"]')).toHaveLength(0)
+    expect(q('[data-test="attach-start"]')).toBeNull()
   })
 
   it('Allow goes through the decideAttach door for that mission and request', async () => {
