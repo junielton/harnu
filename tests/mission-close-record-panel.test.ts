@@ -12,7 +12,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { i18n } from '@renderer/i18n'
 import type { MissionView } from '../src/main/mission-ipc'
 import type { MemoryDraft } from '../src/main/consolidator-core'
-import MissionPill from '../src/renderer/src/components/MissionPill.vue'
+import MissionPill from './helpers/LegacyMissionPill.vue'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { fixtureView } from './helpers/mission-v3-view'
 

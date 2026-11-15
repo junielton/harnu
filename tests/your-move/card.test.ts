@@ -24,7 +24,7 @@ const sessionsFake = vi.hoisted(() => ({
 }))
 const missionsFake = vi.hoisted(() => ({
   requestPopover: vi.fn(),
-  isV3Mission: vi.fn((_id: string) => false)
+  chooseMission: vi.fn()
 }))
 const helpersFake = vi.hoisted(() => ({
   currentWorktreePath: '/org/proj/www',
@@ -101,7 +101,7 @@ beforeEach(() => {
   sessionsFake.markSessionSeen.mockClear()
   helpersFake.toggleMissionHelper.mockClear()
   missionsFake.requestPopover.mockClear()
-  missionsFake.isV3Mission.mockReturnValue(false)
+  missionsFake.chooseMission.mockClear()
   helpersFake.panesForCurrentWorktree = []
 })
 afterEach(() => {
@@ -328,8 +328,7 @@ describe('YourMoveCard in the Return here zone', () => {
     expect(helpersFake.toggleMissionHelper).toHaveBeenCalledWith('/org/proj/www')
   })
 
-  it('Open mission on a v3 mission opens its popover, as it always did, not the pane', async () => {
-    missionsFake.isV3Mission.mockReturnValue(true)
+  it('Open mission on a v3 mission opens the pane too: every record lives there (S-35)', async () => {
     const w = await mountZone([
       card({ id: 'c4', source: 'mission', mission: { missionId: 'mnt-1' } })
     ])
@@ -339,8 +338,11 @@ describe('YourMoveCard in the Return here zone', () => {
       .find((b) => b.text() === 'Open mission')!
       .trigger('click')
     expect(sessionsFake.activateSession).toHaveBeenCalledWith('sess-0001')
-    expect(missionsFake.requestPopover).toHaveBeenCalledWith('mnt-1')
-    expect(helpersFake.toggleMissionHelper).not.toHaveBeenCalled()
+    expect(helpersFake.toggleMissionHelper).toHaveBeenCalledWith('/org/proj/www')
+    // No popover is asked for, and the pane shows the mission the card names, not the session's default one
+    // (S-35 delta 1: a leader of several missions must land on the one the card is about).
+    expect(missionsFake.requestPopover).not.toHaveBeenCalled()
+    expect(missionsFake.chooseMission).toHaveBeenCalledWith('sess-0001', 'mnt-1')
   })
 
   it('Open mission leaves the pane alone when it is already open', async () => {

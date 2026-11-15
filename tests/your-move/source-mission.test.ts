@@ -43,6 +43,12 @@ const allKinds: MissionYouItem[] = [
 
 const open = (s: YourMoveState) => s.cards.filter((c) => c.closedAt === undefined)
 
+/** The record store answered for these roots and holds nothing: a mission absent from the list is then really gone. */
+const readEmptyFor = (
+  roots: readonly string[]
+): ReadonlyMap<string, { views: never[]; v4Ids: Set<string>; unreadable: boolean }> =>
+  new Map(roots.map((r) => [r, { views: [], v4Ids: new Set<string>(), unreadable: false }]))
+
 describe('missionDrafts', () => {
   it('maps each owed kind to the table above, and approvals and needs-input to nothing', () => {
     const drafts = missionDrafts(view('mnt-1', allKinds), 'live')
@@ -129,7 +135,8 @@ describe('reconcileMissions', () => {
       mint,
       1_000
     )
-    const b = reconcileMissions(a, result([]), roots, 'live', mint, 2_000)
+    // The records of the repo have been read (S-35 delta 1: before that nothing closes by absence).
+    const b = reconcileMissions(a, result([]), roots, 'live', mint, 2_000, readEmptyFor(roots))
     expect(open(b)).toHaveLength(0)
     expect(b.cards[0]).toMatchObject({ closedBy: 'source-resolved' })
   })
@@ -253,7 +260,15 @@ describe('which missions the queue follows', () => {
       ownerArchived: (id) => id === 'sess-archived',
       folderOff: () => false
     })
-    const after = reconcileMissions(filed, picked.result, picked.roots, 'live', mint, 2_000)
+    const after = reconcileMissions(
+      filed,
+      picked.result,
+      picked.roots,
+      'live',
+      mint,
+      2_000,
+      readEmptyFor(roots)
+    )
     expect(open(after).map((c) => c.mission?.missionId)).toEqual(['mnt-2'])
   })
 

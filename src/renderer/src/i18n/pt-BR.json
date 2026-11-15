@@ -589,10 +589,6 @@
       "notRunning": "{name} não está rodando. Retome-a e envie a pergunta de novo.",
       "close": "Fechar"
     },
-    "v3": {
-      "title": "Esta missão ainda é uma missão v3.",
-      "body": "Abra-a pela pílula da missão no topo."
-    },
     "close": {
       "open": "Fechar missão…",
       "title": "Fechar esta missão?",
@@ -646,6 +642,10 @@
         "sessions": "Aperte a linha Sessões, no fim.",
         "big-waiting": "Aperte “N esperando você” na caixa do próximo passo."
       }
+    },
+    "leads": {
+      "label": "Esta sessão lidera {n} missões",
+      "choose": "Escolha a missão a mostrar"
     }
   },
   "memoryPane": {
@@ -5302,6 +5302,10 @@
         "session-died": "Sessão encerrada",
         "compaction": "Compactada"
       }
+    },
+    "unreadable": {
+      "title": "Não foi possível ler um arquivo de missão",
+      "body": "{files}. A missão que ele guarda fica oculta até o arquivo ser corrigido ou removido."
     }
   },
   "campaign": {

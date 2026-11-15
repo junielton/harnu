@@ -122,18 +122,14 @@ async function run(action: CardAction): Promise<void> {
     }
     case 'open-mission': {
       sessions.activateSession(props.card.sessionId)
-      // A v3 mission keeps its popover until the popover is retired (as on main); a v4 mission lives in the
-      // pane beside its leader session: open the session, then the pane.
-      const missions = useMissionsStore()
-      if (missions.isV3Mission(action.missionId)) {
-        missions.requestPopover(action.missionId)
-        return
-      }
+      // Every record lives in the pane beside its leader session (S-35): open the session, then the pane,
+      // on the mission the card names (a leader of several would otherwise land on its default one).
       const helpers = useHelpersStore()
       const worktree = helpers.currentWorktreePath
       if (worktree && !helpers.panesForCurrentWorktree.some((p) => p.type === 'mission')) {
         helpers.toggleMissionHelper(worktree)
       }
+      void useMissionsStore().chooseMission(props.card.sessionId, action.missionId)
       return
     }
   }

@@ -388,6 +388,26 @@ export async function listMissionRecords(
   return { records, unreadable: bad }
 }
 
+/**
+ * The v4 record files of `root` that cannot be read (S-35): a file that does not parse, or cannot be opened.
+ * A reader that skips such a file would hide a mission, so the list names each one and the app raises a
+ * notice. Reads only; `[]` when the repo has no v4 directory.
+ */
+export async function unreadableRecordFiles(root: string): Promise<string[]> {
+  let entries: FileEntry[]
+  try {
+    entries = await entriesOf(v4RecordsDir(root), MISSION_FILE_RE)
+  } catch {
+    return []
+  }
+  const bad: string[] = []
+  for (const entry of entries) {
+    const read = await readV4(root, entry).catch(() => null)
+    if (!read || !read.ok) bad.push(entry.name)
+  }
+  return bad
+}
+
 // ---- Writing -------------------------------------------------------------------
 
 /** In-process lock per v4 mission id: one read-modify-write at a time. */

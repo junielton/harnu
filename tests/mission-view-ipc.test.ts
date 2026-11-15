@@ -21,6 +21,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync
 } from 'node:fs'
 import * as os from 'node:os'
@@ -336,12 +337,16 @@ describe("the view carries the pane's data", () => {
   it('returns the mission id, and a later call that names it reads one record and lists none', async () => {
     seed(record())
     seed(record({ id: 'mnt-d0000002', title: 'Other' }))
+    // Written last, to the second: the file clock decides which one is shown.
+    const later = new Date(Date.now() + 5_000)
+    utimesSync(path.join(v4Dir(), 'mnt-d0000002-score-report.md'), later, later)
     const first = await ipc.buildMissionV4View(
       { folder: root, sessionId: LEADER, missionId: undefined },
       { facts: factsDeps() }
     )
-    // The session leads both missions: it must name one.
-    expect(first).toMatchObject({ state: 'refused', code: 'AMBIGUOUS_MISSION' })
+    // The session leads both missions: it is never refused (S-35). The one written last is shown (here the
+    // second file); the pane offers the other.
+    expect(first).toMatchObject({ state: 'mission', missionId: 'mnt-d0000002' })
 
     const one = mkdtempSync(path.join(os.tmpdir(), 'harnu-view-one-'))
     try {

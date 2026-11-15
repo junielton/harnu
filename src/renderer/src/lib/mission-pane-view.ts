@@ -3,8 +3,7 @@
  * (design.md §6 "Mission pane"). Pure: no store, no `window.api`.
  *
  * The channel answers `{ state: 'mission' | 'none' | 'refused' }` (`mission:v4View`). This module
- * decides what a reply MEANS for one session — a v4 mission to draw, no mission, a refusal, or a v3
- * record the popover still serves — and words the numbers the server already counted. It never recounts:
+ * decides what a reply MEANS for one session — a mission to draw, no mission or a refusal — and words the numbers the server already counted. It never recounts:
  * the pill's "4/21 · 3 for you" is `progress.done`, `progress.total` and the length of the waiting list,
  * and the state is the identifier translated through i18n, never the English words in the reply.
  */
@@ -18,7 +17,7 @@ type Translate = (key: string, values?: Record<string, unknown>, plural?: number
 export type MissionV4Reply = Extract<MissionV4ViewReply, { state: 'mission' }>
 
 /** What the pane draws: a state of its own, not a gap. */
-export type PaneKind = 'loading' | 'mission' | 'none' | 'refused' | 'v3'
+export type PaneKind = 'loading' | 'mission' | 'none' | 'refused'
 
 /**
  * What a reply means for `sessionId`.
@@ -28,7 +27,8 @@ export type PaneKind = 'loading' | 'mission' | 'none' | 'refused' | 'v3'
  *   (a hand-off closed its row) must never show another session's mission here.
  * - A mission the operator closed is `none` too: it leaves the pane and the session shows the
  *   no-mission state.
- * - A v3 record (`source` other than `v4`) is `v3`: the v3 stack serves it, the pane does not draw it.
+ * - Every other record is a `mission`, whatever file it came from (S-35): a v3 record is read as v4 by the view
+ *   channel, so the pane draws it like any other. The first door use on it creates its v4 copy.
  */
 export function classifyReply(reply: MissionV4ViewReply | null, sessionId: string): PaneKind {
   if (reply === null) return 'loading'
@@ -36,10 +36,10 @@ export function classifyReply(reply: MissionV4ViewReply | null, sessionId: strin
   if (reply.state === 'none') return 'none'
   if (!reply.sessions.some((row) => row.id === sessionId && row.open)) return 'none'
   if (reply.detail.status === 'closed') return 'none'
-  return reply.source === 'v4' ? 'mission' : 'v3'
+  return 'mission'
 }
 
-/** The v4 mission this reply holds for `sessionId`, or `null` (anything else the pane or pill shows). */
+/** The mission this reply holds for `sessionId`, or `null` (anything else the pane or pill shows). */
 export function v4MissionOf(
   reply: MissionV4ViewReply | null,
   sessionId: string
@@ -47,7 +47,7 @@ export function v4MissionOf(
   return classifyReply(reply, sessionId) === 'mission' ? (reply as MissionV4Reply) : null
 }
 
-/** Whether a NAMED read should be dropped and asked again by session: it is neither a v4 nor a v3 mission of it. */
+/** Whether a NAMED read should be dropped and asked again by session: it is not a mission of this session. */
 export function isStaleNamedRead(reply: MissionV4ViewReply | null, sessionId: string): boolean {
   const kind = classifyReply(reply, sessionId)
   return kind === 'none' || kind === 'refused'

@@ -9,7 +9,7 @@
  *   RoadmapBoard.dispatch       RoadmapBoard.vue                  Roadmap board → an AGENT-authored card's "Dispatch"
  *   MissionsReviewDialog        MissionsReviewDialog.vue          Activity bell → a mission row (owner session absent)
  *   MissionBulkCloseConfirmDialog  MissionBulkCloseConfirmDialog.vue   …→ Review → "Close selected" (stacked over the review)
- *   MissionCloseConfirmDialog   MissionCloseConfirmDialog.vue     owner session selected → Topbar mission pill → End mission…
+ *   MissionCloseConfirmDialog   MissionCloseConfirmDialog.vue     owner session selected → Topbar mission pill → Mission pane → Close mission…
  *   MissionHandoffDialog        MissionHandoffDialog.vue          a v4 mission's leading session selected → Topbar pill → Sessions → "Continue in a new session…"
  *
  * A route is `{ id, file, reach, note?, open({ page, app, seed }), close?({ page }) }`. `open`
@@ -94,18 +94,9 @@ async function tidy(page) {
   await page.mouse.move(640, 450)
 }
 
-/** Clear stray dialogs, a stray bell popover and a stray mission popover. */
+/** Clear stray dialogs and a stray bell popover (the Mission pane keeps its open state between routes). */
 async function reset(page) {
   await closeAllDialogs(page)
-  if (
-    await page
-      .locator('[data-test="mission-count"]')
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await page.keyboard.press('Escape')
-    await page.waitForTimeout(200)
-  }
   const bell = page.locator('[data-dsqa="topbar-bell"]')
   if ((await bell.getAttribute('aria-expanded').catch(() => 'false')) === 'true') await bell.click()
   await tidy(page)
@@ -464,30 +455,23 @@ export const ROUTES_BOARD_MISSIONS = [
     reach: 'seed',
     note:
       'Needs the mission OWNER session in the sidebar: the route writes a transcript for it (the seed does not) and selects it. ' +
-      'Selecting a session starts a `claude --resume` PTY; the pill and popover do not depend on that process.',
+      "The seeded mission is a v3 file: since the cut-over its pill opens the Mission pane like any record, and the pane's " +
+      '"Close mission…" opens the dialog. The pane keeps its open state between runs in one app, so it is opened only when it is closed. ' +
+      'Selecting a session starts a `claude --resume` PTY; the pill and the pane do not depend on that process.',
     open: async (ctx) => {
       const { page } = ctx
       await reset(page)
       await selectOwnerSession(ctx)
       await tidy(page)
-      await pill(page).click()
-      await page.locator('[data-test="mission-end-open"]').click()
+      const pane = page.locator('[data-dsqa="mission-pane"]')
+      if (!(await pane.isVisible().catch(() => false))) await pill(page).click()
+      await page.locator('[data-test="mission-close-open"]').click()
       await page
         .locator('[data-test="mission-close-confirm"]')
         .waitFor({ state: 'visible', timeout: 8000 })
       await dialogReady(page)
     },
-    close: async ({ page }) => {
-      await closeAllDialogs(page)
-      if (
-        await page
-          .locator('[data-test="mission-count"]')
-          .isVisible()
-          .catch(() => false)
-      ) {
-        await pill(page).click()
-      }
-    }
+    close: async ({ page }) => closeAllDialogs(page)
   },
   {
     id: 'MissionHandoffDialog',

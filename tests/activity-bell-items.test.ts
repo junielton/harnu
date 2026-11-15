@@ -1,29 +1,29 @@
 // @vitest-environment jsdom
 /**
  * BUG-173 S4 (spec §3.4, I-6, I-7) — the Activity bell renders a record's
- * `items` as clickable rows, and `MissionPill` answers the popover request.
+ * `items` as clickable rows, and an Activity row opens the Mission pane.
  *
  * - up to 5 rows (`MISSION_ROWS_MAX`) plus a "Review all {n}" button past that;
  * - a row with its owner loaded activates the owner session, then asks the
- *   missions store to open that mission's popover — without dismissing the entry;
+ *   missions store to open that mission (its pane, S-35) — without dismissing the entry;
  * - a row whose owner is not loaded shows a muted hint and opens the review
  *   focused on that mission;
  * - a record without `items` behaves exactly as before (click navigates + dismisses).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import { i18n } from '@renderer/i18n'
 import ActivityBell from '../src/renderer/src/components/ActivityBell.vue'
-import MissionPill from '../src/renderer/src/components/MissionPill.vue'
+import { useHelpersStore } from '../src/renderer/src/stores/helpers'
+import { useUiStore } from '../src/renderer/src/stores/ui'
 import { useMissionsStore } from '../src/renderer/src/stores/missions'
 import {
   useNotificationsStore,
   type NotificationItem
 } from '../src/renderer/src/stores/notifications'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
-import { fixtureView } from './helpers/mission-v3-view'
 
 vi.mock('../src/renderer/src/lib/notification-sound', () => ({ playNotificationSound: vi.fn() }))
 
@@ -114,7 +114,7 @@ describe('ActivityBell — grouped entry rows', () => {
 })
 
 describe('ActivityBell — item click', () => {
-  it('owner loaded: activates the owner, requests that popover, keeps the entry', async () => {
+  it('owner loaded: activates the owner, opens that mission, keeps the entry', async () => {
     post([item(1), item(2)])
     const w = await openBell()
     await w.findAll('[data-dsqa="activity-item"]')[1].trigger('click')
@@ -182,56 +182,43 @@ describe('ActivityBell — records without items are unchanged (I-7)', () => {
   })
 })
 
-describe('MissionPill — answers popoverRequest', () => {
-  let pill: VueWrapper | null = null
-  afterEach(() => {
-    pill?.unmount()
-    pill = null
-  })
+describe('an Activity row opens the Mission pane (S-35)', () => {
+  const OWNER = 'sess-1'
+  const panes = (): string[] => useHelpersStore().panesForCurrentWorktree.map((p) => p.type)
 
-  async function mountPill(
-    request: 'before' | 'after' | 'other'
-  ): Promise<{ w: VueWrapper; id: string }> {
-    const v = fixtureView('faq-like')
-    ;(window as unknown as { api: unknown }).api = {
-      missionList: vi.fn(async () => ({ views: [v], unreadable: [] })),
-      missionOperatorDoor: vi.fn()
-    }
-    useSessionsStore().folders = [{ path: '/repo', sessions: [] }] as never
-    const missions = useMissionsStore()
-    await missions.refresh()
-    const id = v.mission.id
-    const wanted = request === 'other' ? 'mnt-someone-else' : id
-    if (request === 'before') missions.requestPopover(wanted)
-    const w = mount(MissionPill, {
-      attachTo: document.body,
-      props: { sessionId: v.mission.owner.sessionId },
-      global: { plugins: [i18n] }
-    })
-    pill = w
-    await flushPromises()
-    if (request !== 'before') {
-      missions.requestPopover(wanted)
-      await flushPromises()
-    }
-    return { w, id }
+  function select(): void {
+    const sessions = useSessionsStore()
+    sessions.folders = [
+      { path: '/repo', sessions: [{ sessionId: OWNER, projectPath: '/repo' }] }
+    ] as never
+    sessions.select(OWNER)
   }
-
-  it('opens its popover for a request made before it mounted, and consumes it', async () => {
-    const { w } = await mountPill('before')
-    expect(w.get('button').attributes('aria-expanded')).toBe('true')
-    expect(useMissionsStore().popoverRequest).toBeNull()
+  beforeEach(() => {
+    ;(window as unknown as { api: unknown }).api = {
+      missionList: vi.fn(async () => ({ views: [], unreadable: [] })),
+      missionOperatorDoor: vi.fn(),
+      helpersGet: vi.fn(async () => null),
+      helpersSet: vi.fn(async () => undefined)
+    }
   })
 
-  it('opens its popover for a request made while mounted, and consumes it', async () => {
-    const { w } = await mountPill('after')
-    expect(w.get('button').attributes('aria-expanded')).toBe('true')
-    expect(useMissionsStore().popoverRequest).toBeNull()
+  it('opens the pane of the selected owner, and never a popover', () => {
+    select()
+    useUiStore().openNavigableView('mission', { missionId: 'mnt-1' })
+    expect(panes()).toEqual(['mission'])
+    expect(useUiStore().popovers.missionProgress).toBe(false)
   })
 
-  it('ignores a request for another mission and leaves it pending', async () => {
-    const { w } = await mountPill('other')
-    expect(w.get('button').attributes('aria-expanded')).toBe('false')
-    expect(useMissionsStore().popoverRequest).toMatchObject({ missionId: 'mnt-someone-else' })
+  it('leaves an open pane open', () => {
+    select()
+    const missions = useMissionsStore()
+    missions.requestPopover('mnt-1')
+    missions.requestPopover('mnt-1')
+    expect(panes()).toEqual(['mission'])
+  })
+
+  it('opens nothing without a selected session', () => {
+    useMissionsStore().requestPopover('mnt-1')
+    expect(panes()).toEqual([])
   })
 })
