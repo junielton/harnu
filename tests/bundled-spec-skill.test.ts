@@ -1125,7 +1125,9 @@ function userGuideProblems({ userDoc, changelog, skill }: Docs): string[] {
       problems.push('the section does not say what it writes')
     if (
       !/`Approve this spec\?`|"Approve this spec\?"/.test(sec) ||
-      !/\*\*Mark verified\*\*/.test(sec)
+      !/Mission pane/.test(sec) ||
+      !/tick the criterion/.test(sec) ||
+      /Mark verified/.test(sec)
     )
       problems.push('the section does not say how to approve')
     if (!sec.includes('`/harnu:spec check`') || !sec.includes('`--cards`'))
@@ -1202,8 +1204,8 @@ const S8_MUTATIONS: Record<string, Mutation[]> = {
     },
     {
       target: 'userDoc',
-      find: '**Mark verified**',
-      replace: 'Verify',
+      find: 'tick the criterion',
+      replace: 'verify the step',
       why: 'the section says how to approve'
     },
     {
