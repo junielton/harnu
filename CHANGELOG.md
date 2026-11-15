@@ -42,6 +42,14 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **The skills Harnu ships now speak version 4 missions.** `mission`, `status`, `report-back`, `orchestrate-delivery`, `delivery-verifier`, `delivery-watchdog`, `spec`, `one-by-one`, `grill-me`, `step-by-step`, `your-move` and `draft-to-prompt` were rewritten, and they are much shorter. A plan is milestones and steps, and every step carries criteria; a second session settles each criterion from evidence; there is no steward, so the session that leads a mission starts its own verifiers, nudges a stalled session and rebases a stack itself, and `delivery-watchdog` is only the read-only sweep. What is yours stays yours: you tick the criteria that only you can judge, answer a blocker with **Done, continue** in the Mission pane, and decide a hand-off to a fresh session (the leader never switches itself, and there is no prompt to paste). Skills are off until you switch them on in **Settings → Skills**, and the Skills user page says all of this in plain words. A new test now reads every skill Harnu ships and fails on a retired word or a verb Harnu no longer has.
 
+- **Activity and the missions that wait on you.** A row in the Activity entry that names a mission now always lands somewhere: it opens the session that leads the mission and its Mission pane, or, when that session is not open in this window, it shows a notice that names the mission and says why it cannot open from here. The entry lists every mission that is waiting on you, with no "Review all" row and no second list to open. A mission you had paused the steward of before this version no longer shows "The steward is paused" as something you owe, and its card in Your move closes by itself, because there is no steward left to resume; nothing else it was waiting on changes, no sound plays, and the mission's file is not touched.
+
+- A steward an older version left in the Scheduler's list never shows as one of your workers.
+
+### Removed
+
+- **The old mission screens are gone.** The mission and campaign popovers, the step rail, the Missions review and bulk-close dialogs, the steward pause dialog and the **Stewards** block in the Scheduler are removed. Every mission, including the ones you started before this version, opens in the Mission pane, and nothing else lists your missions across a repo except the pane's own picker when a session has no mission.
+
 ### Fixed
 
 - A leader that did a step itself, with no other session linked to it, no longer settles that step's criteria as if it were a second session: its check is recorded as a self-check and the criterion stays open.
