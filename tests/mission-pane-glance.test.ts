@@ -162,6 +162,18 @@ describe('AC-8 — a narrow pane stays usable: no minimum width, a narrow layout
     expect(root.getAttribute('data-width-mode')).toBe('narrow')
   })
 
+  it('the disclosure lines wrap instead of holding a fixed-width label (found in the 110 px capture)', async () => {
+    await mountPane(realReply('default'))
+    await setPaneWidth(110)
+    for (const sel of ['[data-test="tree-toggle"]', '[data-test="sessions-toggle"]']) {
+      const toggle = q(sel) as HTMLElement
+      expect(toggle.className, sel).toContain('flex-wrap')
+      for (const label of [...toggle.querySelectorAll<HTMLElement>('span')]) {
+        expect(label.className, `${sel}: ${label.textContent}`).not.toContain('shrink-0')
+      }
+    }
+  })
+
   it('at 110 px the body never scrolls sideways and the glance keeps its title, bar and next step', async () => {
     await mountPane(realReply('default'))
     await setPaneWidth(110)
