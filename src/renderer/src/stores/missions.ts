@@ -67,6 +67,7 @@ import {
   type MissionModel
 } from '../lib/mission-view'
 import { playNotificationSound } from '../lib/notification-sound'
+import { sampleOf, type Sample, type SampleState } from '../lib/mission-sample'
 import {
   useNotificationsStore,
   type NotificationItem,
@@ -467,6 +468,13 @@ export const useMissionsStore = defineStore('missions', () => {
     const selected = sessions.selectedSession
     const mission = selected ? v4MissionForSession(selected.sessionId) : null
     const door = window.api.missionHandOff
+    if (sampleState.value !== null) {
+      return {
+        ok: false,
+        code: 'SAMPLE',
+        error: 'SAMPLE: this is a sample, so no session was started.'
+      }
+    }
     if (!selected || !mission || typeof door !== 'function') {
       return {
         ok: false,
@@ -512,6 +520,7 @@ export const useMissionsStore = defineStore('missions', () => {
    * reply is always a value, never a throw: the caller words what to do from `code`.
    */
   async function runV4Door(call: V4DoorCall): Promise<MissionV4DoorReply> {
+    if (sampleState.value !== null) return sampleDoorReply()
     const selected = sessions.selectedSession
     const mission = selected ? v4MissionForSession(selected.sessionId) : null
     if (!selected || !mission) return noMissionToActOn()
@@ -525,10 +534,14 @@ export const useMissionsStore = defineStore('missions', () => {
    * as {@link runV4Door}: never a throw, and the view is read again after the reply.
    */
   async function runV4DoorOn(missionId: string, call: V4DoorCall): Promise<MissionV4DoorReply> {
+    if (sampleState.value !== null) return sampleDoorReply()
     const selected = sessions.selectedSession
     if (!selected) return noMissionToActOn()
     return callV4Door(selected.projectPath, missionId, call)
   }
+
+  /** A door pressed on the sample: nothing changed, nothing was called, and the view is not read. */
+  const sampleDoorReply = (): MissionV4DoorReply => ({ ok: true, changed: false })
 
   const noMissionToActOn = (): MissionV4DoorReply => ({
     ok: false,
@@ -557,6 +570,38 @@ export const useMissionsStore = defineStore('missions', () => {
     // `loadV4` (not `refreshV4`) so a read already in flight, which may predate the door, is dropped.
     await loadV4()
     return res
+  }
+
+  // ---- Missions v4 (S-22): the sample and the close -----------------------------------------------------------
+  /**
+   * The sample mission the pane shows, or `null`. A sample is built in the renderer from nothing (see
+   * `lib/mission-sample.ts`): it has no record, so no door may reach the main process while one shows. Every
+   * door answers "nothing changed" without a call and without reading the view; the hand-off refuses in words.
+   * Nothing but the pane reads it, so the pill, the sidebar and the other readers never see a sample.
+   */
+  const sampleState = ref<SampleState | null>(null)
+  const sampleView = computed<Sample | null>(() =>
+    sampleState.value ? sampleOf(sampleState.value) : null
+  )
+  function showSample(state: SampleState | null): void {
+    sampleState.value = state
+  }
+
+  /**
+   * Close the mission the selected session is in: the operator's one end door (S-22), as delivered or
+   * discarded, with an optional reason. It never refuses for an open matter: those come back as warnings, and
+   * the view's own (counted with the facts) are what the dialog lists before the operator confirms. Through
+   * {@link runV4Door}: the view is read again after the reply, and a closed mission is then no mission here.
+   */
+  function closeMission(args: {
+    closedAs: 'delivered' | 'discarded'
+    reason?: string
+  }): Promise<MissionV4DoorReply> {
+    return runV4Door({
+      door: 'close',
+      closedAs: args.closedAs,
+      ...(args.reason ? { reason: args.reason } : {})
+    })
   }
 
   /** The v4 mission this session is attached to, or `null` (none, v3, refused, closed or not answered yet). */
@@ -817,6 +862,10 @@ export const useMissionsStore = defineStore('missions', () => {
     attachAsksForSession,
     runV4Door,
     runV4DoorOn,
+    closeMission,
+    sampleState,
+    sampleView,
+    showSample,
     handOffPending,
     handoffDismissedAt,
     dismissHandoff,

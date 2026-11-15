@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Flag } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import {
   nextLook,
@@ -20,7 +21,7 @@ import {
  * review of several) draws no button until the slice that owns its door lands.
  */
 const props = defineProps<{ detail: MissionV4Reply['detail'] }>()
-const emit = defineEmits<{ openStep: [stepId: string] }>()
+const emit = defineEmits<{ openStep: [stepId: string]; close: [] }>()
 
 const { t } = useI18n()
 
@@ -30,6 +31,7 @@ const look = computed<NextLook>(() => nextLook(props.detail))
 const expanded = ref(false)
 
 const primaryStep = computed(() => (next.value ? waitingStepId(next.value) : null))
+const nextIsClose = computed(() => next.value?.kind === 'close')
 
 /** Nothing waits on the operator: say what runs, counted from the server's numbers. */
 const calmLine = computed(() => {
@@ -96,7 +98,7 @@ const KIND: Record<string, string> = {
     >
 
     <div
-      v-if="primaryStep || more.length > 0"
+      v-if="primaryStep || nextIsClose || more.length > 0"
       class="flex flex-wrap items-center"
       style="gap: 10px"
     >
@@ -107,6 +109,9 @@ const KIND: Record<string, string> = {
         @click="emit('openStep', primaryStep)"
       >
         {{ $t('missionPane.next.openStep') }}
+      </Button>
+      <Button v-if="nextIsClose" variant="primary" data-test="next-close" @click="emit('close')">
+        <Flag :size="14" :stroke-width="1.8" aria-hidden="true" />{{ $t('missionPane.next.close') }}
       </Button>
       <button
         v-if="more.length > 0"
@@ -152,6 +157,16 @@ const KIND: Record<string, string> = {
           @click="emit('openStep', waitingStepId(item) as string)"
         >
           {{ $t('missionPane.next.openStep') }}
+        </button>
+        <button
+          v-else-if="item.kind === 'close'"
+          type="button"
+          class="row-span-2 rounded-sm border border-border-2 text-text-2 transition hover:bg-surface-2 hover:text-text"
+          style="grid-column: 2; grid-row: 1 / span 2; padding: 2px 8px; font-size: 11px"
+          data-test="next-close"
+          @click="emit('close')"
+        >
+          {{ $t('missionPane.next.close') }}
         </button>
         <span v-if="item.why" class="break-words text-text-4" style="font-size: 10.5px">{{
           item.why

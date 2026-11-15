@@ -510,7 +510,7 @@ describe('AC-48 — a 10-milestone mission where nothing runs and five things wa
     expect(w.findAll('[data-test="next-rest-row"]')).toHaveLength(0)
   })
 
-  it('opens the step an item names with its button, and a step-less item draws no button', async () => {
+  it('opens the step an item names with its button, and a close item has Close mission, not Open step', async () => {
     const w = await mountPane(
       reply({
         ...ten,
@@ -531,10 +531,12 @@ describe('AC-48 — a 10-milestone mission where nothing runs and five things wa
     await button.trigger('click')
     expect(stepRow(w, 'stp-2').attributes('aria-expanded')).toBe('true')
 
-    // A close item has no step: no button until its door lands.
+    // A close item names no step, so it has no Open step. Since S-22 it has its own button: Close mission…
+    // (its door is the pane's, see tests/mission-close-confirm.test.ts).
     await w.get('[data-test="next-more"]').trigger('click')
     const rest = w.get('[data-test="next-rest-row"]')
     expect(rest.text()).toContain('Everything is done')
-    expect(rest.find('button').exists()).toBe(false)
+    expect(rest.find('[data-test="next-rest-open"]').exists()).toBe(false)
+    expect(rest.get('[data-test="next-close"]').text()).toBe('Close mission…')
   })
 })

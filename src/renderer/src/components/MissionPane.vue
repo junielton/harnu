@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeftRight, Expand, Maximize2, Minimize2, Target, X } from 'lucide-vue-next'
+import { ArrowLeftRight, Expand, Flag, Maximize2, Minimize2, Target, X } from 'lucide-vue-next'
 import { useFocusRegion } from '../composables/useTerminalFocus'
 import { useSessionLinks } from '../composables/useSessionLinks'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
@@ -13,9 +13,12 @@ import {
   attachRequestsOf,
   buildPaneTree,
   classifyReply,
+  closeErrorKey,
+  closeMatters,
   doorErrorKey,
   handoffErrorKey,
   handoffOfferView,
+  isReadyToClose,
   missionNumbers,
   missionSummaryText,
   missionProgressLine,
@@ -26,7 +29,9 @@ import {
   v4MissionOf,
   type PaneKind
 } from '../lib/mission-pane-view'
+import { SAMPLE_STATES, type SampleState } from '../lib/mission-sample'
 import Button from './ui/Button.vue'
+import MissionCloseConfirmDialog from './MissionCloseConfirmDialog.vue'
 import MissionHandoffDialog from './MissionHandoffDialog.vue'
 import MissionPaneAsk from './MissionPaneAsk.vue'
 import MissionPaneAttach, { type RequestRow } from './MissionPaneAttach.vue'
@@ -49,6 +54,13 @@ import MissionPaneTree from './MissionPaneTree.vue'
  * hand-off only from the dialog's confirm. Attach, the attach request and Ask (S-21) live in
  * `MissionPaneAttach` and `MissionPaneAsk`: a session with no mission gets the picker, a request to join
  * gets Allow and Deny, and a milestone's Ask goes to the leading session.
+ *
+ * Close and the sample (S-22). "Close mission…" opens the one end dialog (`MissionCloseConfirmDialog`, v4
+ * mode): Close as delivered or Discard, the open matters as warnings that never block, and the door call
+ * goes through the store. A closed mission is no mission here: the view answers none and the pane shows the
+ * attach picker. The SAMPLE (`lib/mission-sample.ts`) is a view object built from nothing that the pane can
+ * show in place of the real answer, so every state is visible while no agent can create a v4 mission; a
+ * strip says so, and every door the store runs for it changes nothing.
  */
 interface Props {
   /** The shared pane union (HelperStack routes only `type:'mission'` here). */
@@ -69,8 +81,14 @@ const keybindings = useKeybindingsStore()
 // The store polls only once someone asks it to start; the pane is a reader like the pill.
 onMounted(() => missions.ensureStarted())
 
-const sessionId = computed(() => sessions.selectedSession?.sessionId ?? null)
-const reply = computed(() => missions.v4ReplyForSession(sessionId.value))
+// The sample, when shown, stands in for the real answer and for the session the pane follows.
+const sample = computed(() => missions.sampleView)
+const sessionId = computed(
+  () => sample.value?.sessionId ?? sessions.selectedSession?.sessionId ?? null
+)
+const reply = computed(() =>
+  sample.value ? sample.value.reply : missions.v4ReplyForSession(sessionId.value)
+)
 const kind = computed<PaneKind>(() =>
   sessionId.value ? classifyReply(reply.value, sessionId.value) : 'none'
 )
@@ -92,7 +110,7 @@ const percent = computed(() =>
 // Links shelf reads the same transcript). The clock is for how long a blocker has waited.
 const linkSession = computed(() => {
   const id = sessionId.value
-  return id && !id.startsWith('synthetic-') ? id : null
+  return id && !id.startsWith('synthetic-') && !sample.value ? id : null
 })
 const { entries: sessionLinks } = useSessionLinks(linkSession)
 const now = ref(Date.now())
@@ -149,13 +167,50 @@ const requestRows = computed<RequestRow[]>(() => {
     }))
   }
   if (kind.value !== 'none') return []
-  return missions.attachAsksForSession(id).map((a) => ({
+  const asks = sample.value ? sample.value.asks : missions.attachAsksForSession(id)
+  return asks.map((a) => ({
     requestId: a.requestId,
     missionId: a.missionId,
     missionTitle: a.title,
     askerId: null
   }))
 })
+// ---- Close (S-22) -------------------------------------------------------------------------------------
+// One end dialog for the Mission pane. The door call is the store's; the dialog lists what is open and never
+// blocks. It opens on Close as delivered only when the server says every step is done; otherwise on Discard,
+// so a stray Enter on an unfinished mission confirms nothing it did not mean.
+const closeOpen = ref(false)
+const closeBusy = ref(false)
+const closeError = ref<string | null>(null)
+const matters = computed(() => closeMatters(mission.value?.closeWarnings ?? []))
+const readyToClose = computed(() => (mission.value ? isReadyToClose(mission.value.detail) : false))
+
+function openClose(): void {
+  closeError.value = null
+  closeOpen.value = true
+  // The dialog lists what the view counted: read it again, the poll may be up to 20 s old.
+  if (!sample.value) void missions.refreshV4()
+}
+function cancelClose(): void {
+  if (!closeBusy.value) closeOpen.value = false
+}
+async function confirmClose(closedAs: 'delivered' | 'discarded', reason?: string): Promise<void> {
+  if (closeBusy.value) return
+  closeBusy.value = true
+  closeError.value = null
+  try {
+    const res = await missions.closeMission({ closedAs, reason })
+    if (res.ok) closeOpen.value = false
+    else closeError.value = `missionPane.close.error.${closeErrorKey(res.code)}`
+  } finally {
+    closeBusy.value = false
+  }
+}
+// A mission that is no longer this pane's (it closed, the view lost it) takes its dialog with it.
+watch(kind, (k) => {
+  if (k !== 'mission') closeOpen.value = false
+})
+
 const askLeader = computed(() => (mission.value ? askLeaderOf(mission.value) : null))
 const askFor = ref<string | null>(null)
 // Another mission starts with no question open.
@@ -225,6 +280,28 @@ function openNewLeader(): void {
   if (newLeader.value && newLeaderLoaded.value) sessions.select(newLeader.value)
   handoffOpen.value = false
 }
+
+// ---- The sample (S-22) --------------------------------------------------------------------------------
+const sampleHint = computed(() => sample.value?.hint === true)
+function chooseSample(ev: Event): void {
+  missions.showSample((ev.target as HTMLSelectElement).value as SampleState)
+}
+// A state that is a click on another one opens that part of the pane for you.
+watch(
+  () => sample.value?.state ?? null,
+  async (state) => {
+    askFor.value = null
+    handoffOpen.value = false
+    handoffDone.value = false
+    if (!state || !sample.value) return
+    const ui = sample.value.ui
+    await nextTick()
+    if (ui.openStep) treeRef.value?.openStep(ui.openStep)
+    if (ui.ask) askFor.value = ui.ask
+    if (ui.handoff) handoffOpen.value = true
+  },
+  { flush: 'post' }
+)
 
 function onClose(): void {
   helpers.removeHelper(props.worktreePath, props.pane.id)
@@ -321,6 +398,48 @@ useFocusRegion(props.pane.id, rootEl, {
       </button>
     </header>
 
+    <!-- The sample strip: what shows below is made up, and where to leave it. -->
+    <section
+      v-if="sample"
+      class="flex shrink-0 flex-col border-b border-accent-line bg-accent-soft text-text"
+      style="padding: 8px 12px; gap: 6px; font-size: 11.5px; line-height: 1.45"
+      :aria-label="$t('missionPane.sample.label')"
+      data-test="mission-sample"
+    >
+      <span class="flex items-center" style="gap: 8px">
+        <b class="uppercase text-accent" style="font-size: 10px; letter-spacing: 0.07em">{{
+          $t('missionPane.sample.label')
+        }}</b>
+        <span class="min-w-0 flex-1 text-text-2">{{ $t('missionPane.sample.note') }}</span>
+        <button
+          type="button"
+          class="shrink-0 rounded-sm border border-border-2 bg-surface-2 text-text transition hover:border-text-4"
+          style="height: 20px; padding: 0 7px; font-size: 11px; font-weight: 500"
+          data-test="mission-sample-leave"
+          @click="missions.showSample(null)"
+        >
+          {{ $t('missionPane.sample.leave') }}
+        </button>
+      </span>
+      <label class="flex items-center" style="gap: 8px">
+        <span class="shrink-0 text-text-3">{{ $t('missionPane.sample.chooser') }}</span>
+        <select
+          class="min-w-0 flex-1 rounded-sm border border-border-2 bg-bg text-text outline-none focus:border-accent-line"
+          style="height: 22px; padding: 0 4px; font-size: 11.5px"
+          :value="sample.state"
+          data-test="mission-sample-state"
+          @change="chooseSample"
+        >
+          <option v-for="s in SAMPLE_STATES" :key="s" :value="s">
+            {{ $t(`missionPane.sample.state.${s}`) }}
+          </option>
+        </select>
+      </label>
+      <span v-if="sampleHint" class="text-text-3" data-test="mission-sample-hint">{{
+        $t(`missionPane.sample.hint.${sample.state}`)
+      }}</span>
+    </section>
+
     <div
       ref="bodyEl"
       class="scrollable no-default-ring min-h-0 flex-1 overflow-y-auto outline-none"
@@ -381,7 +500,11 @@ useFocusRegion(props.pane.id, rootEl, {
             data-test="mission-state"
             >{{ $t(stateKey) }}</span
           >
-          <MissionPaneNext :detail="mission.detail" @open-step="treeRef?.openStep($event)" />
+          <MissionPaneNext
+            :detail="mission.detail"
+            @open-step="treeRef?.openStep($event)"
+            @close="openClose"
+          />
           <!-- A session asked to join: only the operator answers it. -->
           <div v-if="requestRows.length > 0" style="margin-top: 10px">
             <MissionPaneAttach :session-id="sessionId as string" :requests="requestRows" />
@@ -460,6 +583,21 @@ useFocusRegion(props.pane.id, rootEl, {
           :pending="missions.handOffPending"
           @continue="openHandoff"
         />
+        <!-- Ending is the operator's: always here, ready or not (a mission can be discarded at any time). -->
+        <div class="flex justify-end" style="padding: 4px 16px 14px">
+          <button
+            type="button"
+            class="inline-flex items-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
+            :class="readyToClose ? 'text-green' : ''"
+            style="height: 20px; padding: 0 7px; gap: 5px; font-size: 11px; font-weight: 500"
+            data-test="mission-close-open"
+            @click="openClose"
+          >
+            <Flag :size="11" :stroke-width="1.8" aria-hidden="true" />{{
+              $t('missionPane.close.open')
+            }}
+          </button>
+        </div>
       </template>
 
       <!-- No mission: the picker of the folder's open missions, and any request to join (design.md §6 "Mission pane" → Attach). -->
@@ -480,6 +618,23 @@ useFocusRegion(props.pane.id, rootEl, {
           :missions="requestRows.length > 0 ? null : picker"
           :requests="requestRows"
         />
+        <!-- A v4 mission cannot be created by an agent yet: the sample is how every state is seen meanwhile. -->
+        <div
+          v-if="!sample"
+          class="flex flex-col border-t border-border text-text-3"
+          style="padding-top: 12px; gap: 4px; font-size: 11.5px; line-height: 1.45"
+        >
+          <button
+            type="button"
+            class="self-start text-accent transition hover:underline"
+            style="font-size: 12px; font-weight: 500"
+            data-test="mission-sample-open"
+            @click="missions.showSample('default')"
+          >
+            {{ $t('missionPane.sample.open') }}
+          </button>
+          <span>{{ $t('missionPane.sample.openHint') }}</span>
+        </div>
       </div>
 
       <!-- A refusal, a v3 record, or no session: the same empty layout (design.md §6 "Mission pane" → States). -->
@@ -555,6 +710,18 @@ useFocusRegion(props.pane.id, rootEl, {
 
     <!-- At the pane's root, not in the mission branch: after a hand-off this session is released, the pane
          shows no mission, and the dialog is still the one that says what happened. -->
+    <MissionCloseConfirmDialog
+      v-if="closeOpen && mission"
+      mode="v4"
+      :title="mission.detail.title"
+      :busy="closeBusy"
+      :matters="matters"
+      :done-when="mission.detail.doneWhen"
+      :initial="readyToClose ? 'delivered' : 'discarded'"
+      :error-key="closeError"
+      @cancel="cancelClose"
+      @confirm="confirmClose"
+    />
     <MissionHandoffDialog
       :open="handoffOpen"
       :brief="handoffSummary"

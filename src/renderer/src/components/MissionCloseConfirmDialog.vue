@@ -17,6 +17,12 @@
  * The backdrop carries `data-mission-close-confirm` so the pill's click-outside
  * leaves the popover open behind it; the capture-phase Esc listener stops the
  * key before the popover's own Esc handler sees it.
+ *
+ * **Two modes, one dialog.** `v3` (the default) is the popover's: it lists the v3 `EndWarning`s and offers the
+ * memory drafts. `v4` is the Mission pane's (Missions v4 S-22, design.md §6 "Mission pane" → Close): it lists
+ * the close door's open matters by identifier in words of its own (the server's English `text` is never the
+ * copy), says which Done when closing as delivered confirms, and shows what the door said when it failed. In
+ * both modes an open matter is a warning and never disables the confirm.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -24,6 +30,7 @@ import { Check, Trash2, TriangleAlert, X } from 'lucide-vue-next'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { playNotificationSound } from '../lib/notification-sound'
 import type { EndChoice, EndWarning } from '../lib/mission-view'
+import type { CloseMatter } from '../lib/mission-pane-view'
 import type { MemoryDraft } from '../../../main/consolidator-core'
 import { citationRefs, draftExcerpt, draftHeading } from '../lib/memory-draft-view'
 import Button from './ui/Button.vue'
@@ -40,8 +47,25 @@ const props = withDefaults(
     drafts?: MemoryDraft[]
     /** Campaign ch.6 — the consolidator found nothing worth recording. */
     nothingNotable?: boolean
+    /** `v4` is the Mission pane's dialog (S-22); `v3` is the popover's. */
+    mode?: 'v3' | 'v4'
+    /** v4: the close door's open matters, by identifier. Shown, never enforced. */
+    matters?: CloseMatter[]
+    /** v4: the Done when that closing as delivered confirms. */
+    doneWhen?: string
+    /** v4: the i18n key of what to do after the door failed; the dialog stays open. */
+    errorKey?: string | null
   }>(),
-  { warnings: () => [], initial: 'delivered', drafts: () => [], nothingNotable: false }
+  {
+    warnings: () => [],
+    initial: 'delivered',
+    drafts: () => [],
+    nothingNotable: false,
+    mode: 'v3',
+    matters: () => [],
+    doneWhen: '',
+    errorKey: null
+  }
 )
 const emit = defineEmits<{
   cancel: []
@@ -69,6 +93,23 @@ const WARNING_KEY: Record<EndWarning['kind'], string> = {
 
 /** Kinds whose heading counts matters — the i18n plural takes `count`. */
 const COUNTED = new Set<EndWarning['kind']>(['left-behind', 'checks-open', 'blockers-open'])
+
+const isV4 = computed(() => props.mode === 'v4')
+
+/** What the warnings block lists: v3's warnings with their step titles, or v4's open matters with a count. */
+const rows = computed(() =>
+  isV4.value
+    ? props.matters.map((m) => ({
+        kind: m.kind as string,
+        heading: t(`missionPane.close.matters.${m.kind}`, m.count),
+        items: [] as EndWarning['items']
+      }))
+    : props.warnings.map((w) => ({
+        kind: w.kind as string,
+        heading: warningHeading(w),
+        items: w.items
+      }))
+)
 
 function warningHeading(w: EndWarning): string {
   const key = `mission.end.warnings.${WARNING_KEY[w.kind]}`
@@ -159,7 +200,7 @@ onBeforeUnmount(() => {
             class="text-text"
             style="font-size: 13.5px; line-height: 20px; font-weight: 600"
           >
-            {{ t('mission.end.title') }}
+            {{ t(isV4 ? 'missionPane.close.title' : 'mission.end.title') }}
           </h2>
           <button
             class="flex items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
@@ -176,7 +217,11 @@ onBeforeUnmount(() => {
           class="scrollable overflow-y-auto text-text-2"
           style="padding: 14px 18px; font-size: 12.5px; line-height: 19px"
         >
-          <i18n-t keypath="mission.end.body" tag="p" scope="global">
+          <i18n-t
+            :keypath="isV4 ? 'missionPane.close.body' : 'mission.end.body'"
+            tag="p"
+            scope="global"
+          >
             <template #title>
               <b class="text-text">{{ title }}</b>
             </template>
@@ -207,6 +252,15 @@ onBeforeUnmount(() => {
               </span>
             </label>
           </fieldset>
+
+          <p
+            v-if="isV4 && choice === 'delivered' && doneWhen"
+            class="break-words text-text-2"
+            style="margin: 10px 0 0; font-size: 11.5px; line-height: 1.5"
+            data-test="mission-close-done-when"
+          >
+            {{ t('missionPane.close.doneWhen', { text: doneWhen }) }}
+          </p>
 
           <label class="block" style="margin-top: 10px">
             <span class="block text-text-3" style="font-size: 11px; margin-bottom: 4px">{{
@@ -311,7 +365,7 @@ onBeforeUnmount(() => {
           </section>
 
           <div
-            v-if="warnings.length"
+            v-if="rows.length"
             class="flex items-start rounded-sm border border-warning-line bg-warning-soft text-warning"
             style="
               gap: 6px;
@@ -336,13 +390,13 @@ onBeforeUnmount(() => {
               >
               <ul style="margin: 0; padding: 0; list-style: none">
                 <li
-                  v-for="w in warnings"
+                  v-for="w in rows"
                   :key="w.kind"
                   data-test="mission-end-warning"
                   :data-kind="w.kind"
                   style="margin-top: 3px"
                 >
-                  <span class="block" style="font-weight: 500">{{ warningHeading(w) }}</span>
+                  <span class="block" style="font-weight: 500">{{ w.heading }}</span>
                   <span
                     v-for="(item, i) in w.items"
                     :key="i"
@@ -355,6 +409,16 @@ onBeforeUnmount(() => {
               </ul>
             </div>
           </div>
+
+          <p
+            v-if="errorKey"
+            class="break-words text-text"
+            style="margin: 10px 0 0; font-size: 11.5px; line-height: 1.5"
+            role="alert"
+            data-test="mission-close-error"
+          >
+            {{ t(errorKey) }}
+          </p>
         </div>
 
         <footer

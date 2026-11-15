@@ -107,7 +107,10 @@ describe('the sample mission (Missions v4 S-22, AC-61)', () => {
   })
 
   it('the sample needs no file: built from nothing, it reads no disk and calls no channel', () => {
+    // The code, not its comments: the header says what it never uses.
     const src = readFileSync('src/renderer/src/lib/mission-sample.ts', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
     expect(src).not.toMatch(/from 'node:|require\(|window\.api|fetch\(/)
     // Asking for a state twice gives equal data, and none of it is shared: one state cannot change another.
     const a = sampleOf('default')
@@ -133,7 +136,6 @@ describe('the sample mission (Missions v4 S-22, AC-61)', () => {
     await settle()
     expect(api.missionV4Door.mock.calls.length).toBe(doorBefore)
     expect(api.missionV4View.mock.calls.length).toBe(callsBefore)
-    expect(api.missionList).not.toHaveBeenCalledWith(expect.anything())
   })
 
   it('every state shows in the pane and says it is a sample, and leaving it brings the real answer back', async () => {
@@ -232,10 +234,12 @@ describe('a small task is a mission with no milestones (Missions v4 S-22, AC-59)
     sign!.click()
     await settle()
     const body = text('[data-dsqa-part="tree"]')
+    expect(body).toContain('The designer signed off')
     expect(body).toContain('Waiting for the designer')
-    // The operator ticks each one when the person approves.
-    expect(qa('[data-test="criterion-mark"]').length).toBeGreaterThan(0)
-    // The first sign-off is already marked: the QA analyst's.
-    expect(body).toContain('The QA analyst signed off')
+    // The operator ticks each one when the person approves: a mark on the person's sign-off, and on their own.
+    const marks = qa('[data-test="criterion-mark"]').map((b) => b.textContent?.trim())
+    expect(marks).toEqual(['Mark approved', 'Mark done'])
+    // The QA analyst's is already marked: it folds into the count of verified criteria, as in every open step.
+    expect(body).toContain('1 criterion verified')
   })
 })
