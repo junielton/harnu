@@ -11,10 +11,11 @@
  * `scripts/eval/mission-behavior/scenarios/` (AC-9); these guards keep the text
  * those scenarios exercise from drifting.
  *
- * Missions v4 S-28 rewrote the `mission` skill, so its describe (the v2 end, blocker and close
- * rules) is gone; `tests/skill-mission-v4.test.ts` pins its v4 text. The other skills stay pinned
- * here until S-29 and S-30 rewrite them and delete this suite. `mission` stays in the shared list
- * below: the two checks over it still hold for the v4 text.
+ * Missions v4 S-28 rewrote the `mission` skill and S-29 `orchestrate-delivery`, so their describes (the
+ * v2 end, blocker and close rules) are gone; `tests/skill-mission-v4.test.ts` and
+ * `tests/skill-orchestrate-delivery-v4.test.ts` pin their v4 text. `delivery-verifier` stays pinned here
+ * until S-30 rewrites it and deletes this suite. The two checks over the shared list below still hold
+ * for the v4 text of every skill in it.
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -27,14 +28,6 @@ function readSkill(name: string): string {
     path.join(REPO_ROOT, 'resources', 'skills', 'skills', name, 'SKILL.md'),
     'utf8'
   )
-}
-
-/** The text of one `## ` section (heading line excluded), up to the next `## `. */
-function section(raw: string, heading: string): string {
-  const start = raw.indexOf(`\n## ${heading}`)
-  expect(start, `section "## ${heading}"`).toBeGreaterThan(-1)
-  const next = raw.indexOf('\n## ', start + 4)
-  return raw.slice(start, next === -1 ? undefined : next)
 }
 
 /** Collapse Prettier's line wrapping so a sentence matches whatever its breaks. */
@@ -56,61 +49,10 @@ describe('no skill promises what the code does not enforce (§3.2, AC-4)', () =>
   })
 })
 
-describe('orchestrate-delivery — the Mission v2 rules (§3.2–§3.6)', () => {
-  const raw = readSkill('orchestrate-delivery')
-  const phase1 = flat(section(raw, 'Phase 1 — Topology'))
-
-  it('creates the mission in Phase 1, before any dispatch, with the end agreed up front', () => {
-    expect(phase1).toContain('mission_create')
-    expect(phase1).toMatch(/before any dispatch/)
-    expect(phase1).toMatch(
-      /confirm it with the operator in ONE AskUserQuestion — the proposal is the recommended option/
-    )
-    expect(phase1).toMatch(/Pass the spec \/ PRD \/ ADR paths as\s+`scope`/)
-    // Mission v3 §3.4 retired the Approve click; tests/mission-v3-skills.test.ts pins its absence.
-    expect(phase1).toMatch(/The answer comes before the first dispatch\./)
-    expect(phase1).toMatch(
-      /write no packet, create no session and link no child until the operator has answered/
-    )
-  })
-
-  it('no longer creates the mission in Phase 3', () => {
-    const phase3 = flat(section(raw, 'Phase 3 — Monitor'))
-    expect(phase3).not.toMatch(/The mission is born `draft`: tell the operator it waits/)
-    expect(phase3).toMatch(/The mission you declared in Phase 1/)
-  })
-
-  it('raises an operator-owned blocker on every turn that ends waiting on the operator', () => {
-    const resume = flat(section(raw, 'Resume — every turn re-arms'))
-    expect(resume).toMatch(/A turn that ends waiting on the operator raises a blocker/)
-    expect(resume).toContain("mission_set_blocker { owner: 'operator'")
-    expect(resume).toMatch(/every 30 minutes/)
-    expect(resume).toContain('mission_clear_blocker')
-  })
-
-  it('re-scopes the end in the same turn the operator changes the rule', () => {
-    expect(flat(raw)).toMatch(
-      /changes how the delivery ends \(merge policy, target branch, what counts as done\), call `mission_set_end` in the same turn/
-    )
-  })
-
-  it('retargets stacked PRs before handing merges to the operator', () => {
-    const phase2 = flat(section(raw, 'Phase 2 — Cards and dispatch'))
-    expect(phase2).toContain('gh pr edit <n> --base <default branch>')
-    expect(phase2).toContain('gh pr view <n> --json baseRefName')
-  })
-
-  it('closes by verifying the end itself, reading closeReadiness, then requesting the close', () => {
-    const phase4 = flat(section(raw, 'Phase 4 — Verify each unit, per acceptance criterion'))
-    expect(phase4).toMatch(
-      /verify the fixed end \(`Delivered and verified`\) yourself with `mission_verify_step` \(you built none of the steps, so it lands `verified`\)/
-    )
-    expect(phase4).toMatch(
-      /read `closeReadiness` on `mission_get`, and call `mission_request_close`/
-    )
-    expect(phase4).toContain('RESCOPE_PENDING')
-  })
-})
+// Missions v4 S-29: the `orchestrate-delivery` skill speaks v4. Its v2 rules that still hold (the mission is
+// created at once, a wait on the operator is a blocker, the Done when is re-scoped in the same turn, stacked PRs
+// are retargeted, the close is requested and never done) are pinned against the v4 text in
+// tests/skill-orchestrate-delivery-v4.test.ts; the rest (the end question, closeReadiness) is gone with v3.
 
 describe('delivery-verifier — the end wording (§3.5)', () => {
   it('leaves the fixed end to the orchestrator, after the per-unit verdicts', () => {

@@ -1,576 +1,240 @@
 ---
 name: orchestrate-delivery
-description: Decompose an objective into board cards, dispatch one Harnu session per unit, monitor until each opens a PR, verify every acceptance criterion independently, and hand back a Delivery Report. Use when the operator hands over an objective too large for one session and wants it delivered rather than discussed — "orchestrate this", "break this down and dispatch it", "fan this out across worktrees", "deliver this epic" — or when a Harnu board already holds several ready cards that need to be planned, dispatched and graded as one delivery. Do NOT use to implement a single unit of work yourself, to review a PR, or to merge anything.
+description: Plan an objective as a Harnu mission of milestones and steps, dispatch one session per step, have a second session settle every criterion, and hand the operator a report, for an objective too large for one session ("orchestrate this", "break this down and dispatch it", "deliver this epic") and never to implement one unit yourself, review a PR or merge
 ---
 
 # Orchestrate delivery
 
-Deliver an objective by decomposing it into board cards, dispatching one Harnu
-session per unit, monitoring until each unit opens a PR, verifying every
-acceptance criterion against real evidence, and handing the operator a Delivery
-Report they can act on without re-reading a single transcript.
+Deliver an objective as a Harnu mission: plan it, dispatch one session per step, monitor until each step opens a
+PR, have a second session settle every criterion from evidence, and give the operator a report they can act on
+without reading a transcript. Load `../mission/references/writing-contract.md` before you write any title,
+criterion, ask or blocker reason: the verbs refuse text over a cap and never rewrite it. If the `mission` skill is
+not staged, the file is missing: write the shortest honest line.
 
-## Why this shape
+## The rules
 
-Large deliveries must become small, reviewable PRs with no file conflicts between
-sessions. The topology is what avoids rework: parallelize what is independent,
-stack what depends on earlier code. In Harnu the board **is** the delivery plan —
-cards are the units, the dispatch manifest is the gate, the columns are the
-report.
+- 1 unit of work = 1 step = 1 branch = 1 session = 1 PR. Never mix units.
+- Delivery is not "the PRs are open". It is every criterion settled, by a session that did not build the step, from
+  evidence. Phase 4 is not optional.
+- You lead the mission (the `mission` skill has the verbs and the tick). There is no steward: you, the leader,
+  dispatch the verifiers, nudge a stalled worker and call `rebase_stack` after a parent lands.
+- Never merge, never move a card to done, never write product code in this session. Never use, copy or link the
+  operator's Claude credentials; a session that needs a login is a blocker for the operator.
+- Every output stays short. Silence about healthy work is the feature.
 
-## Invariant
+## Phase 0 — Hydrate and triage
 
-1 unit of work = 1 board card = 1 branch/worktree = 1 session = 1 PR — and, on
-the mission, 1 unit = 1 PR = 1 step. Never mix units. And delivery is not "the PRs are open" — it is "every acceptance criterion
-is accounted for, with evidence or with a named human check". Phase 5 is not
-optional.
+`memory_read` for this repo, then check the board for cards that overlap the objective: extend them, never
+duplicate. Confirm a `WORKTREE.md` exists at the repo root; if not, that is a blocker before any worktree dispatch.
 
-## Phase 0 — Hydrate
+Name the door you came in by and take its first step; most doors never reach a spec. A vague idea starts with
+`brainstorming`, a task or ticket with `scope-task` and the `mission` skill's intake rules, a bug with
+`systematic-debugging` (a `bug` card with the repro as its criterion), a PR comment or red CI with `address-review`
+or `debug-gh-action` (a commit on the existing branch, no spec), a design with `create-mockup` or `implement-design`,
+a question with an answer in chat, "where did we leave off" with `harnu:status`.
 
-Call `memory_read` (hot + index) for this repo first, then `memory_query` for
-"delivery map": an earlier multi-campaign delivery leaves a line there naming its
-next campaign and its map. Check the board for existing
-cards that overlap the objective — extend or re-scope them instead of duplicating.
-Confirm a `WORKTREE.md` manifest exists at the repo root (worktrees are born usable
-through it); if it is missing, flag it as a blocker before dispatching anything to
-a worktree.
+**Size decides depth.** Small (one area, no new interface, a reviewer judges the PR at a glance) is one step and the
+card's own criteria: no spec, no scout. Medium gets a one-page spec, large adds goals and open decisions, complex
+adds a PRD and an ADR (`docs/specs/TEMPLATE.md` is the shape). A one-line bug and a PR comment never enter the funnel.
 
-**Triage first — how much of the funnel does this entry deserve?** Name the door you
-came in by and take its first step; most doors never reach a spec.
+**The contract must be readable from a fresh worktree.** Every unit above small needs its criteria, spec, design
+links and tracker link committed on the base branch. With no criteria, the first unit is a scout that writes them.
+If the card's `spec`, `mockup`, `prd` or `adr` is a path under `.harnu/out/`, stop: that directory is gitignored and
+no child worktree can read it. Landing the bundle is **commit 0**, a unit with its own card, worktree, session and
+owner; nothing else dispatches until it is on the base branch. Already committed: say so in one line and skip it.
 
-| You arrive with           | First step                                       | Becomes                                |
-| ------------------------- | ------------------------------------------------ | -------------------------------------- |
-| A vague idea              | `brainstorming` (one question per turn)          | objective + request atoms R-n          |
-| A task / ticket           | `scope-task` (ACs one by one, what exists, gaps) | report on the card                     |
-| A bug                     | `systematic-debugging` until root cause          | `bug` card with the repro as an AC     |
-| A question                | answer in chat; `memory_query` and lessons first | nothing, or one decisions line         |
-| A PR comment / red CI     | `address-review` / `debug-gh-action`             | commit on the existing branch; no spec |
-| A design / mockup         | `create-mockup` or `implement-design`            | screens approved one by one            |
-| A recurring pain          | `learn-from-review` or a card                    | a lesson, or a `chore` card            |
-| "Where did we leave off?" | `harnu:status` / `resume-task`                   | a read of the mission, nothing written |
+A resolved open decision is one line in memory: `memory_append` (`decisions`) `D-n · <question> · chosen: <option> ·
+<date>`, and a row in the spec's Amendments table. The rationale stays in the spec.
 
-**Sizing rule — size decides depth.** **Small = the card's ACs only, no spec:** one
-area, no new interface, no new behaviour contract, reviewable at a glance — do not
-commission a spec bundle or a scout; the card's objective and its ACs are the spec,
-and the delivery is a single unit. **Medium** gets a one-page spec (Problem, Slices,
-ACs); **large** adds Goals and Open decisions; **complex** adds the prd, adr and
-mockup header fields (`docs/specs/TEMPLATE.md` is the shape, `scripts/ci/spec-gate.mjs`
-enforces it on every `status: approved` spec). When in doubt, the test is whether a
-reviewer could judge the PR without a document beside it. A one-line bug and a PR
-comment never enter the spec funnel.
+## Phase 1 — Plan
 
-**Require a spec bundle readable from a fresh worktree.** Every unit above Small
-needs its acceptance criteria, spec, design links and tracker link available on the
-BASE BRANCH — committed, not sitting untracked in `.harnu/`, which a fresh worktree
-cannot see. If the objective arrives without acceptance criteria, the first
-delegation is a scout that writes them, not an implementation.
+Break the objective into units and say the topology in one line each: **single** if it fits one reviewable PR (about
+500 lines) or the parts touch the same files, **parallel** if units share no files and no code (check with grep over
+each unit's paths, not intuition), **stacked** if unit N+1 consumes code from unit N. Ask only on genuine scope
+ambiguity, one binary question: a question costs a round-trip of wall-clock, a slightly wrong dispatch costs a rebase.
 
-**Refuse to dispatch while the contract lives in `.harnu/out/`.** If the card's
-`spec`, or the `mockup` / `prd` / `adr` the spec's header names, is a path under
-`.harnu/out/`, stop: that directory is gitignored, so every child worktree would be
-dispatched against a contract it cannot read. Landing the bundle comes first.
+**Create the mission now, without asking.** `mission_list { folder }` first: when one already holds this work,
+join it, never open a second. Then `mission_create`, with the whole plan in one call:
 
-**Commit 0 is a unit, with an owner.** Landing the spec bundle (spec, mockup, prd,
-adr, on the base branch the children fork from) is the delivery's first named unit,
-not an executor's side job: give it a card, a worktree and one session (the owner is
-named on the card: the orchestrator who dispatches it, or the operator who lands it
-by hand), and nothing else dispatches until its PR has landed on the base. When the
-bundle is already committed on the base, say so in one line and skip the unit.
+```json
+{
+  "folder": "<absolute path of the repo>",
+  "title": "Serve the catalog from the new storefront",
+  "doneWhen": "Catalog pages render from the new stack on main",
+  "milestones": [
+    { "title": "Images load from the CDN" },
+    { "title": "Pages render from templates" }
+  ],
+  "steps": [
+    {
+      "title": "Upload every image to the CDN",
+      "milestone": "Images load from the CDN",
+      "criteria": [
+        { "text": "Every catalog image resolves on the CDN", "by": "session" },
+        { "text": "The upload ran from a clean checkout", "by": "session" }
+      ]
+    },
+    {
+      "title": "Render a page from its template",
+      "milestone": "Pages render from templates",
+      "criteria": ["The product page renders with no console errors"]
+    }
+  ],
+  "sessionId": "<your session id>"
+}
+```
 
-**A resolved open decision is one line in memory.** When a `D-n` from the spec's Open
-decisions table is resolved, record the resolution in the spec's Amendments table (the body is frozen) and write
-ONE structured line with `memory_append` (`decisions`):
-`D-n · <question> · chosen: <option> · <date>` — nothing else. The rationale stays in
-the spec; `decisions.md` is an index of choices, not a second copy of the argument.
+- **A stage of the objective is a milestone**, named for what becomes true. A mission of a handful of steps needs
+  none. `mission_create` takes the milestone's title; `mission_add_step` takes its id (`mls-<n>`), so add the
+  milestone first with `mission_add_milestone`, then its steps. Plan the next milestone to steps when the one before
+  is settled, with what you learned in it: a plan for stage 9 written on day one is a guess the operator reads as a
+  promise. The plan only grows; you never remove or rewrite a step.
+- **1 unit = 1 PR = 1 step.** Sub-phases (spec, implement, review, ship) go to the Log, not into steps. A step added
+  after work started needs a `reason`. Something found on the way is an optional step.
+- **Every step carries at least one criterion**: a fact that is true when it is done, at most 70 characters. `by`
+  says who settles it: `fact` (Harnu reads it: `pr-opened`, `ci-green`, `pr-merged`, `main-green`), `session` (a
+  second session, the default), `operator` or `person`. **A sign-off is an operator criterion (`by: 'operator'`),
+  never a step.** Add one later with `mission_add_ac`. A stage that gates the next on the operator's own act (a merge
+  and a build, a credential) is a blocker raised when you reach it (`mission_set_blocker`, `owner: 'operator'`), and
+  the plan says so now, in one line.
+- **The last step is "Check the whole mission against Done when"**, with a second session criterion. It lives in the
+  last milestone and stays last: create it with the plan, and insert every step added later before it (`afterStepId`
+  names the step it follows). It is a convention, not an engine rule: the operator confirms Done when at the close.
+- **Criteria are frozen at dispatch.** A criterion is never edited after dispatch: a change is a new criterion with
+  the reason in `mission_log`. A criterion the spec lacks is a spec gap: amend the spec, never the card alone.
+- **The Done when is the operator's words.** Propose it in the same call. When they change it, call
+  `mission_set_done_when` in the same turn with their words as the `reason`; the operator confirms the new text in the Mission pane.
+- Put the plan in one chat message (units, topology, Done when) and dispatch. Authorization to orchestrate is
+  authorization to dispatch: there is no second approval to collect.
 
-## Phase 1 — Topology
-
-Break the objective into deliverable units and build the dependency graph:
-
-- **Single unit** if the work fits one reviewable PR (~500 lines) or the parts
-  touch the same files.
-- **Parallel** if units share no files and no code dependency. Confirm with real
-  analysis (grep/glob over each unit's paths), not intuition.
-- **Stacked (sequential)** if unit N+1 consumes code from unit N.
-
-Declare the topology in one line per unit and proceed. Ask only on genuine scope
-ambiguity — one binary question. A question costs the operator a full round-trip
-of wall-clock; a dispatch that turns out slightly wrong costs a rebase. When both
-are available, dispatch. The one question you always ask is the end, below.
-
-**One chapter or several? — the campaign gate.** Count the chapters before you
-declare anything. An objective is **one chapter** when a single mission can carry
-it: its units are independent or stack on each other's code, and nothing a later
-unit needs has to exist in the world first. An objective is **more than one
-chapter** when its stages gate each other — stage 2 consumes something stage 1
-produces (images on a CDN, page templates, credentials, a decision) — or when it
-is too large to plan to the step now. **Single-chapter work keeps the mission-only
-path below, unchanged.** For more than one chapter, declare ONE campaign, not
-loose missions:
-
-`campaign_create { folder, title, declaredEnd, sessionId, chapters: [{ title,
-consumes?, produces?, radiant? }], scope }` — a chapter IS a mission, created
-later; the campaign only holds the plan.
-
-- **One campaign per objective.** Chapters in delivery order, one per stage the
-  spec names. `declaredEnd` is the whole objective's end (kind, target,
-  evidence), proposed from the spec and confirmed in the one end question below.
-  `scope` carries the spec / PRD / ADR paths.
-- **Tokens are how the order is checked.** Give every chapter the `produces` and
-  `consumes` tokens the spec names — free strings such as `images-on-cdn`,
-  `page-templates`. Harnu refuses a chapter that consumes a token no EARLIER
-  chapter produces: `PREREQ_MISSING`, naming the token and the chapter, and
-  nothing is written. **Fix the plan and send the call again: re-order so the
-  producer comes first, or add the producing chapter that is missing.** Never
-  pass `force` to get past it — a forced gap is logged as a `surprise` the
-  operator reads at the close, and it only hides a plan that would have run
-  its chapters in the wrong order.
-- **Rolling wave: detail only the next chapter.** Create the mission of the
-  chapter that starts now — `mission_create { campaignId, chapterId, steps, … }`
-  with the `cmp-…` and `chp-…` ids the campaign ACK returned — and declare its
-  whole plan in that call (1 unit = 1 PR = 1 step, as below). Chapters after it
-  stay coarse: a title, tokens, nothing else, no mission. Detail the next
-  chapter only when the one before is verified, with what you learned in it.
-  A plan for chapter 9 written on day one is a guess the operator will have to
-  read as a promise.
-- **A detour is a side step, not a new mission.** Something found on the way —
-  a fix a unit's PR needs first, a deferred cleanup — is
-  `mission_add_step { required: false, discoveredFrom: <the step it came from>,
-reason }`. It never moves the headline ("Step N of M") and keeps its origin
-  visible. A detour as large as a chapter of its own is a side-quest chapter
-  (`campaign_add_chapter { required: false, discoveredFrom }`); chapters are
-  append-only, so you add them, never reorder or delete them.
-- **Frozen, ID'd acceptance criteria before any dispatch.** Every unit of the
-  chapter you just detailed gets its ACs written with ids and a verification
-  mode (Phase 2) BEFORE its session is created, and they are frozen from then
-  on: an AC is never edited after dispatch — a change is a new AC id with the
-  reason in `mission_log`. Later chapters' ACs are written when their wave
-  starts, not before.
-- **Reading and closing.** `campaign_get` returns the chapter progress Harnu
-  derived ("Chapter N of M") — render it, never recount it. When every required
-  chapter reads done, `campaign_request_close` asks the operator to close; only
-  they end a campaign, and `CAMPAIGN_CLOSED` means stop and report.
-
-**Declare the mission now — after the topology line and the Phase 1b go, before any
-dispatch.** A delivery whose spec `harnu:spec` wrote already has its mission: adopt it
-as _The spec-born mission_ (end of this phase) says, and add the slice steps there.
-The rest of this paragraph is for a delivery with no such mission. Call `mission_create` right after that go, not after the first unit is out: the mission is
-how the operator sees the delivery, and an end they never agreed to is a finish
-line they will dispute at the close. Propose the declared end from the spec
-(kind, target, evidence) and confirm it with the operator in ONE AskUserQuestion —
-the proposal is the recommended option. Pass the spec / PRD / ADR paths as
-`scope` (an attachment, never a step), and declare the whole plan in the same
-call — `mission_create { steps }` — so the mission shows every unit before the
-first executor starts. (For a campaign, this is the mission of the chapter that
-starts now, created with its `campaignId` and `chapterId`.) Shape the steps by
-these rules:
-
-- **1 unit = 1 PR = 1 step.** One step per deliverable that moves where the work
-  is, so the operator's pill ("Step N of M") moves when a unit moves. Sub-phases
-  go to the Log (`mission_log`): spec, implement, review and ship are one step,
-  not four.
-- **Sign-offs become checks, not steps.** A human confirmation of a unit's
-  deliverable — the designer signs off, DSQA, "validated visually" — is a check
-  on that unit's step: `mission_add_check({ folder, missionId, stepId, label })`.
-  Only the operator ticks it. A `human` step is only for a stage of its own that
-  gates what comes next (an operator decision before the next wave).
-
-**The answer comes before the first dispatch.** Ask, then stop: write no packet,
-create no session and link no child until the operator has answered the end
-question (for a campaign, one question: the end of the whole objective). The
-question is asked inside the Phase 1b delivery map, and the go is the answer. The end question in chat is the agreement: the mission is born
-`active`, and nothing else waits on the operator. If they correct the end, stage
-the correction with `mission_set_end`. Once they have answered, dispatch at
-once.
-
-**Integration branch — whenever the delivery needs more than one PR.** Cut
-`feat/<epic>` from the default branch after the Phase 1b go and before dispatching anything, and make it the
-base of every unit's branch (parallel units fork from it; stacked units fork from
-their predecessor). It exists so the feature can be tested as ONE thing before it
-touches the default branch: all unit PRs merge into `feat/<epic>`, that branch goes
-to staging, and `feat/<epic> → main` is a single final PR whose body is the
-Delivery Report. One PR total → no integration branch, target the default branch
-directly.
-
-Rules that keep the cost bounded:
-
-- **Freeze the base SHA per wave.** Every unit in a wave forks from the same
-  `feat/<epic>` commit. Rebase `feat/<epic>` onto the default branch only BETWEEN
-  waves.
-- **Serialize merges into `feat/<epic>`** and run the full suite after each one.
-- **Single-own hub files** (shared types, routes, i18n bundles). If several units
-  need the same hub file, that file gets its own unit, first in the wave.
-- Expect roughly one in four agent PRs to conflict — rebasing is a planned step of
-  delivery, not an incident.
-
-Commit the spec bundle on `feat/<epic>` so every child worktree inherits it.
+**Integration branch, whenever the delivery needs more than one PR.** Cut `feat/<epic>` from the default branch
+before the first dispatch, with the spec bundle committed on it, and make it the base of every unit (parallel units
+fork from it, stacked units from their predecessor). Unit PRs merge into it, it goes to staging, and `feat/<epic>` to
+main is one final PR whose body is the report. Freeze the base SHA per wave, serialize merges into it and run the
+suite after each. A hub file several units need (types, routes, i18n bundles) is its own unit, first in the wave.
+About one agent PR in four conflicts: rebasing is a planned step. One PR total: no integration branch.
 
 ### The spec-born mission
 
-`harnu:spec` opens a mission the moment an entry leaves Small: one human "Approve spec" step,
-the spec bundle as `scope`, and, under D-5, the delivery's end as its declared end. One
-mission per body of work, so you adopt that one and never call `mission_create` a second time:
+`harnu:spec` opens a mission the moment an entry leaves small: an "Approve spec" step with an operator criterion and
+the spec linked to the mission as a `doc` link. One mission per body of work: you adopt that one and never open a
+second.
 
-1. **Find it.** `mission_list` on your `folder`, then `mission_get` on each open row until one's
-   `scope` names the spec (`derived.scope` lists the paths it resolved). Keep its
-   `missionId`, the "Approve spec" step's id and its declared end. Two missions name the
-   spec: ask the operator which one, in one question.
-2. **Confirm the end.** The Phase 1b end question runs on the end that mission declares. A
-   correction is staged with `mission_set_end` and a reason, never a second mission.
-3. **Add one step per slice** with `mission_add_step`, in the spec's slice order, each
-   inserted before the fixed end: title `S-n · <slice title>` (the slice heading verbatim),
-   verification `verifier`, and a `reason` naming the spec. The approval already gave the
-   mission a proof, so the verb requires the reason. Keep each `stepId` from the ACK: the
-   slice → step map is what Phase 2 links children to and what its decision nodes block.
+1. **Find it.** `mission_list { folder }`, then `mission_get` on each open row until one's `links` name the spec. Two
+   name it: ask the operator which, in one question. This session leads it: go on. Another session leads it: ask to
+   join with `mission_attach`, then ask the operator for the hand-off in one line plus one `mission_log`; until they
+   allow it every other verb is refused `NOT_ATTACHED`.
+2. **Add one step per slice** with `mission_add_step`, in the spec's slice order: the title is the slice's title as a
+   verb phrase of at most 50 characters (an id like `S-2` is refused at either edge of a title), the `milestone` is
+   the id the slice belongs to, a `reason` names the spec, and the criteria are short facts, one per spec AC. The card
+   keeps the spec's AC lines verbatim. Keep every `stepId`: the slice to step map is what Phase 2 dispatches with.
 
 ```json
 {
   "folder": "<absolute path of the repo>",
   "missionId": "<mnt-… of the spec-born mission>",
-  "title": "S-n · <slice title>",
-  "verification": "verifier",
-  "reason": "Slice S-n of <spec path>, adopted at dispatch (D-5)"
+  "title": "<the slice's title as a verb phrase>",
+  "milestone": "<mls-… of the slice's stage>",
+  "criteria": ["<one short fact per spec AC, true when the slice is done>"],
+  "reason": "Slice S-n of <spec path>, added at dispatch",
+  "sessionId": "<your session id>"
 }
 ```
 
-When none does (`harnu:spec` is off, or the spec was written by hand), declare the mission
-with `mission_create` as above.
-
-## Phase 1b — Delivery map
-
-The operator sees the whole plan before any session exists. Once the topology and
-the chapter count are settled (Phase 1) and before anything is dispatched, render
-the map and wait for a go. Until the go, you may only write planning artifacts —
-the map itself, the spec bundle drafts, cards in `backlog`, `memory_append` — and
-you call none of `submit_manifest`, `create_session`, `create_worktree`,
-`campaign_create` or `mission_create`.
-
-**1. Write the map** to `.harnu/out/<slug>/delivery-map.md` (`<slug>` is the
-objective's slug, the same one the spec and cards use) and show it with
-`open_file`. Say one line in chat pointing at it; never paste it. It holds, in this
-order:
-
-- **Header** — the objective, the proposed declared end (kind, target, evidence),
-  and the totals: campaigns, chapters, the cards detailed so far, and the estimated
-  number of executor sessions (one per card, plus one shipper per card; verifiers run
-  as subagents; a coarse chapter counts as a stated guess, marked as one).
-- **Per campaign, per chapter, in delivery order** — the `produces` / `consumes`
-  tokens the order rests on and, for the chapter that starts now, its cards with
-  their dependencies (parallel, or stacked on which card). Every later chapter stays
-  coarse, as in the rolling wave (Phase 1): title, tokens and the line "cards:
-  detailed when the chapter starts"; its operator points still go in the table below.
-- **Where the operator must act** — a table of every merge, build, credential or
-  decision the delivery needs from them: when it falls (after which card or
-  chapter), what exactly they do, and the observable event that clears it. A
-  delivery with no such point says so in one line.
-- **Campaign boundaries** — which chapters belong to which campaign, and where one
-  campaign ends and the next begins (below).
-
-**2. Fit check — one campaign, or several sequential ones?** Run it on the map,
-not on instinct. The objective does not fit one campaign when any of these holds
-(the numbers are defaults; the operator may override them in the go):
-
-- the map has more than 8 chapters or more than 25 executor sessions;
-- a stage needs something only the operator can produce — a merge and a build, a
-  credential, a decision — before the next stage can even be planned;
-- chapters beyond the next one are still guesses (rolling wave, Phase 1).
-
-Split at the boundary that does the most work: prefer a human pause, otherwise the
-point where a `produces` token is consumed by everything after it. Each campaign
-gets its own `declaredEnd`, verifiable on its own evidence. The campaigns run
-**sequentially, and the next one starts only when the operator starts it** — a new
-invocation of this skill, after the previous campaign is closed — never as a
-continuation you carry on by yourself.
-Campaign tokens are checked per campaign (`PREREQ_MISSING`), so a chapter of campaign
-N+1 does not list as `consumes` what campaign N produced: name it in that campaign's
-`declaredEnd` and in the map's "Starts from" line instead, and let the first chapter
-verify it on arrival. The boundary and the map's path go to memory in the same turn
-as the go (`memory_append`, `decisions`, `watches: [<slug>]`, one line: `delivery
-map · <slug> · <n> campaigns · next: <campaign 2 title> · <path>`). Phase 0 looks it
-up with `memory_query` on "delivery map", so the next start finds the boundary.
-
-**3. Ask for the go — once.** `notify` the operator that the map is ready, then ask
-ONE `AskUserQuestion`: go as mapped (recommended), or change the map. The declared
-end in the header is the end question of Phase 1, so this is the same question, not
-a second one. The go authorizes this map only — campaign 1 when the map has
-several. Ambiguous energy — "let's start", "sounds good", "go for it" — authorizes
-planning artifacts only, never execution; when unsure, ask ONE binary question. A
-correction is a new map (rewrite the file, ask again), not a verbal patch. With no
-answer, nothing is dispatched: the map stays open and the question stays asked.
-
-**4. After the go**, in this order: cut the integration branch and land the spec
-bundle (Commit 0) if the delivery needs them (Phase 1), call `campaign_create` for
-the campaign that starts now (when the map has several, each later campaign gets
-its own `campaign_create` at the moment the operator starts it), `mission_create`
-for the chapter that starts now with its whole step plan (later chapters get theirs
-when they start), and go on to Phase 2.
-
-### Map template
-
-Keep this shape; the example is a two-campaign objective.
-
-```markdown
-# Delivery map — Acme catalog on the new storefront
-
-Objective: serve the Acme catalog from the new storefront stack.
-Declared end (proposed): kind `code` · target "catalog pages render from the new
-stack on main" · evidence "catalog e2e green on main".
-Totals: 2 campaigns · 4 chapters · 3 cards detailed (Ch. 1) · ~3 executor sessions +
-3 shippers for Ch. 1, ~6 more estimated for Ch. 2–4 (a guess).
-
-## Campaign 1 — Foundations (starts now)
-
-### Ch. 1 — Images on the CDN · produces `images-on-cdn`
-
-| Card              | Depends on       | Parallel/stacked |
-| ----------------- | ---------------- | ---------------- |
-| cdn-upload-script | —                | parallel         |
-| image-url-helper  | —                | parallel         |
-| image-tests       | image-url-helper | stacked          |
-
-### Ch. 2 — Page templates · consumes `images-on-cdn` · produces `page-templates`
-
-Cards: detailed when the chapter starts.
-
-## Campaign 2 — Cutover (starts when you start it)
-
-Starts from: `page-templates` on main (verified by Ch. 3's first card).
-
-### Ch. 3 — Content migration
-
-Cards: detailed when the chapter starts.
-
-### Ch. 4 — Switch traffic
-
-Cards: detailed when the chapter starts.
-
-## Where you act
-
-| When                 | What you do                             | Clears when               |
-| -------------------- | --------------------------------------- | ------------------------- |
-| After Ch. 1 verified | Merge the feat branch, run the CDN sync | images resolve on the CDN |
-| Campaign boundary    | Start campaign 2 (new orchestrate run)  | campaign 2 mission exists |
-| After Ch. 4 verified | Approve the traffic switch              | the flip PR merges        |
-
-## Boundary
-
-Campaign 1 = Ch. 1–2, ends when page templates are on main. Campaign 2 = Ch. 3–4.
-Campaign 2 is not started by this run.
-
-Go: reply "go" to dispatch campaign 1 as mapped, or tell me what to change.
-```
+With no mission naming the spec (`harnu:spec` is off, or the spec was written by hand), create it as above and link
+the spec with `mission_link { link: { kind: 'doc', ref: '<spec path>' } }`.
 
 ## Phase 2 — Cards and dispatch
 
-For each unit, create a card (`create_card`, with kind + complexity +
-`substrate: "worktree"`) whose body is a complete delegation packet:
+Per unit, write a complete delegation packet and dispatch it by ONE of two paths, never both. **`create_session`**
+creates the step's card itself, so the packet is its `prePrompt` and you create no card first: `create_card` cannot
+stamp a step, so a card you made would become a second card for the step. **`submit_manifest` binds a card you made**:
+`create_card` (kind, complexity, `substrate: "worktree"`) with the packet as its body, `move_card` to `ready`, and the
+step on its manifest entry. Cards from a spec (below) always take the second path. A packet an executor can misread
+is your defect, not theirs.
 
 - **Objective** and the done criterion for the unit.
-- **Acceptance criteria, with ids and a verification mode** — the contract this
-  unit will be graded against in Phase 5. One line each:
-  `- [ ] AC-1 #a1b2 — <observable behavior> — verify: test|visual|manual|review — source: <spec §, design node, ticket id>`
-  Write them from the spec or the tracker, never from imagination, and keep the ids
-  stable: evidence, the report and the tracker tick-back all key on them.
-  `verify: manual` up front is honest and useful — it pre-declares what will land
-  on the human's checklist.
-
-  **When the unit has a spec, the AC block is derived from it, not retyped.** Copy
-  each of the slice's AC lines from the spec's Acceptance criteria table: the
-  **spec's id verbatim**, its statement and its `proof` as written, plus a short
-  content hash — `#` and the first four hex characters of the sha256 of
-  `<statement> | <proof>` with runs of whitespace collapsed
-  (`printf '%s' "$text" | sha256sum | cut -c1-4`) — so the line reads
-  `AC-3 #a1b2`. A reviewer, the executor and the verifier can then tell at a glance
-  whether the card still says what the spec says; a spec AC that changes gets a new
-  hash and a delta to the executor. **Inventing an AC id that is not in the spec is
-  forbidden** — an id you coin cannot be traced to the spec, and the verifier will
-  read it as a criterion nobody agreed to. A criterion the spec lacks is a spec gap:
-  amend the spec (its Amendments table), never the card alone. ACs that exist only
-  on the card (the unit's own `AC-C` changelog line, say) stay card-only and
-  unhashed. The orchestrator pastes this block and the scope boundary below from the
-  spec; the executor's packet still names skills by name only, never restated steps.
-  When `harnu:spec` is staged, its planner writes this block and the scope line for you
-  (_Cards from a spec_, below); copying them by hand is the fallback.
-
-- **Provisional ACs — mark what you invented.** ACs traceable to a committed
-  spec, a design node or the tracker are the contract. ACs you wrote yourself,
-  because the objective arrived without any, are **provisional** — and they carry
-  a real hazard, because Phase 5 will grade the delivery against a bar you set.
-  Dispatch anyway; a round-trip costs the operator more than a rebase costs you.
-  But make the self-authorship visible instead of silent:
-
-  - tag each one `provisional` in the card, and open the AC block with one line
-    naming what you derived them from (screenshots, a design node, the code as it
-    stands today);
-  - `notify` the operator once, at dispatch, listing them — you are proposing a
-    definition of done, and that is theirs to correct, not yours to assume;
-  - carry the tag into the Phase 5 report, so a `met` on a provisional AC reads as
-    "met the bar I proposed" rather than "met the spec".
-
-  A provisional AC the operator corrects mid-flight is a delta back to the SAME
-  executor, exactly like an `unmet`. Never quietly promote one to non-provisional
-  just because it passed — passing your own bar is not evidence the bar was right.
-
-- **Honest exit clause** (paste it verbatim): "If an AC cannot be satisfied — the
-  spec is contradictory, the data does not exist, an answer is missing — report it
-  as `AC-n: unmet` with the reason, or `blocked` with the question. Never quietly
-  drop an AC, never weaken a test to make one pass, never edit an acceptance
-  criterion to match what you built." Agents given an explicit way out cheat far
-  less than agents told to keep trying.
-- **Scope boundary**: exactly which files and directories it may touch. Out of
-  scope means no refactors, no abstractions, no dependency changes beyond the unit.
-  When the unit has a spec, paste the slice's `files-may-touch` line verbatim as the
-  boundary — you do not infer it, and a spec slice without one is sent back to the
-  spec rather than guessed.
-- **Context pointers**: files to read first, relevant memory pages, prior
-  decisions.
-- **Visual proof — a unit that changes rendered UI must be looked at before it
-  reports done.** A code review cannot see a rendered page. A template that escapes
-  an HTML string, a component that lays out wrong, an image slot that prints its own
-  `<img>` tag as a paragraph of text: the diff reads correctly line by line, the
-  build is green, the tests are green, and the page is visibly broken. Put it in the
-  packet as a step, not a suggestion: start the app or dev server, open every
-  affected route with the Chrome tools (`navigate` + `read_page` / screenshot), and
-  attach the capture to the card (`update_card { images }`). **Name the routes in
-  the packet** — the executor should not have to infer which page it changed. An AC
-  about something visible is never satisfied by an argument that the code is right.
-- **UI rule — a UI unit's packet names its skills.** When the unit builds or
-  changes UI, the packet cites by name the implementation skill that matches the
-  source of truth — `/dtk:implement-design` when the contract is a Figma design,
-  `/dtk:implement-mockup` when it is an approved mockup — and the QA skill that
-  closes it: `/dtk:dsqa` after a Figma build, `/dtk:mockup-qa` after a mockup
-  build. Name the skills; do not restate their steps (see "Boot templates by
-  role"). The visual-proof step above still applies on top of them.
-- **Git conventions**: point the executor at the repo's own conventions doc for
-  branch naming and PR title/description rules — reference it, do not restate the
-  rules in the packet, because restated copies drift.
-- **The repo's method, written as steps rather than as a slogan.** Read how this
-  repo actually works — `CLAUDE.md`, its conventions doc, its lessons — and put
-  the method in the packet as things to do. "We do TDD" changes nothing an
-  executor can act on; "the first commit on this branch is the failing test for
-  AC-n, and your report states the red→green transition" is a step it can be held
-  to and a verifier can confirm from `git log`. Same shape for a spec-first repo:
-  the spec commit lands before the implementation commit. If the repo states no
-  method, do not invent one — say so in the packet and let the ACs carry the
-  weight alone.
-- **Exit sequence — the executor commits and stands down; YOU dispatch the
-  shipper.** The session that wrote the code is the worst available reviewer of
-  it: its context already holds every justification it made, so a `review-local`
-  run inside it re-reads its own reasoning instead of reading the diff cold. The
-  PR pipeline therefore runs in a FRESH session in the same worktree — dispatched
-  by you, never by the executor:
-
-  - The executor's own run ends at **commit + push + clean tree + `.harnu/REPORT.md`
-    written** (see "Done conditions" below). It verifies its
-    commits exist (`git rev-list --count <base>..HEAD` > 0) and that
-    `git status --porcelain` is empty. It must **not** invoke `ship` — or any
-    pipeline whose first step is a self-review — in its own session.
-  - **Never write "then spawn the shipper" into the packet — the executor
-    cannot.** A session dispatched by an agent is spawned `agentControlled`, and
-    Harnu withholds its `--mcp-config`: that session has NO `mcp__harnu__*` verbs at
-    all, by design (it is what stops a recursive conductor). A packet telling it
-    to call `create_session` is an instruction it can only fail — it pushes, finds
-    no verb, and stands down with no PR and no way to tell you. Every unit
-    dispatched that way parks at "pushed, no PR" until a human happens to look.
-  - **The handoff is yours, on the tick that finds a clean pushed tree** — you
-    hold the verbs, the executor does not. It is a normal step of the delivery,
-    not a recovery path; see Phase 3.
-  - **Serialize the two.** Two sessions in one worktree share the index and HEAD.
-    Dispatch the shipper only once the executor has reported a clean tree, and
-    tell it in the packet that it touches that worktree no further after
-    reporting.
-  - The shipper's boot prompt is the **shipper template** in "Boot templates by
-    role" below — pasted, not paraphrased. It invokes the `ship` pipeline; the
-    orchestrator never has the shipper hand-roll the steps, and there is no
-    `gh pr create` fallback. If the `ship` skill is missing from the shipper's
-    session, that is a blocker to raise (`mission_set_blocker`), not a licence to
-    improvise a PR by hand.
-
-- **Report format**: branch + head sha + one-line summary + per-AC self-assessment
-  (recorded, never trusted — Phase 5 grades independently) + unresolved findings.
-  The executor never reports a PR URL, because it never opens the PR — that
-  arrives from the shipper you dispatch, or from your own `gh pr list` on the next
-  tick.
-- **A return address the executor can actually resolve, plus a file it can always
-  write.** A dispatched session holds no `mcp__harnu__*` verbs, but `SendMessage` is
-  a native tool, not MCP — it has that, and it can reach you even though you are a
-  session the operator opened themselves. A native address is a **name**, and a
-  name is not an identity: yours can change when Harnu parks and resumes you, so
-  the packet carries both halves and the `mission` skill's **child-reporting hard
-  rules**, verbatim:
-
-  - **your stable session id** (`owner session <uuid>`) — who the report is for;
-  - **your current name** — call `ListAgents` once before writing the packet; its
-    first line states it verbatim ("This session is `<name> [<ref>]`"). A session
-    UUID is not a SendMessage address, so never paste it as one. Include the
-    ` [ref]` when your bare name is ambiguous in a busy fleet;
-  - **resolve at send time:** the executor lists agents again right before every
-    send, and sends only to your latest address it just saw listed — never to a
-    name cached from an earlier turn;
-  - **open every report with `Report for session <uuid> · mission <id> · step
-<stepId>`**, so you confirm it by id whatever name it arrived under;
-  - **never broadcast:** if no name resolves or the send fails, the report stays in
-    the file (and, for an executor holding Harnu verbs, on its step via
-    `mission_log`) — it is never sent to a sibling, another orchestrator, or
-    anyone "who might relay it".
-
-  Give it a fallback in the same breath, because a send can still fail and an
-  executor with nowhere to put its report will improvise or lose it: **write the
-  report to `.harnu/REPORT.md` in the worktree as well, always, then send.** The
-  file is what your next tick reads; the message is what makes the tick happen now
-  instead of later. When your own name changes mid-delivery, re-announce it to
-  each live child — the `mission` skill's owner rules say how.
-
-A packet an executor can misread is your defect, not theirs.
+- **Acceptance criteria with ids and a verification mode**, one line each:
+  `- [ ] AC-1 #a1b2 — <observable behavior> — verify: test|visual|manual|review — source: <spec §, design node, ticket id>`.
+  Write them from the spec or the tracker, never from imagination, and keep the ids stable: evidence and the report
+  key on them. **With a spec, the block is derived, not retyped:** the spec's id verbatim, its statement and `proof` as
+  written, plus a content hash, `#` and the first four hex characters of the sha256 of `<statement> | <proof>` with
+  runs of whitespace collapsed
+  (`printf '%s' "$text" | sha256sum | cut -c1-4`), so the line reads `AC-3 #a1b2`. Inventing an AC id the spec lacks
+  is forbidden: the verifier reads it as a criterion nobody agreed to. Card-only criteria stay unhashed.
+- **Provisional criteria.** Ones you wrote yourself, because the objective arrived with none, are tagged
+  `provisional`, the block opens with what you derived them from, and you `notify` the operator once at dispatch:
+  you are proposing a definition of done and it is theirs to correct. A `met` on one reads "met the bar I proposed".
+  Never promote one to non-provisional because it passed.
+- **Honest exit clause**, verbatim: "If an AC cannot be satisfied — the spec is contradictory, the data does not
+  exist, an answer is missing — report it as `AC-n: unmet` with the reason, or `blocked` with the question. Never
+  quietly drop an AC, never weaken a test to make one pass, never edit an acceptance criterion to match what you
+  built."
+- **Scope boundary.** With a spec, paste the slice's `files-may-touch` line verbatim; a slice without one goes back to
+  the spec. Out of scope means no refactors, no abstractions, no dependency changes beyond the unit.
+- **Context pointers**: files to read first, memory pages, prior decisions. **Git conventions**: point at the repo's
+  own conventions doc, never restate it.
+- **The repo's method, as steps.** Read `CLAUDE.md`, the conventions doc and the lessons, and write the method as
+  things to do: "the first commit is the failing test for AC-n and your report states the red to green transition".
+  A repo that states no method gets none invented. **A proof must fail against the code it replaces:** the
+  executor plants a fault first, shows the test red, then makes it green, and never rewrites a committed red test
+  after it is green: it adds to it.
+- **Visual proof.** A unit that changes rendered UI is looked at before it reports done: start the app, open every
+  affected route named in the packet with the Chrome tools, attach the capture to the card (`update_card { images }`).
+  A diff reads correctly line by line and the page can still be broken. A UI unit's packet names its skills:
+  `/dtk:implement-design` and `/dtk:dsqa` for a Figma contract, `/dtk:implement-mockup` and `/dtk:mockup-qa` for a
+  mockup. Name them, never restate their steps.
+- **Exit sequence.** The executor ends at commit, push, a clean tree and `.harnu/REPORT.md`. It never invokes
+  `ship`: the session that wrote the code is the worst reviewer of it. **You dispatch the shipper**, in the same
+  worktree, only once the executor reported a clean tree (two sessions in one worktree share the index). A
+  dispatched session holds only its step's scoped verbs (`mission_get`, `mission_link`, `mission_log`,
+  `mission_set_blocker`), never `create_session`: a packet that says "then spawn the shipper" is an instruction it can
+  only fail. The shipper merges `origin/main` into its branch before it opens the PR, and never rebase a pushed branch.
+- **Report format**: branch, head sha, one-line summary, each AC met, unmet or blocked with its evidence, the files
+  touched outside the scope boundary (or none), unresolved findings. The executor never reports a PR URL.
+- **Return address.** The packet carries your stable session id (`owner session <uuid>`), your current name (call
+  `ListAgents` once before writing; its first line states it; a UUID is not a SendMessage address) and the `mission`
+  skill's child-reporting rules, verbatim: resolve the leader's name with `ListAgents` right before every send; open
+  every report with `Report for session <owner uuid> · mission <missionId> · step <stepId>`; never broadcast, and if
+  the send fails the report stays in the file. **Write `.harnu/REPORT.md` first, always, then send:** the file is what
+  your next tick reads, the message only makes the tick happen sooner. When your name changes, tell each live child.
+- **A change of instructions goes to a dispatched session as a delta file the message names** (`S-n-delta-k.md`),
+  never only in a message: a relayed message is not an instruction the child can check.
 
 ### Cards from a spec — the derive planner
 
-When the units are a spec's slices, the cards come from the planner `harnu:spec` stages
-beside this skill, not from your hand. You are told this skill's base directory when it
-loads; the planner is its sibling `../spec/scripts/spec-derive.mjs`, a dependency-free Node
+When the units are a spec's slices, the cards come from the planner `harnu:spec` stages beside this skill, not from
+your hand. It is the sibling `../spec/scripts/spec-derive.mjs` of this skill's base directory: a dependency-free Node
 script that reads the spec and the board, prints a plan and writes nothing.
 
-1. **Write the board file.** One entry per card file in the main checkout's
-   `.harnu/memory/roadmap/`: `slug` (the file name without `.md`), `status` and `title`
-   from its frontmatter, `spec` from its frontmatter `spec:` line when it has one, and
-   `body`, the text below the frontmatter. Write the JSON array to
-   `.harnu/out/<delivery>/board.json`; `.harnu/` stays writable even when you are promoted.
-2. **Run the planner** from the repo root. It prints `{ create, update, skip, refuse }` and
-   exits 1 when `refuse` is not empty:
+1. **Write the board file**: one entry per card file in the main checkout's `.harnu/memory/roadmap/` with `slug`,
+   `status`, `title`, `spec` (when its frontmatter has one) and `body`, as a JSON array in
+   `.harnu/out/<delivery>/board.json`.
+2. **Run the planner** from the repo root. It prints `{ create, update, skip, refuse }` and exits 1 when `refuse` is
+   not empty:
 
    ```sh
    node <this skill's base directory>/../spec/scripts/spec-derive.mjs <spec-path> --board .harnu/out/<delivery>/board.json
    ```
 
 3. **Execute the plan**, entry by entry:
-   - `create`: one `create_card` per entry, its `title` as the title, the spec path as
-     `spec`, and a body that opens with the `spec-slice: S-n` marker line, then the entry's
-     `block` verbatim, then your envelope (objective, return address, exit sequence,
-     method, honest exit clause: the bullets above). Every card carries the marker, a slice
-     an open D-n gates too: its card stays in the backlog while its decision node holds the
-     dispatch (_Open decisions become decision nodes_, below).
-   - `update`: `update_card` has no splice. Take the card's body (from the board file, or
-     the card file again if it changed since), replace only the span between the markers
-     `<!-- spec:begin S-n -->` and `<!-- spec:end S-n -->`, both included, with the entry's
-     `block`, keep every other byte, and send the whole result as `replaceBody`. A ticked
-     box survives: the planner already kept it in `block`. Send the executor the delta, as
-     for any changed AC.
-   - `skip`: nothing to write. A card past `ready` belongs to its executor now; an `orphan`
-     is a card whose slice the spec dropped: tell the operator, never delete it.
-   - `refuse`: that slice goes back to the spec with the reason (its author amends the
-     spec, then you run the planner again); the other slices go on. Never hand-write a
-     refused slice's card.
+   - `create`: one `create_card` per entry, its `title`, the spec path as `spec`, and a body that opens with the
+     `spec-slice: S-n` marker line, then the entry's `block` verbatim, then your envelope (objective, return address,
+     exit sequence, method, honest exit clause). Every card carries the marker.
+   - `update`: `update_card` has no splice. Take the card's body, replace only the span between the markers
+     `<!-- spec:begin S-n -->` and `<!-- spec:end S-n -->`, both included, with the entry's `block`, keep every other
+     byte, send the whole result as `replaceBody`. A ticked box survives. Send the executor the delta (a file).
+   - `skip`: nothing to write. A card past `ready` belongs to its executor; an `orphan` is a card whose slice the spec
+     dropped: tell the operator, never delete it.
+   - `refuse`: that slice goes back to the spec with the reason; the others go on. Never hand-write its card.
 
-   The envelope is yours: you write everything outside the markers, and on a later run
-   the planner never touches it. The block is the planner's: never retype it. A second run
+   The envelope is yours and the planner never touches it; the block is the planner's, never retype it. A second run
    over the board you just wrote prints an empty plan; anything else is a defect to report.
 
-4. **Hand the card map to the wave's bookkeeping unit (D-3).** The marker alone lets the
-   next run match every card from the board. The spec still records the map, as `card` rows
-   of its Amendments table (`S-n → <card slug>`), but a promoted orchestrator cannot edit the
-   spec: its guard stops writes outside `.harnu/` and the scratchpad. So list the `card` rows
-   of every card you created in the packet of one docs-only card per wave, scoped to the spec
-   file, which commits them (and the D-n resolutions of the wave) on the integration branch.
+4. **Hand the card map to the wave's bookkeeping unit (D-3).** The marker alone lets the next run match every card.
+   The spec records the map as `card` rows of its Amendments table (`S-n → <card slug>`), but a promoted orchestrator
+   cannot edit the spec: its guard stops writes outside `.harnu/` and the scratchpad. List the `card` rows, and the
+   wave's D-n resolutions, in the packet of one docs-only card per wave scoped to the spec file.
 
 ```json
 {
@@ -592,117 +256,105 @@ script that reads the spec and the board, prints a plan and writes nothing.
 }
 ```
 
-**When `harnu:spec` is switched off** the sibling is not staged and
-`../spec/scripts/spec-derive.mjs` does not exist. Keep the Wave A hand derivation (the AC
-block copied from the spec, above), say in one line that
+With `harnu:spec` switched off the sibling is not staged: keep the hand derivation above, say in one line that
 the derive planner was unavailable, and still write the `spec-slice: S-n` marker on each card.
 
-### Open decisions become decision nodes
+### Open decisions become operator blockers
 
-A spec can reach dispatch with rows of status `open` in its Open decisions table. Each one
-that gates work becomes a decision node on the mission, so it locks only what it gates:
+A spec can reach dispatch with open rows in its Open decisions table. Each open D-n that gates a slice is an operator
+blocker on exactly the steps of the slices whose `gated-by:` names it:
 
-- For each row with status `open`, add one `mission_add_step` with a `decision`: title
-  `D-n · <question>`, verification `human`, `options` the row's options cell split at `;`,
-  and `blocks` exactly the steps of the slices whose `gated-by:` names it (their `stepId`s
-  from Phase 1).
-- A D-n that gates no slice gets no node: it is a question for `harnu:one-by-one`, not a
-  lock. A resolved row gates nothing.
-- The slices no open D-n gates are dispatched now (`submit_manifest`, below). A gated
-  slice's card is created all the same and waits in the backlog.
-- The choice is the operator's: point them at the node's **Choose…** door in the mission
-  popover, and never write `chosen` (the verb refuses it). Once they choose, the blocked
-  steps unlock: the resolution joins the wave's spec rows (step 4 above), the planner runs
-  again if the choice changed an AC, and the held slices go out with `submit_manifest`.
+- For each gated step, one `mission_set_blocker` (the `reason` names the spec path, the question and the options, the
+  row's options cell split at `;`):
 
-```json
-{
-  "folder": "<absolute path of the repo>",
-  "missionId": "<mnt-… of the mission>",
-  "title": "D-n · <question>",
-  "verification": "human",
-  "reason": "Open decision D-n of <spec path> gates S-a and S-b",
-  "decision": {
-    "title": "<question>",
-    "options": ["<option 1>", "<option 2>"],
-    "blocks": ["stp-3", "stp-4"]
+  ```json
+  {
+    "folder": "<absolute path of the repo>",
+    "missionId": "<mnt-… of the mission>",
+    "stepId": "<stp-… of a gated slice>",
+    "reason": "<spec path> leaves open <D-n>: <question> Options: <option 1> or <option 2>",
+    "ask": "Choose <D-n>, then say done",
+    "unblocks": "<the gated slice's title>",
+    "owner": "operator",
+    "sessionId": "<your session id>"
   }
-}
-```
+  ```
 
-`blocks` holds the gated slices' step ids (here `stp-3` for S-a and `stp-4` for S-b).
+- A D-n that gates no slice gets no blocker: it is a question for `harnu:one-by-one`. A resolved row gates nothing.
+- The slices no open D-n gates are dispatched now. A gated slice's card is created all the same and waits in the
+  backlog.
+- The choice is the operator's, and so is clearing an operator-owned blocker (they say "Done, continue" in the Mission
+  pane). When they have, record the choice with `mission_log { kind: 'decision', stepId }`, run the planner again if
+  it changed an AC, and send the held slices out with `submit_manifest`.
+
+### Dispatching
+
+**One unit, no card of yours.** `create_session` with `missionId` and `stepId` (the packet as `prePrompt`, a model
+hint in `bootOverride`): Harnu creates the step's card, attaches the new session as its worker with a credential
+scoped to that step, and links it. The ACK carries `card` and `worker`; a `bindError` means the session still runs and the binding
+failed, so fix it with `mission_link`. A step you do yourself is never dispatched, so it never gets a card.
+
+**Parallel units, or any card you made.** Move the cards to `ready` (`move_card`), then submit ONE batch with
+`submit_manifest`, each card entry carrying `missionId` and `stepId`, in drain order (a batch of one is fine). The drain cuts one worktree per card, respects the
+board's WIP ceiling and bases on the default branch: with an integration branch, dispatch manually
+(`create_worktree { base: "feat/<epic>" }`, then `create_session`) or retarget each PR with
+`gh pr edit <n> --base feat/<epic>`, and say which.
+
+**Stacked units.** Stack each unit on the previous branch: `create_worktree` with `base` set to the previous unit's
+branch (verify with `git merge-base`), then `create_session` into it. Do not wait for a merge unless a runtime
+dependency needs one: a unit that needs the earlier code to run in Harnu waits, one that only reads it does not.
+Before the merge handoff, retarget every stacked PR whose base landed: `gh pr edit <n> --base <default branch>`, then
+`gh pr view <n> --json baseRefName`.
+
+Model and effort per card are hints: the operator's routing table decides what launches (`dispatched-with:` on the
+card says what ran). A mutating verb that comes back as a confirm ("Ask before agent actions") is covered once by
+`plan_mission` for the whole fan-out.
 
 ### Done conditions — checkable by the worker alone
 
-Every done condition you write into a packet, a boot template or a `/goal` must be
-something the worker can verify from its own worktree, with no other session's
-cooperation:
+Every done condition in a packet or a boot template is something the worker verifies from its own worktree:
 
-- **Executor:** commits pushed (`git rev-list --count <base>..HEAD` > 0) + tree
-  clean (`git status --porcelain` empty) + `.harnu/REPORT.md` written.
-- **Shipper:** PR open + CI green + `.harnu/REPORT-ship.md` written.
-- **Lander:** every PR in the list handed back `ready`, `awaiting-reviewer` or
-  `blocked-<why>` + branches pushed, tree clean + `.harnu/REPORT-land.md` written.
-- **Reviewer:** the review written to `.harnu/REPORT-review.md`.
+- **Executor:** commits pushed (`git rev-list --count <base>..HEAD` > 0), tree clean (`git status --porcelain`
+  empty), `.harnu/REPORT.md` written.
+- **Shipper:** PR open, CI green, `.harnu/REPORT-ship.md` written. **Lander:** every PR handed back `ready`,
+  `awaiting-reviewer` or `blocked-<why>`, branches pushed, tree clean, `.harnu/REPORT-land.md` written.
+  **Reviewer:** the review in `.harnu/REPORT-review.md`.
 
-**Never make "a message was delivered to another session" a done condition** —
-not in a packet, not in a `/goal`, not in a Stop hook. The worker cannot check it,
-and cannot make it true when the recipient is parked, renamed or gone. A done
-condition it can neither verify nor satisfy never clears, so the Stop hook
-re-prompts it forever: one worker was re-prompted 578 times, roughly $130 spent
-on a turn that could never end. The report message is a best-effort courtesy that
-makes your next tick happen sooner; the file is the deliverable, and the file is
-what "done" is graded on.
+**Never make "a message was delivered to another session" a done condition**, in a packet or a Stop hook: the worker
+cannot make it true when the recipient is parked, renamed or gone, and the Stop hook then re-prompts it forever. The
+message is a courtesy, the file is the deliverable.
 
 ### Boot templates by role
 
-Each dispatched role starts from a fixed template. **Paste it; do not paraphrase
-it.** Fill only the `<…>` slots. A boot prompt you re-word each time is a new
-prompt each time, and every re-wording is a chance to drop an override, a done
-condition or the return address.
+**Paste a template; never paraphrase it**, and fill only the `<…>` slots: a re-worded boot prompt can drop an
+override, a done condition or the return address. Cite a skill by name, never restate its steps. Every template ends
+with the return address and this exit line: write the report file, then send; owner unreachable, the file only.
 
-**Cite a skill by name; never restate its steps in the prompt — a restated copy
-drifts.** The skill is the single source of the procedure and improves in one
-place; a prompt that lists "review, commit, open the PR, assign reviewers" freezes
-today's version of it into every future delivery. The template says which skill to
-invoke and what to override, nothing more.
-
-Every template ends with the same two blocks: the **return address** (your session
-id, your current name from `ListAgents`, and the `mission` skill's child-reporting
-hard rules, verbatim — see "A return address…" above) and the **exit line** (write
-the report file, then send; unreachable owner → the file only).
-
-- **Executor** — the delegation packet from the list above, in full: objective,
-  ACs with ids, honest exit clause, scope boundary, context pointers, visual proof
-  when it renders UI, the repo's method as steps, the done condition above, report
-  format, return address. It never invokes `ship`.
-- **Shipper** — dispatched by you into the executor's worktree once the tree is
-  clean and pushed:
+- **Executor:** the delegation packet above, in full. It never invokes `ship`.
+- **Shipper**, dispatched into the executor's worktree once the tree is clean and pushed:
 
   ```
   Invoke `/dtk:ship` with these overrides:
   - base branch: <base per the topology>
-  - open the PR only — never merge
-  - skip the notify step — the orchestrator reports centrally
+  - merge `origin/main` into the branch before opening the PR; never rebase a pushed branch
+  - open the PR only, never merge
+  - skip the notify step, the orchestrator reports centrally
   Done = PR open + CI green + `.harnu/REPORT-ship.md` written.
   After you report, touch this worktree no further.
   <return address> <exit line>
   ```
 
-- **Lander** — dispatched for the closing phase (below), into a fresh worktree of
-  the repo:
+- **Lander**, for the closing phase, into a fresh worktree:
 
   ```
   Invoke `land-prs` on: <PR numbers, in landing order>.
-  Target: <the branch the declared end names>. Merge policy: <the declared end's
-  words on merging, verbatim>.
-  Done = every PR handed back ready, awaiting-reviewer or blocked-<why>, branches
-  pushed, tree clean, `.harnu/REPORT-land.md` written.
+  Target: <the branch the Done when names>. Merge policy: <the Done when's words on merging, verbatim>.
+  Done = every PR handed back ready, awaiting-reviewer or blocked-<why>, branches pushed, tree clean,
+  `.harnu/REPORT-land.md` written.
   <return address> <exit line>
   ```
 
-- **Reviewer** — when a unit wants a cold code review beyond Phase 4's per-AC
-  grading:
+- **Reviewer**, for a cold code review beyond Phase 4:
 
   ```
   Invoke `/dtk:review-peer` on PR #<n>. Post nothing to the PR.
@@ -710,516 +362,184 @@ the report file, then send; unreachable owner → the file only).
   <return address> <exit line>
   ```
 
-Phase 4's blind verifiers are subagents with their own packet from the
-`delivery-verifier` skill; they are not one of these roles.
-
-**Parallel units:** move their cards to `ready` (`move_card`), then submit ONE
-dispatch batch with `submit_manifest`, cards in drain order. The drain cuts one
-worktree per card and respects the board's WIP ceiling — do not hardcode your own
-concurrency cap. Caveat when an integration branch is in play: **the drain always
-bases on the default branch**. Either dispatch parallel units manually
-(`create_worktree { base: "feat/<epic>" }` + `create_session`, compensating the
-missing bind as described below), or let them fork from the default branch and
-retarget the PR base with `gh pr edit <n> --base feat/<epic>` before any merge. Say
-which you chose.
-
-**Stacked units:** the manifest drain branches from the default branch, so stacking
-is manual. Dispatch unit 1 via the manifest. When unit N's PR is open,
-`create_worktree` passing the unit-N worktree path as `folder` (so the base is
-branch N — verify with `git merge-base` that the base is what you expect), then
-`create_session` in it with the packet as `prePrompt`. These verbs run without
-confirms by default; only if a confirm comes back ("Ask before agent actions" is
-on) call `plan_mission` once to cover the remaining follow-ups.
-
-- [ ] **Retarget before the merge handoff.** Before handing merges to the
-      operator, retarget every stacked PR whose base has landed:
-      `gh pr edit <n> --base <default branch>`, then
-      `gh pr view <n> --json baseRefName` to confirm. A merge into a stack base
-      that never reaches the default branch is a second round-trip for the
-      operator. (`mission_get` shows each linked PR's `baseRefName` too.)
-
-A manually dispatched card never binds to its session: the board will not show
-`in-progress` and no `dispatched-with:` line is written. Compensate with
-`update_card` — note the session and worktree path in the card body — so the board
-still tells the truth.
-
-Model and effort per card are hints only; the operator's routing table decides what
-actually launches. On manifest-dispatched cards, read the `dispatched-with:` line
-afterwards if you need to know what ran.
-
 ## Phase 3 — Monitor
 
-The mission you declared in Phase 1 is the state that survives interruptions — a
-structured Mission the `mission` skill owns through the `mission_*` verbs. Keep it
-true as the delivery moves: `mission_link_child` for each unit's session,
-worktree, card and PR as they appear, and a `mission_add_step` for any unit born
-mid-delivery. **Never link a session to a step only to change its proof label;
-link the sessions that built it.** A session link says who built the step — the
-operator reads it that way, and the end's verification counts on it. One mission
-per owner session, so parallel orchestrations in one checkout never overwrite
-each other. Then **arm the ticks yourself** — a loop over `mission`, self-paced,
-stopped when the mission closes. Every tick prompt you arm starts with the fixed
-first line `mission` defines (see "The tick prompt's first line" there), naming
-this mission's id. On `MISSION_CLOSED`, stop the loop: the
-operator ended the mission (closed or discarded it), and every write refuses from
-then on — report it, never retry or open a replacement mission. Do not wait to be asked "how is it
-going": an orchestration whose heartbeat depends on the operator remembering to
-poke it is an orchestration that quietly parks work.
+**Arm the ticks yourself, before you report the dispatch**: a loop over the `mission` skill, self-paced, stopped when
+the mission closes. Every tick prompt you arm starts with the one fixed first line the `mission` skill defines (see
+"The tick prompt's first line" there), naming this mission, then free text. Code parses that line: never reshape it.
 
-**Arm the loop before you report the dispatch, and keep it alive until every unit
-has reached `review`.** No dispatched unit may exist without a live heartbeat
-over it. The operator is not a watchdog: if the way a stalled unit gets found is
-that they opened the folder days later and asked, the orchestration failed even
-if every executor did its job.
+No dispatched step may exist without a live heartbeat over it. On `MISSION_CLOSED`, stop the loop and report: the
+operator ended the mission, and you never open a replacement. The loop dies in ordinary ways (parked under memory
+pressure, the app closed, a compaction, a turn that ended without re-arming), so keep three layers:
 
-### The heartbeat needs three layers, because the loop dies
+1. **A push subscription per worker, taken at dispatch:** `SendMessage { to: "<name from ListAgents>",
+notify_when_idle: true }` with no message. One `[Cross-session idle notice]` arrives when it goes idle or exits;
+   that is your cue to spawn a tick subagent. Never poll `ListAgents` or ask workers whether they are done. The
+   notice can lapse, never lie: re-take it rather than raising the tick rate.
+2. **The loop**, a backstop with slow ticks, since arrival is pushed to you.
+3. **A watchdog on the Scheduler:** a worker in `observe` mode on this repo's folder with the prompt
+   `/harnu:delivery-watchdog`, about 30 minutes, "carry last result" on. It is a smoke alarm, not a sprinkler: it
+   reads the missions, can `notify` and nothing else, and outlives this session. Log the cadence and the worker (or
+   `none`, and why) with `mission_log`.
 
-Your loop lives inside this session, and this session is mortal in entirely
-ordinary ways: Harnu parks it under memory pressure, the operator closes the app, a
-compaction lands, or they simply ask you something mid-delivery and the turn ends
-without re-arming. None of that is exotic — **the loop stopping is the normal
-failure**, and a delivery whose only heartbeat is that loop parks silently until a
-human wanders back. Assume it will happen and make it survivable rather than
-pretending it is impossible:
+### Every tick runs in a fresh subagent
 
-**Layer 1 — a push subscription per executor, taken at dispatch.** The moment a
-unit's session exists, subscribe to it:
-`SendMessage { to: "<executor name from ListAgents>", notify_when_idle: true }`
-with **no message** — a pure subscription costs that session nothing. Exactly one
-`[Cross-session idle notice]` arrives when it next goes idle or exits, which wakes
-you at the moment the unit actually finishes rather than whenever your timer
-happens to land. That notice is your cue to spawn a tick subagent (below) — not to
-read state, evidence or reports yourself.
-
-This is the layer that collapses the expensive gap. An executor that finishes and
-stands down is otherwise invisible until something asks git about it, and "how
-long until something asks" is the entire latency of a delivery. Do not simulate it
-by polling `ListAgents` or by messaging executors to ask whether they are done —
-that burns their turns and yours, and the subscription exists precisely so nobody
-has to.
-
-Treat it as unreliable in one direction only: the notice can lapse (the
-subscription expires, the session ended abruptly, you were not around to receive
-it). It never lies about a unit being finished; it can only fail to tell you. That
-is what the next two layers are for.
-
-**Layer 2 — the loop.** It fires the work: each firing spawns a tick subagent that
-dispatches shippers, sends deltas back, verifies and closes out. The loop and the
-subscriptions are the only things that stay in your context; the work does not.
-With layer 1 in place its cadence is a backstop rather than a discovery mechanism
-— slow ticks are correct, because arrival is pushed to you.
-
-**Layer 3 — a watchdog on Harnu's Scheduler.** Stand one up at the same time you
-arm the loop: Scheduler → New worker, `observe` mode, this repo's folder, prompt
-`/harnu:delivery-watchdog`, ~30 minutes, with "carry last result" on — that one
-carried line is how the watchdog remembers what it already reported. It reads
-your mission through `mission_get`/`mission_list`, both on the `observe`
-allowlist. A worker is a fresh unattended process on
-a timer, so it outlives this session by construction — which is the whole point,
-since neither of the layers above can report its own death: a subscription nobody
-is alive to receive and a loop that stopped look identical from the inside.
-
-Be honest with the operator about what this layer is: **a smoke alarm, not a
-sprinkler.** An `observe` tick is read-only by allowlist and cannot wake you —
-`message_session` is denied to it by name, and a session the operator opened
-themselves is not a messageable recipient in the first place. It can `notify`,
-and nothing else — it writes to no card and no mission. It still turns a stall
-found the next day into a stall found in half an hour, which is most of the value.
-
-Record the arrangement on the mission so a lapse is legible: a `mission_log` line
-naming the cadence and the watchdog worker (or `none`, and why). Harnu derives the
-rest: a mission with no new evidence for over an hour while no linked session is
-working reads `derived.stale` on `mission_get` — to the watchdog and to you on
-resume, with no heartbeat claim to trust.
-
-### Every tick runs in a fresh subagent — your context stays flat
-
-Your context grows per tick, not per task: each `mission_get`, `campaign_get` or
-`get_fleet` dump you read lands in this transcript and is re-read on every later
-turn. One delivery reached ~941k tokens that way. So you never read those dumps.
-**Every tick, every verification read and every child report is handled by a fresh
-subagent** that calls the Harnu verbs, acts, and returns a short structured summary.
-You keep only the loop, the subscriptions and that summary.
-
-**The rule: an unattended run never depends on a human pasting a prompt.** There is
-no token threshold at which you stand down, and no hand-written prompt for the
-operator to carry into a new session. The context stays small by construction, so
-the delivery runs overnight.
-
-How to spawn it, on every firing of the loop and on every `[Cross-session idle
-notice]`:
-
-- Use the `Agent` tool with a **fresh general-purpose subagent** (omit
-  `subagent_type`, or pass `general-purpose`). **Never `subagent_type: "fork"`**: a
-  fork inherits your whole context, so it saves nothing and pays for the transcript
-  again.
-- Pass your **real session id** (the UUID that ends your scratchpad path) in the
-  prompt. A session id is self-declared, so this is what attributes the subagent's
-  `mission_*` calls to you, the owner. A subagent's own id reads `agent-<…>`; it
-  must never be used as `sessionId` or `ownerSessionId`.
-- Pass your **current native name** (first line of `ListAgents`) so the subagent can
-  put both halves of your address into any dispatch packet and notice when it
-  changed (`mission`'s owner rules). Reading that one line is the only state you
-  read yourself.
-- Run it in the foreground when you are waiting on the result to re-arm, in the
-  background when a notice arrives mid-turn. Spawn at most one tick subagent at a
-  time per mission: two ticks writing the same mission race each other.
-
-**Tick subagent prompt template** — fill the slots, change nothing else:
+Your context grows per tick, so you never read a `mission_get` or `get_fleet` dump yourself. Every tick, verification
+read and child report is handled by a **fresh general-purpose subagent** (the `Agent` tool, never `subagent_type:
+"fork"`, which inherits your whole transcript), at most one per mission at a time. Pass your real session id (the UUID
+that ends your scratchpad path: a subagent's own `agent-<…>` id is never a `sessionId`) and your current name. Prompt
+template, slots only:
 
 ```
-You are running ONE coordination tick for the Harnu mission <missionId> on behalf
-of its owner session <ownerSessionId> (native name: <ownerName>). You are a
-subagent, not the owner: pass sessionId/ownerSessionId = <ownerSessionId> on every
-verb that takes one, never your own id, never link your own session anywhere.
-Folder: <folder>. Campaign: <campaignId or none>. Trigger: <loop firing | idle
-notice from session <childId>>.
+You are running ONE coordination tick for the Harnu mission <missionId> on behalf of its leader, session
+<leaderSessionId> (native name: <leaderName>). You are a subagent, not the leader: pass sessionId =
+<leaderSessionId> on every verb that takes one, never your own id.
+Folder: <folder>. Trigger: <loop firing | idle notice from session <childId>>.
 
-Read: mission_get({ folder, missionId }) and, when a campaignId is set,
-campaign_get. Nothing else for state — no get_fleet, no gh pr view for facts the
-mission already carries.
+Read mission_get({ folder, missionId, sessionId }) and nothing else for state: no get_fleet, no gh pr view.
+Run the tick the `mission` skill defines, with the leader's rules from `orchestrate-delivery`. You may link, log,
+raise and clear agent blockers, add an optional step for a red gate, dispatch a shipper or a `role: 'verifier'`
+session, nudge a stalled child with message_session, and call rebase_stack after a parent lands. You may not end or
+close a mission, merge, write product code, move a card to done, or re-dispatch a child that is not proven dead.
+Put <leaderSessionId> and <leaderName> in every packet. On MISSION_CLOSED stop and say so.
 
-Run the tick the `mission` skill defines (its "mission — one tick", steps 1–5),
-with the owner's rules from `orchestrate-delivery` Phase 3. You may: link
-children (mission_link_child), log (mission_log), raise and clear blockers,
-add side steps for red gates, dispatch a shipper or a role:'verifier' session
-per the existing rules, nudge a stalled child with message_session, and record
-a verification only for a step you did not author. Put <ownerSessionId> and
-<ownerName> in every dispatch packet you write. You may not: end or close a
-mission, merge, tick a check, choose a decision, write product code, move a
-card to done, or re-dispatch a child that is not proven dead. On MISSION_CLOSED
-stop and say so.
-
-Return ONLY this report, at most 15 lines, no raw tool output:
+Return ONLY this, at most 15 lines:
 tick · <missionId> · <time>
-progress: <Step N of M · V verified | Ch. N/M · Step a/b>
-you: <the `you` line verbatim>
-stale: <yes|no> · red gates: <step: gate #PR, or none>
-did: <one clause per action taken, or "nothing">
-children: <step: session8 state — only those that changed>
+progress: <progress.headline>
+waiting: <next, and the count behind it>
+did: <one clause per action, or "nothing">
+children: <step: session8 state, only those that changed>
 subscribe: <child session id · native name, per child you dispatched, or none>
-verify: <unit awaiting a verification subagent, or none>
-owner-must: <what only the owner can do — re-arm, ask the operator — or none>
+verify: <step awaiting a verifier, or none>
+owner-must: <what only the leader can do, or none>
 next: <suggested interval in seconds and why>
 ```
 
-What you do with the summary, and only that:
+What you do with the summary: `subscribe:` take the idle subscription for each child (a subagent cannot take yours);
+`verify:` dispatch the verification (Phase 4) and never read the diff yourself; `owner-must:` do exactly that, then
+re-arm at `next:`. Report the `tick —` line from `progress:` and `waiting:`. A summary that is missing, malformed or
+longer than 15 lines is a failed tick: spawn it again with the defect named in one line.
 
-- `subscribe:` → take `SendMessage { to: <name>, notify_when_idle: true }` with no
-  message for each child listed (look the name up in `ListAgents` if it came back
-  unknown). A subagent cannot take your subscriptions: its notices would go to
-  it, not to you.
-- `verify:` → dispatch the verification subagent (Phase 4), do not read the
-  diff yourself.
-- `owner-must:` → do exactly that, then re-arm the loop at `next:`.
-- Report the `tick —` line to the operator from `progress:` and `you:`. The
-  summary is not evidence of a verdict: a verdict is whatever `mission_get` says
-  on the next tick's read, in the subagent's context, not yours.
+**What a tick covers:**
 
-A summary that is missing, malformed or longer than 15 lines is a failed tick, not
-a reason to read the mission yourself: spawn the tick again with the defect named
-in one line.
+- Each worker's state from `sessions` and the step's `state`: `hibernated: true` is not death and not a stall, and a
+  spawn can be in flight (`get_session` says `spawning`). Never dispatch a replacement over a session not proven dead:
+  two in one worktree corrupt each other.
+- A PR for a step no link names yet: link it (`mission_link`); on unit N's PR, start the next stacked unit.
+- Verify by evidence, never by a worker's own account. A wrong result goes back to the SAME worker with a delta file,
+  not a redo. A worker that reports done with no commit goes back with that exact finding: never commit for it.
+- **Ship handoff, the step you own.** A step with pushed commits, a clean tree and no open PR waits on you: dispatch
+  the shipper on the tick that finds it. A step stuck between push and PR is your defect.
+- After review changes or a squash-merge of unit N, tell unit N+1's worker to merge the new tip, or call
+  `rebase_stack` for the step's own worktree: it never pushes (publishing the rewrite is yours), never touches
+  another branch or the main checkout, and on a conflict aborts and writes nothing, so raise the blocker yourself and
+  do not retry.
+- A worker idle with no commit, PR or log line since the last tick: nudge it once with `message_session`; after a
+  second check about 10 minutes later, raise a blocker on the step and stop insisting.
 
-What a tick covers (the tick subagent runs these; the `mission` skill defines the
-tick, from one `mission_get`):
+**Dispatch bias.** A step that can run is dispatched on the tick that finds it. A step may sit undispatched only when
+it is blocked on something you cannot resolve: an unmerged dependency, a missing spec, a named unanswered question.
+"It came up later" and "it wasn't in the plan" are not blockers. A step born mid-delivery (a split, a deferred fix, a
+reviewer's follow-up) enters the same pipeline: `mission_add_step`, card, packet, dispatch. Before each report, walk
+the steps you are not running and say, per step, `dispatched` or `blocked on <the specific thing>`; if you cannot
+name the thing, dispatch now.
 
-- Linked executors' state from `derived.steps[].children` — `get_session` only to
-  prove a spawn still in flight. `hibernated: true` is NOT death and NOT a stall —
-  the session resumes on selection; never dispatch a replacement over it. If a
-  unit's idle subscription lapsed without ever firing, re-take it
-  (`notify_when_idle`) rather than raising the tick rate.
-- Linked worktrees' PRs from `derived.steps[].links`, plus `gh pr list` for a PR
-  no step links yet (link it); on unit N's PR, trigger the next stacked unit.
-- Verify by evidence, never by the executor's own account: read the diff, the gate
-  output, the PR. A wrong result goes back to the SAME executor with a specific
-  delta, not a redo from scratch.
-- If an executor reports done but `git rev-list` shows no commit, send it back with
-  that exact finding — do not commit on its behalf.
-- **Ship handoff — the step you own.** A unit with pushed commits, a clean
-  worktree and no open PR is not waiting on anyone: it is waiting on you.
-  Dispatch the shipper (`create_session` into that worktree) on the tick that
-  finds it — never send the implementer back to review and ship its own work,
-  which is the exact contamination the handoff exists to prevent. The executor
-  cannot do this for you (Phase 2: agent-dispatched sessions hold no Harnu verbs),
-  so a unit stuck between push and PR is always your defect, and the operator
-  noticing it before you did is the failure this step exists to make impossible.
-- If unit N's PR takes review changes (or a squash-merge) after unit N+1 already
-  branched, instruct unit N+1's executor to rebase onto the new tip — never let the
-  stack drift silently.
-- Per unit, answer these five each tick: is the unit's objective fully satisfied by
-  evidence? is the executor looping? is there forward progress since last tick? who
-  acts next? what exactly do they do?
+**A wave that ends at a human pause** (a merge and a build before the next stage can branch) does not end the
+session. Leave the mission, the board and the links true, `memory_append` what the next stage needs, raise
+`mission_set_blocker { owner: 'operator' }` naming the exact act and the event that clears it, and keep the loop
+armed slowly. **A turn that ends waiting on the operator raises that blocker first**: a line in the transcript
+reaches nobody who is away. `mission_clear_blocker` clears your own the turn you see them resolved; an
+operator-owned one is the operator's to clear.
 
-**Dispatch bias — a unit that CAN run is dispatched on the tick that discovers
-it.** Authorization to orchestrate IS authorization to dispatch; there is no
-second approval to collect. Handing the operator a unit they already gave you,
-dressed as a question, is not caution — it is a stalled delivery wearing a
-question mark, and it costs exactly as much as forgetting the unit entirely.
+**Every turn is a possible resume**, an operator question and the turn after a compaction included. When you are not
+certain the loop is armed, spawn a tick subagent to re-derive state from the world (`mission_get`, the board, git
+per worktree), do the missed work before reporting it, and re-arm with the same first line. Answering without
+re-arming is the defect.
 
-A unit may sit undispatched only when it is blocked on something you cannot
-resolve yourself: an unmerged dependency, a missing spec, a named unanswered
-question. "It came up later", "it was a split", "it wasn't in the original plan",
-"I wasn't sure it was in scope" are not blockers — they are how deliveries
-actually grow.
+## Hand-off
 
-Units born mid-delivery — a split from verification, a deferred fix, a follow-up
-a reviewer raised — enter the SAME pipeline as planned units: card, ACs, packet,
-manifest, dispatch. Never park one in a report as a suggestion for the operator
-to approve.
+Only the operator starts a hand-off, from the Mission pane. The leader never switches itself, whatever its context
+says. A session near its context limit asks the operator for one: one line in its reply and one `mission_log` note,
+nothing else. If they agree, Harnu starts a fresh session whose first prompt is the mission summary, and the old one
+is released, not killed. A fresh session starts from the summary: it reads `mission_get` and carries on, and no
+resume prompt is ever pasted, by you or by the operator. Another session that only wants to help uses
+`mission_attach` and joins as a worker, never as the leader.
 
-Before writing any tick or report, walk the units you are NOT running and say,
-per unit, either `dispatched` or `blocked on <the specific thing>`. If you cannot
-name the specific thing, it is not blocked — dispatch it on this tick, then
-report that you did.
+## Phase 4 — Verify each unit, per criterion
 
-Stall rule: stall is not yours to compute — it is `mission_get`'s `derived.stale`,
-deterministic and fresh on every read (an `active` mission with no evidence for
-over an hour while no linked session is `working`). When it is `true`, find which
-unit has gone quiet from `derived.steps[]` (no working child, no new commit or PR
-on its links), then stop that unit: flag it with `mission_set_blocker` (reason +
-what would unblock it + whose move it is), record the finding in its card body
-(`update_card`), move the card back to `backlog` (`move_card`), and report the
-blockage instead of insisting. Do not keep a tick counter of your own.
+The moment a unit's PR is open, verify it: do not wait for the wave. Use the `delivery-verifier` skill. Two rules from
+it: the grader never reads the worker's report, and each criterion is judged on its own.
 
-### Wave boundary — a human pause is a blocker, not a stand-down
+You dispatch, you do not read. For each step with an open PR, spawn a fresh general-purpose subagent (never a fork),
+or `create_session` with `role: 'verifier'`, `missionId` and `stepId` when the unit needs a browser or a long run.
+That session is attached with a credential that also holds `mission_settle_ac`, gets no card and is not linked to the
+step as a builder. Give it the step, the PR, the spec path, and your session id and name. It reads only the blind
+packet and returns at most 15 lines: a verdict per criterion with its evidence pointer, what it recorded, and the open
+items. What it does:
 
-A wave that ends at a **human pause** — a merge and a build the operator must do
-before the next wave can branch from the result — does not end your session. Leave
-the world carrying the state (mission steps, links and ledger current, the wave's
-Delivery Report written, `memory_append` of anything the next wave must know), raise
-`mission_set_blocker { owner: 'operator', reason, unblocks }` naming the exact
-action and the observable event that clears it, and keep the loop and the
-subscriptions armed at a slow cadence. When the event happens, the next tick sees
-it and the next wave starts in this same session. The state lives in the mission and
-the board, never in this transcript — and your transcript stays small anyway,
-because ticks and verification run in subagents.
+- run the deterministic checks first: commits beyond the base, a clean tree, the PR base is the intended branch, CI
+  green, tests ran after the last commit, the diff inside the scope boundary, acceptance tests not edited;
+- **put its evidence in the exact folder `.harnu/evidence/<missionId>/<stepId>`, with a README that says what each
+  file shows**: its commands re-run at the PR head in a clean worktree, the output, screenshots and console. A folder
+  with another name is evidence nobody finds;
+- **plant a fault against the code the proof replaces and show the proof red**: a test that passes before the change
+  proves nothing;
+- settle each `by: session` criterion with `mission_settle_ac { stepId, criterionId, evidence }`, from a session that
+  did not build the step: a builder's own check is labelled a self-check and never proof;
+- **a visual or pane sign-off is its own operator criterion.** Settle the machine criteria with their evidence and
+  leave the sign-off to the operator, who ticks it in the Mission pane, instead of leaving the whole step open.
+- `unmet` goes back to the SAME worker as a delta file, re-verify only that criterion, twice unmet is the operator's
+  decision, not a third attempt. `blocked` is a blocker next to the criterion it holds. Move the finished card to
+  `review` with the PR URL, never to `done`.
 
-**There is no context threshold and no resume prompt.** Do not stand down because
-the session "feels long", and never hand the operator text to paste into a new
-session: a new session is not the mission's owner (the pill and the `you` line are
-keyed on the owner session id), the operator is not told there is anything to
-paste, and the sidebar fills with orphan sessions.
+When every step is settled, one more verification subagent gathers the evidence for "Check the whole mission against
+Done when" and settles it. Read `waiting` on `mission_get`: an item of kind `settle` or `review` is still open. Then
+`mission_request_close`. It is refused `STEPS_OPEN` while a required step is not done, it never closes, and adding a
+step afterwards clears it. The operator closes. Open matters (an unticked operator criterion, an optional step left)
+are warnings they see at the close, so name them in your report.
 
-**Recovery, not routine — a lost owner is moved by Harnu, not by you.** This
-session promises no successor: an agent-spawned session holds no `mcp__harnu__*`
-verbs (Phase 2), so one spawned from here could not own the mission, and this skill
-spawns none. When this session
-cannot go on (it died and was resumed with its context unusable, or the app closed
-under it), the mission, board, ledger and git already hold every fact, so what the
-owner does is leave them true and ask for the move:
+**Closing on main.** When the Done when says the work lands on the default branch, the last stretch is a merge
+train and it is not yours: dispatch ONE session with the lander template, listing the PRs in landing order and the
+Done when's merge words verbatim. Read `.harnu/REPORT-land.md` on the tick that finds it idle, raise an operator
+blocker for every PR it hands back `blocked-<why>` or `awaiting-reviewer`, and verify "on main" from the merged state
+of the default branch, not from the lander's report.
 
-1. Keep steps, links and the ledger current before the turn ends (`mission_link_child`,
-   `mission_log`), and `memory_append` anything the next owner must know.
-2. Raise `mission_set_blocker { owner: 'operator', reason, unblocks }` naming the
-   mission id and "ownership must move".
-3. State plainly that ownership moves only through Harnu's `mission_transfer_owner` /
-   `campaign_transfer_owner`, called from a session the operator opens (or, once
-   BUG-253 lands, from a Harnu-spawned successor role).
+## Phase 5 — Delivery report
 
-If nothing is left that can raise the blocker, the `delivery-watchdog` worker
-notifies the operator that the mission went quiet, and that is the end of the
-recovery.
+After each wave, and when the feature is complete, write the Delivery Report (the format is in `delivery-verifier`)
+from the cards and the evidence, never from memory. Per unit and for the whole: where we are against the plan, which
+criteria are settled, **which ones the operator must open the app and check** (the manual-QA handoff), what is unmet
+and went back, open questions, tech debt raised. `open_file` it, and paste it into the `feat/<epic>` PR body. With a
+tracker connected, tick only the criteria a second session or a person settled, never a worker's self-check, and post
+one comment per ticket with the PR link: these N are done, these K you confirm yourself, these J are not, and why.
 
-## Closing phase — when the declared end is "on main"
-
-When the mission's declared end is that the work lands on the default branch, the
-last step is a merge train, and it is **not yours**. The orchestrator never merges.
-After Phase 5 has produced the Delivery Report and every unit is verified:
-
-1. Dispatch ONE session with the **lander template** ("Boot templates by role"),
-   listing the PRs in landing order and quoting the declared end's merge policy
-   verbatim. It invokes `land-prs`, which triages, reviews, rebases, addresses
-   change requests and hands each PR back `ready`, `awaiting-reviewer` or
-   `blocked-<why>`.
-2. Link the lander to the final step (`mission_link_child`), subscribe to its idle
-   notice like any other child, and read `.harnu/REPORT-land.md` on the tick that
-   finds it idle.
-3. A PR the lander hands back `blocked-<why>` or `awaiting-reviewer` is an
-   operator item: `mission_set_blocker { owner: 'operator' }` naming it. Verify
-   the end ("on main") from the merged state on the default branch, not from the
-   lander's report.
-
-When the end is anything other than "on main", there is no closing phase: the
-delivery ends at Phase 5 with PRs open.
-
-## Resume — every turn re-arms
-
-A delivery is long-lived and the session driving it is not, so treat **every turn
-in this session as a possible resume**, including the innocuous ones: an operator
-question, a `status` request, an interruption, the turn after a compaction.
-
-The failure this exists to prevent is specific, and it is cheap to walk into. The
-operator asks how it is going. You re-read the state, answer accurately, and the
-turn ends — with the heartbeat still dead. They got an answer and lost the
-delivery, and the next thing that finds the stall is them asking again.
-
-So on any turn where you are not certain the loop is still armed:
-
-1. **Re-derive state from the world, not from this transcript** — by spawning a
-   tick subagent, not by reading it yourself. It reads `mission_get` (children,
-   links, proofs, `derived.stale`, the `you` line), the board cards and
-   `git rev-list` / `git status` per worktree. Your own context may be hours stale
-   and is the only source that cannot be checked against anything.
-2. **Do the missed work before reporting it.** The tick subagent dispatches the
-   shipper for a unit that is pushed-and-clean with no PR, on this turn, rather
-   than describing it. Whatever the loop would have done in the ticks it missed,
-   that tick does now.
-3. **Re-arm, and say the cadence in one clause.** The re-armed prompt starts with
-   the same fixed first line (`mission`'s "The tick prompt's first line"). If it
-   is genuinely over — every
-   unit in `review`, mission closed — say that instead, and stop the loop
-   deliberately rather than by neglect.
-
-Answering without re-arming is the defect. The operator poking you is evidence the
-heartbeat failed; it is not permission to stay stopped.
-
-**A turn that ends waiting on the operator raises a blocker.** Before you end a
-turn whose next move is the operator's — a merge, a key, a credential, a
-decision — call
-`mission_set_blocker { owner: 'operator', reason: '<what exactly>', unblocks: '<the observable event>' }`.
-Harnu then chimes, asks for their attention and reminds them every 30 minutes.
-Clear it with `mission_clear_blocker` on the turn you see it done. Text in the
-transcript is not a signal: nobody reads it until they come back.
-
-**A changed rule is a re-scope, in the same turn.** When the operator changes how
-the delivery ends (merge policy, target branch, what counts as done), call
-`mission_set_end` in the same turn with the new end; the operator approves the
-re-scope in the Topbar. An end that still names the old rule is a close the
-operator will refuse, or worse, one they accept against a finish line nobody
-holds anymore.
-
-## Phase 4 — Verify each unit, per acceptance criterion
-
-The moment a unit's PR is open, verify it — do not wait for the whole wave. Use the
-**delivery-verifier** skill for that unit. Two hard rules from it: the grader never
-reads the executor's report, and each AC is graded on its own call into
-`met | unmet | blocked | needs-human`.
-
-Your part as orchestrator is to dispatch, not to read. Verification never runs in
-your context: for each unit whose PR is open, spawn a **fresh general-purpose
-subagent** (never `subagent_type: "fork"`), or a `create_session` with
-`role: 'verifier'` when the unit needs a browser or a long run. Give it the unit's
-card slug, mission id, step id, the PR, the spec path, and your session id and name.
-It follows the `delivery-verifier` skill end to end, reads only the blind packet
-(never the executor's report), and returns at most 15 lines: one verdict per AC with
-its evidence pointer, what it recorded on the card and the mission step, and the
-open items. A verifier session is not linked to the step as a builder; a subagent's
-`mission_verify_step` passes your session id, which is not one of the step's linked
-(authoring) sessions. What that verifier does, in the `delivery-verifier` skill's
-terms:
-
-- run the deterministic checks first (`git rev-list` > 0, clean worktree, PR base is
-  the intended branch, gates green, tests ran AFTER the last commit, diff inside the
-  scope boundary, acceptance tests not edited) — cheap, and they catch most of it;
-- assemble the blind packet (AC list + diff + test output + CI + screenshots) and
-  grade one AC per call — through its own per-AC graders when its tools allow
-  nested agents, otherwise one AC at a time itself;
-- write the per-AC verdict table onto the card (`update_card` with `appendBody`),
-  each row carrying its evidence and `by: verifier`, and record the unit's verdict
-  on its mission step with `mission_verify_step` — from a session that is not one
-  of the step's linked (authoring) sessions, which is your id, passed by the
-  verifier subagent, when an executor built it;
-- `unmet` → delta back to the SAME executor, re-verify only that AC; twice unmet
-  becomes an operator decision, not a third attempt;
-- `blocked` → surface the question to the operator, next to the AC it blocks;
-- `needs-human` → record the step with verdict `needs-human` and a `checkLabel`
-  naming what the person must confirm: the step reads `done` and carries that
-  check, which lands on the operator's `you` list until they tick it;
-- move the finished card to `review` with the PR URL — never to `done`.
-
-When every unit is verified and the end's evidence exists, have one more
-verification subagent gather the end's evidence bundle, then verify the fixed end
-(`Delivered and verified`) yourself with `mission_verify_step` (you built none of
-the steps, so it lands `verified`), read `closeReadiness` on `mission_get`, and
-call `mission_request_close`. The operator closes. `closeReadiness` is `null`
-when the request will land; otherwise it names the refusal (`END_NOT_VERIFIED`,
-`OPEN_BLOCKERS`, `RESCOPE_PENDING`, `MISSION_CLOSED`) — fix that first instead
-of calling the verb to find out. Unticked checks and left-behind steps
-(`derived.progress.leftBehind`) never refuse the close; the operator sees them as
-warnings when they end the mission, so name them in your report.
-
-Nothing enters the report without verification. An executor's own tick is recorded
-as `by: executor` and is never counted.
-
-## Phase 5 — Delivery assurance (the handoff)
-
-After each wave, and again when the feature is complete, generate the **Delivery
-Report** (format in the delivery-verifier skill) from the cards and the evidence —
-never narrated from memory. It must answer, per unit and for the feature: where we
-are against the plan, which ACs are verified, **which ACs the human must open the
-app and check** (the `needs-human` list — this is the manual-QA handoff), what is
-unmet and went back, which questions are open, what tech debt was raised.
-
-Then close the loop on both surfaces:
-
-- `open_file` the report so the operator reads it inside Harnu, and paste it into the
-  `feat/<epic> → main` PR body;
-- if a tracker is connected, tick the ACs verified by the verifier or by a human —
-  never `needs-human`, never an executor self-tick — and post one comment per ticket
-  with the PR link and the three buckets. Then tell the operator per ticket: these N
-  are ticked and done; these K you must confirm yourself; these J are not done, with
-  the reason.
-
-### Retro — what the delivery taught you about the pipeline
-
-Every delivery says something about the machinery, and the lesson evaporates
-unless it lands somewhere the next orchestration will read. Close with a short
-pass over how the pipeline behaved, kept separate from how the code turned out:
-
-- **Where did a unit wait on nothing?** The gap between "pushed and clean" and "PR
-  open", and between "PR open" and "verified", is your latency — not the
-  executor's. Name it in wall-clock.
-- **What did a packet instruct that could not be done?** An instruction an
-  executor can only fail is a defect in the delegation template, not in the
-  executor, and it repeats on every future delivery until the template changes.
-- **Which verbs refused, and was the refusal a rule you should have known?**
-
-Write it with `memory_append` (`decisions`, dated) so the next orchestration in
-this repo starts already knowing it. When the defect is in the delegation template
-rather than in this repo, raise a card against the skill itself — that is how a
-bundled skill learns from a delivery that actually happened, instead of from
-whichever post-mortem someone remembers to run.
+**Retro: what the delivery taught you about the pipeline.** Where did a unit wait on nothing (the gaps between
+"pushed and clean" and "PR open", and "PR open" and "settled" are your latency, in wall-clock)? What did a packet
+instruct that could not be done? Which verbs refused, and was it a rule you should have known? `memory_append`
+(`decisions`, dated), and when the defect is in this skill's templates, raise a card against the skill.
 
 ## Boundaries
 
-- Open PRs only. The orchestrator never merges — when the declared end is "on
-  main", the merge train belongs to the dispatched lander session (Closing
-  phase). Never move a card to `done`.
-- Never touch product code, run builds, or commit in this session — delegate. If
-  promoted to Orchestrator, Harnu's structural guard enforces this for you.
-- Do not touch branches, worktrees or cards this orchestration did not create.
-- One manifest go covers exactly that batch — new cards need a new manifest.
-- A `next:` or `you` line that names work you could have dispatched yourself is a
-  defect in the report, not information. The operator's next action is never
-  "tell the orchestrator to start something that was already unblocked".
-- Never edit an acceptance criterion to match what was built. If the spec was wrong,
-  that is a finding for the operator, not a silent correction.
+- Open PRs only. The merge train belongs to the lander. Never move a card to done.
+- Never write product code, run builds or commit in this session: delegate. A promoted orchestrator is stopped by
+  Harnu's guard.
+- Do not touch branches, worktrees or cards this orchestration did not create. One manifest covers that batch: new
+  cards need a new manifest.
+- A `next:` or `waiting` line that names work you could have dispatched yourself is a defect, not information.
+- Never edit a criterion to match what was built. A wrong spec is a finding for the operator, not a silent fix.
 
 ## Final output
 
-**End the run with a `report-back` final report** — that skill owns the format
-(rail, ledger, links, summary); this skill does not restate it. The `status`
-skill's glance card heads it, built from `mission_get`, the board and
-`gh pr list`/`checks`; the card's `you` / `open` rows and links fold into the
-report's ledger and links block per `report-back`'s "For other skills" rule —
-never print two. The card's mission header is `derived.progress` as the pill
-shows it — "Step N of M" — never a count of proven steps you made yourself.
+End the run with a `report-back` final report: that skill owns the format, headed by the `status` skill's glance card
+built from `mission_get`, the board and `gh pr list`. Never print two ledgers. The card's headline is
+`progress.headline` as `mission_get` returns it, never a count you made. The rail's rows, each with a concrete outcome:
 
-The rail's rows are this orchestration's own steps, in this order, each with a
-concrete outcome:
+- `Topology`: single, parallel xN or stacked xN, and the integration branch (or why none)
+- `Plan`: the milestones and steps, and the Done when
+- `Heartbeat`: the loop at its cadence and the watchdog worker (or why none)
+- one row per unit, `<card-slug> (branch)`: the one-line summary, `PR #n`, and `criteria n/m settled, k wait on you`
+- `Review findings`: N found, M fixed, the rest noted on the PRs
+- `Delivery report`: the path, and how many criteria are ticked and how many are left for a manual check
 
-- `Topology` — single | parallel xN | stacked xN, plus the integration branch (or why none)
-- `Delivery map` — the path, campaigns n, and the go (when and what it covered)
-- `Heartbeat` — loop @<cadence> + watchdog worker (or why none)
-- one row per unit — `<card-slug> (branch)`: one-line summary, `PR #n`, and
-  `ACs n/m met, k need a human`
-- `Review findings` — N found, M fixed, rest noted on the PRs
-- `Delivery report` — the path, plus `<n> ACs ticked, <k> left for manual check`
-
-A unit with unmet ACs, a blocked step, an open question or debt takes `!` or `✗`
-on its own row (reason in its prose); what only the operator can resolve goes on
-the `you` line, and an unanswered question on `open`. Full PR URLs live in the
-links block only.
-
-The board is the durable record and the Delivery Report is the human handoff — this
-summary is only for the operator's glance.
+A unit with an unmet criterion, a blocker or open debt takes `!` or `✗` on its own row; what only the operator can do
+goes on the `you` line, and an unanswered question on `open`. Full PR URLs live in the links block only.
