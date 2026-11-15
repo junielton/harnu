@@ -34,6 +34,8 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import type {
   MissionDoor,
   MissionDoorResult,
+  MissionV4Door,
+  MissionV4DoorReply,
   MissionV4ViewReply,
   MissionView
 } from '../../../main/mission-ipc'
@@ -69,6 +71,13 @@ import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
 
 const POLL_MS = 20_000
+
+/** One of the operator's v4 doors as the pane calls it: the folder and the mission are the store's to add. */
+export type V4DoorCall = MissionV4Door extends infer D
+  ? D extends MissionV4Door
+    ? Omit<D, 'folder' | 'missionId'>
+    : never
+  : never
 
 /** What the view channel last answered for one session (Missions v4, S-17). */
 export interface V4Entry {
@@ -301,6 +310,45 @@ export const useMissionsStore = defineStore('missions', () => {
   function v4ReplyForSession(sessionId: string | null | undefined): MissionV4ViewReply | null {
     const entry = v4.value
     return entry && sessionId && entry.sessionId === sessionId ? entry.reply : null
+  }
+
+  /**
+   * Missions v4 (S-19) — one of the operator's doors on the v4 mission the selected session is in, then
+   * the view is read again (there is no push event, so the pane is only as fresh as its last read).
+   * The mission id is the one the view ANSWERED for, never `detail.id`; the folder is the selected
+   * session's, the one the view is asked from. A door never refuses the operator: a refusal here is a
+   * record that changed under them (`NOT_FOUND`), one that closed, or a channel that is not there. The
+   * reply is always a value, never a throw: the caller words what to do from `code`.
+   */
+  async function runV4Door(call: V4DoorCall): Promise<MissionV4DoorReply> {
+    const selected = sessions.selectedSession
+    const mission = selected ? v4MissionForSession(selected.sessionId) : null
+    const door = window.api.missionV4Door
+    if (!selected || !mission || typeof door !== 'function') {
+      return {
+        ok: false,
+        code: 'UNAVAILABLE',
+        error: 'UNAVAILABLE: the pane has no mission to act on.'
+      }
+    }
+    let res: MissionV4DoorReply
+    try {
+      res = await door({
+        ...call,
+        folder: selected.projectPath,
+        missionId: mission.missionId
+      } as MissionV4Door)
+    } catch (err) {
+      res = {
+        ok: false,
+        code: 'UNAVAILABLE',
+        error: `UNAVAILABLE: ${err instanceof Error ? err.message : String(err)}`
+      }
+    }
+    // Read again whatever came back: a refusal usually means the record moved, and the pane must show how.
+    // `loadV4` (not `refreshV4`) so a read already in flight, which may predate the door, is dropped.
+    await loadV4()
+    return res
   }
 
   /** The v4 mission this session is attached to, or `null` (none, v3, refused, closed or not answered yet). */
@@ -558,6 +606,7 @@ export const useMissionsStore = defineStore('missions', () => {
     refreshV4,
     v4ReplyForSession,
     v4MissionForSession,
+    runV4Door,
     runDoor,
     runDoors,
     popoverRequest,

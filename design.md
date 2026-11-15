@@ -7773,14 +7773,11 @@ criteria, every level behind a **chevron** (`ChevronRight` closed, `ChevronDown`
 - **Step row** (`grid`, columns `10px 12px 1fr auto`, `gap: 7px`, `padding: 5px 6px`, `12px`,
   `text-text-2`): chevron, glyph, title (wraps to at most **two lines**, then cuts), then the right cell (`10.5px`, `text-text-4`):
   the pull request number **`#256`** in `font-mono`, `text-accent` (the step's `pr` link; nothing
-  when it has none), a **Blocked** chip when the step carries the blocked mark (`rounded-sm border
+  when it has none; **a link** when Harnu has the pull request's address — see "An open step"), a **Blocked** chip when the step carries the blocked mark (`rounded-sm border
 border-red-line bg-red-soft text-red`, `10.5px`) and a **Yours** chip when the operator owes it
   (`border-warning-line bg-warning-soft text-warning`).
-- **Criteria** (an open step): a column under the step row (`margin: 2px 0 8px 29px`, `gap: 5px`),
-  one line per criterion, `grid 12px 1fr`, `11.5px`: a settled criterion is a green check
-  (`Check`, 10px, `text-green`) and `text-text-2`; an open one a hollow `10px` box (`border
-border-text-4`, `rounded-sm`) and `text-text`. This slice draws the criteria as a plain list;
-  who settles each, the collapse of verified ones, a blocker and the links are S-19.
+- **An open step** is `MissionPaneStep.vue` (S-19, below): the blocker, the acceptance criteria and
+  the links, in a column under the step row.
 - **Optional milestones** sit **under one collapsed line** at the end of the tree: "{n} optional
   milestones" (`11px`, `text-text-4`); clicking it unfolds them as ordinary milestone rows.
 - **A mission with no milestones** draws its steps directly under the next-step box as one list
@@ -7810,7 +7807,7 @@ breaks inside itself, so no `·` opens a wrapped line. The summary line wraps un
 
 **Not in this slice** (drawn in the mockup, built later, so absent from the pane today): **Ask**
 on a milestone, the **Sessions** row and the hand-off, **Close mission…**, the attach picker and
-request, an open step's who-settles, blocker and links, the sample mission. v4 missions cannot be
+request, the sample mission. (An open step's who-settles, blocker and links are S-19, below.) v4 missions cannot be
 created by an agent yet (the verbs land in chapter 5), so the glance has something to show only
 when a v4 record already exists on disk.
 
@@ -7820,6 +7817,127 @@ from the reply (the `ask` and the `why` are the one wording the server owns, sho
 ❌ Poll from a loop the store does not own. ❌ Draw a Done when paragraph. ❌ Open more than the
 current milestone by itself. ❌ Count to do steps in a milestone's summary. ❌ Draw a button whose
 door is not built yet.
+
+#### An open step (Missions v4, S-19)
+
+**S-19 (`MissionPaneStep.vue`, with `MissionPane.vue`, `MissionPaneTree.vue` and the store; draft
+mockup `docs/design/missions-v4/`, screen `mission-pane`, states `step-open`, `step-blocked`).** What
+the operator reads when they open a step in the tree, and the only writes the pane makes on a step.
+The component **computes no state**: which criteria are settled, what blocks the step and where a link
+goes are worked out in `lib/mission-pane-view.ts` from the server's view (`buildPaneTree`), and the
+component draws them. **Tokens only; no new colour, radius, easing or row height.** An open step is a
+column under its row (`margin: 2px 0 8px 29px`, `gap: 8px`) with up to three blocks, in this order.
+
+**Blocker** — only when the step has a blocker that still shows. One box per blocker (`rounded-sm
+border border-red-line bg-red-soft`, `padding: 8px 10px`, `gap: 6px`, `12px`, `text-text`):
+
+- the **head** (`10px / 700`, uppercase, `0.06em`, `text-red`, a `Flag` 13px before it): **"Blocked ·
+  waiting for you · 40m"** when the blocker is the operator's, **"Blocked · waiting for the session"**
+  when it is the session's; the time is how long since the blocker was raised (`<1m`, `40m`,
+  `1h 50m`, `3d`) and is left out when the record has no time;
+- the **reason** (the server's words, as written), then the **ask** — the exact thing needed
+  (`font-weight: 500`; left out when it says what the reason already says) — then what it **unblocks**
+  (`11px`, `text-text-3`);
+- **"Done, continue"** (door `clearBlocker`): the dense primary pill (`rounded-sm`, `padding: 2px
+7px`, `11px / 500`, `bg-accent text-accent-ink`, hover `brightness-110`). **Only on a blocker that
+  is the operator's**: a blocker that is the session's move has no button (the pane does not offer a
+  door that is not yours). The mockup's "Open session" is not drawn: choosing which session to open
+  belongs to the Sessions row (S-20).
+
+**Acceptance criteria** — the heading **"Acceptance criteria"** (`10px / 700`, uppercase, `0.07em`,
+`text-text-4`), then:
+
+- **the verified ones fold into one line**: a 12px `bg-green` circle with a `Check` (8px, stroke 3,
+  `text-bg`) and **"19 criteria verified"** (`11.5px`, `text-text-2`; "1 criterion verified"). It is
+  the server's count of settled criteria, by whatever settled them; **the line is left out when none
+  is**. The mockup lists each verified criterion on its own row in `step-open`; the spec wins: a
+  step with 19 settled criteria does not draw 19 rows.
+- **only the open ones are listed**: a `grid` (`12px 1fr auto`, `column-gap: 8px`, `11.5px`,
+  `text-text`): a hollow 12px box (`border-[1.5px] border-text-3`, `rounded-sm`), the text, and at
+  the right **who settles it** (`10.5px`, `text-text-4`), then the operator's button when there is
+  one. Below 340px of tree width (the tree is a container) the right cell moves **under the text**.
+
+| Settled by (`by`) | Words                       | Button                                                             |
+| ----------------- | --------------------------- | ------------------------------------------------------------------ |
+| `fact`            | Checked automatically       | none — Harnu reads it, it is never ticked by hand                  |
+| `session`         | Checked by a second session | none                                                               |
+| `operator`        | You                         | **Mark done**                                                      |
+| `person`          | Waiting for {person}        | **Mark approved** (title: "Mark {person} as having approved this") |
+
+The words are translated **by the identifier**, never the English word in the reply. **One wording for
+another person's sign-off: "approved"** — the criterion is the person's approval, the operator marks
+it when they give it ("Mark approved"), and until then the step reads "Waiting for Dana". The mockup's
+word "sign-off" is not used in the pane. A criterion with a builder's **own check** (`selfCheck`) stays
+open and says under its text, `10.5px`, `text-text-4`: **"The session says it is done. Not checked
+yet."** (labelled, and never proof). The mockup shows "later" next to an operator criterion on a step
+that has not started; the spec wins: the button is always there (a door never refuses the operator).
+A step with no criteria says "No criteria yet."
+
+**Links from the session** — the heading **"Links from the session"** (the same eyebrow as the
+criteria heading), then a wrapping row (`gap: 6px`) of pills: `rounded-sm border border-border-2`,
+`padding: 1px 6px`, `11px`, a 10px `Link` icon. An address Harnu can open is a `<button
+role="link">` in `text-accent` (hover `border-accent-line`) that opens it in the browser
+(`shellOpenExternal`); anything else — a repo path in a record — is plain text in `text-text-3` with
+no role (nothing to open). **Only http and https addresses open.** The order is: the pull request
+(`font-mono`, `#256`), the finished page (**"Page · localhost:5173/score-report"** — an address on
+this machine), then the rest, in the order they were written. Where they come from:
+
+- the step's own links: the pull request Harnu found on its branch and what the agent added with
+  `mission_link`;
+- **for a step the session is working** (running, or waiting for review), the links Harnu already
+  collects from that session's transcript (the footer's Links shelf reads the same ones), **only the
+  ones the session wrote** (not the ones the operator pasted), newest eight at most. The session works
+  one step after another, so a link is a step's **from the step's start until the next working step
+  starts** (a step with no start time takes every link); a pull request that is **another step's**
+  never lists here. A link in both places is listed once. A step that is **done** lists only what its
+  record holds.
+
+**The pull request number on a step row** is a link too, when Harnu has the address: the step's `pr`
+link when it is an address, else the pull request of that number in the session's links. It is a
+`<span role="link" tabindex="0">` (the row is a button, and a button does not nest in a button): a
+click or Enter opens the pull request and **never folds or unfolds the step**; it gets hover
+underline. With no address it stays plain text (a guess at the repository would open the wrong page).
+
+**A step whose session wrote no links yet** (not drawn in the mockup): the heading and one line,
+**"The session has not written any links for this step yet."** (`11px`, `text-text-4`).
+
+**A door that fails** (not drawn in the mockup): under the step's last block, one box (`rounded-sm
+border border-red-line bg-red-soft`, `padding: 6px 10px`, `11.5px`, `text-text`, `role="alert"`)
+that says **what to do, never the code**. A door never refuses the operator; what comes back is a
+record that changed under them, one that closed, a criterion a fact settles, or a channel that is not
+there. `NOT_FOUND`: "That changed while you were looking. The pane shows the latest. Check it and try
+again if you still need to." · `WRITE_CONFLICT`: "The mission changed at the same moment. The pane
+shows the latest. Try again." · `MISSION_CLOSED`: "This mission is closed, so nothing in it can
+change." · `SETTLES_ITSELF`: "Harnu checks this one by itself. You do not mark it." · anything else:
+"Harnu could not save that. Try again in a moment. If it keeps happening, close the pane and open it
+again." The buttons are disabled while a door is in flight (`disabled:opacity-40`), and the pane
+**reads the view again after every reply**, refused or not.
+
+**A Done when a session staged** (not drawn in the mockup; a mission-level door, so it sits in the
+head, under "Your next step", not in a step): a box like the next-step box in the accent look
+(`rounded border border-accent-line bg-accent-soft`, `padding: 10px 12px`, `gap: 8px`). The eyebrow
+**"New Done when proposed"** (`10px / 700`, uppercase, `text-accent`), the proposed text (`13px`,
+`text-text`), one line saying what each button does (`11.5px`, `text-text-3`), then **Approve**
+(`ui/Button` primary) and **Decline** (`ui/Button` soft). It is drawn only while the view carries a
+staged Done when; the mission's own Done when is still not drawn.
+
+**Narrow pane.** The open step is as narrow as its tree: the criteria's right cell moves under the
+text (above), the pills wrap and break long addresses (`break-all`), the blocker's text wraps, and
+nothing has a fixed width.
+
+**Data.** The doors are `window.api.missionV4Door` (channel `mission:v4Door`): `mark` (a criterion),
+`clearBlocker`, `approveDoneWhen`, `declineDoneWhen`. They go through `stores/missions.ts`
+(`runV4Door`), which adds the folder (the selected session's) and the mission id **the view answered
+for** (never `detail.id`), and reads the view again after the reply. The links come from
+`window.api.sessionLinksList` for the selected session (`useSessionLinks`, the footer shelf's own
+composable). v4 missions cannot be created by an agent yet (the verbs land in chapter 5), so an open
+step has something to show only when a v4 record already exists on disk.
+
+**Don'ts.** ❌ Draw every verified criterion. ❌ Print the code a door came back with. ❌ Offer "Done,
+continue" on a blocker that is the session's. ❌ Draw a button on a criterion a fact or a second
+session settles. ❌ Open an address that is not http or https. ❌ Guess a pull request's repository
+to make its number a link. ❌ List a link the operator pasted as "from the session". ❌ Call the
+approval of another person a "sign-off" in the pane.
 
 ### Campaign progress (pill, popover)
 

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Expand, Maximize2, Minimize2, Target, X } from 'lucide-vue-next'
 import { useFocusRegion } from '../composables/useTerminalFocus'
+import { useSessionLinks } from '../composables/useSessionLinks'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useMissionsStore } from '../stores/missions'
@@ -10,6 +11,7 @@ import { useSessionsStore } from '../stores/sessions'
 import {
   buildPaneTree,
   classifyReply,
+  doorErrorKey,
   missionNumbers,
   missionProgressLine,
   missionStateKey,
@@ -17,6 +19,7 @@ import {
   v4MissionOf,
   type PaneKind
 } from '../lib/mission-pane-view'
+import Button from './ui/Button.vue'
 import MissionPaneNext from './MissionPaneNext.vue'
 import MissionPaneTree from './MissionPaneTree.vue'
 
@@ -25,9 +28,10 @@ import MissionPaneTree from './MissionPaneTree.vue'
  * non-PTY pane in the helper stack that the Topbar pill opens and closes. It FOLLOWS the selected session
  * and shows only that session's mission.
  *
- * It only reads. The missions store asks the view channel for the selected session (when it changes and
- * on its 20 s poll: there is no push event) and the pill reads the same answer; this component never
- * calls the view itself and never calls a door. What it draws is what the server said: the numbers are the
+ * It reads, and it holds the operator's doors. The missions store asks the view channel for the selected
+ * session (when it changes and on its 20 s poll: there is no push event) and the pill reads the same
+ * answer; this component never calls the view itself. A door (mark a criterion, clear a blocker, approve or
+ * decline a staged Done when) goes through the store, which reads the view again after every reply. What it draws is what the server said: the numbers are the
  * server's, the state is an identifier translated through i18n, a v3 record is not drawn at all (the v3
  * popover still serves it). This slice is the shell: the glance, an open step, sessions and the hand-off
  * land in later slices.
@@ -70,7 +74,21 @@ const numbers = computed(() => (mission.value ? missionNumbers(mission.value.det
 const percent = computed(() =>
   numbers.value ? progressPercent(numbers.value.done, numbers.value.total) : 0
 )
-const tree = computed(() => (mission.value ? buildPaneTree(mission.value.detail) : null))
+// An open step lists the links its session wrote: the ones Harnu already collects for it (the footer's
+// Links shelf reads the same transcript). The clock is for how long a blocker has waited.
+const linkSession = computed(() => {
+  const id = sessionId.value
+  return id && !id.startsWith('synthetic-') ? id : null
+})
+const { entries: sessionLinks } = useSessionLinks(linkSession)
+const now = ref(Date.now())
+const clock = setInterval(() => (now.value = Date.now()), 30_000)
+onBeforeUnmount(() => clearInterval(clock))
+const tree = computed(() =>
+  mission.value
+    ? buildPaneTree(mission.value.detail, { sessionLinks: sessionLinks.value, now: now.value })
+    : null
+)
 const hasTree = computed(
   () =>
     tree.value !== null &&
@@ -79,6 +97,21 @@ const hasTree = computed(
       (tree.value.loose?.shown.length ?? 0) + (tree.value.loose?.folded.length ?? 0) > 0)
 )
 const treeRef = ref<InstanceType<typeof MissionPaneTree> | null>(null)
+
+// A Done when a session staged waits for the operator: approve it or decline it (the doors never refuse).
+const doneWhenBusy = ref(false)
+const doneWhenError = ref<string | null>(null)
+async function decideDoneWhen(door: 'approveDoneWhen' | 'declineDoneWhen'): Promise<void> {
+  if (doneWhenBusy.value) return
+  doneWhenBusy.value = true
+  doneWhenError.value = null
+  try {
+    const res = await missions.runV4Door({ door })
+    if (!res.ok) doneWhenError.value = t(`missionPane.step.error.${doorErrorKey(res.code)}`)
+  } finally {
+    doneWhenBusy.value = false
+  }
+}
 
 function onClose(): void {
   helpers.removeHelper(props.worktreePath, props.pane.id)
@@ -236,6 +269,53 @@ useFocusRegion(props.pane.id, rootEl, {
             >{{ $t(stateKey) }}</span
           >
           <MissionPaneNext :detail="mission.detail" @open-step="treeRef?.openStep($event)" />
+          <!-- A Done when a session staged: only the operator makes it the mission's end. -->
+          <section
+            v-if="mission.pendingDoneWhen"
+            class="flex flex-col rounded border border-accent-line bg-accent-soft"
+            style="margin-top: 10px; padding: 10px 12px; gap: 8px"
+            data-test="done-when-staged"
+          >
+            <span
+              class="uppercase text-accent"
+              style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em"
+              >{{ $t('missionPane.doneWhen.eyebrow') }}</span
+            >
+            <span
+              class="break-words text-text"
+              style="font-size: 13px; line-height: 1.4"
+              data-test="done-when-text"
+              >{{ mission.pendingDoneWhen.text }}</span
+            >
+            <span class="text-text-3" style="font-size: 11.5px; line-height: 1.4">{{
+              $t('missionPane.doneWhen.body')
+            }}</span>
+            <div class="flex flex-wrap items-center" style="gap: 10px">
+              <Button
+                variant="primary"
+                :disabled="doneWhenBusy"
+                data-test="done-when-approve"
+                @click="decideDoneWhen('approveDoneWhen')"
+              >
+                {{ $t('missionPane.doneWhen.approve') }}
+              </Button>
+              <Button
+                :disabled="doneWhenBusy"
+                data-test="done-when-decline"
+                @click="decideDoneWhen('declineDoneWhen')"
+              >
+                {{ $t('missionPane.doneWhen.decline') }}
+              </Button>
+            </div>
+            <span
+              v-if="doneWhenError"
+              class="break-words text-text"
+              style="font-size: 11.5px; line-height: 1.4"
+              role="alert"
+              data-test="done-when-error"
+              >{{ doneWhenError }}</span
+            >
+          </section>
         </section>
         <section v-if="hasTree && tree" style="padding: 14px 16px" data-dsqa-part="tree">
           <!-- Keyed by the mission the reply was answered for: another mission starts with its own folds. -->

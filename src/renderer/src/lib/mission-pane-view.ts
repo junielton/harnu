@@ -183,6 +183,287 @@ function prNumberOf(links: StepView['links']): string | null {
   return m ? m[1] : null
 }
 
+// ---- Missions v4 · S-19 — an open step: who settles each criterion, the blocker and the links ----------
+//
+// Still pure. The server says which criteria are settled and by what (`by`, `settled`); this only splits
+// them (verified ones fold into a count, open ones are listed), names who settles each and works out
+// what a link opens. A blocker is the server's `reason`, `ask` and `unblocks`, shown as written.
+
+/** What settles a criterion: a fact Harnu reads, a second session, the operator, or another person. */
+export type Settler = CriterionView['by']
+
+/** One OPEN criterion of an open step. */
+export interface CriterionRow {
+  id: string
+  text: string
+  settler: Settler
+  /** The person a `person` criterion waits for, or `null` (a `person` criterion that names none). */
+  person: string | null
+  /** A builder's own check: labelled, and never proof, so the criterion stays open. */
+  selfCheck: boolean
+  /** The operator has a button for it: their own criterion, or another person's approval. */
+  canMark: boolean
+}
+
+/** A blocker that still shows on a step. */
+export interface BlockerRow {
+  id: string
+  reason: string
+  ask: string | null
+  unblocks: string | null
+  owner: 'agent' | 'operator'
+  /** Milliseconds since the blocker was raised, or `null` when the record has no time. */
+  waitedMs: number | null
+}
+
+/**
+ * One link of an open step: a pull request, the finished page, a report. `url` is `null` when there is
+ * nothing to open. A `page` row's `label` is the bare `host/path`: the renderer words it ("Page · …").
+ */
+export interface StepLinkRow {
+  key: string
+  kind: 'pr' | 'page' | 'figma' | 'doc' | 'file' | 'link'
+  label: string
+  url: string | null
+}
+
+/** The part of a link the footer's Links shelf collects (`sessionLinksList`) that this view reads. */
+export interface SessionLinkLike {
+  url: string
+  kind: 'pr' | 'issue' | 'task' | 'figma' | 'doc' | 'web'
+  label: string
+  /** `agent` for a link the session wrote, `user` for one the operator did. Only the session's are shown. */
+  source: 'user' | 'agent'
+  /** ISO time of the link's latest occurrence in the transcript. */
+  at?: string
+}
+
+/** What a step draws beyond the server's own fields. `now` is the clock of the caller (a pure module never reads it). */
+export interface StepContext {
+  sessionLinks?: readonly SessionLinkLike[]
+  now?: number
+}
+
+/** The newest session links one step lists: a session that wrote a lot of links does not bury the step. */
+export const SESSION_LINK_CAP = 8
+
+/** `https://…` or `http://…` as a normalised address, or `null`: nothing else is ever opened. */
+export function httpAddress(ref: string): string | null {
+  try {
+    const u = new URL(ref.trim())
+    return u.protocol === 'http:' || u.protocol === 'https:' ? ref.trim() : null
+  } catch {
+    return null
+  }
+}
+
+/** A host that is this machine's: the address of a page the session is serving, not a site on the internet. */
+function isLocalHost(host: string): boolean {
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '[::1]' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.test')
+  )
+}
+
+/** `host/path` of an address, without the scheme, a trailing slash or the query. */
+function hostAndPath(address: string): string {
+  const u = new URL(address)
+  const path = u.pathname === '/' ? '' : u.pathname.replace(/\/+$/, '')
+  return `${u.host}${path}`
+}
+
+const PULL_NUMBER_RE = /\/pull\/(\d+)(?:[/?#]|$)/
+
+/** The address of a step's pull request: its own link when that is an address, else the session's matching one. */
+function prAddress(
+  number: string,
+  ref: string,
+  sessionLinks: readonly SessionLinkLike[]
+): string | null {
+  const own = httpAddress(ref)
+  if (own && PULL_NUMBER_RE.exec(own)?.[1] === number) return own
+  const found = sessionLinks.find(
+    (l) => l.kind === 'pr' && PULL_NUMBER_RE.exec(l.url)?.[1] === number
+  )
+  return found ? (httpAddress(found.url) ?? null) : null
+}
+
+const LINK_RANK: Record<StepLinkRow['kind'], number> = {
+  pr: 0,
+  page: 1,
+  figma: 2,
+  doc: 2,
+  file: 2,
+  link: 2
+}
+
+/**
+ * What an open step lists under "Links from the session": its pull request, the finished page and the
+ * reports. They come from the step's own links (the pull request Harnu found, what the agent added with
+ * mission_link) and — for a step the session is working now — from the links Harnu collected from that
+ * session's transcript, the ones the session wrote. The pull request comes first, then pages, then the
+ * rest in the order they were written; a link in both places is listed once.
+ */
+export function stepLinkRows(
+  links: StepView['links'],
+  sessionLinks: readonly SessionLinkLike[],
+  opts: {
+    /** The links an address is looked up in; the ones listed are `sessionLinks`. All of them by default. */
+    resolveIn?: readonly SessionLinkLike[]
+    /** When the step started (ms): a session link written before it belongs to an earlier step. */
+    since?: number | null
+    /** When the next step the session works started (ms): a link written from then on is that step's. */
+    until?: number | null
+    /** Pull request numbers that are another step's: the session's link to one is that step's, not this one's. */
+    otherPrs?: ReadonlySet<string>
+  } = {}
+): StepLinkRow[] {
+  const resolveIn = opts.resolveIn ?? sessionLinks
+  const rows: StepLinkRow[] = []
+  const seen = new Set<string>()
+  const add = (row: StepLinkRow, dedupe: string): void => {
+    if (seen.has(dedupe)) return
+    seen.add(dedupe)
+    rows.push(row)
+  }
+
+  for (const l of links) {
+    if (l.kind === 'session') continue
+    if (l.kind === 'pr') {
+      const number = /(\d+)\s*$/.exec(l.ref.replace(/\/+$/, ''))?.[1]
+      if (!number) continue
+      add(
+        {
+          key: `pr:${number}`,
+          kind: 'pr',
+          label: `#${number}`,
+          url: prAddress(number, l.ref, resolveIn)
+        },
+        `pr:${number}`
+      )
+      continue
+    }
+    const address = httpAddress(l.ref)
+    if (address === null) {
+      // A repo path (or anything else a record holds): shown, never opened.
+      add({ key: `${l.kind}:${l.ref}`, kind: 'file', label: l.ref, url: null }, l.ref)
+      continue
+    }
+    const local = isLocalHost(new URL(address).hostname)
+    add(
+      {
+        key: `${l.kind}:${address}`,
+        kind: local ? 'page' : l.kind === 'doc' ? 'doc' : 'link',
+        label: hostAndPath(address),
+        url: address
+      },
+      address
+    )
+  }
+
+  let extra = 0
+  for (const l of sessionLinks) {
+    if (l.source !== 'agent' || extra >= SESSION_LINK_CAP) continue
+    const address = httpAddress(l.url)
+    if (address === null) continue
+    if (opts.since != null && l.at !== undefined) {
+      const at = Date.parse(l.at)
+      if (Number.isFinite(at) && at < opts.since) continue
+    }
+    if (opts.until != null && l.at !== undefined) {
+      const at = Date.parse(l.at)
+      if (Number.isFinite(at) && at >= opts.until) continue
+    }
+    const number = l.kind === 'pr' ? PULL_NUMBER_RE.exec(address)?.[1] : undefined
+    if (number && opts.otherPrs?.has(number) && !seen.has(`pr:${number}`)) continue
+    if (number && seen.has(`pr:${number}`)) continue
+    if (seen.has(address)) continue
+    const local = isLocalHost(new URL(address).hostname)
+    const kind: StepLinkRow['kind'] = number
+      ? 'pr'
+      : local
+        ? 'page'
+        : l.kind === 'figma'
+          ? 'figma'
+          : l.kind === 'doc'
+            ? 'doc'
+            : 'link'
+    extra++
+    add(
+      {
+        key: number ? `pr:${number}` : address,
+        kind,
+        label: number ? `#${number}` : local ? hostAndPath(address) : l.label,
+        url: address
+      },
+      number ? `pr:${number}` : address
+    )
+  }
+
+  return rows
+    .map((row, i) => ({ row, i }))
+    .sort((a, b) => LINK_RANK[a.row.kind] - LINK_RANK[b.row.kind] || a.i - b.i)
+    .map((x) => x.row)
+}
+
+/** The codes a door can answer that the pane words one by one; any other code reads as `other`. */
+const DOOR_CODES = ['NOT_FOUND', 'WRITE_CONFLICT', 'MISSION_CLOSED', 'SETTLES_ITSELF'] as const
+
+/** The i18n key (under `missionPane.step.error`) that says what to do after a door was refused with `code`. */
+export function doorErrorKey(code: string): (typeof DOOR_CODES)[number] | 'other' {
+  return (DOOR_CODES as readonly string[]).includes(code)
+    ? (code as (typeof DOOR_CODES)[number])
+    : 'other'
+}
+
+/** How long something has waited, from a duration: "<1m", "40m", "1h 50m", "3d". */
+export function formatWaited(ms: number): string {
+  const minutes = Math.max(0, Math.floor(ms / 60_000))
+  if (minutes < 1) return '<1m'
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    const rest = minutes % 60
+    return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
+  }
+  return `${Math.floor(hours / 24)}d`
+}
+
+/** The criteria of a step, split: how many the server says are settled, and the ones still open. */
+export function splitCriteria(criteria: readonly CriterionView[]): {
+  verified: number
+  open: CriterionRow[]
+} {
+  const open = criteria
+    .filter((c) => !c.settled)
+    .map((c): CriterionRow => ({
+      id: c.id,
+      text: c.text,
+      settler: c.by,
+      person: c.person ?? null,
+      selfCheck: c.selfCheck !== undefined,
+      canMark: c.by === 'operator' || c.by === 'person'
+    }))
+  return { verified: criteria.length - open.length, open }
+}
+
+function blockerRows(blockers: StepView['blockers'], now: number | undefined): BlockerRow[] {
+  return blockers.map((b) => {
+    const raised = b.raisedAt !== undefined ? Date.parse(b.raisedAt) : Number.NaN
+    return {
+      id: b.id,
+      reason: b.reason,
+      ask: b.ask !== undefined && b.ask !== '' && b.ask !== b.reason ? b.ask : null,
+      unblocks: b.unblocks !== undefined && b.unblocks !== '' ? b.unblocks : null,
+      owner: b.owner,
+      waitedMs: now !== undefined && Number.isFinite(raised) ? Math.max(0, now - raised) : null
+    }
+  })
+}
+
 /** One step row of the tree. */
 export interface PaneStepRow {
   id: string
@@ -194,6 +475,15 @@ export interface PaneStepRow {
   needsYou: boolean
   pr: string | null
   criteria: CriterionView[]
+  /** S-19: where the pull request number opens, or `null` when Harnu has no address for it. */
+  prUrl: string | null
+  /** S-19: how many criteria the server says are settled, and the ones still open. */
+  verified: number
+  open: CriterionRow[]
+  /** S-19: the blockers that still show. */
+  blockers: BlockerRow[]
+  /** S-19: the links an open step lists (see {@link stepLinkRows}). */
+  links: StepLinkRow[]
 }
 
 /** The steps a milestone (or a mission with no milestones) draws, and the ones folded behind "N more". */
@@ -242,17 +532,51 @@ export interface PaneTree {
   loose: StepGroups | null
 }
 
-export function buildPaneTree(detail: Detail): PaneTree {
+export function buildPaneTree(detail: Detail, ctx: StepContext = {}): PaneTree {
   const owed = owedStepIds(detail)
-  const rowOf = (s: StepView): PaneStepRow => ({
-    id: s.id,
-    title: s.title,
-    state: s.state,
-    blocked: s.blocked,
-    needsYou: owed.has(s.id),
-    pr: prNumberOf(s.links),
-    criteria: s.criteria
+  const sessionLinks = ctx.sessionLinks ?? []
+  // When each step the session is working on started: the windows its links are shared out by.
+  const workingStarts = detail.steps.flatMap((x) => {
+    const t = x.startedAt !== null ? Date.parse(x.startedAt) : Number.NaN
+    return (x.state === 'running' || x.state === 'waiting-review') && Number.isFinite(t) ? [t] : []
   })
+  const prNumbers = detail.steps.flatMap((x) => {
+    const number = prNumberOf(x.links)
+    return number ? [{ step: x.id, number }] : []
+  })
+  const rowOf = (s: StepView): PaneStepRow => {
+    const pr = prNumberOf(s.links)
+    const split = splitCriteria(s.criteria)
+    // The session's own links belong to the steps it is working on: a running one, or one waiting for review.
+    const working = s.state === 'running' || s.state === 'waiting-review'
+    const started = s.startedAt !== null ? Date.parse(s.startedAt) : Number.NaN
+    const otherPrs = new Set(prNumbers.filter((p) => p.step !== s.id).map((p) => p.number))
+    // The session works on one step after another: its links are the step's from the step's start until
+    // the next working step starts.
+    const next = Number.isFinite(started)
+      ? Math.min(...workingStarts.filter((t) => t > started), Number.POSITIVE_INFINITY)
+      : Number.POSITIVE_INFINITY
+    const links = stepLinkRows(s.links, working ? sessionLinks : [], {
+      resolveIn: sessionLinks,
+      since: Number.isFinite(started) ? started : null,
+      until: Number.isFinite(next) ? next : null,
+      otherPrs
+    })
+    return {
+      id: s.id,
+      title: s.title,
+      state: s.state,
+      blocked: s.blocked,
+      needsYou: owed.has(s.id),
+      pr,
+      criteria: s.criteria,
+      prUrl: pr ? (links.find((l) => l.key === `pr:${pr}`)?.url ?? null) : null,
+      verified: split.verified,
+      open: split.open,
+      blockers: blockerRows(s.blockers, ctx.now),
+      links
+    }
+  }
 
   if (detail.milestones.length === 0) {
     return { milestones: [], optional: [], loose: orderSteps(detail.steps.map(rowOf)) }

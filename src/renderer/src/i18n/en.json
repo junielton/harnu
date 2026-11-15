@@ -429,6 +429,44 @@
         "in-progress": "In progress"
       }
     },
+    "step": {
+      "criteria": "Acceptance criteria",
+      "verified": "{n} criterion verified | {n} criteria verified",
+      "by": {
+        "fact": "Checked automatically",
+        "session": "Checked by a second session",
+        "operator": "You",
+        "person": "Waiting for {person}",
+        "personUnnamed": "Waiting for another person"
+      },
+      "selfCheck": "The session says it is done. Not checked yet.",
+      "mark": "Mark done",
+      "markPerson": "Mark approved",
+      "markPersonTitle": "Mark {person} as having approved this",
+      "blocked": {
+        "you": "Blocked · waiting for you",
+        "session": "Blocked · waiting for the session",
+        "withAge": "{head} · {age}"
+      },
+      "clear": "Done, continue",
+      "linksTitle": "Links from the session",
+      "linksNone": "The session has not written any links for this step yet.",
+      "page": "Page · {address}",
+      "openLink": "Open {label}",
+      "error": {
+        "NOT_FOUND": "That changed while you were looking. The pane shows the latest. Check it and try again if you still need to.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. The pane shows the latest. Try again.",
+        "MISSION_CLOSED": "This mission is closed, so nothing in it can change.",
+        "SETTLES_ITSELF": "Harnu checks this one by itself. You do not mark it.",
+        "other": "Harnu could not save that. Try again in a moment. If it keeps happening, close the pane and open it again."
+      }
+    },
+    "doneWhen": {
+      "eyebrow": "New Done when proposed",
+      "body": "A session proposes this as the new Done when. Approve to make it the mission's end. Decline to keep the current one.",
+      "approve": "Approve",
+      "decline": "Decline"
+    },
     "none": {
       "title": "This session has no mission."
     },

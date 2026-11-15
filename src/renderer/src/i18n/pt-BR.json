@@ -429,6 +429,44 @@
         "in-progress": "Em andamento"
       }
     },
+    "step": {
+      "criteria": "Critérios de aceite",
+      "verified": "{n} critério verificado | {n} critérios verificados",
+      "by": {
+        "fact": "Conferido automaticamente",
+        "session": "Conferido por uma segunda sessão",
+        "operator": "Você",
+        "person": "Esperando {person}",
+        "personUnnamed": "Esperando outra pessoa"
+      },
+      "selfCheck": "A sessão diz que terminou. Ainda não foi conferido.",
+      "mark": "Marcar como feito",
+      "markPerson": "Marcar como aprovado",
+      "markPersonTitle": "Marcar que {person} aprovou isto",
+      "blocked": {
+        "you": "Bloqueado · esperando você",
+        "session": "Bloqueado · esperando a sessão",
+        "withAge": "{head} · {age}"
+      },
+      "clear": "Pronto, continuar",
+      "linksTitle": "Links da sessão",
+      "linksNone": "A sessão ainda não escreveu nenhum link para este passo.",
+      "page": "Página · {address}",
+      "openLink": "Abrir {label}",
+      "error": {
+        "NOT_FOUND": "Isso mudou enquanto você olhava. O painel mostra o mais recente. Confira e tente de novo se ainda precisar.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. O painel mostra o mais recente. Tente de novo.",
+        "MISSION_CLOSED": "Esta missão está fechada, então nada nela pode mudar.",
+        "SETTLES_ITSELF": "O Harnu confere este critério sozinho. Você não o marca.",
+        "other": "O Harnu não conseguiu salvar. Tente de novo em instantes. Se continuar, feche o painel e abra de novo."
+      }
+    },
+    "doneWhen": {
+      "eyebrow": "Novo Pronto quando proposto",
+      "body": "Uma sessão propõe isto como o novo Pronto quando. Aprove para torná-lo o fim da missão. Recuse para manter o atual.",
+      "approve": "Aprovar",
+      "decline": "Recusar"
+    },
     "none": {
       "title": "Esta sessão não tem missão."
     },

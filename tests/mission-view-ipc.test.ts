@@ -553,7 +553,7 @@ describe('the preload entries', () => {
     expect(preload).toMatch(/ipcRenderer\.invoke\('mission:choose', args\)/)
   })
 
-  it('the view is asked by the missions store only (S-17) and no renderer calls a door yet', () => {
+  it('the view and the doors are called by the missions store only (S-17, S-19)', () => {
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
         e.isDirectory()
@@ -569,8 +569,9 @@ describe('the preload entries', () => {
         .map((f) => path.relative(renderer, f))
     // S-17: the Mission pane and the pill READ the view through the missions store, the one loop that asks.
     expect(callers(/missionV4View/)).toEqual(['stores/missions.ts'])
-    // No renderer code calls a door until S-19.
-    expect(callers(/missionV4Door/)).toEqual([])
+    // S-19: the operator's doors (mark, clear a blocker, approve or decline a Done when) go through the
+    // same store, which reads the view again after every reply; no component calls one by itself.
+    expect(callers(/missionV4Door/)).toEqual(['stores/missions.ts'])
   })
 })
 

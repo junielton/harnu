@@ -2,7 +2,7 @@
 
 A **mission** is one body of work that an agent keeps track of for you across sessions: what it is for, how far it has got and what is waiting on you. This page covers the **Mission pane**, the way you see a mission in Harnu.
 
-> **Where this stands.** Harnu is moving to a new kind of mission (version 4) and the Mission pane is the first piece you can see. Agents cannot create a version 4 mission yet (the commands for that arrive in a later update), so today the pane has a mission to show only if a version 4 mission file already exists in your repo. Missions you already have (version 3) are unchanged: they keep their pill and their popover. This page says what the pane does today; it grows as the rest lands.
+> **Where this stands.** Harnu is moving to a new kind of mission (version 4) and the Mission pane is the first piece you can see. Agents cannot create a version 4 mission yet (the commands for that arrive in a later update), so today the pane has a mission to show only if a version 4 mission file already exists in your repo; the buttons below work on such a file, and on nothing else. Missions you already have (version 3) are unchanged: they keep their pill and their popover. This page says what the pane does today; it grows as the rest lands.
 
 ## The pill
 
@@ -42,14 +42,37 @@ Below the next step, the mission is a tree: milestone, then step, then criteria.
 - A line joins the milestone dots like a timeline. It is **green behind a finished milestone** and grey ahead, and it runs down through an open milestone's steps.
 - Under an open milestone, a summary line counts what is **running**, **waiting for review** and **blocked** ("4 running · 9 waiting for review · 1 blocked"). Steps that have not started are not counted. A milestone's count on the right is its finished steps out of its steps ("4/4").
 - Inside a milestone the steps you owe something on come **first** (marked **Yours**), then the running ones. Every other step is folded behind **N more steps**; click it to see them all, and again (**Show less**) to fold them.
-- A step shows its pull request number (**#256**) when it has one, and a **Blocked** mark when something stops it. Open a step to see its criteria; a ticked criterion is settled and an empty box is not yet.
+- A step shows its pull request number (**#256**) when it has one, and a **Blocked** mark when something stops it. Click the number to open the pull request in your browser (it is plain text when Harnu does not know where the pull request is). Open a step to see what is in it: see "An open step" below.
 - If a milestone has to wait for one that is not the one just before it, it says **Waits for "…"** and names it. It stops saying so once that milestone is done.
 - Optional milestones sit under one line at the bottom ("2 optional milestones"); click it to see them.
 - A mission with no milestones shows its steps directly, in the same order.
 
 In a narrow pane the tree wraps: step titles take up to two lines and a step's marks move under its title.
 
-Your next step has one button, **Open step**: it opens that step in the tree and brings it into view. Items that need another action (closing the mission, letting a session join, marking a criterion done) show their text but no button yet.
+Your next step has one button, **Open step**: it opens that step in the tree and brings it into view. Items that need another action (closing the mission, letting a session join) show their text but no button yet.
+
+### An open step
+
+Click a step to open it. It shows up to three parts, in this order.
+
+**The blocker**, when something stops the step. A red box says **Blocked · waiting for you · 40m** (how long it has been waiting) when it is yours to clear, or **Blocked · waiting for the session** when the session has to move. Under it is what is wrong, the exact thing that is needed, and what starts once it is done. When the blocker is yours, **Done, continue** clears it. Do that after you have done the thing; the box goes away and the step carries on. A blocker that belongs to the session has no button, because there is nothing for you to press.
+
+**Acceptance criteria.** A criterion is one thing that has to be true for the step to be done. The ones that are already verified fold into one line, such as **19 criteria verified**, so a long list does not push the rest off the screen. Only the open ones are listed, and each says who settles it:
+
+- **Checked automatically** — Harnu reads a fact (a pull request merged, CI green). You never tick it.
+- **Checked by a second session** — another session looks at the work and settles it. You do not tick it either.
+- **You** — it is yours. **Mark done** settles it.
+- **Waiting for Dana** — another person has to approve it. When they do, click **Mark approved**. Until then the step reads as waiting for them, not as waiting for you.
+
+If the session says it is done with a criterion but nothing independent has checked it, the criterion stays open and says **The session says it is done. Not checked yet.** A step with no criteria says so.
+
+**Links from the session.** The pull request, the finished page (**Page · localhost:5173/score-report**), and reports or documents. Click a link to open it in your browser. A file path from the repo is shown as text, because there is nothing to open. These come from two places: what is recorded on the step (the pull request Harnu found on its branch, and links the agent added), and, for a step the session is working on right now, the links the session wrote in its conversation (the same ones the footer's Links list shows). A link you pasted yourself is not listed here. A step the session has not written any links for yet says **The session has not written any links for this step yet.**
+
+**When a button does not work.** If something changed under you (someone else cleared the blocker a moment ago, or the mission was closed), the pane says what to do in plain words, shows the latest, and leaves the step as it now is. Nothing is lost.
+
+### A new Done when
+
+A session can propose a new **Done when** for the mission (what has to be true for it to be finished). It never takes effect by itself: the pane shows a box under **Your next step** with the proposed text, **Approve** and **Decline**. Approve makes it the mission's Done when; Decline keeps the current one.
 
 It can also say:
 
@@ -60,8 +83,7 @@ It can also say:
 ## What you cannot do yet
 
 - **Create a version 4 mission.** Agents cannot create one yet.
-- **Act on a mission from the pane.** There are no buttons for marking a criterion, clearing a blocker, closing the mission or handing it to a new session yet. The pane only reads.
-- **See more of an open step.** Opening a step lists its criteria, but not who settles each one, its blocker or the links its session left. Those arrive next.
+- **Close the mission or hand it to a new session from the pane.** There are no buttons for those yet. On an open step you can mark your own criteria, mark another person's approval, clear a blocker that is yours, and approve or decline a new Done when.
 - **Ask a milestone a question, see the sessions that worked on it or move it to a new session.** Not in the pane yet.
 
 ## Related
