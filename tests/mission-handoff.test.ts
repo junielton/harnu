@@ -866,12 +866,30 @@ describe('nothing releases a session but the hand-off', () => {
   it('handoff.ts subscribes to no process or PTY exit, and imports nothing that could', () => {
     const code = codeOf(read(path.join('missions', 'handoff.ts')))
     expect(code).not.toMatch(
-      /\b(process\.(on|once)|onExit|onDidExit|addTaskEventObserver|SessionEnd|node-pty|killAllPtys)\b|['"`]exit['"`]|from\s+['"][^'"]*(pty|hook-bridge|detect\/|hibernation)/
+      /\b(process\.(on|once)|onExit|onDidExit|SessionEnd|node-pty|killAllPtys)\b|['"`]exit['"`]|from\s+['"][^'"]*(pty|hook-bridge|hibernation)/
     )
     const imports = [...code.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1])
     for (const spec of imports) {
-      expect(spec, spec).toMatch(/^\.\.\/data-dir$|^\.\/[a-z-]+$/)
+      expect(spec, spec).toMatch(/^\.\.\/data-dir$|^\.\/[a-z-]+$|^node:path$/)
     }
+  })
+
+  it('its one subscription (S-20 delta 2) only learns the new session’s id: a first prompt, resolving a promise', () => {
+    // The hand-off's session is not agent-controlled, so the renderer never reports its materialization; the
+    // starter hears the session's own first prompt instead. That is the ONLY event it subscribes to, it is
+    // loaded on use from the hub, and its callback can do nothing but hand an id to the waiting starter.
+    const code = codeOf(read(path.join('missions', 'handoff.ts')))
+    expect([...code.matchAll(/addTaskEventObserver/g)]).toHaveLength(2) // the import and the call
+    expect([...code.matchAll(/import\('([^']+)'\)/g)].map((m) => m[1])).toEqual([
+      '../detect/task-state-hub'
+    ])
+    expect(code).toContain("ev.event !== 'UserPromptSubmit'")
+    const hub = code.slice(
+      code.indexOf('async function hubObserve'),
+      code.indexOf('export function bridgeStarter')
+    )
+    // nothing in the subscription writes, releases, kills or messages
+    expect(hub).not.toMatch(/releaseEntry|applyChange|writeMission|kill|destroy|handOff\(/)
   })
 })
 
