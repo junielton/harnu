@@ -154,7 +154,7 @@ describe('one list feeds every reader (AC-7)', () => {
     )
     const decide = drafts.find((d) => d.sourceKey === `${m.id}:decide:stp-2`)
     expect(decide).toMatchObject({ kind: 'decide', source: 'mission' })
-    expect(decide?.ask).toBe(youSentence(list.find((i) => i.kind === 'decide')!))
+    expect(decide?.ask).toBe(describeWaiting(list.find((i) => i.kind === 'decide')!).ask)
   })
 
   it('the renderer adds no row of its own: a decision node the server did not list is not a row', () => {

@@ -321,7 +321,12 @@ describe('readers use the v4 view', () => {
       seedV3(
         v3Mission({
           blockers: [
-            { reason: 'Waiting on the vendor', unblocks: 'a key', owner: 'operator' } as never
+            {
+              reason: 'Waiting on the vendor',
+              unblocks: 'a key',
+              owner: 'operator',
+              raisedAt: NOW
+            } as never
           ]
         })
       )
@@ -360,7 +365,12 @@ describe('readers use the v4 view', () => {
       seedV3(
         v3Mission({
           blockers: [
-            { reason: 'Waiting on the vendor', unblocks: 'a key', owner: 'operator' } as never
+            {
+              reason: 'Waiting on the vendor',
+              unblocks: 'a key',
+              owner: 'operator',
+              raisedAt: NOW
+            } as never
           ]
         })
       )
