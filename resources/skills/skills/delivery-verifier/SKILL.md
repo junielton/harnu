@@ -265,4 +265,6 @@ criterion with its evidence pointer, what you recorded, and what is open.
 - Never move a card to `done`: Review to Done is the operator's close. Never merge, and never edit product code to make
   a criterion pass: finding it broken IS the deliverable.
 - Never settle a criterion that is not `by: session`, never your own step's, and never one you could not check.
+- Never use, copy or link the operator's Claude credentials, token or login: a check that needs a logged-in Claude
+  becomes an operator criterion; leave it open and `mission_log` one line for the leader.
 - Never invent evidence. "No evidence found" is an outcome.

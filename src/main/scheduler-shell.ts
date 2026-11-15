@@ -1115,13 +1115,17 @@ export function setObserverMcpConfigWriter(
 /**
  * The `--mcp-config` a tick presents. A steward has its own bearer; an observe worker has the OBSERVER
  * credential for its folder (the observe allowlist's read verbs, bound to that folder), and when the
- * control server cannot write one it gets NO config, never the main one; an `act` worker keeps the
+ * control server cannot write one (or is not up yet) it gets NO config, never the main one; an `act` worker keeps the
  * main config. `undefined` is "no Harnu verbs for this tick".
  */
 export async function tickMcpConfigFor(worker: Worker): Promise<string | undefined> {
   if (worker.category === 'steward') return writeStewardMcpConfig(worker.id)
-  if (worker.mode === 'observe' && observerConfigWriter) {
-    return observerConfigWriter({ role: 'observer', folder: worker.folder })
+  if (worker.mode === 'observe') {
+    // No writer yet (the Scheduler registers before the control server, and a `runOnBoot` worker starts
+    // at once) is the same as no credential: the tick runs WITHOUT Harnu verbs, never on the main config.
+    return observerConfigWriter
+      ? observerConfigWriter({ role: 'observer', folder: worker.folder })
+      : undefined
   }
   return mcpConfigPathIfPresent()
 }
