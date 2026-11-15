@@ -264,7 +264,12 @@ const FOLDER = '/repo'
 const SESSION = 'sess-1'
 
 function reply(
-  over: { source?: 'v4' | 'v3-mission' | 'v3-campaign'; id?: string; title?: string } = {}
+  over: {
+    source?: 'v4' | 'v3-mission' | 'v3-campaign'
+    id?: string
+    title?: string
+    items?: unknown[]
+  } = {}
 ): MissionV4ViewReply {
   const id = over.id ?? 'mnt-0a1b2c3d'
   return {
@@ -295,7 +300,7 @@ function reply(
       steps: [],
       next: null,
       waiting: {
-        items: [{ id: 'w0' }],
+        items: over.items ?? [{ id: 'w0' }],
         next: null,
         more: [],
         moreLine: null,
@@ -517,6 +522,59 @@ describe('the chip, the pane choice and the unreadable-file notice read every re
     unreadable = []
     await store.refresh()
     expect(records()).toHaveLength(0)
+  })
+
+  it("upgrading chimes nothing: a v3 mission owed since before keeps main's cue key, though the view words it another way", async () => {
+    // What main remembered: the v3 blocker key, cued long ago.
+    const t = Date.now() - 10 * 60_000
+    localStorage.setItem(
+      'om2tab.missionCues',
+      JSON.stringify({
+        v: 1,
+        owed: {
+          'mnt-0a1b2c3d': {
+            lastSeenAt: t,
+            keys: {
+              'blocker:Waiting on the vendor key': {
+                count: 1,
+                firstOwedAt: t,
+                lastCuedAt: t,
+                nudges: 0
+              }
+            }
+          }
+        }
+      })
+    )
+    v3Views = [
+      fixtureView('parallel', {
+        mission: { id: 'mnt-0a1b2c3d', owner: { sessionId: OWNER, folder: FOLDER } } as never,
+        view: {
+          title: 'Legacy rollout',
+          you: [
+            { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }
+          ] as never
+        }
+      })
+    ]
+    // The view words the same owed item as a v4 `unblock` item, which has another key.
+    viewReply = reply({
+      items: [
+        {
+          kind: 'unblock',
+          id: 'unblock:mission:blk-1',
+          stepId: null,
+          blockerId: 'blk-1',
+          ask: 'Waiting on the vendor key',
+          why: 'It waits'
+        }
+      ]
+    })
+    install()
+    const store = useMissionsStore()
+    await store.refresh()
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
   })
 
   it('the upgrade chimes nothing: a v3 mission already owed is not news on the first read', async () => {
