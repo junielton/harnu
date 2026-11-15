@@ -240,9 +240,10 @@ describe('one reader for every caller', () => {
     expect(campaigns.views).toHaveLength(1)
     expect(campaigns.views[0].progress.states).toMatchObject({ 'chp-1': 'done', 'chp-2': 'done' })
 
-    // Hibernation: only the winner of an id counts. The winner of M_SHADOW is delivered (it pins
-    // nobody, the rule that was already there), so its stale active twin in clone A pins nobody
-    // either; the lone active mission with a live child still pins its leader.
+    // Hibernation: only the winner of an id counts. The winner of M_SHADOW is delivered, which v4 reads
+    // as ready to close, so its leader is pinned (S-23, AC-62: "ready to close included"; it was not
+    // before). Its stale active twin in clone A lost, so STALE_LEADER pins nobody; the lone active
+    // mission still pins its leader.
     const cold = (sessionKey: string, cwd: string): { sessionKey: string; cwd: string } => ({
       sessionKey,
       cwd
@@ -255,7 +256,7 @@ describe('one reader for every caller', () => {
       cold(LONE_LEADER, cloneA),
       cold(LONE_CHILD, cloneA)
     ])
-    expect([...owners]).toEqual([LONE_LEADER])
+    expect([...owners].sort()).toEqual([LEADER, LONE_LEADER].sort())
   }, 30_000)
 })
 

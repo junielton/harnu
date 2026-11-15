@@ -10,8 +10,8 @@ import { useContextMenu } from '../composables/useContextMenu'
 import { useFolderMenuActions } from '../composables/useFolderMenuActions'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
-import { useMissionsStore } from '../stores/missions'
-import { headlineText, TONE_TEXT_CLASS, type MissionModel } from '../lib/mission-view'
+import { useMissionsStore, type ChipModel } from '../stores/missions'
+import { TONE_TEXT_CLASS } from '../lib/mission-view'
 import { relativeTime } from '../composables/useRelativeTime'
 import { dotFor, type Dot } from './session-dot'
 import { failureBadge, type FailureBadge } from './failure-badge'
@@ -410,14 +410,15 @@ function chipRevealClass(s: Session, force = false): string {
 const missions = useMissionsStore()
 missions.ensureStarted()
 
-function missionOf(s: Session): MissionModel | null {
-  const m = missions.modelForSession(s.sessionId)
-  return m && m.headline.kind !== 'empty' ? m : null
+// Missions v4 S-23: the chip reads the v4 view (the pill's own text and tone) for the session that leads
+// the mission, whether the record is a v4 one or a v3 file read through the record store.
+function missionOf(s: Session): ChipModel | null {
+  return missions.chipFor(s.sessionId)
 }
 
-function missionChipLabel(m: MissionModel): string {
+function missionChipLabel(m: ChipModel): string {
   return t(m.needsYou ? 'mission.sidebarChipNeedsYou' : 'mission.sidebarChip', {
-    headline: headlineText(t, m.headline)
+    headline: m.text
   })
 }
 
@@ -910,7 +911,7 @@ function onSelectTeammate(session: Session): void {
                   :stroke-width="2"
                   aria-hidden="true"
                 />
-                {{ headlineText(t, missionOf(s)!.headline, true) }}
+                {{ missionOf(s)!.compact }}
               </span>
             </span>
           </button>

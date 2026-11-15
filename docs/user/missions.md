@@ -159,6 +159,16 @@ A mission does not need milestones. A small task, such as one scoped from a trac
 
 An agent cannot create a version 4 mission yet, so most of the pane has nothing to show. To see what it will look like, open the pane on a session that has no mission and press **See a sample mission**. A strip at the top says "Sample mission" and has a **State** chooser: a mission with something waiting, a step open, a step blocked, a milestone being asked about, the hand-off offered and confirmed, nothing waiting, everything done and ready to close, another session, a small task, a small task with sign-offs, a large mission, a session with no mission, a request to join, and a closed mission. Three of them (the next-step list, every step of a milestone, and the Sessions row) are one click away on the default mission, and the strip says which click. The data is made up. **Nothing you press on a sample is saved**: marks, approvals, the hand-off and the close all answer "nothing changed" without touching any file. **Leave the sample** brings the real answer back.
 
+## Elsewhere in Harnu
+
+The same waiting list shows up outside the pane:
+
+- **The sidebar chip.** On the session that leads a version 4 mission, the session's row in the sidebar shows what the pill shows ("4/21 · 3 for you"), in the same colour. It stays visible while something waits on you. A mission you already have (a version 3 one) keeps its own chip and its popover, saying what that mission's pill says, until those are retired.
+- **Activity.** One entry lists every mission that is waiting on you, one row each, with one plain sentence saying what to do. Clicking a row opens the session that leads that mission.
+- **Your move.** A mission that waits on you files a card for each thing, with the same sentence. A mission you already have (a version 3 one) keeps the cards it had, so updating Harnu does not close or re-file any of them. **Open mission** on a card opens the session and, for a version 4 mission, its Mission pane; for a version 3 mission it opens the popover, as before.
+- **Sounds and reminders.** Harnu plays its attention sound when something new waits on you: a blocker that is yours, a session asking to join, a mission that is ready to close, a main branch that went red, a criterion only you can mark, or one more pull request waiting for your review. Everything except the pull requests then reminds you after 30 minutes, 1 hour, 2 hours and 4 hours, and stops. When fewer things wait on you, there is no sound, and clearing one blocker never counts the others as new. Updating Harnu makes no sound by itself: what a mission already owed you keeps the reminder it had.
+- **The session that leads a mission stays awake.** Harnu normally puts a session you are not using to sleep to free memory. It does not do that to the session that leads an open mission (a mission that is ready to close included), even when nothing else is running. It stays awake until the mission is closed or you hand it to a new session.
+
 ## What you cannot do yet
 
 - **Create a version 4 mission.** Agents cannot create one yet.

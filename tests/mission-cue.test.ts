@@ -537,3 +537,172 @@ describe('restart — persisted cue memory (spec §3.2 Restart)', () => {
     }
   })
 })
+
+// ---- Missions v4 S-23 (AC-63): the cue reads the v4 waiting list, and recall beats quiet ------------------
+
+type V4Item = import('../src/main/missions/waiting').WaitingItemV4
+
+const unblock = (id: string): V4Item => ({
+  kind: 'unblock',
+  id: `unblock:stp-2:${id}`,
+  stepId: 'stp-2',
+  blockerId: id,
+  ask: 'Pick the store',
+  why: 'Step 2 waits'
+})
+const attach = (n: number): V4Item => ({
+  kind: 'attach',
+  id: `attach:atr-${n}`,
+  requestId: `atr-${n}`,
+  sessionId: `11111111-1111-4111-8111-11111111111${n}`,
+  ask: 'Let a session join',
+  why: 'It waits for you'
+})
+const readyToClose = (requested = false): V4Item => ({
+  kind: 'close',
+  id: 'close',
+  requested,
+  ask: 'Close the mission',
+  why: 'Every step is done'
+})
+const mainFailing = (stepId: string): V4Item => ({
+  kind: 'main-failing',
+  id: `main-failing:${stepId}`,
+  stepId,
+  pr: '12',
+  ask: 'Fix main',
+  why: 'Main is red'
+})
+const reviewOf = (n: number): V4Item => ({
+  kind: 'review',
+  id: 'review',
+  stepIds: Array.from({ length: n }, (_, i) => `stp-${i + 1}`),
+  prs: Array.from({ length: n }, (_, i) => String(i + 10)),
+  ask: 'Look over the pull requests',
+  why: 'Steps wait for review'
+})
+
+/** A v4 reader view: only the fields the cue reads. */
+function v4View(id: string, you: V4Item[]): import('../src/renderer/src/lib/mission-cue').CueView {
+  return { mission: { id }, you }
+}
+
+describe('cues keep recall over quiet', () => {
+  const ID = 'mnt-00000004'
+
+  /** Runs the polls and returns the poll numbers (in ms from T0) that cued. */
+  function cuedAt(you: (at: number) => V4Item[], times: number[]): number[] {
+    let memory: CueMemory = empty()
+    const cued: number[] = []
+    for (const at of times) {
+      const d = decideCue([v4View(ID, you(at))], memory, T0 + at)
+      memory = d.memory
+      if (d.cue) cued.push(at)
+    }
+    return cued
+  }
+
+  it.each([
+    ['an operator-owned blocker', () => [unblock('blk-1')]],
+    ['a request to join', () => [attach(1)]],
+    ['a mission ready to close', () => [readyToClose()]],
+    ['a mission whose agent asked to close', () => [readyToClose(true)]],
+    ['a merged step whose main is red', () => [mainFailing('stp-3')]]
+  ])('%s chimes when it appears and re-nudges on the back-off, then stops', (_name, you) => {
+    // Appears at 0; 30 min after that cue; 60 min after the next (at 90); then 2 h, then 4 h; then silent.
+    const times = [
+      0,
+      29 * MIN,
+      30 * MIN,
+      60 * MIN,
+      90 * MIN,
+      150 * MIN,
+      210 * MIN,
+      330 * MIN,
+      450 * MIN,
+      700 * MIN
+    ]
+    expect(cuedAt(you, times)).toEqual([0, 30 * MIN, 90 * MIN, 210 * MIN, 450 * MIN])
+  })
+
+  it('a second request to join is news; one fewer request never chimes', () => {
+    const a = [attach(1)]
+    const ab = [attach(1), attach(2)]
+    expect(cuedAt((at) => (at === 0 ? a : at === POLL ? ab : a), [0, POLL, 2 * POLL])).toEqual([
+      0,
+      POLL
+    ])
+  })
+
+  it('a decrease never chimes: fewer pull requests to review, a blocker cleared, a request answered', () => {
+    expect(cuedAt((at) => (at === 0 ? [reviewOf(2)] : [reviewOf(1)]), [0, POLL])).toEqual([0])
+    expect(
+      cuedAt((at) => (at === 0 ? [unblock('blk-1'), attach(1)] : [attach(1)]), [0, POLL])
+    ).toEqual([0])
+    expect(cuedAt((at) => (at === 0 ? [attach(1)] : []), [0, POLL])).toEqual([0])
+  })
+
+  it('a first run with a backlog of v4 items is silent (seeded), and a later change is news', () => {
+    const views = [v4View(ID, [attach(1), readyToClose()])]
+    let memory = seedCueMemory(views, T0)
+    const quiet = decideCue(views, memory, T0 + POLL)
+    expect(quiet.cue).toBe(false)
+    memory = quiet.memory
+    expect(
+      decideCue([v4View(ID, [attach(1), readyToClose(), attach(2)])], memory, T0 + 2 * POLL).cue
+    ).toBe(true)
+  })
+
+  // Delta 3: a v3 blocker is numbered by position (`blk-N`), so clearing one renumbers the others. The key
+  // must survive that, or removing a blocker reads as a new one and chimes (AC-63: a decrease never chimes).
+  it('removing a mission-level blocker renumbers the step blocker and still never chimes', () => {
+    const missionLevel: V4Item = {
+      kind: 'unblock',
+      id: 'unblock:mission:blk-1',
+      stepId: null,
+      blockerId: 'blk-1',
+      ask: 'Waiting on the vendor key',
+      why: 'The mission cannot go on until then'
+    }
+    const stepLevel = (n: number): V4Item => ({
+      kind: 'unblock',
+      id: `unblock:stp-4:blk-${n}`,
+      stepId: 'stp-4',
+      blockerId: `blk-${n}`,
+      ask: 'Merge the pull request',
+      why: 'The step cannot go on until then'
+    })
+    expect(
+      cuedAt((at) => (at === 0 ? [missionLevel, stepLevel(3)] : [stepLevel(2)]), [0, POLL])
+    ).toEqual([0])
+  })
+
+  it('two blockers on different steps with the same words are two keys, not one', () => {
+    const at = (stepId: string): V4Item => ({
+      kind: 'unblock',
+      id: `unblock:${stepId}:blk-1`,
+      stepId,
+      blockerId: 'blk-1',
+      ask: 'Merge the pull request',
+      why: 'The step cannot go on until then'
+    })
+    expect(owedKeys(v4View(ID, [at('stp-1'), at('stp-2')])).size).toBe(2)
+  })
+
+  it('owedKeys keys every v4 kind the operator can be waiting on, one wording', () => {
+    const keys = owedKeys(
+      v4View(ID, [unblock('blk-1'), attach(1), readyToClose(), mainFailing('stp-3'), reviewOf(2)])
+    )
+    expect([...keys.keys()].sort()).toEqual(
+      [
+        'attach:atr-1',
+        'main-failing:stp-3',
+        'ready-to-close',
+        'review',
+        'unblock:stp-2:Pick the store'
+      ].sort()
+    )
+    expect(keys.get('review')).toBe(2)
+    expect(firstOwed(v4View(ID, [attach(1)]))?.ask).toBe('Let a session join')
+  })
+})
