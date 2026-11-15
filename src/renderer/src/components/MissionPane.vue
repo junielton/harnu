@@ -9,6 +9,8 @@ import { useKeybindingsStore } from '../stores/keybindings'
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import {
+  askLeaderOf,
+  attachRequestsOf,
   buildPaneTree,
   classifyReply,
   doorErrorKey,
@@ -18,6 +20,7 @@ import {
   missionSummaryText,
   missionProgressLine,
   missionStateKey,
+  pickerRows,
   progressPercent,
   sessionNameOf,
   v4MissionOf,
@@ -25,6 +28,8 @@ import {
 } from '../lib/mission-pane-view'
 import Button from './ui/Button.vue'
 import MissionHandoffDialog from './MissionHandoffDialog.vue'
+import MissionPaneAsk from './MissionPaneAsk.vue'
+import MissionPaneAttach, { type RequestRow } from './MissionPaneAttach.vue'
 import MissionPaneNext from './MissionPaneNext.vue'
 import MissionPaneSessions from './MissionPaneSessions.vue'
 import MissionPaneTree from './MissionPaneTree.vue'
@@ -41,7 +46,9 @@ import MissionPaneTree from './MissionPaneTree.vue'
  * server's, the state is an identifier translated through i18n, a v3 record is not drawn at all (the v3
  * popover still serves it). The Sessions row and the hand-off (S-20) live in `MissionPaneSessions` and
  * `MissionHandoffDialog`: this component hosts them, holds the operator's "Not now" and calls the store's
- * hand-off only from the dialog's confirm.
+ * hand-off only from the dialog's confirm. Attach, the attach request and Ask (S-21) live in
+ * `MissionPaneAttach` and `MissionPaneAsk`: a session with no mission gets the picker, a request to join
+ * gets Allow and Deny, and a milestone's Ask goes to the leading session.
  */
 interface Props {
   /** The shared pane union (HelperStack routes only `type:'mission'` here). */
@@ -118,6 +125,46 @@ async function decideDoneWhen(door: 'approveDoneWhen' | 'declineDoneWhen'): Prom
   } finally {
     doneWhenBusy.value = false
   }
+}
+
+// ---- Attach, the attach request and Ask (S-21) --------------------------------------------------------
+// A session with no mission is shown the folder's open missions to attach to. A request to join is shown
+// where the operator is looking: on the pane of the session that asked (it has no mission yet) and on the
+// pane of a session already in the mission. Ask goes to the session that LEADS, which may not be this one.
+const picker = computed(() =>
+  kind.value === 'none' && sessionId.value
+    ? pickerRows(reply.value?.state === 'none' ? reply.value.missions : [])
+    : null
+)
+const requestRows = computed<RequestRow[]>(() => {
+  const id = sessionId.value
+  if (!id) return []
+  const m = mission.value
+  if (m) {
+    return attachRequestsOf(m.detail).map((r) => ({
+      requestId: r.id,
+      missionId: m.missionId,
+      missionTitle: m.detail.title,
+      askerId: r.sessionId
+    }))
+  }
+  if (kind.value !== 'none') return []
+  return missions.attachAsksForSession(id).map((a) => ({
+    requestId: a.requestId,
+    missionId: a.missionId,
+    missionTitle: a.title,
+    askerId: null
+  }))
+})
+const askLeader = computed(() => (mission.value ? askLeaderOf(mission.value) : null))
+const askFor = ref<string | null>(null)
+// Another mission starts with no question open.
+watch(
+  () => mission.value?.missionId,
+  () => (askFor.value = null)
+)
+const toggleAsk = (milestoneId: string): void => {
+  askFor.value = askFor.value === milestoneId ? null : milestoneId
 }
 
 // ---- Sessions and the hand-off (S-20) -----------------------------------------------------------------
@@ -335,6 +382,10 @@ useFocusRegion(props.pane.id, rootEl, {
             >{{ $t(stateKey) }}</span
           >
           <MissionPaneNext :detail="mission.detail" @open-step="treeRef?.openStep($event)" />
+          <!-- A session asked to join: only the operator answers it. -->
+          <div v-if="requestRows.length > 0" style="margin-top: 10px">
+            <MissionPaneAttach :session-id="sessionId as string" :requests="requestRows" />
+          </div>
           <!-- A Done when a session staged: only the operator makes it the mission's end. -->
           <section
             v-if="mission.pendingDoneWhen"
@@ -385,7 +436,22 @@ useFocusRegion(props.pane.id, rootEl, {
         </section>
         <section v-if="hasTree && tree" style="padding: 14px 16px" data-dsqa-part="tree">
           <!-- Keyed by the mission the reply was answered for: another mission starts with its own folds. -->
-          <MissionPaneTree ref="treeRef" :key="mission.missionId" :tree="tree" />
+          <MissionPaneTree
+            ref="treeRef"
+            :key="mission.missionId"
+            :tree="tree"
+            :askable="askLeader !== null"
+            @ask="toggleAsk"
+          >
+            <template #ask="{ milestone }">
+              <MissionPaneAsk
+                v-if="askLeader && askFor === milestone.id"
+                :milestone-title="milestone.title"
+                :leader-id="askLeader"
+                @close="askFor = null"
+              />
+            </template>
+          </MissionPaneTree>
         </section>
         <!-- Who worked on the mission, and the way to continue it in a new session. -->
         <MissionPaneSessions
@@ -396,7 +462,21 @@ useFocusRegion(props.pane.id, rootEl, {
         />
       </template>
 
-      <!-- No mission, a refusal, or a v3 record: the same empty layout (design.md §6 "Mission pane" → States). -->
+      <!-- No mission: the picker of the folder's open missions, and any request to join (design.md §6 "Mission pane" → Attach). -->
+      <div
+        v-else-if="kind === 'none' && sessionId"
+        class="flex flex-col text-text-3"
+        style="padding: 20px 16px; gap: 14px; font-size: 12.5px; line-height: 1.5"
+        data-test="mission-none"
+      >
+        <span class="flex items-center" style="gap: 8px">
+          <Target :size="14" :stroke-width="1.6" class="shrink-0 text-text-4" />
+          <b class="text-text" style="font-weight: 500">{{ $t('missionPane.none.title') }}</b>
+        </span>
+        <MissionPaneAttach :session-id="sessionId" :missions="picker" :requests="requestRows" />
+      </div>
+
+      <!-- A refusal, a v3 record, or no session: the same empty layout (design.md §6 "Mission pane" → States). -->
       <div
         v-else
         class="flex flex-col items-center text-center text-text-3"
@@ -406,12 +486,23 @@ useFocusRegion(props.pane.id, rootEl, {
         <Target :size="14" :stroke-width="1.6" class="text-text-4" />
         <b class="text-text" style="font-weight: 500">{{ $t(`missionPane.${kind}.title`) }}</b>
         <span v-if="kind === 'v3'">{{ $t('missionPane.v3.body') }}</span>
-        <span
-          v-else-if="kind === 'refused' && refusal"
-          class="break-words font-mono text-text-3"
-          style="font-size: 11.5px"
-          >{{ refusal }}</span
-        >
+        <template v-else-if="kind === 'refused'">
+          <span
+            v-if="refusal"
+            class="break-words font-mono text-text-3"
+            style="font-size: 11.5px"
+            >{{ refusal }}</span
+          >
+          <button
+            type="button"
+            class="inline-flex items-center whitespace-nowrap rounded-sm border border-border-2 bg-surface-2 text-text transition hover:border-text-4"
+            style="height: 20px; padding: 0 7px; font-size: 11px; font-weight: 500; margin-top: 4px"
+            data-test="refused-retry"
+            @click="missions.refreshV4()"
+          >
+            {{ $t('missionPane.refused.retry') }}
+          </button>
+        </template>
       </div>
     </div>
 

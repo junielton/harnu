@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, reactive, ref, type PropType } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown, ChevronRight, Flag } from 'lucide-vue-next'
+import { Check, ChevronDown, ChevronRight, Flag, MessageSquare } from 'lucide-vue-next'
 import MissionPaneStep from './MissionPaneStep.vue'
 import {
   milestoneGlyph,
@@ -24,7 +24,14 @@ import {
  * current milestone are the server's. The criteria are drawn as a plain list here; who settles each, the
  * collapse of verified ones, a blocker and the links belong to the open step (S-19).
  */
-const props = defineProps<{ tree: PaneTree }>()
+const props = defineProps<{
+  tree: PaneTree
+  /** A session leads the mission, so a milestone can be asked about (S-21). Ask is drawn only then. */
+  askable?: boolean
+}>()
+// "Ask" on a milestone (S-21): the pane owns the question box and the sending; the box is drawn in the
+// milestone body through the `ask` slot.
+const emit = defineEmits<{ ask: [milestoneId: string] }>()
 
 const { t } = useI18n()
 
@@ -337,26 +344,39 @@ defineExpose({ openStep })
             data-test="milestone-body"
             :data-milestone="block.milestone?.id"
           >
-            <div
-              v-if="block.milestone"
-              class="text-text-4"
-              style="font-size: 11px; padding: 0 0 4px"
-              data-test="milestone-summary"
-            >
-              <template v-for="(part, pi) in milestoneSummary(block.milestone)" :key="part.kind">
-                <span v-if="pi > 0">{{ ' ' }}</span>
-                <!-- The separator trails its part and the pair never breaks: no "·" opens a wrapped line. -->
-                <span
-                  class="whitespace-nowrap"
-                  :class="part.kind === 'blocked' ? 'text-red' : ''"
-                  >{{
-                    pi < summaryLength(block.milestone) - 1
-                      ? `${summaryText(part)} ·`
-                      : summaryText(part)
-                  }}</span
-                >
-              </template>
+            <div v-if="block.milestone" class="flex items-start" style="padding: 0 0 4px; gap: 8px">
+              <div
+                class="min-w-0 flex-1 text-text-4"
+                style="font-size: 11px"
+                data-test="milestone-summary"
+              >
+                <template v-for="(part, pi) in milestoneSummary(block.milestone)" :key="part.kind">
+                  <span v-if="pi > 0">{{ ' ' }}</span>
+                  <!-- The separator trails its part and the pair never breaks: no "·" opens a wrapped line. -->
+                  <span
+                    class="whitespace-nowrap"
+                    :class="part.kind === 'blocked' ? 'text-red' : ''"
+                    >{{
+                      pi < summaryLength(block.milestone) - 1
+                        ? `${summaryText(part)} ·`
+                        : summaryText(part)
+                    }}</span
+                  >
+                </template>
+              </div>
+              <button
+                v-if="askable"
+                type="button"
+                class="inline-flex shrink-0 items-center whitespace-nowrap rounded-sm border border-border-2 bg-surface-2 text-text transition hover:border-text-4"
+                style="height: 20px; padding: 0 7px; gap: 4px; font-size: 11px; font-weight: 500"
+                :title="$t('missionPane.ask.openTitle')"
+                data-test="ask-open"
+                @click="emit('ask', block.milestone.id)"
+              >
+                <MessageSquare :size="10" :stroke-width="1.6" />{{ $t('missionPane.ask.open') }}
+              </button>
             </div>
+            <slot v-if="block.milestone" name="ask" :milestone="block.milestone" />
 
             <template v-for="s in visibleSteps(block.key, block.groups)" :key="s.id">
               <button

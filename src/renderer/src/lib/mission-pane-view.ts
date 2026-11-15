@@ -9,6 +9,7 @@
  * and the state is the identifier translated through i18n, never the English words in the reply.
  */
 import type { MissionV4ViewReply } from '../../../main/mission-ipc'
+import { buildBracketedPaste } from './composer-core'
 import { sessionTitle, type SessionLike } from './session-label'
 
 type Translate = (key: string, values?: Record<string, unknown>, plural?: number) => string
@@ -898,4 +899,91 @@ export function missionSummaryText(mission: MissionV4Reply | null): string | und
   if (!mission) return undefined
   const { summary } = mission.detail
   return summary
+}
+
+// ---- Attach, the attach request and Ask (Missions v4, S-21) ------------------------------------------
+
+/** One open mission of the folder, as the attach picker lists it: the server's row, with who leads. */
+export interface PickerRow {
+  id: string
+  title: string
+  /** The server's count line ("4 of 21 steps done"), shown as written. */
+  headline: string
+  /** The session that leads it, or `null` when nobody does. */
+  leaderId: string | null
+}
+
+type NoneReply = Extract<MissionV4ViewReply, { state: 'none' }>
+
+/** The picker's rows, in the server's order. */
+export function pickerRows(missions: NoneReply['missions']): PickerRow[] {
+  return missions.map((m) => ({
+    id: m.id,
+    title: m.title,
+    headline: m.headline,
+    leaderId: m.leads ?? null
+  }))
+}
+
+/** A session's request to join, as the waiting list holds it: the id the door takes and who asked. */
+export interface AttachRequestRow {
+  id: string
+  sessionId: string
+}
+
+/** Every undecided request of the waiting list (not only the next item): the session ids are the door's targets. */
+export function attachRequestsOf(detail: Detail): AttachRequestRow[] {
+  const out: AttachRequestRow[] = []
+  for (const item of detail.waiting.items) {
+    if (item.kind === 'attach') out.push({ id: item.requestId, sessionId: item.sessionId })
+  }
+  return out
+}
+
+/** The codes the attach and decide-attach doors answer that the pane words one by one; any other reads as `other`. */
+export const ATTACH_CODES = ['NOT_FOUND', 'MISSION_CLOSED', 'WRITE_CONFLICT'] as const
+
+/** The i18n key (under `missionPane.attach.error`) that says what to do after a door answered `code`. */
+export function attachErrorKey(code: string): (typeof ATTACH_CODES)[number] | 'other' {
+  return (ATTACH_CODES as readonly string[]).includes(code)
+    ? (code as (typeof ATTACH_CODES)[number])
+    : 'other'
+}
+
+/**
+ * What "Start a new mission" puts into the session's prompt. It writes no record: the session makes the
+ * mission once the operator agrees what done means. One line, so it needs no fencing of its own.
+ */
+export const NEW_MISSION_INSTRUCTION =
+  'Please start a new Harnu mission for the work in this session. First tell me in one sentence what done will look like, and wait for my answer before you create it.'
+
+/** What Ask sends: the milestone named by its title, then the question as the operator wrote it. */
+export function askMessage(milestoneTitle: string, question: string): string {
+  return `About the milestone \u201c${milestoneTitle}\u201d: ${question.trim()}`
+}
+
+/** How a write into another session ended: it went in, or the session has no running terminal. */
+export type IntoSession = 'sent' | 'not-running'
+
+/**
+ * Put text into a session's prompt the way "Reference in session" does: through the writer bus, to a live
+ * session only, and with NO Enter (the operator reviews the line and sends it: a session may be waiting at
+ * a permission prompt, and an Enter there would answer it). The text is fenced as one bracketed paste so a
+ * multi-line question lands as one block. Writes nothing for a session that is not running.
+ */
+export function writeIntoSession(
+  deps: {
+    isLive: (sessionId: string) => boolean
+    write: (sessionId: string, data: string) => boolean
+  },
+  sessionId: string,
+  text: string
+): IntoSession {
+  if (!deps.isLive(sessionId)) return 'not-running'
+  return deps.write(sessionId, buildBracketedPaste(text)) ? 'sent' : 'not-running'
+}
+
+/** The session that leads the mission now, or `null`: the one Ask goes to. */
+export function askLeaderOf(mission: MissionV4Reply): string | null {
+  return mission.sessions.find((s) => s.open && s.role === 'leads')?.id ?? null
 }
