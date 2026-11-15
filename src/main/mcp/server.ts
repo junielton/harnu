@@ -96,6 +96,7 @@ import {
   shouldInjectMcpConfig
 } from './config-file'
 import { atomicWriteFile } from './atomic-write'
+import { rawRm } from '../raw-fs'
 import { readOrCreateToken, readStoredPort, writeStore } from './token-store'
 import { buildHarnuMcpInstructions } from './instructions'
 import { appLocale } from '../app-locale'
@@ -344,7 +345,7 @@ function scopedDir(): string {
 
 /** Remove every scoped config: a credential does not outlive the boot (or the stop) that minted it. */
 async function clearScopedConfigs(): Promise<void> {
-  await fs.rm(scopedDir(), { recursive: true, force: true }).catch(() => {})
+  await rawRm(scopedDir(), { recursive: true, force: true }).catch(() => {})
 }
 
 /**
