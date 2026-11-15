@@ -334,6 +334,10 @@ describe('S-21 helpers', () => {
     expect(attachErrorKey('SOMETHING_NEW')).toBe('other')
   })
 
+  it('attachErrorKey knows the code the store answers for a mission file that is gone', () => {
+    expect(attachErrorKey('MISSION_NOT_FOUND')).toBe('MISSION_NOT_FOUND')
+  })
+
   it('the new-mission instruction asks the session, in one place, and names no record', () => {
     expect(NEW_MISSION_INSTRUCTION).toMatch(/new Harnu mission/i)
     expect(NEW_MISSION_INSTRUCTION).not.toContain('\n')
@@ -511,6 +515,25 @@ describe('AC-56 — a session with no mission', () => {
     await click('[data-test="attach-start"]')
     expect(door).not.toHaveBeenCalled()
     expect(text('[data-test="attach-start-error"]')).toMatch(/not running/i)
+  })
+
+  it('says the mission is gone, in words, when its file was removed under the picker', async () => {
+    await mountPane({
+      answer: () => noneReply(),
+      doorReply: { ok: false, code: 'MISSION_NOT_FOUND', error: 'MISSION_NOT_FOUND: x' }
+    })
+    await click(`[data-test="attach-row"][data-mission="${MISSION}"] [data-test="attach-open"]`)
+    await click('[data-test="attach-confirm-yes"]')
+    expect(text('[data-test="attach-error"]')).toMatch(/no longer there/i)
+  })
+
+  it('forgets what Start a new mission said once the operator starts attaching instead', async () => {
+    liveWriter(SESSION)
+    await mountPane({ answer: () => noneReply() })
+    await click('[data-test="attach-start"]')
+    expect(q('[data-test="attach-start-done"]')).not.toBeNull()
+    await click(`[data-test="attach-row"][data-mission="${MISSION}"] [data-test="attach-open"]`)
+    expect(q('[data-test="attach-start-done"]')).toBeNull()
   })
 
   it('a folder with no open mission says so and still offers Start a new mission', async () => {
