@@ -145,8 +145,11 @@ function keyOfV4(item: WaitingItemV4): [OwedKey, number] {
       return ['review', Math.max(1, item.prs.length || item.stepIds.length)]
     case 'close':
       return ['ready-to-close', 1]
-    case 'main-failing':
+    // A blocker's `blk-N` is a position, and a v3 record renumbers its blockers when one is cleared: the key
+    // is its scope plus its words, so clearing a neighbour never makes it new (a decrease never chimes).
     case 'unblock':
+      return [`unblock:${item.stepId ?? 'mission'}:${item.ask}`, 1]
+    case 'main-failing':
     case 'settle':
     case 'attach':
       return [item.id, 1]

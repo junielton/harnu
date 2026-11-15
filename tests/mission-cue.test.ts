@@ -699,7 +699,7 @@ describe('cues keep recall over quiet', () => {
         'main-failing:stp-3',
         'ready-to-close',
         'review',
-        'unblock:stp-2:blk-1'
+        'unblock:stp-2:Pick the store'
       ].sort()
     )
     expect(keys.get('review')).toBe(2)
