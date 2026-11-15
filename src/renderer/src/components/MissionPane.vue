@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeftRight, Expand, Maximize2, Minimize2, Target, X } from 'lucide-vue-next'
 import { useFocusRegion } from '../composables/useTerminalFocus'
@@ -136,7 +136,17 @@ const handoffOpen = ref(false)
 const handoffDone = ref(false)
 const handoffError = ref<string | null>(null)
 const newLeader = ref<string | null>(null)
-const handoffSummary = computed(() => mission.value?.detail.summary ?? '')
+// The summary the confirmation shows is the last one the view gave. When the view stops holding the mission
+// (it closed under the dialog, the session was released), the dialog still shows what it was asked about.
+const lastSummary = ref('')
+watch(
+  () => mission.value?.detail.summary,
+  (summary) => {
+    if (summary !== undefined) lastSummary.value = summary
+  },
+  { immediate: true }
+)
+const handoffSummary = computed(() => mission.value?.detail.summary ?? lastSummary.value)
 const newLeaderLoaded = computed(
   () =>
     newLeader.value !== null && sessions.allSessions.some((s) => s.sessionId === newLeader.value)
