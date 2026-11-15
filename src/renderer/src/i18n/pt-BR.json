@@ -402,7 +402,8 @@
         "review": "Revisar",
         "close": "Fechar",
         "attach": "Entrar"
-      }
+      },
+      "close": "Fechar missão…"
     },
     "tree": {
       "label": "Passos da missão",
@@ -528,7 +529,8 @@
         "HANDOFF_IN_PROGRESS": "Uma transferência desta missão já está iniciando uma sessão. Espere terminar e olhe a linha Sessões.",
         "HANDOFF_UNAVAILABLE": "O Harnu não consegue iniciar uma sessão agora. Nada mudou. Tente de novo em instantes.",
         "LEADER_CHANGED": "Quem lidera a missão mudou enquanto a nova sessão iniciava, então o Harnu não a vinculou. A nova sessão está aberta, mas não faz parte da missão. Olhe a linha Sessões e decida de novo.",
-        "other": "O Harnu não conseguiu concluir a transferência. Olhe a linha Sessões para ver quem lidera e tente de novo."
+        "other": "O Harnu não conseguiu concluir a transferência. Olhe a linha Sessões para ver quem lidera e tente de novo.",
+        "SAMPLE": "Esta é uma missão de exemplo, então nenhuma sessão foi iniciada."
       }
     },
     "none": {
@@ -590,6 +592,60 @@
     "v3": {
       "title": "Esta missão ainda é uma missão v3.",
       "body": "Abra-a pela pílula da missão no topo."
+    },
+    "close": {
+      "open": "Fechar missão…",
+      "title": "Fechar esta missão?",
+      "body": "{title} sai do painel Missão e não pode ser reaberta. O arquivo da missão continua no disco como registro.",
+      "doneWhen": "Fechar como entregue confirma este Pronto quando: “{text}”",
+      "matters": {
+        "unfinished-steps": "{count} passo não está pronto | {count} passos não estão prontos",
+        "open-blockers": "{count} bloqueio ainda aberto | {count} bloqueios ainda abertos",
+        "staged-done-when": "Um novo Pronto quando espera a sua aprovação",
+        "attach-requests": "{count} sessão espera para entrar | {count} sessões esperam para entrar",
+        "other": "{count} outro assunto ainda aberto | {count} outros assuntos ainda abertos"
+      },
+      "error": {
+        "NOT_FOUND": "Isso mudou enquanto você olhava. O painel mostra o mais recente. Confira e tente de novo se ainda precisar.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. O painel mostra o mais recente. Tente de novo.",
+        "MISSION_CLOSED": "Esta missão já está fechada, então não há mais o que fechar.",
+        "other": "O Harnu não conseguiu fechar a missão. Nada mudou. Tente de novo em instantes."
+      }
+    },
+    "sample": {
+      "open": "Ver uma missão de exemplo",
+      "openHint": "Mostra todos os estados deste painel com dados inventados. Nada é salvo.",
+      "label": "Missão de exemplo",
+      "note": "Dados inventados. Nada que você apertar aqui é salvo.",
+      "chooser": "Estado",
+      "leave": "Sair do exemplo",
+      "state": {
+        "default": "Padrão",
+        "waiting": "Esperando você",
+        "step-open": "Um passo aberto",
+        "step-blocked": "Um passo bloqueado",
+        "all-steps": "Todos os passos",
+        "ask": "Perguntando sobre um marco",
+        "sessions": "Sessões",
+        "handoff-suggest": "Passagem oferecida",
+        "handoff-confirm": "Confirmação da passagem",
+        "clear": "Nada esperando",
+        "done": "Concluída, pronta para fechar",
+        "other-session": "Outra sessão",
+        "simple": "Tarefa pequena",
+        "simple-signoff": "Tarefa pequena, aprovações",
+        "big": "Missão grande",
+        "big-waiting": "Missão grande, esperando você",
+        "no-mission": "Sem missão",
+        "attach-request": "Pede para entrar",
+        "closed": "Missão fechada"
+      },
+      "hint": {
+        "waiting": "Aperte “N esperando você” na caixa do próximo passo.",
+        "all-steps": "Aperte “N passos a mais” sob um marco.",
+        "sessions": "Aperte a linha Sessões, no fim.",
+        "big-waiting": "Aperte “N esperando você” na caixa do próximo passo."
+      }
     }
   },
   "memoryPane": {

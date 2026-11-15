@@ -402,7 +402,8 @@
         "review": "Review",
         "close": "Close",
         "attach": "Join"
-      }
+      },
+      "close": "Close mission…"
     },
     "tree": {
       "label": "Steps of the mission",
@@ -528,7 +529,8 @@
         "HANDOFF_IN_PROGRESS": "A hand-off of this mission is already starting a session. Wait for it to finish, then look at the Sessions row.",
         "HANDOFF_UNAVAILABLE": "Harnu cannot start a session right now. Nothing changed. Try again in a moment.",
         "LEADER_CHANGED": "Who leads the mission changed while the new session was starting, so Harnu did not attach it. The new session is open but is not part of the mission. Look at the Sessions row, then decide again.",
-        "other": "Harnu could not finish the hand-off. Look at the Sessions row to see who leads, then try again."
+        "other": "Harnu could not finish the hand-off. Look at the Sessions row to see who leads, then try again.",
+        "SAMPLE": "This is a sample mission, so no session was started."
       }
     },
     "none": {
@@ -590,6 +592,60 @@
     "v3": {
       "title": "This mission is still a v3 mission.",
       "body": "Open it from the mission pill at the top."
+    },
+    "close": {
+      "open": "Close mission…",
+      "title": "Close this mission?",
+      "body": "{title} leaves the Mission pane and cannot be reopened. The mission file stays on disk as the record.",
+      "doneWhen": "Closing as delivered confirms this Done when: “{text}”",
+      "matters": {
+        "unfinished-steps": "{count} step is not done | {count} steps are not done",
+        "open-blockers": "{count} blocker is still open | {count} blockers are still open",
+        "staged-done-when": "A new Done when is waiting for your approval",
+        "attach-requests": "{count} session is waiting to join | {count} sessions are waiting to join",
+        "other": "{count} other matter is still open | {count} other matters are still open"
+      },
+      "error": {
+        "NOT_FOUND": "That changed while you were looking. The pane shows the latest. Check it and try again if you still need to.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. The pane shows the latest. Try again.",
+        "MISSION_CLOSED": "This mission is already closed, so there is nothing left to close.",
+        "other": "Harnu could not close the mission. Nothing changed. Try again in a moment."
+      }
+    },
+    "sample": {
+      "open": "See a sample mission",
+      "openHint": "Shows every state of this pane with made-up data. Nothing is saved.",
+      "label": "Sample mission",
+      "note": "Made-up data. Nothing you press here is saved.",
+      "chooser": "State",
+      "leave": "Leave the sample",
+      "state": {
+        "default": "Default",
+        "waiting": "Waiting on you",
+        "step-open": "A step open",
+        "step-blocked": "A step blocked",
+        "all-steps": "Every step shown",
+        "ask": "Asking about a milestone",
+        "sessions": "Sessions",
+        "handoff-suggest": "Hand-off offered",
+        "handoff-confirm": "Hand-off confirmation",
+        "clear": "Nothing waiting",
+        "done": "Done, ready to close",
+        "other-session": "Another session",
+        "simple": "Small task",
+        "simple-signoff": "Small task, sign-offs",
+        "big": "Large mission",
+        "big-waiting": "Large mission, waiting on you",
+        "no-mission": "No mission",
+        "attach-request": "Asks to join",
+        "closed": "Mission closed"
+      },
+      "hint": {
+        "waiting": "Press “N more waiting on you” in the next-step box.",
+        "all-steps": "Press “N more steps” under a milestone.",
+        "sessions": "Press the Sessions row at the bottom.",
+        "big-waiting": "Press “N more waiting on you” in the next-step box."
+      }
     }
   },
   "memoryPane": {

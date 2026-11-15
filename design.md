@@ -476,7 +476,7 @@ _another_ folder.
 | `contrast`                               | Mission progress — the step rail's `waiting` glyph (◐, Mission v3)                                                                                                                                                                     |
 | `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                                                                                 |
 | `circle-check`                           | Mission progress — the step rail's `done` glyph (✓ hollow, Mission v3)                                                                                                                                                                 |
-| `flag`                                   | Mission progress — the popover footer's "End mission…" button (Mission v3)                                                                                                                                                             |
+| `flag`                                   | Mission progress — the popover footer's "End mission…" button (Mission v3); Mission pane — "Close mission…" (Missions v4 S-22)                                                                                                         |
 | `palette`                                | Canvas properties panel → the collapsed 28px button that opens it on a narrow pane (T536 U3)                                                                                                                                           |
 | `square-round-corner`                    | Canvas properties panel → Corners: round (`square` is sharp) (T536 U3)                                                                                                                                                                 |
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
@@ -8176,6 +8176,105 @@ picker, the request and Ask have something to show only when a v4 record already
 **Don'ts.** ❌ Attach on one click. ❌ Write a record from **Start a new mission**. ❌ Send Enter into another
 session. ❌ Offer **Ask** when nobody leads. ❌ Let a session ask to lead. ❌ Print the code a door came back
 with. ❌ Answer the question in the pane.
+
+#### Close, the small task and the sample (Missions v4, S-22)
+
+**S-22 (`MissionCloseConfirmDialog.vue` in `v4` mode, `MissionPane.vue`, `MissionPaneNext.vue`,
+`lib/mission-sample.ts`, `lib/mission-pane-view.ts` and the store; draft mockup `docs/design/missions-v4/`,
+screen `mission-pane`, states `done`, `simple`, `simple-signoff`, `closed`).** Closing is the operator's act,
+with a confirmation. A mission closes **as delivered** or is **discarded**; open matters **warn and never
+block**; a closed mission **leaves the pane** and the session shows the no-mission state (the attach picker).
+**Tokens only; no new colour, radius, easing or row height.** The mockup draws only a "Close mission…" button;
+the dialog, the quiet entry and the sample's strip are drawn here in the mockup's language.
+
+**Where Close lives.** Two entries, one dialog.
+
+- **Ready to close** (the view says `state: 'ready-to-close'`: every required step is done): the **Your next
+  step** box (§6 "The glance") draws its `close` item with **"Close mission…"** (primary `Button`, a 14px
+  `flag`), next to the server's ask and why shown as written. When another item ranks first, the `close` item
+  sits in the "N more waiting on you" rows and has the same button there (the dense pill: `rounded-sm border
+border-border-2`, `padding: 2px 8px`, `11px`). The box only **opens the dialog**; the door call is the pane's.
+- **Always**: at the foot of the mission, after the Sessions row, a quiet **"Close mission…"** (`text-text-3`,
+  `height: 20px`, `padding: 0 7px`, `11px / 500`, a 11px `flag`; `text-green` when the mission is ready), right
+  aligned. A mission can be discarded at any time, so this never waits for the end.
+
+**The dialog** is the one end dialog of the popover (`MissionCloseConfirmDialog.vue`, §6 "Mission progress" →
+End dialog: same anatomy, same hand-rolled shell until it moves to `ui/Dialog.vue`) in `mode="v4"`. What
+changes is the copy and the list, not the shell:
+
+- Title **"Close this mission?"**; body **"{title} leaves the Mission pane and cannot be reopened. The mission
+  file stays on disk as the record."** (the title in `text-text`, bold).
+- The two choices of the popover's dialog, **Close as delivered** and **Discard**, with their hints. It opens on
+  **Close as delivered** only when the mission is ready to close, else on **Discard**, so a stray Enter on an
+  unfinished mission confirms nothing it did not mean. Initial focus stays **Cancel**.
+- **Closing as delivered says what it confirms**: under the choices, `11.5px`, `text-text-2`, **"Closing as
+  delivered confirms this Done when: “{text}”"**. It disappears on Discard: a discard confirms nothing.
+- The reason box (optional, goes to the mission's Log), then the **warnings box** (`border-warning-line
+bg-warning-soft text-warning`, "Before you end it"): one row per open matter the close door counts, in words
+  of its own, never the server's English: **"{n} steps are not done"**, **"{n} blockers are still open"**,
+  **"A new Done when is waiting for your approval"**, **"{n} sessions are waiting to join"** (any other kind
+  reads "{n} other matters are still open"). The counts are the view's `closeWarnings` (counted with the facts;
+  the close door's own reply counts without them), read again when the dialog opens. **A warning never disables
+  or hides the confirm.**
+- A door that fails (`NOT_FOUND`, `WRITE_CONFLICT`, `MISSION_CLOSED`, anything else) keeps the dialog open and
+  says what to do in a `role="alert"` line under the reason (`11.5px`, `text-text`); the confirm can be pressed
+  again. The code is never printed. A dialog whose mission left the pane closes with it.
+- Esc, the X, Cancel and a backdrop click close it and call no door. Opening it plays the confirm chime and raises
+  OS attention (the popover's rule: an irreversible decision is never silent).
+
+**What the door does** (`src/main/missions/doors.ts`, not changed here): **delivered** sets `doneWhenVerified`
+(the operator confirms the Done when, spec decision D-21); **discarded** does not. Both close the record and
+keep the file. After the reply the store reads the view again, so the pane shows the attach picker at once.
+
+**The small task** is a mission with **no milestones**: its steps sit directly on the timeline (the tree's
+`loose` list, §6 "The glance"), the criteria pulled from the task show under the open step ("Acceptance
+criteria", each settled by a second session), and another person's sign-off is a criterion **the operator ticks**:
+**"Waiting for {person}"** with **Mark approved**, the operator's own with **Mark done**; a sign-off already
+marked folds into "{n} criteria verified" like any settled criterion. Progress counts steps ("1 of 2 steps done").
+**Every step shows, in plan order**, when there are **eight or fewer** (`LOOSE_ALL_SHOWN` in
+`lib/mission-pane-view.ts`): a small task is its timeline, so a done step or one still to do is never hidden behind
+"N more steps". Past eight the order and fold of §6 "The glance" apply (owed first, then running, the rest behind
+"N more"). No new element: it is the tree and the step the pane already draws.
+
+**The sample** (`lib/mission-sample.ts`) is a view object shaped like the view channel's answer, built in the
+renderer from nothing: **no file, no IPC, no store**. It exists because an agent cannot create a v4 mission yet,
+so most of the pane could not be seen. It covers **every state of the mockup** (`simple`, `simple-signoff`,
+`done`, `clear` and `closed` included), with made-up names. A state that is only a click on another one opens
+that part for you (`step-open`, `step-blocked`, `ask`, `handoff-confirm`); the three the pane cannot open for you
+(`waiting`, `all-steps`, `sessions`) show the default data and say which click reaches them.
+
+- **Entry.** The no-mission state ends with a quiet **"See a sample mission"** (`12px / 500`, `text-accent`) and
+  one line, **"Shows every state of this pane with made-up data. Nothing is saved."**, under a `border-t`.
+- **The strip** (pinned under the header while a sample shows): `border-b border-accent-line bg-accent-soft`,
+  `padding: 8px 12px`, `11.5px`. First line: the eyebrow **"Sample mission"** (`10px / 700`, uppercase, `0.07em`,
+  `text-accent`), **"Made-up data. Nothing you press here is saved."** and **"Leave the sample"** (the dense
+  pill). Second line: **"State"** and a native `select` of every state (`rounded-sm border border-border-2
+bg-bg`, `height: 22px`, `11.5px`). A state that needs a click adds one line saying which.
+- **Inert.** While a sample shows, every door the store runs for it answers "nothing changed" **without a call and
+  without reading the view**; the hand-off refuses in words ("This is a sample mission, so no session was
+  started."). The pill, the sidebar and every other reader never see it.
+
+**Differences from the draft mockup** (the spec wins; each is a finding):
+
+1. The mockup's `closed` state is the **pane hidden by the pill** (the pill toggle is S-17's). The sample's
+   `closed` is the **mission closed**: the pane then shows no mission, which is what AC-60 asks for.
+2. The mockup draws a settled sign-off as its own row ("marked by you · Nov 14"); the pane folds a settled
+   criterion into "{n} criteria verified" (S-19), here as everywhere.
+3. The mockup's first step of the small task has a **Confirm** button; no door confirms a plan yet, so the next
+   step box offers **Open step** only.
+4. The mockup heads the small task's lists "Acceptance criteria · from the task" and "Links from the task"; the
+   pane says "Acceptance criteria" and "Links from the session" (S-19's wording) because the view does not say
+   where a criterion came from.
+5. A person's sign-off reads **"Waiting for {person}"**, and the hand-off offer says "context", never "memory".
+6. The mockup's small task, waiting on a person, heads its next-step box "Next step · waiting for other people"
+   with a sentence about the designer. The pane's next-step box does not read the view's `people` list (S-18
+   drew it from `waiting.next` only), so it says "N steps are running. Nothing for you right now." and the
+   sign-offs are in the open step. Not changed here: S-22's extension of that box is the close action only.
+
+**Don'ts.** ❌ Disable or hide the confirm because something is open. ❌ Print the server's English `text` of an
+open matter or a door's code. ❌ Close on one click: the buttons only open the dialog. ❌ Let a sample call a
+door, read the view or reach another surface. ❌ Show Close as delivered as the default of a mission that is not
+done.
 
 ### Campaign progress (pill, popover)
 

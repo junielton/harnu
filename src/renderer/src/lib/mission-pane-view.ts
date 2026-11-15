@@ -534,6 +534,9 @@ export interface PaneTree {
   loose: StepGroups | null
 }
 
+/** A mission with no milestones and at most this many steps shows all of them (Missions v4 S-22). */
+export const LOOSE_ALL_SHOWN = 8
+
 export function buildPaneTree(detail: Detail, ctx: StepContext = {}): PaneTree {
   const owed = owedStepIds(detail)
   const sessionLinks = ctx.sessionLinks ?? []
@@ -581,7 +584,11 @@ export function buildPaneTree(detail: Detail, ctx: StepContext = {}): PaneTree {
   }
 
   if (detail.milestones.length === 0) {
-    return { milestones: [], optional: [], loose: orderSteps(detail.steps.map(rowOf)) }
+    const rows = detail.steps.map(rowOf)
+    // A small task IS its timeline (R-19): every step shows, in plan order. The fold behind "N more" is for a
+    // long list, where the steps nobody waits on would bury the ones that matter.
+    const loose = rows.length <= LOOSE_ALL_SHOWN ? { shown: rows, folded: [] } : orderSteps(rows)
+    return { milestones: [], optional: [], loose }
   }
 
   const byMilestone = detail.progress.unit === 'milestones'
@@ -866,7 +873,9 @@ export const HANDOFF_CODES = [
   'HANDOFF_START_FAILED',
   'HANDOFF_IN_PROGRESS',
   'HANDOFF_UNAVAILABLE',
-  'LEADER_CHANGED'
+  'LEADER_CHANGED',
+  // The sample has no record to hand off (Missions v4 S-22): nothing starts.
+  'SAMPLE'
 ] as const
 
 /**
@@ -1011,4 +1020,54 @@ export function writeIntoSession(
 /** The session that leads the mission now, or `null`: the one Ask goes to. */
 export function askLeaderOf(mission: MissionV4Reply): string | null {
   return mission.sessions.find((s) => s.open && s.role === 'leads')?.id ?? null
+}
+
+// ---- Close (Missions v4, S-22) -------------------------------------------------------------------------------
+//
+// The operator's one end door. Pure: what the dialog lists, in words of its own. The server's `text` for an open
+// matter is English and is never the copy (the renderer translates identifiers); the count is the server's.
+
+/** The open matters the close door counts, by identifier. */
+export const CLOSE_MATTER_KINDS = [
+  'unfinished-steps',
+  'open-blockers',
+  'staged-done-when',
+  'attach-requests'
+] as const
+
+export interface CloseMatter {
+  /** An identifier the dialog translates; a kind this build does not know reads as `other`. */
+  kind: (typeof CLOSE_MATTER_KINDS)[number] | 'other'
+  /** The server's count. */
+  count: number
+}
+
+/**
+ * The view's `closeWarnings` (counted with the facts) as the dialog's rows, in the server's order. A warning
+ * never stops the close: this only says what is open.
+ */
+export function closeMatters(
+  warnings: ReadonlyArray<{ kind: string; count: number }>
+): CloseMatter[] {
+  return warnings.map((w) => ({
+    kind: (CLOSE_MATTER_KINDS as readonly string[]).includes(w.kind)
+      ? (w.kind as CloseMatter['kind'])
+      : 'other',
+    count: w.count
+  }))
+}
+
+/** The codes the close door answers that the dialog words one by one; any other code reads as `other`. */
+export const CLOSE_CODES = ['NOT_FOUND', 'WRITE_CONFLICT', 'MISSION_CLOSED'] as const
+
+/** The i18n key (under `missionPane.close.error`) that says what to do after the door answered `code`. */
+export function closeErrorKey(code: string): (typeof CLOSE_CODES)[number] | 'other' {
+  return (CLOSE_CODES as readonly string[]).includes(code)
+    ? (code as (typeof CLOSE_CODES)[number])
+    : 'other'
+}
+
+/** Whether the server says every required step is done: the mission is ready to close as delivered. */
+export function isReadyToClose(detail: Detail): boolean {
+  return detail.status === 'open' && detail.state === 'ready-to-close'
 }
