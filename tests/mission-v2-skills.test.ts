@@ -30,14 +30,6 @@ function readSkill(name: string): string {
   )
 }
 
-/** The text of one `## ` section (heading line excluded), up to the next `## `. */
-function section(raw: string, heading: string): string {
-  const start = raw.indexOf(`\n## ${heading}`)
-  expect(start, `section "## ${heading}"`).toBeGreaterThan(-1)
-  const next = raw.indexOf('\n## ', start + 4)
-  return raw.slice(start, next === -1 ? undefined : next)
-}
-
 /** Collapse Prettier's line wrapping so a sentence matches whatever its breaks. */
 const flat = (s: string): string => s.replace(/\s+/g, ' ')
 
