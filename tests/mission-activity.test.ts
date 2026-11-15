@@ -494,3 +494,115 @@ describe('the chip of a v3 mission with steps in several states', () => {
     expect(chip!.text).toMatch(new RegExp(`^\\d+/${detail.progress.total}\\b`))
   })
 })
+
+// ---- Missions v4 S-23 delta 2: a finished v3 mission whose leader is not open still cues, with its leader ------
+
+describe('a delivered v3 mission with warnings, its leader not open here', () => {
+  const ABSENT = '4d4d4d4d-0000-4000-8000-0000000000d4'
+  let repo = ''
+
+  beforeEach(async () => {
+    const fs = await import('node:fs')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-delivered-'))
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    const { buildMissionFileContent, missionFilePath, missionsDir } =
+      await import('../src/main/mission-core')
+    const at = '2026-11-14T09:00:00.000Z'
+    const step = (id: string, ordinal: number, over: Record<string, unknown>): unknown => ({
+      id,
+      ordinal,
+      kind: 'custom',
+      title: `Step ${ordinal}`,
+      verification: 'verifier',
+      proof: 'unproven',
+      links: [],
+      blockers: [],
+      ...over
+    })
+    // The shape the e2e seed documents: finished (delivered, the agent asked to close) with a step not proven.
+    const mission = {
+      id: 'mnt-0000b001',
+      slug: 'seed-cue-mission',
+      folder: repo,
+      owner: { sessionId: ABSENT, folder: repo },
+      status: 'delivered',
+      pendingClose: { at, requestedBy: 'seed' },
+      declaredEnd: { kind: 'code', target: 'The slice is merged', evidence: 'green gates' },
+      steps: [
+        step('stp-1', 1, { kind: 'fixed-start', verification: 'existence', proof: 'verified' }),
+        step('stp-2', 2, {}),
+        step('stp-3', 3, { kind: 'fixed-end' })
+      ],
+      blockers: [],
+      openQuestions: [],
+      createdAt: at,
+      updatedAt: at,
+      provenance: { author: 'agent', at }
+    }
+    fs.mkdirSync(missionsDir(repo), { recursive: true })
+    fs.writeFileSync(
+      missionFilePath(repo, mission.id, mission.slug),
+      buildMissionFileContent(mission as never)
+    )
+  })
+
+  afterEach(async () => {
+    const fs = await import('node:fs')
+    fs.rmSync(repo, { recursive: true, force: true })
+  })
+
+  it('gives one Activity row that names its leader, so the row says the leader is missing', async () => {
+    const { missionGet } = await import('../src/main/missions/verbs-read')
+    const detail = await missionGet(repo, { kind: 'operator' }, { missionId: 'mnt-0000b001' })
+    if (!detail.ok) throw new Error(detail.error)
+    const store = mountStore()
+    useSessionsStore().folders = [{ path: repo, sessions: [] }] as never
+    let polled = false
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      // The list poll still serves the v3 view, whose `you` says the agent asked to close (pendingClose).
+      missionList: vi.fn(async () => ({
+        views: [
+          {
+            root: repo,
+            mission: {
+              id: 'mnt-0000b001',
+              status: 'delivered',
+              updatedAt: '2026-11-14T09:00:00.000Z',
+              owner: { sessionId: ABSENT, folder: repo },
+              steps: []
+            },
+            title: 'seed-cue-mission',
+            derived: { stale: false },
+            you: [{ kind: 'close' }],
+            closeWarnings: []
+          }
+        ],
+        unreadable: []
+      })),
+      // The first poll sees nothing (a restart with an empty memory is silent); the mission shows up after.
+      missionV4View: vi.fn(async (a: { missionId?: string }) =>
+        !polled
+          ? { state: 'none', missions: [] }
+          : a.missionId
+            ? { state: 'mission', missionId: a.missionId, detail }
+            : {
+                state: 'none',
+                missions: [
+                  { id: detail.id, title: detail.title, headline: '', leads: detail.leads }
+                ]
+              }
+      ),
+      missionOperatorDoor: vi.fn(),
+      requestAttention: vi.fn(async () => undefined)
+    }
+    await store.refresh()
+    polled = true
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    const items = entry()?.items ?? []
+    expect(items).toHaveLength(1)
+    expect(items[0].sessionId).toBe(ABSENT)
+  })
+})
