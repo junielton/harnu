@@ -211,7 +211,7 @@ function v4Problems(skill: string): string[] {
   if (!/dispatch it by ONE of two paths, never both/.test(all))
     out.push('the two dispatch paths are not stated')
   if (
-    !/`create_session` creates the step's card itself/.test(all) ||
+    !/`create_session`\*{0,2} creates the step's card itself/.test(all) ||
     !/you create no card first/.test(all)
   )
     out.push('create_session is not said to create the card, with no card made first')
