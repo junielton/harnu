@@ -233,10 +233,12 @@ describe('pty:create — a session Harnu spawns for a step holds the scoped verb
   })
 
   it('a read-only companion never takes a credential, even when one is waiting in its folder', async () => {
-    const { dropPendingSpawn } = await import('../src/main/mcp/scope')
+    const { dropPendingSpawn, takePendingSpawn } = await import('../src/main/mcp/scope')
     await pendingFor(STEP)
     const argv = await spawnArgv({ readOnly: true })
     expect(argv).not.toContain('--mcp-config')
+    // ...and it did not use the credential up: the spawn it was noted for can still take it.
+    expect(takePendingSpawn(cwd)).toBeDefined()
     dropPendingSpawn(cwd)
   })
 

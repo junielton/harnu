@@ -661,3 +661,38 @@ describe('a create_session for a step asks for the credential of its role', () =
     expect(schema.safeParse({ folder: repo, role: 'worker' }).success).toBe(false)
   })
 })
+
+describe('the leader that did a step itself checks it, it does not settle it (carried finding)', () => {
+  it('a leader settling a step nobody else is linked to is a builder: its check reads as a self-check', async () => {
+    const id = await newMission(repo)
+    const ac = (await readRecord(repo, id)).steps[1].acs[0].id // stp-2: no session link on it
+    const r = await okOn(mainClient, 'mission_settle_ac', {
+      folder: repo,
+      missionId: id,
+      stepId: 'stp-2',
+      criterionId: ac,
+      evidence: 'I wrote the README myself and read it again',
+      sessionId: LEADER
+    })
+    expect(r.body.outcome).toBe('self-check')
+    const criterion = (await readRecord(repo, id)).steps[1].acs[0]
+    expect(criterion.settled).toBeUndefined()
+    expect(criterion.selfCheck?.by).toBe(LEADER)
+  })
+
+  it('a leader settling a step a worker built is a second session, as before', async () => {
+    const id = await newMission(repo)
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    const ac = (await readRecord(repo, id)).steps[0].acs[0].id
+    const r = await okOn(mainClient, 'mission_settle_ac', {
+      folder: repo,
+      missionId: id,
+      stepId: 'stp-1',
+      criterionId: ac,
+      evidence: 'Ran the exporter on the sample file',
+      sessionId: LEADER
+    })
+    expect(r.body.outcome).toBe('settled')
+    expect((await readRecord(repo, id)).steps[0].acs[0].settled?.by).toBe(LEADER)
+  })
+})
