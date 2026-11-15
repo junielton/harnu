@@ -1,6 +1,6 @@
 ---
 name: one-by-one
-description: "Drain a pile of open decisions one question at a time, and write every answer where it lasts. Reads the spec's Open decisions table (the `D-n` rows) or a wall of open questions, serves ONE decision per message with a recommendation, and after each answer marks that row `resolved` in the spec (chosen option, date), appends one structured line to project memory `decisions`, and — when the mission holds a decision node for it — points the operator at the Choose door (the skill never writes `chosen`). Use when the operator says '/one-by-one', 'one by one', 'one at a time', 'um por vez', 'vamos por partes', or reacts to a dense message with 'this is too much'; also when a spec has open D-n rows, or when you are about to send more than ~5 questions at once. Do NOT use to walk the operator through executing manual actions (step-by-step), to stress-test a plan with questions you generate (grill-me), or for a plain summary — this skill resolves decisions, it never decides them."
+description: "Drain a pile of open decisions one question at a time, and write every answer where it lasts. Reads the spec's Open decisions table (the `D-n` rows) or a wall of open questions, serves ONE decision per message with a recommendation, and after each answer marks that row `resolved` in the spec (chosen option, date), appends one structured line to project memory `decisions`, and logs it on the mission when a step is gated by it (an open one that gates a step is an operator blocker, and only the operator clears it). Use when the operator says '/one-by-one', 'one by one', 'one at a time', 'um por vez', 'vamos por partes', or reacts to a dense message with 'this is too much'; also when a spec has open D-n rows, or when you are about to send more than ~5 questions at once. Do NOT use to walk the operator through executing manual actions (step-by-step), to stress-test a plan with questions you generate (grill-me), or for a plain summary — this skill resolves decisions, it never decides them."
 effort: medium
 ---
 
@@ -37,8 +37,8 @@ generates the questions. This one resolves the decisions that already exist.
 
 In order of precedence:
 
-1. a spec path the operator gave, or the spec attached to the mission as scope
-   (`mission_get` → `scope`);
+1. a spec path the operator gave, or the spec linked to the mission
+   (`mission_get` → `links`, kind `doc`);
 2. a `docs/specs/**/spec.md` the conversation is about;
 3. text the operator pasted, or the most recent message that holds the pile.
 
@@ -93,8 +93,7 @@ After the operator answers, in this order:
 
 1. **Say it:** one line, "Resolved: <decision> — <chosen option>".
 2. **Spec row** — rewrite that `D-n` row in place (see _Persistence_).
-3. **Decision node** — if the mission has a decision node for it, hand the choice to
-   the operator's door (see _Persistence_).
+3. **Mission** — if the D-n gates a step, log the answer there (see _Persistence_).
 4. **Memory line** — one `memory_append` to `decisions`.
 5. **Close the task**, then serve the next item. No recap in between.
 
@@ -126,21 +125,23 @@ tell the operator the section now disagrees with the decision.
 An answer that is none of the listed options is still a resolution: write what the
 operator said, verbatim and short, as the chosen option.
 
-### The mission decision node
+### The mission
 
-`mission_get` lists the mission's steps; a step with a `decision` is a decision node.
-When one matches the `D-n` (same question, or its title names the `D-n`):
+`mission_get` lists the mission's steps and blockers. A D-n that holds a step back is an
+operator blocker (`mission_set_blocker`, `owner: 'operator'`): its `reason` is the question
+and its options, so the Mission pane lists it as owed by the operator. Load
+`../mission/references/writing-contract.md` before you write one.
 
-- **You never write `chosen`.** `mission_update_step` refuses it (`CONTROLLED_FIELD`)
-  and a decision node the operator already chose cannot be rewritten
-  (`DECISION_CHOSEN`). The choice is the operator's door.
-- Tell them exactly where: "click the Step N of M pill → on the decision step press
-  **Choose…** → pick <option>". That click writes `chosen`, one Log line, and unlocks
-  the steps the decision held back.
-- Do not wait on it before serving the next item, but list it on the close-out as
-  **owed by you** until the node reads decided (`mission_get` → the step's `decision.chosen`).
-- If there is no matching node, say nothing about nodes. Never create a decision node
-  just to have one.
+- **Answered:** one `mission_log` with `kind: 'decision'` and the `stepId` it gates:
+  "D-3 · <chosen option> · <why>". If an operator blocker for it is open, tell the operator
+  once: say **Done, continue** on it in the Mission pane. Clearing it is theirs: you never
+  call `mission_clear_blocker` on it (refused `OPERATOR_ONLY`).
+- **Deferred, and it gates a step with no blocker yet:** raise it once, so the next session
+  finds it: `mission_set_blocker { stepId, reason, ask, unblocks, owner: 'operator' }`. The
+  `reason` names the spec path, the D-n, the question and its options; `ask` is at most 90
+  characters.
+- A D-n that gates no step gets no log line and no blocker, and a repo with no mission gets
+  neither: say nothing about missions. Never open a mission just to hold one.
 
 ### The memory line
 
@@ -160,21 +161,21 @@ End with a `harnu:report-back` style checklist, one line per item with its resol
 and where it landed, then what is deferred and what the operator still owes:
 
 ```
-✅ D-3 Retry location — keep in client · spec row ✓ · memory ✓ · node: operator to Choose…
+✅ D-3 Retry location — keep in client · spec row ✓ · memory ✓ · logged on its step
 ✅ D-1 Rate-limit config — 429 already handled (verified, no question asked)
 ⏭️ D-5 Naming of the env var — deferred, row still open
-Owed by you: Choose… on D-3's node. Deferred: D-5. Want cards for the deferred ones?
+Owed by you: "Done, continue" on D-3's blocker in the Mission pane. Deferred: D-5. Want cards for the deferred ones?
 ```
 
 Offer a board card (`create_card`) for each deferred item; only offer.
 
 ## Red flags
 
-| Thought                                              | Reality                                                                        |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------ |
-| "They'd obviously pick the default"                  | Then recommend it and ask. Resolved means they said so.                        |
-| "I'll write all the rows at the end"                 | Row, memory line, then the next question — a crash mid-walk must lose nothing. |
-| "I'll set `chosen` on the node to save them a click" | It is refused, and it is their door. Point at the click.                       |
-| "I'll fix the spec section the answer changes"       | That is an Amendments row plus a note, not a silent edit.                      |
-| "These two are tiny, ask both"                       | Two items, two messages.                                                       |
-| "They said ok"                                       | To what? If it was not a yes/no, ask again or defer.                           |
+| Thought                                         | Reality                                                                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------ |
+| "They'd obviously pick the default"             | Then recommend it and ask. Resolved means they said so.                        |
+| "I'll write all the rows at the end"            | Row, memory line, then the next question — a crash mid-walk must lose nothing. |
+| "I'll clear their blocker to save them a click" | It is refused `OPERATOR_ONLY`, and it is their door. Point at the pane.        |
+| "I'll fix the spec section the answer changes"  | That is an Amendments row plus a note, not a silent edit.                      |
+| "These two are tiny, ask both"                  | Two items, two messages.                                                       |
+| "They said ok"                                  | To what? If it was not a yes/no, ask again or defer.                           |

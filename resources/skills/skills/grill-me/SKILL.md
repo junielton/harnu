@@ -31,8 +31,8 @@ and leave the _residue_ in the document, not in the chat. A grilling that ends w
 
 ## Phase 0 — Load the plan
 
-The target, in order: a spec or plan path the operator gave, the spec attached to the
-mission as scope (`mission_get` → `scope`), a `docs/specs/**/spec.md` the conversation
+The target, in order: a spec or plan path the operator gave, the spec linked to the
+mission (`mission_get` → `links`, kind `doc`), a `docs/specs/**/spec.md` the conversation
 is about, or the plan in the conversation. Read it whole, plus what it cites (PRD,
 ADR, mockup). Then run `memory_query` on its main nouns: "why did we choose X?" is
 often already recorded, and asking the operator a question they answered last month
@@ -85,9 +85,14 @@ Rules for the writes:
 - Rows go in the tables the spec already has. If the spec has no Open decisions or
   Amendments table, add the table at the end with the standard header and say so; do
   not invent another layout.
-- If the mission has a decision node for a `D-n` you wrote as resolved, you still never
-  write `chosen`: tell the operator to press **Choose…** on that step in the Mission
-  popover. Do not create nodes.
+- **The mission, only when a step is gated.** A `D-n` you wrote as resolved that gates a
+  step is one `mission_log` with `kind: 'decision'` and that `stepId`. One you wrote as
+  `open` that gates a step with no blocker yet is an operator blocker
+  (`mission_set_blocker`, `owner: 'operator'`, the `reason` is the question and its
+  options; load `../mission/references/writing-contract.md` first). The operator's blocker
+  is theirs to clear: you never call `mission_clear_blocker` on it (refused
+  `OPERATOR_ONLY`); tell them to say **Done, continue** in the Mission pane. A `D-n` that
+  gates no step, or a repo with no mission, gets neither.
 - If the target is not a file (no spec), nothing is written; every item goes on the
   closing list instead, with the exact row it would have been.
 
@@ -108,7 +113,7 @@ Written to the spec:
 Could not place:
 - "Support for the old export format" — a constraint with no home in this spec; belongs in a PRD or a card.
 
-Owed by you: Choose… on D-6's decision node (if one exists). Nothing is enacted.
+Owed by you: "Done, continue" on D-6's blocker in the Mission pane (if one exists). Nothing is enacted.
 ```
 
 "Written" lists only what the file now contains — re-read the spec before sending, so
