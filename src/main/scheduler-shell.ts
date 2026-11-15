@@ -76,6 +76,7 @@ import {
   type NetworkLossNotice
 } from './scheduler-store'
 import { spawnChild, type SpawnedChild } from './spawn-runner'
+import type { Scope } from './mcp/scope'
 
 /** State pushed to the renderer on every change (`scheduler:changed`). */
 export interface SchedulerState {
@@ -518,10 +519,7 @@ async function startTick(worker: Worker, wakeReason?: WakeReason): Promise<void>
   const lastResult = worker.carryLastResult ? await lastResultFor(worker.id) : undefined
   // A steward presents its OWN bearer (the server recognises it and enforces its allowlist); with
   // no control server up there is nothing for it to do, so it does not tick.
-  const mcpConfigPath =
-    worker.category === 'steward'
-      ? await writeStewardMcpConfig(worker.id)
-      : mcpConfigPathIfPresent()
+  const mcpConfigPath = await tickMcpConfigFor(worker)
   if (worker.category === 'steward' && !mcpConfigPath) return
 
   // BUG-111: a tick runs with `--setting-sources ''`, so the globally-installed
@@ -1099,6 +1097,37 @@ async function stewardGateReason(folder: string, missionId?: string): Promise<st
     folderDenied: isFolderDenied(folder, denied),
     paused
   })
+}
+
+/**
+ * Missions v4 S-25: writes the `--mcp-config` of an observe tick (the observer credential for its
+ * folder). Set by the control server when it registers (this module cannot import it: it imports us).
+ */
+let observerConfigWriter: ((scope: Scope) => Promise<string | undefined>) | null = null
+
+/** Wire the observer-credential writer (called once by `mcp/server.ts`). */
+export function setObserverMcpConfigWriter(
+  fn: ((scope: Scope) => Promise<string | undefined>) | null
+): void {
+  observerConfigWriter = fn
+}
+
+/**
+ * The `--mcp-config` a tick presents. A steward has its own bearer; an observe worker has the OBSERVER
+ * credential for its folder (the observe allowlist's read verbs, bound to that folder), and when the
+ * control server cannot write one (or is not up yet) it gets NO config, never the main one; an `act` worker keeps the
+ * main config. `undefined` is "no Harnu verbs for this tick".
+ */
+export async function tickMcpConfigFor(worker: Worker): Promise<string | undefined> {
+  if (worker.category === 'steward') return writeStewardMcpConfig(worker.id)
+  if (worker.mode === 'observe') {
+    // No writer yet (the Scheduler registers before the control server, and a `runOnBoot` worker starts
+    // at once) is the same as no credential: the tick runs WITHOUT Harnu verbs, never on the main config.
+    return observerConfigWriter
+      ? observerConfigWriter({ role: 'observer', folder: worker.folder })
+      : undefined
+  }
+  return mcpConfigPathIfPresent()
 }
 
 function stewardConfigPath(workerId: string): string {

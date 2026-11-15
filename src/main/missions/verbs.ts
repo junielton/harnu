@@ -27,7 +27,7 @@
  */
 
 import { repoRoot } from '../data-dir'
-import { listMissionRows, type Actor } from './guard'
+import { buildersOf, leaderOf, listMissionRows, type Actor } from './guard'
 import type { AcceptanceCriterion, MissionV4 } from './model'
 import { listMissionRecords, readMissionRecord } from './record-store'
 import type { StepInput } from './state'
@@ -255,6 +255,24 @@ async function inputsOf(
 }
 
 /**
+ * The session ids that built the step without a `session` link on it: the leader, when no other session
+ * is linked to the step (it did the step itself, so what it says of it is a self-check, never a second
+ * session's word). A step a worker is linked to was not built by the leader, which settles it as a
+ * second session. Nothing else is added: a call never names its builders.
+ */
+async function leaderBuilds(
+  folder: string,
+  missionId: string,
+  stepId: string | undefined,
+  actor: Actor
+): Promise<string[]> {
+  if (actor.kind !== 'session' || stepId === undefined) return []
+  const record = await recordOf(folder, missionId)
+  if (!record || leaderOf(record) !== actor.sessionId) return []
+  return buildersOf(record, stepId).length === 0 ? [actor.sessionId] : []
+}
+
+/**
  * Run one v4 verb as `actor`. `args` are the catalog's, already checked for type; this module judges
  * what they mean. Never throws.
  */
@@ -447,7 +465,8 @@ export async function runV4(
         missionId: missionId as string,
         stepId: need('stepId') as string,
         criterionId: need('criterionId') as string,
-        evidence: need('evidence') as string
+        evidence: need('evidence') as string,
+        extraBuilders: await leaderBuilds(folder, missionId as string, need('stepId'), actor)
       })
       return r.ok ? done(op, r) : failed(r)
     }

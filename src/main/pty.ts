@@ -42,6 +42,7 @@ import {
 import { injectHookSettings } from './hook-settings-blob'
 import { forceDowngradePermission } from './mcp/agent-boot'
 import { orderMcpArgs } from './mcp/config-file'
+import { scopedSpawnLine, takePendingSpawn, type PendingSpawn, type Scope } from './mcp/scope'
 import type { SpawnOwner } from './companion/session-table'
 import { PtySessionIndex } from './pty-session-index'
 import {
@@ -597,6 +598,20 @@ let mcpArgsProvider: () => string[] = () => []
 /** Wire the app-managed MCP argv provider (called once by the integrator). */
 export function setMcpArgsProvider(fn: () => string[]): void {
   mcpArgsProvider = fn
+}
+
+/**
+ * Missions v4 S-25 (BUG-253): the argv that gives ONE agent-spawned session the scoped verbs of its role
+ * (`--mcp-config <0600 file holding its own credential>` + the `--allowedTools` of that role). The server
+ * mints the credential and writes the file; this module only receives the argv, so the bearer is never
+ * in a string the model, the argv or a log could carry. `[]` (the default, and the server being off)
+ * means the session is spawned without a Harnu server, exactly as an agent-controlled spawn always was.
+ */
+let scopedMcpArgsProvider: (scope: Scope) => Promise<string[]> = async () => []
+
+/** Wire the scoped-credential argv provider (called once by the MCP server's registration). */
+export function setScopedMcpArgsProvider(fn: (scope: Scope) => Promise<string[]>): void {
+  scopedMcpArgsProvider = fn
 }
 
 /**
@@ -1596,6 +1611,14 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     // `--session-id` argv and the `isArmed` check downstream both see the
     // SAME id.
     let effectiveClaudeSessionId = opts.claudeSessionId
+    // Missions v4 S-25: a `create_session` for one step of a mission left a note for this spawn (the
+    // folder is the key: one create_session is in flight per folder). Only an agent-controlled
+    // `claude-new` takes it, once; its session id is minted HERE so the credential can carry it.
+    let scopedSpawn: PendingSpawn | undefined
+    if (kind === 'claude-new') {
+      if (opts.agentControlled && !opts.readOnly) scopedSpawn = takePendingSpawn(opts.cwd ?? '')
+      if (scopedSpawn) effectiveClaudeSessionId = effectiveClaudeSessionId ?? randomUUID()
+    }
     if (kind === 'claude-new') {
       // A caller-minted uuid (T245) is emitted as `--session-id`; without one
       // this stays a bare `claude` and the CLI mints its own.
@@ -1672,7 +1695,8 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       harnuPreambleBase,
       orchestratorArmed ? HARNU_ORCHESTRATOR_DOC : '',
       modeDoc,
-      autoOrganizeAwareness
+      autoOrganizeAwareness,
+      scopedSpawn ? scopedSpawnLine(scopedSpawn) : ''
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -1708,7 +1732,21 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       // the app-managed --mcp-config so the agent gets NO Harnu MCP server.
       const baseCfg = await getResolvedConfig(opts.cwd)
       const merged = opts.bootOverride ? mergeBootConfig(baseCfg, opts.bootOverride) : baseCfg
-      args = buildClaudeArgs(base, forceDowngradePermission(merged), harnuPreamble)
+      // Missions v4 S-25 (BUG-253): a session started for one step of a mission is the exception to
+      // the withholding. It gets a config of its OWN (the scoped credential of its role, in a 0600 file;
+      // argv carries the path only) and never the full server, so there is still no recursive Conductor.
+      const scopedArgs =
+        scopedSpawn && effectiveClaudeSessionId
+          ? await scopedMcpArgsProvider({
+              ...scopedSpawn,
+              sessionId: effectiveClaudeSessionId,
+              folder: opts.cwd ?? ''
+            })
+          : []
+      args = orderMcpArgs(
+        scopedArgs,
+        buildClaudeArgs(base, forceDowngradePermission(merged), harnuPreamble)
+      )
     } else {
       // Prepend Harnu's app-managed --mcp-config (when the MCP server is enabled)
       // BEFORE the user's resolved Boot args so a user --mcp-config can't bury it.
