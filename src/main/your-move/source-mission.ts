@@ -41,8 +41,12 @@ const askOf = (item: OwedItem): string => ('ask' in item ? item.ask : describeWa
 function mapping(item: OwedItem): { kind: CardKind; suffix: string } | null {
   if ('ask' in item) {
     switch (item.kind) {
-      case 'main-failing':
+      // A blocker's `blk-N` is a position and a v3 record renumbers it when a neighbour is cleared, so its card
+      // is keyed as main keyed a v3 blocker: by its words (`blocker:<reason>`). Clearing a neighbour never
+      // closes and re-files it, and updating Harnu does not re-file what main already had.
       case 'unblock':
+        return { kind: 'do', suffix: `blocker:${item.ask}` }
+      case 'main-failing':
         return { kind: 'do', suffix: item.id }
       case 'settle':
       case 'review':
@@ -80,9 +84,13 @@ function mapping(item: OwedItem): { kind: CardKind; suffix: string } | null {
 
 export function missionDrafts(view: DraftView, lane: CardLane): StructuredDraft[] {
   const drafts: StructuredDraft[] = []
+  const keys = new Set<string>()
   for (const item of view.you) {
     const m = mapping(item)
     if (!m) continue
+    // Two items with the same key are one card (main's v3 blockers with the same reason were too).
+    if (keys.has(m.suffix)) continue
+    keys.add(m.suffix)
     drafts.push({
       sessionId: view.mission.owner.sessionId,
       folder: view.root,

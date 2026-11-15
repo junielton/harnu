@@ -22,6 +22,7 @@ import {
 } from '../lib/your-move-view'
 import { sessionTitle } from '../lib/session-label'
 import { useHelpersStore } from '../stores/helpers'
+import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useYourMoveStore } from '../stores/your-move'
 
@@ -120,8 +121,14 @@ async function run(action: CardAction): Promise<void> {
       return
     }
     case 'open-mission': {
-      // The mission lives in the pane beside its leader session: open the session, then the pane.
       sessions.activateSession(props.card.sessionId)
+      // A v3 mission keeps its popover until the popover is retired (as on main); a v4 mission lives in the
+      // pane beside its leader session: open the session, then the pane.
+      const missions = useMissionsStore()
+      if (missions.isV3Mission(action.missionId)) {
+        missions.requestPopover(action.missionId)
+        return
+      }
       const helpers = useHelpersStore()
       const worktree = helpers.currentWorktreePath
       if (worktree && !helpers.panesForCurrentWorktree.some((p) => p.type === 'mission')) {
