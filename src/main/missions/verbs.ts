@@ -1,26 +1,19 @@
 /**
- * Missions v4 S-24 (AC-66, AC-67) — the dispatch: which format a call is, and the v4 verbs behind it.
+ * Missions v4 (S-24, S-40) — the v4 verbs behind the MCP layer.
  *
  * S-12, S-13 and S-14 wrote the v4 handlers (`verbs-read.ts`, `verbs-plan.ts`, `verbs-state.ts`) and
- * took the caller as an argument. This module is what the MCP layer calls to reach them, beside the v3
- * handlers, which stay as they are until S-40. It owns three things and nothing else:
+ * took the caller as an argument. This module is what the MCP layer calls to reach them. It owns one
+ * thing: **running a v4 verb** ({@link runV4}): the arguments of the catalog become the arguments of
+ * the S-12 to S-14 handlers, with the caller as an {@link Actor} the MCP layer built from the
+ * transport. The facts a verb reads (card column, pull request, CI) are computed here from
+ * `deps.inputsFor`, on the server: a call never supplies them (an `inputs` or `siblingRoots` argument
+ * is not read), and the roots a mission is looked for in come from the folder.
  *
- * 1. **Which format a call is** ({@link shapeOf}). A name only v4 has (`mission_add_milestone`,
- *    `mission_add_ac`, `mission_link`, `mission_set_done_when`, `mission_settle_ac`,
- *    `mission_attach`) is v4. A kept name is v4 when it carries an argument only v4 has (`doneWhen`,
- *    `milestones`, `criteria`, `blockerId`, …), v3 when it carries one only v3 has (`declaredEnd`,
- *    `verification`, `reason`/`index` on a blocker, …), and a call that carries both is refused. A kept
- *    name that takes the same arguments in both formats (`mission_log`, `mission_request_close`, a
- *    blocker set without `ask`) serves the record in the format it is in and never converts it: only a
- *    v4-only verb or argument converts a v3 mission (the copy is S-9's, on its first write).
- * 2. **One format at a time** ({@link formatOf}, {@link v3Refusal}). A mission that has a v4 record is
- *    a v4 mission, and the v3 file is a snapshot nobody writes: a v3-shaped verb aimed at it is refused
- *    `MISSION_IS_V4` with the v4 verb to use, and writes nothing.
- * 3. **Running a v4 verb** ({@link runV4}): the arguments of the catalog become the arguments of the
- *    S-12 to S-14 handlers, with the caller as an {@link Actor} the MCP layer built from the
- *    transport. The facts a verb reads (card column, pull request, CI) are computed here from
- *    `deps.inputsFor`, on the server: a call never supplies them (an `inputs` or `siblingRoots`
- *    argument is not read), and the roots a mission is looked for in come from the folder.
+ * Until S-40 this module also decided which of two formats a call was (v3-shaped or v4-shaped) and
+ * refused a v3-shaped verb aimed at a mission that had a v4 record. The v3 handlers are gone, so every
+ * verb is v4: a mission still held in a v3 file is read in memory and its first write converts it by
+ * copy (the copy is S-9's), and a call carrying an argument only v3 had is refused by the catalog's
+ * schema before it reaches here.
  *
  * Electron-free; what it reads of the outside world (the facts, memory) comes in through
  * {@link V4Deps}. Writes only through the S-11 write path the handlers use.
@@ -44,7 +37,7 @@ import {
 
 // ---- The verbs -------------------------------------------------------------------------
 
-/** The v4 verbs that exist in v4 alone: a call to one is always v4-shaped. */
+/** The verbs the fate table adds (a rename, a merge or a replacement of a v3 verb). */
 export const V4_ONLY_OPS = [
   'mission_add_milestone',
   'mission_add_ac',
@@ -54,7 +47,7 @@ export const V4_ONLY_OPS = [
   'mission_attach'
 ] as const
 
-/** The kept names that take both shapes. */
+/** The kept names (the fate table's keep, reshape and narrow rows). */
 export const SHARED_OPS = [
   'mission_create',
   'mission_get',
@@ -70,9 +63,6 @@ export type V4OnlyOp = (typeof V4_ONLY_OPS)[number]
 export type SharedOp = (typeof SHARED_OPS)[number]
 export type V4Op = V4OnlyOp | SharedOp
 
-export const isV4OnlyOp = (op: string): op is V4OnlyOp =>
-  (V4_ONLY_OPS as readonly string[]).includes(op)
-
 /** What a verb answers: `error` is `CODE: what to do`; a success carries `ok: true` and the op. */
 export type VerbOutcome =
   { ok: true; op: string; [key: string]: unknown } | { ok: false; code: string; error: string }
@@ -83,118 +73,10 @@ const refuse = (code: string, message: string): VerbOutcome => ({
   error: `${code}: ${message}`
 })
 
-// ---- Which format a call is ------------------------------------------------------------
-
-/** `v4` and `v3` name a format; `either` is a call that reads the same in both; `mixed` is refused. */
-export type Shape = 'v4' | 'v3' | 'either' | 'mixed'
-
-const has = (args: Record<string, unknown>, ...keys: string[]): boolean =>
-  keys.some((k) => args[k] !== undefined)
-
 const stepsOf = (args: Record<string, unknown>): Array<Record<string, unknown>> =>
   Array.isArray(args.steps)
     ? args.steps.filter((s): s is Record<string, unknown> => typeof s === 'object' && s !== null)
     : []
-
-/** The arguments each kept name carries in one format alone. */
-function marks(op: string, args: Record<string, unknown>): { v4: boolean; v3: boolean } {
-  switch (op) {
-    case 'mission_create': {
-      const steps = stepsOf(args)
-      return {
-        v4:
-          has(args, 'doneWhen', 'milestones', 'links') ||
-          steps.some((s) => has(s, 'criteria', 'milestone', 'optional', 'waitsFor')),
-        v3:
-          has(args, 'declaredEnd', 'campaignId', 'chapterId', 'steward', 'linkedCard', 'scope') ||
-          steps.some((s) => has(s, 'verification'))
-      }
-    }
-    case 'mission_add_step':
-      return {
-        v4: has(args, 'criteria', 'milestone', 'optional', 'waitsFor'),
-        v3: has(args, 'verification', 'required', 'discoveredFrom', 'edges', 'decision')
-      }
-    case 'mission_set_blocker':
-      return { v4: has(args, 'ask', 'clearsWhen'), v3: false }
-    case 'mission_clear_blocker':
-      return { v4: has(args, 'blockerId'), v3: has(args, 'reason', 'index') }
-    case 'mission_log':
-      return { v4: false, v3: args.kind === 'steward' }
-    case 'mission_get':
-      return { v4: false, v3: has(args, 'ownerSessionId') }
-    default:
-      return { v4: false, v3: false }
-  }
-}
-
-/** The format of one call, from its name and the arguments it carries. */
-export function shapeOf(op: string, args: Record<string, unknown>): Shape {
-  if (isV4OnlyOp(op)) return 'v4'
-  const m = marks(op, args)
-  if (m.v4 && m.v3) return 'mixed'
-  return m.v4 ? 'v4' : m.v3 ? 'v3' : 'either'
-}
-
-/** The refusal for a call that mixes the two shapes: it says which arguments belong to which. */
-export function mixedRefusal(op: string): VerbOutcome {
-  return refuse(
-    'BAD_ARGS',
-    `${op} takes the v3 shape or the v4 shape, not both. v3: declaredEnd, steps with verification, scope, campaignId, chapterId, steward. v4: doneWhen, milestones, steps with criteria, links, milestone, waitsFor, blockerId, ask, clearsWhen. Pass one set.`
-  )
-}
-
-// ---- One format at a time --------------------------------------------------------------
-
-export type Format = 'v4' | 'v3' | 'none'
-
-/**
- * The format a mission is in: `v4` once it has a v4 record (a converted v3 mission and a converted
- * campaign included, by any id it has had), `v3` while only a v3 file holds it, `none` when no record
- * of this repo has the id. Never writes.
- */
-export async function formatOf(folder: string, id: string): Promise<Format> {
-  const read = await readMissionRecord(repoRoot(folder), id)
-  if (!read.ok) return 'none'
-  return read.source === 'v4' ? 'v4' : 'v3'
-}
-
-/** What to use instead of a v3 verb on a v4 mission. */
-const WAY_OUT: Record<string, string> = {
-  mission_link_child:
-    'mission_link (kinds session, pr, worktree, url, doc; leave stepId out to link the mission itself)',
-  mission_add_step: 'mission_add_step with criteria (and milestone) instead of verification',
-  mission_update_step:
-    'nothing in v4 yet: add what is missing with mission_add_step, mission_add_ac or mission_link, or tell the operator',
-  mission_verify_step: 'mission_settle_ac (one criterion, with the evidence you saw)',
-  mission_set_end: 'mission_set_done_when (it stages the new Done when for the operator)',
-  mission_add_check:
-    'mission_add_ac with by: operator (a check is a criterion the operator settles)',
-  mission_transfer_owner:
-    'mission_attach to ask to join; the operator changes who leads, from the Mission pane',
-  mission_clear_blocker: 'mission_clear_blocker with blockerId (mission_get lists each blocker id)',
-  mission_log: 'mission_log with kind note, decision or surprise',
-  mission_create: 'mission_add_milestone on the mission, or a new mission_create with the v4 shape',
-  campaign_create: 'mission_create with milestones',
-  campaign_add_chapter: 'mission_add_milestone',
-  campaign_get: 'mission_get',
-  campaign_list: 'mission_list',
-  campaign_request_close: 'mission_request_close',
-  campaign_transfer_owner: 'mission_attach to ask to join; the operator changes who leads'
-}
-
-/**
- * The refusal for a v3-shaped verb aimed at a mission that has a v4 record: the code is
- * `MISSION_IS_V4`, the sentence names the verb to use, and nothing was written. It never carries the
- * text of the refused call.
- */
-export function v3Refusal(op: string, id: string): VerbOutcome {
-  const use = WAY_OUT[op] ?? 'the v4 form of this verb (mission_get shows the mission as it is now)'
-  return refuse(
-    'MISSION_IS_V4',
-    `${id} is a v4 mission now (it has a v4 record), so ${op}, a v3 verb, no longer reaches it and nothing was written. Use ${use}.`
-  )
-}
 
 // ---- Running a v4 verb -----------------------------------------------------------------
 
@@ -333,19 +215,22 @@ export async function runV4(
     case 'mission_list': {
       const root = repoRoot(folder)
       const { records } = await listMissionRecords(root)
-      const v4 = records.filter((r) => r.source === 'v4' && r.record.status === 'open')
+      // Every open record, whatever file holds it: a mission still in a v3 file is one mission of the list.
+      const open = records.filter((r) => r.record.status === 'open')
       const byMission: Record<string, Record<string, StepInput>> = {}
       await Promise.all(
-        v4.map(async (r) => {
+        open.map(async (r) => {
           byMission[r.record.id] = await deps.inputsFor(root, r.record)
         })
       )
-      const ids = new Set(v4.map((r) => r.record.id))
-      const rows = (await listMissionRows(folder, actor, byMission)).filter((r) => ids.has(r.id))
+      const sourceOf = new Map(open.map((r) => [r.record.id, r.source]))
+      const rows = (await listMissionRows(folder, actor, byMission)).filter((r) =>
+        sourceOf.has(r.id)
+      )
       return {
         ok: true,
         op,
-        missions: rows.map((r) => ({ ...r, format: 'v4' as const }))
+        missions: rows.map((r) => ({ ...r, format: sourceOf.get(r.id) === 'v4' ? 'v4' : 'v3' }))
       }
     }
 

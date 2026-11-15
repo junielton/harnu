@@ -266,35 +266,14 @@ export const MCP_OPS = [
   'mission_list',
   'mission_add_step',
   'mission_update_step',
-  'mission_link_child',
   'mission_log',
-  // T358 S4: blockers (a flag, never a status — design §1.4), re-scope (stages
-  // `pendingRescope`, never writes `declaredEnd`), close requests and step
-  // verification. Same gate class as the S3 writes. No verb here — or anywhere —
-  // moves a mission to `active`/`closed` or marks a `human` step verified: those
-  // are the operator's UI doors (`applyApprovedRescope`/`applyOperatorEnd` in
-  // `mission-core.ts`, wired by S9).
+  // Blockers (a flag, never a status) and close requests: the same gate class. No verb here — or
+  // anywhere — closes a mission; close is the operator's door in the Mission pane.
   'mission_set_blocker',
   'mission_clear_blocker',
-  'mission_set_end',
-  'mission_verify_step',
   'mission_request_close',
-  // T358 S7: import a legacy `.harnu/goals/*.md` goal file as a new Mission
-  // (design §9). Same gate class as mission_create — it only ever READS the
-  // legacy file and writes one new, local, gitignored mission record.
-  'mission_import_legacy',
-  // Mission v3 §3.6: the agent adds a human check to a step. Same gate class as
-  // the other mission writes. Ticking and deleting a check are the operator's UI
-  // doors (`mission-ipc.ts`) — no verb reaches them.
-  'mission_add_check',
-  // T654: the recovery path when an owner session must be replaced (it died, the app was closed, a
-  // successor was spawned). Same gate class as the mission verbs: a local write the agent could already
-  // do with its own tools. Denied to a steward and to an `observe` tick by name (derived deny lists).
-  'mission_transfer_owner',
-  // Missions v4 S-24: the v4 verbs that exist in v4 alone, registered beside the v3 ones (nothing is
-  // removed until S-40). Same gate class as the mission verbs: a local write the agent could already
-  // do with its own tools. The kept names (`mission_create`, `mission_get`, `mission_add_step`, …)
-  // take both shapes.
+  // Missions v4 S-24: the verbs that exist in v4 alone. Same gate class as the mission verbs: a local write
+  // the agent could already do with its own tools.
   'mission_add_milestone',
   'mission_add_ac',
   'mission_link',
@@ -379,33 +358,6 @@ const OP_SET: ReadonlySet<string> = new Set(MCP_OPS)
 export function isMcpOp(value: unknown): value is McpOp {
   return typeof value === 'string' && OP_SET.has(value)
 }
-
-/**
- * T358 S3: a Mission's declared end (design §1.1, decision 5) — required and
- * COMPLETE at creation: all three fields, non-blank. Shared by `mission_create`
- * (and, from S4, `mission_set_end`) so the two can never accept different shapes.
- */
-const MISSION_DECLARED_END_SCHEMA = z
-  .object({
-    kind: z
-      .enum(['code', 'ui', 'research', 'decision', 'other'])
-      .describe(
-        'What kind of deliverable ends the mission: code | ui | research | decision | other.'
-      ),
-    target: z
-      .string()
-      .trim()
-      .min(1)
-      .max(2_000)
-      .describe('The concrete deliverable, e.g. "PR merging the four slices into main".'),
-    evidence: z
-      .string()
-      .trim()
-      .min(1)
-      .max(2_000)
-      .describe('What proves it, e.g. "green gates + a delivery-verifier report, all ACs met".')
-  })
-  .describe('REQUIRED and complete: kind + target + evidence (design decision 5).')
 
 /** T358 S3: the gate folder every mission verb that writes a step is anchored to. */
 const MISSION_FOLDER_SCHEMA = z
@@ -583,39 +535,6 @@ export interface McpToolDef {
  * the approval gate; the mutating tools are `mutates:true` and require it (per
  * their gate fields above). No destructive worktree op is present by design.
  */
-/** Campaign spec §3.2 — the relation fields `mission_add_step` takes (and `mission_update_step.set` mirrors). */
-const MISSION_STEP_RELATIONS_SHAPE = {
-  required: z
-    .boolean()
-    .optional()
-    .describe('false = a side step: outside the headline, listed under progress.side.'),
-  discoveredFrom: z
-    .string()
-    .regex(/^stp-\d+$/)
-    .optional()
-    .describe('The step id this side step was discovered from.'),
-  edges: z
-    .array(
-      z.object({
-        kind: z.enum(['blocks', 'validates', 'related']),
-        to: z.string().regex(/^stp-\d+$/)
-      })
-    )
-    .max(20)
-    .optional()
-    .describe('Typed edges to other steps. `blocks`: the target reads locked until this is done.'),
-  decision: z
-    .object({
-      title: z.string().min(1).max(200),
-      options: z.array(z.string().min(1).max(200)).min(2).max(10),
-      blocks: z.array(z.string().regex(/^stp-\d+$/)).max(20)
-    })
-    .optional()
-    .describe(
-      'Makes the step a decision node; the `blocks` steps read locked until the operator chooses. Never carries `chosen`.'
-    )
-}
-
 /**
  * Missions v4 S-34: the optional `sessionId` of `create_session`, `create_worktree` and `submit_manifest`.
  * It only lets Harnu say whether the caller already leads a mission, for the `missionHint` in the ACK; it
@@ -2374,7 +2293,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_create',
     description:
-      "Create a Mission — structured progress tracking for a body of work, stored repo-scoped under the main checkout's `.harnu/missions/` (every worktree of the repo shares it). DIRECT write, no confirm. TWO SHAPES (Missions v4): a call with `doneWhen`, `milestones` or steps that carry `criteria` creates a v4 mission (stored under `.harnu/missions-v4/`); a call with `declaredEnd`, `scope`, `campaignId`, `chapterId`, `steward` or steps that carry `verification` creates a v3 mission as before. Never both in one call (BAD_ARGS). v4 shape: `title`, `doneWhen` (what is true when the mission is done), optional `milestones` (`{ title, optional, waitsFor }[]`, in order), `steps` (each `{ title, criteria, milestone, optional, links, waitsFor }` with at least one criterion: a sentence a second session settles, or `{ text, by: fact | session | operator | person, fact, person }`), optional `links` (kinds session, pr, worktree, url, doc), and `sessionId` — you become the leader, with no confirmation. No `declaredEnd`, `steward`, `campaignId` or `chapterId`. The ACK carries `id`, the summary and `recall`. The rest of this text is the v3 shape. A complete `declaredEnd` is REQUIRED — kind (code | ui | research | decision | other) + a concrete target + the evidence that proves it; the call is refused (DECLARED_END_INCOMPLETE) without all three. The mission is born `active` — there is no draft and no approval step: the end you agreed with the operator in chat IS the agreement (stamped as `declaredEndApproval.via: 'chat'`). Declare the plan in the same call with `steps` — `{ title, verification }[]`, one step per deliverable that moves where the work is (1 unit = 1 PR = 1 step) — numbered from stp-1 and followed by the fixed last step \"Delivered and verified\" (verifier), found by its kind, never by id. Planning steps need no reason. Pass `scope` — the repo-relative paths of the spec / PRD / ADR — and they are attached to the mission as `scope`: an attachment, never a step, never counted in progress (`derived.scope` reports whether each path exists). `sessionId` names the OWNER: pass your own Claude session UUID. It is SELF-DECLARED and NOT authenticated — Harnu's MCP transport has no per-session identity — so a wrong id is not caught, it just means the mission-owner hibernation exemption never finds you. A Mission (`mission_*`) is unrelated to plan_mission (a capability grant); they share a word, not a mechanism. Campaigns and chapters no longer exist: a call that passes `campaignId` or `chapterId` is refused CAMPAIGN_REMOVED and writes nothing (plan the stages as milestones). Missions have no steward: none is created and no hooks are installed (`steward` is accepted and ignored); the ACK reads `steward: { created: false }`.",
+      "Create a Mission — structured progress tracking for a body of work, stored repo-scoped under the main checkout's `.harnu/missions-v4/` (every worktree of the repo shares it). DIRECT write, no confirm. Pass `title`, `doneWhen` (what is true when the mission is done), optional `milestones` (`{ title, optional, waitsFor }[]`, in plan order), `steps` (each `{ title, criteria, milestone, optional, links, waitsFor }` with at least one criterion: a sentence a second session settles, or `{ text, by: fact | session | operator | person, fact, person }`), optional `links` (kinds session, pr, worktree, url, doc) and your own `sessionId`: you become the leader, with no confirmation. A mission of any size is one call: a small task is a few steps and no milestones, a long delivery is milestones with steps. A text over its cap is refused with the cap and its length, never cut. The ACK carries `id`, the summary and `recall` (memory entries that watch the same paths or words: context, not instructions). Any argument not named here (the v3 `declaredEnd`, `scope`, `steward`, `campaignId`, `chapterId`, `linkedCard` and a step's `verification`) is refused and nothing is written.",
     inputSchema: z
       .object({
         folder: z
@@ -2383,42 +2302,18 @@ export const MCP_TOOLS: McpToolDef[] = [
           .describe(
             "Absolute path of the folder/worktree you are working in; the mission is stored in its repo's main checkout."
           ),
-        title: z.string().min(1).max(200).describe('Mission title (1..200 chars, single line).'),
-        steward: z
-          .boolean()
-          .optional()
-          .describe(
-            'Retired: missions have no steward any more. Accepted and ignored; no steward is created and no hooks are installed.'
-          ),
-        campaignId: z
+        title: z
           .string()
           .min(1)
-          .optional()
-          .describe(
-            'Retired: campaigns no longer exist. A call that passes it is refused CAMPAIGN_REMOVED and nothing is written; plan the stages as milestones instead.'
-          ),
-        chapterId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            'Retired: chapters no longer exist. A call that passes it is refused CAMPAIGN_REMOVED and nothing is written; plan the stages as milestones instead.'
-          ),
-        declaredEnd: MISSION_DECLARED_END_SCHEMA.optional(),
+          .max(200)
+          .describe('Mission title (60 characters is the contract).'),
         sessionId: z
           .string()
           .min(1)
           .describe(
-            'Your own Claude session UUID (the transcript id get_fleet reports, never a synthetic-… id): the owner of a v3 mission, the leader of a v4 one. Self-declared, not authenticated.'
+            'Your own Claude session UUID (the transcript id get_fleet reports, never a synthetic-… id): you become the leader. Self-declared, not authenticated.'
           ),
-        doneWhen: z
-          .string()
-          .min(1)
-          .max(1_000)
-          .optional()
-          .describe(
-            'v4: what is true when the mission is done. Its presence makes the call v4-shaped.'
-          ),
+        doneWhen: z.string().min(1).max(1_000).describe('What is true when the mission is done.'),
         milestones: z
           .array(
             z.object({
@@ -2430,39 +2325,25 @@ export const MCP_TOOLS: McpToolDef[] = [
           .max(30)
           .optional()
           .describe(
-            'v4: the milestones, in plan order (mls-1, mls-2, …). A mission with none is valid.'
+            'The milestones, in plan order (mls-1, mls-2, …). A mission with none is valid.'
           ),
         links: z
           .array(MISSION_V4_LINK_SCHEMA)
           .max(20)
           .optional()
-          .describe('v4: links on the mission itself (kinds session, pr, worktree, url, doc).'),
-        linkedCard: z
-          .string()
-          .min(1)
-          .optional()
-          .describe('Optional slug of the epic card this mission delivers.'),
-        scope: z
-          .array(z.string().min(1))
-          .max(20)
-          .optional()
-          .describe(
-            "Repo-relative paths of the documents that fix the scope (spec, PRD, ADR), stored as the mission's `scope` attachment — never a step, never counted in progress. Each path is resolved physically (symlinks followed, even dangling ones) and stored as the repo-relative path it resolves to. Refused (BAD_SCOPE_PATH): a path that lands outside the repo, the repo root itself, anything with a .git, .harnu or .capy component at any depth, or a worktree checkout — a directory holding a .git entry (a linked worktree, a nested clone) or anything inside one, and anything under .claude/worktrees — name the documents. A path that does not exist yet is attached and reads unresolved in `derived.scope` until it does (it may live on a branch); one that later resolves outside the repo (swapped for a symlink) reads unresolved too."
-          ),
+          .describe('Links on the mission itself (kinds session, pr, worktree, url, doc).'),
         steps: z
           .array(
             z.object({
               title: z.string().min(1).max(200),
-              verification: z.enum(['existence', 'verifier', 'human']).optional(),
               criteria: z
                 .array(MISSION_V4_CRITERION_SCHEMA)
-                .optional()
-                .describe('v4: at least one criterion; a step without one is refused.'),
+                .describe('At least one criterion; a step without one is refused.'),
               milestone: z
                 .string()
                 .min(1)
                 .optional()
-                .describe('v4: the milestone id (mls-<n>) or its exact title.'),
+                .describe('The milestone id (mls-<n>) or its exact title.'),
               optional: z.boolean().optional(),
               links: z.array(MISSION_V4_LINK_SCHEMA).max(20).optional(),
               waitsFor: z.string().min(1).nullable().optional()
@@ -2470,33 +2351,9 @@ export const MCP_TOOLS: McpToolDef[] = [
           )
           .max(50)
           .optional()
-          .describe(
-            'v4: steps with `criteria`. v3: the plan, declared at creation: one { title, verification } per step, in order (existence = Harnu checks a linked artifact; verifier = an independent session verifies; human = only the operator ticks it). The fixed end is appended after them. A human sign-off on a deliverable is a check (mission_add_check) on that step, not a step of its own.'
-          )
+          .describe('The steps, each with its criteria.')
       })
-      .superRefine((v, ctx) => {
-        const steps = v.steps ?? []
-        const v4 =
-          v.doneWhen !== undefined ||
-          v.milestones !== undefined ||
-          steps.some((st) => st.criteria !== undefined)
-        if (!v4 && v.declaredEnd === undefined) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['declaredEnd'],
-            message: 'pass declaredEnd (the v3 shape) or doneWhen (the v4 shape)'
-          })
-        }
-        steps.forEach((st, i) => {
-          if (st.verification === undefined && st.criteria === undefined) {
-            ctx.addIssue({
-              code: 'custom',
-              path: ['steps', i],
-              message: 'a step carries verification (v3) or criteria (v4)'
-            })
-          }
-        })
-      }),
+      .strict(),
     mutates: true,
     op: 'mission_create',
     silentAllowInAgentFolder: true
@@ -2504,40 +2361,22 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_get',
     description:
-      'Read one Mission. TWO FORMATS (Missions v4): a mission with a v4 record answers in v4 — `{ ok, op, id, title, doneWhen, status, state, stateLabel, standing, leads, source, progress, milestones, steps (each with its criteria, who settles each, blockers and links), next, waiting, summary, links, blockers, sessions }`. `waiting` is what the operator owes, in rank order — items of kind main-failing, unblock, settle, review, close and attach, each with `ask` and `why` — and `next` is its first. A v4 mission answers the sessions attached to it and the Harnu workers bound to it; any other caller is refused NOT_ATTACHED, with the way out (mission_attach, or mission_list for the folder\'s missions). Pass your `sessionId` and a `missionId`; with no `missionId` you get the open mission you are attached to (AMBIGUOUS_MISSION when it is more than one). A mission that only has a v3 file answers as described next, unchanged. Read one Mission: the full stored record (declared end, steps with their verification level, proof, links and blockers, open questions, status) plus its free-text Log, a `derived` block, `youItems` — the ordered list of what the operator owes (a rescope to approve, a close request, a steward the operator paused before it was retired (`steward-paused`), an operator-owned blocker, a decision node waiting for the operator\'s choice (`decide`), a red main after a merge (`main-red`), due checks, human steps, an imported end to review, child approvals, child needs-input; [] when nothing) — and the `you` line, ALWAYS present: the first item plus "(+N more)", or "— nothing, you\'re clear". `derived.progress` is THE progress — render it, never recount: { total, current { from, to } | null, allDone, done, verified, states, leftBehind, unprovable, computedAt } — position, not proof ("Step N of M" with N = current.from; ✓ only when allDone). Address it by `missionId`, or by `ownerSessionId` to find the mission a session owns (the most recently updated one that is not closed). `ownerSessionId` is a SELF-DECLARED, NOT authenticated lookup key — Harnu\'s MCP transport has no per-session identity. `derived` is computed fresh on every read: per step, each linked session\'s live state (scoped to this mission), each worktree/card/pr link resolved to commits and PRs, and an `existence` proof for existence-level steps; plus `derived.stall` — an active mission with no new evidence for over an hour and no linked session working is flagged `derived.stale: true` — recomputed on every read, never written to the stored status. Each child carries `taskState` (what the session is doing: working / idle / needs-input …) and `status` (the sidebar row\'s state) — read `taskState` to know whether it is working. Each PR (a `pr` link, or a PR summarized under a worktree/card link) carries `baseRefName`, the branch it merges into. Every `derived.steps[]` row carries `gates` — { pr, ci, main, verifier, checks }, each green | red | running | off | na (plus `stale: true` when GitHub was unreachable and these are the last known values) — and `prNumber`: the facts that prove the step, derived from the linked PR, its CI, the CI of its merge commit on the default branch, the verifier verdict and the ticked checks; never stored. A red `main` on a done step adds a `main-red` item to `youItems`. `ledger` is the last 20 rows of what Harnu itself did and saw (dispatches, worktree cuts, PRs opened/merged, CI changes, verdicts, a linked session ending, compactions), oldest first, and `ledgerCount` the total — read it instead of re-deriving dispatch state; no verb writes it. `closeReadiness` is what `mission_request_close` would refuse right now — `{ code, reason }` (MISSION_CLOSED | END_NOT_VERIFIED | OPEN_BLOCKERS | RESCOPE_PENDING) — or `null` when a request would land.',
-    inputSchema: z
-      .object({
-        folder: z
-          .string()
-          .min(1)
-          .describe('Absolute path of any folder/worktree of the repo that holds the mission.'),
-        missionId: z.string().min(1).optional().describe('The mission id (mnt-<8 hex>).'),
-        sessionId: MISSION_V4_SESSION_SCHEMA,
-        ownerSessionId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            'Find the mission this Claude session UUID owns. Self-declared, not authenticated.'
-          )
-      })
-      .refine(
-        (v) =>
-          v.missionId !== undefined || v.ownerSessionId !== undefined
-            ? v.missionId === undefined || v.ownerSessionId === undefined
-            : v.sessionId !== undefined,
-        {
-          message:
-            'pass a missionId, or an ownerSessionId (v3), or your own sessionId to find the v4 mission you are attached to — and never both ids'
-        }
-      ),
+      "Read one Mission: `{ ok, op, id, title, doneWhen, status, state, stateLabel, standing, leads, source, progress, milestones, steps (each with its criteria, who settles each, blockers and links), next, waiting, summary, links, blockers, sessions }`. `waiting` is what the operator owes, in rank order — items of kind main-failing, unblock, settle, review, close and attach, each with `ask` and `why` — and `next` is its first. `progress` is THE progress: render it, never recount. `source` says where the record came from: `v4`, or `v3-mission` (`v3-campaign` for an older plan made of chapters, read as one mission) for a mission still in a file an older Harnu wrote (it reads the same, and its first write converts it by copy; the old file is never changed). The detail is for the sessions attached to the mission and the Harnu workers bound to it; any other caller is refused NOT_ATTACHED, with the way out (mission_attach, or mission_list for the folder's missions). Pass your `sessionId` and a `missionId`; with no `missionId` you get the open mission you are attached to (AMBIGUOUS_MISSION when it is more than one).",
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .describe('Absolute path of any folder/worktree of the repo that holds the mission.'),
+      missionId: z.string().min(1).optional().describe('The mission id (mnt-<8 hex>).'),
+      sessionId: MISSION_V4_SESSION_SCHEMA
+    }),
     mutates: false,
     op: 'mission_get'
   },
   {
     name: 'mission_list',
     description:
-      "List Missions. v4 missions come back as one row each — `{ id, title, headline, leads, format: 'v4' }` (the headline is its progress line, `leads` the session that leads it) — and only for a `folder`: any session in the folder may list them, to find one to ask to join with mission_attach; a row never carries steps, criteria, links or history. A mission that has a v4 record is listed once, as a v4 row (its v3 file is a snapshot). Every other row is a v3 mission, as before: one row per mission: id, slug, title, status, the repo folder it lives in, owner session, linked card, `progress` (the last derive's — up to one poll old, see its computedAt; null before any read — call mission_get for exact numbers), the deprecated step counts (total / verified / claimed, a legacy fixed start excluded), whether it carries a blocker and `ledgerCount` (rows in the Harnu-written ledger). With `folder`, only that repo's missions (any worktree of it resolves to the same list); without it, every repo Harnu knows, skipping folders the operator blocked. Use mission_get for one mission's steps and Log.",
+      "List the open Missions of a folder's repo, one line each: `{ id, title, headline, leads, format }` (the headline is the progress line, `leads` the session that leads it). Any session in the folder may list them, to find one to ask to join with mission_attach; a row never carries steps, criteria, links or history. A mission still held in a v3 file is listed too (once, as the one mission it is). Pass `folder`; use mission_get for one mission's detail.",
     inputSchema: z.object({
       folder: z
         .string()
@@ -2551,60 +2390,39 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_add_step',
     description:
-      "Add a middle step to a Mission — DIRECT write, no confirm. TWO SHAPES (Missions v4): with `criteria` (and optionally `milestone`, `optional`, `waitsFor`) it adds a step to a v4 mission — the leader's verb; the step needs at least one criterion, goes after `afterStepId` or last, needs a `reason` once work has started, and has no card until it is dispatched; a v4-shaped call on a v3 mission converts it first (a v4 copy; the v3 file is not touched). It also clears a standing close request: the new step is not done. ACK `{ ok, op, stepId, criterionIds, totalSteps, started }`. With `verification` it is the v3 verb below, refused MISSION_IS_V4 on a mission that has a v4 record. The v3 shape: the step is inserted before the fixed end (or right after `afterStepId`; never after the fixed end), gets a stable `stp-<n>` id and an `addedAt` stamp, starts `unproven`, and declares its `verification` level up front (existence = Harnu checks a linked artifact exists; verifier = an independent session verifies it; human = only the operator can mark it). Pass `links` to make the step provable at birth (an existence step with no path, card or PR link can never be proven). `reason` is REQUIRED once the mission has STARTED — any step has a link or a proof (refused REASON_REQUIRED without it); the added step and its reason show on the mission, so a growing total is always explained. Before that, steps are planning: no reason is needed and none is stored. Campaign spec §3.2 relations: `required: false` makes it a SIDE step (outside the headline, never left behind, listed in `progress.side`), `discoveredFrom` names the step it came from, `edges` types its links to other steps (`blocks` locks the target until this step is done; `validates` and `related` are informational), and `decision` makes it a decision node whose `blocks` steps read `locked` until the operator chooses. A decision is declared without `chosen` — the operator picks (refused CONTROLLED_FIELD otherwise). Every named step must exist (STEP_NOT_FOUND). ACK: `{ ok, stepId, totalSteps }`.",
+      "Add a step to a Mission — DIRECT write, no confirm; the leader's verb. The step needs at least one criterion, goes after `afterStepId` or last, belongs to a `milestone` (required when the mission has milestones), needs a `reason` once work has started, and has no board card until it is dispatched. It also clears a standing close request: the new step is not done. A mission still in a v3 file is converted by copy first. ACK `{ ok, op, stepId, criterionIds, totalSteps, started }`.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
-      title: z.string().min(1).max(200).describe('Step title (1..200 chars, single line).'),
+      title: z.string().min(1).max(200).describe('Step title (50 characters is the contract).'),
       sessionId: MISSION_V4_SESSION_SCHEMA,
       criteria: z
         .array(MISSION_V4_CRITERION_SCHEMA)
-        .optional()
-        .describe("v4: the step's criteria — at least one. Its presence makes the call v4-shaped."),
+        .describe("The step's criteria — at least one."),
       milestone: z
         .string()
         .min(1)
         .optional()
-        .describe(
-          'v4: the milestone (mls-<n> or its exact title) the step belongs to. Required when the mission has milestones.'
-        ),
-      optional: z
-        .boolean()
-        .optional()
-        .describe('v4: an optional step does not hold the mission back.'),
-      waitsFor: z.string().min(1).nullable().optional().describe('v4: what the step waits for.'),
-      ...MISSION_STEP_RELATIONS_SHAPE,
-      verification: z
-        .enum(['existence', 'verifier', 'human'])
-        .optional()
-        .describe(
-          'v3: how the step gets proven: existence | verifier | human. Immutable afterwards.'
-        ),
+        .describe('The milestone (mls-<n> or its exact title) the step belongs to.'),
+      optional: z.boolean().optional().describe('An optional step does not hold the mission back.'),
+      waitsFor: z.string().min(1).nullable().optional().describe('What the step waits for.'),
       afterStepId: z
         .string()
         .min(1)
         .optional()
-        .describe('Insert right after this step id. Omitted: just before the fixed end.'),
-      reason: z
-        .string()
-        .min(1)
-        .max(2_000)
-        .optional()
-        .describe(
-          'Why the step was added. REQUIRED once the mission has started (a step has a link or a proof).'
-        ),
+        .describe('Insert right after this step (stp-<n>). Omitted: last.'),
       links: z
-        .array(
-          z.object({
-            kind: z.enum(['session', 'worktree', 'card', 'pr', 'url', 'doc']),
-            ref: z.string().min(1).max(1_000)
-          })
-        )
+        .array(MISSION_V4_LINK_SCHEMA)
         .max(20)
         .optional()
-        .describe(
-          'Links the step is born with — the same kinds as mission_link_child (session UUID, path, card slug, "owner/repo#123").'
-        )
+        .describe('Links the step is born with (kinds session, pr, worktree, url, doc).'),
+      reason: z
+        .string()
+        .trim()
+        .min(1)
+        .max(1_000)
+        .optional()
+        .describe('REQUIRED once work has started: why the plan grew.')
     }),
     mutates: true,
     op: 'mission_add_step',
@@ -2613,56 +2431,24 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_update_step',
     description:
-      "Edit one Mission step — DIRECT write, no confirm. `set` may carry `title` (custom steps only — the fixed frame's titles are fixed) and `proof: 'claimed'` — the owner's \"I believe this is done, unverified\", allowed only on a verifier/human step that is still unproven. Proof is otherwise a CONTROLLED field, like `verifiedBy`: any other `proof` value (verified, self-verified, unproven) and any `verifiedBy` are refused (CONTROLLED_FIELD) — a step is verified only through verification, never by assertion. Also settable: `required`, `discoveredFrom`, `edges` and `decision` (same shapes as mission_add_step; a fixed step cannot be made a side step, and a decision the operator already made is no longer rewritable — DECISION_CHOSEN). `chosen` — a decision's picked option — is the operator's: `set.chosen` (or a decision carrying it) is refused CONTROLLED_FIELD. ACK: `{ ok, stepId, changed }`.",
+      'Edit one Mission step: `set` takes `title`, `milestone`, `waitsFor` or `optional`. NOT BUILT YET: no v4 write for it exists, so a call is refused NOT_AVAILABLE and nothing is written. Add what is missing with mission_add_step (a new step), mission_add_ac (a criterion) or mission_link, or tell the operator.',
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
       stepId: z.string().min(1).describe('The step id (stp-<n>).'),
+      sessionId: MISSION_V4_SESSION_SCHEMA,
       set: z
         .record(z.string(), z.unknown())
-        .describe(
-          "Fields to set: title | proof ('claimed' only) | required | discoveredFrom | edges | decision. proof (any other value), verifiedBy and chosen are CONTROLLED and refused."
-        )
+        .describe('Fields to set: title | milestone | waitsFor | optional.')
     }),
     mutates: true,
     op: 'mission_update_step',
     silentAllowInAgentFolder: true
   },
   {
-    name: 'mission_link_child',
-    description:
-      "Link a step to what it is built from — DIRECT write, no confirm: a `session` (a child session's Claude session UUID), a `worktree` (a path — any file or directory in the repo, repo-relative or absolute, not only a worktree checkout), a `card` (its slug) or a `pr` (\"owner/repo#123\"). Idempotent — the same link twice is stored once. With `scope: true` and no `stepId`, the link is a scope document instead (a `worktree` path only), appended to the mission's `scope` attachment and held to the same rules as mission_create's `scope`: refused BAD_SCOPE_PATH outside the repo, on the repo root, under .git/.harnu/.capy at any depth, or in a worktree checkout, and stored as the repo-relative path it resolves to — ACK `{ ok, scope }`. A `worktree` link on a legacy fixed start (\"Scope confirmed\", only in missions created before v3) gets the same check. Links on every other step are stored as given. Harnu derives the step's live state from these links, and a `session` link is also what keeps a waiting mission owner from being parked while that child runs. A session ref is SELF-DECLARED and NOT authenticated (no per-session identity on this transport), so it must be the child's real transcript uuid — a synthetic-… id is refused (BAD_SESSION_ID). ACK: `{ ok, stepId, links }`.",
-    inputSchema: z.object({
-      folder: MISSION_FOLDER_SCHEMA,
-      missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
-      stepId: z
-        .string()
-        .min(1)
-        .optional()
-        .describe('The step id (stp-<n>). Omit it with scope: true.'),
-      scope: z
-        .boolean()
-        .optional()
-        .describe(
-          'true: attach a scope document (a worktree path) to the mission instead of a step.'
-        ),
-      link: z
-        .object({
-          kind: z.enum(['session', 'worktree', 'card', 'pr']),
-          ref: z.string().min(1).max(1_000)
-        })
-        .describe(
-          'kind + ref: session → Claude session UUID; worktree → a path to any file or directory in the repo (repo-relative or absolute); card → slug; pr → "owner/repo#123".'
-        )
-    }),
-    mutates: true,
-    op: 'mission_link_child',
-    silentAllowInAgentFolder: true
-  },
-  {
     name: 'mission_log',
     description:
-      "Append a note to a Mission's free-text Log — DIRECT write, no confirm. Works on a v3 mission and on a v4 one (pass your `sessionId` for a v4 mission: any session attached to it may write; kinds note, decision, surprise; the Log is the history and feeds the summary's Decided part). It serves the record in the format it is in and never converts it. The Log is the owner's narrative (a child's report, a decision, what happened), timestamped server-side and optionally tagged with a `stepId`. Append-only; it never touches the mission's structured fields, and it is never authoritative for state — steps, links and proof are. ACK: `{ ok }`.",
+      "Append a note to a Mission's Log — DIRECT write, no confirm. Pass your `sessionId`: any session attached to the mission may write. Kinds `note` (default), `decision` and `surprise`; the Log is the history and feeds the summary's Decided part. Timestamped server-side and optionally tagged with a `stepId`. Append-only; it never touches the mission's structured fields, and it is never authoritative for state — steps, links and criteria are. ACK: `{ ok }`.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
@@ -2674,10 +2460,10 @@ export const MCP_TOOLS: McpToolDef[] = [
         .describe('Optional step id (stp-<n>) the note is about.'),
       note: z.string().min(1).max(8_000).describe('Markdown note to append (≤ 8000 chars).'),
       kind: z
-        .enum(['note', 'decision', 'surprise', 'steward'])
+        .enum(['note', 'decision', 'surprise'])
         .optional()
         .describe(
-          'What the entry is (default note). The heading carries it (`### <time> · <kind>`), so the Log can be read by kind. `steward` is kept so older Logs read the same; Harnu no longer writes steward entries.'
+          'What the entry is (default note). The heading carries it, so the Log can be read by kind.'
         )
     }),
     mutates: true,
@@ -2687,7 +2473,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_set_blocker',
     description:
-      "Raise a blocker on a Mission — DIRECT write, no confirm. Works on a v3 mission and on a v4 one (pass your `sessionId` for a v4 mission; `ask` and `clearsWhen` are v4-only: `ask` is the one-line thing the operator does, `clearsWhen` a fact — pr-merged, ci-green or main-green — that ends a STEP's blocker by itself). A v4 blocker gets an id (`blk-<n>`, never reused); ACK `{ ok, op, blockerId, stepId?, deduped }`. A call without `ask` or `clearsWhen` serves the record in the format it is in and never converts it. The v3 verb: raise a blocker on a Mission. A blocker is a FLAG, never a status: the mission keeps whatever status it had, and the flag is what the operator sees. Without `stepId` it blocks the mission as a whole; with it, that one step. Each blocker says why (`reason`), what would clear it (`unblocks`) and whose move it is (`owner`: agent | operator — an operator-owned blocker shows on the mission's `you` line). The same `reason` on the same target is stored once (a repeat updates `unblocks`/`owner`). Clear it with mission_clear_blocker once it no longer holds; mission_request_close refuses while any blocker is open. ACK: `{ ok, blockers }` — the target's blockers after the write.",
+      "Raise a blocker on a Mission or on one step — DIRECT write, no confirm. Pass your `sessionId`. `reason` is the exact thing needed; `ask` the one line the operator does (90 characters is the contract); `unblocks` what it holds up (60); `owner` whose move it is (`agent` | `operator`: an operator-owned blocker is on the waiting list and chimes). Optional `clearsWhen`: a fact — pr-merged, ci-green or main-green — that ends a STEP's blocker by itself. A blocker is a flag, never a status. Every blocker gets an id (`blk-<n>`, never reused); the same reason on the same target is stored once. ACK `{ ok, op, blockerId, stepId?, deduped }`.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
@@ -2697,35 +2483,28 @@ export const MCP_TOOLS: McpToolDef[] = [
         .optional()
         .describe('Block this step (stp-<n>). Omitted: the blocker is on the mission itself.'),
       sessionId: MISSION_V4_SESSION_SCHEMA,
-      reason: z
-        .string()
-        .trim()
-        .min(1)
-        .max(2_000)
-        .describe('Why the work is blocked (v4: the exact thing needed).'),
+      reason: z.string().trim().min(1).max(2_000).describe('The exact thing needed.'),
       ask: z
         .string()
         .trim()
         .min(1)
         .max(500)
         .optional()
-        .describe('v4: one line, what the operator does (90 characters is the contract).'),
+        .describe('One line, what the operator does (90 characters is the contract).'),
       clearsWhen: z
         .enum(CLEARS_WHEN)
         .optional()
-        .describe('v4: a fact that ends a step blocker by itself.'),
+        .describe('A fact that ends a step blocker by itself.'),
       unblocks: z
         .string()
         .trim()
         .min(1)
         .max(2_000)
         .optional()
-        .describe(
-          'What would clear the blocker. Required on a v3 mission; on v4 it says what the blocker holds up.'
-        ),
+        .describe('What the blocker holds up (60 characters is the contract).'),
       owner: z
         .enum(['agent', 'operator'])
-        .describe("Whose move it is: 'agent' (you or a child) or 'operator' (the human).")
+        .describe("Whose move it is: 'agent' (you or a worker) or 'operator' (the human).")
     }),
     mutates: true,
     op: 'mission_set_blocker',
@@ -2734,184 +2513,33 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_clear_blocker',
     description:
-      "Clear one blocker from a Mission. On a v4 mission name it by `blockerId` (`blk-<n>`, from mission_get) and pass your `sessionId`: you clear an agent-owned blocker, an operator-owned one is the operator's (OPERATOR_ONLY); ACK `{ ok, op, blockerId, stepId? }`. On a v3 mission the rest of this text applies. Clear one blocker from a Mission (or, with `stepId`, from one step) — DIRECT write, no confirm. Name it by its exact `reason` or by its 0-based `index` in the list mission_get shows — exactly one of the two; an unknown one is refused (BLOCKER_NOT_FOUND). ACK: `{ ok, blockers }` — what is still open on that target.",
-    inputSchema: z
-      .object({
-        folder: MISSION_FOLDER_SCHEMA,
-        missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
-        stepId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe("Clear from this step's blockers. Omitted: from the mission's own."),
-        sessionId: MISSION_V4_SESSION_SCHEMA,
-        blockerId: z.string().min(1).optional().describe('v4: the blocker id (blk-<n>).'),
-        reason: z
-          .string()
-          .min(1)
-          .optional()
-          .describe('v3: the exact reason of the blocker to clear.'),
-        index: z
-          .number()
-          .int()
-          .min(0)
-          .optional()
-          .describe('The 0-based position of the blocker to clear.')
-      })
-      .refine((v) => [v.reason, v.index, v.blockerId].filter((x) => x !== undefined).length === 1, {
-        message: 'pass exactly one of blockerId (v4) / reason / index (v3)'
-      }),
-    mutates: true,
-    op: 'mission_clear_blocker',
-    silentAllowInAgentFolder: true
-  },
-  {
-    name: 'mission_set_end',
-    description:
-      "Propose a new declared end for a Mission (a re-scope) — DIRECT write, no confirm, but it NEVER changes `declaredEnd` itself: it stages the new end as `pendingRescope` and puts \"approve the new declared end\" on the mission's `you` line. Only the operator's approval, from the UI (no verb does it), promotes it — and that approval resets the fixed end's proof to `unproven`, whatever it was, because the old proof was about the old target. A complete `declaredEnd` (kind + target + evidence) and a `reason` are REQUIRED; the reason is logged with the was/now pair. A second call before approval replaces the staged proposal; an end identical to the current one is refused (END_UNCHANGED). ACK: `{ ok, pendingRescope: true }`.",
-    inputSchema: z.object({
-      folder: MISSION_FOLDER_SCHEMA,
-      missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
-      declaredEnd: MISSION_DECLARED_END_SCHEMA,
-      reason: z
-        .string()
-        .trim()
-        .min(1)
-        .max(2_000)
-        .describe('Why the end changes — logged next to the was/now pair the operator approves.')
-    }),
-    mutates: true,
-    op: 'mission_set_end',
-    silentAllowInAgentFolder: true
-  },
-  {
-    name: 'mission_verify_step',
-    description:
-      "Record an independent verification of a `verifier`-level Mission step — DIRECT write, no confirm, and it NEVER refuses on self-verification: it labels instead of blocking. With verdict `met`, proof becomes `verified` when the step has at least one `session` link AND your declared `sessionId` differs from every one of them; otherwise `self-verified` — which the operator never sees as proven. The fixed end is built by the whole mission, so for it the links that count are its own `session` links plus every custom step's: the owner, who built none of the steps, verifies the end as `verified` once the steps' child sessions are linked; with no session link anywhere it stays `self-verified`. Verdict `needs-human` means the machine part is met and a human part remains: the proof takes its label as for `met`, the step reads `done` in progress, and a human CHECK is added to the step — labelled `checkLabel`, else the first line of `evidence` (deduped by label, case-insensitively) — for the operator to tick. A later `met` verification leaves that check open: the human part is still owed. Any other verdict (unmet | blocked) records the verification and leaves the step `unproven`. Either way `verifiedBy` (your declared id, the time, the verdict) is stored and the `evidence` is logged, so the operator can audit it. `sessionId` is SELF-DECLARED and NOT authenticated — Harnu's MCP transport has no per-session identity, so a misreported id is not caught: this is convention plus audit, not a security check. Refused only for a step that is not `verifier`-level (WRONG_VERIFICATION_LEVEL: an `existence` step is proven by Harnu at read time; a `human` step only by the operator, from the UI). ACK: `{ ok, stepId, proof, verdict }`.",
-    inputSchema: z.object({
-      folder: MISSION_FOLDER_SCHEMA,
-      missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
-      stepId: z.string().min(1).describe('The verifier-level step id (stp-<n>).'),
-      verdict: z
-        .enum(['met', 'unmet', 'blocked', 'needs-human'])
-        .describe("The verification's verdict — the delivery-verifier vocabulary."),
-      evidence: z
-        .string()
-        .trim()
-        .min(1)
-        .max(8_000)
-        .describe('What you checked and what it showed — appended to the mission Log.'),
-      sessionId: z
-        .string()
-        .min(1)
-        .describe(
-          'Your own Claude session UUID (the verifier). Self-declared, not authenticated — it decides verified vs self-verified and is recorded as verifiedBy.'
-        ),
-      checkLabel: z
-        .string()
-        .trim()
-        .min(1)
-        .max(200)
-        .optional()
-        .describe(
-          "With verdict needs-human: the human check to add (e.g. 'Validated visually'). Omitted: the first line of evidence."
-        )
-    }),
-    mutates: true,
-    op: 'mission_verify_step',
-    silentAllowInAgentFolder: true
-  },
-  {
-    name: 'mission_request_close',
-    description:
-      'Ask the operator to close a Mission. On a v4 mission (pass your `sessionId`; the leader\'s verb) it is refused STEPS_OPEN while a required step is not done, sets `closeRequested` and never closes: close is the operator\'s door in the Mission pane. ACK `{ ok, op, closeRequested: { at }, deduped }`. Adding a step afterwards clears the request. The rest of this text is the v3 verb. Ask the operator to close a Mission — DIRECT write, no confirm, but it never closes anything: it is your "it\'s done" signal — it sets `pendingClose`, moves the mission to `delivered` and puts "close the mission" on its `you` line; only the operator ends a mission (close as delivered, or discard), from the UI, and can do so at any time (no verb can). Once the operator ends it, every mission_* write refuses MISSION_CLOSED — stop your loop and report. Refused unless the fixed end is `verified` (END_NOT_VERIFIED — `claimed` and `self-verified` do not count: it must be verified by a session that built none of the steps, e.g. the owner once the child session of every step is linked), no blocker is open on the mission or any step (OPEN_BLOCKERS — clear them first) and no re-scope is staged (RESCOPE_PENDING — the operator approves it first). The `closeReadiness` field of mission_get reports the same refusal ahead of time. `sessionId` (optional, self-declared, not authenticated) is recorded as who asked; omitted, the owner. ACK: `{ ok, pendingClose: true }`.',
-    inputSchema: z.object({
-      folder: MISSION_FOLDER_SCHEMA,
-      missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
-      sessionId: z
-        .string()
-        .min(1)
-        .optional()
-        .describe(
-          'Your Claude session UUID, recorded as who requested the close. Self-declared, not authenticated. Omitted: the mission owner.'
-        )
-    }),
-    mutates: true,
-    op: 'mission_request_close',
-    silentAllowInAgentFolder: true
-  },
-  {
-    name: 'mission_import_legacy',
-    description:
-      "Import a legacy goal file (`.harnu/goals/*.md`, the free-markdown state the `mission` skill wrote before Missions existed) as a NEW Mission — DIRECT write, no confirm. It only READS the legacy file: the source is never modified, moved or deleted. Recognized sections are extracted best-effort — North star/Objective → declaredEnd.target, Done criteria → declaredEnd.evidence (the kind is inferred from their words), each Executors/Units row → a custom step with its session/card/pr links, Pending gates → mission blockers, Open questions → openQuestions, Log → the new mission's Log, verbatim. The whole file is ALWAYS kept byte-for-byte in the mission's `legacyRaw` frontmatter field, whatever its shape (mission_get omits it and reports its size and file path instead). A file with no recognized heading still imports: its declared end is a placeholder and `needsReview` lists `declaredEnd` — stage a real one with mission_set_end for the operator to approve (until then 'review the imported end' is on the operator's `you` list). The mission is born `active` in the v3 shape: the imported units numbered from stp-1, then the fixed end — no fixed start. `sessionId` names the owner (self-declared, NOT authenticated); omitted, the legacy file's own `session:` UUID is used. Refused: BAD_LEGACY_PATH (not a `.harnu/goals/*.md` file of `folder` or its main checkout), LEGACY_NOT_FOUND, LEGACY_NOT_UTF8 (never imported lossily), LEGACY_TOO_LARGE (over 1 MiB), ALREADY_IMPORTED (names the existing mission). ACK: `{ ok, missionId, slug, extractedFields, needsReview, legacyPreserved: true }`.",
-    inputSchema: z.object({
-      folder: z
-        .string()
-        .min(1)
-        .describe(
-          "Absolute path of the folder/worktree whose `.harnu/goals/` holds the file; the mission is stored in its repo's main checkout."
-        ),
-      legacyPath: z
-        .string()
-        .min(1)
-        .describe(
-          "The goal file: `.harnu/goals/<name>.md`, relative to `folder` (or absolute). Must be a `.md` file under `folder`'s or its main checkout's `.harnu/goals/`."
-        ),
-      sessionId: z
-        .string()
-        .min(1)
-        .optional()
-        .describe(
-          "The owner — your own Claude session UUID. Self-declared, not authenticated. Omitted: the legacy file's frontmatter `session:`, when it is a full UUID."
-        )
-    }),
-    mutates: true,
-    op: 'mission_import_legacy',
-    silentAllowInAgentFolder: true
-  },
-  {
-    name: 'mission_add_check',
-    description:
-      "Add a human CHECK to a Mission step — DIRECT write, no confirm. A check is a human confirmation of a deliverable the step produced: DSQA done, 'validated visually', a designer sign-off. Prefer it over a `human` step: a check rides on the step that produced the work and never changes progress, while a `human` step is a stage of its own that gates what comes next. Labels are unique per step, case-insensitively — adding one that is already there (from you, a verifier or the operator) is a no-op that keeps the first creator's. Only the operator ticks or deletes a check, from the app — no verb can, and no argument of this one sets `ticked`. An unticked check on a step that was reached is due: it lands on the operator's `you` list and in the close warnings. Refused STEP_NOT_FOUND, BAD_ARGS (label 1..200 chars) and MISSION_CLOSED. ACK: `{ ok, stepId, checks }` — the step's checks after the write — plus `deduped: true` when the label was already on the step: nothing was written (the file and updatedAt are untouched) and the existing check stands.",
+      "Clear one blocker by `blockerId` (`blk-<n>`, from mission_get) — DIRECT write, no confirm. Pass your `sessionId`: you clear an agent-owned blocker; an operator-owned one is the operator's (OPERATOR_ONLY). ACK `{ ok, op, blockerId, stepId? }`.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
       stepId: z
         .string()
         .min(1)
-        .describe('The step id (stp-<n>) whose deliverable needs the check.'),
-      label: z
-        .string()
-        .trim()
-        .min(1)
-        .max(200)
-        .describe("What the human confirms, e.g. 'Designer sign-off on the hero' (1..200 chars).")
+        .optional()
+        .describe("Clear from this step's blockers. Omitted: from the mission's own."),
+      sessionId: MISSION_V4_SESSION_SCHEMA,
+      blockerId: z.string().min(1).describe('The blocker id (blk-<n>).')
     }),
     mutates: true,
-    op: 'mission_add_check',
+    op: 'mission_clear_blocker',
     silentAllowInAgentFolder: true
   },
   {
-    name: 'mission_transfer_owner',
+    name: 'mission_request_close',
     description:
-      "Hand a Mission to a new owner session — the RECOVERY path for when the owner must be replaced (it died, the app was closed, a successor was spawned to resume the delivery). DIRECT write, no confirm. It moves `owner.sessionId` to `toSessionId` and everything keyed on it follows: the Topbar pill and the `you` line show on the new session's row (not the old one's), `mission_get { ownerSessionId }` answers for the new owner only, and the hibernation exemption goes with it. `owner.folder` stays. The normal path is ONE owner for the whole delivery — do not use this to share a mission. Each transfer appends a Log entry (`### <time> · owner transfer: <from> → <to> (<reason>)`) and a ledger row of kind `owner-transfer` (`ref` = the new owner). Refused `MISSION_CLOSED` once the operator ended the mission, `BAD_SESSION_ID` when `toSessionId` is not a real Claude session UUID (never a `synthetic-…` id), `SAME_OWNER` when it already owns the mission, `FOLDER_NOT_ALLOWED` in a blocked folder, `BAD_ARGS` for an empty `reason`. An `observe` worker cannot call it (STEWARD_VERB_NOT_ALLOWED). ACK `{ ok, op, missionId, from, to }`. Session ids are self-declared, not authenticated.",
+      "Ask the operator to close a Mission — the leader's verb, DIRECT write, no confirm. It is refused STEPS_OPEN while a required step is not done, sets `closeRequested` and never closes: close is the operator's door in the Mission pane. Adding a step afterwards clears the request. ACK `{ ok, op, closeRequested: { at }, deduped }`. Pass your `sessionId`.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
-      toSessionId: z
-        .string()
-        .min(1)
-        .describe(
-          'The Claude session UUID that becomes the owner (the transcript id get_fleet reports, never a synthetic-… id).'
-        ),
-      reason: z
-        .string()
-        .min(1)
-        .max(300)
-        .describe('Why the owner changes, one line (it goes in the Log and the audit trail).')
+      sessionId: MISSION_V4_SESSION_SCHEMA
     }),
     mutates: true,
-    op: 'mission_transfer_owner',
+    op: 'mission_request_close',
     silentAllowInAgentFolder: true
   },
   {

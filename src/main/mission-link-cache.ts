@@ -19,7 +19,7 @@ import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { app } from 'electron'
 import { atomicWriteFile } from './mcp/atomic-write'
-import type { LedgerRow } from './mission-core'
+import type { LedgerRow } from './mission-ledger'
 import {
   OBSERVED_LEDGER_MAX,
   adoptCachedRows,

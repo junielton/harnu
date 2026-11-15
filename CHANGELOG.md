@@ -46,6 +46,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - A steward an older version left in the Scheduler's list never shows as one of your workers.
 
+- The companion's mission card now shows each step's **executors and pull request badges** for a version 4 mission, as it did for the older ones, and a mission file that the companion, the hibernation check or Your move can't read is named in the Activity bell instead of being skipped quietly.
+
 ### Removed
 
 - **The old mission screens are gone.** The mission and campaign popovers, the step rail, the Missions review and bulk-close dialogs, the steward pause dialog and the **Stewards** block in the Scheduler are removed. Every mission, including the ones you started before this version, opens in the Mission pane, and nothing else lists your missions across a repo except the pane's own picker when a session has no mission.
@@ -53,6 +55,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **The mission steward is gone for good.** Harnu no longer contains the helper that used to wake on mission events, rebase a stack, start a verifier or nudge a session; the Scheduler keeps only your own **Observe** and **Act** workers. The first start after an upgrade still removes any steward an older version left (its Scheduler worker and its entries in the folder's `.claude/settings.local.json`, never your own hooks) and posts the one Activity notice. A session that was already open when you upgraded may still run the old steward hooks; they now answer with nothing. Closing a mission no longer looks for a steward to remove. The **Pause steward** and **Resume steward** actions are gone too. No mission or campaign file changes: a mission that was paused keeps that line in its file, and nothing reads it.
 
 - **The six campaign commands are gone.** Agents can no longer create, read, list, extend, close or hand over a campaign (`campaign_create`, `campaign_add_chapter`, `campaign_get`, `campaign_list`, `campaign_request_close`, `campaign_transfer_owner`), and `mission_create` refuses a call that names a campaign or a chapter, with a message that points to milestones; nothing is written. A large piece of work is now one mission with milestones. A campaign file an earlier version left in `.harnu/campaigns/` is kept and never changed: the Mission pane opens it as one mission with its chapters as milestones in order, and the chapter missions it names open as before.
+
+- **Six more old mission commands are gone, and the old mission code behind them.** Agents can no longer call `mission_link_child`, `mission_set_end`, `mission_verify_step`, `mission_add_check`, `mission_transfer_owner` or `mission_import_legacy`: a session that still does is told the tool is not found, and nothing changes. Each has a replacement (`mission_link`, `mission_set_done_when`, `mission_settle_ac`, `mission_add_ac`, the hand-off in the Mission pane, and nothing for the goal-file import). The mission commands that stay take only the version 4 shape: `mission_create` refuses an older argument (an end of the old kind, a steward, a chapter, a step's `verification`) and writes nothing. A mission an earlier version wrote still opens, every command reads it, and the first change converts it by copy while the old file stays as it was. `mission_update_step` stays in the list but is not built yet: it is refused and writes nothing, so a session adds to the plan instead.
 
 ### Fixed
 

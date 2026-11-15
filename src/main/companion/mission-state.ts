@@ -21,10 +21,12 @@ import {
   missionStateKey,
   missionViewInOf,
   projectMissions,
-  type MissionViewIn
+  type MissionViewIn,
+  type ViewFacts
 } from './mission-state-core'
 import { repoRoot } from '../data-dir'
 import type { MissionDetail } from '../missions/verbs-read'
+import { reportUnreadableMissionFiles } from '../missions/store'
 import type { BindingView } from './session-table'
 
 const FEATURE = 'ui.quietRows'
@@ -83,12 +85,21 @@ const READER_ID = 'harnu-companion'
 
 /** How a mission's detail is read: the view channel's own builder, which gathers the facts of the steps. */
 type ReadDetail = (folder: string, missionId: string) => Promise<MissionDetailRead>
-type MissionDetailRead = MissionDetail | { ok: false } | null
+/** A detail, with the facts the view gathered about its steps when the read had them (S-40, Decision 12). */
+type MissionDetailRead = (MissionDetail & { viewFacts?: ViewFacts }) | { ok: false } | null
 
 async function defaultReadDetail(folder: string, missionId: string): Promise<MissionDetailRead> {
   const { buildMissionV4View } = await import('../mission-ipc')
+  const { getTaskState } = await import('../detect/task-state-hub')
   const reply = await buildMissionV4View({ folder, sessionId: READER_ID, missionId })
-  return reply.state === 'mission' ? reply.detail : null
+  if (reply.state !== 'mission') return null
+  return {
+    ...reply.detail,
+    viewFacts: {
+      ...(reply.stepFacts ? { steps: reply.stepFacts } : {}),
+      taskState: (sid) => getTaskState(sid)
+    }
+  }
 }
 
 /**
@@ -119,9 +130,12 @@ export async function readViewsFromRecords(
         folder,
         source === 'v3-campaign' ? (sourceIds[0] ?? record.id) : record.id
       )
-      if (detail && detail.ok) views.push(missionViewInOf(detail))
+      if (detail && detail.ok) views.push(missionViewInOf(detail, detail.viewFacts))
     }
   }
+  // A file this read could not parse is named to the app's unreadable list (one Activity notice, once
+  // per file), never skipped silently: what the mod holds is kept, and the operator is told why.
+  reportUnreadableMissionFiles('companion', unreadable)
   return { views, unreadable }
 }
 

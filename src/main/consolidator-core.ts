@@ -17,7 +17,14 @@
 
 import { HOT_MAX_WORDS, MEMORY_ENTRY_MAX_CHARS } from './mcp/memory-core'
 import { isEntryId } from './mcp/memory-entries'
-import type { DeclaredEnd, LedgerRow } from './mission-core'
+import type { LedgerRow } from './mission-ledger'
+
+/** The end a v3 mission declared: its kind, the target and the evidence that proves it. */
+export interface DeclaredEnd {
+  kind: 'code' | 'ui' | 'research' | 'decision' | 'other'
+  target: string
+  evidence: string
+}
 
 // ── the allowlist, as data ───────────────────────────────────────────────────
 
@@ -46,7 +53,7 @@ export function consolidatorReadRefusal(filePath: string): string | null {
 /** A Log entry, read off its `### <time> · <kind> · <step>` heading. */
 export interface LogEntry {
   at: string
-  kind: 'note' | 'decision' | 'surprise' | 'steward'
+  kind: 'note' | 'decision' | 'surprise'
   stepId?: string
   text: string
 }
@@ -142,7 +149,7 @@ export interface Consolidation {
 
 // ── the Log ──────────────────────────────────────────────────────────────────
 
-const LOG_KIND_SET: ReadonlySet<string> = new Set(['note', 'decision', 'surprise', 'steward'])
+const LOG_KIND_SET: ReadonlySet<string> = new Set(['note', 'decision', 'surprise'])
 const STEP_REF = /^(?:stp|chp)-\d+$/
 
 /** Parse a Log body into entries. Anything before the first heading is not an entry. */

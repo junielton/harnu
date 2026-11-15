@@ -1874,7 +1874,7 @@ describe('verbs on a v3 record', () => {
     // and a `linkedCard`), and mission_list holds the open v3 missions. Nothing is written.
     const got = await call('mission_get', { missionId: 'mnt-5c0de001', sessionId: LEADER })
     expect(got.isError, got.text).toBe(false)
-    expect(got.json).toMatchObject({ ok: true, id: 'mnt-5c0de001', source: 'v3' })
+    expect(got.json).toMatchObject({ ok: true, id: 'mnt-5c0de001', source: 'v3-mission' })
     const listed = await call('mission_list', {})
     expect(listed.isError, listed.text).toBe(false)
     const ids = (listed.json.missions as Array<{ id: string }>).map((m) => m.id)

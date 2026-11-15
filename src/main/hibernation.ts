@@ -4,7 +4,7 @@ import { mainCheckoutRoot } from './data-dir'
 import { leaderOf as leaderOfRecord } from './missions/guard'
 import { parseMissionRecordFile } from './missions/model'
 import { migratedDir, v4RecordsDir } from './missions/record-store'
-import { leaderOf, readMissionsDedupedSync } from './missions/store'
+import { leaderOf, readMissionsDedupedSync, reportUnreadableMissionFiles } from './missions/store'
 
 /**
  * The set of session keys currently PARKED — process killed to reclaim memory, conversation
@@ -155,16 +155,21 @@ export function resetHibernation(): void {
  * leader being the owner while it is not closed (a delivered one, waiting for the operator to close
  * it, is ready to close). The record store reads asynchronously and this runs inside the synchronous
  * fleet snapshot, so the same files are read here with the same parser. Fails OPEN: an unreadable
- * directory or a malformed file exempts nobody, which is what happened before this exemption existed.
+ * directory or a malformed file exempts nobody, which is what happened before this exemption existed. It
+ * never fails SILENT (Missions v4 S-40, Decision 12): a malformed file is reported by name to the store's
+ * unreadable list, and the app's Activity notice (raised from `mission:list`) names it once, for as long as
+ * the same file stays unreadable. A mission whose file nobody can read is a mission whose leader may be parked.
  */
 
 /** The leaders of the open v4 records under `root`, and every mission id a v4 record or sidecar covers. */
 function readV4Leaders(root: string): {
   leaders: Map<string, string | null>
   covered: Set<string>
+  unreadable: string[]
 } {
   const leaders = new Map<string, string | null>()
   const covered = new Set<string>()
+  const unreadable: string[] = []
   try {
     for (const name of readdirSync(v4RecordsDir(root))) {
       const m = /^(mnt-[0-9a-f]{8})-.+\.md$/.exec(name)
@@ -173,11 +178,15 @@ function readV4Leaders(root: string): {
         const record = parseMissionRecordFile(
           readFileSync(path.join(v4RecordsDir(root), name), 'utf8')
         )
-        if ('error' in record) continue
+        if ('error' in record) {
+          unreadable.push(name)
+          continue
+        }
         covered.add(record.id)
         leaders.set(record.id, record.status === 'open' ? leaderOfRecord(record) : null)
       } catch {
-        /* one unreadable file exempts nobody */
+        /* one unreadable file exempts nobody: it is reported by name, below */
+        unreadable.push(name)
       }
     }
   } catch {
@@ -192,7 +201,7 @@ function readV4Leaders(root: string): {
   } catch {
     /* no sidecars */
   }
-  return { leaders, covered }
+  return { leaders, covered, unreadable }
 }
 
 /**
@@ -202,19 +211,24 @@ function readV4Leaders(root: string): {
 export function openMissionLeaders(roots: readonly string[]): Set<string> {
   const out = new Set<string>()
   const covered = new Set<string>()
+  const unreadable: string[] = []
   for (const root of roots) {
     const v4 = readV4Leaders(root)
     for (const id of v4.covered) covered.add(id)
     for (const leader of v4.leaders.values()) if (leader) out.add(leader)
+    unreadable.push(...v4.unreadable)
   }
   // The store's one v3 read: the newest copy of each mission across the clones, so a stale twin in
   // another clone pins nobody. `includeClosed: false` leaves the closed ones out.
-  for (const { mission } of readMissionsDedupedSync([...roots], { includeClosed: false })
-    .missions) {
+  const v3 = readMissionsDedupedSync([...roots], { includeClosed: false })
+  for (const { mission } of v3.missions) {
     if (covered.has(mission.id)) continue
     const leader = leaderOf(mission)
     if (leader) out.add(leader)
   }
+  unreadable.push(...v3.unreadable.map((u) => u.name))
+  // Every pass reports its whole set: a file that reads again leaves the list, and a later failure of it is news.
+  reportUnreadableMissionFiles('hibernation', unreadable)
   return out
 }
 

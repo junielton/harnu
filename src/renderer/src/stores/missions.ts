@@ -41,7 +41,6 @@ import type {
   MissionView
 } from '../../../main/mission-ipc'
 import { i18n } from '../i18n'
-import { progressHeadline } from '../../../main/mission-progress'
 import {
   decideCue,
   deserializeCueMemory,
@@ -66,6 +65,7 @@ import {
   buildMissionModel,
   headlineText,
   missionForSession,
+  progressHeadline,
   youItemText,
   type MissionModel
 } from '../lib/mission-view'

@@ -298,7 +298,7 @@ describe('AC-90 — a v3 record still opens after the removal', () => {
     const userDataBefore = tree(h.userDataDir)
 
     const got = await ok('mission_get', { folder: root, missionId: MISSION, sessionId: LEADER })
-    expect(got).toMatchObject({ ok: true, id: MISSION, source: 'v3' })
+    expect(got).toMatchObject({ ok: true, id: MISSION, source: 'v3-mission' })
     expect(got.title).toBeTruthy()
     const listed = await ok('mission_list', { folder: root })
     const ids = (listed.missions as Array<{ id: string }>).map((m) => m.id)

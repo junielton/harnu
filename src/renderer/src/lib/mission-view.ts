@@ -11,17 +11,41 @@
  * presentation — the tone, the step visuals, where a child session's row sits.
  */
 import type { MissionView } from '../../../main/mission-ipc'
-import { progressHeadline, type StepState } from '../../../main/mission-progress'
+import type {
+  Blocker,
+  Check,
+  GateState,
+  MissionLinkSignal,
+  MissionProgress,
+  MissionStep,
+  StepGates,
+  StepState
+} from '../../../main/missions/derive'
 import type { MissionChildState } from '../../../main/mcp/fleet-snapshot'
-import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
-import type { Blocker, Check, LedgerRow, MissionStep } from '../../../main/mission-core'
-import type { MissionYouItem } from '../../../main/mcp/tool-handlers'
-import type { GateState, StepGates } from '../../../main/mission-gates'
+import type { LedgerRow } from '../../../main/mission-ledger'
+import type { MissionYouItem } from '../../../main/missions/waiting'
+
+/** The headline every surface prints: "Step N of M", "Steps a–b of M", "Step M of M ✓", or nothing (`empty`). */
+export function progressHeadline(p: MissionProgress): {
+  kind: 'single' | 'range' | 'done' | 'empty'
+  n: number
+  to: number
+  m: number
+} {
+  // `empty`: nothing to count (total 0) — surfaces must not print "Step 0 of 0".
+  if (p.total === 0) return { kind: 'empty', n: 0, to: 0, m: 0 }
+  if (p.allDone || !p.current) return { kind: 'done', n: p.total, to: p.total, m: p.total }
+  return {
+    kind: p.current.from === p.current.to ? 'single' : 'range',
+    n: p.current.from,
+    to: p.current.to,
+    m: p.total
+  }
+}
 
 /**
  * `verifiedBy.sessionId` on a step the operator ticked from the UI — mirrors
- * `OPERATOR_VERIFIER` in `mission-core.ts` (tests/mission-view.test.ts pins the
- * two equal).
+ * the operator's verifier id in a stored v3 file.
  */
 export const OPERATOR_VERIFIER_ID = 'operator'
 
@@ -366,7 +390,6 @@ const RISK: Record<YouRow['kind'], YouRisk> = {
   'main-red': 'high',
   close: 'mid',
   'human-steps': 'mid',
-  'steward-paused': 'mid',
   approvals: 'mid',
   'needs-input': 'mid',
   checks: 'low',
@@ -388,8 +411,6 @@ function itemAge(view: MissionView, item: MissionYouItem, now: number): number |
     }
     case 'close':
       return ageSince(m.pendingClose?.at, now)
-    case 'steward-paused':
-      return ageSince(item.at, now)
     case 'main-red':
       return ageSince(
         (m.ledger ?? []).find((r) => r.kind === 'pr-merged' && r.pr === item.pr)?.at,
@@ -426,13 +447,13 @@ export function youRows(view: MissionView, now: number = Date.now()): YouRow[] {
  * age inside its sentence, so its slot stays empty rather than saying it twice.
  */
 export function youRowAge(row: YouRow): string | null {
-  return row.ageMs === null || row.kind === 'steward-paused' ? null : formatDuration(row.ageMs)
+  return row.ageMs === null ? null : formatDuration(row.ageMs)
 }
 
 /**
  * ONE owed item in the operator's words, outside the You lane (the Activity cue, the review dialog):
  * the same {@link youRowText} the lane uses, so an item has one wording in the renderer. No age is
- * known here, so a steward-paused sentence carries none.
+ * known here.
  */
 export function youItemText(
   t: PluralTranslate,
@@ -479,12 +500,6 @@ export function youRowText(
       return t('mission.you.humanSteps', { steps: titles(item.stepIds) }, item.stepIds.length)
     case 'review-import':
       return t('mission.you.reviewImport', {})
-    case 'steward-paused':
-      // "Steward paused {age}: {reason}" — the age is part of the sentence (campaign spec §3.4).
-      return t('mission.you.stewardPaused', {
-        age: row.ageMs === null ? '' : formatDuration(row.ageMs),
-        reason: item.reason
-      })
     case 'main-red':
       return t('mission.you.mainRed', { pr: item.pr, step: titles([item.stepId]) })
     case 'approvals':

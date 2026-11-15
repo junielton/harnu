@@ -1,4 +1,4 @@
-<!-- harnu-features v148 (2026-11-15) -->
+<!-- harnu-features v149 (2026-11-15) -->
 
 # You are running inside Harnu
 
@@ -41,11 +41,10 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `notify`, `speak`, `your_move`, `message_session`, `create_worker`, `list_workers`,
 `list_containers`, `stop_containers`, `start_containers`, `remove_containers`,
 `list_cleanup`, `release_worktree`, `archive_session`, `hide_folder`, `github_budget`, `update_worker`, `delete_worker`, `orchestrator_arm`, `orchestrator_disarm`,
-`mission_create`, `mission_get`, `mission_list`, `mission_add_step`,
-`mission_update_step`, `mission_link_child`, `mission_log`, `mission_set_blocker`,
-`mission_clear_blocker`, `mission_set_end`, `mission_verify_step`,
-`mission_request_close`, `mission_import_legacy`, `mission_add_check`,
-`mission_transfer_owner`, `mission_add_milestone`, `mission_add_ac`, `mission_link`, `mission_set_done_when`, `mission_settle_ac`, `mission_attach`, `rebase_stack`. Resources: `harnu://fleet`,
+`mission_create`, `mission_get`, `mission_list`, `mission_add_milestone`, `mission_add_step`,
+`mission_update_step`, `mission_add_ac`, `mission_link`, `mission_log`, `mission_set_blocker`,
+`mission_clear_blocker`, `mission_set_done_when`, `mission_settle_ac`,
+`mission_request_close`, `mission_attach`, `rebase_stack`. Resources: `harnu://fleet`,
 `harnu://worktrees`, `harnu://session/<id>` (the old `capy://` form still parses).
 
 **Mutations do NOT ask. Just act.** `create_session`, `create_worktree`,
@@ -594,7 +593,7 @@ used, resetAt, callsPerMin, minutesToEmpty }` (ISO `resetAt`; the pace is GitHub
 last 10 minutes). `tighter` is the bucket with the lower share left, the one the throttle follows.
 `throttle.state` is `normal`, `low`, `exhausted` or `unavailable`. `harnu.byConsumer` is Harnu's
 calls in the tighter bucket's current window per consumer (`missions`, `pr-stack`, `review`,
-`cleanup`, `steward`, `budget` — the login lookup); `outside` is the rest of what that bucket spent (an
+`cleanup`, `budget` — the login lookup; a count an older Harnu stored under `steward` still reads); `outside` is the rest of what that bucket spent (an
 estimate: other tools or machines on the same login). With `gh` missing or signed out the call still
 returns `ok: true` with `throttle.state: 'unavailable'`, a `reason` and null buckets. `login` is
 `null` when Harnu does not know it. `sampledAt` is the last good poll (they run every minute). On
@@ -1144,7 +1143,7 @@ A **mission** is the record of a body of work: what "done" means, the plan, who 
 | `mission_settle_ac({ stepId, criterionId, evidence })`                                           | A second session settles one `by: session` criterion with evidence it saw. From the step's builder it is a self-check and settles nothing.                                                                                                                                    |
 | `mission_request_close({ missionId })`                                                           | Your "it is done". Refused `STEPS_OPEN` while a required step is not done. It never closes.                                                                                                                                                                                   |
 | `mission_attach({ missionId })`                                                                  | A request to join a mission, which the operator allows or denies in the pane. It never asks to lead.                                                                                                                                                                          |
-| `mission_update_step`                                                                            | No v4 form: refused `MISSION_IS_V4` on a v4 mission. Add with `mission_add_step`, `mission_add_ac` or `mission_link`.                                                                                                                                                         |
+| `mission_update_step`                                                                            | Not built yet: refused `NOT_AVAILABLE`, writes nothing. Add with `mission_add_step`, `mission_add_ac` or `mission_link`.                                                                                                                                                      |
 | `rebase_stack({ missionId, onto, stepId?, from? })`                                              | Leader only: rebases the step's own linked worktree onto the new base after a parent landed. It never pushes (`pushed: false`; publishing is yours) and never touches another branch or a dirty tree. On a conflict it aborts and writes nothing: raise the blocker yourself. |
 
 **Writing contract.** The reader is tired and was not in your session. A verb refuses text that breaks a rule, names the rule, and never cuts or rewrites it.
@@ -1169,7 +1168,7 @@ A **mission** is the record of a body of work: what "done" means, the plan, who 
 
 **The summary and the hand-off.** Harnu builds one summary from the record alone (at most 8,000 characters): Goal, Where it is, Decided (the last `decision` Log entries), Stopped at (per session), Next step, plus the open criteria and the links. `mission_get` returns it and a fresh session starts from it. Only the operator decides a hand-off, from the pane, and it is the only thing that changes who leads. You never switch yourself, whatever your context says: a session near its limit (Harnu offers the hand-off from about 80 percent) asks with one line in its reply and one `mission_log` note, nothing else. On their yes Harnu starts a fresh session in the folder with the summary as its first prompt, in the operator's own boot permission mode, not yours, and attaches it as the leader; the old session is released, not killed. No resume prompt is ever pasted, by you or by the operator.
 
-**Records from earlier versions.** A mission an older Harnu wrote, or an older delivery plan with its chapter missions, opens in the pane through a converted view; reading changes no byte. The first v4-shaped call (`mission_add_milestone`, `mission_add_ac`, `mission_link`, `mission_set_done_when`, `mission_settle_ac`, `mission_attach`, or a `mission_create` or `mission_add_step` carrying `criteria`) or operator door converts it by copy: a v4 record is written under the same id and the old file stays byte for byte. A delivery plan becomes one mission, each chapter a milestone. From then on only the v4 record counts: a verb of the older shape aimed at it is refused `MISSION_IS_V4`, writes nothing and names the verb to use; a call that mixes the shapes is `BAD_ARGS`. Always write the v4 shape.
+**Records from earlier versions.** A mission an older Harnu wrote, or an older delivery plan with its chapter missions, opens in the pane through a converted view, and every verb above reads it (`source` says `v3-mission` or `v3-campaign`); reading changes no byte. The first write (a verb that writes, or an operator door) converts it by copy: a v4 record is written under the same id and the old file stays byte for byte. A delivery plan becomes one mission, each chapter a milestone. The verbs an older Harnu had under other names are gone: use the table above, always in the v4 shape; an older argument (`declaredEnd`, `steward`, a step's `verification`) is refused and nothing is written.
 
 ## Orchestration, skills and the UI
 
