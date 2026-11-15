@@ -289,6 +289,7 @@ import { resolveCreateSessionBoot } from './agent-boot'
 import { getResolvedConfig } from '../claude-config'
 import { type ClaudeBootConfig } from '../claude-args'
 import { parsePlanMission } from './validate'
+import type { Scope } from './scope'
 import { pokeManifestDrain } from '../manifest-drain'
 import { isFolderDenied, isWithinRoot, normalizePath, resolveKnownFolder } from './permission-core'
 import { scanFolders } from '../claude-reader'
@@ -377,12 +378,13 @@ import { getSessionArchive } from '../session-archive-core'
 import { planArchiveSession, summarizeArchive, type ArchivePlan } from './archive-session-core'
 import { planHideFolder, summarizeHide } from './hide-folder-core'
 
-/** The caller a steward's bearer proves: its worker and the mission it is bound to. */
-export interface HandlerCaller {
-  kind: 'steward'
-  workerId: string
-  missionId: string
-}
+/**
+ * The caller the transport proved. A steward's bearer proves its worker and the mission it is bound to;
+ * a scoped bearer (Missions v4 S-25) proves a session Harnu spawned (its own session id, the mission and
+ * the step it was started for) or the observe worker of a folder.
+ */
+export type HandlerCaller =
+  { kind: 'steward'; workerId: string; missionId: string } | { kind: 'scoped'; scope: Scope }
 
 /** Everything a handler may need beyond its own validated `input`. */
 export interface ToolHandlerCtx {
@@ -6810,6 +6812,15 @@ function actorOf(
 ): { ok: true; actor: Actor } | { ok: false; error: string } {
   if (ctx.caller?.kind === 'steward') {
     return { ok: true, actor: { kind: 'worker', missionId: ctx.caller.missionId } }
+  }
+  // Missions v4 S-25: a session Harnu spawned IS the session id in its credential. An argument never
+  // names it (so a verifier that built its step stays a builder), and the observe worker of a folder is
+  // a Harnu worker bound to that folder: it reads any mission of it and never writes.
+  if (ctx.caller?.kind === 'scoped') {
+    const scope = ctx.caller.scope
+    return scope.role === 'observer'
+      ? { ok: true, actor: { kind: 'worker' } }
+      : { ok: true, actor: { kind: 'session', sessionId: scope.sessionId } }
   }
   const sessionId = strField(args, 'sessionId')
   if (sessionId === undefined) {

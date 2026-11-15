@@ -269,7 +269,7 @@ describe('spawned sessions hold scoped verbs', () => {
       folder: repo,
       missionId: id,
       stepId: 'stp-1',
-      reason: 'The sample file is missing',
+      reason: 'The `sample.csv` file is missing from the repo',
       owner: 'operator',
       ask: 'Add the sample CSV to the repo',
       unblocks: 'The exporter test can run'
@@ -278,7 +278,9 @@ describe('spawned sessions hold scoped verbs', () => {
     const record = await readRecord(repo, id)
     const step = record.steps.find((s) => s.id === 'stp-1')!
     expect(step.links.some((l) => l.kind === 'pr' && l.ref === '412')).toBe(true)
-    expect(JSON.stringify(record.blockers ?? [])).toContain('The sample file is missing')
+    expect(JSON.stringify(step.blockers)).toContain(
+      'The `sample.csv` file is missing from the repo'
+    )
     const log = await fs.readFile(
       path.join(
         repo,
