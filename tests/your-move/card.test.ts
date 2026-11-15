@@ -22,9 +22,13 @@ const sessionsFake = vi.hoisted(() => ({
     )
   }
 }))
-const missionsFake = vi.hoisted(() => ({ requestPopover: vi.fn() }))
+const helpersFake = vi.hoisted(() => ({
+  currentWorktreePath: '/org/proj/www',
+  panesForCurrentWorktree: [] as { type: string }[],
+  toggleMissionHelper: vi.fn()
+}))
 vi.mock('../../src/renderer/src/stores/sessions', () => ({ useSessionsStore: () => sessionsFake }))
-vi.mock('../../src/renderer/src/stores/missions', () => ({ useMissionsStore: () => missionsFake }))
+vi.mock('../../src/renderer/src/stores/helpers', () => ({ useHelpersStore: () => helpersFake }))
 
 const NOW = 1_800_000_000_000
 
@@ -90,7 +94,8 @@ beforeEach(() => {
   sessionsFake.allSessions = [{ sessionId: 'sess-0001', summary: 'Ship PROJ-231' }]
   sessionsFake.activateSession.mockClear()
   sessionsFake.markSessionSeen.mockClear()
-  missionsFake.requestPopover.mockClear()
+  helpersFake.toggleMissionHelper.mockClear()
+  helpersFake.panesForCurrentWorktree = []
 })
 afterEach(() => {
   wrapper?.unmount()
@@ -312,7 +317,21 @@ describe('YourMoveCard in the Return here zone', () => {
       .find((b) => b.text() === 'Open mission')!
       .trigger('click')
     expect(sessionsFake.activateSession).toHaveBeenCalledWith('sess-0001')
-    expect(missionsFake.requestPopover).toHaveBeenCalledWith('mnt-1')
+    // The mission lives in the pane beside its leader: the card opens the session, then the pane.
+    expect(helpersFake.toggleMissionHelper).toHaveBeenCalledWith('/org/proj/www')
+  })
+
+  it('Open mission leaves the pane alone when it is already open', async () => {
+    helpersFake.panesForCurrentWorktree = [{ type: 'mission' }]
+    const w = await mountZone([
+      card({ id: 'c3', source: 'mission', mission: { missionId: 'mnt-1' } })
+    ])
+    await expand(w, 0)
+    await cardEls(w)[0]
+      .findAll('button')
+      .find((b) => b.text() === 'Open mission')!
+      .trigger('click')
+    expect(helpersFake.toggleMissionHelper).not.toHaveBeenCalled()
   })
 
   it('a card whose answer was not delivered says so and stays', async () => {

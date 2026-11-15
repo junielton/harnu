@@ -21,7 +21,7 @@ import {
   type CardButton
 } from '../lib/your-move-view'
 import { sessionTitle } from '../lib/session-label'
-import { useMissionsStore } from '../stores/missions'
+import { useHelpersStore } from '../stores/helpers'
 import { useSessionsStore } from '../stores/sessions'
 import { useYourMoveStore } from '../stores/your-move'
 
@@ -119,10 +119,16 @@ async function run(action: CardAction): Promise<void> {
       if (url) void window.api.shellOpenExternal(url)
       return
     }
-    case 'open-mission':
+    case 'open-mission': {
+      // The mission lives in the pane beside its leader session: open the session, then the pane.
       sessions.activateSession(props.card.sessionId)
-      useMissionsStore().requestPopover(action.missionId)
+      const helpers = useHelpersStore()
+      const worktree = helpers.currentWorktreePath
+      if (worktree && !helpers.panesForCurrentWorktree.some((p) => p.type === 'mission')) {
+        helpers.toggleMissionHelper(worktree)
+      }
       return
+    }
   }
 }
 </script>
