@@ -535,7 +535,57 @@
       "title": "This session has no mission."
     },
     "refused": {
-      "title": "This mission cannot be read right now."
+      "title": "This mission cannot be read right now.",
+      "retry": "Retry"
+    },
+    "attach": {
+      "pickerTitle": "Open missions in this folder",
+      "ledBy": "led by {name}",
+      "unled": "nobody leads it",
+      "attach": "Attach",
+      "confirm": {
+        "text": "Attach this session to “{title}”? It will be part of the mission, but it will not lead it.",
+        "cancel": "Cancel",
+        "yes": "Attach"
+      },
+      "start": "Start a new mission",
+      "startDone": "Added to this session’s prompt. Press Enter there to send it.",
+      "startError": "This session is not running. Resume it, then try again.",
+      "empty": "There is no open mission in this folder to attach to.",
+      "error": {
+        "NOT_FOUND": "This mission is no longer there. Pick another one.",
+        "MISSION_NOT_FOUND": "This mission is no longer there. Pick another one.",
+        "MISSION_CLOSED": "This mission was closed, so a session cannot join it.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. Try again.",
+        "other": "Harnu could not attach this session. Try again in a moment."
+      },
+      "request": {
+        "eyebrow": "Asks to join",
+        "thisSession": "This session asks to join “{mission}”. If you allow it, it works on the mission. It does not lead it.",
+        "otherSession": "{session} asks to join “{mission}”. If you allow it, it works on the mission. It does not lead it.",
+        "allow": "Allow",
+        "deny": "Deny",
+        "already": "Someone already answered this request, so nothing changed.",
+        "error": {
+          "NOT_FOUND": "This request is no longer there.",
+          "MISSION_NOT_FOUND": "This mission is no longer there.",
+          "MISSION_CLOSED": "This mission was closed, so there is nothing to join.",
+          "WRITE_CONFLICT": "The mission changed at the same moment. Try again.",
+          "other": "Harnu could not save your answer. Try again in a moment."
+        }
+      }
+    },
+    "ask": {
+      "open": "Ask",
+      "openTitle": "Ask the session about this milestone",
+      "placeholder": "What is still missing to finish this milestone?",
+      "label": "Question about “{title}”",
+      "hint": "Goes to the prompt of {name}. The answer shows in that session.",
+      "cancel": "Cancel",
+      "send": "Send",
+      "done": "Added to the prompt of {name}. Press Enter there to send it. The answer shows in that session.",
+      "notRunning": "{name} is not running. Resume it, then send the question again.",
+      "close": "Close"
     },
     "v3": {
       "title": "This mission is still a v3 mission.",

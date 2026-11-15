@@ -535,7 +535,57 @@
       "title": "Esta sessão não tem missão."
     },
     "refused": {
-      "title": "Não foi possível ler esta missão agora."
+      "title": "Não foi possível ler esta missão agora.",
+      "retry": "Tentar de novo"
+    },
+    "attach": {
+      "pickerTitle": "Missões abertas nesta pasta",
+      "ledBy": "liderada por {name}",
+      "unled": "ninguém a lidera",
+      "attach": "Anexar",
+      "confirm": {
+        "text": "Anexar esta sessão a “{title}”? Ela fará parte da missão, mas não vai liderá-la.",
+        "cancel": "Cancelar",
+        "yes": "Anexar"
+      },
+      "start": "Começar uma nova missão",
+      "startDone": "Adicionado ao prompt desta sessão. Aperte Enter lá para enviar.",
+      "startError": "Esta sessão não está rodando. Retome-a e tente de novo.",
+      "empty": "Não há missão aberta nesta pasta para anexar.",
+      "error": {
+        "NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
+        "MISSION_NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
+        "MISSION_CLOSED": "Esta missão foi encerrada, então uma sessão não pode entrar nela.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. Tente de novo.",
+        "other": "O Harnu não conseguiu anexar esta sessão. Tente de novo em instantes."
+      },
+      "request": {
+        "eyebrow": "Pede para entrar",
+        "thisSession": "Esta sessão pede para entrar em “{mission}”. Se você permitir, ela trabalha na missão. Ela não a lidera.",
+        "otherSession": "{session} pede para entrar em “{mission}”. Se você permitir, ela trabalha na missão. Ela não a lidera.",
+        "allow": "Permitir",
+        "deny": "Negar",
+        "already": "Alguém já respondeu a este pedido, então nada mudou.",
+        "error": {
+          "NOT_FOUND": "Este pedido não existe mais.",
+          "MISSION_NOT_FOUND": "Esta missão não existe mais.",
+          "MISSION_CLOSED": "Esta missão foi encerrada, então não há nada para entrar.",
+          "WRITE_CONFLICT": "A missão mudou no mesmo instante. Tente de novo.",
+          "other": "O Harnu não conseguiu salvar sua resposta. Tente de novo em instantes."
+        }
+      }
+    },
+    "ask": {
+      "open": "Perguntar",
+      "openTitle": "Perguntar à sessão sobre este marco",
+      "placeholder": "O que ainda falta para terminar este marco?",
+      "label": "Pergunta sobre “{title}”",
+      "hint": "Vai para o prompt de {name}. A resposta aparece nessa sessão.",
+      "cancel": "Cancelar",
+      "send": "Enviar",
+      "done": "Adicionado ao prompt de {name}. Aperte Enter lá para enviar. A resposta aparece nessa sessão.",
+      "notRunning": "{name} não está rodando. Retome-a e envie a pergunta de novo.",
+      "close": "Fechar"
     },
     "v3": {
       "title": "Esta missão ainda é uma missão v3.",

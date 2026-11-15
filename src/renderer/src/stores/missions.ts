@@ -53,7 +53,12 @@ import {
   type CueMemory,
   type PersistedCueMemory
 } from '../lib/mission-cue'
-import { isStaleNamedRead, v4MissionOf, type MissionV4Reply } from '../lib/mission-pane-view'
+import {
+  attachRequestsOf,
+  isStaleNamedRead,
+  v4MissionOf,
+  type MissionV4Reply
+} from '../lib/mission-pane-view'
 import {
   buildMissionModel,
   headlineText,
@@ -79,6 +84,19 @@ export type V4DoorCall = MissionV4Door extends infer D
     ? Omit<D, 'folder' | 'missionId'>
     : never
   : never
+
+/** A request to join that names a session with no mission: the mission it asked for, and what to answer. */
+export interface AttachAsk {
+  missionId: string
+  /** The mission's title, as the view gave it. */
+  title: string
+  requestId: string
+  /** The session that leads that mission now, or `null`. */
+  leaderId: string | null
+}
+
+/** How many of the folder's open missions are read by name to find a request that names this session. */
+const ASK_READS_MAX = 6
 
 /** What the view channel last answered for one session (Missions v4, S-17). */
 export interface V4Entry {
@@ -241,6 +259,12 @@ export const useMissionsStore = defineStore('missions', () => {
   const v4 = shallowRef<V4Entry | null>(null)
   /** The `missionId` each session's last answer carried: sent back so the next call reads one record. */
   const v4Ids = new Map<string, string>()
+  /**
+   * The requests to join that name the selected session while it has no mission (S-21). The session that
+   * asked is not in the mission, so the view does not answer for it: the store reads the folder's open
+   * missions by name (the same poll, at most {@link ASK_READS_MAX}) and keeps the requests that are its own.
+   */
+  const v4Asks = shallowRef<{ sessionId: string; asks: AttachAsk[] } | null>(null)
   let v4Seq = 0
   let v4Flight: { sessionId: string; promise: Promise<void> } | null = null
   let started = false
@@ -290,8 +314,47 @@ export const useMissionsStore = defineStore('missions', () => {
       v4Ids.set(sessionId, reply.missionId)
       forgetStaleDismissal(reply)
     } else v4Ids.delete(sessionId)
-    if (reply) v4.value = { sessionId, reply, at: Date.now() }
-    else if (v4.value?.sessionId !== sessionId) v4.value = null
+    const asks = reply && reply.state === 'none' ? await readAsks(sessionId, folder, reply) : []
+    if (seq !== v4Seq) return
+    if (reply) {
+      v4.value = { sessionId, reply, at: Date.now() }
+      v4Asks.value = asks.length > 0 ? { sessionId, asks } : null
+    } else if (v4.value?.sessionId !== sessionId) {
+      v4.value = null
+      v4Asks.value = null
+    }
+  }
+
+  /** The requests to join, in the folder's open missions, that name `sessionId` (a request is its own: never another's). */
+  async function readAsks(
+    sessionId: string,
+    folder: string,
+    reply: Extract<MissionV4ViewReply, { state: 'none' }>
+  ): Promise<AttachAsk[]> {
+    const read = await Promise.all(
+      reply.missions.slice(0, ASK_READS_MAX).map(async (m) => ({
+        m,
+        named: await askV4(sessionId, folder, m.id)
+      }))
+    )
+    return read.flatMap(({ m, named }) =>
+      named && named.state === 'mission'
+        ? attachRequestsOf(named.detail)
+            .filter((r) => r.sessionId === sessionId)
+            .map((r) => ({
+              missionId: m.id,
+              title: named.detail.title,
+              requestId: r.id,
+              leaderId: m.leads ?? null
+            }))
+        : []
+    )
+  }
+
+  /** The requests to join that name `sessionId` while it has no mission, as the last read found them. */
+  function attachAsksForSession(sessionId: string | null | undefined): AttachAsk[] {
+    const entry = v4Asks.value
+    return entry && sessionId && entry.sessionId === sessionId ? entry.asks : []
   }
 
   /** Ask the view for the selected session now; concurrent callers for one session share a round-trip. */
@@ -451,21 +514,38 @@ export const useMissionsStore = defineStore('missions', () => {
   async function runV4Door(call: V4DoorCall): Promise<MissionV4DoorReply> {
     const selected = sessions.selectedSession
     const mission = selected ? v4MissionForSession(selected.sessionId) : null
+    if (!selected || !mission) return noMissionToActOn()
+    return callV4Door(selected.projectPath, mission.missionId, call)
+  }
+
+  /**
+   * Missions v4 (S-21) — a door on a mission the view did NOT answer for the selected session: the picker's
+   * "Attach" and a request read by name (the session that asked is not in the mission yet). The mission id
+   * is the one the operator picked or the request names; the folder is the selected session's. Same rules
+   * as {@link runV4Door}: never a throw, and the view is read again after the reply.
+   */
+  async function runV4DoorOn(missionId: string, call: V4DoorCall): Promise<MissionV4DoorReply> {
+    const selected = sessions.selectedSession
+    if (!selected) return noMissionToActOn()
+    return callV4Door(selected.projectPath, missionId, call)
+  }
+
+  const noMissionToActOn = (): MissionV4DoorReply => ({
+    ok: false,
+    code: 'UNAVAILABLE',
+    error: 'UNAVAILABLE: the pane has no mission to act on.'
+  })
+
+  async function callV4Door(
+    folder: string,
+    missionId: string,
+    call: V4DoorCall
+  ): Promise<MissionV4DoorReply> {
     const door = window.api.missionV4Door
-    if (!selected || !mission || typeof door !== 'function') {
-      return {
-        ok: false,
-        code: 'UNAVAILABLE',
-        error: 'UNAVAILABLE: the pane has no mission to act on.'
-      }
-    }
+    if (typeof door !== 'function') return noMissionToActOn()
     let res: MissionV4DoorReply
     try {
-      res = await door({
-        ...call,
-        folder: selected.projectPath,
-        missionId: mission.missionId
-      } as MissionV4Door)
+      res = await door({ ...call, folder, missionId } as MissionV4Door)
     } catch (err) {
       res = {
         ok: false,
@@ -734,7 +814,9 @@ export const useMissionsStore = defineStore('missions', () => {
     refreshV4,
     v4ReplyForSession,
     v4MissionForSession,
+    attachAsksForSession,
     runV4Door,
+    runV4DoorOn,
     handOffPending,
     handoffDismissedAt,
     dismissHandoff,

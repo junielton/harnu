@@ -384,6 +384,8 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission pane — an open step (§6 — S-19)            | `components/MissionPaneStep.vue` + `lib/mission-pane-view.ts`                    |
 | Mission pane — sessions row (§6 — S-20)            | `components/MissionPaneSessions.vue` + `lib/mission-pane-view.ts`                |
 | Mission hand-off confirmation (§6 — S-20)          | `components/MissionHandoffDialog.vue` + `stores/missions.ts`                     |
+| Mission pane — attach and request (§6 — S-21)      | `components/MissionPaneAttach.vue` + `lib/mission-pane-view.ts`                  |
+| Mission pane — Ask on a milestone (§6 — S-21)      | `components/MissionPaneAsk.vue` + `lib/mission-pane-view.ts`                     |
 | Mission step rail (§6 — T370)                      | `src/renderer/src/components/MissionStepRail.vue`                                |
 | Mission step glyph (§6 — T596)                     | `src/renderer/src/components/MissionStepGlyph.vue`                               |
 | Campaign popover (§6 — T596)                       | `src/renderer/src/components/CampaignPopover.vue` + `lib/campaign-view.ts`       |
