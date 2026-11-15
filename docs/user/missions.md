@@ -78,7 +78,7 @@ A mission outlives the session that works on it. The pane keeps the list of the 
 
 At the bottom of the pane, **Sessions** is one line: how many sessions worked on the mission and which one leads it, for example **4 · led by this session**, **4 · led by orch-1** or **4 · nobody leads it**. Click it to open the list. Each session shows:
 
-- its **name** (**Session** and the first eight characters of its id when the session is not loaded any more);
+- its **name** (**Session** and the first eight characters of its id when the session is not loaded any more; a session that a hand-off started reads **Took over "…"** with the mission's title instead of its opening message);
 - what it is or was in the mission: **Leads the mission** / **Led the mission** (the one that leads, or used to) and **Works on the mission** / **Worked on the mission**, with **this session** on the one you are looking at;
 - **when it worked**: **Since Nov 13** while it is attached, **Nov 11 to Nov 12** once it stopped (with the hours when it started and stopped on the same day);
 - for a session that stopped, **where it stopped**: **Stopped at "Run the tool on the whole test set"** and, when it was waiting for something, **Waiting for: the corpus folder path**. If the record does not say, it says **Stopped. The record does not say where.**
@@ -100,9 +100,10 @@ Starting a session can take **up to 90 seconds**. The window says so, stays open
 If it does not work, the window stays open and says what to do. In every case the old session still leads, unless the window says the lead changed:
 
 - **The new session did not start.** Nothing changed. Try again in a moment.
+- **The new session was started, but it did not take over in time.** The same session still leads. Harnu did not see the new session begin, so it did not attach it, and it is running on its own. **Open the new session** takes you to it so you can see what happened or close it. Then try again.
 - **A hand-off of this mission is already starting a session.** Wait for it to finish, then look at the Sessions line.
 - **Harnu cannot start a session right now.** Nothing changed. Try again in a moment.
-- **Who leads the mission changed while the new session was starting.** Harnu did not attach the new session, so it is open but is not part of the mission. Look at the Sessions line and decide again.
+- **Who leads the mission changed while the new session was starting.** Harnu did not attach the new session, so it is open but is not part of the mission (**Open the new session** takes you to it). Look at the Sessions line and decide again.
 - **This mission is closed.** There is nothing to continue.
 
 ### When Harnu offers it

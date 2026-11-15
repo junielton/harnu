@@ -868,28 +868,45 @@ export const HANDOFF_CODES = [
   'LEADER_CHANGED'
 ] as const
 
-/** The i18n key (under `missionPane.handoff.error`) that says what to do after the door answered `code`. */
-export function handoffErrorKey(code: string): (typeof HANDOFF_CODES)[number] | 'other' {
+/**
+ * The i18n key (under `missionPane.handoff.error`) that says what to do after the door answered `code`.
+ * `started` is whether a session WAS started (the reply names it): a start that failed after that is not
+ * "did not start, nothing changed", it is a session that runs and did not take over.
+ */
+export function handoffErrorKey(
+  code: string,
+  started = false
+): (typeof HANDOFF_CODES)[number] | 'STARTED_NOT_ATTACHED' | 'other' {
+  if (code === 'HANDOFF_START_FAILED' && started) return 'STARTED_NOT_ATTACHED'
   return (HANDOFF_CODES as readonly string[]).includes(code)
     ? (code as (typeof HANDOFF_CODES)[number])
     : 'other'
 }
 
 /**
+ * What a session started by a hand-off is named after by default: its first prompt, which opens with the
+ * hand-off's instruction line (`HANDOFF_INSTRUCTION`, `src/main/missions/handoff.ts`; a test pins the two).
+ */
+export const HANDOFF_NAME_PREFIX = 'You are taking over this mission'
+
+/**
  * The name a session shows in the Sessions row and the offer: the one name every surface shows
  * (`sessionTitle`), else "Session" and the first eight characters of its id, so a session that is not
- * loaded any more is never a blank.
+ * loaded any more is never a blank. A session a hand-off started has its first prompt for a name (the
+ * instruction line); with the mission's title it reads "Took over “…”" instead.
  */
 export function sessionNameOf(
   id: string,
   all: readonly (SessionLike & { sessionId: string })[],
-  t: Translate
+  t: Translate,
+  missionTitle?: string
 ): string {
   const found = all.find((s) => s.sessionId === id)
-  return (
-    (found ? sessionTitle(found, all, t) : '') ||
-    t('missionPane.sessions.unnamed', { id: id.slice(0, 8) })
-  )
+  const own = found ? sessionTitle(found, all, t) : ''
+  if (own.startsWith(HANDOFF_NAME_PREFIX) && missionTitle) {
+    return t('missionPane.sessions.tookOver', { title: missionTitle })
+  }
+  return own || t('missionPane.sessions.unnamed', { id: id.slice(0, 8) })
 }
 
 /**

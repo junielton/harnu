@@ -131,7 +131,9 @@ const offer = computed(() => {
   return at !== null && o.reading <= at ? null : o
 })
 const offerName = computed(() =>
-  offer.value?.leaderId ? sessionNameOf(offer.value.leaderId, sessions.allSessions, t) : ''
+  offer.value?.leaderId
+    ? sessionNameOf(offer.value.leaderId, sessions.allSessions, t, mission.value?.detail.title)
+    : ''
 )
 const handoffOpen = ref(false)
 const handoffDone = ref(false)
@@ -156,6 +158,7 @@ const newLeaderLoaded = computed(
 function openHandoff(): void {
   handoffDone.value = false
   handoffError.value = null
+  newLeader.value = null
   handoffOpen.value = true
 }
 function closeHandoff(): void {
@@ -171,7 +174,9 @@ async function confirmHandoff(): Promise<void> {
     handoffDone.value = true
     newLeader.value = res.sessionId
   } else {
-    handoffError.value = handoffErrorKey(res.code)
+    // A session the door started that did not take over runs without being attached: name the way to it.
+    newLeader.value = res.started ?? null
+    handoffError.value = handoffErrorKey(res.code, res.started !== undefined)
   }
 }
 function openNewLeader(): void {
