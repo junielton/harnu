@@ -481,6 +481,7 @@ export function gradeState(state, assertions, vars) {
  *  - `{ addMission: "<slug>" }` — a v4 record appeared (a mission nobody should have made)
  *  - `{ addV3Mission: "<file>" }` — a file appeared in the v3 directory
  *  - `{ file, write: "…" }` / `{ file, delete: true }` — a plain sandbox file changed / is gone
+ *  - `{ file, unload: true }` — the grader never loaded it (no assertion may pass on that)
  *  - `{ mission, clearBlockers: true }` — every blocker gone (the mission's and each step's)
  *  - `{ mission, eachBlocker: { set: { "<path>": value } } }` — applied to every blocker
  *  - `{ mission, eachLink: { match: {…}, remove: true } }` — every step link matching removed
@@ -518,6 +519,11 @@ export function applyBreak(state, brk, vars) {
       continue
     }
     if (op.file) {
+      if (op.unload) {
+        // The grader never loaded it (not even as "absent"): no assertion may pass on that.
+        next.files = Object.fromEntries(Object.entries(next.files).filter(([k]) => k !== op.file))
+        continue
+      }
       next.files = { ...next.files, [op.file]: op.delete ? null : op.write }
       continue
     }

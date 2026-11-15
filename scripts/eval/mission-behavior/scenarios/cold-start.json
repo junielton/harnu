@@ -224,6 +224,15 @@
       ]
     },
     {
+      "name": "turn-file-not-loaded",
+      "mutate": [
+        {
+          "file": ".eval/turn-cold.txt",
+          "unload": true
+        }
+      ]
+    },
+    {
       "name": "the-run-crashed",
       "mutate": [
         {

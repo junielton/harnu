@@ -118,6 +118,15 @@
           "delete": true
         }
       ]
+    },
+    {
+      "name": "turn-file-not-loaded",
+      "mutate": [
+        {
+          "file": ".eval/turn-question.txt",
+          "unload": true
+        }
+      ]
     }
   ]
 }

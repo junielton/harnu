@@ -110,6 +110,15 @@
       ]
     },
     {
+      "name": "turn-never-recorded",
+      "mutate": [
+        {
+          "mission": "*",
+          "logRemove": "EVAL-TURN[proactive]"
+        }
+      ]
+    },
+    {
       "name": "work-before-the-mission-log",
       "mutate": [
         {

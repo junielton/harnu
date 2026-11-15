@@ -123,6 +123,15 @@
   ],
   "breaks": [
     {
+      "name": "turn-never-recorded",
+      "mutate": [
+        {
+          "mission": "*",
+          "logRemove": "EVAL-TURN[handoff]"
+        }
+      ]
+    },
+    {
       "name": "never-asked",
       "mutate": [
         {

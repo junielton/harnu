@@ -49,6 +49,16 @@ opens). A login that arrives as a `CLAUDE_CODE_*` environment variable (for exam
 It launches its own isolated instance (`--user-data-dir` under the run dir), so a running Harnu is
 never touched.
 
+**The instance never touches the operator's `~/.claude`.** Harnu installs its hooks and statusLine into
+`~/.claude/settings.json` at boot and removes them at exit, so the instance the harness starts gets its
+own throwaway HOME, XDG directories and no `CLAUDE_CONFIG_DIR`, all under `<run dir>/home`
+(`instanceEnv` in `harnu.mjs`), and `assertInstanceIsolated` stops the run before the spawn if any of
+them points at the operator's. Nothing from the real `~/.claude` is needed: the scenarios work on the
+sandbox repo's `.harnu/`. Only the scripted `claude` agents keep the operator's environment, because they
+need its on-disk login (nothing is copied, linked or moved). The only thing the harness still does under
+`~/.claude` is delete the exact sandbox folders' transcript directories (`projects/<sandbox slug>`) that
+Claude wrote for spawned children.
+
 ## What a run leaves behind
 
 `.harnu/eval/mission-behavior/<timestamp>/` (gitignored): `harnu.log`, Harnu's own `mcp-audit.json`
