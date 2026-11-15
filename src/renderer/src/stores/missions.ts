@@ -152,6 +152,41 @@ export type ReaderView = CueView & {
   mission: { id: string; owner: { sessionId: string }; updatedAt: string }
 }
 
+/**
+ * A close request the v4 waiting list does not show. The list shows `close` only when every required step
+ * is done (derived), so a session's request to close with a step still open (a v3 `pendingClose`, or a v4
+ * `closeRequested`) reads as nothing there. The operator's rule is that a miss is worse than a false alarm,
+ * so the cue and the Activity entry keep it: a v3 view the list poll still serves says the agent asked
+ * (`you` holds `close`), and the reader of that mission gets a `close` item of its own (worded as the
+ * waiting list words a request). A record the v3 list does not serve is not covered: its `closeRequested`
+ * is not in the detail, so the waiting list owes that one (reported to the owner of `waiting.ts`).
+ */
+function withCloseRequests(
+  readers: readonly ReaderMission[],
+  v3: readonly MissionView[]
+): ReaderMission[] {
+  const asked = new Set(
+    v3.filter((v) => v.you.some((i) => i.kind === 'close')).map((v) => v.mission.id)
+  )
+  return readers.map((r) =>
+    asked.has(r.mission.id) && !r.you.some((i) => i.kind === 'close')
+      ? {
+          ...r,
+          you: [
+            ...r.you,
+            {
+              kind: 'close' as const,
+              id: 'close',
+              requested: true,
+              ask: 'Close the mission: the session says it is ready',
+              why: 'The mission is finished once you close it'
+            }
+          ]
+        }
+      : r
+  )
+}
+
 /** One mission the readers know through the v4 view: what the cue reads, and the detail the chip is drawn from. */
 export interface ReaderMission extends ReaderView {
   detail: Extract<MissionV4ViewReply, { state: 'mission' }>['detail']
@@ -716,7 +751,7 @@ export const useMissionsStore = defineStore('missions', () => {
         text,
         compact: text,
         tone: missionPillTone(r.detail),
-        needsYou: r.detail.waiting.items.length > 0
+        needsYou: r.you.length > 0
       }
     }
     const m = modelForSession(sessionId)
@@ -751,8 +786,9 @@ export const useMissionsStore = defineStore('missions', () => {
       // build without the channel keeps the v3 list; a repo whose read fails keeps its last good missions.
       const read = await loadReaders(folders)
       if (startedAt !== writeSeq) return
-      readers.value = read
-      const cueViews: readonly ReaderView[] = read ?? list
+      const withAsks = read ? withCloseRequests(read, list) : null
+      readers.value = withAsks
+      const cueViews: readonly ReaderView[] = withAsks ?? list
       const now = Date.now()
       if (!cueMemory) {
         // No memory: the backlog the operator already has on screen is not news.
