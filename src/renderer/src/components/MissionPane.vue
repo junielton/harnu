@@ -592,8 +592,8 @@ useFocusRegion(props.pane.id, rootEl, {
         <div class="flex justify-end" style="padding: 4px 16px 14px">
           <button
             type="button"
-            class="inline-flex items-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
-            :class="readyToClose ? 'text-green' : ''"
+            class="inline-flex items-center rounded-sm transition hover:bg-surface-2 hover:text-text"
+            :class="readyToClose ? 'text-green' : 'text-text-3'"
             style="height: 20px; padding: 0 7px; gap: 5px; font-size: 11px; font-weight: 500"
             data-test="mission-close-open"
             @click="openClose"
