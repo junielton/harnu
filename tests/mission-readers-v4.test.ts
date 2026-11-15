@@ -18,6 +18,7 @@ import { readViewsFromRecords } from '../src/main/companion/mission-state'
 import { projectMissions } from '../src/main/companion/mission-state-core'
 import { missionGet } from '../src/main/missions/verbs-read'
 import { emptyState, type YourMoveState } from '../src/main/your-move/core'
+import { fixtureView } from './helpers/mission-v3-view'
 import {
   readRecordViews,
   currentRecordViews,
@@ -496,6 +497,66 @@ describe('readers use the v4 view', () => {
       const still = s.cards.find((c) => c.id === stepCard.id)!
       expect(still.closedAt).toBeUndefined()
       expect(s.cards.filter((c) => c.sourceKey?.endsWith('Merge the pull request'))).toHaveLength(1)
+    })
+
+    it("a v3 mission keeps main's cards: the same keys and the same count for every kind it can owe", async () => {
+      const END = { kind: 'code', target: 'The slice is merged', evidence: 'green gates' }
+      const owed = [
+        { kind: 'rescope', end: END },
+        { kind: 'steward-paused', reason: 'checking', at: NOW },
+        { kind: 'close' },
+        { kind: 'checks', count: 2, stepIds: ['stp-2'] },
+        { kind: 'human-steps', stepIds: ['stp-2'] },
+        { kind: 'decide', stepId: 'stp-3', title: 'Which store?' },
+        { kind: 'review-import' },
+        { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' },
+        { kind: 'main-red', stepId: 'stp-2', pr: 12 }
+      ]
+      // What main filed for these: `<mission id>:<its mapping's key>`, one card each (approvals and needs-input none).
+      const main = [
+        'rescope:The slice is merged',
+        'steward-paused',
+        'close',
+        'checks',
+        'human-steps',
+        'decide:stp-3',
+        'review-import',
+        'blocker:Waiting on the vendor key',
+        'main-red:stp-2'
+      ].map((k) => `mnt-0a1b2c3d:${k}`)
+      seedV3(v3Mission())
+      const view = fixtureView('parallel', {
+        mission: { id: 'mnt-0a1b2c3d', owner: { sessionId: LEADER, folder: repo } } as never,
+        view: { root: repo, you: owed as never }
+      })
+      const records = await readRecordViews([repo], { readDetail })
+      const s = reconcileMissions(
+        emptyState(),
+        { views: [view], unreadable: [] },
+        [repo],
+        'live',
+        mint,
+        1,
+        records
+      )
+      const keys = s.cards
+        .filter((c) => c.closedAt === undefined)
+        .map((c) => c.sourceKey)
+        .sort()
+      expect(keys).toEqual([...main].sort())
+      // And a second pass changes nothing: no card closed, none re-filed.
+      const again = reconcileMissions(
+        s,
+        { views: [view], unreadable: [] },
+        [repo],
+        'live',
+        mint,
+        2,
+        records
+      )
+      expect(again.cards.map((c) => [c.id, c.closedAt])).toEqual(
+        s.cards.map((c) => [c.id, c.closedAt])
+      )
     })
 
     it('only the roots of the latest query are remembered, even when two queries overlap', async () => {
