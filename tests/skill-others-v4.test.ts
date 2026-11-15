@@ -42,12 +42,7 @@ const NAMES = [
 ] as const
 type Name = (typeof NAMES)[number]
 
-/**
- * How long each skill was before S-31 (lines of SKILL.md). The v3 notes are gone, but the v4 text is new
- * (a payload that parses, the operator's blocker, the writing contract), so a rewrite may grow by
- * `GROWTH` lines and no more: the operator asked for less to read, not more.
- */
-const GROWTH = 8
+/** How long each skill was before S-31 (lines of SKILL.md): a rewrite is never longer (the operator asked for less to read). */
 const LINES_BEFORE: Record<Name, number> = {
   spec: 392,
   'one-by-one': 180,
@@ -196,8 +191,8 @@ function problemsOf(t: Texts): string[] {
   for (const name of NAMES) {
     const skill = t[`${name}/SKILL.md`] ?? ''
     if (parseSkillFrontmatter(skill, name)?.name !== name) p.push(`${name} lost its name`)
-    const lines = skill.split('\n').length
-    if (lines > LINES_BEFORE[name] + GROWTH)
+    const lines = skill.split('\n').length - 1 // wc -l: the count LINES_BEFORE was taken with
+    if (lines > LINES_BEFORE[name])
       p.push(`${name} grew to ${lines} lines (was ${LINES_BEFORE[name]})`)
   }
 
@@ -295,6 +290,50 @@ function problemsOf(t: Texts): string[] {
       p.push(`${name} may raise a blocker for a decision that gates no step`)
   }
 
+  // 4b. The v4 verbs refuse a call without the caller's session id (BAD_ARGS): the shorthands carry it.
+  for (const name of ['one-by-one', 'grill-me'] as const) {
+    const f = flat(t[`${name}/SKILL.md`] ?? '')
+    if (!/`mission_set_blocker \{[^}]*sessionId[^}]*\}`/.test(f))
+      p.push(`${name}: the mission_set_blocker shorthand has no sessionId`)
+    if (!/`mission_log`[^.]*`sessionId`/.test(f))
+      p.push(`${name}: mission_log is shown with no sessionId`)
+    if (!/Pass your own `sessionId` on every mission call/.test(f))
+      p.push(`${name} does not say to pass your own sessionId on every mission call`)
+  }
+  if (!/`mission_get\(\{ folder, sessionId \}\)`/.test(flat(t['one-by-one/SKILL.md'] ?? '')))
+    p.push('one-by-one: mission_get is shown with no sessionId')
+
+  // 4c. The operator's doors: each prohibition is stated, and no line tells the agent to do the forbidden thing.
+  const clear = j('mission_clear', '_blocker')
+  const settle = j('mission_settle', '_ac')
+  const doors: { file: string; stated: RegExp; forbidden: RegExp; what: string }[] = [
+    ...['spec', 'one-by-one', 'grill-me'].map((n) => ({
+      file: `${n}/SKILL.md`,
+      stated: /you never call (?:it|`mission_clear_blocker` on it)/,
+      forbidden: new RegExp(
+        `(?<!never )\\bcall \`${clear}\`|(?:clear|clears|clearing) (?:it|the blocker) with \`${clear}\``
+      ),
+      what: "never clear an operator's blocker"
+    })),
+    ...['spec', 'step-by-step'].map((n) => ({
+      file: `${n}/SKILL.md`,
+      stated: /no verb of yours can/,
+      forbidden: new RegExp(`(?:call|use|run) \`${settle}\`|\`${settle}\``),
+      what: "never tick the operator's criterion"
+    })),
+    {
+      file: 'one-by-one/SKILL.md',
+      stated: /You never answer a decision yourself/,
+      forbidden: /(?<!never )answer a decision yourself|(?:pick|choose|decide) it yourself/i,
+      what: 'never answer a decision yourself'
+    }
+  ]
+  for (const d of doors) {
+    const f = flat(t[d.file] ?? '')
+    if (!d.stated.test(f)) p.push(`${d.file} does not state: ${d.what}`)
+    if (d.forbidden.test(f)) p.push(`${d.file} tells the agent to break: ${d.what}`)
+  }
+
   // 5. step-by-step: each manual action is an operator criterion, added with mission_add_ac, never ticked.
   const sbs = t['step-by-step/SKILL.md'] ?? ''
   const s = flat(sbs)
@@ -343,6 +382,54 @@ interface Fault {
 }
 
 const FAULTS: Fault[] = [
+  {
+    file: 'spec/SKILL.md',
+    find: 'so you never call it',
+    replace: 'so you call it',
+    why: 'the skill never clears the approval blocker'
+  },
+  {
+    file: 'one-by-one/SKILL.md',
+    find: 'you never call `mission_clear_blocker`',
+    replace: 'you call `mission_clear_blocker`',
+    why: "one-by-one never clears the operator's blocker"
+  },
+  {
+    file: 'grill-me/SKILL.md',
+    find: 'you never call `mission_clear_blocker`',
+    replace: 'you call `mission_clear_blocker`',
+    why: "grill-me never clears the operator's blocker"
+  },
+  {
+    file: 'step-by-step/SKILL.md',
+    find: 'no verb of yours can,',
+    replace: `call \`${j('mission_settle', '_ac')}\`,`,
+    why: 'step-by-step never settles the operator’s criterion'
+  },
+  {
+    file: 'spec/SKILL.md',
+    find: 'no verb of yours can.',
+    replace: `call \`${j('mission_settle', '_ac')}\`.`,
+    why: 'spec never ticks the approval criterion'
+  },
+  {
+    file: 'one-by-one/SKILL.md',
+    find: 'You never answer a decision yourself',
+    replace: 'You answer a decision yourself',
+    why: 'one-by-one never decides'
+  },
+  {
+    file: 'one-by-one/SKILL.md',
+    find: "`mission_set_blocker { stepId, reason, ask, unblocks, owner: 'operator', sessionId }`",
+    replace: "`mission_set_blocker { stepId, reason, ask, unblocks, owner: 'operator' }`",
+    why: 'a blocker call carries the session id'
+  },
+  {
+    file: 'grill-me/SKILL.md',
+    find: 'Pass your own `sessionId` on every mission call',
+    replace: 'Pass the mission id on every mission call',
+    why: 'every mission call carries the session id'
+  },
   {
     file: 'spec/SKILL.md',
     find: '"by": "operator"',

@@ -103,8 +103,7 @@ mission exists: create it as _The mission_ below says. Then work in this order:
 6. **Goldfish review.** Run the staged review of _Goldfish review_ below. Every finding gets its
    disposition, and an open `Blocker` keeps the next step from running.
 7. **Approval question.** Run the no-code check of _Before the approval question_ below; a path
-   outside the bundle stops you there. Then run _The approval question_ below: the mission,
-   `open_file`, then the one question `Approve this spec?` The approval is the operator's yes.
+   outside the bundle stops you there. Then run _The approval question_ below.
 
 An unanswered decision in the Open decisions table:
 
@@ -112,25 +111,23 @@ An unanswered decision in the Open decisions table:
 | D-n | <question, citing the R-n it settles> | <option>; <option> | <what a slice uses until it is chosen> | open |
 ```
 
-The skill never dispatches, creates cards, merges or ticks anything: once the operator approves,
-the next step is `harnu:orchestrate-delivery`.
+The skill never dispatches, creates cards or merges: `harnu:orchestrate-delivery` comes after.
 
 ## The mission
 
 The mission is born the moment the entry leaves Small: as soon as triage names Medium, Large or
-Complex, call `mission_create` (a Small entry gets no mission). You lead it. Load
-`../mission/references/writing-contract.md` first: Harnu refuses text over a cap.
+Complex, call `mission_create` (a Small entry gets no mission; outside Harnu, without the verbs, say
+so and go on). You lead it. Load `../mission/references/writing-contract.md` first: Harnu refuses
+text over a cap.
 
 - **The Done when is the delivery's end (D-5):** what ships the objective, never the spec approval.
-  `orchestrate-delivery` adopts this mission at dispatch instead of creating a second. When the spec
-  changes the end, stage the new one with `mission_set_done_when` and a reason: the operator approves
-  it in the Mission pane.
-- **One step, "Approve spec"**, with an operator criterion: only the operator ticks it. Keep its
-  `stepId` from the ACK; the dispositions, the approval and the blocker go on it.
-- **The links** are `doc` links to the spec and the PRD and ADR the tier will carry, written or not.
+  `orchestrate-delivery` adopts this mission at dispatch. When the spec changes the end, stage it
+  with `mission_set_done_when` and a reason: the operator approves it in the Mission pane.
+- **One step, "Approve spec"**, with an operator criterion only the operator ticks. Keep its
+  `stepId`: the dispositions, the approval and the blocker go on it.
+- **The links** are `doc` links to the spec and the PRD and ADR the tier carries, written or not.
   Drop the PRD and ADR links a tier does not carry: Medium and Large link the spec alone, Complex
-  adds the PRD and, when it records an architectural decision, the ADR. Pass `linkedCard` when the
-  entry has a card.
+  adds the PRD and, when it records an architectural decision, the ADR. `linkedCard`: the entry's card.
 
 ```json
 {
@@ -151,8 +148,6 @@ Complex, call `mission_create` (a Small entry gets no mission). You lead it. Loa
   ]
 }
 ```
-
-Without the `mission_*` verbs (outside Harnu), say so in one line and go on without a mission.
 
 ## The Complex bundle
 
@@ -195,7 +190,7 @@ conversation. Stages run in order; the reviewers within a stage run in parallel:
 | Complex | comprehension   | hostile critic, overhead lens, traceability lens | implementation readiness | 5          |
 
 One re-review per stage after fixes, so the worst case is twice the column. A round spawns
-at most five sub-agents, and a Small entry spawns none: it never reaches this section.
+at most five sub-agents, and a Small entry spawns none.
 
 **Spawning.** Each reviewer is one `Agent` call with `subagent_type: "general-purpose"` (never
 `fork`, which inherits this conversation) and, under D-14, a `model` other than yours whenever one

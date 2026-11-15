@@ -118,6 +118,20 @@ describe("an observe worker's tick is on the observer credential", () => {
     }
   })
 
+  it('before the credential writer is wired (boot) an observe tick gets no config, even with the main one on disk', async () => {
+    setObserverMcpConfigWriter(null)
+    try {
+      expect(await fs.stat(path.join(h.userDataDir, 'harnu.mcp.json'))).toBeTruthy()
+      expect(await tickMcpConfigFor(worker())).toBeUndefined()
+      // An act worker is not affected by the writer: it keeps the main config.
+      expect(await tickMcpConfigFor(worker({ mode: 'act' }))).toBe(
+        path.join(h.userDataDir, 'harnu.mcp.json')
+      )
+    } finally {
+      setObserverMcpConfigWriter(writeScopedMcpConfig)
+    }
+  })
+
   it('with the control server down an observe tick gets no config at all, never the main one', async () => {
     await closeMcpServer()
     expect(await tickMcpConfigFor(worker())).toBeUndefined()
