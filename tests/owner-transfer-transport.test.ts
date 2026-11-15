@@ -74,6 +74,7 @@ vi.mock('../src/main/pr-stack', async (importOriginal) => ({
 import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
 import {
+  createStewardForMission,
   registerScheduler,
   stopSchedulerTicker,
   setStewardTickStarter
@@ -458,6 +459,9 @@ describe('AC-5 — a steward is refused both verbs by name', () => {
       steps: STEPS
     })
     const missionId = created.missionId as string
+    // Missions v4 S-27: mission_create makes no steward any more. Plant the worker an older Harnu left,
+    // so the server's refusal of its bearer (which stays until the steward files go) is still graded.
+    await createStewardForMission({ missionId, folder: main, title: `Stewarded ${titleSeq}` })
     const workers = (await ok('list_workers', {})).workers as Array<Record<string, unknown>>
     const row = workers.find((w) => w.category === 'steward' && w.missionId === missionId)!
     const steward = await connectAs(stewardBearer(serverToken, row.id as string))

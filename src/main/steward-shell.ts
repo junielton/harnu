@@ -1,21 +1,23 @@
 /**
- * Campaign ch.5a (T597, spec §3.4 + §3.7) — the steward's lifecycle on disk and in the Scheduler.
+ * Missions v4 S-27 — the steward is RETIRED. This was its lifecycle on disk and in the Scheduler
+ * (campaign ch.5a); what is left is the way out:
  *
- * The pure halves are `steward-core.ts` (worker shape, allowlist, bearer) and `steward-hooks.ts`
- * (the settings transforms). This is the env-bound shell: it creates a mission's steward and
- * installs its three hooks in the owner folder's `.claude/settings.local.json`, and at close
- * removes the steward and — when no other stewarded mission still needs them — the hooks.
+ *  - Nothing creates a steward and nothing installs its hooks any more.
+ *  - At boot, once the Scheduler has loaded, every steward that an older Harnu left behind has its
+ *    Scheduler worker deleted and its hooks taken out of the owner folder's
+ *    `.claude/settings.local.json` (only ours: the user's own hooks stay), and ONE Activity notice
+ *    lists the missions affected. It fires once per boot when stewards existed, never when none did.
+ *  - It never reads or writes a mission file: the missions are named from the workers themselves.
  *
- * It imports neither `mcp/tool-handlers` nor `mission-ipc`: both call INTO it, so everything it
- * needs about a mission is passed as arguments.
+ * `steward-core.ts` and `steward-hooks.ts` stay until S-38 deletes the steward files. It imports
+ * neither `mcp/tool-handlers` nor `mission-ipc`: both call INTO it.
  */
 
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { atomicWriteFile } from './mcp/atomic-write'
-import { getStewardHookEndpoint } from './hook-bridge'
-import { createStewardForMission, listStewards, retireStewardForMission } from './scheduler-shell'
-import { mergeStewardHooks, removeStewardHooks } from './steward-hooks'
+import { listStewards, retireStewardForMission, whenSchedulerLoaded } from './scheduler-shell'
+import { removeStewardHooks } from './steward-hooks'
 
 export type HooksOutcome = 'installed' | 'removed' | 'unchanged' | 'skipped'
 
@@ -51,23 +53,6 @@ async function writeSettings(file: string, value: unknown, mode: number): Promis
   await atomicWriteFile(file, JSON.stringify(value, null, 2) + '\n', mode)
 }
 
-/**
- * Install (or refresh) the steward hooks in `folder`'s `.claude/settings.local.json`. A file that
- * is not valid JSON is the user's: left alone, outcome `skipped`. So is a run with no hook bridge
- * to point the hooks at — boot reconciliation installs them once it is up.
- */
-export async function installStewardHooks(folder: string): Promise<HooksOutcome> {
-  const endpoint = getStewardHookEndpoint()
-  if (!endpoint) return 'skipped'
-  const file = settingsLocalPath(folder)
-  const read = await readSettings(file)
-  if (read.kind === 'unreadable') return 'skipped'
-  const next = mergeStewardHooks(read.kind === 'ok' ? read.value : undefined, endpoint)
-  if (read.kind === 'ok' && JSON.stringify(next) === JSON.stringify(read.value)) return 'unchanged'
-  await writeSettings(file, next, read.kind === 'ok' ? read.mode : 0o644)
-  return 'installed'
-}
-
 /** Remove the steward hooks from `folder`'s settings file, and nothing else. */
 export async function removeStewardHooksFrom(folder: string): Promise<HooksOutcome> {
   const file = settingsLocalPath(folder)
@@ -81,44 +66,6 @@ export async function removeStewardHooksFrom(folder: string): Promise<HooksOutco
 }
 
 const same = (a: string, b: string): boolean => path.resolve(a) === path.resolve(b)
-
-/** What `mission_create` reports about the steward it set up. */
-export interface StewardStart {
-  created: boolean
-  workerId?: string
-  hooks?: HooksOutcome
-  /** Why no steward exists (only when `created` is false and it was asked for). */
-  error?: string
-}
-
-/**
- * Give a freshly created mission its steward and hooks. Never throws: a mission is already on disk
- * by now, and a steward that could not start (the Scheduler not loaded yet, say) is reported in
- * the ACK, not allowed to fail the mission.
- */
-export async function startStewardForMission(input: {
-  missionId: string
-  ownerFolder: string
-  title: string
-}): Promise<StewardStart> {
-  try {
-    const worker = await createStewardForMission({
-      missionId: input.missionId,
-      folder: input.ownerFolder,
-      title: input.title
-    })
-    let hooks: HooksOutcome
-    try {
-      hooks = await installStewardHooks(input.ownerFolder)
-    } catch (err) {
-      console.warn('[steward] could not install hooks:', err)
-      hooks = 'skipped'
-    }
-    return { created: true, workerId: worker.id, hooks }
-  } catch (err) {
-    return { created: false, error: (err as Error).message.split(':')[0] }
-  }
-}
 
 /**
  * The mission is closed: delete its steward, and take the hooks out of the owner folder unless
@@ -138,24 +85,97 @@ export async function retireStewardForClosedMission(input: {
   }
 }
 
+export interface RetiredSteward {
+  missionId: string
+  folder: string
+}
+
 /**
- * Boot reconciliation, once the hook bridge is up: every steward's hooks are re-pointed at the live
- * port/token (they change every boot), and a steward whose mission was closed while Harnu was away
- * (or from another clone) is retired. `missionStatus` is injected so this file stays free of the
- * mission store.
+ * Delete every steward's Scheduler worker, then take our hooks out of each owner folder that no
+ * steward needs any more. Never throws; a steward that could not be retired is left for the next boot
+ * and is not in the returned list.
  */
-export async function reconcileStewards(
-  missionStatus: (folder: string, missionId: string) => Promise<'closed' | 'open' | 'unknown'>
-): Promise<void> {
-  for (const s of listStewards()) {
+async function retireAllStewards(): Promise<RetiredSteward[]> {
+  const found = listStewards()
+  const retired: RetiredSteward[] = []
+  for (const s of found) {
     try {
-      if ((await missionStatus(s.folder, s.missionId)) === 'closed') {
-        await retireStewardForClosedMission({ missionId: s.missionId, ownerFolder: s.folder })
-        continue
-      }
-      await installStewardHooks(s.folder)
+      await retireStewardForMission(s.missionId)
+      retired.push({ missionId: s.missionId, folder: s.folder })
     } catch (err) {
-      console.warn('[steward] reconcile failed for', s.missionId, err)
+      console.warn('[steward] could not retire the steward of', s.missionId, err)
     }
   }
+  const remaining = listStewards()
+  for (const folder of new Set(found.map((s) => path.resolve(s.folder)))) {
+    if (remaining.some((s) => same(s.folder, folder))) continue
+    try {
+      await removeStewardHooksFrom(folder)
+    } catch (err) {
+      console.warn('[steward] could not remove the steward hooks from', folder, err)
+    }
+  }
+  return retired
+}
+
+const NOTICE_RETRY_MS = 2_000
+const NOTICE_MAX_TRIES = 30
+
+export interface RetireNoticeDeps {
+  /** The command bridge's dispatch: `notify.push` posts the Activity notice. */
+  dispatch: (command: string, payload: unknown) => Promise<unknown>
+  wait?: (ms: number) => Promise<void>
+}
+
+/** The one Activity notice: what vanished, and why nothing is lost. */
+function retirementNotice(retired: RetiredSteward[]): {
+  folderPath: string
+  title: string
+  description: string
+  kind: 'info'
+} {
+  const list = retired.map((r) => `${r.missionId} (${path.basename(r.folder)})`).join(', ')
+  return {
+    folderPath: retired[0].folder,
+    title: 'Mission stewards retired',
+    description:
+      `Missions no longer have a steward. Harnu removed its Scheduler worker and its hooks for ` +
+      `${retired.length === 1 ? '1 mission' : `${retired.length} missions`}: ${list}. ` +
+      `The session that leads each mission carries on; no mission file was changed.`,
+    kind: 'info'
+  }
+}
+
+/**
+ * Boot: once the Scheduler has loaded (it boots on its own clock, so reading its list earlier would
+ * find nothing), retire every steward and raise ONE Activity notice naming the missions affected.
+ * The bridge refuses to dispatch until the renderer has announced itself, so the notice is retried for
+ * a minute before it is dropped.
+ */
+export async function retireStewardsOnBoot(
+  deps: RetireNoticeDeps
+): Promise<{ retired: RetiredSteward[] }> {
+  await whenSchedulerLoaded()
+  const retired = await retireAllStewards()
+  if (retired.length === 0) return { retired }
+  const wait = deps.wait ?? ((ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)))
+  const notice = retirementNotice(retired)
+  for (let attempt = 0; attempt < NOTICE_MAX_TRIES; attempt++) {
+    try {
+      await deps.dispatch('notify.push', notice)
+      return { retired }
+    } catch {
+      await wait(NOTICE_RETRY_MS)
+    }
+  }
+  console.warn('[steward] the retirement notice was not delivered:', notice.description)
+  return { retired }
+}
+
+/**
+ * Kept so `steward-bridge.ts` (S-38 deletes it) still compiles: it no longer re-points anything. The
+ * boot path in `index.ts` calls {@link retireStewardsOnBoot}; a stray caller of this one retires too.
+ */
+export async function reconcileStewards(_missionStatus?: unknown): Promise<void> {
+  await retireAllStewards()
 }

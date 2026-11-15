@@ -455,3 +455,61 @@ describe("Delta 1 — only the step's OWN worktree is rebased (path trust)", () 
     expect(git(r.wt, 'rev-parse', 'HEAD')).toBe(head)
   })
 })
+
+describe('Missions v4 S-27 (AC-70) — rebase_stack answers the leader of a v4 mission, over the wire', () => {
+  const LEADER = '11111111-2222-4333-8444-555555555555'
+  const STRANGER = '99999999-9999-4999-8999-999999999999'
+
+  async function v4Mission(r: Repo): Promise<string> {
+    const ack = await ok('mission_create', {
+      folder: r.main,
+      title: 'Land the v4 stack',
+      doneWhen: 'The stack is merged',
+      sessionId: LEADER,
+      steps: [
+        { title: 'Step one', criteria: [{ text: 'The pull request is merged', fact: 'pr-merged' }] }
+      ]
+    })
+    const id = ack.id as string
+    await ok('mission_link', {
+      folder: r.main,
+      missionId: id,
+      stepId: 'stp-1',
+      link: { kind: 'worktree', ref: r.wt },
+      sessionId: LEADER
+    })
+    return id
+  }
+
+  it('the leader rebases the step locally and the remote is untouched', async () => {
+    const r = await repo()
+    const id = await v4Mission(r)
+    commit(r.main, 'other.txt', 'other\n', 'main moved')
+    const remoteBefore = git(r.origin, 'for-each-ref', '--format=%(refname) %(objectname)')
+    const out = await ok('rebase_stack', {
+      folder: r.main,
+      missionId: id,
+      onto: 'main',
+      sessionId: LEADER
+    })
+    expect(out).toMatchObject({ ok: true, op: 'rebase_stack', stepId: 'stp-1', pushed: false })
+    expect(git(r.wt, 'merge-base', 'HEAD', 'main')).toBe(git(r.main, 'rev-parse', 'main'))
+    expect(git(r.origin, 'for-each-ref', '--format=%(refname) %(objectname)')).toBe(remoteBefore)
+  })
+
+  it('a session that is not attached is refused and the worktree does not move', async () => {
+    const r = await repo()
+    const id = await v4Mission(r)
+    commit(r.main, 'other.txt', 'other\n', 'main moved')
+    const head = git(r.wt, 'rev-parse', 'HEAD')
+    const res = await call('rebase_stack', {
+      folder: r.main,
+      missionId: id,
+      onto: 'main',
+      sessionId: STRANGER
+    })
+    expect(res.isError).toBe(true)
+    expect(res.text).toMatch(/NOT_ATTACHED/)
+    expect(git(r.wt, 'rev-parse', 'HEAD')).toBe(head)
+  })
+})

@@ -217,7 +217,8 @@ import { registerReaperHandlers } from './reaper/reaper-ipc'
 import { registerContainersHandlers } from './containers/containers-ipc'
 import { registerGcHandlers } from './gc/gc-ipc'
 import { registerScheduler, setSchedulerCompanionProvider } from './scheduler-shell'
-import { reconcileStewardsOnBoot, registerStewardWiring } from './steward-bridge'
+import { registerStewardWiring } from './steward-bridge'
+import { retireStewardsOnBoot } from './steward-shell'
 import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
@@ -721,14 +722,13 @@ app.whenReady().then(async () => {
   // (installs observer hooks into ~/.claude/settings.json unless disabled);
   // async + best-effort, degrades to the activity heuristic if it can't install.
   void registerHookBridge(() => mainWindow)
-    // Campaign ch.5a: once the bridge is listening, answer the steward's hooks and re-point every
-    // steward's `.claude/settings.local.json` hooks at the live port/token (both change per boot).
+    // Once the bridge is listening, keep answering the hook routes a retired steward left behind in a
+    // folder until its hooks are gone (Missions v4 S-27 removes them below, once the Scheduler loads).
     .then(async () => {
       registerStewardWiring()
       // Missions v4 S-16b: the summary a `SessionStart` (compact) hook in every spawned session fetches
       // after a compaction. It prints something only for the open leader of an open v4 mission.
       setMissionSummaryHandler(answerMissionSummaryHook)
-      await reconcileStewardsOnBoot()
     })
     .catch((err) => console.error('[hook-bridge] register failed', err))
   // Harnu mod host (T389). Dark by default: it only listens when the developer mode file asks for
@@ -843,6 +843,12 @@ app.whenReady().then(async () => {
   // so a worker's own self-disable notice (streak or vanished folder) goes
   // through the ordinary notify.push path — no new transport.
   registerScheduler(() => mainWindow, cmdBridge.bridge)
+  // Missions v4 S-27: no mission has a steward any more. Once the Scheduler has loaded, delete the
+  // workers and hooks an older Harnu left behind and raise ONE Activity notice naming the missions.
+  // Never touches a mission file.
+  void retireStewardsOnBoot({ dispatch: (c, p) => cmdBridge.bridge.dispatch(c, p) }).catch((err) =>
+    console.error('[steward] retirement failed', err)
+  )
 
   // T45: the renderer pulls the launch folder (`harnu .`) once it's mounted and
   // subscribed to `folders:adopted`, so the pin lands instead of racing startup.
