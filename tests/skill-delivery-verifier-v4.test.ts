@@ -14,7 +14,7 @@
  * reports quiet for a read it could not make) must report that very problem, so a check that stopped looking
  * would fail here.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { z } from 'zod'
@@ -484,5 +484,194 @@ describe('the verifier settles criteria one by one, and the watchdog has no stew
       const problems = watchdogProblems(mutate(skill, m)).join('\n')
       expect(problems, `a watchdog text that says "${m.replace}"`).toContain(m.reports)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------
+// Added with the delete of tests/mission-v2-skills.test.ts, tests/mission-v3-skills.test.ts and
+// tests/mission-skills-migration.test.ts (S-30 is the last slice that lists them). They pinned two kinds of
+// things: the v2/v3 text of the two skills this slice rewrites (gone with the rewrite, pinned above) and
+// rules about skills S-30 does not rewrite (`status`, `mission`, `conductor`, `spec`, ...). The second kind
+// moved here, unchanged in what it asserts, so deleting the suites loses no guard. The names are the fate
+// table's and the retired phrases; never the plain word "chapter" as prose (decision 18).
+// ---------------------------------------------------------------------------------------------------------
+
+/** The text of one `## ` section (heading line excluded), up to the next `## `. */
+function mdSection(raw: string, heading: string): string {
+  const start = raw.indexOf(`\n## ${heading}`)
+  expect(start, `section "## ${heading}"`).toBeGreaterThan(-1)
+  const next = raw.indexOf('\n## ', start + 4)
+  return raw.slice(start, next === -1 ? undefined : next)
+}
+
+/** Every file under `resources/skills/skills/**` — SKILL.md files and their references. */
+function everySkillFile(dir = SKILLS): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? everySkillFile(path.join(dir, e.name)) : [path.join(dir, e.name)]
+  )
+}
+
+const DELIVERY_SKILLS = [
+  'status',
+  'mission',
+  'orchestrate-delivery',
+  'delivery-verifier',
+  'delivery-watchdog'
+]
+
+describe('no skill carries the retired approval ceremony (§3.4)', () => {
+  it.each(DELIVERY_SKILLS)('%s has no draft / Approve / MISSION_DRAFT wording', (name) => {
+    const raw = flat(readSkill(name))
+    expect(raw).not.toContain('MISSION_DRAFT')
+    expect(raw).not.toMatch(/`draft`/)
+    expect(raw).not.toMatch(/\b(is a|in|a) draft\b/i)
+    expect(raw).not.toMatch(/Approve click|their Approve|operator's Approve/)
+    expect(raw).not.toMatch(/approves? it into `active`/)
+    expect(raw).not.toMatch(/approve (it|its end|the end|the mission)\b/i)
+    expect(raw).not.toMatch(/mission approval/i)
+    expect(raw).not.toMatch(/has not started/)
+  })
+
+  // Every bundled file, references included: a skill that hands an agent a template (draft-to-prompt's
+  // harness routing) teaches the lifecycle too. The patterns are mission-scoped, because "a draft" is
+  // ordinary prose elsewhere.
+  it.each(everySkillFile().map((f) => path.relative(SKILLS, f)))(
+    '%s describes no mission draft or approval step',
+    (rel) => {
+      const raw = flat(readFileSync(path.join(SKILLS, rel), 'utf8'))
+      expect(raw).not.toContain('MISSION_DRAFT')
+      expect(raw).not.toContain('Scope confirmed')
+      expect(raw).not.toMatch(/born (as )?a \**draft/i)
+      expect(raw).not.toMatch(/approves? (it|the mission|its end) in (Harnu's |the )?Topbar/i)
+      expect(raw).not.toMatch(/Approve click|their Approve|operator's Approve/)
+      expect(raw).not.toMatch(/approves? it into `active`/)
+      expect(raw).not.toMatch(/mission approval/i)
+    }
+  )
+
+  it.each(DELIVERY_SKILLS)('%s never names the legacy fixed start as a step', (name) => {
+    expect(readSkill(name)).not.toContain('Scope confirmed')
+  })
+})
+
+describe('no skill promises what the code does not enforce (§3.2, AC-4)', () => {
+  it.each(DELIVERY_SKILLS)('%s never says a draft blocks dispatch', (name) => {
+    const raw = flat(readSkill(name))
+    expect(raw).not.toMatch(/never tell the operator it is running before they approved it/)
+    expect(raw).not.toMatch(/nothing runs until/i)
+  })
+
+  it.each(DELIVERY_SKILLS)('%s never demands an end verifier the owner cannot produce', (name) => {
+    const raw = flat(readSkill(name))
+    expect(raw).not.toMatch(/get an independent verification first/)
+    expect(raw).not.toMatch(/must be `verified` by a session that did not author it/)
+  })
+})
+
+describe('no skill recounts progress, and the shadow phase is retired (§3.1, §3.11)', () => {
+  it.each(DELIVERY_SKILLS)('%s carries no "steps proven" recount', (name) => {
+    const raw = flat(readSkill(name))
+    expect(raw).not.toMatch(/steps proven/i)
+    expect(raw).not.toMatch(/`verified\/total` as the count/)
+  })
+
+  it.each(DELIVERY_SKILLS)('%s carries no mirror / shadow / divergence wording', (name) => {
+    const raw = flat(readSkill(name))
+    expect(raw).not.toMatch(/shadow phase/i)
+    expect(raw).not.toMatch(/divergence checker/i)
+    expect(raw).not.toMatch(/\bmirror\b/i)
+  })
+
+  it('the mission skill description no longer promises a mirrored goal file', () => {
+    const head = readSkill('mission').split('\n---\n')[0]
+    expect(head).not.toMatch(/mirrored/)
+  })
+})
+
+describe('status — the card rules (§3.11, V3-13)', () => {
+  const raw = readSkill('status')
+  const all = flat(raw)
+
+  it('states the one-print rule', () => {
+    expect(all).toMatch(/Each of the six lines prints exactly once per front/)
+    expect(all).toMatch(/A mission is one front/)
+  })
+
+  it('every example card prints each label at most once, and no Progress line', () => {
+    const blocks = [...raw.matchAll(/```\n([\s\S]*?)```/g)].map((m) => m[1])
+    expect(blocks.length).toBeGreaterThan(0)
+    for (const block of blocks) {
+      expect(block).not.toMatch(/^\S?\s*progress\b/im)
+      // A blank line separates fronts; within one front each label is printed once.
+      for (const card of block.split(/\n\s*\n/)) {
+        for (const label of ['now', 'done', 'next', 'you', 'open']) {
+          const hits = card.split('\n').filter((l) => new RegExp(`^.{2}${label}\\s`).test(l))
+          expect(hits.length, `"${label}" in:\n${card}`).toBeLessThanOrEqual(1)
+        }
+      }
+    }
+  })
+
+  it('every example honors the gutter rule: `?` on an open line with content, `⚑` on an owed you line', () => {
+    const blocks = [...raw.matchAll(/```\n([\s\S]*?)```/g)].map((m) => m[1])
+    for (const line of blocks.join('\n').split('\n')) {
+      const m = /^(.) (open|you) {2,}(.*)$/.exec(line)
+      if (!m) continue
+      const [, gutter, label, value] = m
+      const empty = value.startsWith('—')
+      if (label === 'open') expect(gutter, line).toBe(empty ? ' ' : '?')
+      if (label === 'you') expect(gutter, line).toBe(empty ? ' ' : '⚑')
+    }
+  })
+
+  it('has a mission example whose header is the server headline', () => {
+    expect(raw).toMatch(/\d+ of \d+ steps done/)
+  })
+
+  it('reads missions through mission_list / mission_get, and takes the headline and the next step from them (AC-S8-1)', () => {
+    const sources = mdSection(raw, 'Where the facts come from')
+    expect(sources).toContain('mission_list({ folder })')
+    expect(sources).toContain('mission_get({ folder,')
+    expect(raw).toContain('progress.headline')
+    expect(flat(sources)).toMatch(/`next` from `mission_get`: its `ask`/)
+  })
+})
+
+describe('mission — child reporting is a hard rule (AC-S8-5)', () => {
+  const rules = flat(mdSection(readSkill('mission'), 'Child reporting'))
+
+  it('is stated as rules, not suggestions', () => {
+    expect(rules).toMatch(/they are rules, not advice/)
+  })
+
+  it('addresses the leader by stable session id, resolved at send time', () => {
+    expect(rules).toMatch(/A name is not an identity/)
+    expect(rules).toMatch(/your leader is a session id, not a name/)
+    expect(rules).toMatch(
+      /Call `ListAgents` right before every send and send only to a name you just saw listed/
+    )
+  })
+
+  it('names the leader in the report itself, by id', () => {
+    expect(rules).toContain('Report for session <owner uuid> · mission <missionId> · step <stepId>')
+  })
+
+  it('forbids broadcasting when the leader is unreachable', () => {
+    expect(rules).toMatch(/If the leader is unreachable, write `\.harnu\/REPORT\.md` first/)
+    expect(rules).toMatch(/Never send the report to any other session/)
+  })
+
+  it('tells the leader to recognize reports by id, and to re-announce a changed name', () => {
+    expect(rules).toMatch(/A report that names your session id is yours/)
+    expect(rules).toMatch(/When your name changes/)
+    expect(rules).toContain('message_session')
+  })
+})
+
+describe('the watchdog writes to no card (the `## Watchdog` block is retired)', () => {
+  it('never names a card verb, and never says it appends a Watchdog block', () => {
+    const raw = readSkill('delivery-watchdog')
+    expect(raw).not.toMatch(/update_card|create_card/)
+    expect(raw).not.toMatch(/## Watchdog/)
   })
 })
