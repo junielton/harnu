@@ -127,12 +127,13 @@ export function reconcileMissions(
   const asked = new Set(queriedRoots)
   const records = new Map([...(explicit ?? lastRecordViews)].filter(([root]) => asked.has(root)))
   const present = new Set<string>()
-  // A root the record store answered for is read from the records alone (one format at a time: a v3
-  // snapshot beside a v4 copy says nothing). A root it has not answered for yet — the first poll —
-  // keeps the list's views, so there is no gap while the first read runs.
-  const covered = new Set(records.keys())
+  // A v3 mission keeps main's cards: the list's own view of it (its items, its keys, as `mapping` maps them)
+  // is what files them, so updating Harnu closes and re-files nothing. Only a mission the record store says
+  // is a v4 record is read from the records: a v4 file is the mission (one format at a time), so a v3
+  // snapshot beside it says nothing. A root the store has not answered for yet (the first poll) is all v3.
+  const v4Ids = new Set([...records.values()].flatMap((r) => [...r.v4Ids]))
   const views: DraftView[] = [
-    ...result.views.filter((v) => !covered.has(v.root)),
+    ...result.views.filter((v) => !v4Ids.has(v.mission.id)),
     ...[...records.values()].flatMap((r) => r.views)
   ]
   const unreadable = result.unreadable.length > 0 || [...records.values()].some((r) => r.unreadable)
@@ -188,7 +189,10 @@ export function selectForReconcile(
 
 /** What the record store answered for one repo root: its open missions as card views. */
 export interface RecordRead {
+  /** The open v4 records of the repo (a v3 file is not here: the list's own view files its cards). */
   views: DraftView[]
+  /** Every v4 record's id, open or closed: the v3 snapshot of such an id says nothing. */
+  v4Ids: ReadonlySet<string>
   /** A file the store could not parse: nothing closes by absence while one exists. */
   unreadable: boolean
 }
@@ -223,17 +227,20 @@ export async function readRecordViews(
   for (const root of new Set(roots.map((r) => repoRoot(r)))) {
     const listed = await listMissionRecords(root)
     const views: DraftView[] = []
+    const v4Ids = new Set<string>()
     for (const { record, source, sourceIds } of listed.records) {
+      // A v3 file keeps main's cards (they come from the list's v3 view, see `reconcileMissions`): reading
+      // its converted waiting list would close the cards main filed and file others, and a v3 file cannot
+      // hold a request to join (that lives in a v4 record), so there is nothing to add from here.
+      if (source !== 'v4') continue
+      v4Ids.add(record.id)
       if (record.status !== 'open') continue
       // Who leads is the record's own rule (`leaderOf`, the one hibernation uses): the session with an open
       // `leads` entry. A mission nobody leads files nothing: a session that already left is not handed a
       // card. A v3 record's owner leads it until it is closed (the conversion writes that entry).
       const leader = leaderOfRecord(record)
       if (!leader) continue
-      const detail = await readDetail(
-        root,
-        source === 'v3-campaign' ? (sourceIds[0] ?? record.id) : record.id
-      )
+      const detail = await readDetail(root, sourceIds[0] ?? record.id)
       if (!detail || !detail.ok) continue
       views.push({
         root,
@@ -241,7 +248,7 @@ export async function readRecordViews(
         you: detail.waiting.items
       })
     }
-    out.set(root, { views, unreadable: listed.unreadable.length > 0 })
+    out.set(root, { views, v4Ids, unreadable: listed.unreadable.length > 0 })
   }
   return out
 }

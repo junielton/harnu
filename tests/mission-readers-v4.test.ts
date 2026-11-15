@@ -323,22 +323,29 @@ describe('readers use the v4 view', () => {
       expect(new Set(cards.map((c) => c.sessionId))).toEqual(new Set([LEADER]))
     })
 
-    it('a v3 file files its cards through the same read, in the same wording', async () => {
-      seedV3(
-        v3Mission({
-          blockers: [
-            {
-              reason: 'Waiting on the vendor',
-              unblocks: 'a key',
-              owner: 'operator',
-              raisedAt: NOW
-            } as never
-          ]
-        })
+    it("a v3 file files its cards from the list's own v3 view (main's items), in the waiting list's one wording", async () => {
+      seedV3(v3Mission())
+      const view = fixtureView('parallel', {
+        mission: { id: 'mnt-0a1b2c3d', owner: { sessionId: LEADER, folder: repo } } as never,
+        view: {
+          root: repo,
+          you: [
+            { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }
+          ] as never
+        }
+      })
+      const records = await readRecordViews([repo], { readDetail })
+      const s = reconcileMissions(
+        emptyState(),
+        { views: [view], unreadable: [] },
+        [repo],
+        'live',
+        mint,
+        1,
+        records
       )
-      const views = await readRecordViews([repo], { readDetail })
-      const s = reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 1, views)
-      expect(open(s).map((c) => c.ask)).toContain('Waiting on the vendor')
+      expect(open(s).map((c) => c.ask)).toEqual(['Unblock: Waiting on the vendor key'])
+      expect(open(s)[0].key).toBe('mnt-0a1b2c3d:blocker:Waiting on the vendor key')
     })
 
     it('a card closes when the record stops owing the item', async () => {
@@ -382,9 +389,27 @@ describe('readers use the v4 view', () => {
       )
       seedV4(v4Record({ id: 'mnt-0a1b2c3d', status: 'closed', closedAs: 'delivered' }, true))
       const views = await readRecordViews([repo], { readDetail })
-      expect(open(reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 1, views))).toEqual(
-        []
-      )
+      // The list still serves the v3 snapshot (it owes a blocker); the closed v4 record is the mission.
+      const snapshot = fixtureView('parallel', {
+        mission: { id: 'mnt-0a1b2c3d', owner: { sessionId: LEADER, folder: repo } } as never,
+        view: {
+          root: repo,
+          you: [{ kind: 'blocker', reason: 'Waiting on the vendor', unblocks: 'a key' }] as never
+        }
+      })
+      expect(
+        open(
+          reconcileMissions(
+            emptyState(),
+            { views: [snapshot], unreadable: [] },
+            [repo],
+            'live',
+            mint,
+            1,
+            views
+          )
+        )
+      ).toEqual([])
     })
   })
 
@@ -416,57 +441,36 @@ describe('readers use the v4 view', () => {
       expect(views.get(repo)?.views).toEqual([])
     })
 
-    it('a v3 record is led by its owner while it is not closed', async () => {
-      seedV3(
-        v3Mission({
-          blockers: [
-            {
-              reason: 'Waiting on the vendor key',
-              unblocks: 'a key',
-              owner: 'operator',
-              raisedAt: NOW
-            } as never
-          ]
-        })
-      )
+    it("a v3 file is not read from the records for cards: its owner and cards come from the list's v3 view", async () => {
+      seedV3(v3Mission())
       const views = await readRecordViews([repo], { readDetail })
-      expect(views.get(repo)?.views[0]?.mission.owner.sessionId).toBe(LEADER)
+      expect(views.get(repo)?.views).toEqual([])
+      expect([...(views.get(repo)?.v4Ids ?? [])]).toEqual([])
     })
 
     it("a v3 blocker keeps main's card key, and clearing a neighbour never closes and re-files it", async () => {
-      const blockers = (rs: string[]): never =>
-        rs.map((reason) => ({
-          reason,
-          unblocks: 'a key',
-          owner: 'operator',
-          raisedAt: NOW
-        })) as never
-      const stepWith = (blk: unknown[]): unknown => ({
-        id: 'stp-2',
-        ordinal: 2,
-        kind: 'custom',
-        title: 'Build',
-        verification: 'verifier',
-        proof: 'unproven',
-        links: [],
-        blockers: blk
-      })
-      const base = v3Mission({ blockers: blockers(['Waiting on the vendor key']) })
-      const withStep = (m: ReturnType<typeof v3Mission>, step: unknown) => ({
-        ...m,
-        steps: [m.steps[0], step, m.steps[1]]
-      })
-      seedV3(withStep(base, stepWith(blockers(['Merge the pull request']))) as never)
+      const viewOf = (reasons: string[]): never =>
+        fixtureView('parallel', {
+          mission: { id: 'mnt-0a1b2c3d', owner: { sessionId: LEADER, folder: repo } } as never,
+          view: {
+            root: repo,
+            you: reasons.map((reason) => ({ kind: 'blocker', reason, unblocks: 'a key' })) as never
+          }
+        }) as never
+      seedV3(v3Mission())
+      const records = await readRecordViews([repo], { readDetail })
       let s = reconcileMissions(
         emptyState(),
-        NONE,
+        {
+          views: [viewOf(['Waiting on the vendor key', 'Merge the pull request'])],
+          unreadable: []
+        },
         [repo],
         'live',
         mint,
         1,
-        await readRecordViews([repo], { readDetail })
+        records
       )
-      // Main's key for a v3 blocker: `<mission id>:blocker:<reason>`.
       expect(
         s.cards
           .filter((c) => c.closedAt === undefined)
@@ -477,25 +481,16 @@ describe('readers use the v4 view', () => {
         'mnt-0a1b2c3d:blocker:Waiting on the vendor key'
       ])
       const stepCard = s.cards.find((c) => c.sourceKey?.endsWith('Merge the pull request'))!
-      // The operator clears the mission-level blocker: the step blocker is renumbered, and its card stays.
-      rmSync(missionsDir(repo), { recursive: true, force: true })
-      seedV3(
-        withStep(
-          v3Mission({ blockers: [] }),
-          stepWith(blockers(['Merge the pull request']))
-        ) as never
-      )
       s = reconcileMissions(
         s,
-        NONE,
+        { views: [viewOf(['Merge the pull request'])], unreadable: [] },
         [repo],
         'live',
         mint,
         2,
-        await readRecordViews([repo], { readDetail })
+        records
       )
-      const still = s.cards.find((c) => c.id === stepCard.id)!
-      expect(still.closedAt).toBeUndefined()
+      expect(s.cards.find((c) => c.id === stepCard.id)!.closedAt).toBeUndefined()
       expect(s.cards.filter((c) => c.sourceKey?.endsWith('Merge the pull request'))).toHaveLength(1)
     })
 
