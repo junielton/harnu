@@ -90,6 +90,12 @@ When a session wants to launch several ready cards at once, it submits them as a
 
 If you edit a card's title, spec, or body after it's already been approved this way, that edit still goes through, but the approval is voided — the card falls back to asking again individually the next time something tries to dispatch it, rather than silently keeping the old approval.
 
+## A card can be a step
+
+A card can be the work of one step of a [mission](missions.md). It happens when the session that leads the mission hands a step to a session or worktree of its own: it starts the session for that step, or submits a dispatch batch that names the step, or you press **Dispatch** on a card that already is a step's. Harnu then creates the card in **Backlog** (or uses the card the step already had) and marks it with the mission, the milestone and the step (`mission`, `milestone` and `step` in the card's file; the board does not draw a chip for them yet). The card's body also carries the step's acceptance criteria, in a block between two comment lines that Harnu keeps up to date. Ask the session to change the criteria on the step rather than editing the block, because Harnu rewrites it.
+
+A step the leading session does itself never gets a card, so small work does not fill the board. No session can set those marks with the usual card actions, and Harnu never moves such a card to **Done**: closing it stays yours, like every card.
+
 ## The In progress limit
 
 The **In progress** column has a limit — 5 by default — shown as a small chip at the top right of the board (for example `In Progress 3/5`). It exists to keep you from supervising more agents than you can really watch, and it is what pauses a batch of approved cards when it is full: they wait for a free slot and start on their own once one opens.
