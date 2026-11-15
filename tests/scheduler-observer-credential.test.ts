@@ -28,9 +28,9 @@ vi.mock('../src/main/claude-reader', async (importOriginal) => ({
   scanFolders: async (): Promise<unknown[]> => []
 }))
 
-import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
+import { registerMcpServer, closeMcpServer, writeScopedMcpConfig } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
-import { tickMcpConfigFor } from '../src/main/scheduler-shell'
+import { setObserverMcpConfigWriter, tickMcpConfigFor } from '../src/main/scheduler-shell'
 import { verifyScopedBearer } from '../src/main/mcp/scope'
 import { verifyStewardBearer } from '../src/main/steward-core'
 import type { Worker } from '../src/main/scheduler-core'
@@ -106,6 +106,16 @@ describe("an observe worker's tick is on the observer credential", () => {
     )
     expect(steward).toBe(path.join(h.userDataDir, 'steward-mcp', 'w-1.json'))
     expect(verifyStewardBearer(serverToken, await bearerIn(steward as string))).toBe('w-1')
+  })
+
+  it('when no credential can be written an observe tick gets no config, even with the main one on disk', async () => {
+    setObserverMcpConfigWriter(async () => undefined)
+    try {
+      expect(await fs.stat(path.join(h.userDataDir, 'harnu.mcp.json'))).toBeTruthy()
+      expect(await tickMcpConfigFor(worker())).toBeUndefined()
+    } finally {
+      setObserverMcpConfigWriter(writeScopedMcpConfig)
+    }
   })
 
   it('with the control server down an observe tick gets no config at all, never the main one', async () => {
