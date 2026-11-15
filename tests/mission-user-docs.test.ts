@@ -127,7 +127,8 @@ describe('the user guide covers missions (AC-85)', () => {
     // A delivery plan gets a new id; a single mission keeps its own.
     expect(flat).toMatch(/delivery plan becomes one new mission with a new id/)
     expect(flat).not.toMatch(/with the same id/)
-    // Activity, as main does it today.
-    expect(flat).toMatch(/Review all N/)
+    // Activity, as head does it (S-37): every mission waiting gets its own row; the review that took the rest is gone.
+    expect(flat).toMatch(/Every mission that waits on you gets its own row, however many/)
+    expect(flat).not.toMatch(/Review all/)
   })
 })
