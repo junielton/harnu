@@ -451,7 +451,9 @@ useFocusRegion(props.pane.id, rootEl, {
       @mousedown="onHeaderMouseDown"
     >
       <Target :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-      <span class="min-w-0 flex-1 truncate">{{ $t('missionPane.title') }}</span>
+      <span class="min-w-0 flex-1 truncate" :title="$t('missionPane.title')">{{
+        $t('missionPane.title')
+      }}</span>
       <button
         class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
         :class="isExpanded ? 'text-accent' : 'text-text-3'"
