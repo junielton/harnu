@@ -429,6 +429,17 @@ describe('skills speak v4', () => {
     expect(problems.verbs).toEqual([])
   })
 
+  it('(f) the skills user page speaks v4 too, with no steward and no hand-off by the leader', () => {
+    const page = readFileSync(path.join(REPO_ROOT, 'docs', 'user', 'bundled-skills.md'), 'utf8')
+    const file = 'docs/user/bundled-skills.md'
+    expect(retiredProblems({ [file]: page })).toEqual([])
+    expect(flat(page)).toMatch(/Only you start a hand-off/)
+    expect(flat(page)).toMatch(/the leader never switches itself/)
+    // The page bites like the skills do: a retired phrase, or a steward relied on, is a problem.
+    const bad = `${page}\nUse the ${j('pop', 'over')}. The ${j('stew', 'ard')} will nudge.\n`
+    expect(retiredProblems({ [file]: bad }).length).toBe(2)
+  })
+
   it.each(FAULTS)('a planted fault bites: $name', ({ check, make }) => {
     expect(problemsOf(make(w))[check].length).toBeGreaterThan(0)
   })
