@@ -95,4 +95,14 @@ describe('the user guide covers missions (AC-85)', () => {
     for (const file of ['missions.md', 'agent-control.md'])
       expect(read(file), file).not.toContain('Mark verified')
   })
+
+  it('the missions page says the pill, the chip and the pane show one mission (S-35 delta 1)', () => {
+    const flat = MISSIONS.replace(/\s+/g, ' ')
+    expect(flat).toMatch(/pill, the chip and the pane always show the same mission/)
+    expect(flat).toMatch(/waiting on you[^.]*(else|and when none is)[^.]*changed last/i)
+    expect(flat).toMatch(/mission you chose in the pane wins/i)
+    expect(flat).toMatch(/opens the mission it names/i)
+    expect(flat).toMatch(/Close the mission/)
+    expect(flat).not.toMatch(/older Missions review/i)
+  })
 })

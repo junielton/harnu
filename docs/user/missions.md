@@ -28,13 +28,13 @@ There is one Mission pane per folder or worktree.
 
 The pane **follows the session you have selected** and shows only that session's mission. Pick another session in the sidebar and the pane changes with it. It checks for changes about every 20 seconds, so a number can lag the real state by a little.
 
-When the session leads more than one mission, a line above the title says **This session leads 3 missions** and lets you choose which one to show. The pane opens on the one that changed last. Choosing another only changes what the pane shows: it writes nothing to any mission. A session that only works on several missions has no chooser and shows the one that changed last.
+When the session leads more than one mission, a line above the title says **This session leads 3 missions** and lets you choose which one to show. Without a choice of yours the pane opens on the mission that is waiting on you, and when none is, on the one that changed last. A mission you chose in the pane wins over both. Choosing one only changes what the pane shows: it writes nothing to any mission. A session that only works on several missions has no chooser and shows the one that waits on you first, else the one that changed last. The pill and the sidebar chip follow the same rule, so the pill, the chip and the pane always show the same mission.
 
 At a glance, from top to bottom:
 
 - the mission's **title**;
 - a **progress bar** with the count written inside it: **4 of 21 steps done**, or **1 of 10 milestones done** when the mission has milestones. The bar fills in as steps are done. There is no "Done when" paragraph;
-- **Ready to close** when every step is done;
+- **Ready to close** when every step is done. Once the session has asked you to close it, **Close the mission** is in **Your next step** and on the Your move card, so the pane and Your move agree;
 - **Your next step**: one box with what to do and why it matters. If more than one thing waits on you, **N more waiting on you** opens the rest right there, and **Show less** folds them again. When nothing waits on you, the box says what is running instead ("2 steps are running. Nothing for you right now.");
 - the **tree** of the mission.
 
@@ -186,9 +186,9 @@ Missions and delivery plans that an earlier version of Harnu wrote (version 3) a
 
 The same waiting list shows up outside the pane:
 
-- **The sidebar chip.** On the session that leads a mission, the session's row in the sidebar shows what the pill shows ("4/21 · 3 for you"), in the same colour. It stays visible while something waits on you. A mission an earlier version wrote has the same chip.
-- **Activity.** One entry lists every mission that is waiting on you, one row each, with one plain sentence saying what to do. Clicking a row opens the session that leads that mission and its Mission pane. If that session is not loaded in this window, the row opens the older Missions review instead, which lists only missions an earlier version wrote: a mission whose leader is not loaded has no pane to open yet.
-- **Your move.** A mission that waits on you files a card for each thing, with the same sentence. A mission you already have (a version 3 one) keeps the cards it had, so updating Harnu does not close or re-file any of them. **Open mission** on a card opens the session and its Mission pane, for any mission.
+- **The sidebar chip.** On the session that leads a mission, the session's row in the sidebar shows what the pill shows ("4/21 · 3 for you"), in the same colour. It stays visible while something waits on you. A mission an earlier version wrote has the same chip. It names the same mission as the pill and the pane.
+- **Activity.** One entry lists every mission that is waiting on you, one row each, with one plain sentence saying what to do. Clicking a row opens the mission it names: its leader's session and the Mission pane on that mission, even when the session leads several. If the leader's session is not loaded in this window, Harnu says so in a notice instead of opening something else.
+- **Your move.** A mission that waits on you files a card for each thing, with the same sentence. A mission you already have (a version 3 one) keeps the cards it had, so updating Harnu does not close or re-file any of them. **Open mission** on a card opens the mission the card names, in its Mission pane, for any mission. A mission that is ready to close files a **Close the mission** card, and one card is filed per thing that waits on you.
 - **Sounds and reminders.** Harnu plays its attention sound when something new waits on you: a blocker that is yours, a session asking to join, a mission that is ready to close, a main branch that went red, a criterion only you can mark, or one more pull request waiting for your review. Everything except the pull requests then reminds you after 30 minutes, 1 hour, 2 hours and 4 hours, and stops. When fewer things wait on you, there is no sound, and clearing one blocker never counts the others as new. Updating Harnu makes no sound by itself: what a mission already owed you keeps the reminder it had.
 - **The session that leads a mission stays awake.** Harnu normally puts a session you are not using to sleep to free memory. It does not do that to the session that leads an open mission (a mission that is ready to close included), even when nothing else is running. It stays awake until the mission is closed or you hand it to a new session.
 
