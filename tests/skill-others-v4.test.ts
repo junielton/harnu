@@ -42,7 +42,12 @@ const NAMES = [
 ] as const
 type Name = (typeof NAMES)[number]
 
-/** How long each skill was before S-31 (lines of SKILL.md): a rewrite never makes one longer. */
+/**
+ * How long each skill was before S-31 (lines of SKILL.md). The v3 notes are gone, but the v4 text is new
+ * (a payload that parses, the operator's blocker, the writing contract), so a rewrite may grow by
+ * `GROWTH` lines and no more: the operator asked for less to read, not more.
+ */
+const GROWTH = 8
 const LINES_BEFORE: Record<Name, number> = {
   spec: 392,
   'one-by-one': 180,
@@ -192,7 +197,7 @@ function problemsOf(t: Texts): string[] {
     const skill = t[`${name}/SKILL.md`] ?? ''
     if (parseSkillFrontmatter(skill, name)?.name !== name) p.push(`${name} lost its name`)
     const lines = skill.split('\n').length
-    if (lines > LINES_BEFORE[name])
+    if (lines > LINES_BEFORE[name] + GROWTH)
       p.push(`${name} grew to ${lines} lines (was ${LINES_BEFORE[name]})`)
   }
 
@@ -319,7 +324,9 @@ function problemsOf(t: Texts): string[] {
     `${t['draft-to-prompt/SKILL.md'] ?? ''} ${t['draft-to-prompt/references/harness-routing.md'] ?? ''}`
   )
   if (!/Done when/.test(dp)) p.push('draft-to-prompt does not speak of a Done when')
-  if (!/Mission pane/.test(dp)) p.push('draft-to-prompt does not point at the Mission pane')
+  for (const file of ['SKILL.md', 'references/harness-routing.md'])
+    if (!/Mission pane/.test(flat(t[`draft-to-prompt/${file}`] ?? '')))
+      p.push(`draft-to-prompt/${file} does not point at the Mission pane`)
   if (/born \*\*active\*\*|born active/.test(dp))
     p.push('draft-to-prompt still says a mission is born active')
 
@@ -493,7 +500,13 @@ const FAULTS: Fault[] = [
 function plant(t: Texts, f: Fault): Texts {
   const before = t[f.file]
   if (before === undefined) throw new Error(`no such file: ${f.file}`)
-  const after = before.replace(f.find, f.replace)
+  // A sentence may wrap across lines in the file: a string `find` matches whatever its breaks, and a
+  // fault changes every mention of it (a text that says a thing twice is not fixed by one change).
+  const pattern =
+    typeof f.find === 'string'
+      ? new RegExp(f.find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'), 'g')
+      : f.find
+  const after = before.replace(pattern, () => f.replace)
   if (after === before) throw new Error(`fault does not apply (${f.why}): ${String(f.find)}`)
   return { ...t, [f.file]: after }
 }
