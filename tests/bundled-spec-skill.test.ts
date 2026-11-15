@@ -1088,7 +1088,13 @@ function awarenessProblems({ features }: Docs): string[] {
   // The finished skill, once: the mission at triage, the approval door, the hand-off.
   if (!/`mission_create`/.test(p) || !/"Approve spec"/.test(p))
     problems.push('the paragraph does not name the mission born at triage')
-  if (!/\*\*Mark verified\*\*/.test(p) || !/never tick/.test(p))
+  // The v4 pane has no "Mark verified" button: the operator ticks the step's criterion (Mark done).
+  if (
+    /Mark verified/.test(p) ||
+    !/Mission pane/.test(p) ||
+    !/tick the criterion/.test(p) ||
+    !/never tick/.test(p)
+  )
     problems.push('the paragraph does not leave the approval to the operator')
   if (!/`harnu:orchestrate-delivery` adopts/.test(p))
     problems.push('the paragraph does not say orchestrate-delivery adopts the mission')
@@ -1187,6 +1193,12 @@ const S8_MUTATIONS: Record<string, Mutation[]> = {
       find: '**Bundled skills — OFF until switched on.**',
       replace: '**Bundled skills.**',
       why: 'the paragraph lives in the bundled-skills part'
+    },
+    {
+      target: 'features',
+      find: 'tick the criterion',
+      replace: 'tick the step',
+      why: 'the approval is the criterion the operator ticks in the Mission pane'
     },
     {
       target: 'features',
