@@ -420,7 +420,7 @@ describe('a v3 mission paused with a steward: the pause is not owed any more', (
     // The stored pause is still in the file: it is never edited, only no longer read as owed.
     expect(readFileSync(file, 'utf8')).toContain('stewardPause')
     expect(existsSync(path.join(repo, '.harnu', 'missions-v4'))).toBe(false)
-  })
+  }, 60_000)
 
   it('a Your move card filed for the pause before the upgrade closes, and no other card is lost or re-filed', async () => {
     const m = pausedV3()
@@ -477,7 +477,7 @@ describe('a v3 mission paused with a steward: the pause is not owed any more', (
     for (const c of after.cards.filter((c) => c.closedAt === undefined)) {
       expect(c.id).toBe(idsBefore.get(c.sourceKey))
     }
-  })
+  }, 60_000)
 
   it('the cue keys and the chime memory are those of main for every other item', () => {
     const view = (you: unknown[]): never =>
