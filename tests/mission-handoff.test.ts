@@ -1042,6 +1042,48 @@ describe('a hand-off whose dispatch is not agent-controlled', () => {
     }
   })
 
+  describe('how much of the prompt a sighting must hold', () => {
+    // a prompt as long as a real hand-off's: the instruction line and a summary, well over 200 characters
+    const LONG = `${HANDOFF_INSTRUCTION}\n\n## Goal\n${'Score a spec with a test set. '.repeat(30)}`
+
+    const trial = async (
+      seenOf: (sent: string) => string
+    ): Promise<Awaited<ReturnType<HandoffStart>>> => {
+      const t = realPath({
+        sight: (sent) => ({ sessionId: NEW_ONE, prompt: seenOf(sent), cwd: root })
+      })
+      return t.start({ folder: root, prompt: LONG })
+    }
+
+    it('a prompt equal to the one sent settles the door', async () => {
+      expect(LONG.length).toBeGreaterThan(400)
+      expect(await trial((sent) => sent)).toEqual({ ok: true, sessionId: NEW_ONE })
+    })
+
+    it('a prefix of at least 200 characters settles it: a long prompt may reach the hook cut short', async () => {
+      for (const n of [200, 201, 250, 399]) {
+        expect(await trial((sent) => sent.slice(0, n)), `${n} characters`).toEqual({
+          ok: true,
+          sessionId: NEW_ONE
+        })
+      }
+    })
+
+    it('a prefix shorter than 200 characters does not: a short prompt in the same folder is another session', async () => {
+      for (const n of [1, 3, 20, 100, 199]) {
+        const r = await trial((sent) => sent.slice(0, n))
+        expect(r, `${n} characters`).toMatchObject({ ok: false, reason: 'timeout' })
+      }
+      // and the plainest case: someone types "You" in a session of the same folder
+      expect(await trial(() => 'You')).toMatchObject({ ok: false, reason: 'timeout' })
+    })
+
+    it('a prefix is judged after whitespace is squashed, so the 200 characters are counted on the same text', async () => {
+      const spaced = (sent: string): string => sent.slice(0, 250).replace(/ /g, '   ')
+      expect(await trial(spaced)).toEqual({ ok: true, sessionId: NEW_ONE })
+    })
+  })
+
   it('stops listening once it has settled, whichever way it went', async () => {
     const yes = realPath({ sight: seen })
     await yes.start({ folder: root, prompt: 'p' })
