@@ -1,0 +1,557 @@
+/**
+ * Missions v4 · S-25 · AC-64, AC-65 — scoped verbs for the sessions Harnu spawns (BUG-253).
+ *
+ * Graded through the REAL MCP transport, the way the steward's lifecycle is (lesson
+ * `docs/lessons/testing/006-…`): a v4 mission is made over HTTP with the main bearer, the sessions
+ * Harnu spawned for it connect with their OWN scoped credential, and every claim is read back from
+ * the mission's files on disk, not from an ACK. Only `electron` and the live sources are stubbed.
+ *
+ *  - AC-64 "spawned sessions hold scoped verbs": a worker reads its mission and links, logs and sets a
+ *    blocker on its own step and nothing else; a verifier also settles a criterion of a session that
+ *    did not build the step; the observer bound to a folder reads that folder's missions; none can
+ *    lead, attach itself or touch another mission (or, for a worker, another step).
+ *  - AC-65 "spawned identity is not self-declared": the session id comes from the credential, so a
+ *    verifier that built the step is a builder whatever `sessionId` the call says, and a credential
+ *    that was forged, tampered with or borrowed reaches nothing.
+ */
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { promises as fs } from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+
+const h = vi.hoisted(() => ({ userDataDir: '' }))
+
+vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: (): string => h.userDataDir,
+    getAppPath: (): string => h.userDataDir
+  },
+  dialog: {},
+  shell: {},
+  BrowserWindow: class {},
+  ipcMain: { handle: (): void => {}, on: (): void => {} }
+}))
+vi.mock('../src/main/claude-reader', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  scanFolders: async (): Promise<unknown[]> => []
+}))
+
+import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
+import { createConfirmCore } from '../src/main/mcp/confirm-core'
+import { _setStepInputsForTest } from '../src/main/mcp/tool-handlers'
+import {
+  mintScopedBearer,
+  scopeCallRefusal,
+  SCOPED_VERBS,
+  verifyScopedBearer,
+  type Scope
+} from '../src/main/mcp/scope'
+import { readMissionRecord } from '../src/main/missions/record-store'
+import { writeMission } from '../src/main/missions/write'
+import { appendWorked, attachDispatchedWorker } from '../src/main/missions/sessions'
+import type { MissionV4 } from '../src/main/missions/model'
+
+const LEADER = '3f1c9a52-7d4e-4b8a-9c21-5e6a0b7d8f10'
+const WORKER = '5b7d9f11-2a4c-4e6a-8b0d-1c3e5a7c9e21'
+const VERIFIER = '8a2d4c6e-1b3f-4a5c-9d7e-2f4a6c8e0b1d'
+const STRANGER = 'e0e0e0e0-0000-4000-8000-000000000001'
+
+let serverUrl = ''
+let serverToken = ''
+let repo = ''
+let otherRepo = ''
+let mainClient: Client
+const open: Client[] = []
+
+interface Reply {
+  isError: boolean
+  text: string
+  body: Record<string, unknown>
+}
+
+async function connectAs(bearer: string): Promise<Client> {
+  const c = new Client({ name: 'scoped-test', version: '0.0.0' })
+  await c.connect(
+    new StreamableHTTPClientTransport(new URL(serverUrl), {
+      requestInit: { headers: { Authorization: `Bearer ${bearer}` } }
+    })
+  )
+  open.push(c)
+  return c
+}
+
+/** A call the way a model makes it: a refusal (or an unknown tool) is a reply, never a throw. */
+async function callOn(c: Client, name: string, args: Record<string, unknown>): Promise<Reply> {
+  try {
+    const res = (await c.callTool({ name, arguments: args })) as {
+      isError?: boolean
+      content: Array<{ type: string; text?: string }>
+    }
+    const text = res.content[0]?.text ?? ''
+    let body: Record<string, unknown> = {}
+    try {
+      body = JSON.parse(text) as Record<string, unknown>
+    } catch {
+      /* a refusal is plain text */
+    }
+    return { isError: res.isError === true, text, body }
+  } catch (err) {
+    return { isError: true, text: String(err instanceof Error ? err.message : err), body: {} }
+  }
+}
+
+const okOn = async (c: Client, name: string, args: Record<string, unknown>): Promise<Reply> => {
+  const r = await callOn(c, name, args)
+  expect(r.isError, r.text).toBe(false)
+  return r
+}
+
+async function fakeRepo(): Promise<string> {
+  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-scoped-repo-'))
+  const root = path.join(base, 'main')
+  await fs.mkdir(path.join(root, '.git'), { recursive: true })
+  return root
+}
+
+const readRecord = async (root: string, id: string): Promise<MissionV4> => {
+  const read = await readMissionRecord(root, id)
+  if (!read.ok) throw new Error(read.error)
+  return read.record
+}
+
+/** Two steps, one criterion each that a session settles. The leader (self-declared) leads it. */
+async function newMission(root: string): Promise<string> {
+  const r = await okOn(mainClient, 'mission_create', {
+    folder: root,
+    title: `Export the report ${Math.random().toString(36).slice(2, 8)}`,
+    doneWhen: 'The CSV export is merged and a spreadsheet opens it',
+    sessionId: LEADER,
+    steps: [
+      { title: 'Add the CSV exporter', criteria: [{ text: 'The exporter writes valid CSV' }] },
+      { title: 'Document the exporter', criteria: [{ text: 'The README says how to run it' }] }
+    ]
+  })
+  return r.body.id as string
+}
+
+/** Attach `sessionId` as a worker of the mission with NO session link on a step (a second session). */
+async function attachWithoutLink(
+  root: string,
+  missionId: string,
+  sessionId: string
+): Promise<void> {
+  const at = new Date().toISOString()
+  const done = await writeMission(
+    root,
+    missionId,
+    { kind: 'harnu' },
+    'operator',
+    (record, log) => ({
+      record: { ...record, sessions: appendWorked(record.sessions, sessionId, at) },
+      log
+    })
+  )
+  if (!done.ok) throw new Error(done.error)
+}
+
+/** Attach `sessionId` as the worker of a step: attached AND linked, so it BUILT the step. */
+async function attachAsBuilder(
+  root: string,
+  missionId: string,
+  sessionId: string,
+  stepId: string
+): Promise<void> {
+  const done = await attachDispatchedWorker(root, missionId, {
+    sessionId,
+    stepId,
+    actor: { kind: 'harnu' }
+  })
+  if (!done.ok) throw new Error(done.error)
+}
+
+const scopeOf = (
+  role: 'worker' | 'verifier',
+  sessionId: string,
+  missionId: string,
+  stepId = 'stp-1',
+  folder = repo
+): Scope => ({ role, sessionId, folder, missionId, stepId })
+
+const bearerFor = (scope: Scope): string => mintScopedBearer(serverToken, scope)
+
+beforeAll(async () => {
+  h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-scoped-ud-'))
+  _setStepInputsForTest(async () => ({}))
+  await registerMcpServer(() => null, {
+    bridge: { dispatch: async () => ({}) } as never,
+    confirm: createConfirmCore({
+      send: () => true,
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      now: () => Date.now()
+    })
+  })
+  const cfg = JSON.parse(await fs.readFile(path.join(h.userDataDir, 'harnu.mcp.json'), 'utf8')) as {
+    mcpServers: { harnu: { url: string; headers: { Authorization: string } } }
+  }
+  serverUrl = cfg.mcpServers.harnu.url
+  serverToken = cfg.mcpServers.harnu.headers.Authorization.replace(/^Bearer /, '')
+  mainClient = await connectAs(serverToken)
+})
+
+afterAll(async () => {
+  _setStepInputsForTest(null)
+  for (const c of open) await c.close().catch(() => {})
+  await closeMcpServer()
+})
+
+beforeEach(async () => {
+  repo = await fakeRepo()
+  otherRepo = await fakeRepo()
+})
+
+describe('spawned sessions hold scoped verbs', () => {
+  it('a worker holds mission_get, mission_link, mission_log and mission_set_blocker, and no other verb', async () => {
+    const id = await newMission(repo)
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    const worker = await connectAs(bearerFor(scopeOf('worker', WORKER, id)))
+
+    const listed = (await worker.listTools()).tools.map((t) => t.name).sort()
+    expect(listed).toEqual(
+      ['mission_get', 'mission_link', 'mission_log', 'mission_set_blocker'].sort()
+    )
+    expect([...SCOPED_VERBS.worker].sort()).toEqual(listed)
+
+    // Verbs outside the list are not callable even when named: it cannot lead, attach itself or plan.
+    for (const [verb, args] of [
+      ['mission_attach', { folder: repo, missionId: id }],
+      ['mission_request_close', { folder: repo, missionId: id }],
+      ['mission_add_step', { folder: repo, missionId: id, title: 'Sneak a step in' }],
+      [
+        'mission_settle_ac',
+        { folder: repo, missionId: id, stepId: 'stp-1', criterionId: 'ac-1', evidence: 'x' }
+      ],
+      ['mission_list', { folder: repo }],
+      ['create_session', { folder: repo }],
+      ['get_fleet', {}]
+    ] as Array<[string, Record<string, unknown>]>) {
+      const r = await callOn(worker, verb, args)
+      expect(r.isError, verb).toBe(true)
+    }
+  })
+
+  it('a worker reads its mission and links, logs and blocks on its own step', async () => {
+    const id = await newMission(repo)
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    const worker = await connectAs(bearerFor(scopeOf('worker', WORKER, id)))
+
+    const got = await okOn(worker, 'mission_get', { folder: repo, missionId: id })
+    expect(got.body.id).toBe(id)
+    expect(got.body.standing).toBe('worked')
+
+    await okOn(worker, 'mission_link', {
+      folder: repo,
+      missionId: id,
+      stepId: 'stp-1',
+      link: { kind: 'pr', ref: '412' }
+    })
+    await okOn(worker, 'mission_log', {
+      folder: repo,
+      missionId: id,
+      stepId: 'stp-1',
+      kind: 'note',
+      note: 'The exporter handles quoted commas.'
+    })
+    await okOn(worker, 'mission_set_blocker', {
+      folder: repo,
+      missionId: id,
+      stepId: 'stp-1',
+      reason: 'The sample file is missing',
+      owner: 'operator',
+      ask: 'Add the sample CSV to the repo',
+      unblocks: 'The exporter test can run'
+    })
+
+    const record = await readRecord(repo, id)
+    const step = record.steps.find((s) => s.id === 'stp-1')!
+    expect(step.links.some((l) => l.kind === 'pr' && l.ref === '412')).toBe(true)
+    expect(JSON.stringify(record.blockers ?? [])).toContain('The sample file is missing')
+    const log = await fs.readFile(
+      path.join(
+        repo,
+        '.harnu',
+        'missions-v4',
+        (await fs.readdir(path.join(repo, '.harnu', 'missions-v4')))[0]
+      ),
+      'utf8'
+    )
+    expect(log).toContain('The exporter handles quoted commas.')
+  })
+
+  it('a worker writes only its own step: another step is refused and nothing changes', async () => {
+    const id = await newMission(repo)
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    const worker = await connectAs(bearerFor(scopeOf('worker', WORKER, id)))
+    const before = JSON.stringify(await readRecord(repo, id))
+
+    for (const [verb, args] of [
+      ['mission_link', { stepId: 'stp-2', link: { kind: 'pr', ref: '413' } }],
+      [
+        'mission_log',
+        { stepId: 'stp-2', kind: 'note', note: 'Writing on a step that is not mine' }
+      ],
+      [
+        'mission_set_blocker',
+        { stepId: 'stp-2', reason: 'Not my step', owner: 'agent', unblocks: 'nothing' }
+      ]
+    ] as Array<[string, Record<string, unknown>]>) {
+      const r = await callOn(worker, verb, { folder: repo, missionId: id, ...args })
+      expect(r.isError, verb).toBe(true)
+      expect(r.text, verb).toMatch(/SCOPE_STEP/)
+      expect(r.text, verb).toMatch(/stp-1/) // says which step it may write
+    }
+    expect(JSON.stringify(await readRecord(repo, id))).toBe(before)
+
+    // Left out, the step is its own: a link without a stepId lands on stp-1, never on the mission.
+    await okOn(worker, 'mission_link', {
+      folder: repo,
+      missionId: id,
+      link: { kind: 'pr', ref: '414' }
+    })
+    const record = await readRecord(repo, id)
+    expect(record.steps.find((s) => s.id === 'stp-1')!.links.some((l) => l.ref === '414')).toBe(
+      true
+    )
+    expect(
+      (record as { links?: Array<{ ref: string }> }).links?.some((l) => l.ref === '414') ?? false
+    ).toBe(false)
+  })
+
+  it('a worker touches no other mission, even one it is attached to', async () => {
+    const id = await newMission(repo)
+    const second = await newMission(repo)
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    await attachAsBuilder(repo, second, WORKER, 'stp-1') // the guard alone would let it write there
+    const worker = await connectAs(bearerFor(scopeOf('worker', WORKER, id)))
+    const before = JSON.stringify(await readRecord(repo, second))
+
+    for (const verb of ['mission_get', 'mission_link', 'mission_log', 'mission_set_blocker']) {
+      const args: Record<string, unknown> =
+        verb === 'mission_get'
+          ? {}
+          : verb === 'mission_link'
+            ? { stepId: 'stp-1', link: { kind: 'pr', ref: '500' } }
+            : verb === 'mission_log'
+              ? { stepId: 'stp-1', kind: 'note', note: 'Not this mission' }
+              : { stepId: 'stp-1', reason: 'Not this mission', owner: 'agent', unblocks: 'x' }
+      const r = await callOn(worker, verb, { folder: repo, missionId: second, ...args })
+      expect(r.isError, verb).toBe(true)
+      expect(r.text, verb).toMatch(/SCOPE_MISSION/)
+      expect(r.text, verb).toContain(id) // says which mission it may touch
+    }
+    expect(JSON.stringify(await readRecord(repo, second))).toBe(before)
+  })
+
+  it('a worker is bound to the folder it was spawned in', async () => {
+    const id = await newMission(repo)
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    const worker = await connectAs(bearerFor(scopeOf('worker', WORKER, id)))
+    const r = await callOn(worker, 'mission_get', { folder: otherRepo, missionId: id })
+    expect(r.isError).toBe(true)
+    expect(r.text).toMatch(/SCOPE_FOLDER/)
+  })
+
+  it('a verifier also settles a criterion of a step it did not build', async () => {
+    const id = await newMission(repo)
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    await attachWithoutLink(repo, id, VERIFIER) // attached, but no session link: a second session
+    const verifier = await connectAs(bearerFor(scopeOf('verifier', VERIFIER, id)))
+
+    const listed = (await verifier.listTools()).tools.map((t) => t.name).sort()
+    expect(listed).toEqual(
+      [
+        'mission_get',
+        'mission_link',
+        'mission_log',
+        'mission_set_blocker',
+        'mission_settle_ac'
+      ].sort()
+    )
+
+    const ac = (await readRecord(repo, id)).steps[0].acs[0].id
+    // Its own step only: the other step's criterion is out of scope.
+    const out = await callOn(verifier, 'mission_settle_ac', {
+      folder: repo,
+      missionId: id,
+      stepId: 'stp-2',
+      criterionId: (await readRecord(repo, id)).steps[1].acs[0].id,
+      evidence: 'I read the README'
+    })
+    expect(out.isError).toBe(true)
+    expect(out.text).toMatch(/SCOPE_STEP/)
+
+    const settled = await okOn(verifier, 'mission_settle_ac', {
+      folder: repo,
+      missionId: id,
+      stepId: 'stp-1',
+      criterionId: ac,
+      evidence: 'Ran the exporter on the sample file; the output parses as CSV'
+    })
+    expect(settled.body.outcome).toBe('settled')
+    const stamp = (await readRecord(repo, id)).steps[0].acs[0].settled
+    expect(stamp?.by).toBe(VERIFIER)
+  })
+
+  it("the observer bound to a folder reads that folder's missions and nothing else", async () => {
+    const id = await newMission(repo)
+    const foreign = await newMission(otherRepo)
+    const observer = await connectAs(bearerFor({ role: 'observer', folder: repo }))
+
+    const listed = (await observer.listTools()).tools.map((t) => t.name).sort()
+    expect(listed).toEqual(['mission_get', 'mission_list'])
+
+    const rows = await okOn(observer, 'mission_list', { folder: repo })
+    expect((rows.body.missions as Array<{ id: string }>).map((m) => m.id)).toEqual([id])
+
+    // It is attached to nothing and still reads the detail: a Harnu worker bound to the folder.
+    const got = await okOn(observer, 'mission_get', { folder: repo, missionId: id })
+    expect(got.body.id).toBe(id)
+    expect(got.body.standing).toBe('worker')
+
+    // Another folder's missions are out of reach, by folder and by id.
+    for (const [verb, args] of [
+      ['mission_list', { folder: otherRepo }],
+      ['mission_get', { folder: otherRepo, missionId: foreign }],
+      ['mission_get', { folder: repo, missionId: foreign }]
+    ] as Array<[string, Record<string, unknown>]>) {
+      const r = await callOn(observer, verb, args)
+      expect(r.isError, `${verb} ${JSON.stringify(args)}`).toBe(true)
+    }
+    // And it writes, attaches or leads nothing.
+    for (const verb of ['mission_log', 'mission_attach', 'mission_link', 'mission_create']) {
+      const r = await callOn(observer, verb, { folder: repo, missionId: id })
+      expect(r.isError, verb).toBe(true)
+    }
+  })
+
+  it('the refusal of a verb outside the role says what to do next', () => {
+    const scope = scopeOf('worker', WORKER, 'mnt-aaaaaaaa')
+    const refused = scopeCallRefusal({ op: 'mission_attach', args: { folder: repo }, scope })
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) {
+      expect(refused.error).toMatch(/^SCOPE_VERB_NOT_ALLOWED/)
+      expect(refused.error).toMatch(/mission_log|mission_set_blocker/) // names what it may do
+    }
+  })
+})
+
+describe('spawned identity is not self-declared', () => {
+  it('a verifier that built the step is a builder whatever session id the call declares', async () => {
+    const id = await newMission(repo)
+    await attachAsBuilder(repo, id, VERIFIER, 'stp-1') // attached and linked: it built the step
+    await attachWithoutLink(repo, id, STRANGER) // a real second session, attached
+    const verifier = await connectAs(bearerFor(scopeOf('verifier', VERIFIER, id)))
+    const ac = (await readRecord(repo, id)).steps[0].acs[0].id
+
+    // The call says it is the stranger (who did not build it). The credential wins: a self-check.
+    const r = await okOn(verifier, 'mission_settle_ac', {
+      folder: repo,
+      missionId: id,
+      stepId: 'stp-1',
+      criterionId: ac,
+      evidence: 'I looked at my own work',
+      sessionId: STRANGER
+    })
+    expect(r.body.outcome).toBe('self-check')
+    const criterion = (await readRecord(repo, id)).steps[0].acs[0]
+    expect(criterion.settled).toBeUndefined()
+    expect(criterion.selfCheck?.by).toBe(VERIFIER)
+  })
+
+  it('the standing a spawned session reads is its own, not the one it declares', async () => {
+    const id = await newMission(repo)
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    const worker = await connectAs(bearerFor(scopeOf('worker', WORKER, id)))
+
+    // It declares the LEADER's id and reads as a worker, not as the leader.
+    const as = await okOn(worker, 'mission_get', { folder: repo, missionId: id, sessionId: LEADER })
+    expect(as.body.standing).toBe('worked')
+    // A session id that is not a session UUID is not a way to be the operator either.
+    const ops = await callOn(worker, 'mission_get', {
+      folder: repo,
+      missionId: id,
+      sessionId: 'operator'
+    })
+    if (!ops.isError) expect(ops.body.standing).toBe('worked')
+  })
+
+  it('an ordinary session still declares its own id (an operator-started session has no credential)', async () => {
+    const id = await newMission(repo)
+    const r = await okOn(mainClient, 'mission_get', {
+      folder: repo,
+      missionId: id,
+      sessionId: LEADER
+    })
+    expect(r.body.standing).toBe('leads')
+    const stranger = await callOn(mainClient, 'mission_get', {
+      folder: repo,
+      missionId: id,
+      sessionId: STRANGER
+    })
+    expect(stranger.isError).toBe(true)
+    expect(stranger.text).toMatch(/NOT_ATTACHED/)
+  })
+
+  it('a credential round-trips and every part of it is checked', () => {
+    const scope = scopeOf('verifier', VERIFIER, 'mnt-aaaaaaaa', 'stp-3')
+    const bearer = mintScopedBearer('server-secret', scope)
+    expect(verifyScopedBearer('server-secret', bearer)).toEqual(scope)
+    expect(verifyScopedBearer('another-secret', bearer)).toBeNull()
+    expect(verifyScopedBearer('server-secret', serverToken)).toBeNull()
+    expect(verifyScopedBearer('server-secret', '')).toBeNull()
+
+    // Tamper with the payload (a different session id) and keep the old mac.
+    const [head, mac] = bearer.split('.')
+    const payload = JSON.parse(Buffer.from(head.slice('scp_'.length), 'base64url').toString('utf8'))
+    payload.sessionId = STRANGER
+    const forged = `scp_${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${mac}`
+    expect(verifyScopedBearer('server-secret', forged)).toBeNull()
+  })
+
+  it('a forged, tampered or borrowed credential reaches nothing', async () => {
+    const id = await newMission(repo)
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    const good = bearerFor(scopeOf('worker', WORKER, id))
+
+    // Minted with a secret that is not the server's: refused at the door.
+    const forged = mintScopedBearer('not-the-server-secret', scopeOf('worker', WORKER, id))
+    await expect(connectAs(forged)).rejects.toBeTruthy()
+    // Payload swapped to another session, mac kept: refused.
+    const [head, mac] = good.split('.')
+    const payload = JSON.parse(Buffer.from(head.slice(4), 'base64url').toString('utf8'))
+    payload.sessionId = LEADER
+    await expect(
+      connectAs(`scp_${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${mac}`)
+    ).rejects.toBeTruthy()
+
+    // Borrowed: another caller's MCP session id with a different bearer inherits nothing.
+    const worker = await connectAs(good)
+    const transport = (worker as unknown as { transport?: { sessionId?: string } }).transport
+    const sessionId = transport?.sessionId
+    expect(sessionId).toBeTruthy()
+    const res = await fetch(serverUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${serverToken}`,
+        'mcp-session-id': sessionId as string
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
+    })
+    expect(res.status).toBe(403)
+  })
+})
