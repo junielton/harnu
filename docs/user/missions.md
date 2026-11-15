@@ -135,10 +135,34 @@ A session can ask to join a mission that already exists. The pane then shows a b
 
 When a session leads the mission, each open milestone has an **Ask** button next to its summary line. It opens a small box: type the question and press **Send**. Harnu puts "About the milestone "…": your question" into the prompt of the session that **leads** the mission, the way **Reference in session** does it. It does not press Enter, because the session may be waiting at a permission prompt: you press Enter there. The answer shows in that session, not in the pane. If the session that leads is not running, the pane says so and keeps your question. When nobody leads the mission there is no Ask button.
 
+## Closing a mission
+
+You close a mission from the pane. **Close mission…** is at the foot of the pane for any open mission, ready or not, and it is also the button in **Your next step** when every step is done ("Everything is done. Look it over and close the mission."). Either one only **opens a question**: nothing changes until you confirm.
+
+The question offers two ends:
+
+- **Close as delivered**: the work is done. It also confirms the mission's **Done when**, and the question shows the text it confirms.
+- **Discard**: drop it because it is dead, duplicated or abandoned. A discard confirms nothing.
+
+It opens on **Close as delivered** only when every step is done; otherwise it opens on **Discard**, so a stray Enter on an unfinished mission does not mark it delivered. An optional **Reason** goes to the mission's log.
+
+If something is still open, the question lists it under **Before you end it**: how many steps are not done, how many blockers are still open, a new Done when waiting for your approval, and sessions waiting to join. These are **warnings only**. They never stop you and never turn the button off. If Harnu cannot save the close (the mission changed at the same moment, or it was already closed), the question stays open and says what to do; press the button again after reading it.
+
+A closed mission **leaves the pane**. The session then shows "This session has no mission" with the list of the folder's open missions (see "A session with no mission"). The mission's file stays on disk as the record, and it cannot be reopened.
+
+## A small task
+
+A mission does not need milestones. A small task, such as one scoped from a tracker, is a mission with **no milestones**: its steps sit **directly on the timeline**, the progress bar counts steps ("1 of 2 steps done"), and an open step shows the **acceptance criteria** taken from the task. When another person has to approve something (a designer, a QA analyst), that approval is a criterion that says **Waiting for the designer** with **Mark approved**. Harnu cannot see their approval, so you press it when they tell you they approve. A sign-off you already marked is counted in "1 criterion verified", like any criterion that is settled.
+
+## A sample mission
+
+An agent cannot create a version 4 mission yet, so most of the pane has nothing to show. To see what it will look like, open the pane on a session that has no mission and press **See a sample mission**. A strip at the top says "Sample mission" and has a **State** chooser: a mission with something waiting, a step open, a step blocked, a milestone being asked about, the hand-off offered and confirmed, nothing waiting, everything done and ready to close, another session, a small task, a small task with sign-offs, a large mission, a session with no mission, a request to join, and a closed mission. Three of them (the next-step list, every step of a milestone, and the Sessions row) are one click away on the default mission, and the strip says which click. The data is made up. **Nothing you press on a sample is saved**: marks, approvals, the hand-off and the close all answer "nothing changed" without touching any file. **Leave the sample** brings the real answer back.
+
 ## What you cannot do yet
 
 - **Create a version 4 mission.** Agents cannot create one yet.
-- **Close the mission from the pane.** There is no button for that yet. On an open step you can mark your own criteria, mark another person's approval, clear a blocker that is yours, and approve or decline a new Done when. You can continue the mission in a new session (see "Sessions and continuing in a new session").
+- **Reopen a closed mission.** A closed mission stays closed. You can close a mission from the pane (see "Closing a mission"), mark your own criteria and another person's approval on an open step, clear a blocker that is yours, approve or decline a new Done when, and continue the mission in a new session (see "Sessions and continuing in a new session").
+- **Confirm a plan from the pane.** The pane has no button for that; the sample's "Confirm the plan" step only offers **Open step**.
 
 ## Related
 
