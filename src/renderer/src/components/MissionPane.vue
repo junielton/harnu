@@ -126,9 +126,9 @@ async function decideDoneWhen(door: 'approveDoneWhen' | 'declineDoneWhen'): Prom
 const offer = computed(() => {
   const o = mission.value ? handoffOfferView(mission.value, sessionId.value) : null
   if (!o || !mission.value) return null
-  // "Not now" is kept per leader: at a reading no higher than the one it was said at, stay quiet.
+  // "Not now" is kept per leader: at a reading no higher than the one it was said at (raw against raw), stay quiet.
   const at = missions.handoffDismissedAt(mission.value.missionId, o.leaderId)
-  return at !== null && o.percent <= at ? null : o
+  return at !== null && o.reading <= at ? null : o
 })
 const offerName = computed(() =>
   offer.value?.leaderId ? sessionNameOf(offer.value.leaderId, sessions.allSessions, t) : ''

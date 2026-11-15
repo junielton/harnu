@@ -792,6 +792,8 @@ export function sessionWhen(from: string, to: string | null, locale: string): Se
 export interface HandoffOfferView {
   /** The leader's context, rounded for the reader. */
   percent: number
+  /** The reading as the view gave it. "Not now" stores and compares THIS, never the rounded one. */
+  reading: number
   /** The leading session, or `null` when none leads. */
   leaderId: string | null
   /** The pane is following the leading session. */
@@ -812,6 +814,7 @@ export function handoffOfferView(
   const leader = mission.sessions.find((s) => s.open && s.role === 'leads')
   return {
     percent: Math.round(offer.percent),
+    reading: offer.percent,
     leaderId: leader?.id ?? null,
     leaderIsCurrent: leader !== undefined && leader.id === selectedId
   }
