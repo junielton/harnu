@@ -6,9 +6,14 @@
  *
  * Covers AC-5a.1 (the server enforces the allowlist on a steward caller), AC-5a.3 (system worker
  * category, WORKER_IS_STEWARD, deleted at close, kill-switches), AC-5a.4 (event wake-ups with a
- * coalescing gap, every action a `steward` Log entry) and AC-5a.5 (hooks installed at create,
- * removed at close, the user's own hooks untouched). Only `electron`, the live sources (PR join,
- * fleet scan, hook FSM) and the `claude` spawn are stubbed at their seams.
+ * coalescing gap, every action a `steward` Log entry) and AC-5a.5 (hooks removed at close, the
+ * user's own hooks untouched). Only `electron`, the live sources (PR join, fleet scan, hook FSM) and
+ * the `claude` spawn are stubbed at their seams.
+ *
+ * Missions v4 S-27: NOTHING creates a steward or installs its hooks any more (`mission_create` makes
+ * none; the first describe pins that). The steward machinery stays until S-38 deletes it, so these
+ * tests plant a steward and its hooks the way an older Harnu left them (`plantSteward`) and keep
+ * grading what that machinery does.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
@@ -74,6 +79,7 @@ import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
 import { writeMcpEnabled } from '../src/main/mcp/prefs'
 import {
+  createStewardForMission,
   registerScheduler,
   stopSchedulerTicker,
   setStewardTickStarter,
@@ -84,7 +90,7 @@ import {
 import { runOperatorDoor } from '../src/main/mission-ipc'
 import { recordLedgerEvent } from '../src/main/mcp/tool-handlers'
 import { stewardBearer } from '../src/main/steward-core'
-import { isStewardHook } from '../src/main/steward-hooks'
+import { isStewardHook, mergeStewardHooks } from '../src/main/steward-hooks'
 
 const OWNER = '11111111-2222-4333-8444-555555555555'
 const CHILD = '99999999-2222-4333-8444-555555555555'
@@ -151,15 +157,35 @@ async function fakeRepo(): Promise<string> {
 let missionSeq = 0
 /** A unique title per call: two identical mission_create calls are one call to the idempotency registry. */
 async function newMission(folder: string, extra: Record<string, unknown> = {}): Promise<string> {
+  const title = `Ship the migration ${++missionSeq}`
   const ack = await ok('mission_create', {
     folder,
-    title: `Ship the migration ${++missionSeq}`,
+    title,
     declaredEnd: END,
     sessionId: OWNER,
     steps: STEPS,
     ...extra
   })
-  return ack.missionId as string
+  const missionId = ack.missionId as string
+  if (extra.steward !== false) await plantSteward(folder, missionId, title)
+  return missionId
+}
+
+/** A steward and its hooks, as an older Harnu left them (see the header). */
+async function plantSteward(folder: string, missionId: string, title: string): Promise<void> {
+  await createStewardForMission({ missionId, folder: path.resolve(folder), title })
+  let current: unknown
+  try {
+    current = JSON.parse(await fs.readFile(settingsPath(folder), 'utf8'))
+  } catch {
+    current = undefined
+  }
+  await fs.mkdir(path.dirname(settingsPath(folder)), { recursive: true })
+  await fs.writeFile(
+    settingsPath(folder),
+    JSON.stringify(mergeStewardHooks(current, { port: 4711, token: 'bridge-token' }), null, 2),
+    'utf8'
+  )
 }
 
 async function missionOnDisk(
@@ -223,42 +249,22 @@ beforeEach(() => {
 })
 
 describe('AC-5a.3 — a mission carries a system-worker steward', () => {
-  it('mission_create creates one steward by default: category steward, not agent-controllable, 20-minute beat', async () => {
+  it('mission_create creates no steward and installs no hooks, whatever `steward` says', async () => {
     const repo = await fakeRepo()
-    const missionId = await newMission(repo)
-    const rows = (await stewardRows()).filter((w) => w.missionId === missionId)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({
-      mode: 'steward',
-      category: 'steward',
-      agentControllable: false,
-      everyMinutes: 20,
-      enabled: true,
-      missionId
-    })
-  })
-
-  it('the ACK says so, and `steward: false` creates none', async () => {
-    const repo = await fakeRepo()
-    const ack = await ok('mission_create', {
-      folder: repo,
-      title: 'No steward',
-      declaredEnd: END,
-      sessionId: OWNER,
-      steps: STEPS
-    })
-    expect(ack.steward).toMatchObject({ created: true })
     const before = (await stewardRows()).length
-    const off = await ok('mission_create', {
-      folder: repo,
-      title: 'Opted out',
-      declaredEnd: END,
-      sessionId: OWNER,
-      steps: STEPS,
-      steward: false
-    })
-    expect(off.steward).toMatchObject({ created: false })
+    for (const extra of [{}, { steward: true }, { steward: false }]) {
+      const ack = await ok('mission_create', {
+        folder: repo,
+        title: `No steward ${++missionSeq}`,
+        declaredEnd: END,
+        sessionId: OWNER,
+        steps: STEPS,
+        ...extra
+      })
+      expect(ack.steward).toEqual({ created: false })
+    }
     expect((await stewardRows()).length).toBe(before)
+    await expect(fs.stat(settingsPath(repo))).rejects.toThrow()
   })
 
   it('update_worker and delete_worker refuse WORKER_IS_STEWARD and change nothing', async () => {
@@ -576,7 +582,7 @@ describe('AC-5a.4 — event wake-ups with a coalescing gap and a 20-minute fallb
 })
 
 describe("AC-5a.5 — hooks go into the folder's settings.local.json and leave at close", () => {
-  it("installs SessionStart(compact), PreCompact, Stop and SubagentStop, keeping the user's own settings", async () => {
+  it("removes our four hooks at close and keeps the user's own settings", async () => {
     const repo = await fakeRepo()
     const userHook = { type: 'command', command: 'echo mine' }
     const seed = {
@@ -588,23 +594,12 @@ describe("AC-5a.5 — hooks go into the folder's settings.local.json and leave a
     const missionId = await newMission(repo)
 
     const s = (await readSettings(repo)) as {
-      permissions: unknown
       hooks: Record<string, Array<{ matcher?: string; hooks: unknown[] }>>
     }
-    expect(s.permissions).toEqual(seed.permissions)
-    expect(Object.keys(s.hooks).sort()).toEqual([
-      'PreCompact',
-      'SessionStart',
-      'Stop',
-      'SubagentStop'
-    ])
-    expect(s.hooks.PreCompact[0].hooks).toEqual([userHook])
-    expect(s.hooks.SessionStart.find((e) => e.matcher === 'compact')).toBeTruthy()
     const ours = Object.values(s.hooks).flatMap((es) =>
       es.flatMap((e) => e.hooks.filter(isStewardHook))
     )
     expect(ours).toHaveLength(4)
-    expect(JSON.stringify(ours)).toContain('/steward/bridge-token/')
 
     await closeAs(repo, missionId)
     expect(await readSettings(repo)).toEqual(seed)
@@ -635,19 +630,12 @@ describe("AC-5a.5 — hooks go into the folder's settings.local.json and leave a
     expect((await readSettings(repo)).hooks).toBeUndefined()
   })
 
-  it('a settings file that is not valid JSON is left alone, and the ACK says the hooks were skipped', async () => {
+  it('a settings file that is not valid JSON is left alone at close', async () => {
     const repo = await fakeRepo()
-    await fs.mkdir(path.dirname(settingsPath(repo)), { recursive: true })
+    const missionId = await newMission(repo)
     await fs.writeFile(settingsPath(repo), '{ not json', 'utf8')
-    const ack = await ok('mission_create', {
-      folder: repo,
-      title: 'Messy settings',
-      declaredEnd: END,
-      sessionId: OWNER,
-      steps: STEPS
-    })
+    await closeAs(repo, missionId)
     expect(await fs.readFile(settingsPath(repo), 'utf8')).toBe('{ not json')
-    expect(ack.steward).toMatchObject({ created: true, hooks: 'skipped' })
   })
 
   it('no steward → no hooks', async () => {

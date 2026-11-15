@@ -3,6 +3,11 @@
  * `registerScheduler` loads the workers on another; reconciling stewards read the Scheduler's
  * in-memory list, so a bridge that came up FIRST reconciled against an empty list and re-pointed
  * nothing. `reconcileStewardsOnBoot` now waits for the Scheduler to have loaded.
+ *
+ * Missions v4 S-27: boot no longer re-points a steward's hooks at the live bridge; it retires the
+ * steward (`steward-retired.test.ts` pins the retirement and its notice). What this file keeps is the
+ * race: whoever runs at boot waits for the Scheduler, and even the old entry point can no longer
+ * re-install a hook.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
@@ -81,7 +86,7 @@ beforeEach(() => {
 })
 
 describe('reconcileStewardsOnBoot waits for the Scheduler', () => {
-  it('the bridge resolving FIRST still finds the stewards and re-points their hooks at the live bridge', async () => {
+  it('the bridge resolving FIRST still finds the stewards, and retires them instead of re-pointing their hooks', async () => {
     await seedWorld()
     const bridge = await import('../src/main/steward-bridge')
     const shell = await import('../src/main/scheduler-shell')
@@ -99,10 +104,12 @@ describe('reconcileStewardsOnBoot waits for the Scheduler', () => {
     shell.stopSchedulerTicker()
 
     const after = await fs.readFile(path.join(repo, '.claude', 'settings.local.json'), 'utf8')
-    expect(after).toContain('fresh-boot-token')
+    expect(after).not.toContain('fresh-boot-token')
     expect(after).not.toContain('old-boot-token')
-    expect(after).toContain(':5150/steward/')
-  })
+    expect(after).not.toContain('/steward/')
+    expect(shell.listStewards()).toEqual([])
+    // The bridge pulls in the whole mission handler tree; a cold transform can exceed the 5 s default.
+  }, 30_000)
 
   it('whenSchedulerLoaded stays pending until registerScheduler has loaded the store', async () => {
     await seedWorld()
