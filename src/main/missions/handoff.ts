@@ -26,6 +26,7 @@
  * the v3 file. Electron-free.
  */
 
+import * as path from 'node:path'
 import { repoRoot } from '../data-dir'
 import { guardMission, leaderOf, openEntry, type Actor, type Standing } from './guard'
 import type { MissionV4, StoppedAt } from './model'
@@ -111,7 +112,18 @@ export function handoffPrompt(
 
 // ---- Starting the session ---------------------------------------------------------------------
 
-export type HandoffStartResult = { ok: true; sessionId: string } | { ok: false; reason: string }
+export type HandoffStartResult =
+  | { ok: true; sessionId: string }
+  | {
+      ok: false
+      reason: string
+      /**
+       * Set when a session WAS started (the dispatch was accepted) but its real id never came back in
+       * time: the id the renderer minted for it. The session exists and is not attached; the refusal
+       * names it so the operator can open or close it.
+       */
+      started?: string
+    }
 
 /** Starts a normal session in `folder` with `prompt` and resolves with its REAL id. It may not throw. */
 export type HandoffStart = (args: { folder: string; prompt: string }) => Promise<HandoffStartResult>
@@ -128,22 +140,98 @@ export interface HandoffBridge {
 /** How long the door waits for the new session to appear on disk with its real id. */
 export const HANDOFF_START_TIMEOUT_MS = 90_000
 
+/** A session's first prompt, as Claude Code's `UserPromptSubmit` hook delivers it to main. */
+export interface PromptSighting {
+  /** The REAL session id (the hook's `session_id`). */
+  sessionId: string
+  prompt: string
+  /** The session's working directory, when the hook sent it. */
+  cwd?: string
+}
+
+/** Subscribe to prompt sightings; returns the unsubscribe. */
+export type ObservePrompts = (cb: (s: PromptSighting) => void) => () => void
+
 const LINE_BREAKS = new RegExp('[\\r\\n\\v\\f\\u0085\\u2028\\u2029]+', 'g')
 const oneLine = (s: string): string => s.replace(LINE_BREAKS, ' ').slice(0, 120)
+
+/** `text` with every run of whitespace as one space, so a trailing newline is not a difference. */
+const squash = (text: string): string => text.replace(/\s+/g, ' ').trim()
+
+/**
+ * Whether `sighting` is the first prompt of the session this hand-off started: the same prompt (the one
+ * the door sent, which holds the mission and the instruction line), from the same folder. A long prompt
+ * may reach the hook cut short, so a prefix of at least 200 characters counts too.
+ */
+function isOurPrompt(sighting: PromptSighting, folder: string, prompt: string): boolean {
+  if (typeof sighting.sessionId !== 'string' || sighting.sessionId === '') return false
+  if (typeof sighting.prompt !== 'string') return false
+  if (typeof sighting.cwd === 'string' && path.resolve(sighting.cwd) !== path.resolve(folder)) {
+    return false
+  }
+  const seen = squash(sighting.prompt)
+  const sent = squash(prompt)
+  return seen === sent || (seen.length >= 200 && sent.startsWith(seen))
+}
+
+/**
+ * The hub's observer of first prompts, loaded on first use so this module stays free of Electron at load
+ * time. `null` when the hub cannot be loaded (a test with nothing to observe): the starter then relies on
+ * the materialization wait alone.
+ */
+async function hubObserve(): Promise<ObservePrompts | null> {
+  try {
+    const { addTaskEventObserver } = await import('../detect/task-state-hub')
+    return (cb) =>
+      addTaskEventObserver((ev) => {
+        // the main thread's own prompt: a subagent's hook (`agentId`) is never a session's first prompt
+        if (ev.event !== 'UserPromptSubmit' || ev.agentId !== undefined) return
+        const prompt = ev.payload?.prompt
+        if (typeof prompt !== 'string') return
+        cb({
+          sessionId: ev.sessionId,
+          prompt,
+          ...(ev.payload?.cwd !== undefined ? { cwd: ev.payload.cwd } : {})
+        })
+      })
+  } catch {
+    return null
+  }
+}
 
 /**
  * The starter the app uses: `session.dispatchCard` over the command bridge (the way Harnu starts a
  * normal session for the operator: full permissions, the normal config, no board card and no board
- * state), then the bridge's wait for the real session id. Never `session.create`, which starts an
- * agent-controlled session. Both a refusal and a throw are an answer, never an exception.
+ * state), never `session.create`, which starts an agent-controlled session. Both a refusal and a throw
+ * are an answer, never an exception.
+ *
+ * **How it learns the real session id.** `create_session` learns it from the renderer's report that a
+ * synthetic materialized, but the renderer makes that report only for an agent-controlled synthetic, and
+ * this one is not (it keeps the operator's permission mode). So the starter waits for either signal:
+ * the bridge's materialization (a renderer that reports it), or the new session's own first prompt, which
+ * the hook bridge hands to main with the real `session_id`. It listens BEFORE it dispatches, so a prompt
+ * that arrives while the dispatch is still being answered is not missed, and it stops listening when it
+ * settles. When neither comes in time the failure carries the id of the session that WAS started.
  */
 export function bridgeStarter(
   bridge: HandoffBridge,
-  opts: { timeoutMs?: number } = {}
+  opts: { timeoutMs?: number; observe?: ObservePrompts | null } = {}
 ): HandoffStart {
   const timeoutMs = opts.timeoutMs ?? HANDOFF_START_TIMEOUT_MS
   return async ({ folder, prompt }) => {
+    let stop: () => void = () => undefined
+    let started: string | undefined
     try {
+      const observe = opts.observe === undefined ? await hubObserve() : opts.observe
+      let onSight: (sessionId: string) => void = () => undefined
+      const sighted = new Promise<string>((resolve) => {
+        onSight = resolve
+      })
+      if (observe) {
+        stop = observe((s) => {
+          if (isOurPrompt(s, folder, prompt)) onSight(s.sessionId)
+        })
+      }
       const ack = (await bridge.dispatch('session.dispatchCard', {
         folderPath: folder,
         prompt
@@ -153,14 +241,24 @@ export function bridgeStarter(
         const why = typeof ack?.error === 'string' && ack.error !== '' ? ack.error : 'no session id'
         return { ok: false, reason: oneLine(why) }
       }
-      const real = await bridge.awaitMaterialization(synthetic, timeoutMs)
-      if (real === null) return { ok: false, reason: 'timeout' }
+      started = synthetic
+      const real = await Promise.race([
+        sighted.then((sessionId) => ({ sessionId })),
+        bridge.awaitMaterialization(synthetic, timeoutMs)
+      ])
+      if (real === null) return { ok: false, reason: 'timeout', started }
       if (typeof real.sessionId !== 'string' || real.sessionId === '') {
-        return { ok: false, reason: 'no real session id' }
+        return { ok: false, reason: 'no real session id', started }
       }
       return { ok: true, sessionId: real.sessionId }
     } catch (err) {
-      return { ok: false, reason: oneLine(err instanceof Error ? err.message : String(err)) }
+      return {
+        ok: false,
+        reason: oneLine(err instanceof Error ? err.message : String(err)),
+        ...(started !== undefined ? { started } : {})
+      }
+    } finally {
+      stop()
     }
   }
 }
@@ -198,6 +296,11 @@ export interface HandoffRefusal {
   code: HandoffCode | (string & {})
   /** `CODE: what to do`; never the record or a path. */
   error: string
+  /**
+   * The id of a session this hand-off started that is NOT attached to the mission (it did not take over in
+   * time, or the leader changed under it). It exists and runs; the operator can open or close it.
+   */
+  started?: string
 }
 
 export type HandoffResult =
@@ -215,10 +318,11 @@ export type HandoffResult =
     }
   | HandoffRefusal
 
-const refusal = (code: HandoffCode, message: string): HandoffRefusal => ({
+const refusal = (code: HandoffCode, message: string, started?: string): HandoffRefusal => ({
   ok: false,
   code,
-  error: `${code}: ${message}`
+  error: `${code}: ${message}`,
+  ...(started !== undefined ? { started } : {})
 })
 
 /** A real Claude session id. A `synthetic-…` id, or any other text, is never written to a record. */
@@ -296,6 +400,15 @@ export async function handOff(
       started = { ok: false, reason: err instanceof Error ? err.message : String(err) }
     }
     if (!started.ok) {
+      // A session that WAS started and did not take over still runs: say so, name it, and say the record is
+      // as it was. Only a start that never began changed nothing at all.
+      if (started.started !== undefined) {
+        return refusal(
+          'HANDOFF_START_FAILED',
+          `a new session was started (${started.started}) but it did not take over: Harnu did not see it begin in time (${oneLine(started.reason)}). The mission record is unchanged and ${expectedLeader ?? 'no session'} still leads. Open the new session to see what happened, or close it, then try again.`,
+          started.started
+        )
+      }
       return refusal(
         'HANDOFF_START_FAILED',
         `the new session did not start (${oneLine(started.reason)}). Nothing changed: ${expectedLeader ?? 'no session'} still leads. Try again, or attach the session from the picker if it appears.`
@@ -328,7 +441,7 @@ export async function handOff(
         if (leaderOf(rec) !== expectedLeader) {
           throw Object.assign(
             new Error(
-              `LEADER_CHANGED: the leader of ${rec.id} changed while the new session started. Nothing was changed; look at the Sessions row and decide again.`
+              `LEADER_CHANGED: the leader of ${rec.id} changed while the new session started. The record was not changed, and the new session ${newId} is open but not attached. Look at the Sessions row and decide again.`
             ),
             { code: 'LEADER_CHANGED' }
           )
@@ -370,7 +483,10 @@ export async function handOff(
         }
       }
     )
-    if (!written.ok) return { ok: false, code: written.code, error: written.error }
+    if (!written.ok) {
+      // the session started and runs: name it so the operator can open or close it
+      return { ok: false, code: written.code, error: written.error, started: newId }
+    }
     return {
       ok: true,
       changed: true,
@@ -396,10 +512,17 @@ export type HandOffReply =
       previousLeader: string | null
       standing: Standing
     }
-  | { ok: false; code: string; error: string }
+  | { ok: false; code: string; error: string; started?: string }
 
 export function handOffReply(result: HandoffResult): HandOffReply {
-  if (!result.ok) return { ok: false, code: result.code, error: result.error }
+  if (!result.ok) {
+    return {
+      ok: false,
+      code: result.code,
+      error: result.error,
+      ...(result.started !== undefined ? { started: result.started } : {})
+    }
+  }
   const { record: _record, file: _file, ...rest } = result
   return rest
 }

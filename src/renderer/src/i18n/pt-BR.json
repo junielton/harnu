@@ -483,6 +483,7 @@
       },
       "thisSession": "esta sessão",
       "unnamed": "Sessão {id}",
+      "tookOver": "Assumiu “{title}”",
       "since": "Desde {day}",
       "span": "{from} a {to}",
       "sameDay": "{day}, {from} a {to}",
@@ -524,6 +525,7 @@
       "error": {
         "MISSION_CLOSED": "Esta missão está fechada, então não há o que continuar.",
         "HANDOFF_START_FAILED": "A nova sessão não iniciou. Nada mudou: a mesma sessão continua liderando. Tente de novo em instantes.",
+        "STARTED_NOT_ATTACHED": "A nova sessão foi iniciada, mas não assumiu a tempo. A mesma sessão continua liderando. Abra a nova sessão para ver o que aconteceu, ou feche-a. Depois tente de novo.",
         "HANDOFF_IN_PROGRESS": "Uma transferência desta missão já está iniciando uma sessão. Espere terminar e olhe a linha Sessões.",
         "HANDOFF_UNAVAILABLE": "O Harnu não consegue iniciar uma sessão agora. Nada mudou. Tente de novo em instantes.",
         "LEADER_CHANGED": "Quem lidera a missão mudou enquanto a nova sessão iniciava, então o Harnu não a vinculou. A nova sessão está aberta, mas não faz parte da missão. Olhe a linha Sessões e decida de novo.",

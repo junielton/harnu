@@ -42,6 +42,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **Continue in a new session** now works end to end in the real app. Before, Harnu started the new session but never learned that it had begun: it waited 90 seconds, said "Nothing changed" and left the new session running with no mission. Harnu now recognizes the new session from its first message, attaches it as the one that leads and releases the old one. If it still does not take over in time, the window says what is true: the new session was started, the same session still leads, and **Open the new session** takes you to it. The session row for a new leader reads "Took over “…”" with the mission's title instead of the hand-off's opening sentence. Agents cannot create a version 4 mission yet, so this only matters for a version 4 mission file that already exists in your repo.
 - A step whose pull request is still a draft now reads "PR #7 · draft" (or "rascunho" in Portuguese) in the mission step rail, instead of printing the raw text `mission.pr.state.isDraft`.
 
 ## 2026-11-13

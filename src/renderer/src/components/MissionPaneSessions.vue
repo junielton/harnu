@@ -45,7 +45,8 @@ const rows = computed(() =>
 const folded = computed(() => foldSessionRows(rows.value, expanded.value))
 const leader = computed(() => sessionsLeader(rows.value))
 
-const nameOf = (id: string): string => sessionNameOf(id, sessions.allSessions, t)
+const nameOf = (id: string): string =>
+  sessionNameOf(id, sessions.allSessions, t, props.mission.detail.title)
 
 const meta = computed(() => {
   const count = rows.value.length

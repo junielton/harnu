@@ -228,12 +228,14 @@ const toggleAsk = (milestoneId: string): void => {
 const offer = computed(() => {
   const o = mission.value ? handoffOfferView(mission.value, sessionId.value) : null
   if (!o || !mission.value) return null
-  // "Not now" is kept per leader: at a reading no higher than the one it was said at, stay quiet.
+  // "Not now" is kept per leader: at a reading no higher than the one it was said at (raw against raw), stay quiet.
   const at = missions.handoffDismissedAt(mission.value.missionId, o.leaderId)
-  return at !== null && o.percent <= at ? null : o
+  return at !== null && o.reading <= at ? null : o
 })
 const offerName = computed(() =>
-  offer.value?.leaderId ? sessionNameOf(offer.value.leaderId, sessions.allSessions, t) : ''
+  offer.value?.leaderId
+    ? sessionNameOf(offer.value.leaderId, sessions.allSessions, t, mission.value?.detail.title)
+    : ''
 )
 const handoffOpen = ref(false)
 const handoffDone = ref(false)
@@ -258,6 +260,7 @@ const newLeaderLoaded = computed(
 function openHandoff(): void {
   handoffDone.value = false
   handoffError.value = null
+  newLeader.value = null
   handoffOpen.value = true
 }
 function closeHandoff(): void {
@@ -273,7 +276,9 @@ async function confirmHandoff(): Promise<void> {
     handoffDone.value = true
     newLeader.value = res.sessionId
   } else {
-    handoffError.value = handoffErrorKey(res.code)
+    // A session the door started that did not take over runs without being attached: name the way to it.
+    newLeader.value = res.started ?? null
+    handoffError.value = handoffErrorKey(res.code, res.started !== undefined)
   }
 }
 function openNewLeader(): void {
