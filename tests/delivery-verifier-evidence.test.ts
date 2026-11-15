@@ -1,10 +1,15 @@
 /**
  * Campaign ch.6 part 2 (T610, AC-6.4) — `delivery-verifier` re-runs the named checks at the
  * PR head in a clean worktree and leaves an EVIDENCE BUNDLE under
- * `.harnu/evidence/<missionId>/<stepId>/`, linked on the step with `mission_link_child`
- * (a `worktree` link). The `verifier` gate reads that link, so the skill must say so —
- * for a unit step and for the fixed end. Prose assertions on the shipped model-facing file,
- * the same posture as `delivery-verifier-rubrics.test.ts`.
+ * `.harnu/evidence/<missionId>/<stepId>/`, linked on the step (a `worktree` link). Prose
+ * assertions on the shipped model-facing file, the same posture as
+ * `delivery-verifier-rubrics.test.ts`.
+ *
+ * Missions v4 S-30: the link is `mission_link` (the scoped verifier holds it), it comes before the
+ * settle call instead of before `mission_verify_step`, and the v3 `verifier` gate that read it is not
+ * the v4 reader, so the old gate pin is gone. What chapter 4 added stays pinned here: the exact
+ * folder, the verifier's own `verify/` subfolder, a `README.md` in every folder, the builder's files
+ * left alone, and a free port before one is opened.
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -38,7 +43,7 @@ describe('delivery-verifier — the evidence bundle (AC-6.4)', () => {
     const at = headings.indexOf('## Step 3 — Re-run the checks and keep the evidence')
     expect(at).toBeGreaterThan(-1)
     expect(headings[at - 1]).toMatch(/^## The rubrics$/)
-    expect(headings[at + 1]).toMatch(/^## Step 4 — Record on the card and on the mission step$/)
+    expect(headings[at + 1]).toMatch(/^## Step 4 — Record, and say who$/)
   })
 
   it('re-runs the named checks at the PR head in a clean worktree', () => {
@@ -52,7 +57,7 @@ describe('delivery-verifier — the evidence bundle (AC-6.4)', () => {
   it('stores test output, screenshots and console under the bundle directory', () => {
     const s = section('Step 3 — Re-run the checks and keep the evidence')
     expect(s).toContain('.harnu/evidence/<missionId>/<stepId>/')
-    // The path the skill teaches is the path the gate reads.
+    // The path the skill teaches is the path the code names.
     expect(evidenceBundleDir('<missionId>', '<stepId>')).toBe(
       '.harnu/evidence/<missionId>/<stepId>'
     )
@@ -61,24 +66,30 @@ describe('delivery-verifier — the evidence bundle (AC-6.4)', () => {
     expect(s).toMatch(/console/)
   })
 
-  it('links the bundle on the step as a worktree link — before recording the verdict', () => {
+  it('links the bundle on the step as a worktree link, before settling', () => {
     const s = section('Step 3 — Re-run the checks and keep the evidence')
-    expect(s).toMatch(/mission_link_child/)
+    expect(s).toMatch(/mission_link\(/)
+    expect(s).not.toMatch(/mission_link_child/)
     expect(s).toMatch(/kind: 'worktree'/)
-    expect(s).toMatch(/before\W+you call `mission_verify_step`/)
+    expect(s).toMatch(/Link the folder before you settle/)
   })
 
-  it('says what the gate does without it: verified with no bundle link reads running, not green', () => {
+  it("keeps its own files under verify/ and leaves the builder's files alone", () => {
     const s = section('Step 3 — Re-run the checks and keep the evidence')
-    expect(s).toMatch(/verifier. gate/)
-    expect(s).toMatch(/no bundle link reads `running`/)
-    expect(s).toMatch(/not `green`/)
+    expect(s).toContain('`.harnu/evidence/<missionId>/<stepId>/verify/`')
+    expect(s).toMatch(/the builder's files in the step folder stay the builder's/)
   })
 
-  it('the fixed end needs its bundle too, linked by whoever verifies it', () => {
-    const s = section('Step 4 — Record on the card and on the mission step')
-    expect(s).toMatch(/fixed end/i)
-    expect(s).toMatch(/evidence bundle/)
+  it('gives every evidence folder a README, and opens no port it did not see free', () => {
+    const s = section('Step 3 — Re-run the checks and keep the evidence')
+    expect(s).toMatch(/every evidence folder a `README\.md`/)
+    expect(s).toMatch(/Pick a free port before you open one/)
+  })
+
+  it('the last step is settled the same way, by a session that built none of the steps', () => {
+    const s = section('Step 4 — Record, and say who')
+    expect(s).toMatch(/Check the whole mission against Done when/)
+    expect(s).toMatch(/a session that built none of the steps/)
   })
 
   it('the bundle path stays out of git: it is evidence, not source', () => {
