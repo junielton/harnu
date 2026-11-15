@@ -795,4 +795,26 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
     expect(store.chipFor(OWNER)?.text).toBe('2/5 · 1 for you')
     expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(false)
   })
+
+  // Delta 5: Open mission on a v3 card must open only the popover. The mission the card names is the one the
+  // v3 list serves; it need not be one the v4 readers read by that id (a campaign's chapter mission is a
+  // milestone of another id there, and the readers read a bounded number of missions per repo).
+  it('a mission only the v3 list knows is a v3 mission: Open mission is the popover, never the pane', async () => {
+    const store = mountStore()
+    v3Views = [
+      v3([{ kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }]),
+      fixtureView('parallel', {
+        mission: { id: 'mnt-0c0c0c0c', owner: { sessionId: OWNER, folder: '/repo' } } as never,
+        view: { you: [{ kind: 'close' }] as never }
+      })
+    ]
+    v4Items = []
+    wire()
+    await store.refresh()
+    // The second id is in no reader (the view channel answers only for the first).
+    expect(store.isV3Mission('mnt-0c0c0c0c')).toBe(true)
+    expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(true)
+    // An id nobody knows is not claimed for the popover.
+    expect(store.isV3Mission('mnt-deadbeef')).toBe(false)
+  })
 })
