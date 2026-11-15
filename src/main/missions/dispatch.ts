@@ -353,6 +353,16 @@ export interface BindCardDeps {
   timeoutMs?: number
 }
 
+/**
+ * How a synthetic session id becomes the real one. The shell that owns the command bridge registers it
+ * once (the manifest drain's), so the one place a card is bound to its session (`bindSessionCore`, used by
+ * the board and the drain alike) can wait for the real id without owning a bridge.
+ */
+let bootWaiter: BindCardDeps['waitForBoot'] | null = null
+export function setBootWaiter(fn: BindCardDeps['waitForBoot'] | null): void {
+  bootWaiter = fn ?? null
+}
+
 const SYNTHETIC_PREFIX = 'synthetic-'
 const BOOT_WAIT_MS = 15 * 60_000
 
@@ -377,8 +387,9 @@ export async function bindCardSession(
   if (card.malformed || !card.mission || !card.step) return { ok: true, bound: false }
 
   let realId = sessionId
-  if (sessionId.startsWith(SYNTHETIC_PREFIX) && deps.waitForBoot) {
-    const booted = await deps.waitForBoot(sessionId, deps.timeoutMs ?? BOOT_WAIT_MS)
+  const waitForBoot = deps.waitForBoot ?? bootWaiter
+  if (sessionId.startsWith(SYNTHETIC_PREFIX) && waitForBoot) {
+    const booted = await waitForBoot(sessionId, deps.timeoutMs ?? BOOT_WAIT_MS)
     if (!booted) {
       return refusal(
         'SESSION_NOT_BOOTED',
@@ -438,30 +449,63 @@ export async function noteCardSpawn(
   }
 }
 
-// ---- The drain's side of it: which card is being spawned, and attaching its session ---------------------
+// ---- The board's and the drain's side of it ------------------------------------------------------------
+
+/**
+ * A card was bound to its session (`bindSessionCore`, the one place the board's Dispatch button and the
+ * manifest drain both bind through). When the card is the work of a step, the session is attached to the
+ * step as a worker once it has booted. Detached on purpose: a boot may queue for minutes and the caller
+ * never waits on it; a failure is said in the log, and the operator can attach the session from the
+ * Mission pane. Never throws.
+ */
+export function bindStepSession(folder: string, slug: string, sessionId: string): void {
+  const warn = (why: string): void =>
+    console.warn(`[dispatch] ${slug} was not attached to its step: ${why}`)
+  void bindCardSession(folder, slug, sessionId)
+    .then((res) => {
+      if (!res.ok) warn(res.error)
+    })
+    .catch((err) => warn(err instanceof Error ? err.message : String(err)))
+}
+
+/**
+ * The board's Dispatch button plans the dispatch before it spawns. When the card is the work of a step and
+ * is dispatched into this folder (a session or a teammate), leave the credential note for the session it
+ * is about to spawn. A card cut into a worktree is not noted: where it spawns is not known until the
+ * worktree exists (the drain, which cuts it itself, does note it). `false` when nothing was noted.
+ */
+export async function noteBoardCardSpawn(
+  folder: string,
+  slug: string,
+  boardArg?: BoardIo
+): Promise<boolean> {
+  try {
+    const board = boardArg ?? (await realBoardIo(folder))
+    const file = await board.read(slug)
+    if (!file) return false
+    const substrate = parseCard(file.content, file.slug).substrate
+    if (substrate === 'worktree' || substrate === 'internal') return false
+    return await noteCardSpawn(folder, folder, slug, board)
+  } catch {
+    return false
+  }
+}
 
 /**
  * What the manifest drain's shell does around a card's session, in the order the drain calls it:
- * `planned` (the card is next), `cut` (its worktree exists, for a worktree card), `beforeSpawn` (leave
- * the credential note, in the folder it spawns in), then `afterBind` (the card is bound to its session:
- * attach it to the step once it has booted). The drain's `spawnSession` is not told which card it is
- * spawning for, so the card waits here by the folder its session spawns in (one card is dispatched at a
- * time within a pass). A card with no step is untouched by all of it.
+ * `planned` (the card is next), `cut` (its worktree exists, for a worktree card), then `beforeSpawn`
+ * (leave the credential note, in the folder it spawns in). The drain's `spawnSession` is not told which
+ * card it is spawning for, so the card waits here by the folder its session spawns in (one card is
+ * dispatched at a time within a pass). Attaching the session is `bindStepSession`'s, from the bind. A
+ * card with no step is untouched by all of it.
  */
-export function createDrainBinder(deps: {
-  waitForBoot: NonNullable<BindCardDeps['waitForBoot']>
-  /** Where a failure to attach is said (the operator can attach the session from the Mission pane). */
-  warn?: (message: string) => void
-}): {
+export function createDrainBinder(): {
   planned(folder: string, slug: string): void
   cut(worktreePath: string, home: string, slug: string): void
   /** Take the card waiting for `spawnFolder` and leave its note. The returned function undoes the note. */
   beforeSpawn(spawnFolder: string): Promise<() => void>
-  /** Resolves when the attach has settled; the drain never waits on it. */
-  afterBind(folder: string, slug: string, sessionId: string): Promise<void>
 } {
   const dispatching = new Map<string, { home: string; slug: string }>()
-  const warn = deps.warn ?? ((m: string) => console.warn(`[manifest-drain] ${m}`))
   return {
     planned: (folder, slug) => void dispatching.set(folder, { home: folder, slug }),
     cut: (worktreePath, home, slug) => void dispatching.set(worktreePath, { home, slug }),
@@ -471,18 +515,6 @@ export function createDrainBinder(deps: {
       const noted = card ? await noteCardSpawn(spawnFolder, card.home, card.slug) : false
       return () => {
         if (noted) dropPendingSpawn(spawnFolder)
-      }
-    },
-    async afterBind(folder, slug, sessionId) {
-      try {
-        const res = await bindCardSession(folder, slug, sessionId, {
-          waitForBoot: deps.waitForBoot
-        })
-        if (!res.ok) warn(`${slug} was not attached to its step: ${res.error}`)
-      } catch (err) {
-        warn(
-          `${slug} was not attached to its step: ${err instanceof Error ? err.message : String(err)}`
-        )
       }
     }
   }

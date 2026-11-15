@@ -27,7 +27,7 @@ import { getFleetFolders } from './fleet-model'
 import { isHibernated } from './hibernation'
 import { liveSessionKeys, resolveSessionAlias } from './pty'
 import { getUserProjectWipLimit } from './user-projects'
-import { createDrainBinder } from './missions/dispatch'
+import { createDrainBinder, setBootWaiter } from './missions/dispatch'
 
 /**
  * T113 — the env-bound shell wiring the pure drain driver (`manifest-drain.ts`)
@@ -139,11 +139,10 @@ export function registerManifestDrain(
   })
 
   // Missions v4 S-26 (AC-68): a card that is the work of a step spawns a session with the scoped verbs of
-  // that step, and the session is attached to the step once it has booted (see `createDrainBinder`).
-  // Detached on purpose: a boot may queue behind others for minutes, and the drain never waits on it.
-  const binder = createDrainBinder({
-    waitForBoot: (syntheticId, timeoutMs) => bridge.awaitMaterialization(syntheticId, timeoutMs)
-  })
+  // that step (see `createDrainBinder`), and is attached to it once it has booted: `bindSessionCore`, which
+  // the board and this drain both bind through, does that, waiting for the real session id over this bridge.
+  const binder = createDrainBinder()
+  setBootWaiter((syntheticId, timeoutMs) => bridge.awaitMaterialization(syntheticId, timeoutMs))
 
   const deps: DrainPassDeps = {
     loadState: async (folder) => {
@@ -253,13 +252,8 @@ export function registerManifestDrain(
     rollbackWorktree: async (repoRoot, path, createdBranch) =>
       rollbackWorktree(repoRoot, path, createdBranch),
 
-    bindSession: async (folder, slug, sessionId, dispatchedWith, substrate, executedIn) => {
-      const bound = (
-        await bindSessionCore(folder, slug, sessionId, dispatchedWith, substrate, executedIn)
-      ).ok
-      if (bound) void binder.afterBind(folder, slug, sessionId)
-      return bound
-    },
+    bindSession: async (folder, slug, sessionId, dispatchedWith, substrate, executedIn) =>
+      (await bindSessionCore(folder, slug, sessionId, dispatchedWith, substrate, executedIn)).ok,
 
     // T190: probe the SPAWN folder (not the card's home `folder`) for its short
     // branch name — works for both same-folder dispatch and a freshly cut

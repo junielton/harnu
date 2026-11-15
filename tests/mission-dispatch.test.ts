@@ -620,14 +620,14 @@ describe('the drain’s side: the card being spawned, its note and its session',
     const id = await newMission()
     const slug = await newCard()
     await submitManifest([{ slug, missionId: id, stepId: 'stp-1' }])
-    const binder = createDrainBinder({ waitForBoot: waitFor, warn: () => {} })
+    const binder = createDrainBinder()
 
     binder.planned(repo, slug)
     const undo = await binder.beforeSpawn(repo)
     expect(takePendingSpawn(repo)).toEqual({ role: 'worker', missionId: id, stepId: 'stp-1' })
     undo()
 
-    await binder.afterBind(repo, slug, 'synthetic-drained')
+    await bindCardSession(repo, slug, 'synthetic-drained', { waitForBoot: waitFor })
     const record = await readRecord(id)
     expect(record.sessions.find((s) => s.id === DRAINED)).toMatchObject({
       role: 'worked',
@@ -640,7 +640,7 @@ describe('the drain’s side: the card being spawned, its note and its session',
     const id = await newMission()
     const slug = await newCard()
     await submitManifest([{ slug, missionId: id, stepId: 'stp-1' }])
-    const binder = createDrainBinder({ waitForBoot: waitFor, warn: () => {} })
+    const binder = createDrainBinder()
     binder.planned(repo, slug)
     const undo = await binder.beforeSpawn(repo)
     undo()
@@ -652,7 +652,7 @@ describe('the drain’s side: the card being spawned, its note and its session',
     const slug = await newCard()
     await submitManifest([{ slug, missionId: id, stepId: 'stp-1' }])
     const worktree = path.join(path.dirname(repo), 'wt-card')
-    const binder = createDrainBinder({ waitForBoot: waitFor, warn: () => {} })
+    const binder = createDrainBinder()
     binder.planned(repo, slug)
     binder.cut(worktree, repo, slug)
     await binder.beforeSpawn(worktree)
@@ -663,25 +663,24 @@ describe('the drain’s side: the card being spawned, its note and its session',
   it('a card with no step is neither noted nor attached', async () => {
     const id = await newMission()
     const slug = await newCard('A card for no step')
-    const binder = createDrainBinder({ waitForBoot: waitFor, warn: () => {} })
+    const binder = createDrainBinder()
     binder.planned(repo, slug)
     await binder.beforeSpawn(repo)
     expect(takePendingSpawn(repo)).toBeUndefined()
-    await binder.afterBind(repo, slug, 'synthetic-plain')
+    expect(
+      await bindCardSession(repo, slug, 'synthetic-plain', { waitForBoot: waitFor })
+    ).toMatchObject({ ok: true, bound: false })
     expect((await readRecord(id)).sessions.map((s) => s.id)).toEqual([LEADER])
   })
 
-  it('a session that never boots is said, not thrown: the drain goes on', async () => {
+  it('a session that never boots is refused with a way out, not thrown: the bind goes on', async () => {
     const id = await newMission()
     const slug = await newCard()
     await submitManifest([{ slug, missionId: id, stepId: 'stp-1' }])
-    const warnings: string[] = []
-    const binder = createDrainBinder({
-      waitForBoot: async () => null,
-      warn: (m) => warnings.push(m)
+    const out = await bindCardSession(repo, slug, 'synthetic-never', {
+      waitForBoot: async () => null
     })
-    await binder.afterBind(repo, slug, 'synthetic-never')
-    expect(warnings.join('\n')).toMatch(/not attached to its step/)
+    expect(out).toMatchObject({ ok: false, code: 'SESSION_NOT_BOOTED' })
     expect((await readRecord(id)).sessions.map((s) => s.id)).toEqual([LEADER])
   })
 
@@ -694,7 +693,7 @@ describe('the drain’s side: the card being spawned, its note and its session',
       'binder.planned(',
       'binder.cut(',
       'binder.beforeSpawn(',
-      'binder.afterBind('
+      'setBootWaiter('
     ]) {
       expect(src, call).toContain(call)
     }
