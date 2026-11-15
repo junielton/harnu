@@ -801,6 +801,27 @@ async function missionOfSession(
   return { ok: true, view: written[0].view }
 }
 
+/**
+ * The folder's open missions, the most recently written first (the file's mtime, a v3 file included; the id
+ * breaks a tie): the order every reader of a session that leads several shares (S-35 delta 1), and the one
+ * {@link missionOfSession} picks from. The list is otherwise ordered by id, which says nothing.
+ */
+async function newestFirst(root: string, rows: readonly ListedMission[]): Promise<ListedMission[]> {
+  const { records } = await listMissionRecords(root)
+  const file = new Map(records.map((v) => [v.record.id, v.file]))
+  const written = await Promise.all(
+    rows.map(async (row) => ({
+      row,
+      at: await fs.stat(file.get(row.id) ?? '').then(
+        (st) => st.mtimeMs,
+        () => 0
+      )
+    }))
+  )
+  written.sort((a, b) => b.at - a.at || a.row.id.localeCompare(b.row.id))
+  return written.map((w) => w.row)
+}
+
 /** The status line's LIVE readings: one record per running session. The last-known ones are never used. */
 const liveContexts = (): readonly ContextReading[] => getTelemetryPayload().perSession
 
@@ -849,7 +870,7 @@ export async function buildMissionV4View(
       if (found.ok === 'none') {
         const list = await missionList(folder, { kind: 'operator' })
         return list.ok
-          ? { state: 'none', missions: list.missions }
+          ? { state: 'none', missions: await newestFirst(root, list.missions) }
           : { state: 'refused', code: list.code, error: list.error }
       }
       view = found.view
