@@ -736,6 +736,22 @@ describe('AC-55 — at 80 percent or more of context the pane offers the hand-of
     expect(text('[data-test="handoff-offer"]')).toContain('87%')
   })
 
+  it('stays quiet at a fractional reading after "Not now", also after a restart', async () => {
+    // 82.6 shows as 83% but is dismissed as 82.6: the quiet rule compares the same number on both sides
+    const fractional = { offer: true, percent: 82.6 }
+    await mountPane(reply(FIVE, { handoff: fractional }))
+    expect(text('[data-test="handoff-offer"]')).toContain('83%')
+    q('[data-test="handoff-offer-later"]')!.click()
+    await flushPromises()
+    await flushPromises()
+    expect(q('[data-test="handoff-offer"]')).toBeNull()
+    // a restart: new pinia and a new pane, the same storage and the same reading from the view
+    wrapper?.unmount()
+    setActivePinia(createPinia())
+    await mountPane(reply(FIVE, { handoff: fractional }))
+    expect(q('[data-test="handoff-offer"]')).toBeNull()
+  })
+
   it('speaks of the leading session by name when the selected one is not it', async () => {
     await mountPane(reply(FIVE, { handoff: handoffOffer(90) }), {
       selected: WORKER,
