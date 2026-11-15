@@ -18,7 +18,11 @@ import { readViewsFromRecords } from '../src/main/companion/mission-state'
 import { projectMissions } from '../src/main/companion/mission-state-core'
 import { missionGet } from '../src/main/missions/verbs-read'
 import { emptyState, type YourMoveState } from '../src/main/your-move/core'
-import { readRecordViews, reconcileMissions } from '../src/main/your-move/source-mission'
+import {
+  readRecordViews,
+  reconcileMissions,
+  refreshRecordViews
+} from '../src/main/your-move/source-mission'
 import { buildMissionRecordContent, type MissionV4 } from '../src/main/missions/model'
 import {
   buildMissionFileContent,
@@ -379,6 +383,87 @@ describe('readers use the v4 view', () => {
       expect(open(reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 1, views))).toEqual(
         []
       )
+    })
+  })
+
+  describe('Your move: who a card is filed for, and which roots it remembers', () => {
+    const readDetail = async (folder: string, missionId: string) =>
+      missionGet(folder, { kind: 'operator' }, { missionId })
+    const blocker = {
+      id: 'blk-1',
+      reason: 'The vendor export is late',
+      ask: 'Ask the vendor for the export',
+      unblocks: 'Step 1 can load the files',
+      owner: 'operator' as const
+    }
+    const NONE = { views: [], unreadable: [] }
+    let n = 0
+    const mint = (): string => `c2-${++n}`
+    const asks = (s: YourMoveState): string[] =>
+      s.cards.filter((c) => c.closedAt === undefined).map((c) => c.ask)
+
+    it('a mission with no open leader files nothing: a session that already left is not handed a card', async () => {
+      seedV4(
+        v4Record({
+          sessions: [{ id: LEADER, role: 'leads', from: NOW, to: '2026-11-14T11:00:00Z' }],
+          steps: [{ ...v4Record().steps[0], blockers: [blocker] }]
+        })
+      )
+      const views = await readRecordViews([repo], { readDetail })
+      expect(views.get(repo)?.views).toEqual([])
+    })
+
+    it('a v3 record is led by its owner while it is not closed', async () => {
+      seedV3(
+        v3Mission({
+          blockers: [
+            {
+              reason: 'Waiting on the vendor key',
+              unblocks: 'a key',
+              owner: 'operator',
+              raisedAt: NOW
+            } as never
+          ]
+        })
+      )
+      const views = await readRecordViews([repo], { readDetail })
+      expect(views.get(repo)?.views[0]?.mission.owner.sessionId).toBe(LEADER)
+    })
+
+    it('only the roots of the latest query are remembered, even when two queries overlap', async () => {
+      const other = mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-other-'))
+      try {
+        mkdirSync(path.join(other, '.git'), { recursive: true })
+        seedV4(v4Record({ steps: [{ ...v4Record().steps[0], blockers: [blocker] }] }))
+        // The same record in the other repo, with a different blocker, so a card says which root it came from.
+        const dir = path.join(other, '.harnu', 'missions-v4')
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(
+          path.join(dir, 'mnt-a7230002-other.md'),
+          buildMissionRecordContent(
+            v4Record({
+              id: 'mnt-a7230002',
+              steps: [
+                { ...v4Record().steps[0], blockers: [{ ...blocker, ask: 'Ask the other vendor' }] }
+              ]
+            })
+          )
+        )
+        // Two overlapping queries: the second (other) is the latest. The first one's root must be forgotten.
+        const first = refreshRecordViews([repo], { readDetail })
+        const second = refreshRecordViews([other], { readDetail })
+        await Promise.all([first, second])
+        let s = reconcileMissions(emptyState(), NONE, [other], 'live', mint, 1)
+        expect(asks(s)).toEqual(['Ask the other vendor'])
+        // Asking again for the first root alone drops the other one.
+        await refreshRecordViews([repo], { readDetail })
+        s = reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 2)
+        expect(asks(s)).toEqual(['Ask the vendor for the export'])
+        s = reconcileMissions(emptyState(), NONE, [other], 'live', mint, 3)
+        expect(asks(s)).toEqual([])
+      } finally {
+        rmSync(other, { recursive: true, force: true })
+      }
     })
   })
 })
