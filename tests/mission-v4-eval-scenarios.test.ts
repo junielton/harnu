@@ -31,6 +31,11 @@ import {
   missionsDirOf,
   v3MissionsDirOf
 } from '../scripts/eval/mission-behavior/grade.mjs'
+import {
+  assertInstanceIsolated,
+  cleanEnv,
+  instanceEnv
+} from '../scripts/eval/mission-behavior/harnu.mjs'
 import { seedV4Record } from '../scripts/eval/mission-behavior/seed-v4.mjs'
 import { MCP_TOOLS } from '../src/main/mcp/tool-catalog'
 import {
@@ -868,5 +873,167 @@ describe('grader operators added for v4', () => {
         }
       ).ok
     ).toBe(false)
+  })
+})
+
+// ---- delta 1: two grader gaps the verifier found --------------------------------
+
+describe('a grader that cannot see its evidence never passes (delta 1)', () => {
+  const state = {
+    missions: [
+      {
+        file: 'mnt-0000abc0-m.md',
+        slug: 'm',
+        data: { steps: [] },
+        log: '### t\nEVAL-TURN[x] asked=false tools=Read\n'
+      }
+    ],
+    v3Missions: [],
+    unreadable: [],
+    files: { 'a.txt': 'tools=Read\n' }
+  }
+  const ok = (a: Json, st: Json = state): boolean => (evaluate(st, a) as { ok: boolean }).ok
+
+  it('a logLine whose prefix no Log line starts with fails, whatever it asks of the line', () => {
+    for (const extra of [{}, { notContains: 'x' }, { notMatches: 'x' }, { contains: '' }])
+      expect(
+        ok({ mission: 'm', logLine: 'EVAL-TURN[gone]', ...extra }),
+        JSON.stringify(extra)
+      ).toBe(false)
+    expect(ok({ mission: 'm', logLine: 'EVAL-TURN[x]', notContains: 'mission_attach' })).toBe(true)
+  })
+
+  it('a file the grader never loaded fails every matcher, `exists: false` included', () => {
+    for (const a of [
+      { exists: false },
+      { exists: true },
+      { notContains: 'x' },
+      { notMatches: 'x' },
+      { contains: 'x' }
+    ])
+      expect(ok({ file: 'never-loaded.txt', ...a }), JSON.stringify(a)).toBe(false)
+    expect(ok({ file: 'a.txt', exists: true })).toBe(true)
+  })
+
+  it.each(['hand-off', 'proactive-creates'])(
+    '%s has a break that removes the recorded turn line, and it is caught',
+    (name) => {
+      const sc = loadScenario(name)
+      const brk = sc.breaks.find((b) => b.name === 'turn-never-recorded')
+      expect(brk, `${name} has a "turn-never-recorded" break`).toBeDefined()
+    }
+  )
+
+  it.each(['proactive-none', 'cold-start'])(
+    '%s has a break that leaves its turn file unloaded',
+    (name) => {
+      const sc = loadScenario(name)
+      expect(
+        sc.breaks.find((b) => b.name === 'turn-file-not-loaded'),
+        name
+      ).toBeDefined()
+    }
+  )
+
+  it('the unload break op removes the file from the state, not just its content', () => {
+    const broken = applyBreak(
+      { ...state, files: { 'a.txt': 'x' } },
+      { name: 'u', mutate: [{ file: 'a.txt', unload: true }] },
+      vars()
+    ) as { files: Record<string, unknown> }
+    expect('a.txt' in broken.files).toBe(false)
+  })
+})
+
+// ---- delta 1: the instance never touches the operator's ~/.claude ---------------
+
+describe('the Harnu instance the harness starts never touches the operator’s ~/.claude (delta 1)', () => {
+  const REAL_HOME = '/home/operator'
+  const RUN_DIR = '/tmp/run-1'
+  const base = {
+    HOME: REAL_HOME,
+    CLAUDE_CONFIG_DIR: `${REAL_HOME}/.claude`,
+    XDG_CONFIG_HOME: `${REAL_HOME}/.config`,
+    XDG_CACHE_HOME: `${REAL_HOME}/.cache`,
+    XDG_DATA_HOME: `${REAL_HOME}/.local/share`,
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+    CLAUDE_CODE_OAUTH_TOKEN: 'secret',
+    CLAUDECODE: '1',
+    ANTHROPIC_API_KEY: 'key',
+    PATH: '/usr/bin'
+  }
+  const env = (): Record<string, string | undefined> =>
+    instanceEnv({ runDir: RUN_DIR, rendererUrl: 'http://127.0.0.1:1', base })
+
+  it('gives the instance its own HOME under the run directory, never the operator’s', () => {
+    const e = env()
+    expect(e.HOME).toBe(`${RUN_DIR}/home`)
+    expect(e.HOME).not.toBe(REAL_HOME)
+    expect(String(e.HOME).startsWith(REAL_HOME)).toBe(false)
+  })
+
+  it('points every config, cache and data directory, and the Claude config dir, away from the operator’s', () => {
+    const e = env()
+    expect(e.CLAUDE_CONFIG_DIR).toBeUndefined()
+    for (const k of ['XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'])
+      expect(String(e[k]).startsWith(`${RUN_DIR}/home`), k).toBe(true)
+    expect(JSON.stringify(e)).not.toContain(REAL_HOME)
+  })
+
+  it('keeps what the instance needs and drops what it must not inherit', () => {
+    const e = env()
+    expect(e.ELECTRON_RENDERER_URL).toBe('http://127.0.0.1:1')
+    expect(e.PATH).toBe('/usr/bin')
+    expect(e.DBUS_SESSION_BUS_ADDRESS).toBeUndefined()
+    expect(e.CLAUDECODE).toBeUndefined()
+    expect(e.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+  })
+
+  it('refuses an environment that points at the operator’s HOME or Claude config', () => {
+    const good = env()
+    expect(() => assertInstanceIsolated(good, REAL_HOME, RUN_DIR)).not.toThrow()
+    expect(() => assertInstanceIsolated({ ...good, HOME: REAL_HOME }, REAL_HOME, RUN_DIR)).toThrow(
+      /HOME/
+    )
+    expect(() => assertInstanceIsolated({ ...good, HOME: undefined }, REAL_HOME, RUN_DIR)).toThrow(
+      /HOME/
+    )
+    expect(() =>
+      assertInstanceIsolated(
+        { ...good, CLAUDE_CONFIG_DIR: `${REAL_HOME}/.claude` },
+        REAL_HOME,
+        RUN_DIR
+      )
+    ).toThrow(/CLAUDE_CONFIG_DIR/)
+    expect(() =>
+      assertInstanceIsolated(
+        { ...good, XDG_CONFIG_HOME: `${REAL_HOME}/.config` },
+        REAL_HOME,
+        RUN_DIR
+      )
+    ).toThrow(/XDG_CONFIG_HOME/)
+    expect(() =>
+      assertInstanceIsolated({ ...good, HOME: '/tmp/elsewhere/home' }, REAL_HOME, RUN_DIR)
+    ).toThrow(/run directory/)
+  })
+
+  it('startHarnu launches with that environment, checked before it spawns', () => {
+    const src = readFileSync(path.join(EVAL, 'harnu.mjs'), 'utf8')
+    const start = src.slice(src.indexOf('export async function startHarnu'))
+    const build = start.indexOf('instanceEnv(')
+    const check = start.indexOf('assertInstanceIsolated(')
+    const spawnAt = start.indexOf('spawn(cmd')
+    expect(build, 'startHarnu builds the instance env with instanceEnv').toBeGreaterThan(-1)
+    expect(check, 'and asserts it is isolated').toBeGreaterThan(build)
+    expect(spawnAt, 'before it spawns the instance').toBeGreaterThan(check)
+    expect(start).toMatch(/spawn\(cmd, args, \{[^}]*\benv\b/s)
+  })
+
+  it('the scripted agents keep the operator’s environment: they need its on-disk login', () => {
+    const e = cleanEnv({}, base)
+    expect(e.HOME).toBe(REAL_HOME)
+    expect(e.CLAUDE_CONFIG_DIR).toBe(`${REAL_HOME}/.claude`)
+    expect(e.ANTHROPIC_API_KEY).toBe('key')
+    expect(e.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
   })
 })
