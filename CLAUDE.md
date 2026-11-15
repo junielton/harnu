@@ -376,8 +376,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Scheduler prompt field (skill mentions, T305)      | `src/renderer/src/components/SchedulerPromptField.vue` + `scheduler-mentions.ts` |
 | Scheduler worker detail                            | `src/renderer/src/components/SchedulerWorkerDetail.vue`                          |
 | Roadmap WIP chip + limit stepper (§6 — BUG-197)    | `src/renderer/src/components/RoadmapWipChip.vue`                                 |
-| Mission progress pill (Topbar, §6 — T370)          | `src/renderer/src/components/MissionPill.vue` + `lib/mission-view.ts`            |
-| Mission progress popover (§6 — T370)               | `src/renderer/src/components/MissionPopover.vue` + `stores/missions.ts`          |
+| Mission pill (Topbar, §6 — T370, S-17)             | `src/renderer/src/components/MissionPill.vue` + `lib/mission-pane-view.ts`       |
 | Mission pane (helper stack, §6 — S-17)             | `components/MissionPane.vue` + `lib/mission-pane-view.ts`                        |
 | Mission pane — next step box (§6 — S-18)           | `components/MissionPaneNext.vue` + `lib/mission-pane-view.ts`                    |
 | Mission pane — tree and timeline (§6 — S-18)       | `components/MissionPaneTree.vue` + `lib/mission-pane-view.ts`                    |
@@ -388,15 +387,6 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission pane — Ask on a milestone (§6 — S-21)      | `components/MissionPaneAsk.vue` + `lib/mission-pane-view.ts`                     |
 | Mission pane — close dialog (§6 — S-22)            | `components/MissionCloseConfirmDialog.vue` + `stores/missions.ts`                |
 | Mission pane — sample mission (§6 — S-22)          | `lib/mission-sample.ts` + `stores/missions.ts`                                   |
-| Mission step rail (§6 — T370)                      | `src/renderer/src/components/MissionStepRail.vue`                                |
-| Mission step glyph (§6 — T596)                     | `src/renderer/src/components/MissionStepGlyph.vue`                               |
-| Campaign popover (§6 — T596)                       | `src/renderer/src/components/CampaignPopover.vue` + `lib/campaign-view.ts`       |
-| Campaign store + IPC (§6 — T596)                   | `stores/campaigns.ts` + `src/main/campaign-ipc.ts`                               |
-| Mission close confirm (§6 — T370 AC-S9-8)          | `src/renderer/src/components/MissionCloseConfirmDialog.vue`                      |
-| Pause steward dialog (§6 — T609)                   | `src/renderer/src/components/StewardPauseDialog.vue`                             |
-| Scheduler Stewards section (§6 — T609)             | `src/renderer/src/components/SchedulerStewards.vue` + `lib/steward-view.ts`      |
-| Missions review dialog (§6 — BUG-173 S5)           | `src/renderer/src/components/MissionsReviewDialog.vue`                           |
-| Bulk close confirm (§6 — BUG-173 S5)               | `src/renderer/src/components/MissionBulkCloseConfirmDialog.vue`                  |
 | Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
 | Containers — Paused detail (§6 — U3.4)             | `src/renderer/src/components/ContainersPausedDetail.vue`                         |
 | Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                              |

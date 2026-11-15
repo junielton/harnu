@@ -230,7 +230,6 @@ import {
   startMissionObserver
 } from './mission-ipc'
 import { bridgeStarter } from './missions/handoff'
-import { registerCampaignIpc } from './campaign-ipc'
 import { registerReviewHandlers } from './review-ipc'
 import { resolveCliFolderArg } from './cli-folder-arg'
 import { registerMcpServer, closeMcpServer } from './mcp/server'
@@ -661,7 +660,6 @@ app.whenReady().then(async () => {
   // show (ledger rows, remembered progress) and wakes the stewards: a pass on a cadence, and one
   // after a linked session ends.
   stopMissionObserver = startMissionObserver()
-  registerCampaignIpc()
   // T164 U2: branch-vs-base diff + the evidence header's receipts, plus the
   // per-repo blast-radius list (operator-owned, never reachable from an MCP verb).
   registerReviewHandlers(() => mainWindow)

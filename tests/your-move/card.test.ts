@@ -23,7 +23,6 @@ const sessionsFake = vi.hoisted(() => ({
   }
 }))
 const missionsFake = vi.hoisted(() => ({
-  requestPopover: vi.fn(),
   chooseMission: vi.fn()
 }))
 const helpersFake = vi.hoisted(() => ({
@@ -100,7 +99,6 @@ beforeEach(() => {
   sessionsFake.activateSession.mockClear()
   sessionsFake.markSessionSeen.mockClear()
   helpersFake.toggleMissionHelper.mockClear()
-  missionsFake.requestPopover.mockClear()
   missionsFake.chooseMission.mockClear()
   helpersFake.panesForCurrentWorktree = []
 })
@@ -339,9 +337,8 @@ describe('YourMoveCard in the Return here zone', () => {
       .trigger('click')
     expect(sessionsFake.activateSession).toHaveBeenCalledWith('sess-0001')
     expect(helpersFake.toggleMissionHelper).toHaveBeenCalledWith('/org/proj/www')
-    // No popover is asked for, and the pane shows the mission the card names, not the session's default one
+    // The pane shows the mission the card names, not the session's default one
     // (S-35 delta 1: a leader of several missions must land on the one the card is about).
-    expect(missionsFake.requestPopover).not.toHaveBeenCalled()
     expect(missionsFake.chooseMission).toHaveBeenCalledWith('sess-0001', 'mnt-1')
   })
 

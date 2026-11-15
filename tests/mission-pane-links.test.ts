@@ -175,7 +175,6 @@ async function mountPane(
   view = vi.fn(async () => current)
   ;(window as unknown as { api: unknown }).api = {
     missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
-    campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
     missionV4View: view,
     missionV4Door: door,
     missionOperatorDoor: vi.fn(),

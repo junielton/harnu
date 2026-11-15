@@ -7,11 +7,10 @@
  * mission owed right now (not only the ones this poll cued), ordered cued first,
  * then blocking kinds, then newest. `ts` moves only when a poll cued; a quiet
  * sync after every poll rewrites title + items without touching `ts`, removes
- * the entry at zero and never resurrects a dismissed one. `openReview` leaves a
- * request for the review dialog (S5).
+ * the entry at zero and never resurrects a dismissed one. (The review dialog and its
+ * request are gone, S-37.)
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import type { MissionView } from '../src/main/mission-ipc'
 import { useMissionsStore } from '../src/renderer/src/stores/missions'
@@ -276,30 +275,6 @@ describe('syncMissionActivity — quiet rewrite after every poll', () => {
     list.mockRejectedValueOnce(new Error('EIO'))
     await store.refresh()
     expect(entry()?.items).toHaveLength(1)
-  })
-})
-
-describe('openReview — the request S5’s review dialog will consume', () => {
-  it('records the focused mission and a timestamp', () => {
-    const store = mountStore()
-    expect(store.reviewRequest).toBeNull()
-    store.openReview('mnt-9')
-    expect(store.reviewRequest).toEqual({ missionId: 'mnt-9', at: Date.now() })
-  })
-
-  it('with no argument asks for the whole review', () => {
-    const store = mountStore()
-    store.openReview()
-    expect(store.reviewRequest).toEqual({ missionId: null, at: Date.now() })
-  })
-
-  it('consumeReviewRequest hands it over once', async () => {
-    const store = mountStore()
-    store.openReview('mnt-9')
-    await nextTick()
-    expect(store.consumeReviewRequest()?.missionId).toBe('mnt-9')
-    expect(store.reviewRequest).toBeNull()
-    expect(store.consumeReviewRequest()).toBeNull()
   })
 })
 

@@ -78,7 +78,6 @@ import type {
   MissionV4ViewReply,
   MissionV4ViewRequest
 } from '../main/mission-ipc'
-import type { CampaignListResult } from '../main/campaign-ipc'
 import type {
   ReviewSnapshot,
   ReviewLoadArgs,
@@ -2968,10 +2967,6 @@ const api = {
    */
   missionHandOff: (args: { folder: string; missionId: string }): Promise<MissionHandOffReply> =>
     ipcRenderer.invoke('mission:handOff', args),
-  // ---- Campaign progress (T596; UI-only, read-only — no campaign door exists in main yet) --
-  /** Every open campaign in the repos of `folders`, with the server's chapter progress. */
-  campaignList: (folders: string[]): Promise<CampaignListResult> =>
-    ipcRenderer.invoke('campaign:list', folders),
 
   // ---- Review pane (T164; UI-only, never exposed to an agent) --------------
   /**

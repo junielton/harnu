@@ -4863,21 +4863,6 @@
     "subtitle": "{workers} workers · {running} running",
     "newWorker": "New worker",
     "footerNote": "Checks every 30s · max 2 workers at once · nothing runs while Harnu is closed",
-    "stewards": {
-      "title": "Stewards",
-      "aria": "Stewards — one per mission, read-only",
-      "running": "Running",
-      "paused": "Paused",
-      "awaitingClose": "Awaiting close",
-      "summaryRunning": "{n} running",
-      "summaryAwaiting": "{n} awaiting close",
-      "closeHint": "Close a delivered mission to retire its steward.",
-      "lastWake": "Last wake {age} ago",
-      "noTick": "No tick yet",
-      "pausedReason": "Paused — {reason}",
-      "unknownMission": "Mission {id}",
-      "hint": "A steward belongs to its mission. Pause it from the mission’s popover."
-    },
     "emptyTitle": "No workers yet",
     "emptyBody": "A worker runs one prompt in one folder, on a cadence, without opening a session. Good for watching a repo, answering review comments, or checking something on a timer.",
     "list": {
@@ -5023,9 +5008,6 @@
     }
   },
   "mission": {
-    "pillTitle": "Mission “{title}” — {state}. Click for progress",
-    "pillTitleWithPulse": "Mission “{title}” — {state} · {pulse}. Click for progress",
-    "progress": "Progress",
     "headline": {
       "single": "Step {n} of {m}",
       "range": "Steps {n}–{to} of {m}",
@@ -5036,85 +5018,7 @@
       "range": "{n}–{to}/{m}",
       "done": "{m}/{m} ✓"
     },
-    "header": {
-      "counts": "{done} done · {verified} verified",
-      "leftBehind": "· {n} left behind",
-      "onBranch": "on a branch"
-    },
-    "state": {
-      "active": "in progress",
-      "blocked": "blocked",
-      "needsYou": "needs you",
-      "stale": "stale",
-      "totalChanged": "in progress, steps added",
-      "rescopePending": "re-scope awaiting your approval",
-      "delivered": "delivered, awaiting your close"
-    },
-    "visual": {
-      "verified": "Verified",
-      "done": "Done, not verified",
-      "running": "Running",
-      "waiting": "Waiting",
-      "blocked": "Blocked",
-      "todo": "To do",
-      "locked": "Locked",
-      "leftBehind": "Left behind"
-    },
-    "side": {
-      "title": "Side steps",
-      "show": "Show side steps",
-      "hide": "Hide side steps",
-      "metaOpen": "{open} open",
-      "metaBoth": "{open} open · {done} done",
-      "discoveredFrom": "discovered from {origin}",
-      "open": "Open"
-    },
-    "decision": {
-      "blocks": "Blocks {steps}",
-      "options": "Options",
-      "choose": "Choose…",
-      "pickFirst": "Pick an option first",
-      "chose": "Chose {option}"
-    },
-    "gates": {
-      "label": "Step gates",
-      "name": {
-        "pr": "PR merged",
-        "ci": "CI green on PR",
-        "main": "main green after merge",
-        "verifier": "Verifier verdict"
-      },
-      "state": {
-        "green": "green",
-        "red": "red",
-        "running": "in progress",
-        "off": "not yet",
-        "na": "n/a"
-      },
-      "short": {
-        "pr": "PR",
-        "ci": "CI",
-        "main": "main",
-        "verifier": "verifier"
-      },
-      "tooltip": "{gate}: {state}",
-      "tooltipStale": "{gate}: {state} (last known)"
-    },
-    "sub": {
-      "totalChanged": "Total: {total} steps (was {was}) — {n} added",
-      "delivered": "Delivered — awaiting your close"
-    },
-    "approveRescope": "Approve re-scope",
-    "close": "Close mission",
-    "checks": {
-      "add": "+ check",
-      "placeholder": "What to check by hand",
-      "delete": "Delete check",
-      "due": "due",
-      "tick": "Tick “{label}”"
-    },
     "end": {
-      "open": "End mission…",
       "title": "End this mission?",
       "body": "{title} leaves the Topbar and the sidebar and can’t be reopened. The mission file stays on disk as the record.",
       "choice": "How to end it",
@@ -5146,35 +5050,7 @@
         "rescopeStaged": "A re-scope is staged"
       }
     },
-    "verification": {
-      "existence": "Existence check",
-      "verifier": "Verifier",
-      "human": "Human"
-    },
-    "proof": {
-      "claimed": "Claimed",
-      "proven": "Proven"
-    },
-    "added": "Added",
-    "addedCaption": "Added — reason: {reason}",
-    "rescopeBadge": "Re-scope pending",
-    "endCaption": "End: {kind} · {target} · evidence: {evidence}",
-    "verifiedCaption": "Verified by {who} — {verdict}",
-    "verifiedByYou": "you",
-    "blocked": "Blocked",
-    "blockedBody": "— {reason}. Unblocks when {unblocks} · {owner}",
-    "blockerOwner": {
-      "agent": "agent",
-      "operator": "you"
-    },
-    "stale": "Stale",
-    "staleBody": "— no evidence in {duration}.",
-    "rescopeTitle": "End changed, awaiting approval.",
-    "was": "was:",
-    "now": "now:",
     "you": {
-      "label": "You",
-      "clear": "Nothing — you’re clear.",
       "rescope": "Approve the new declared end ({kind}: {target}).",
       "close": "Close the mission when you’re satisfied — its end is verified.",
       "blocker": "Unblock: {reason} — unblocks when {unblocks}.",
@@ -5187,63 +5063,7 @@
       "needsInput": "{session} is waiting on you — open it and answer.",
       "decide": "Decide: {title}"
     },
-    "markVerified": "Mark verified",
-    "unmark": "Unmark",
-    "openQuestions": "Open questions",
-    "pulse": {
-      "commits": "{n} commit | {n} commits",
-      "active": "active {age} ago",
-      "activeNow": "active just now",
-      "quiet": "no activity for {age}",
-      "quietNever": "no activity seen yet"
-    },
-    "pr": {
-      "line": "PR #{n} · {state}",
-      "state": {
-        "open": "open",
-        "draft": "draft",
-        "merged": "merged"
-      },
-      "ci": {
-        "passing": "CI green",
-        "failing": "CI red",
-        "pending": "CI running"
-      }
-    },
-    "child": {
-      "working": "working",
-      "workingHelpers": "working · helpers",
-      "needsInput": "needs-input",
-      "idle": "idle",
-      "parked": "parked",
-      "failed": "failed",
-      "unknown": "not found",
-      "goTo": "Go to session",
-      "notLoaded": "Session not loaded yet",
-      "notLoadedBody": "It shows up once the sidebar has loaded it.",
-      "elsewhere": "+{n} session | +{n} sessions"
-    },
     "doorFailed": "Mission action refused",
-    "steward": {
-      "label": "Steward",
-      "lastAction": "{what}",
-      "noAction": "no action yet",
-      "ago": "{age} ago",
-      "next": "next: {when}",
-      "nextEvents": "on the next event",
-      "paused": "paused",
-      "pause": "Pause steward…",
-      "resume": "Resume steward",
-      "pauseDialog": {
-        "title": "Pause the steward?",
-        "body": "It stops waking on events and on its 20-minute beat until you resume it. Nothing is lost — the mission keeps its state.",
-        "reason": "Reason",
-        "reasonPlaceholder": "Goes to the mission’s Log and the You list",
-        "confirm": "Pause steward",
-        "cancel": "Cancel",
-        "dismiss": "Cancel and keep the steward running"
-      }
-    },
     "recordFailedTitle": "Some memory wasn’t recorded",
     "recordFailed": "The mission is closed, but memory refused: {drafts}",
     "sidebarChip": "Mission: {headline}",
@@ -5251,114 +5071,14 @@
     "cue": {
       "one": "Mission “{title}” needs you: {what}",
       "many": "{n} missions need you",
-      "reviewAll": "Review all {n}",
-      "ownerMissing": "The owner session isn’t open here — click to review this mission instead.",
+      "ownerMissing": "The owner session isn’t open here — click to see why this mission can’t open.",
+      "ownerMissingTitle": "Can’t open “{title}” from here",
+      "ownerMissingBody": "Its owner session isn’t open in this window. Open that session, then use its Mission pane.",
       "itemAria": "Open mission {title}"
-    },
-    "review": {
-      "title": "Missions that need you",
-      "intro": "Close the finished ones in one go, or open any of them to handle it.",
-      "groups": {
-        "ready": "Ready to close",
-        "finished": "Finished, close never requested",
-        "finishedHint": "Nobody verified the end of these, so none is pre-selected.",
-        "other": "Waiting on you for something else"
-      },
-      "selectAllReady": "Select all ready",
-      "selected": "{count} selected",
-      "closeSelected": "Close {count} as delivered…",
-      "empty": "No mission needs you right now.",
-      "openMission": "Open",
-      "ownerMissing": "The owner session isn’t open here, so this mission can’t be opened from the review.",
-      "dismiss": "Close the review"
-    },
-    "bulk": {
-      "title": "Close {count} mission as delivered? | Close {count} missions as delivered?",
-      "body": "They leave the Topbar and the sidebar and can’t be reopened. Each mission file stays on disk as the record.",
-      "reason": "Reason (optional)",
-      "reasonPlaceholder": "Goes to every mission’s Log",
-      "confirm": "Close {count} mission | Close {count} missions",
-      "cancel": "Cancel",
-      "dismiss": "Cancel and keep the missions open",
-      "closing": "Closing {done} of {total}…",
-      "done": "{count} mission closed | {count} missions closed",
-      "partial": "{failed} of {total} could not be closed"
-    },
-    "back": {
-      "campaign": "Campaign",
-      "chapter": "Chapter {n} of {m}",
-      "sideQuest": "Side quest"
-    },
-    "ledger": {
-      "label": "Ledger",
-      "ago": "{age} ago",
-      "kind": {
-        "dispatched": "Dispatched",
-        "worktree": "Worktree",
-        "pr-opened": "PR opened",
-        "pr-merged": "PR merged",
-        "ci": "CI",
-        "verified": "Verified",
-        "session-died": "Session ended",
-        "compaction": "Compacted"
-      }
     },
     "unreadable": {
       "title": "A mission file can't be read",
       "body": "{files}. The mission it holds stays hidden until the file is fixed or removed."
-    }
-  },
-  "campaign": {
-    "pill": {
-      "single": "Ch. {n}/{m}",
-      "range": "Ch. {n}–{to}/{m}",
-      "done": "Ch. {m}/{m} ✓",
-      "step": {
-        "single": "Step {n}/{m}",
-        "range": "Steps {n}–{to}/{m}",
-        "done": "Step {m}/{m} ✓"
-      },
-      "forYou": "{n} for you",
-      "radiant": "{done}/{total}",
-      "title": "{title} — campaign, {label}"
-    },
-    "headline": {
-      "single": "Chapter {n} of {m}",
-      "range": "Chapters {n}–{to} of {m}",
-      "done": "Chapter {m} of {m} ✓"
-    },
-    "counts": "{done} done · {inReview} in review · {running} running · {locked} locked · {side} side ({sideDone} done, {sideOpen} open)",
-    "radiant": "{done} / {total} units",
-    "declaredEnd": "End: {target}",
-    "group": {
-      "main": "Main quest",
-      "side": "Side quests",
-      "locked": "Locked",
-      "mainMeta": "{n} of {m}",
-      "sideMeta": "{n} open"
-    },
-    "state": {
-      "done": "done",
-      "inReview": "in review",
-      "running": "running",
-      "locked": "locked",
-      "todo": "to do"
-    },
-    "objectives": "Objectives",
-    "objectivesStepsOf": "{done} of {total} steps",
-    "openChapter": "Open chapter →",
-    "noMission": "No mission yet — this chapter has not started.",
-    "missionNotOpen": "This chapter’s mission is closed.",
-    "sideQuest": "Side quest",
-    "sideNotRequired": "not required for the end",
-    "discoveredFrom": "Discovered from chapter {n} · {title}",
-    "lockedUntil": "Locked until its prerequisites are done.",
-    "you": {
-      "chapterTag": "ch. {n}"
-    },
-    "end": {
-      "open": "End campaign…",
-      "unavailable": "Ending a campaign from here isn’t available yet — end its chapters’ missions instead."
     }
   },
   "harnuMod": {

@@ -1,7 +1,7 @@
 /**
  * Campaign ch.5b (T609, spec §3.4) — "Pause steward…" is a MISSION door, not a worker switch:
  *  - it takes a mandatory reason and writes a `steward` Log entry;
- *  - the You list carries `steward-paused` until the operator resumes;
+ *  - the You list carries no `steward-paused` item (S-37: there is no steward to resume);
  *  - a paused steward does not tick (the gate, the wake and the 20-minute beat);
  *  - it is an operator door: no MCP verb reaches it.
  */
@@ -111,15 +111,10 @@ describe('applyPauseSteward / applyResumeSteward (pure)', () => {
 })
 
 describe('the You list', () => {
-  it('carries a steward-paused item (with the reason and time) until resumed', () => {
+  it('carries no steward item for a pause: there is no steward to resume (S-37)', () => {
     const paused = applyPauseSteward(mission(), 'CI is flaky', { at: AT })
     const progress = computeProgress(paused, [], Date.parse(AT))
-    const items = youItems(paused, [], progress)
-    expect(items).toContainEqual({ kind: 'steward-paused', reason: 'CI is flaky', at: AT })
-    const resumed = applyResumeSteward(paused, { at: AT })
-    expect(
-      youItems(resumed, [], computeProgress(resumed, [], Date.parse(AT))).map((i) => i.kind)
-    ).not.toContain('steward-paused')
+    expect(youItems(paused, [], progress).map((i) => i.kind)).not.toContain('steward-paused')
   })
 })
 

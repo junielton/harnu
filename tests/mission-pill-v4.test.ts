@@ -97,7 +97,6 @@ let v3Views: unknown[] = []
 function install(): void {
   ;(window as unknown as { api: unknown }).api = {
     missionList: vi.fn(async () => ({ views: v3Views, unreadable: [], shadowed: [] })),
-    campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
     missionV4View: vi.fn(async () => viewReply),
     missionV4Door: vi.fn(),
     missionOperatorDoor: vi.fn(),

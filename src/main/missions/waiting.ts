@@ -178,7 +178,7 @@ const BLOCKING_FIRST: ReadonlySet<MissionYouItem['kind']> = new Set([
 
 /**
  * What the operator owes this mission, in this order (the v3 order, kept by the adapter): a re-scope
- * to approve, a pending close, a paused steward, each operator-owned blocker, the due checks (unticked
+ * to approve, a pending close, each operator-owned blocker, the due checks (unticked
  * checks on a reached step — not `todo`/`blocked`), the `human` steps that are current or left behind
  * and not ticked, an imported end to review, red `main`, and the linked children's parked approvals
  * and needs-input. Each undecided decision node is listed after the last blocking item. A closed
@@ -196,9 +196,8 @@ export function waitingList(
   const items: MissionYouItem[] = []
   if (m.pendingRescope) items.push({ kind: 'rescope', end: m.pendingRescope })
   if (m.pendingClose) items.push({ kind: 'close' })
-  if (m.stewardPause) {
-    items.push({ kind: 'steward-paused', reason: m.stewardPause.reason, at: m.stewardPause.at })
-  }
+  // A steward the operator paused is not derived: there is no steward any more (S-27), so nothing waits on
+  // the operator to resume it. The pause stays in the file, untouched; it is only no longer read as owed.
   for (const b of [...m.blockers, ...m.steps.flatMap((s) => s.blockers)]) {
     if (b.owner === 'operator')
       items.push({ kind: 'blocker', reason: b.reason, unblocks: b.unblocks })
