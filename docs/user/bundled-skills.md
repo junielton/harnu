@@ -244,8 +244,8 @@ rarely chose to delegate on its own.
 
 **It needs Harnu running.** The gate is answered by Harnu itself. A session whose Harnu
 has quit — or a `claude` you run outside Harnu — reads every file as usual; nothing
-breaks. It is never added to a read-only Scheduler worker or a Scheduler steward an
-older Harnu left, because they cannot call an agent and a refused read would leave them stuck. It has no
+breaks. It is never added to a read-only Scheduler worker,
+because it cannot call an agent and a refused read would leave them stuck. It has no
 "Also outside Harnu" switch.
 
 ## Turning one on
