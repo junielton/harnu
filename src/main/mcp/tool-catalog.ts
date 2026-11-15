@@ -312,7 +312,7 @@ export const MCP_OPS = [
   'mission_set_done_when',
   'mission_settle_ac',
   'mission_attach',
-  // Campaign ch.5a (T597, spec §3.4): the steward's one new verb. Rewrites a step's OWN local
+  // Campaign ch.5a (T597, spec §3.4), the leader's since Missions v4 S-27. Rewrites a step's OWN local
   // branch with `git rebase --onto` in its linked worktree; on a conflict it aborts, leaves the tree
   // as it was and sets a blocker. It never pushes and never touches another branch. Same gate class
   // as the mission verbs (a local write the agent could already do with its own tools).
@@ -2418,7 +2418,7 @@ export const MCP_TOOLS: McpToolDef[] = [
           .boolean()
           .optional()
           .describe(
-            'Give the mission a steward (default true). `false` creates none and installs no hooks.'
+            'Retired: missions have no steward any more. Accepted and ignored; no steward is created and no hooks are installed.'
           ),
         campaignId: z
           .string()
@@ -2705,7 +2705,7 @@ export const MCP_TOOLS: McpToolDef[] = [
         .enum(['note', 'decision', 'surprise', 'steward'])
         .optional()
         .describe(
-          "What the entry is (default note). The heading carries it (`### <time> · <kind>`), so the Log can be read by kind. A mission's steward's own actions are written as `steward` entries by Harnu itself."
+          'What the entry is (default note). The heading carries it (`### <time> · <kind>`), so the Log can be read by kind. `steward` is kept so older Logs read the same; Harnu no longer writes steward entries.'
         )
     }),
     mutates: true,
@@ -3214,7 +3214,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'rebase_stack',
     description:
-      "Rebase a mission step's branch onto a new base — `git rebase --onto <onto> <from|onto>` in the step's LINKED worktree (the steward's routine move after a parent lands). DIRECT write, no confirm. It rewrites the step's own LOCAL branch and NOTHING else: it never pushes (ACK `pushed: false` — publishing the rewritten branch, a `--force-with-lease` of that one branch, is the owner's move), never touches another branch, never rebases the main checkout, a detached HEAD or a dirty tree. The step is `stepId`, or — omitted — the one open step that links a linked worktree of this repo (STEP_AMBIGUOUS listing the candidates when several do, NO_STEP_WORKTREE when none). `onto` and `from` are refs or commits, shape-checked and resolved first (BAD_ONTO). Pass `from` — the old parent tip — to drop a squash-merged parent's commits (`git rebase --onto main <parentTip>`). On a conflict it ABORTS, leaves the tree exactly as it was and refuses REBASE_CONFLICT naming the files, and sets an agent-owned blocker on the step (once; a retry does not stack another) — do not retry; tell the operator. Other refusals: REBASE_DIRTY, DETACHED_HEAD, NOT_A_LINKED_WORKTREE, WORKTREE_NOT_IN_REPO, MISSION_CLOSED. ACK: `{ ok, stepId, branch, before, after, rebased, pushed: false }`.",
+      "Rebase a mission step's branch onto a new base — `git rebase --onto <onto> <from|onto>` in the step's LINKED worktree (the leader's move after a parent lands; a v4 mission answers only the session that leads it). DIRECT write, no confirm. It rewrites the step's own LOCAL branch and NOTHING else: it never pushes (ACK `pushed: false` — publishing the rewritten branch, a `--force-with-lease` of that one branch, is the owner's move), never touches another branch, never rebases the main checkout, a detached HEAD or a dirty tree. The step is `stepId`, or — omitted — the one open step that links a linked worktree of this repo (STEP_AMBIGUOUS listing the candidates when several do, NO_STEP_WORKTREE when none). `onto` and `from` are refs or commits, shape-checked and resolved first (BAD_ONTO). Pass `from` — the old parent tip — to drop a squash-merged parent's commits (`git rebase --onto main <parentTip>`). On a conflict it ABORTS, leaves the tree exactly as it was and refuses REBASE_CONFLICT naming the files, and, on a v3 mission, sets an agent-owned blocker on the step (once; a retry does not stack another); on a v4 mission it writes nothing, so raise the blocker yourself with mission_set_blocker — do not retry; tell the operator. Other refusals: REBASE_DIRTY, DETACHED_HEAD, NOT_A_LINKED_WORKTREE, NOT_STEP_WORKTREE, WORKTREE_NOT_IN_REPO, MISSION_CLOSED, and on a v4 mission NOT_ATTACHED / NOT_LEADER (only the session that leads it may rebase). ACK: `{ ok, stepId, branch, before, after, rebased, pushed: false }`.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
@@ -3235,7 +3235,8 @@ export const MCP_TOOLS: McpToolDef[] = [
         .min(1)
         .max(200)
         .optional()
-        .describe('The old base to drop (git rebase --onto <onto> <from>). Default: onto.')
+        .describe('The old base to drop (git rebase --onto <onto> <from>). Default: onto.'),
+      sessionId: MISSION_V4_SESSION_SCHEMA
     }),
     mutates: true,
     op: 'rebase_stack',

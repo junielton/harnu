@@ -219,7 +219,7 @@ describe('AC-69 — the steward is retired at boot', () => {
       for (const dir of ['missions', 'missions-v4']) {
         const names = await fs.readdir(path.join(repo, '.harnu', dir)).catch(() => [])
         const planted = seed.missionFiles.filter((f) =>
-          f.startsWith(path.join(repo, '.harnu', dir))
+          f.startsWith(path.join(repo, '.harnu', dir) + path.sep)
         )
         expect(names.sort()).toEqual(planted.map((f) => path.basename(f)).sort())
       }

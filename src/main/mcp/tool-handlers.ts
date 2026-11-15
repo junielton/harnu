@@ -152,7 +152,7 @@ import {
 import { arm, disarm, listArmedSessionIds } from '../orchestrator-guard'
 import { resolveAgentTarget } from './target-scope'
 import { dataDirAt, dataDirReady, mkdirDataDir, repoRoot } from '../data-dir'
-import { readMissionRecord } from '../missions/record-store'
+import { listMissionRecords, readMissionRecord } from '../missions/record-store'
 import { dispatchAck, dispatchStep, realBoardIo, stampCardForStep } from '../missions/dispatch'
 import { hibernatedKeys, isHibernated } from '../hibernation'
 import {
@@ -365,7 +365,7 @@ import {
   updateWorkerForAgent,
   type UpdateWorkerPatch
 } from '../scheduler-shell'
-import { startStewardForMission } from '../steward-shell'
+import { rebaseStackV4 } from '../missions/rebase'
 import { currentBranch, rebaseStack, repoCommonDir, worktreeToplevel } from '../steward-rebase'
 import type { Effort, NotifyOn, WorkerMode } from '../scheduler-core'
 import { getContainersService } from '../containers/containers-ipc'
@@ -4122,16 +4122,9 @@ const missionCreateHandler: Handler = async (args, ctx) => {
       ? await bindMissionToChapter(root, campaignId, chapterId, createMission, ctx)
       : await createMission()
   if (!created.ok) return errorResult(created.error)
-  // Campaign ch.5a (spec §3.4): a mission gets a steward unless it opts out. The mission is on disk
-  // already, so a steward that cannot start is reported in the ACK, never a failed create.
-  const steward =
-    args.steward === false
-      ? { created: false }
-      : await startStewardForMission({
-          missionId: created.mission.id,
-          ownerFolder: path.resolve(folder),
-          title
-        })
+  // Missions v4 S-27: no mission gets a steward any more (`steward` is accepted and ignored). The ACK
+  // keeps its `steward` field so a caller that reads it still finds it.
+  const steward = { created: false }
   // Campaign ch.6 (AC-6.3): what memory already knows about this scope.
   const recall = await recallFor(folder, {
     paths: scopePaths(created.mission.scope ?? []),
@@ -5482,6 +5475,35 @@ const rebaseStackHandler: Handler = async (args, ctx) => {
   const root = missionRoot(folder)
   const refusal = missionFolderRefusal(folder, root, ctx)
   if (refusal) return errorResult(refusal)
+
+  // Missions v4 S-27: a v4 mission answers the session that leads it (no steward in between).
+  if ((await formatOf(folder, missionId)) === 'v4') {
+    const who = actorOf(args, ctx)
+    if (!who.ok) return errorResult(who.error)
+    const read = await readMissionRecord(root, missionId)
+    if (!read.ok) return errorResult(read.error)
+    const out = await rebaseStackV4(
+      {
+        root,
+        record: read.record,
+        actor: who.actor,
+        onto,
+        ...(from ? { from } : {}),
+        ...(wantedStep ? { stepId: wantedStep } : {})
+      },
+      {
+        executedIn: async (slug) => {
+          const card = await readCard(root, slug).catch(() => null)
+          return card?.ok ? card.card.executedIn : undefined
+        },
+        otherOpenMissions: async () =>
+          (await listMissionRecords(root)).records
+            .map((r) => r.record)
+            .filter((r) => r.id !== missionId)
+      }
+    )
+    return out.ok ? textResult(out.ack) : errorResult(out.error)
+  }
 
   const loaded = await loadMission(root, missionId)
   if (!loaded.ok) return errorResult(loaded.error)
