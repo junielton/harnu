@@ -10,6 +10,11 @@
  * cannot produce. The behavior itself is graded by the eval scenarios in
  * `scripts/eval/mission-behavior/scenarios/` (AC-9); these guards keep the text
  * those scenarios exercise from drifting.
+ *
+ * Missions v4 S-28 rewrote the `mission` skill, so its describe (the v2 end, blocker and close
+ * rules) is gone; `tests/skill-mission-v4.test.ts` pins its v4 text. The other skills stay pinned
+ * here until S-29 and S-30 rewrite them and delete this suite. `mission` stays in the shared list
+ * below: the two checks over it still hold for the v4 text.
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -104,46 +109,6 @@ describe('orchestrate-delivery — the Mission v2 rules (§3.2–§3.6)', () => 
       /read `closeReadiness` on `mission_get`, and call `mission_request_close`/
     )
     expect(phase4).toContain('RESCOPE_PENDING')
-  })
-})
-
-describe('mission — the Mission v2 rules (§3.2–§3.5)', () => {
-  const raw = readSkill('mission')
-
-  // Mission v3 §3.4: there is no draft to dispatch around or to approve, so the
-  // v2 "dispatch may run before approval" and "keep coordinating a draft" rules
-  // are retired — tests/mission-v3-skills.test.ts pins the absence of that wording.
-  it('never idles a tick on a waiting mission', () => {
-    const tick = flat(section(raw, '`mission` — one tick'))
-    expect(tick).not.toMatch(/and nothing else this tick/)
-  })
-
-  it('creates the mission with scope, the end confirmed in one question', () => {
-    const set = flat(section(raw, '`mission set <objective>`'))
-    expect(set).toMatch(/scope\?/)
-    expect(set).toMatch(/confirm it with the operator in ONE AskUserQuestion/)
-  })
-
-  it('raises an operator-owned blocker next to the blocker row', () => {
-    const tick = flat(section(raw, '`mission` — one tick'))
-    expect(tick).toMatch(/A turn that ends waiting on the operator raises a blocker/)
-    expect(tick).toContain("mission_set_blocker { owner: 'operator'")
-    expect(tick).toMatch(/every 30 minutes/)
-  })
-
-  it('re-scopes on a rule change with mission_set_end', () => {
-    expect(flat(raw)).toMatch(
-      /changed how the delivery ends\*\* \(merge policy, target branch, what counts as done\) → `mission_set_end` in the same turn/
-    )
-  })
-
-  it('`mission done` has the owner verify the end, read closeReadiness, then request the close', () => {
-    const done = flat(section(raw, '`mission done`'))
-    expect(done).toMatch(/verify the fixed end \(`Delivered and verified`\) yourself/)
-    expect(done).toMatch(/you built none of the steps, so it lands `verified`/)
-    expect(done).toContain('closeReadiness')
-    expect(done).toContain('RESCOPE_PENDING')
-    expect(done).toMatch(/the close itself is theirs/)
   })
 })
 

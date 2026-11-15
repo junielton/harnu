@@ -44,7 +44,8 @@ function everySkillFile(dir = SKILLS_ROOT): string[] {
     e.isDirectory() ? everySkillFile(path.join(dir, e.name)) : [path.join(dir, e.name)]
   )
 }
-const OWNERS = ['mission', 'orchestrate-delivery']
+// `mission` left this list in Missions v4 S-28 (its v3 owner rules are gone; skill-mission-v4 pins v4).
+const OWNERS = ['orchestrate-delivery']
 
 describe('no skill carries the retired approval ceremony (§3.4)', () => {
   it.each(ALL)('%s has no draft / Approve / MISSION_DRAFT wording', (name) => {
@@ -88,12 +89,11 @@ describe('no skill recounts progress (§3.1, §3.11)', () => {
     expect(raw).not.toMatch(/`verified\/total` as the count/)
   })
 
-  it.each(['status', 'mission', 'orchestrate-delivery', 'delivery-watchdog'])(
-    '%s reads derived.progress',
-    (name) => {
-      expect(readSkill(name)).toContain('derived.progress')
-    }
-  )
+  // `status` and `mission` moved to the v4 headline (`progress.headline`) in Missions v4 S-28:
+  // tests/skill-mission-v4.test.ts pins them.
+  it.each(['orchestrate-delivery', 'delivery-watchdog'])('%s reads derived.progress', (name) => {
+    expect(readSkill(name)).toContain('derived.progress')
+  })
 })
 
 describe('the shadow phase is retired (§3.11, closes T371)', () => {
@@ -110,23 +110,11 @@ describe('the shadow phase is retired (§3.11, closes T371)', () => {
   })
 })
 
-describe('status — renders the server progress once (§3.11, V3-13)', () => {
+// Missions v4 S-28: the v3 progress pins (derived.progress, youItems) went with the v3 headline;
+// the structural card rules below still hold, and tests/skill-mission-v4.test.ts pins the v4 headline.
+describe('status — the card rules (§3.11, V3-13)', () => {
   const raw = readSkill('status')
   const all = flat(raw)
-
-  it('renders derived.progress and the `you` list as-is, never recounting', () => {
-    expect(all).toMatch(/`derived\.progress` is the bar — render it, never recount it/)
-    expect(all).toContain('Step N of M · V verified · L left behind')
-    expect(all).toContain('youItems')
-    expect(all).toMatch(/`you` line, verbatim/)
-  })
-
-  it('no longer builds the bar from the deprecated step counts', () => {
-    expect(all).not.toMatch(
-      /`mission_list` returns `steps: \{ total, verified, claimed \}` per mission: one cell per step/
-    )
-    expect(all).toMatch(/deprecated/)
-  })
 
   it('states the one-print rule', () => {
     expect(all).toMatch(/Each of the six lines prints exactly once per front/)
@@ -161,7 +149,7 @@ describe('status — renders the server progress once (§3.11, V3-13)', () => {
   })
 
   it('has a mission example whose header is the server headline', () => {
-    expect(raw).toMatch(/Step \d+ of \d+ · \d+ verified/)
+    expect(raw).toMatch(/\d+ of \d+ steps done/)
   })
 })
 
@@ -199,23 +187,6 @@ describe.each(OWNERS)('%s — the v3 owner rules (§3.11)', (name) => {
   })
 })
 
-describe('mission — the tick surfaces what the server derived (§3.9, AC-9)', () => {
-  const tick = flat(section(readSkill('mission'), '`mission` — one tick'))
-
-  it('reads the progress object instead of recounting', () => {
-    expect(tick).toContain('derived.progress')
-  })
-
-  it('surfaces unprovable existence steps', () => {
-    expect(tick).toContain('derived.progress.unprovable')
-    expect(tick).toMatch(/can never be proven — link its PR or path/)
-  })
-
-  it('stops on a closed mission', () => {
-    expect(tick).toContain('MISSION_CLOSED')
-  })
-})
-
 describe('delivery-verifier — needs-human becomes a check (§3.6)', () => {
   const raw = flat(readSkill('delivery-verifier'))
 
@@ -242,7 +213,7 @@ describe('delivery-watchdog — reads progress, no draft skip (§3.11)', () => {
 
 describe('mission — tick prompts open with a fixed first line (T587 U1)', () => {
   const raw = readSkill('mission')
-  const rule = section(raw, '`mission` — one tick')
+  const rule = section(raw, 'One tick')
 
   it('documents the exact first-line shape: skill, `tick`, middle dot, mission id', () => {
     expect(rule).toContain('/harnu:mission tick · <missionId>')
