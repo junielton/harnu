@@ -245,3 +245,13 @@ export function takePendingSpawn(folder: string, now = Date.now()): PendingSpawn
 export function dropPendingSpawn(folder: string): void {
   pending.delete(keyOf(folder))
 }
+
+/** What the spawned session is told about itself: one line, in its system prompt, never a user turn. */
+export function scopedSpawnLine(spawn: PendingSpawn): string {
+  const verbs = SCOPED_VERBS[spawn.role].join(', ')
+  const own =
+    spawn.role === 'verifier'
+      ? 'You may settle a criterion of that step you did not build'
+      : 'You write only that step'
+  return `Harnu started this session as the ${spawn.role} of step ${spawn.stepId} of mission ${spawn.missionId}. Your only Harnu verbs are ${verbs}. ${own}; the leader and the operator do everything else, so when you need something from them, say it with mission_log or mission_set_blocker on your step. Your session id is part of your credential: you never pass one.`
+}

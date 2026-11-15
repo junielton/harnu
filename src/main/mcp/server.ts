@@ -44,7 +44,7 @@
 
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { promises as fs, existsSync } from 'node:fs'
 import * as path from 'node:path'
@@ -91,6 +91,7 @@ import { callIdFor, beginCall, completeCall, wasRecentlyFailed } from './idempot
 import {
   MCP_SERVER_NAME,
   buildHarnuMcpConfig,
+  mcpConfigArgs,
   appManagedMcpArgs,
   shouldInjectMcpConfig
 } from './config-file'
@@ -125,7 +126,15 @@ import { parseAgentBootOverride } from './agent-boot'
 import { listInflightSessions } from './inflight-session-registry'
 import { folderForWorkerId, stewardForWorkerId, WorkerIsStewardError } from '../scheduler-shell'
 import { stewardCallRefusal, verifyStewardBearer } from '../steward-core'
-import { SCOPED_VERBS, scopeCallRefusal, scopeKey, verifyScopedBearer, type Scope } from './scope'
+import {
+  mintScopedBearer,
+  SCOPED_VERBS,
+  scopeCallRefusal,
+  scopedAllowedTools,
+  scopeKey,
+  verifyScopedBearer,
+  type Scope
+} from './scope'
 import { inFlightFolderFor } from './agent-inflight-registry'
 import { snapshotInheritOnce, addInheritOnce, closeInheritOnce } from './inherit-once-registry'
 import { pushShadowEntry } from '../responder-registry'
@@ -133,7 +142,7 @@ import type { CommandBridge } from '../command-bridge'
 import type { FolderEntry } from '../folder-model'
 import { scanFolders } from '../claude-reader'
 import { readUserProjects, setUserProjectInheritAgentControl } from '../user-projects'
-import { setMcpArgsProvider } from '../pty'
+import { setMcpArgsProvider, setScopedMcpArgsProvider } from '../pty'
 import { gateTerminalOp, type TerminalGateState } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
 import {
@@ -323,6 +332,48 @@ async function writeConfigFile(port: number, secret: string): Promise<void> {
 async function deleteConfigFile(): Promise<void> {
   await fs.unlink(configPath()).catch(() => {})
   await fs.unlink(legacyConfigPath()).catch(() => {})
+  await clearScopedConfigs()
+}
+
+// ---- Scoped credentials (Missions v4 S-25) -----------------------------------------------------
+
+/** `<userData>/scoped-mcp` — one 0600 config per session Harnu spawned (each holds a live bearer). */
+function scopedDir(): string {
+  return path.join(app.getPath('userData'), 'scoped-mcp')
+}
+
+/** Remove every scoped config: a credential does not outlive the boot (or the stop) that minted it. */
+async function clearScopedConfigs(): Promise<void> {
+  await fs.rm(scopedDir(), { recursive: true, force: true }).catch(() => {})
+}
+
+/**
+ * Write the `--mcp-config` document of one scoped caller (its own bearer, the control server's URL) and
+ * return its path, or `undefined` when the server is not up or the operator opted out of auto-register.
+ * The bearer is derived from the server secret and lives only in this 0600 file in a 0700 directory:
+ * `claude` reads it, and the argv, the model and the logs see only the path.
+ */
+export async function writeScopedMcpConfig(scope: Scope): Promise<string | undefined> {
+  if (!running || !autoRegisterEnabled || listeningPort === 0) return undefined
+  try {
+    const name =
+      scope.role === 'observer'
+        ? `observer-${createHash('sha256').update(scope.folder).digest('hex').slice(0, 16)}`
+        : `${scope.sessionId}`
+    const doc = buildHarnuMcpConfig({ port: listeningPort, token: mintScopedBearer(token, scope) })
+    await fs.mkdir(scopedDir(), { recursive: true, mode: 0o700 })
+    const file = path.join(scopedDir(), `${name}.json`)
+    await atomicWriteFile(file, JSON.stringify(doc, null, 2) + '\n', 0o600)
+    return file
+  } catch {
+    return undefined
+  }
+}
+
+/** The argv that gives a spawned session its scoped verbs: its config's path and the role's allow rules. */
+async function scopedMcpArgsFor(scope: Scope): Promise<string[]> {
+  const file = await writeScopedMcpConfig(scope)
+  return file ? [...mcpConfigArgs(file), '--allowedTools', scopedAllowedTools(scope).join(',')] : []
 }
 
 // ---- Audit persistence ------------------------------------------------------
@@ -2030,6 +2081,7 @@ async function start(): Promise<void> {
   if (fellBack) console.warn(`[mcp] ${portFallbackWarning}`)
   // Config is written AFTER the port is known but BEFORE `running` flips, so the
   // pty provider never injects a config the server isn't yet serving.
+  await clearScopedConfigs()
   await writeConfigFile(listeningPort, token)
   await writeStore(userDataDir, { token, port: listeningPort })
   running = true
@@ -2125,6 +2177,8 @@ export async function registerMcpServer(
       configPath()
     )
   )
+  // Missions v4 S-25: the argv of a session Harnu spawns for one step (its own credential, never ours).
+  setScopedMcpArgsProvider(scopedMcpArgsFor)
 
   ipcMain.handle('mcp:status', async () => ({
     enabled: await readMcpEnabled(),

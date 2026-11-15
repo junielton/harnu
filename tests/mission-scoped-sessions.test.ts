@@ -41,11 +41,14 @@ vi.mock('../src/main/claude-reader', async (importOriginal) => ({
 
 import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
-import { _setStepInputsForTest } from '../src/main/mcp/tool-handlers'
+import { _setStepInputsForTest, WIRED_TOOLS } from '../src/main/mcp/tool-handlers'
+import { toolByName } from '../src/main/mcp/tool-catalog'
 import {
   mintScopedBearer,
+  dropPendingSpawn,
   scopeCallRefusal,
   SCOPED_VERBS,
+  takePendingSpawn,
   verifyScopedBearer,
   type Scope
 } from '../src/main/mcp/scope'
@@ -555,5 +558,106 @@ describe('spawned identity is not self-declared', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
     })
     expect(res.status).toBe(403)
+  })
+})
+
+describe('a create_session for a step asks for the credential of its role', () => {
+  const create = WIRED_TOOLS.find((t) => t.op === 'create_session')!.handler as unknown as (
+    args: Record<string, unknown>,
+    ctx: Record<string, unknown>
+  ) => Promise<{ isError?: boolean; content: Array<{ text?: string }> }>
+
+  let dispatched = 0
+  const bridgeFor = (over: Record<string, unknown> = {}): unknown => ({
+    dispatch: async () => {
+      dispatched++
+      return { syntheticId: `synthetic-${dispatched}` }
+    },
+    awaitMaterialization: async (syntheticId: string) => ({
+      syntheticId,
+      sessionId: WORKER,
+      folder: repo
+    }),
+    ...over
+  })
+  const start = async (
+    args: Record<string, unknown>,
+    bridge: unknown = bridgeFor()
+  ): Promise<{ isError: boolean; text: string }> => {
+    const r = await create(
+      { folder: repo, ...args },
+      { folder: repo, folders: [], denyFolders: [], bridge }
+    )
+    return { isError: r.isError === true, text: r.content[0]?.text ?? '' }
+  }
+
+  beforeEach(() => {
+    dispatched = 0
+    dropPendingSpawn(repo)
+  })
+
+  it('a worker is the default for a step: the spawn is noted for the folder, once', async () => {
+    const id = await newMission(repo)
+    const r = await start({ missionId: id, stepId: 'stp-1' })
+    expect(r.isError, r.text).toBe(false)
+    expect(takePendingSpawn(repo)).toEqual({ role: 'worker', missionId: id, stepId: 'stp-1' })
+    expect(takePendingSpawn(repo)).toBeUndefined()
+  })
+
+  it("a verifier is asked for with role: 'verifier'", async () => {
+    const id = await newMission(repo)
+    await start({ missionId: id, stepId: 'stp-2', role: 'verifier' })
+    expect(takePendingSpawn(repo)).toEqual({ role: 'verifier', missionId: id, stepId: 'stp-2' })
+  })
+
+  it('a mission or a step that does not exist is refused before anything is started', async () => {
+    const id = await newMission(repo)
+    const noMission = await start({ missionId: 'mnt-00000000', stepId: 'stp-1' })
+    expect(noMission.isError).toBe(true)
+    expect(noMission.text).toMatch(/MISSION_NOT_FOUND/)
+    const noStep = await start({ missionId: id, stepId: 'stp-9' })
+    expect(noStep.isError).toBe(true)
+    expect(noStep.text).toMatch(/STEP_NOT_FOUND/)
+    expect(noStep.text).toMatch(/stp-1/) // names the steps it has
+    expect(dispatched).toBe(0)
+    expect(takePendingSpawn(repo)).toBeUndefined()
+  })
+
+  it('a v3 mission is refused: a worker on it would convert it', async () => {
+    const v3 = await okOn(mainClient, 'mission_create', {
+      folder: repo,
+      title: 'An older mission',
+      declaredEnd: { kind: 'code', target: 'the export', evidence: 'the PR is merged' },
+      sessionId: LEADER,
+      steward: false,
+      steps: [{ title: 'Build the exporter', verification: 'verifier' }]
+    })
+    const r = await start({ missionId: v3.body.missionId as string, stepId: 'stp-1' })
+    expect(r.isError).toBe(true)
+    expect(r.text).toMatch(/MISSION_NOT_V4/)
+    expect(dispatched).toBe(0)
+  })
+
+  it('a spawn that fails leaves no credential waiting', async () => {
+    const id = await newMission(repo)
+    const bridge = bridgeFor({ dispatch: async () => ({ error: 'RENDERER_GONE' }) })
+    await start({ missionId: id, stepId: 'stp-1' }, bridge)
+    expect(takePendingSpawn(repo)).toBeUndefined()
+  })
+
+  it('without a mission and step it is the plain session it always was (role alone is a label)', async () => {
+    await start({ role: 'verifier' })
+    expect(takePendingSpawn(repo)).toBeUndefined()
+  })
+
+  it('the catalog takes a mission with its step, and a worker needs both', () => {
+    const schema = toolByName('create_session' as never)!.inputSchema
+    expect(
+      schema.safeParse({ folder: repo, missionId: 'mnt-aaaaaaaa', stepId: 'stp-1' }).success
+    ).toBe(true)
+    expect(schema.safeParse({ folder: repo, role: 'verifier' }).success).toBe(true)
+    expect(schema.safeParse({ folder: repo, missionId: 'mnt-aaaaaaaa' }).success).toBe(false)
+    expect(schema.safeParse({ folder: repo, stepId: 'stp-1' }).success).toBe(false)
+    expect(schema.safeParse({ folder: repo, role: 'worker' }).success).toBe(false)
   })
 })
