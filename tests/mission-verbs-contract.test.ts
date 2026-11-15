@@ -907,3 +907,84 @@ describe('Missions v4 · the verbs registered beside the v3 ones', () => {
     }
   })
 })
+
+// ---- Missions v4 S-40 (AC-89): the catalog is the fate table's sixteen --------------------------
+
+/** The fate table's verbs that stay (spec "Verb fate table": 10 keep, 5 rename, 1 replace, rebase_stack). */
+const FATE_TABLE_VERBS = [
+  'mission_create',
+  'mission_get',
+  'mission_list',
+  'mission_add_milestone',
+  'mission_add_step',
+  'mission_update_step',
+  'mission_add_ac',
+  'mission_link',
+  'mission_log',
+  'mission_set_blocker',
+  'mission_clear_blocker',
+  'mission_set_done_when',
+  'mission_settle_ac',
+  'mission_request_close',
+  'mission_attach',
+  'rebase_stack'
+] as const
+
+/** The six verbs with no v4 verb of the same name (renamed, merged, replaced or removed), from parts. */
+const FATE_TABLE_REMOVED = [
+  ['link', 'child'],
+  ['set', 'end'],
+  ['verify', 'step'],
+  ['add', 'check'],
+  ['transfer', 'owner'],
+  ['import', 'legacy']
+].map((parts) => ['mission', ...parts].join('_'))
+
+describe('Missions v4 · the verbs after S-40', () => {
+  it('the catalog matches the fate table', async () => {
+    const registered = (MCP_OPS as readonly string[]).filter((o) =>
+      /^(mission_|rebase_stack$)/.test(o)
+    )
+    // Exactly the sixteen: each registered, each wired to a handler, none of the six, and no seventeenth.
+    expect([...registered].sort()).toEqual([...FATE_TABLE_VERBS].sort())
+    expect(registered).toHaveLength(16)
+    for (const op of FATE_TABLE_VERBS) {
+      expect(toolByName(op as McpOp)?.name, op).toBe(op)
+      expect(typeof handlers[op], `${op} has a handler`).toBe('function')
+    }
+    for (const op of FATE_TABLE_REMOVED) {
+      expect(registered, op).not.toContain(op)
+      expect(handlers[op], `${op} has no handler`).toBeUndefined()
+    }
+
+    // The v3 handlers, the v3 writers and the steward files are gone; the frozen reader stays.
+    const root = path.join(__dirname, '..')
+    for (const gone of [
+      'src/main/steward-bridge.ts',
+      'src/main/steward-core.ts',
+      'src/main/steward-hooks.ts',
+      'src/main/steward-pause.ts',
+      'src/main/steward-rebase.ts',
+      'src/main/steward-routes.ts',
+      'src/main/steward-shell.ts'
+    ]) {
+      await expect(fs.access(path.join(root, gone)), gone).rejects.toThrow()
+    }
+    await expect(
+      fs.access(path.join(root, 'src/main/missions/v3-read.ts'))
+    ).resolves.toBeUndefined()
+
+    // The awareness verb index lists the sixteen, and none of the six.
+    const doc = await fs.readFile(path.join(root, 'docs', 'harnu-features.md'), 'utf8')
+    const start = doc.indexOf('The core verbs are available from the first turn:')
+    const end = doc.indexOf('Resources:', start)
+    expect(start).toBeGreaterThan(-1)
+    const index = doc.slice(start, end)
+    for (const op of FATE_TABLE_VERBS) {
+      expect(index.includes(`\`${op}\``), `${op} is in the awareness index`).toBe(true)
+    }
+    for (const op of FATE_TABLE_REMOVED) {
+      expect(index.includes(`\`${op}\``), `${op} is not in the awareness index`).toBe(false)
+    }
+  })
+})

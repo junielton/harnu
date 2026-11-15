@@ -1783,3 +1783,148 @@ for (let i = 0; i < Number(count); i++) {
     expect(v4RecordFiles(root)).not.toContain('nope-bad.md')
   })
 })
+
+// ---- Missions v4 S-40 (AC-90): the v3 verbs and handlers are gone; a v3 record still opens --------
+
+const s40 = vi.hoisted(() => ({ userDataDir: '' }))
+
+vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: (): string => s40.userDataDir,
+    getAppPath: (): string => s40.userDataDir
+  },
+  dialog: {},
+  shell: {},
+  BrowserWindow: class {},
+  ipcMain: { handle: (): void => {}, on: (): void => {} }
+}))
+
+describe('verbs on a v3 record', () => {
+  type Wired = (
+    args: Record<string, unknown>,
+    ctx: Record<string, unknown>
+  ) => Promise<{ isError?: boolean; content: Array<{ text?: string }> }>
+  let wired: Record<string, Wired>
+  let setInputs: (fn: (() => Record<string, never>) | null) => void
+
+  beforeEach(async () => {
+    s40.userDataDir = mkdtempSync(path.join(os.tmpdir(), 'harnu-s40-ud-'))
+    const mod = await import('../src/main/mcp/tool-handlers')
+    wired = Object.fromEntries(mod.WIRED_TOOLS.map((t) => [t.op, t.handler as unknown as Wired]))
+    setInputs = (fn) => mod._setStepInputsForTest(fn ? async () => fn() : null)
+    setInputs(() => ({}))
+  })
+  afterEach(() => {
+    setInputs(null)
+    rmSync(s40.userDataDir, { recursive: true, force: true })
+  })
+
+  /** One call as the transport hands it to the wired handler (`folder` and `sessionId` as a client sends them). */
+  async function call(
+    op: string,
+    args: Record<string, unknown>
+  ): Promise<{ isError: boolean; text: string; json: Record<string, unknown> }> {
+    const res = await wired[op](
+      { folder: root, ...args },
+      {
+        folder: root,
+        folders: [],
+        denyFolders: [],
+        bridge: undefined
+      }
+    )
+    const text = res.content[0]?.text ?? ''
+    let json: Record<string, unknown> = {}
+    try {
+      json = JSON.parse(text) as Record<string, unknown>
+    } catch {
+      /* a refusal line */
+    }
+    return { isError: res.isError === true, text, json }
+  }
+
+  it('no verb of v3 alone is wired any more', () => {
+    for (const parts of [
+      ['link', 'child'],
+      ['set', 'end'],
+      ['verify', 'step'],
+      ['add', 'check'],
+      ['transfer', 'owner'],
+      ['import', 'legacy']
+    ]) {
+      expect(wired[['mission', ...parts].join('_')], parts.join(' ')).toBeUndefined()
+    }
+  })
+
+  it('the v4 verbs read a v3 record, the first write converts it by copy, and every v3 byte stays', async () => {
+    const before = snapshot(root)
+    const v3Dirs = (): Record<string, { sha: string; mtimeMs: number }> => ({
+      ...snapshot(path.join(root, '.harnu', 'missions')),
+      ...Object.fromEntries(
+        Object.entries(snapshot(path.join(root, '.harnu', 'campaigns'))).map(([k, v]) => [
+          `campaigns/${k}`,
+          v
+        ])
+      )
+    })
+    const v3Before = v3Dirs()
+
+    // Reads: mission_get answers the v3 record as a mission (the mission with the retired `steward` field
+    // and a `linkedCard`), and mission_list holds the open v3 missions. Nothing is written.
+    const got = await call('mission_get', { missionId: 'mnt-5c0de001', sessionId: LEADER })
+    expect(got.isError, got.text).toBe(false)
+    expect(got.json).toMatchObject({ ok: true, id: 'mnt-5c0de001', source: 'v3' })
+    const listed = await call('mission_list', {})
+    expect(listed.isError, listed.text).toBe(false)
+    const ids = (listed.json.missions as Array<{ id: string }>).map((m) => m.id)
+    expect(ids).toContain('mnt-5c0de001')
+    expect(snapshot(root)).toEqual(before)
+    expect(v4RecordFiles(root)).toEqual([])
+
+    // The first write: a v4 record by copy; the v3 file and its mtime are untouched.
+    const wrote = await call('mission_add_ac', {
+      missionId: 'mnt-5c0de001',
+      stepId: 'stp-1',
+      text: 'The designer signed off',
+      by: 'operator',
+      sessionId: LEADER
+    })
+    expect(wrote.isError, wrote.text).toBe(false)
+    expect(v4RecordFiles(root).some((n) => n.startsWith('mnt-5c0de001'))).toBe(true)
+    expect(v3Dirs()).toEqual(v3Before)
+    const after = await call('mission_get', { missionId: 'mnt-5c0de001', sessionId: LEADER })
+    expect(after.json.source).toBe('v4')
+  })
+
+  it('every kept verb that writes converts the v3 record it names, never the file', async () => {
+    const v3Before = JSON.stringify(
+      v3MissionFiles(root).map((n) =>
+        readFileSync(path.join(root, '.harnu', 'missions', n), 'utf8')
+      )
+    )
+    const writes: Array<[string, Record<string, unknown>]> = [
+      ['mission_log', { kind: 'note', note: 'Checked the fixture by hand' }],
+      ['mission_link', { link: { kind: 'doc', ref: 'docs/specs/x.md' } }],
+      [
+        'mission_add_step',
+        {
+          title: 'Check the layout',
+          criteria: ['The layout is confirmed'],
+          reason: 'The first slice reported nothing back'
+        }
+      ]
+    ]
+    for (const [op, args] of writes) {
+      const r = await call(op, { missionId: 'mnt-5c0de001', sessionId: LEADER, ...args })
+      expect(r.isError, `${op}: ${r.text}`).toBe(false)
+    }
+    expect(
+      JSON.stringify(
+        v3MissionFiles(root).map((n) =>
+          readFileSync(path.join(root, '.harnu', 'missions', n), 'utf8')
+        )
+      )
+    ).toBe(v3Before)
+  })
+})
