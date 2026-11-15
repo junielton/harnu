@@ -27,7 +27,8 @@ vi.mock('electron', () => ({
   app: {
     isPackaged: false,
     getPath: (): string => h.userDataDir,
-    getAppPath: (): string => h.userDataDir
+    getAppPath: (): string => h.userDataDir,
+    commandLine: { getSwitchValue: (): string => '' }
   },
   dialog: {},
   shell: {},
@@ -44,6 +45,7 @@ import { createConfirmCore } from '../src/main/mcp/confirm-core'
 import { _setStepInputsForTest, WIRED_TOOLS } from '../src/main/mcp/tool-handlers'
 import { MCP_TOOLS, toolByName } from '../src/main/mcp/tool-catalog'
 import { OBSERVE_MCP_ALLOW } from '../src/main/scheduler-core'
+import { browserRegistry } from '../src/main/browser/browser-service'
 import {
   mintScopedBearer,
   dropPendingSpawn,
@@ -447,7 +449,12 @@ describe('spawned sessions hold scoped verbs', () => {
 
   it('the refusal of a verb outside the role says what to do next', () => {
     const scope = scopeOf('worker', WORKER, 'mnt-aaaaaaaa')
-    const refused = scopeCallRefusal({ op: 'mission_attach', args: { folder: repo }, scope })
+    const refused = scopeCallRefusal({
+      op: 'mission_attach',
+      args: { folder: repo },
+      scope,
+      lookups: {}
+    })
     expect(refused.ok).toBe(false)
     if (!refused.ok) {
       expect(refused.error).toMatch(/^SCOPE_VERB_NOT_ALLOWED/)
@@ -757,10 +764,52 @@ describe("the observe worker's tick holds the observe allowlist's read verbs, bo
       expect.arrayContaining(['mission_link', 'mission_log', 'create_session'])
     )
     const before = JSON.stringify(await readRecord(repo, id))
-    for (const verb of writes) {
-      const r = await callOn(observer, verb, { folder: repo, missionId: id })
-      expect(r.isError, verb).toBe(true)
+    const ac = (await readRecord(repo, id)).steps[0].acs[0].id
+    // VALID arguments for each mission writer: a verb that were offered would run (or be refused by the
+    // guard for another reason), so only "this tool is not there" passes, never an argument error.
+    const valid: Record<string, Record<string, unknown>> = {
+      mission_log: {
+        missionId: id,
+        stepId: 'stp-1',
+        kind: 'note',
+        note: 'A note from an observer'
+      },
+      mission_link: { missionId: id, stepId: 'stp-1', link: { kind: 'pr', ref: '9' } },
+      mission_set_blocker: {
+        missionId: id,
+        stepId: 'stp-1',
+        reason: 'The `sample.csv` file is missing from the repo',
+        owner: 'agent',
+        unblocks: 'the exporter test'
+      },
+      mission_clear_blocker: { missionId: id, blockerId: 'blk-1' },
+      mission_settle_ac: {
+        missionId: id,
+        stepId: 'stp-1',
+        criterionId: ac,
+        evidence: 'I read it as an observer'
+      },
+      mission_attach: { missionId: id },
+      mission_request_close: { missionId: id },
+      mission_add_step: {
+        missionId: id,
+        title: 'A step an observer adds',
+        criteria: [{ text: 'It is added' }],
+        reason: 'Because'
+      },
+      mission_add_milestone: { missionId: id, title: 'A milestone' },
+      mission_add_ac: { missionId: id, stepId: 'stp-1', text: 'Another criterion' },
+      mission_set_done_when: { missionId: id, doneWhen: 'Something else', reason: 'Because' }
     }
+    for (const verb of writes) {
+      const r = await callOn(observer, verb, {
+        folder: repo,
+        ...(valid[verb] ?? { missionId: id })
+      })
+      expect(r.isError, verb).toBe(true)
+      expect(r.text, `${verb}: ${r.text}`).toMatch(/not found/i)
+    }
+    expect(Object.keys(valid).every((v) => writes.includes(v))).toBe(true)
     expect(JSON.stringify(await readRecord(repo, id))).toBe(before)
   })
 
@@ -802,5 +851,136 @@ describe("the observe worker's tick holds the observe allowlist's read verbs, bo
     // And a foreign mission id is not found in its own folder.
     const got = await callOn(observer, 'mission_get', { missionId: foreign })
     expect(got.isError).toBe(true)
+  })
+})
+
+describe('the observer reaches the panes and terminals of its own folder only (delta 2)', () => {
+  const paneRecord = (paneId: string, folder: string): never =>
+    ({
+      paneId,
+      folder,
+      name: paneId,
+      openedBy: 'agent',
+      partition: 'agent',
+      ownerSessionId: null,
+      createdAt: 1,
+      lastActiveAt: 1,
+      seenHosts: new Set<string>(),
+      flagged: null
+    }) as never
+  const paneVerbs = OBSERVE_MCP_ALLOW.filter((n) => n.startsWith('mcp__harnu__'))
+    .map((n) => n.slice('mcp__harnu__'.length))
+    .filter((v) => {
+      let schema = toolByName(v as never)!.inputSchema as unknown as {
+        _def?: { schema?: unknown }
+        shape?: Record<string, unknown>
+      }
+      while (schema._def?.schema) schema = schema._def.schema as typeof schema
+      return 'paneId' in (schema.shape ?? {})
+    })
+  const argsFor = (verb: string, paneId: string): Record<string, unknown> => ({
+    paneId,
+    ...(verb === 'browser_set_data' ? { data: { a: 1 } } : {}),
+    ...(verb === 'browser_patch' ? { selector: 'body', mode: 'append', html: '<i></i>' } : {}),
+    ...(verb === 'browser_wait_for' ? { text: 'x', timeoutMs: 100 } : {})
+  })
+
+  beforeEach(() => {
+    browserRegistry.add(paneRecord('pane-other', otherRepo))
+    browserRegistry.add(paneRecord('pane-own', repo))
+  })
+  afterAll(() => {
+    browserRegistry.remove('pane-other')
+    browserRegistry.remove('pane-own')
+  })
+
+  it('knows which verbs address a pane: every pane verb of the observe allowlist, readers too', () => {
+    expect(paneVerbs).toEqual(
+      expect.arrayContaining([
+        'browser_snapshot',
+        'browser_screenshot',
+        'browser_console',
+        'browser_wait_for',
+        'browser_set_data',
+        'browser_patch'
+      ])
+    )
+  })
+
+  it('every pane verb on a pane of another folder is SCOPE_FOLDER, and a pane of its own folder is not', async () => {
+    const observer = await connectAs(bearerFor({ role: 'observer', folder: repo }))
+    for (const verb of paneVerbs) {
+      const other = await callOn(observer, verb, argsFor(verb, 'pane-other'))
+      expect(other.isError, verb).toBe(true)
+      expect(other.text, verb).toMatch(/SCOPE_FOLDER/)
+      const own = await callOn(observer, verb, argsFor(verb, 'pane-own'))
+      expect(own.text, `${verb}: ${own.text}`).not.toMatch(/SCOPE_FOLDER/)
+    }
+  })
+
+  it('an unknown pane stays PANE_NOT_FOUND, not a folder refusal', async () => {
+    const observer = await connectAs(bearerFor({ role: 'observer', folder: repo }))
+    const r = await callOn(observer, 'browser_snapshot', { paneId: 'pane-nowhere' })
+    expect(r.isError).toBe(true)
+    expect(r.text).toMatch(/PANE_NOT_FOUND/)
+    expect(r.text).not.toMatch(/SCOPE_FOLDER/)
+  })
+
+  it('browser_list with no folder lists its own folder only, and another folder is refused', async () => {
+    const observer = await connectAs(bearerFor({ role: 'observer', folder: repo }))
+    const listed = await okOn(observer, 'browser_list', {})
+    expect(listed.text).toContain('pane-own')
+    expect(listed.text).not.toContain('pane-other')
+    const other = await callOn(observer, 'browser_list', { folder: otherRepo })
+    expect(other.isError).toBe(true)
+    expect(other.text).toMatch(/SCOPE_FOLDER/)
+  })
+
+  const lookups = {
+    paneFolder: (id: string): string | undefined =>
+      ({ 'pane-a': '/work/a', 'pane-b': '/work/b' })[id],
+    terminalFolder: (id: string): string | undefined =>
+      ({ 'term-a': '/work/a', 'term-b': '/work/b' })[id]
+  }
+  const scope: Scope = { role: 'observer', folder: '/work/a' }
+
+  it('a terminal of another folder is SCOPE_FOLDER too', () => {
+    const own = scopeCallRefusal({
+      op: 'read_terminal',
+      args: { terminalId: 'term-a' },
+      scope,
+      lookups
+    })
+    expect(own.ok).toBe(true)
+    const other = scopeCallRefusal({
+      op: 'read_terminal',
+      args: { terminalId: 'term-b' },
+      scope,
+      lookups
+    })
+    expect(other.ok).toBe(false)
+    if (!other.ok) expect(other.error).toMatch(/^SCOPE_FOLDER/)
+    const unknown = scopeCallRefusal({
+      op: 'read_terminal',
+      args: { terminalId: 'term-z' },
+      scope,
+      lookups
+    })
+    expect(unknown.ok).toBe(true) // the verb answers TERMINAL_NOT_FOUND itself
+  })
+
+  it("the list verbs that take an optional folder default it to the credential's, and refuse another", () => {
+    for (const op of [
+      'browser_list',
+      'list_terminals',
+      'list_worktrees',
+      'list_containers',
+      'list_cleanup'
+    ]) {
+      const left = scopeCallRefusal({ op, args: {}, scope, lookups })
+      expect(left.ok && left.args.folder, op).toBe('/work/a')
+      const other = scopeCallRefusal({ op, args: { folder: '/work/b' }, scope, lookups })
+      expect(other.ok, op).toBe(false)
+    }
   })
 })

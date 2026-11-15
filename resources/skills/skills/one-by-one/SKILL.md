@@ -50,8 +50,8 @@ When the source is a spec, the pile is its **Open decisions** table:
 
 Rows whose status is `open` are the queue. Read the whole spec, not just the table —
 a decision may hide in prose, and an Amendments row may already have settled one.
-When the source is a wall of text with no spec, run the same walk and write nothing
-to a spec (there is none); the memory line and the closing report still apply.
+A wall of text with no spec gets the same walk with nothing written to a spec; the memory
+line and the closing report still apply.
 
 ## Phase 1 — Inventory (one message)
 
@@ -127,21 +127,21 @@ operator said, verbatim and short, as the chosen option.
 
 ### The mission
 
-`mission_get` lists the mission's steps and blockers. A D-n that holds a step back is an
-operator blocker (`mission_set_blocker`, `owner: 'operator'`): its `reason` is the question
-and its options, so the Mission pane lists it as owed by the operator. Load
-`../mission/references/writing-contract.md` before you write one.
+Pass your own `sessionId` on every mission call. `mission_get({ folder, sessionId })` lists the
+mission's steps and blockers. A D-n that holds a step back is an operator blocker
+(`mission_set_blocker`, `owner: 'operator'`): its `reason` is the question and its options, so
+the Mission pane lists it as owed by the operator. Load `../mission/references/writing-contract.md`
+before you write one.
 
-- **Answered:** one `mission_log` with `kind: 'decision'` and the `stepId` it gates:
-  "D-3 · <chosen option> · <why>". If an operator blocker for it is open, tell the operator
-  once: say **Done, continue** on it in the Mission pane. Clearing it is theirs: you never
+- **Answered:** one `mission_log` with `kind: 'decision'`, the `stepId` it gates and your
+  `sessionId`: "D-3 · <chosen option> · <why>". If an operator blocker for it is open, tell the
+  operator once: say **Done, continue** on it in the Mission pane. Clearing it is theirs: you never
   call `mission_clear_blocker` on it (refused `OPERATOR_ONLY`).
-- **Deferred, and it gates a step with no blocker yet:** raise it once, so the next session
-  finds it: `mission_set_blocker { stepId, reason, ask, unblocks, owner: 'operator' }`. The
-  `reason` names the spec path, the D-n, the question and its options; `ask` is at most 90
-  characters.
-- A D-n that gates no step gets no log line and no blocker, and a repo with no mission gets
-  neither: say nothing about missions. Never open a mission just to hold one.
+- **Deferred, and it gates a step with no blocker yet:** raise it once:
+  `mission_set_blocker { stepId, reason, ask, unblocks, owner: 'operator', sessionId }`. The
+  `reason` names the spec path, the D-n, the question and its options; `ask` is at most 90 characters.
+- A D-n that gates no step, or a repo with no mission, gets neither: say nothing about missions.
+  Never open a mission just to hold one.
 
 ### The memory line
 
@@ -177,5 +177,4 @@ Offer a board card (`create_card`) for each deferred item; only offer.
 | "I'll write all the rows at the end"            | Row, memory line, then the next question — a crash mid-walk must lose nothing. |
 | "I'll clear their blocker to save them a click" | It is refused `OPERATOR_ONLY`, and it is their door. Point at the pane.        |
 | "I'll fix the spec section the answer changes"  | That is an Amendments row plus a note, not a silent edit.                      |
-| "These two are tiny, ask both"                  | Two items, two messages.                                                       |
 | "They said ok"                                  | To what? If it was not a yes/no, ask again or defer.                           |

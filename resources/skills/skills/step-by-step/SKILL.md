@@ -41,15 +41,12 @@ and you never describe a criterion as done because the operator said "done" in c
 
 ## Phase 0 — Locate the list and the mission
 
-The list, in order: text the operator pasted or pointed at; the most recent message
-with the "pending with you" block; the mission's own open operator criteria and
-`waiting` (`mission_get`).
-
-Find the mission with `mission_get({ folder, sessionId })` (or `mission_list({ folder })`).
-Each manual action lands on the step whose deliverable it belongs to (the DNS record on
-the step that ships the tunnel, the secret on the step that needs it). If no mission
-exists, or you do not lead it (`mission_add_ac` is the leader's verb), run the walk
-anyway, write no criteria, and say so in the first message; offer the `mission` skill
+The list, in order: text the operator pasted or pointed at; the most recent message with the
+"pending with you" block; the mission's own open operator criteria and `waiting` (`mission_get`).
+Find the mission with `mission_get({ folder, sessionId })` (or `mission_list({ folder })`). Each
+action lands on the step whose deliverable it belongs to (the DNS record on the step that ships
+the tunnel). With no mission, or one you do not lead (`mission_add_ac` is the leader's verb), run
+the walk anyway, write no criteria and say so in the first message; offer the `mission` skill
 only when the operator wants the list to survive the session.
 
 ## Phase 1 — Roadmap (one message)
@@ -67,7 +64,6 @@ only when the operator wants the list to survive the session.
 
 ```
 ## Step by step — 8 steps (3 already done ✔) · 5 criteria on the mission
-Order follows the dependencies: 1 → 3 → 4, 2 is independent.
 
 1. Create the Access service token — I can't check this one · criterion on "Ship the tunnel"
 3. Ingress rule on the VM — I'll check: `curl` from the tunnel hostname · criterion on "Ship the tunnel"
@@ -127,12 +123,12 @@ each action that is **not** already ✔:
 ```
 
 - **The text is a fact that is true when the action is done:** no step numbers, no
-  dates, no counters — `The Access service token exists`, not `Step 1: token`.
+  dates, no counters — `The Access service token exists`, not `Step 1: token`. Several
+  actions on one step are several criteria.
 - **Harnu does not dedupe a criterion, and a plan only grows**, so re-running the same
   list must not add twice: read the step's criteria first and add only the ones whose
   wording is not there. Never reword one to "fix" it; if the action truly changed, say
   so and add the new one.
-- **Several actions on one step** are several criteria on that step.
 - **You can neither edit nor remove a criterion**: an action no longer needed is the
   operator's to deal with in the pane. Once its step starts, it shows under what they owe.
 
@@ -155,19 +151,16 @@ unverified items:
 ⚠️ 5. Rejected without token — operator ✅, my curl got 200 (followed anyway)
 ⏭️ 6. Host key — skipped
 Criteria still open (Mission pane → the step → tick): 1, 4, 5, 6.
-Skipped: 6. Unverified: 5. Want cards for them?
 ```
 
-Offer board cards for skipped items; only offer.
+Offer board cards for skipped and unverified items; only offer.
 
 ## Red flags
 
-| Thought                                        | Reality                                                          |
-| ---------------------------------------------- | ---------------------------------------------------------------- |
-| "They said done, I'll mark the criterion"      | You cannot. Say it is theirs to tick.                            |
-| "I'll reword the criterion so it's clearer"    | A reworded one is a second criterion. Keep it stable.            |
-| "I'll add the criteria as we go"               | Before step 1: the list on the mission is the no-skip guarantee. |
-| "I'll just add the whole list again"           | Nothing dedupes it. Read the step first.                         |
-| "I'll just run this myself to speed it up"     | If you could, it wouldn't be on the list.                        |
-| "Then step 2, which is on the VM…"             | That is a preview. The next step appears when this one closes.   |
-| "Three things to diagnose, let me ask for all" | One fact per message.                                            |
+| Thought                                     | Reality                                                          |
+| ------------------------------------------- | ---------------------------------------------------------------- |
+| "They said done, I'll mark the criterion"   | You cannot. Say it is theirs to tick.                            |
+| "I'll reword the criterion so it's clearer" | A reworded one is a second criterion. Keep it stable.            |
+| "I'll add the criteria as we go"            | Before step 1: the list on the mission is the no-skip guarantee. |
+| "I'll just run this myself to speed it up"  | If you could, it wouldn't be on the list.                        |
+| "Then step 2, which is on the VM…"          | That is a preview. The next step appears when this one closes.   |

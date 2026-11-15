@@ -28,9 +28,7 @@ tick.
 
 ### 1. Find the open missions
 
-`mission_list({ folder })` returns one row per open mission, `{ id, title, headline, leads, format }`. A row whose
-`format` is not `v4` is an older mission this sweep does not judge: name it `older mission <title>` in the run result.
-No open mission, and the list itself read: write "nothing in flight", notify nothing. A quiet tick is the right outcome
+`mission_list({ folder })` returns one row per open mission, `{ id, title, headline, leads, format }`. No open mission, and the list itself read: write "nothing in flight", notify nothing. A quiet tick is the right outcome
 most of the time, and a chatty watchdog gets muted.
 
 For each one, `mission_get({ folder, missionId })` with no `sessionId`: you are a Harnu worker bound to the folder. That
@@ -38,6 +36,13 @@ one read is the whole state, so read these fields and never re-derive them: `pro
 each step's `state` (`todo`, `running`, `waiting-review`, `done`), its `blockers` and `links`, `waiting` and `next` (what
 the operator owes, with `ask` and `why`), and `sessions`. Name a step by its title and say where the mission is with
 `progress.headline`; never count steps yourself.
+
+**Older missions are judged too.** A row whose `format` is not `v4` is still judged until older missions are converted,
+and a stalled one raises the same one `notify`: a quiet sweep over a stalled mission is worse than a false alarm. Read it
+with `mission_get({ folder, missionId })` as the sweep always did: it is stalled when its `derived.stale` is `true`, and
+you also read an operator-owned blocker in its `blockers` raised over two hours ago (with a stall) and a unit that is
+finished but parked (a `worktree` link with commits, a clean tree in `list_worktrees`, no PR, no working child). Name it
+`older mission <title>`. A v4 mission is judged the v4 way, below.
 
 ### 2. Read the findings
 
@@ -61,6 +66,7 @@ human action would resolve. Never raise a healthy step: in flight and progressin
 Every finding has a key that stays the same while the situation does and changes the moment it moves:
 
 - stalled → `<missionId>/<stepId>:stalled@<lastTransitionAt>`;
+- stalled older mission → `<missionId>:stale@<derived.stall.lastEvidenceAt>`;
 - pushed, no PR → `<missionId>/<stepId>:no-pr@<head sha>`;
 - operator blocker → `<missionId>/<blockerId>:blocked@<raisedAt>`;
 - main red → `<missionId>:main-failing@<the step>`.
