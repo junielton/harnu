@@ -621,6 +621,24 @@ describe('AC-54 — "Continue in a new session…" shows the summary and asks be
     })
   }
 
+  it('keeps showing the summary it was asked about when the mission leaves the pane after a refusal', async () => {
+    const w = await mountPane(reply(FIVE), {
+      handOffReply: { ok: false, code: 'MISSION_CLOSED', error: 'MISSION_CLOSED: x' }
+    })
+    await openDialog(w)
+    // what the view answers once the mission closed under the open dialog
+    current = { state: 'none', missions: [] } as unknown as MissionV4ViewReply
+    q('[data-test="handoff-confirm"]')!.click()
+    await flushPromises()
+    await flushPromises()
+    expect(q('[data-test="mission-none"]')).not.toBeNull()
+    expect(text('[data-test="handoff-error"]')).toMatch(/This mission is closed/)
+    expect(text('[data-test="handoff-section"][data-heading="Goal"]')).toContain(
+      'Score a spec with a test set'
+    )
+    expect(text('[data-test="handoff-summary"]')).not.toContain('no summary')
+  })
+
   it('says the channel is missing the same way instead of throwing', async () => {
     const w = await mountPane(reply(FIVE), { api: { missionHandOff: undefined } })
     await openDialog(w)
