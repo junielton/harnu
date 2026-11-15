@@ -84,39 +84,9 @@ describe('status — reads missions through mission_list / mission_get (AC-S8-1)
   })
 })
 
-describe('orchestrate-delivery — stall comes from the mission (AC-S8-1)', () => {
-  const raw = readSkill('orchestrate-delivery')
-
-  it('retires its own 3-tick stall heuristic in favour of derived.stale', () => {
-    expect(raw).not.toMatch(/across 3 consecutive ticks/)
-    expect(raw).toMatch(/stall is not yours to compute — it is `mission_get`'s `derived.stale`/)
-  })
-
-  it('declares the delivery as a Mission through the verbs', () => {
-    for (const verb of [
-      'mission_create',
-      'mission_add_step',
-      'mission_link_child',
-      'mission_verify_step',
-      'mission_request_close'
-    ]) {
-      expect(raw, verb).toContain(verb)
-    }
-    expect(raw).not.toContain('.harnu/goals/<session8>-<slug>.md')
-    expect(raw).not.toContain('.capy/goals/<session8>-<slug>.md')
-  })
-
-  it('keeps the three-layer heartbeat (it solves being woken, not state)', () => {
-    expect(raw).toMatch(/Layer 1 — a push subscription/)
-    expect(raw).toMatch(/Layer 3 — a watchdog on Harnu's Scheduler/)
-  })
-
-  it('gives executors a stable-id return address and forbids broadcast (AC-S8-5)', () => {
-    expect(raw).toMatch(/your stable session id/)
-    expect(raw).toMatch(/resolve at send time/)
-    expect(raw).toMatch(/never broadcast/)
-  })
-})
+// Missions v4 S-29: the `orchestrate-delivery` skill speaks v4 (no derived.stale, no mission_link_child, no
+// mission_verify_step). Its mission-through-the-verbs, three-layer heartbeat and stable-id return address
+// (AC-S8-1, AC-S8-5) are pinned against the v4 text in tests/skill-orchestrate-delivery-v4.test.ts.
 
 describe('delivery-watchdog — reads the mission instead of hand-coded shapes (AC-S8-1)', () => {
   const raw = readSkill('delivery-watchdog')

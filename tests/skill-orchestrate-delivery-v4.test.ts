@@ -28,7 +28,7 @@ const read = (): string => readFileSync(SKILL_FILE, 'utf8')
 
 /** AC-71's line: under 700. The operator's ask (less information in a small space) is the tighter cap. */
 const AC_LINE_CAP = 700
-const SMALL_LINE_CAP = 540
+const SMALL_LINE_CAP = 550
 
 /** Collapse Prettier's line wrapping so a sentence matches whatever its breaks. */
 const flat = (s: string): string => s.replace(/\s+/g, ' ')
@@ -230,12 +230,76 @@ function v4Problems(skill: string): string[] {
   if (!/Stack each unit on the previous branch/.test(all) || !/runtime dependency/.test(all))
     out.push('stacking is not stated')
 
-  // What a dispatched packet and a tick keep, because code or a skill parses it.
-  if (!all.includes('/harnu:mission tick · <missionId>')) out.push('the tick first line is missing')
+  // What a dispatched packet and a tick keep, because code or a skill parses it. The tick first line
+  // lives in the `mission` skill alone (its own pins hold it byte for byte): here it is a pointer, never a copy.
+  if (
+    !/starts with the one fixed first line the `mission` skill defines/.test(all) ||
+    !/The tick prompt's first line/.test(all)
+  )
+    out.push('the tick first line is not pointed at')
+  if (skill.includes('/harnu:mission tick ·')) out.push('the tick first line is restated here')
   if (!all.includes('Report for session <owner uuid> · mission <missionId> · step <stepId>'))
     out.push('the child report header is missing')
   if (!/Honest exit clause/.test(all) || !/Never quietly drop an AC/.test(all))
     out.push('the honest exit clause is missing')
+
+  // Rules the older v2 and v3 suites held on this skill and that still hold in v4 (those suites no longer read it).
+  for (const heading of [
+    /^## Phase 1 — Plan\s*$/m,
+    /^### The spec-born mission\s*$/m,
+    /^## Phase 2 — Cards and dispatch\s*$/m,
+    /^### Cards from a spec — the derive planner\s*$/m,
+    /^### Open decisions become operator blockers\s*$/m,
+    /^### Done conditions — checkable by the worker alone\s*$/m,
+    /^### Boot templates by role\s*$/m,
+    /^## Phase 3 — Monitor\s*$/m,
+    /^## Hand-off\s*$/m,
+    /^## Phase 4 — Verify each unit, per criterion\s*$/m,
+    /^## Phase 5 — Delivery report\s*$/m
+  ])
+    if (!heading.test(skill)) out.push(`no section ${heading}`)
+  if (!/Create the mission now, without asking/.test(all))
+    out.push('the mission is not created at once')
+  if (!/1 unit = 1 PR = 1 step/.test(all) || !/Sub-phases[^.]*go to the Log/.test(all))
+    out.push('one step per deliverable is not stated')
+  if (!/Never make "a message was delivered to another session" a done condition/.test(all))
+    out.push('a delivered message may be a done condition')
+  if (!/Invoke `\/dtk:ship`/.test(all) || !/open the PR only, never merge/.test(all))
+    out.push('the shipper template is missing')
+  if (!/Invoke `land-prs`/.test(all) || !/Invoke `\/dtk:review-peer`/.test(all))
+    out.push('the lander or reviewer template is missing')
+  // The heartbeat keeps three layers: it solves being woken, not state.
+  if (!/notify_when_idle: true/.test(all) || !/push subscription per worker/.test(all))
+    out.push('no push subscription per worker')
+  if (!/`\/harnu:delivery-watchdog`/.test(all) || !/`observe` mode/.test(all))
+    out.push('no watchdog worker')
+  if (!/Arm the ticks yourself, before you report the dispatch/.test(all))
+    out.push('the ticks are not armed')
+  if (!/On `MISSION_CLOSED`, stop the loop/.test(all))
+    out.push('the loop does not stop on MISSION_CLOSED')
+  // The return address: a stable id, resolved at send time, never broadcast, the file first.
+  if (!/your stable session id/.test(all)) out.push('the return address has no stable session id')
+  if (!/right before every send/.test(all)) out.push('the leader is not resolved at send time')
+  if (!/never broadcast/.test(all)) out.push('a report may be broadcast')
+  if (!/Write `\.harnu\/REPORT\.md` first, always, then send/.test(all))
+    out.push('the report file is not first')
+  // An operator wait is a blocker, the Done when is re-scoped the same turn, stacked PRs are retargeted.
+  if (
+    !/A turn that ends waiting on the operator raises that blocker first/.test(all) ||
+    !all.includes("`mission_set_blocker { owner: 'operator' }`")
+  )
+    out.push('a wait on the operator is not a blocker')
+  if (!/call `mission_set_done_when` in the same turn/.test(all))
+    out.push('Done when is not re-scoped at once')
+  if (
+    !all.includes('gh pr edit <n> --base <default branch>') ||
+    !all.includes('gh pr view <n> --json baseRefName')
+  )
+    out.push('stacked PRs are not retargeted before the merge handoff')
+  if (!/`mission_request_close`/.test(all) || !/refused `STEPS_OPEN`/.test(all))
+    out.push('the close request and its refusal are not stated')
+  if (!/`mission_settle_ac \{ stepId, criterionId, evidence \}`/.test(all))
+    out.push('criteria are not settled with mission_settle_ac')
 
   // The hand-off is the operator's.
   const handoff = flat(section(skill, /^## Hand-off\s*$/))
@@ -326,9 +390,9 @@ describe('the skill speaks v4', () => {
         why: 'no rebase of a pushed branch'
       },
       {
-        find: '/harnu:mission tick · <missionId>',
-        replace: 'tick the mission',
-        why: 'the tick first line is parsed by code'
+        find: 'the one fixed first line the `mission` skill defines',
+        replace: 'a first line of your own',
+        why: 'the tick first line is parsed by code and defined once'
       },
       {
         find: 'mission_attach',

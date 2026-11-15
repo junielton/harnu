@@ -44,8 +44,6 @@ function everySkillFile(dir = SKILLS_ROOT): string[] {
     e.isDirectory() ? everySkillFile(path.join(dir, e.name)) : [path.join(dir, e.name)]
   )
 }
-// `mission` left this list in Missions v4 S-28 (its v3 owner rules are gone; skill-mission-v4 pins v4).
-const OWNERS = ['orchestrate-delivery']
 
 describe('no skill carries the retired approval ceremony (§3.4)', () => {
   it.each(ALL)('%s has no draft / Approve / MISSION_DRAFT wording', (name) => {
@@ -89,9 +87,10 @@ describe('no skill recounts progress (§3.1, §3.11)', () => {
     expect(raw).not.toMatch(/`verified\/total` as the count/)
   })
 
-  // `status` and `mission` moved to the v4 headline (`progress.headline`) in Missions v4 S-28:
-  // tests/skill-mission-v4.test.ts pins them.
-  it.each(['orchestrate-delivery', 'delivery-watchdog'])('%s reads derived.progress', (name) => {
+  // `status` and `mission` moved to the v4 headline (`progress.headline`) in Missions v4 S-28, and
+  // `orchestrate-delivery` in S-29 (it prints `progress.headline` as `mission_get` returns it):
+  // tests/skill-mission-v4.test.ts and tests/skill-orchestrate-delivery-v4.test.ts pin them.
+  it.each(['delivery-watchdog'])('%s reads derived.progress', (name) => {
     expect(readSkill(name)).toContain('derived.progress')
   })
 })
@@ -153,39 +152,9 @@ describe('status — the card rules (§3.11, V3-13)', () => {
   })
 })
 
-describe.each(OWNERS)('%s — the v3 owner rules (§3.11)', (name) => {
-  const raw = flat(readSkill(name))
-
-  it('one step per deliverable: 1 unit = 1 PR = 1 step', () => {
-    expect(raw).toContain('1 unit = 1 PR = 1 step')
-    expect(raw).toMatch(/Sub-phases go to the Log/)
-  })
-
-  it('sign-offs become checks, not steps', () => {
-    expect(raw).toMatch(/sign-offs become checks/i)
-    expect(raw).toContain('mission_add_check')
-  })
-
-  it('declares the plan with mission_create { steps }', () => {
-    expect(raw).toContain('mission_create { steps }')
-    expect(raw).toMatch(/the end question in chat is the agreement/i)
-  })
-
-  it('never links a session only to change a proof label', () => {
-    expect(raw).toMatch(
-      /Never link a session to a step only to change its proof label; link the sessions that built it/
-    )
-  })
-
-  it('stops the loop on MISSION_CLOSED', () => {
-    expect(raw).toMatch(/On `MISSION_CLOSED`, stop the loop/)
-  })
-
-  it('speaks the pill headline', () => {
-    expect(raw).toContain('Step N of M')
-    expect(raw).toContain('derived.progress')
-  })
-})
+// Missions v4: `mission` left the v3 owner rules in S-28 and `orchestrate-delivery` in S-29 (1 unit = 1 PR = 1 step,
+// the sign-off as an operator criterion, the plan declared with `mission_create`, stopping on MISSION_CLOSED).
+// tests/skill-mission-v4.test.ts and tests/skill-orchestrate-delivery-v4.test.ts pin the v4 text.
 
 describe('delivery-verifier — needs-human becomes a check (§3.6)', () => {
   const raw = flat(readSkill('delivery-verifier'))

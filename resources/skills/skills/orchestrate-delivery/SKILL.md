@@ -102,7 +102,7 @@ join it, never open a second. Then `mission_create`, with the whole plan in one 
 - **Criteria are frozen at dispatch.** A criterion is never edited after dispatch: a change is a new criterion with
   the reason in `mission_log`. A criterion the spec lacks is a spec gap: amend the spec, never the card alone.
 - **The Done when is the operator's words.** Propose it in the same call. When they change it, call
-  `mission_set_done_when` in the same turn with their words as the `reason`; they approve it in the Mission pane.
+  `mission_set_done_when` in the same turn with their words as the `reason`; the operator confirms the new text in the Mission pane.
 - Put the plan in one chat message (units, topology, Done when) and dispatch. Authorization to orchestrate is
   authorization to dispatch: there is no second approval to collect.
 
@@ -251,23 +251,36 @@ script that reads the spec and the board, prints a plan and writes nothing.
 }
 ```
 
-With `harnu:spec` switched off the sibling is not staged: keep the hand derivation above, say in one line that the
-derive planner was unavailable, and still write the `spec-slice: S-n` marker on each card.
+With `harnu:spec` switched off the sibling is not staged: keep the hand derivation above, say in one line that
+the derive planner was unavailable, and still write the `spec-slice: S-n` marker on each card.
 
 ### Open decisions become operator blockers
 
 A spec can reach dispatch with open rows in its Open decisions table. Each open D-n that gates a slice is an operator
 blocker on exactly the steps of the slices whose `gated-by:` names it:
 
-- For each gated step, `mission_set_blocker { stepId, reason, ask, unblocks, owner: 'operator' }`: the `reason`
-  names the spec path, the question and the options (the row's options cell, split at `;`), the `ask` is "Choose and
-  say done", the `unblocks` names the step.
+- For each gated step, one `mission_set_blocker` (the `reason` names the spec path, the question and the options, the
+  row's options cell split at `;`):
+
+  ```json
+  {
+    "folder": "<absolute path of the repo>",
+    "missionId": "<mnt-… of the mission>",
+    "stepId": "<stp-… of a gated slice>",
+    "reason": "<spec path> leaves open <D-n>: <question> Options: <option 1> or <option 2>",
+    "ask": "Choose <D-n>, then say done",
+    "unblocks": "<the gated slice's title>",
+    "owner": "operator",
+    "sessionId": "<your session id>"
+  }
+  ```
+
 - A D-n that gates no slice gets no blocker: it is a question for `harnu:one-by-one`. A resolved row gates nothing.
 - The slices no open D-n gates are dispatched now. A gated slice's card is created all the same and waits in the
   backlog.
-- The choice is the operator's. When they say it is made, record it with `mission_log { kind: 'decision', stepId }`,
-  `mission_clear_blocker` on your own blockers, run the planner again if the choice changed an AC, and send the held
-  slices out with `submit_manifest`.
+- The choice is the operator's, and so is clearing an operator-owned blocker (they say "Done, continue" in the Mission
+  pane). When they have, record the choice with `mission_log { kind: 'decision', stepId }`, run the planner again if
+  it changed an AC, and send the held slices out with `submit_manifest`.
 
 ### Dispatching
 
@@ -347,12 +360,8 @@ with the return address and this exit line: write the report file, then send; ow
 ## Phase 3 — Monitor
 
 **Arm the ticks yourself, before you report the dispatch**: a loop over the `mission` skill, self-paced, stopped when
-the mission closes. Every tick prompt you arm starts with the one fixed first line the `mission` skill defines, naming
-the mission, then free text:
-
-```
-/harnu:mission tick · <missionId>
-```
+the mission closes. Every tick prompt you arm starts with the one fixed first line the `mission` skill defines (see
+"The tick prompt's first line" there), naming this mission, then free text. Code parses that line: never reshape it.
 
 No dispatched step may exist without a live heartbeat over it. On `MISSION_CLOSED`, stop the loop and report: the
 operator ended the mission, and you never open a replacement. The loop dies in ordinary ways (parked under memory
@@ -434,7 +443,8 @@ name the thing, dispatch now.
 session. Leave the mission, the board and the links true, `memory_append` what the next stage needs, raise
 `mission_set_blocker { owner: 'operator' }` naming the exact act and the event that clears it, and keep the loop
 armed slowly. **A turn that ends waiting on the operator raises that blocker first**: a line in the transcript
-reaches nobody who is away. Clear your own blockers the turn you see them resolved.
+reaches nobody who is away. `mission_clear_blocker` clears your own the turn you see them resolved; an
+operator-owned one is the operator's to clear.
 
 **Every turn is a possible resume**, an operator question and the turn after a compaction included. When you are not
 certain the loop is armed, spawn a tick subagent to re-derive state from the world (`mission_get`, the board, git
