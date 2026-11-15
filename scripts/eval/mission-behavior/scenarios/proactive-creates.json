@@ -123,6 +123,15 @@
       ]
     },
     {
+      "name": "work-before-the-mission-another-line",
+      "mutate": [
+        {
+          "mission": "*",
+          "logAppend": "EVAL-TURN[proactive] asked=false tools=Read,Write,mission_create"
+        }
+      ]
+    },
+    {
       "name": "work-before-the-mission-file",
       "mutate": [
         {
