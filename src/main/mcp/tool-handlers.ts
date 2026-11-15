@@ -147,7 +147,8 @@ import {
 } from '../messaging-socket'
 import { arm, disarm, listArmedSessionIds } from '../orchestrator-guard'
 import { resolveAgentTarget } from './target-scope'
-import { dataDirAt, dataDirReady, mkdirDataDir } from '../data-dir'
+import { dataDirAt, dataDirReady, mkdirDataDir, repoRoot } from '../data-dir'
+import { readMissionRecord } from '../missions/record-store'
 import { hibernatedKeys, isHibernated } from '../hibernation'
 import {
   applyAddCheck,
@@ -289,7 +290,7 @@ import { resolveCreateSessionBoot } from './agent-boot'
 import { getResolvedConfig } from '../claude-config'
 import { type ClaudeBootConfig } from '../claude-args'
 import { parsePlanMission } from './validate'
-import type { Scope } from './scope'
+import { dropPendingSpawn, registerPendingSpawn, type PendingSpawn, type Scope } from './scope'
 import { pokeManifestDrain } from '../manifest-drain'
 import { isFolderDenied, isWithinRoot, normalizePath, resolveKnownFolder } from './permission-core'
 import { scanFolders } from '../claude-reader'
@@ -1032,6 +1033,47 @@ async function ensureFolderThenRetryCreate(
   return { error: 'FOLDER_ADOPT_TIMEOUT' }
 }
 
+/**
+ * The step a `create_session` is for (Missions v4 S-25), or the refusal. Nothing to note for a plain
+ * session (no mission and step), and `role` alone stays the label it always was.
+ */
+async function stepSpawnOf(
+  args: Record<string, unknown>,
+  folder: string
+): Promise<PendingSpawn | { error: string } | undefined> {
+  const missionId = strField(args, 'missionId')
+  const stepId = strField(args, 'stepId')
+  const role = strField(args, 'role')
+  if (missionId === undefined && stepId === undefined) {
+    return role === 'worker'
+      ? {
+          error:
+            "BAD_ARGS: role 'worker' is a session started for a step: pass missionId and stepId."
+        }
+      : undefined
+  }
+  if (missionId === undefined || stepId === undefined) {
+    return { error: 'BAD_ARGS: pass missionId and stepId together.' }
+  }
+  const read = await readMissionRecord(repoRoot(folder), missionId)
+  if (!read.ok) {
+    return {
+      error: `MISSION_NOT_FOUND: no mission ${missionId} in this repo. mission_list { folder } shows the open ones.`
+    }
+  }
+  if (read.source !== 'v4') {
+    return {
+      error: `MISSION_NOT_V4: ${missionId} is a v3 mission, and a session on one of its steps would convert it by its first write. Convert it first with a v4 verb such as mission_add_milestone, or start the session without missionId and stepId.`
+    }
+  }
+  if (!read.record.steps.some((st) => st.id === stepId)) {
+    return {
+      error: `STEP_NOT_FOUND: ${missionId} has no step ${stepId}; it has ${read.record.steps.map((st) => st.id).join(', ') || 'no steps'}.`
+    }
+  }
+  return { role: role === 'verifier' ? 'verifier' : 'worker', missionId, stepId }
+}
+
 const createSessionHandler: Handler = async (args, ctx) => {
   if (!ctx.bridge) return errorResult('NO_BRIDGE')
   const bridge = ctx.bridge
@@ -1043,6 +1085,11 @@ const createSessionHandler: Handler = async (args, ctx) => {
   if (restored.status === 'failed') {
     return steerError(`SHELVED_RESTORE_FAILED: ${restored.reason}: ${restored.message}`, ctx.folder)
   }
+  // Missions v4 S-25 (BUG-253): a session started for one step of a v4 mission holds the scoped verbs of
+  // its role. The mission and the step are checked here, before anything starts; the credential itself
+  // is minted when the spawn reaches `pty:create` (that is where the session id is fixed).
+  const stepSpawn = await stepSpawnOf(args, folder)
+  if (stepSpawn && 'error' in stepSpawn) return errorResult(stepSpawn.error)
   const payload: Record<string, unknown> = { folder }
   const prePrompt = strField(args, 'prePrompt')
   if (prePrompt) payload.prePrompt = prePrompt
@@ -1071,10 +1118,14 @@ const createSessionHandler: Handler = async (args, ctx) => {
   // per-folder single-occupancy registry).
   const deps: CreateSessionDeps = {
     dispatchCreate: async (p) => {
+      // Noted only once the folder's single-occupancy reservation is held (this runs after it), so a
+      // refused duplicate never replaces the note of the spawn that is really in flight.
+      if (stepSpawn) registerPendingSpawn(folder, stepSpawn)
       let result = await bridge.dispatch('session.create', p)
       if (asRecord(result).error === 'FOLDER_NOT_FOUND') {
         result = await ensureFolderThenRetryCreate(folder, p, bridge)
       }
+      if (stepSpawn && !dispatchSucceeded(result)) dropPendingSpawn(folder)
       // BUG-30 D3: register ONLY on a successful dispatch — a failed one must
       // register nothing, or the registry re-creates the ok:true-but-no-session
       // lie. Registering here (as soon as the syntheticId is known, before

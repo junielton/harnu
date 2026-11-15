@@ -726,29 +726,49 @@ export const MCP_TOOLS: McpToolDef[] = [
     name: 'create_session',
     description:
       'Start a new Claude session in a folder, optionally with an initial prompt. `ok:true` means the session actually MATERIALIZED (a real process + an on-disk transcript) — this call blocks (up to ~60s) waiting for that before ACKing. A timed-out/failed spawn returns `ok:false` with a steerable error (SPAWN_NOT_MATERIALIZED) and refunds any reserved grant budget unit; a second call for a folder that already has one in flight is refused (SESSION_ALREADY_IN_FLIGHT) rather than risking two processes in the same working tree.',
-    inputSchema: z.object({
-      folder: z.string().min(1).describe('Absolute path of the folder to launch in.'),
-      prePrompt: z.string().optional().describe('Initial prompt to send on launch.'),
-      // T33-A′: capacity knobs only (allowlisted to model/effort by agent-boot) —
-      // lets a mission spawn e.g. a cheap Haiku session in the new worktree.
-      // T63/BUG-10: passed through as raw `unknown` so the border owns validation
-      // (agent-boot's `parseAgentBootOverride`) — the shell tolerates a
-      // JSON-string form and returns a steering INVALID_BOOT_OVERRIDE for a bad
-      // shape / forbidden key instead of the SDK silently stripping or opaquely
-      // rejecting it. The advertised shape stays in the description.
-      bootOverride: z
-        .unknown()
-        .optional()
-        .describe(
-          'Optional launch overrides, model / effort only: an object { model?: string, effort?: string } (e.g. {"model":"sonnet","effort":"high"}). Any other field is refused with INVALID_BOOT_OVERRIDE.'
-        ),
-      role: z
-        .enum(['verifier'])
-        .optional()
-        .describe(
-          "Optional: what the session is for. `verifier` marks a session started to verify a unit's acceptance criteria. A mission's steward may call create_session ONLY with role: 'verifier' (STEWARD_ROLE_REQUIRED otherwise); for any other caller it is a label, echoed in the ACK."
-        )
-    }),
+    inputSchema: z
+      .object({
+        folder: z.string().min(1).describe('Absolute path of the folder to launch in.'),
+        prePrompt: z.string().optional().describe('Initial prompt to send on launch.'),
+        // T33-A′: capacity knobs only (allowlisted to model/effort by agent-boot) —
+        // lets a mission spawn e.g. a cheap Haiku session in the new worktree.
+        // T63/BUG-10: passed through as raw `unknown` so the border owns validation
+        // (agent-boot's `parseAgentBootOverride`) — the shell tolerates a
+        // JSON-string form and returns a steering INVALID_BOOT_OVERRIDE for a bad
+        // shape / forbidden key instead of the SDK silently stripping or opaquely
+        // rejecting it. The advertised shape stays in the description.
+        bootOverride: z
+          .unknown()
+          .optional()
+          .describe(
+            'Optional launch overrides, model / effort only: an object { model?: string, effort?: string } (e.g. {"model":"sonnet","effort":"high"}). Any other field is refused with INVALID_BOOT_OVERRIDE.'
+          ),
+        role: z
+          .enum(['worker', 'verifier'])
+          .optional()
+          .describe(
+            "Optional: what the session is for. With `missionId` and `stepId` it is the role of the session Harnu starts for that step: `worker` (the default) or `verifier`. On its own, `verifier` is only a label that marks a session started to verify a unit's acceptance criteria (a mission's steward may call create_session ONLY with role: 'verifier', STEWARD_ROLE_REQUIRED otherwise), echoed in the ACK."
+          ),
+        missionId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Start the session for one step of this v4 mission (mnt-<8 hex>); pass `stepId` with it. Harnu gives the session a credential of its own: a worker holds mission_get, mission_link, mission_log and mission_set_blocker on that step; a verifier also holds mission_settle_ac. Its session id is part of the credential, so it never passes one, and it can neither lead, attach itself, plan nor touch another mission or step. It is refused MISSION_NOT_FOUND, STEP_NOT_FOUND or MISSION_NOT_V4 before anything starts. Attaching the session to the step is the dispatch's job, not this call's."
+          ),
+        stepId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('The step of `missionId` the session is for (stp-<n>).')
+      })
+      .refine((v) => (v.missionId === undefined) === (v.stepId === undefined), {
+        message:
+          'pass missionId and stepId together: a session is started for one step of one mission'
+      })
+      .refine((v) => v.role !== 'worker' || v.missionId !== undefined, {
+        message: "role 'worker' is a session started for a step: pass missionId and stepId"
+      }),
     mutates: true,
     op: 'create_session',
     grantable: isSafeGrantVerb('create_session'),
