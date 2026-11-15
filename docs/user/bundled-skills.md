@@ -10,19 +10,19 @@ say so.
 
 | Skill                  | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `orchestrate-delivery` | Decompose an objective into board cards, dispatch one Harnu session per unit, monitor until each opens a PR, then hand back a report.                                                                                                                                                                                                                                                                                                                                    |
-| `delivery-verifier`    | Grade a finished unit's acceptance criteria one at a time, from evidence in the repo rather than from what the session says about itself.                                                                                                                                                                                                                                                                                                                                |
-| `mission`              | Run one coordination tick over dispatched work and report a single line.                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `delivery-watchdog`    | The tick of a mission's steward (verify-dispatch, nudge, rebase, log). Without a steward: sweep a repo for delivery work that is finished but parked — pushed with no PR, a card the board is lying about — and raise one notification naming the fix.                                                                                                                                                                                                                   |
+| `orchestrate-delivery` | Plan an objective as milestones and steps, dispatch one Harnu session per step, have a second session settle every criterion, then hand back a report.                                                                                                                                                                                                                                                                                                                   |
+| `delivery-verifier`    | Settle a finished step's criteria one at a time, from evidence in the repo rather than from what the builder says about itself, then write the delivery report.                                                                                                                                                                                                                                                                                                          |
+| `mission`              | Lead a body of work as a Mission: create it at the first sign of multi-step work, run one coordination tick over what was dispatched, and ask you to close it when it is done.                                                                                                                                                                                                                                                                                           |
+| `delivery-watchdog`    | A read-only sweep over your open missions: it says once when a delivery is stalled, parked or waiting on you. Built to run as a Scheduler worker.                                                                                                                                                                                                                                                                                                                        |
 | `conductor`            | Drive the Harnu fleet through the `harnu` MCP verbs — see every session and worktree, create sessions, terminals and worktrees.                                                                                                                                                                                                                                                                                                                                          |
 | `status`               | Render a fixed six-line "glance card" of where every feature or mission stands, plus the links worth opening, built from the board, the mission files and open PRs.                                                                                                                                                                                                                                                                                                      |
 | `read-aloud`           | Speak a short, ear-friendly summary of a result out loud — through Harnu's own voice inside the app, or a text-to-speech command on your PATH outside it.                                                                                                                                                                                                                                                                                                                |
 | `report-back`          | The final-report format every multi-step run ends with: one line per step with its concrete outcome, what you owe (always printed, even when it is nothing), the links worth opening, and a summary of at most three lines.                                                                                                                                                                                                                                              |
 | `draft-to-prompt`      | Turn a rough idea or a messy draft into a finished prompt for a Claude model — including a boot prompt for a new session or worktree — with the model, effort and any long-running harness it needs spelled out as run instructions.                                                                                                                                                                                                                                     |
-| `one-by-one`           | Work through a pile of open decisions one question at a time, and write each answer where it lasts — the resolved row in your spec, a line in project memory, and a pointer to the Mission's **Choose…** button when the mission has a decision for it.                                                                                                                                                                                                                  |
+| `one-by-one`           | Work through a pile of open decisions one question at a time, and write each answer where it lasts — the resolved row in your spec and a line in project memory. When a mission needs the decision, it is a blocker you clear in the Mission pane.                                                                                                                                                                                                                       |
 | `grill-me`             | Have a spec or plan stress-tested by one question at a time, with a recommended answer each. Every question that survives is written into the spec — an open decision, an amendment, or a non-goal — and the session ends by listing what it wrote and what it could not place.                                                                                                                                                                                          |
-| `step-by-step`         | Be walked through a list of manual actions only you can do — dashboard clicks, DNS, secrets, a release — one step per message. Each action also becomes a check on the relevant Mission step, which only you can tick.                                                                                                                                                                                                                                                   |
-| `spec`                 | Run it at the start of any piece of work: it names what you came in with and how big the work is, in one message. Most entries — a one-line bug, a PR comment, a red CI, a question — end right there with their first step and nothing written. Bigger work gets a spec and a mission with one step, "Approve spec", that you mark yourself after answering its one question; `/harnu:spec check` lints a spec (and, with `--cards`, the cards against it) in any repo. |
+| `step-by-step`         | Be walked through a list of manual actions only you can do — dashboard clicks, DNS, secrets, a release — one step per message. Each action also becomes a criterion on the relevant Mission step, which only you can tick.                                                                                                                                                                                                                                               |
+| `spec`                 | Run it at the start of any piece of work: it names what you came in with and how big the work is, in one message. Most entries — a one-line bug, a PR comment, a red CI, a question — end right there with their first step and nothing written. Bigger work gets a spec and a mission with one step, "Approve spec", that you tick yourself after answering its one question; `/harnu:spec check` lints a spec (and, with `--cards`, the cards against it) in any repo. |
 | `your-move`            | Have a session tell you, in a card you can act on, the moment a turn leaves something only you can unblock: a decision, a go or no-go, something only you hold, a manual step, a check. It also tells the session how to write that card so you never have to open the session to learn what it asks.                                                                                                                                                                    |
 
 Each row in the panel shows the skill's name and its own one-line purpose, taken
@@ -31,7 +31,7 @@ from what the session actually reads.
 
 ### `delivery-watchdog` is the second heartbeat over dispatched work
 
-> **Two jobs now.** A mission's [steward](agent-control.md#a-steward-for-every-mission) runs this skill as its tick: woken by an event on the mission (or every 20 minutes), it reads the mission's gates and ledger, starts a verifier session for a PR that is ready, nudges a child that stalled, rebases a stack after a merge, and writes a `steward` line in the Log for each thing it did. It never merges, closes or verifies for you. The rest of this section is the other job — the read-only sweep — which is what the skill does for a repo whose missions have no steward.
+> **There is no steward any more.** A mission's leader does the routine moves itself: it starts a verifier for a pull request that is ready, nudges a session that stalled and rebases a stack after a merge. `delivery-watchdog` is only the read-only sweep described here.
 
 When Harnu orchestrates a delivery, the thing keeping it moving is a loop inside the
 orchestrating session — and that session is mortal in ordinary ways. Harnu parks it
@@ -49,8 +49,8 @@ there is no next tick, the branch is simply done and invisible until someone loo
 [Scheduler](scheduler.md)) with `/harnu:delivery-watchdog` as the prompt, `observe`
 mode, every 30 minutes or so, with **carry last result** on. Each tick is a fresh
 unattended process, so it keeps running whatever happened to the session it is
-watching. It reads every running **mission** in the repo — the structured record the
-orchestrating session keeps — and looks for: a mission Harnu has flagged as stalled
+watching. It reads every open **mission** in the repo — the structured record the
+orchestrating session keeps — and looks for: a mission that has stalled
 (no new activity for over an hour and nothing working), work pushed with no PR and no
 live session, something that has been waiting on you while the mission stalled, and a
 board card whose column disagrees with its worktree.
@@ -87,15 +87,15 @@ override the tier; it takes your word without arguing.
   only when the spec records an architectural decision, and a mockup folder when there
   is UI.
 - **A mission starts the moment the work leaves Small.** Its finish line is the delivery
-  itself, not the spec, and it has one step, "Approve spec", that only you can mark.
+  itself, not the spec, and it has one step, "Approve spec", with one criterion that only you can tick.
 - **Fresh reviewers read the spec cold.** Two for Medium, three for Large, five for
   Complex, each started on a different model when one is available and handed nothing but
   file paths. Every finding gets one written answer in `critics.md` beside the spec.
 
 **How you approve.** When the spec is clean and reviewed, the session opens it in a pane
 beside the session and asks one question: `Approve this spec?`. On a yes it marks the spec
-approved; you then click the mission pill → **Mark verified** on the "Approve spec" step,
-because the skill never ticks it for you. If you are away when it asks, it raises a
+approved; you then open the **Mission pane** and tick the criterion on the "Approve spec"
+step, because the skill never ticks it for you. If you are away when it asks, it raises a
 blocker in your name, so Harnu chimes and reminds you. Once a slice of the spec has a
 card, the spec is frozen: later changes are added as rows of its **Amendments** table.
 After you approve, `orchestrate-delivery` picks up the same mission, turns each slice
@@ -116,9 +116,9 @@ time — but none of them lets the answer die in the transcript.
 - **`one-by-one`** reads the **Open decisions** table of your spec (the `D-n` rows) and
   asks one decision per message, with a recommendation. After each answer it marks that
   row `resolved` (with your choice and the date) and appends one line to the project
-  memory's decisions. It never decides for you: a decision you skip stays open. If the
-  Mission has a decision step for it, the session tells you where to click — the Step
-  pill → **Choose…** — because only you can make that choice.
+  memory's decisions. It never decides for you: a decision you skip stays open. When the
+  Mission waits on a decision, it is a blocker in your name; once you have answered,
+  say **Done, continue** on it in the Mission pane, because only you clear it.
 - **`grill-me`** is the stress test you run between a draft and an approval. It asks
   one question at a time and looks up anything the code or memory already answers. What
   you raise is written into the spec as it goes: a new open decision, a row in
@@ -126,78 +126,59 @@ time — but none of them lets the answer die in the transcript.
   non-goals. It finishes with two lists — what it wrote and what it could not place — and
   starts nothing.
 - **`step-by-step`** guides you through actions only you can perform. Before the first
-  step it adds one **check** per action to the Mission step it belongs to (running it
+  step it adds one **criterion** per action to the Mission step it belongs to (running it
   again with the same list adds nothing). It runs only read-only checks to confirm a
-  step worked, and it never ticks a check for you — you tick them in the Mission
-  popover, and the closing report says which are still open.
+  step worked, and it never ticks a criterion for you — you tick them in the Mission
+  pane, and the closing report says which are still open.
 
 All three work without a spec or a mission; they just have nowhere to write, and say so.
 
 ### The delivery skills work on Missions
 
 `mission`, `status`, `orchestrate-delivery`, `delivery-watchdog` and
-`delivery-verifier` all keep a coordinated delivery as a **Mission** — a structured
-record Harnu stores in your repo's `.harnu/missions/` — rather than a free-form notes
-file. What that changes for you:
+`delivery-verifier` keep a coordinated delivery as a **Mission** — a structured
+record Harnu stores in your repo's `.harnu/missions/` and shows in the
+[Mission pane](missions.md) — rather than a free-form notes file. What that
+changes for you:
 
-- **You agree the finish line up front, and you end the mission at the end.** An
-  orchestrating session sets up its mission before it sends out any work, proposes the
-  finish line from the spec and asks you to confirm it in one question — your answer
-  in chat is the agreement, so there is nothing to approve afterwards. It declares the
-  whole plan at once, one step per pull request, and attaches the spec as scope. No
-  skill can end a mission on your behalf, and once you end one (close or discard), its
-  session stops coordinating it.
-- **They report a mission the way the topbar does.** The `status` card, the `mission`
-  tick and the watchdog all say "Step 4 of 5 · 2 verified" — the same numbers as the
-  pill, worked out by Harnu — instead of counting proven steps on their own, and the
-  status card prints each of its lines once.
-- **Sign-offs are checks, not extra steps.** Tell a session "the designer must sign off
-  the section" and it adds a check to that section's step for you to tick, rather than
-  growing the plan. The same happens when `delivery-verifier` finds everything met
-  except a part only a person can judge: the step counts as done and the human part
-  becomes a check with a clear label.
-- **When a session is waiting on you, Harnu tells you.** A session whose turn ends
-  waiting on you — a merge, a key, a decision — raises a blocker in your name, which is
-  what makes Harnu chime and remind you (after 30 minutes, then 1, 2 and 4 hours) until it's handled or the reminders run out.
-- **Change the rules and the finish line follows.** Tell the session the delivery now
-  ends differently (stacked PRs you merge yourself, a different target branch) and it
-  proposes the new finish line on the spot, for you to approve.
-- **Missions can actually close.** Before asking you to merge, the session retargets
-  stacked PRs to your default branch. Once every unit is verified, it verifies the
-  finish line itself — it built none of the units, so that counts — and asks you to
-  close.
-- **"Is it stuck?" has one answer.** Harnu works out whether a mission has stalled by a
-  fixed rule, and every skill reads that same answer instead of guessing its own.
-- **A step only counts as proven when someone other than its author verified it.**
-  `delivery-verifier` grades code, UI, research and decision work each against its own
-  rubric. With no browser tools available in the session, anything visual lands on your
-  "check by hand" list rather than being passed on a code-reading argument.
-- **A long delivery doesn't outgrow its orchestrating session.** The orchestrator runs
-  every check-in, every verification and every report in a fresh
-  helper agent that hands back a short summary, so the orchestrating session never
-  re-reads the full mission state and its conversation stays small however long the
-  delivery runs. There is no "start a new session at some size" step and no prompt for
-  you to paste: the session that started the mission keeps owning it. When a stage ends
-  at something only you can do — a merge and a build, say — it raises a blocker for you
-  and waits for it to clear rather than handing the work over.
-- **You see the whole plan before anything starts, and say go.** Before the
-  orchestrator dispatches a single session, it writes a delivery map and opens it
-  beside the session: the chapters in order, the cards of the chapter that starts now with what they depend
-  on, the points where you have to act (a merge, a build, a decision), roughly how
-  many sessions it will use, and which campaign each chapter belongs to. Nothing is
-  dispatched until you answer with a clear go; "sounds good" is not one, and the
-  orchestrator asks a single yes/no question if it is unsure. A plan too big for one
-  campaign is split into campaigns that run one after another, with the boundary
-  marked on the map, and you start each next one yourself when you are ready.
+- **The session that starts the work leads it.** At the first sign of multi-step
+  work it creates the mission itself, with no confirmation; a one-line question
+  creates none. The plan is milestones, then steps, and every step has at least one
+  criterion: a line that says how anyone can tell it is done.
+- **There is no steward.** The leader dispatches the verifiers, nudges a session that
+  stalled and rebases a stack after a merge on its own; `delivery-watchdog` is only
+  the read-only sweep.
+- **A criterion is settled by someone who did not build the step.** `delivery-verifier`
+  judges each criterion on its own, from evidence, as a second session. What the
+  builder says about its own work is a self-check and never closes one. With no
+  browser tools in the session, anything visual lands on your "check by hand" list.
+- **The ones that are yours, you tick.** A sign-off or a manual check ("the designer
+  approves the section", a dashboard step) is an **operator criterion**. You tick it
+  in the Mission pane; no skill can.
+- **When a session is waiting on you, Harnu tells you.** It raises a blocker in your
+  name, which is what makes Harnu chime and remind you (after 30 minutes, then 1, 2 and
+  4 hours). You answer it in the Mission pane (**Done, continue**), and the answer is
+  written in the mission's Log as a decision.
+- **Changing the finish line is yours.** A session that thinks the delivery now ends
+  differently proposes a new **Done when**; it waits for you in the pane.
+- **Closing, and handing over, are yours.** When every step is done the session asks
+  you to close, and you close the mission. Only you start a hand-off, from the pane's
+  **Continue in a new session…**; the leader never switches itself, whatever its
+  context says. The fresh session starts from the mission summary: there is no prompt
+  for you to paste.
+- **Reports use one set of numbers.** The `status` card, the `mission` tick and the
+  watchdog say the same thing as the pane, worked out by Harnu, and the card prints
+  each of its lines once.
+- **A long delivery doesn't outgrow its session.** The orchestrator runs every
+  check-in, verification and report in a fresh helper agent that hands back a short
+  summary, so its own conversation stays small however long the delivery runs.
 - **Sessions reporting back find the right session.** A helper session addresses the
-  session that dispatched it by its permanent id and looks up its current address right
-  before sending — so a report is not lost when that session was parked and resumed —
-  and it never sprays its report to other sessions when it can't reach the right one.
+  session that dispatched it by looking up its current address right before sending, and
+  it never sprays its report to other sessions when it can't reach the right one.
 
-The `mission` skill no longer writes the old-style notes file in `.harnu/goals/` next to
-each mission — the mission is the only record. Old notes files are left where they
-are, and a session can still bring one over as a mission. If you had your own personal
-`mission` or `status` skill, it is still there, untouched — removing it is your call.
+Missions you already have (version 3) keep working as they did. If you had your own
+personal `mission` or `status` skill, it is still there, untouched — removing it is
+your call.
 
 ### `read-aloud` speaks through Harnu inside the app, and your own command outside it
 
@@ -263,8 +244,8 @@ rarely chose to delegate on its own.
 
 **It needs Harnu running.** The gate is answered by Harnu itself. A session whose Harnu
 has quit — or a `claude` you run outside Harnu — reads every file as usual; nothing
-breaks. It is never added to a read-only Scheduler worker or a mission's steward,
-because they cannot call an agent and a refused read would leave them stuck. It has no
+breaks. It is never added to a read-only Scheduler worker,
+because it cannot call an agent and a refused read would leave them stuck. It has no
 "Also outside Harnu" switch.
 
 ## Turning one on
