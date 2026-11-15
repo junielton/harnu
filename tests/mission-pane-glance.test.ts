@@ -175,6 +175,33 @@ describe('AC-8 — a narrow pane stays usable: no minimum width, a narrow layout
     }
   })
 
+  it('a row of the waiting list with no button keeps its text in the wide column (found in the opened capture)', async () => {
+    localStorage.setItem(PANE_SECTIONS_KEY, '{"more":true}')
+    const reply = realReply('default', (r) => {
+      const w = (r.detail as { waiting: { items: unknown[]; more: unknown[] } }).waiting
+      const attach = {
+        kind: 'attach',
+        id: 'attach:atr-1',
+        requestId: 'atr-1',
+        sessionId: 'sess-x',
+        ask: 'x',
+        why: 'y'
+      }
+      w.items.push(attach)
+      w.more.push(attach)
+    })
+    await mountPane(reply)
+    const rows = qa('[data-test="next-rest-row"]')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      // Without a button in column 2, an unplaced "why" would take it and squeeze the ask into a sliver.
+      expect(
+        row.querySelector('[data-test="next-rest-why"]')?.className,
+        row.textContent ?? ''
+      ).toContain('col-start-1')
+    }
+  })
+
   it('at 110 px the body never scrolls sideways and the glance keeps its title, bar and next step', async () => {
     await mountPane(realReply('default'))
     await setPaneWidth(110)
