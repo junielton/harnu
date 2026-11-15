@@ -301,3 +301,101 @@ describe('openReview — the request S5’s review dialog will consume', () => {
     expect(store.consumeReviewRequest()).toBeNull()
   })
 })
+
+// ---- Missions v4 S-23 (AC-62): the cue and the sidebar chip read the v4 view ----------------------------------
+
+describe('the store reads the v4 view for the cue, the Activity entry and the sidebar chip', () => {
+  const LEADER = '8f2c1e4a-1111-4222-8333-944455556666'
+  const attachItem = {
+    kind: 'attach',
+    id: 'attach:atr-1',
+    requestId: 'atr-1',
+    sessionId: 'b6b6b6b6-0000-4000-8000-0000000000b6',
+    ask: 'Let “Fix the score” join this mission',
+    why: 'It waits for you'
+  }
+  let items: unknown[]
+  let v4List: ReturnType<typeof vi.fn>
+
+  function detail(id: string, title: string): unknown {
+    return {
+      ok: true,
+      id,
+      title,
+      leads: LEADER,
+      status: 'open',
+      state: 'open',
+      progress: { unit: 'steps', total: 21, done: 4, current: null, allDone: false },
+      waiting: { items },
+      sessions: []
+    }
+  }
+
+  beforeEach(() => {
+    items = []
+    v4List = vi.fn(async (a: { folder: string; sessionId: string; missionId?: string }) =>
+      a.missionId
+        ? { state: 'mission', missionId: a.missionId, detail: detail(a.missionId, 'Score report') }
+        : {
+            state: 'none',
+            missions: [{ id: 'mnt-a7230001', title: 'Score report', headline: '', leads: LEADER }]
+          }
+    )
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      missionList: list, // v3 list: empty, there is nothing in a v3 file here
+      missionV4View: v4List,
+      missionOperatorDoor: vi.fn(),
+      requestAttention: vi.fn(async () => undefined)
+    }
+    current = []
+  })
+
+  it('a request to join chimes, names the mission and says what to do in the one wording', async () => {
+    const store = mountStore()
+    await store.refresh() // nothing owed yet
+    items = [attachItem]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(entry()?.title).toBe(
+      'Mission “Score report” needs you: Let “Fix the score” join this mission'
+    )
+    expect(entry()?.items?.[0]).toMatchObject({
+      id: 'mnt-a7230001',
+      title: 'Score report',
+      description: 'Let “Fix the score” join this mission',
+      sessionId: LEADER
+    })
+  })
+
+  it('it asks the channel as no session, so it answers for the mission and never for a member', async () => {
+    const store = mountStore()
+    await store.refresh()
+    const asked = v4List.mock.calls.map((c) => c[0].sessionId)
+    expect(asked.length).toBeGreaterThan(0)
+    expect(asked.every((id: string) => id !== LEADER)).toBe(true)
+  })
+
+  it('a read that fails changes nothing: the last good list stays and nothing is announced twice', async () => {
+    const store = mountStore()
+    items = [attachItem]
+    await store.refresh()
+    const chimes = vi.mocked(playNotificationSound).mock.calls.length
+    v4List.mockImplementation(async () => {
+      throw new Error('offline')
+    })
+    await store.refresh()
+    expect(vi.mocked(playNotificationSound).mock.calls.length).toBe(chimes)
+  })
+
+  it('the sidebar chip is the pill’s text and tone for the leader of the mission, and nothing for anyone else', async () => {
+    const store = mountStore()
+    items = [attachItem]
+    await store.refresh()
+    expect(store.chipFor(LEADER)).toMatchObject({
+      text: '4/21 · 1 for you',
+      needsYou: true,
+      tone: 'warning'
+    })
+    expect(store.chipFor('someone-else')).toBeNull()
+  })
+})
