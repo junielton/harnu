@@ -22,7 +22,9 @@ const sessionsFake = vi.hoisted(() => ({
     )
   }
 }))
-const missionsFake = vi.hoisted(() => ({}))
+const missionsFake = vi.hoisted(() => ({
+  chooseMission: vi.fn()
+}))
 const helpersFake = vi.hoisted(() => ({
   currentWorktreePath: '/org/proj/www',
   panesForCurrentWorktree: [] as { type: string }[],
@@ -97,6 +99,7 @@ beforeEach(() => {
   sessionsFake.activateSession.mockClear()
   sessionsFake.markSessionSeen.mockClear()
   helpersFake.toggleMissionHelper.mockClear()
+  missionsFake.chooseMission.mockClear()
   helpersFake.panesForCurrentWorktree = []
 })
 afterEach(() => {
@@ -334,6 +337,9 @@ describe('YourMoveCard in the Return here zone', () => {
       .trigger('click')
     expect(sessionsFake.activateSession).toHaveBeenCalledWith('sess-0001')
     expect(helpersFake.toggleMissionHelper).toHaveBeenCalledWith('/org/proj/www')
+    // The pane shows the mission the card names, not the session's default one
+    // (S-35 delta 1: a leader of several missions must land on the one the card is about).
+    expect(missionsFake.chooseMission).toHaveBeenCalledWith('sess-0001', 'mnt-1')
   })
 
   it('Open mission leaves the pane alone when it is already open', async () => {

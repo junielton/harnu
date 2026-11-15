@@ -95,4 +95,39 @@ describe('the user guide covers missions (AC-85)', () => {
     for (const file of ['missions.md', 'agent-control.md'])
       expect(read(file), file).not.toContain('Mark verified')
   })
+
+  it('the missions page says the pill, the chip and the pane show one mission (S-35 delta 1)', () => {
+    const flat = MISSIONS.replace(/\s+/g, ' ')
+    expect(flat).toMatch(/pill, the (sidebar )?chip and the pane always show the same mission/)
+    expect(flat).toMatch(/waiting on you[^.]*(else|and when none is)[^.]*changed last/i)
+    expect(flat).toMatch(/mission you chose in the pane wins/i)
+    expect(flat).toMatch(/leads the mission it names/i)
+    expect(flat).toMatch(/Close the mission/)
+    // When the leader's session is not loaded, the click shows a notice that names the mission (S-37).
+    expect(flat).toMatch(/Can’t open “\{title\}” from here/)
+    expect(flat).toMatch(
+      /Its owner session isn’t open in this window\. Open that session, then use its Mission pane/
+    )
+    expect(flat).not.toMatch(/older Missions review/i)
+  })
+
+  it("the missions page says only what main's code does (S-36 delta 2)", () => {
+    const flat = MISSIONS.replace(/\s+/g, ' ')
+    // The real ask of a mission that is ready to close, not the sample mission's.
+    expect(flat).toMatch(/Close the mission: every step is done/)
+    expect(flat).toMatch(/Close the mission: the session says it is ready/)
+    expect(flat).not.toMatch(/Everything is done\. Look it over/)
+    // "Your next step" has a Close button, so the no-button sentence leaves closing out.
+    expect(flat).toMatch(
+      /Items that need another action \(letting a session join\) show their text but no button/
+    )
+    expect(flat).not.toMatch(/closing the mission, letting a session join/)
+    // A session that only works on several missions gets the newest written, not the one waiting on you.
+    expect(flat).toMatch(/only works on several missions[^.]*changed last, whatever waits on you/)
+    // A delivery plan gets a new id; a single mission keeps its own.
+    expect(flat).toMatch(/delivery plan becomes one new mission with a new id/)
+    expect(flat).not.toMatch(/with the same id/)
+    // Activity, as main does it today.
+    expect(flat).toMatch(/Review all N/)
+  })
 })
