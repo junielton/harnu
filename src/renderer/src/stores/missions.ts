@@ -725,10 +725,17 @@ export const useMissionsStore = defineStore('missions', () => {
       .filter((r) => !seen.has(r.mission.id) && !!seen.add(r.mission.id))
   }
 
-  /** Whether `missionId` is a v3 file (not a v4 record) that the v3 list still serves: its pill and popover stay v3. */
+  /**
+   * Whether `missionId` is a v3 mission: its pill and popover stay v3 and **Open mission** opens the popover only,
+   * never the pane (the pane would answer for a session that leads several v3 missions with an error). A v4
+   * record is the one thing the readers positively know (`source: 'v4'`); a mission the readers read as a v3 file,
+   * or one only the v3 list serves (a campaign's chapter mission is another id in the v4 view, and the readers
+   * read a bounded number of missions per repo), is v3. An id nobody knows is not claimed.
+   */
   function isV3Mission(missionId: string): boolean {
     const r = readers.value?.find((m) => m.mission.id === missionId)
-    return r !== undefined && isV3Source(r) && views.value.some((v) => v.mission.id === missionId)
+    if (r) return isV3Source(r)
+    return views.value.some((v) => v.mission.id === missionId)
   }
 
   /**
