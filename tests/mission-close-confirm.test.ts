@@ -352,8 +352,9 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
     await mountPane(paneReply({ ready: true }))
     const btn = q('[data-test="next-close"]')
     expect(btn?.textContent).toContain('Close mission')
-    // The server's words for the item are shown as written.
-    expect(text('[data-test="next-step"]')).toContain('ZZZ server ask: close it')
+    // The pane words a close item itself (stp-21): the server's English is never shown for a kind it knows.
+    expect(text('[data-test="next-step"]')).toContain('Close the mission: every step is done')
+    expect(text('[data-test="next-step"]')).not.toContain('ZZZ server ask')
     await pressOn('[data-test="next-close"]')
     expect(dialog()).not.toBeNull()
     // A ready mission opens on Close as delivered.

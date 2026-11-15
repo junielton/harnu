@@ -66,7 +66,10 @@ async function settle(): Promise<void> {
   await flushPromises()
 }
 
-async function mountPane(reply: MissionV4ViewReply | null, sample?: SampleState): Promise<VueWrapper> {
+async function mountPane(
+  reply: MissionV4ViewReply | null,
+  sample?: SampleState
+): Promise<VueWrapper> {
   ;(window as unknown as { api: unknown }).api = {
     missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
     missionV4View: vi.fn(async () => reply ?? { state: 'none', missions: [] }),
@@ -100,7 +103,10 @@ async function mountPane(reply: MissionV4ViewReply | null, sample?: SampleState)
 }
 
 /** A real session's reply built from the sample's, with the given waiting items. */
-function replyWith(waiting: Item[], edit?: (d: Record<string, unknown>) => void): MissionV4ViewReply {
+function replyWith(
+  waiting: Item[],
+  edit?: (d: Record<string, unknown>) => void
+): MissionV4ViewReply {
   const r = structuredClone(sampleOf('default').reply) as unknown as {
     sessions: Array<{ id: string }>
     detail: { waiting: Record<string, unknown> } & Record<string, unknown>
@@ -160,26 +166,33 @@ describe('AC-3 — a link wraps at separators and never inside a word', () => {
   })
 
   it('a long path is cut at its slashes, dots and dashes: many break points, none inside a segment', () => {
-    const parts = linkLabelParts('github.com/org/repo/blob/main/docs/specs/2026-11-14-missions-v4/spec.md')
+    const parts = linkLabelParts(
+      'github.com/org/repo/blob/main/docs/specs/2026-11-14-missions-v4/spec.md'
+    )
     expect(parts.length).toBeGreaterThan(6)
     expect(parts[0]).toBe('github.')
   })
 
   it('draws a step link with break points at separators, not break-all, and the full text in a title', async () => {
-    const address = 'https://github.com/org/repo/blob/main/docs/specs/2026-11-14-missions-v4/spec.md'
+    const address =
+      'https://github.com/org/repo/blob/main/docs/specs/2026-11-14-missions-v4/spec.md'
     const reply = replyWith([], (d) => {
-      const steps = d.steps as Array<{ links: unknown[] }>
-      steps[0].links = [{ kind: 'doc', ref: address, label: 'spec' }]
+      const steps = d.steps as Array<{ id: string; links: unknown[] }>
+      steps.find((x) => x.id === 'stp-5')!.links = [{ kind: 'doc', ref: address, label: 'spec' }]
     })
     await mountPane(reply)
-    await (q('[data-test="step-row"]') as HTMLElement).click()
+    await (q('[data-test="step-row"][data-step="stp-5"]') as HTMLElement).click()
     await nextTick()
     const link = q('[data-test="step-link"]') as HTMLElement
     expect(link, 'the open step lists its link').not.toBeNull()
     expect(link.innerHTML).not.toContain('break-all')
     expect(link.querySelectorAll('wbr').length).toBeGreaterThan(3)
-    expect(flat(link.textContent)).toBe('github.com/org/repo/blob/main/docs/specs/2026-11-14-missions-v4/spec.md')
-    expect(link.getAttribute('title')).toContain('github.com/org/repo/blob/main/docs/specs/2026-11-14-missions-v4/spec.md')
+    expect(flat(link.textContent)).toBe(
+      'github.com/org/repo/blob/main/docs/specs/2026-11-14-missions-v4/spec.md'
+    )
+    expect(link.getAttribute('title')).toContain(
+      'github.com/org/repo/blob/main/docs/specs/2026-11-14-missions-v4/spec.md'
+    )
   })
 })
 
@@ -194,7 +207,10 @@ const SERVER: Record<string, { ask: string; why: string }> = {
   unblock: { ask: 'Put the export on the shared drive', why: 'The step cannot go on until then' },
   settle: { ask: 'Mark done: Check the layout', why: 'It is the last thing open on this step' },
   review: { ask: 'Look over 2 pull requests', why: '2 steps cannot finish until you do' },
-  close: { ask: 'Close the mission: every step is done', why: 'The mission is finished once you close it' },
+  close: {
+    ask: 'Close the mission: every step is done',
+    why: 'The mission is finished once you close it'
+  },
   attach: {
     ask: 'Let another session join this mission',
     why: 'It asked to work on it and waits for your answer'
@@ -224,7 +240,9 @@ function stepsFor(detail: Detail): Detail['steps'] {
 /** Items that name real steps and criteria of the sample detail, so the renderer can word them from the record. */
 function itemsOf(detail: Detail): Item[] {
   const steps = stepsFor(detail)
-  const withOperatorCriterion = steps.find((s) => s.criteria.some((c) => c.by === 'operator' && !c.settled))
+  const withOperatorCriterion = steps.find((s) =>
+    s.criteria.some((c) => c.by === 'operator' && !c.settled)
+  )
   const blocked = steps.find((s) => s.blockers.length > 0)
   const first = steps[0]
   const second = steps[1]
@@ -251,8 +269,18 @@ function itemsOf(detail: Detail): Item[] {
 }
 
 describe('AC-4 — with the app in Portuguese, the Next box is Portuguese', () => {
-  const detail = (): Detail =>
-    (sampleOf('default').reply as Extract<MissionV4ViewReply, { state: 'mission' }>).detail
+  const detail = (): Detail => {
+    const d = structuredClone(
+      (sampleOf('default').reply as Extract<MissionV4ViewReply, { state: 'mission' }>).detail
+    )
+    // A step with ONE open criterion only the operator can settle, and a blocker with no `unblocks` of its own.
+    ;(d.steps[1] as { criteria: unknown[] }).criteria = [
+      { id: 'c1', text: 'Check the layout', by: 'operator', settled: false, via: null }
+    ]
+    for (const st of d.steps)
+      for (const b of st.blockers) delete (b as Record<string, unknown>).unblocks
+    return d
+  }
 
   it('words every kind of waiting item from its kind and the record, never from the server’s English', () => {
     i18n.global.locale.value = 'pt-BR'
@@ -293,7 +321,10 @@ describe('AC-4 — with the app in Portuguese, the Next box is Portuguese', () =
       why: 'The step cannot go on until then'
     } as unknown as Item
     const bare = structuredClone(d)
-    const bb = bare.steps.find((s) => s.id === stepWithBlocker.id)!.blockers[0] as Record<string, unknown>
+    const bb = bare.steps.find((s) => s.id === stepWithBlocker.id)!.blockers[0] as Record<
+      string,
+      unknown
+    >
     delete bb.unblocks
     const w = waitingText(t, bare, item)
     expect(w.ask).toBe(b.ask || b.reason)
@@ -303,7 +334,7 @@ describe('AC-4 — with the app in Portuguese, the Next box is Portuguese', () =
   it('the mounted Next box and its “more” rows show none of the server’s English under pt-BR', async () => {
     i18n.global.locale.value = 'pt-BR'
     const d = detail()
-    await mountPane(replyWith(itemsOf(d), undefined))
+    await mountPane(replyWith(itemsOf(d), (det) => Object.assign(det, { steps: d.steps })))
     await settle()
     const box = flat(q('[data-test="next-step"]')?.textContent)
     expect(box.length).toBeGreaterThan(0)
@@ -324,7 +355,15 @@ describe('AC-4 — with the app in Portuguese, the Next box is Portuguese', () =
 })
 
 describe('AC-4 — with the app in Portuguese, the summary headings are Portuguese', () => {
-  const HEADINGS = ['Goal', 'Where it is', 'Decided', 'Stopped at', 'Next step', 'Open criteria', 'Links']
+  const HEADINGS = [
+    'Goal',
+    'Where it is',
+    'Decided',
+    'Stopped at',
+    'Next step',
+    'Open criteria',
+    'Links'
+  ]
   const BRIEF = ['# Mission mnt-1', ...HEADINGS.map((h) => `## ${h}\nbody of ${h}`)].join('\n\n')
 
   it('names every heading the summary has, in both languages, and leaves an unknown one as written', () => {
@@ -347,7 +386,14 @@ describe('AC-4 — with the app in Portuguese, the summary headings are Portugue
   it('the confirmation dialog shows the translated headings under pt-BR', async () => {
     i18n.global.locale.value = 'pt-BR'
     const w = mount(MissionHandoffDialog, {
-      props: { open: true, brief: BRIEF, pending: false, errorKey: null, done: false, canOpenNew: false },
+      props: {
+        open: true,
+        brief: BRIEF,
+        pending: false,
+        errorKey: null,
+        done: false,
+        canOpenNew: false
+      },
       global: { plugins: [i18n] },
       attachTo: document.body
     })
@@ -364,7 +410,9 @@ describe('AC-4 — with the app in Portuguese, the summary headings are Portugue
       'Links'
     ])
     // The stable code of the section is still the server's heading.
-    expect(qa('[data-test="handoff-section"]').map((e) => e.getAttribute('data-heading'))).toEqual(HEADINGS)
+    expect(qa('[data-test="handoff-section"]').map((e) => e.getAttribute('data-heading'))).toEqual(
+      HEADINGS
+    )
   })
 
   it('the new keys exist in both locales with the same shape (the parity the schema needs)', () => {
@@ -372,8 +420,8 @@ describe('AC-4 — with the app in Portuguese, the summary headings are Portugue
       typeof o === 'object' && o !== null
         ? Object.entries(o).flatMap(([k, v]) => keysOf(v, p ? `${p}.${k}` : k))
         : [p]
-    const en = keysOf(enMessages.missionPane).sort()
-    const pt = keysOf(ptMessages.missionPane).sort()
+    const en = keysOf(enMessages.missionPane, 'missionPane').sort()
+    const pt = keysOf(ptMessages.missionPane, 'missionPane').sort()
     expect(pt).toEqual(en)
     for (const k of [
       'missionPane.next.text.mainFailing.ask',
@@ -528,7 +576,9 @@ describe('AC-11 — an Activity row of a mission whose leader is not loaded says
 
   it('leader loaded: it activates the session and opens the pane for it', async () => {
     const sessions = useSessionsStore()
-    sessions.folders = [{ path: FOLDER, sessions: [{ sessionId: 'owner-1', projectPath: FOLDER }] }] as never
+    sessions.folders = [
+      { path: FOLDER, sessions: [{ sessionId: 'owner-1', projectPath: FOLDER }] }
+    ] as never
     const w = await bell()
     activate.mockImplementation((id: string) => {
       sessions.select(id)
@@ -543,7 +593,9 @@ describe('AC-11 — an Activity row of a mission whose leader is not loaded says
     const w = await bell()
     activate.mockReturnValue(false)
     await w.get('[data-dsqa="activity-item"]').trigger('click')
-    const notice = useUiStore().toasts.find((x) => `${x.title} ${x.description ?? ''}`.includes('Ship the table'))
+    const notice = useUiStore().toasts.find((x) =>
+      `${x.title} ${x.description ?? ''}`.includes('Ship the table')
+    )
     expect(notice, 'a notice naming the mission').toBeDefined()
     expect(useHelpersStore().panesForCurrentWorktree.map((p) => p.type)).not.toContain('mission')
   })

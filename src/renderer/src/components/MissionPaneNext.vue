@@ -6,6 +6,7 @@ import Button from './ui/Button.vue'
 import {
   nextLook,
   waitingStepId,
+  waitingText,
   type MissionV4Reply,
   type NextLook
 } from '../lib/mission-pane-view'
@@ -19,16 +20,34 @@ import {
  * words and the buttons are written here, by identifier, never taken from the reply. The one button is
  * "Open step": this slice has no door, so an item with no single step to open (a close, an attach, a
  * review of several) draws no button until the slice that owns its door lands.
+ *
+ * The words (stp-21): the server's `ask` and `why` are English, so the pane words each item itself from
+ * its kind and the record (`waitingText`) and a Portuguese pane shows no English. What an agent wrote (a
+ * blocker's own ask, a criterion, a title) is shown as written. "N more waiting on you" opens in place; the
+ * pane keeps that choice (`moreOpen`) so it survives a refresh, and a standalone box keeps its own.
  */
-const props = defineProps<{ detail: MissionV4Reply['detail'] }>()
-const emit = defineEmits<{ openStep: [stepId: string]; close: [] }>()
+const props = defineProps<{
+  detail: MissionV4Reply['detail']
+  /** The kept state of "N more waiting on you"; absent, the box keeps its own. */
+  moreOpen?: boolean
+  /** The pane is narrow: the box gives its text more room. */
+  compact?: boolean
+}>()
+const emit = defineEmits<{ openStep: [stepId: string]; close: []; toggleMore: [] }>()
 
 const { t } = useI18n()
 
 const next = computed(() => props.detail.waiting.next)
 const more = computed(() => props.detail.waiting.more)
 const look = computed<NextLook>(() => nextLook(props.detail))
-const expanded = ref(false)
+const localOpen = ref(false)
+const expanded = computed(() => props.moreOpen ?? localOpen.value)
+function toggleMore(): void {
+  if (props.moreOpen === undefined) localOpen.value = !localOpen.value
+  emit('toggleMore')
+}
+const words = (item: Parameters<typeof waitingText>[2]): ReturnType<typeof waitingText> =>
+  waitingText(t, props.detail, item)
 
 const primaryStep = computed(() => (next.value ? waitingStepId(next.value) : null))
 const nextIsClose = computed(() => next.value?.kind === 'close')
@@ -66,7 +85,12 @@ const KIND: Record<string, string> = {
   <section
     class="flex flex-col rounded border"
     :class="BOX[look]"
-    style="margin-top: 10px; padding: 10px 12px; gap: 8px"
+    :style="{
+      marginTop: '10px',
+      padding: compact ? '8px 8px' : '10px 12px',
+      gap: '8px'
+    }"
+    data-pane-section="next"
     :aria-label="$t('missionPane.next.label')"
     :data-look="look"
     data-test="next-step"
@@ -79,19 +103,19 @@ const KIND: Record<string, string> = {
     >
 
     <template v-if="next">
-      <span class="break-words text-text" style="font-size: 13px; line-height: 1.4">{{
-        next.ask
+      <span class="min-w-0 break-words text-text" style="font-size: 13px; line-height: 1.4">{{
+        words(next).ask
       }}</span>
       <span
-        v-if="next.why"
-        class="break-words text-text-3"
+        v-if="words(next).why"
+        class="min-w-0 break-words text-text-3"
         style="font-size: 11.5px; line-height: 1.4; margin-top: -4px"
-        >{{ next.why }}</span
+        >{{ words(next).why }}</span
       >
     </template>
     <span
       v-else
-      class="text-text"
+      class="min-w-0 break-words text-text"
       style="font-size: 13px; line-height: 1.4"
       data-test="next-calm"
       >{{ calmLine }}</span
@@ -100,27 +124,35 @@ const KIND: Record<string, string> = {
     <div
       v-if="primaryStep || nextIsClose || more.length > 0"
       class="flex flex-wrap items-center"
-      style="gap: 10px"
+      style="gap: 8px 10px"
+      data-test="next-controls"
     >
       <Button
         v-if="primaryStep"
         variant="primary"
+        style="white-space: normal"
         data-test="next-open-step"
         @click="emit('openStep', primaryStep)"
       >
         {{ $t('missionPane.next.openStep') }}
       </Button>
-      <Button v-if="nextIsClose" variant="primary" data-test="next-close" @click="emit('close')">
+      <Button
+        v-if="nextIsClose"
+        variant="primary"
+        style="white-space: normal"
+        data-test="next-close"
+        @click="emit('close')"
+      >
         <Flag :size="14" :stroke-width="1.8" aria-hidden="true" />{{ $t('missionPane.next.close') }}
       </Button>
       <button
         v-if="more.length > 0"
         type="button"
-        class="ml-auto text-text-3 transition hover:text-text"
+        class="ml-auto min-w-0 text-left text-text-3 transition hover:text-text"
         style="font-size: 11.5px"
         :aria-expanded="expanded"
         data-test="next-more"
-        @click="expanded = !expanded"
+        @click="toggleMore"
       >
         {{
           expanded
@@ -146,7 +178,7 @@ const KIND: Record<string, string> = {
             :class="KIND[item.kind]"
             style="font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; margin-right: 6px"
             >{{ $t(`missionPane.next.kind.${item.kind}`) }}</span
-          >{{ item.ask }}
+          >{{ words(item).ask }}
         </span>
         <button
           v-if="waitingStepId(item)"
@@ -168,9 +200,12 @@ const KIND: Record<string, string> = {
         >
           {{ $t('missionPane.next.close') }}
         </button>
-        <span v-if="item.why" class="break-words text-text-4" style="font-size: 10.5px">{{
-          item.why
-        }}</span>
+        <span
+          v-if="words(item).why"
+          class="min-w-0 break-words text-text-4"
+          style="font-size: 10.5px"
+          >{{ words(item).why }}</span
+        >
       </div>
     </div>
   </section>

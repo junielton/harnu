@@ -45,8 +45,12 @@ class FakeResizeObserver {
   constructor(private cb: (entries: unknown[], ro: unknown) => void) {
     FakeResizeObserver.all.push(this)
   }
-  observe(): void {}
-  unobserve(): void {}
+  observe(): void {
+    // the test drives the size by hand
+  }
+  unobserve(): void {
+    // nothing to stop
+  }
   disconnect(): void {
     FakeResizeObserver.all = FakeResizeObserver.all.filter((x) => x !== this)
   }
@@ -251,23 +255,26 @@ describe('AC-2 — the progress bar’s marker never draws through the count', (
     [1, 2, 50],
     [99, 100, 99],
     [21, 21, 100]
-  ])('mounted at %i of %i (%i%%): the count and the marker sit in separate grid rows', async (done, total, fill) => {
-    await mountPane(withProgress(done, total))
-    const bar = q('[data-test="mission-progress"]') as HTMLElement
-    const count = bar.querySelector('[data-test="mission-count"]') as HTMLElement
-    const marker = bar.querySelector('[data-test="mission-bar-marker"]') as HTMLElement | null
-    expect(count.className).toContain('row-start-1')
-    if (fill <= 0 || fill >= 100) {
-      expect(marker, `fill ${fill}`).toBeNull()
-    } else {
-      expect(marker, `fill ${fill}`).not.toBeNull()
-      expect(marker!.className).toContain('row-start-2')
-      expect(marker!.style.width).toBe(`${fill}%`)
+  ])(
+    'mounted at %i of %i (%i%%): the count and the marker sit in separate grid rows',
+    async (done, total, fill) => {
+      await mountPane(withProgress(done, total))
+      const bar = q('[data-test="mission-progress"]') as HTMLElement
+      const count = bar.querySelector('[data-test="mission-count"]') as HTMLElement
+      const marker = bar.querySelector('[data-test="mission-bar-marker"]') as HTMLElement | null
+      expect(count.className).toContain('row-start-1')
+      if (fill <= 0 || fill >= 100) {
+        expect(marker, `fill ${fill}`).toBeNull()
+      } else {
+        expect(marker, `fill ${fill}`).not.toBeNull()
+        expect(marker!.className).toContain('row-start-2')
+        expect(marker!.style.width).toBe(`${fill}%`)
+      }
+      // The fill's edge is not a vertical line that can run through the text any more.
+      const fillEl = bar.querySelector('[data-test="mission-bar-fill"]') as HTMLElement
+      expect(fillEl.className).not.toContain('border-r')
     }
-    // The fill's edge is not a vertical line that can run through the text any more.
-    const fillEl = bar.querySelector('[data-test="mission-bar-fill"]') as HTMLElement
-    expect(fillEl.className).not.toContain('border-r')
-  })
+  )
 })
 
 // ---- AC-9 · the selector ---------------------------------------------------------------------------------------
@@ -293,7 +300,8 @@ describe('AC-9 — the selector of the missions a session leads never hides its 
     const select = q('[data-test="mission-leads-select"]') as HTMLSelectElement
     expect(select.className).toContain('w-full')
     expect(select.getAttribute('title')).toBeTruthy()
-    for (const o of [...select.options]) expect(o.getAttribute('title') ?? o.textContent).toBeTruthy()
+    for (const o of [...select.options])
+      expect(o.getAttribute('title') ?? o.textContent).toBeTruthy()
     void w
   })
 })

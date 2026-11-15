@@ -51,7 +51,10 @@ beforeEach(() => {
   root = mkdtempSync(path.join(os.tmpdir(), 'harnu-handoff-name-'))
   const dir = path.join(root, '.harnu', 'missions-v4')
   mkdirSync(dir, { recursive: true })
-  writeFileSync(path.join(dir, `${ID}-score-report.md`), buildMissionRecordContent(record(), '# Log\n'))
+  writeFileSync(
+    path.join(dir, `${ID}-score-report.md`),
+    buildMissionRecordContent(record(), '# Log\n')
+  )
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
