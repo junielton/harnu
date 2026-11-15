@@ -32,9 +32,6 @@ import {
  */
 
 const READ_TOOLS = [
-  // Campaign ch.3a (T595)
-  'campaign_get',
-  'campaign_list',
   'get_fleet',
   'get_session',
   'list_worktrees',
@@ -90,13 +87,8 @@ const MUTATE_TOOLS = [
   'mission_import_legacy',
   // Mission v3 §3.6
   'mission_add_check',
-  // Campaign ch.3a (T595): the three writes run free, like the mission writes.
-  'campaign_create',
-  'campaign_add_chapter',
-  'campaign_request_close',
   // T654: the owner-transfer recovery verbs.
   'mission_transfer_owner',
-  'campaign_transfer_owner',
   // Missions v4 S-24: the v4-only verbs run free like the other mission writes.
   'mission_add_milestone',
   'mission_add_ac',
@@ -358,13 +350,8 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'mission_import_legacy',
     // Mission v3 §3.6
     'mission_add_check',
-    // Campaign ch.3a (T595): the writes run free like the mission writes.
-    'campaign_create',
-    'campaign_add_chapter',
-    'campaign_request_close',
     // T654: the owner-transfer recovery verbs run free like the other mission writes.
     'mission_transfer_owner',
-    'campaign_transfer_owner',
     // Missions v4 S-24: the v4-only verbs run free like the other mission writes.
     'mission_add_milestone',
     'mission_add_ac',

@@ -230,32 +230,6 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     stepId: 'stp-1',
     label: 'Validated visually'
   },
-  // Campaign ch.3a (T595)
-  campaign_create: {
-    folder: ALLOWED,
-    title: 'Content migration',
-    declaredEnd: { kind: 'code', target: 'every page migrated', evidence: 'the audit is green' },
-    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-    chapters: [
-      { title: 'Images', produces: ['images-on-cdn'] },
-      { title: 'Pages', consumes: ['images-on-cdn'] }
-    ],
-    force: false
-  },
-  campaign_add_chapter: {
-    folder: ALLOWED,
-    campaignId: 'cmp-0000abcd',
-    title: 'Detour',
-    required: false,
-    discoveredFrom: { chapterId: 'chp-1' }
-  },
-  campaign_get: { folder: ALLOWED, campaignId: 'cmp-0000abcd' },
-  campaign_list: { folder: ALLOWED },
-  campaign_request_close: {
-    folder: ALLOWED,
-    campaignId: 'cmp-0000abcd',
-    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-  },
   // Missions v4 S-24: the six verbs that exist in v4 alone.
   mission_add_milestone: {
     folder: ALLOWED,
@@ -304,13 +278,6 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     missionId: 'mnt-0000abcd',
     toSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
     reason: 'the owner session died'
-  },
-  campaign_transfer_owner: {
-    folder: ALLOWED,
-    campaignId: 'cmp-0000abcd',
-    toSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-    reason: 'the owner session died',
-    includeChapters: true
   },
   // Campaign ch.5a (T597).
   rebase_stack: { folder: ALLOWED, missionId: 'mnt-0000abcd', onto: 'origin/main' }

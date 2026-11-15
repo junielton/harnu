@@ -79,18 +79,11 @@ export const MISSION_VERBS = [
 export const STEWARD_VERBS = ['create_session', 'message_session', 'rebase_stack', 'notify']
 
 /**
- * The `campaign_*` verbs (campaign spec §3.3), allowed beside the mission ones. Kept a
- * separate list so the mission-verb pin in the unit suite stays exact; a second pin
- * holds this one to the catalog's `campaign_*` verbs.
+ * The `campaign_*` verbs. There are none any more (Missions v4 S-39 removed them from the catalog); the
+ * list stays, empty, so the eval agent's allowed-tools shape and the unit suite's pin against the
+ * catalog's `campaign_*` verbs keep working.
  */
-export const CAMPAIGN_VERBS = [
-  'campaign_create',
-  'campaign_add_chapter',
-  'campaign_get',
-  'campaign_list',
-  'campaign_request_close',
-  'campaign_transfer_owner'
-]
+export const CAMPAIGN_VERBS = []
 
 /**
  * The fixed frame every scripted prompt runs in. Deliberately tiny: a headless
@@ -134,7 +127,7 @@ function ownerFrame(sessionId, folder, body, tools = [], stewardVerbs = false) {
     `Your own Claude session UUID is ${sessionId} — pass it wherever a verb asks for your session id.`,
     `The repo is your current directory; pass folder="${folder}" to every mcp__harnu__ verb.`,
     'Read the skill file named below first, then act exactly as it says for the situation described. Decide your calls yourself.',
-    'This sandbox has only the mcp__harnu__mission_* and mcp__harnu__campaign_* verbs' +
+    'This sandbox has only the mcp__harnu__mission_* verbs' +
       (stewardVerbs
         ? ', the steward verbs (create_session — only with role: "verifier" —, message_session, rebase_stack, notify)'
         : '') +

@@ -1,5 +1,5 @@
 /**
- * T654 — `mission_transfer_owner` / `campaign_transfer_owner`, driven through the REAL MCP
+ * T654 — `mission_transfer_owner`, driven through the REAL MCP
  * transport (lesson `docs/lessons/testing/006-eval-harness-grades-state-through-the-real-transport.md`):
  * Harnu's own loopback HTTP server, the MCP SDK client with the bearer from `harnu.mcp.json`, so the
  * catalog schema, the bearer guard, the policy gate and the wired handler are all in the path.
@@ -8,8 +8,7 @@
  * An ACK is evidence, not the verdict. Only `electron` and the live sources (PR join, fleet scan,
  * hook FSM) are stubbed at their seams.
  *
- * Covers AC-1 (owner lookup follows), AC-3 (campaign + `includeChapters`), AC-4 (Log entry + ledger
- * row), AC-5 (a bearer shaped like the retired steward's is refused at the door) and the refusal codes the card names.
+ * Covers AC-1 (owner lookup follows), AC-4 (Log entry + ledger row), AC-5 (a bearer shaped like the retired steward's is refused at the door) and the refusal codes the card names.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
@@ -184,17 +183,6 @@ async function newMission(folder: string, extra: Record<string, unknown> = {}): 
   return ack.missionId as string
 }
 
-async function newCampaign(folder: string): Promise<string> {
-  const ack = await ok('campaign_create', {
-    folder,
-    title: `Content migration ${++titleSeq}`,
-    declaredEnd: END,
-    sessionId: OLD,
-    chapters: [{ title: 'First' }, { title: 'Second' }, { title: 'Unbound' }]
-  })
-  return ack.campaignId as string
-}
-
 beforeAll(async () => {
   h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-xfer-ud-'))
   ;({ main, worktree } = await fakeRepo())
@@ -225,7 +213,7 @@ afterAll(async () => {
 })
 
 describe('the verbs are on the wire', () => {
-  it('lists both transfer verbs with the shapes the card names', async () => {
+  it('lists the mission transfer verb with the shape the card names, and no campaign one (S-39)', async () => {
     const { tools } = await client.listTools()
     const props = (n: string): string[] =>
       Object.keys(
@@ -234,9 +222,7 @@ describe('the verbs are on the wire', () => {
     expect(props('mission_transfer_owner')).toEqual(
       expect.arrayContaining(['folder', 'missionId', 'toSessionId', 'reason'])
     )
-    expect(props('campaign_transfer_owner')).toEqual(
-      expect.arrayContaining(['folder', 'campaignId', 'toSessionId', 'reason', 'includeChapters'])
-    )
+    expect(tools.map((t) => t.name)).not.toContain('campaign_transfer_owner')
   })
 })
 
@@ -334,106 +320,6 @@ describe('AC-1 / AC-4 — mission_transfer_owner', () => {
     const r = await call('mission_transfer_owner', {
       folder: blockedMain,
       missionId: 'mnt-0a0a0a0a',
-      toSessionId: NEW,
-      reason: REASON
-    })
-    expect(r.isError).toBe(true)
-    expect(r.text).toMatch(/FOLDER_NOT_ALLOWED/)
-  })
-})
-
-describe('AC-3 / AC-4 — campaign_transfer_owner', () => {
-  it('moves the campaign only, by default; the chapter missions keep their owner', async () => {
-    const cid = await newCampaign(main)
-    const mid = await newMission(main, { campaignId: cid, chapterId: 'chp-1' })
-    const ack = await ok('campaign_transfer_owner', {
-      folder: worktree,
-      campaignId: cid,
-      toSessionId: NEW,
-      reason: REASON
-    })
-    expect(ack).toMatchObject({
-      ok: true,
-      op: 'campaign_transfer_owner',
-      campaignId: cid,
-      from: OLD,
-      to: NEW,
-      moved: { campaign: true, missions: [] }
-    })
-    const disk = await readRecord(main, 'campaigns', cid)
-    expect(ownerOf(disk)).toBe(NEW)
-    expect(disk.log).toMatch(
-      new RegExp(`### \\S+ · owner transfer: ${OLD} → ${NEW} \\(${REASON}\\)`)
-    )
-    expect(ownerOf(await readRecord(main, 'missions', mid))).toBe(OLD)
-    const viaNew = await ok('campaign_get', { folder: main, ownerSessionId: NEW })
-    expect((viaNew.campaign as { id: string }).id).toBe(cid)
-  })
-
-  it('with includeChapters, every non-closed chapter mission moves too, each with Log + ledger', async () => {
-    const cid = await newCampaign(main)
-    const open = await newMission(main, { campaignId: cid, chapterId: 'chp-1' })
-    const closed = await newMission(main, { campaignId: cid, chapterId: 'chp-2' })
-    await runOperatorDoor({ door: 'end', root: main, missionId: closed, closedAs: 'delivered' })
-    const ack = await ok('campaign_transfer_owner', {
-      folder: main,
-      campaignId: cid,
-      toSessionId: NEW,
-      reason: REASON,
-      includeChapters: true
-    })
-    expect(ack.moved).toEqual({ campaign: true, missions: [open] })
-    expect(ownerOf(await readRecord(main, 'campaigns', cid))).toBe(NEW)
-    const moved = await readRecord(main, 'missions', open)
-    expect(ownerOf(moved)).toBe(NEW)
-    expect(moved.log).toMatch(new RegExp(`owner transfer: ${OLD} → ${NEW}`))
-    expect(
-      (moved.front.ledger as Array<{ kind: string }>).filter((r) => r.kind === 'owner-transfer')
-    ).toHaveLength(1)
-    expect(ownerOf(await readRecord(main, 'missions', closed))).toBe(OLD)
-  })
-
-  it('refuses SAME_OWNER, BAD_SESSION_ID and CAMPAIGN_CLOSED, writing nothing', async () => {
-    const cid = await newCampaign(main)
-    const before = (await readRecord(main, 'campaigns', cid)).raw
-    const same = await call('campaign_transfer_owner', {
-      folder: main,
-      campaignId: cid,
-      toSessionId: OLD,
-      reason: REASON
-    })
-    expect(same.text).toMatch(/^SAME_OWNER/)
-    const synthetic = await call('campaign_transfer_owner', {
-      folder: main,
-      campaignId: cid,
-      toSessionId: 'synthetic-0b9d1c1e',
-      reason: REASON
-    })
-    expect(synthetic.text).toMatch(/^BAD_SESSION_ID/)
-    expect((await readRecord(main, 'campaigns', cid)).raw).toBe(before)
-
-    const disk = await readRecord(main, 'campaigns', cid)
-    await fs.writeFile(
-      disk.file,
-      disk.raw.replace(/status: \w+/, 'status: closed\nclosedAs: delivered'),
-      'utf8'
-    )
-    const frozen = (await readRecord(main, 'campaigns', cid)).raw
-    const closed = await call('campaign_transfer_owner', {
-      folder: main,
-      campaignId: cid,
-      toSessionId: NEW,
-      reason: REASON
-    })
-    expect(closed.isError).toBe(true)
-    expect(closed.text).toMatch(/^CAMPAIGN_CLOSED/)
-    expect((await readRecord(main, 'campaigns', cid)).raw).toBe(frozen)
-  })
-
-  it('refuses FOLDER_NOT_ALLOWED in a blocked repo', async () => {
-    const r = await call('campaign_transfer_owner', {
-      folder: blockedMain,
-      campaignId: 'cmp-0a0a0a0a',
       toSessionId: NEW,
       reason: REASON
     })

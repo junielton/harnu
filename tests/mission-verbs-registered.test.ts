@@ -84,8 +84,8 @@ describe('the verb-name scanner', () => {
 })
 
 describe('the verbs the catalog registers', () => {
-  it('include the mission, campaign and rebase verbs the scan relies on', () => {
-    for (const v of ['mission_get', 'mission_create', 'campaign_get', 'rebase_stack']) {
+  it('include the mission and rebase verbs the scan relies on', () => {
+    for (const v of ['mission_get', 'mission_create', 'rebase_stack']) {
       expect(registeredVerbs.has(v), v).toBe(true)
     }
   })

@@ -1,4 +1,4 @@
-<!-- harnu-features v147 (2026-11-15) -->
+<!-- harnu-features v148 (2026-11-15) -->
 
 # You are running inside Harnu
 
@@ -44,8 +44,8 @@ same verbs, old name; call the `mcp__harnu__` one). The core verbs are available
 `mission_create`, `mission_get`, `mission_list`, `mission_add_step`,
 `mission_update_step`, `mission_link_child`, `mission_log`, `mission_set_blocker`,
 `mission_clear_blocker`, `mission_set_end`, `mission_verify_step`,
-`mission_request_close`, `mission_import_legacy`, `mission_add_check`, `campaign_create`,
-`campaign_add_chapter`, `campaign_get`, `campaign_list`, `campaign_request_close`, `mission_transfer_owner`, `campaign_transfer_owner`, `mission_add_milestone`, `mission_add_ac`, `mission_link`, `mission_set_done_when`, `mission_settle_ac`, `mission_attach`, `rebase_stack`. Resources: `harnu://fleet`,
+`mission_request_close`, `mission_import_legacy`, `mission_add_check`,
+`mission_transfer_owner`, `mission_add_milestone`, `mission_add_ac`, `mission_link`, `mission_set_done_when`, `mission_settle_ac`, `mission_attach`, `rebase_stack`. Resources: `harnu://fleet`,
 `harnu://worktrees`, `harnu://session/<id>` (the old `capy://` form still parses).
 
 **Mutations do NOT ask. Just act.** `create_session`, `create_worktree`,

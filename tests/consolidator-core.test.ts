@@ -72,7 +72,7 @@ function fixture(over: Partial<ConsolidatorInput> = {}): ConsolidatorInput {
 
 describe('AC-6.1 — the allowlist reads no transcript', () => {
   it('allows only the structured-record reads, none of which discloses a transcript', () => {
-    expect([...CONSOLIDATOR_ALLOW_VERBS].sort()).toEqual(['campaign_get', 'mission_get'])
+    expect([...CONSOLIDATOR_ALLOW_VERBS].sort()).toEqual(['mission_get'])
     const byName = new Map(MCP_TOOLS.map((t) => [t.name, t]))
     for (const verb of CONSOLIDATOR_ALLOW_VERBS) {
       expect(byName.get(verb), verb).toBeDefined()

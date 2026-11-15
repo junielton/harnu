@@ -7,7 +7,7 @@
  * read learned is handed back as a `MissionObservation`, and only the observer
  * (src/main/missions/observer.ts) acts on it.
  *
- * Delta 1: the claim is about every READ, not one function. `mission_get`, `campaign_get`, the
+ * Delta 1: the claim is about every READ, not one function. `mission_get`, the
  * renderer list poll (`listMissionViews`, which the companion and Your move ride) and the steward
  * bridge's derive all write nothing (the campaign list went with S-37); the observer pass
  * (`observeOpenMissions`, started by `startMissionObserver`) records what they would have.
@@ -310,30 +310,50 @@ const handlerCtx = (): Record<string, unknown> => ({
   bridge: undefined
 })
 
-async function seedCampaign(missionId: string): Promise<void> {
-  const { buildCampaignFileContent } = await import('../src/main/campaign-core')
+/**
+ * A v3 campaign file as a record on disk, written as plain text: the campaign code is gone (S-39), so
+ * no builder writes it. Returns its path, so a read can be proven not to touch it either.
+ */
+async function seedCampaign(missionId: string): Promise<string> {
   const at = '2026-11-01T09:00:00.000Z'
   const dir = path.join(root, '.harnu', 'campaigns')
   await fs.mkdir(dir, { recursive: true })
+  const file = path.join(dir, `${CAMPAIGN_ID}-pure.md`)
   await fs.writeFile(
-    path.join(dir, `${CAMPAIGN_ID}-pure.md`),
-    buildCampaignFileContent(
-      {
-        id: CAMPAIGN_ID,
-        slug: 'pure',
-        folder: root,
-        owner: { sessionId: OWNER, folder: root },
-        title: 'Pure',
-        declaredEnd: { kind: 'code', target: 't', evidence: 'e' },
-        chapters: [{ id: 'chp-1', ordinal: 1, title: 'One', missionId, required: true }],
-        status: 'active',
-        createdAt: at,
-        updatedAt: at,
-        provenance: { author: 'agent', at }
-      },
-      '# Pure\n\n## Log\n'
-    )
+    file,
+    [
+      '---',
+      `id: ${CAMPAIGN_ID}`,
+      'slug: pure',
+      `folder: ${root}`,
+      'owner:',
+      `  sessionId: ${OWNER}`,
+      `  folder: ${root}`,
+      'title: Pure',
+      'declaredEnd:',
+      '  kind: code',
+      '  target: t',
+      '  evidence: e',
+      'chapters:',
+      '  - id: chp-1',
+      '    ordinal: 1',
+      '    title: One',
+      `    missionId: ${missionId}`,
+      '    required: true',
+      'status: active',
+      `createdAt: '${at}'`,
+      `updatedAt: '${at}'`,
+      'provenance:',
+      '  author: agent',
+      `  at: '${at}'`,
+      '---',
+      '# Pure',
+      '',
+      '## Log',
+      ''
+    ].join('\n')
   )
+  return file
 }
 
 interface ReadPath {
@@ -356,11 +376,6 @@ async function readPaths(): Promise<ReadPath[]> {
         ok(await handlers.mission_get({ folder: root, missionId: MISSION_ID }, handlerCtx()))
     },
     {
-      name: 'campaign_get',
-      run: async () =>
-        ok(await handlers.campaign_get({ folder: root, campaignId: CAMPAIGN_ID }, handlerCtx()))
-    },
-    {
       // What the steward bridge's `gatesFor` calls.
       name: 'deriveMissionSignals',
       run: async (mission, log) => {
@@ -378,12 +393,13 @@ async function readPaths(): Promise<ReadPath[]> {
   ]
 }
 
-const READ_PATHS = ['mission_get', 'campaign_get', 'deriveMissionSignals', 'listMissionViews']
+const READ_PATHS = ['mission_get', 'deriveMissionSignals', 'listMissionViews']
 
 describe('every read path is a read with no side effects (AC-4, delta 1)', () => {
   it.each(READ_PATHS)('a read has no side effects through %s', async (name) => {
     const { mission, log, file } = await seed()
-    await seedCampaign(mission.id)
+    const campaignFile = await seedCampaign(mission.id)
+    const campaignBefore = await fs.readFile(campaignFile)
     const before = await fs.readFile(file)
     const beforeStat = await fs.stat(file)
     const cache = await import('../src/main/mission-link-cache')
@@ -396,6 +412,8 @@ describe('every read path is a read with no side effects (AC-4, delta 1)', () =>
     expect(h.joinCalls).toBeGreaterThan(0)
     expect((await fs.readFile(file)).equals(before)).toBe(true)
     expect((await fs.stat(file)).mtimeMs).toBe(beforeStat.mtimeMs)
+    // The campaign file naming this mission stays a record: no read path rewrites it.
+    expect((await fs.readFile(campaignFile)).equals(campaignBefore)).toBe(true)
     expect(h.wakes).toEqual([])
     expect(cache.getObservedLedger(MISSION_ID)).toEqual([])
     expect(cache.getLastKnown(root, 'pr', '8')).toBeNull()

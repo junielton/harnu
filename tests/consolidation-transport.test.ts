@@ -2,7 +2,8 @@
  * Campaign ch.6 (T598, spec §3.6) — close-out consolidation (AC-6.1) and recall at create (AC-6.3),
  * driven through the REAL MCP transport (lesson
  * `docs/lessons/testing/006-eval-harness-grades-state-through-the-real-transport.md`). The harness
- * is the one `campaign-verbs-transport.test.ts` uses; state is graded from the files on disk.
+ * is the one `campaign-verbs-transport.test.ts` uses; state is graded from the files on disk. (The campaign
+ * cases went with the campaign verbs, Missions v4 S-39.)
  *
  * What "real" means here: `registerMcpServer` starts Harnu's own loopback HTTP server (the
  * one a spawned `claude` is pointed at), and the calls below go through the MCP SDK's
@@ -12,9 +13,8 @@
  * `electron` and the live sources (PR join, fleet scan, hook FSM) are stubbed at their seams.
  *
  * State is graded from the files on disk with js-yaml directly — never through
- * `campaign-core.ts` — so a parser drift cannot make the grader agree with the product, and
- * an ACK is evidence, never the verdict (lesson rule 1). The one place the product's own
- * core is used is the operator's end door (`applyOperatorEnd`), which no verb reaches.
+ * the product's parser — so a parser drift cannot make the grader agree with the product, and
+ * an ACK is evidence, never the verdict (lesson rule 1).
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
@@ -81,7 +81,6 @@ vi.mock('../src/main/pr-stack', async (importOriginal) => ({
 import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
 import {
-  applyOperatorEnd,
   buildMissionFileContent,
   parseMissionFile,
   readMissionLog,
@@ -140,52 +139,12 @@ async function fakeRepo(): Promise<{ main: string; worktree: string }> {
 
 // ---- grading from disk (js-yaml, not the product's parser) -----------------
 
-async function campaignFiles(root: string): Promise<string[]> {
-  return (
-    await fs.readdir(path.join(root, '.harnu', 'campaigns')).catch(() => [] as string[])
-  ).filter((n) => n.endsWith('.md'))
-}
-
-interface OnDisk {
-  file: string
-  raw: string
-  front: Record<string, unknown> & {
-    status: string
-    chapters: Array<Record<string, unknown>>
-    pendingClose?: unknown
-  }
-  log: string
-}
-
-async function readCampaign(root: string, id: string): Promise<OnDisk> {
-  const name = (await campaignFiles(root)).find((n) => n.startsWith(`${id}-`))
-  if (!name) throw new Error(`no file for ${id}`)
-  const file = path.join(root, '.harnu', 'campaigns', name)
-  const raw = await fs.readFile(file, 'utf8')
-  const parts = raw.split(/^---\n/m)
-  return {
-    file,
-    raw,
-    front: yaml.load(parts[1], { schema: yaml.CORE_SCHEMA }) as OnDisk['front'],
-    log: parts.slice(2).join('---\n')
-  }
-}
-
 async function missionFile(root: string, id: string): Promise<string> {
   const dir = path.join(root, '.harnu', 'missions')
   return path.join(
     dir,
     (await fs.readdir(dir)).find((n) => n.startsWith(`${id}-`))!
   )
-}
-
-/** The operator ends a mission as delivered — a UI door no verb reaches (product core). */
-async function operatorClosesMission(root: string, id: string): Promise<void> {
-  const file = await missionFile(root, id)
-  const raw = await fs.readFile(file, 'utf8')
-  const m = parseMissionFile(raw) as Mission
-  const ended = applyOperatorEnd(m, { at: new Date().toISOString(), closedAs: 'delivered' })
-  await fs.writeFile(file, buildMissionFileContent(ended, readMissionLog(raw)), 'utf8')
 }
 
 beforeAll(async () => {
@@ -309,25 +268,6 @@ describe('AC-6.3 — recall at create', () => {
       steward: false
     })
     expect(ack.recall).toEqual([])
-  })
-
-  it('campaign_create matches watched topics against the chapter titles', async () => {
-    await ok('memory_append', {
-      folder: main,
-      page: 'decisions',
-      entry: '## CDN uploads are idempotent',
-      watches: ['cdn']
-    })
-    const ack = await ok('campaign_create', {
-      folder: main,
-      title: 'Migration',
-      declaredEnd: END,
-      sessionId: OWNER,
-      chapters: [{ title: 'Images on the CDN' }, { title: 'Migrate pages' }]
-    })
-    expect((ack.recall as Array<{ text: string }>).map((r) => r.text)).toEqual([
-      'CDN uploads are idempotent'
-    ])
   })
 
   it('a superseded decision is not recalled; its successor is', async () => {
@@ -466,50 +406,5 @@ describe('AC-6.1 — mission_request_close runs the consolidator', () => {
     const r = await call('mission_request_close', { folder: main, missionId: id })
     expect(r.text).toMatch(/^END_NOT_VERIFIED/)
     expect((await readMission(main, id)).front).not.toHaveProperty('outcome')
-  })
-})
-
-describe('AC-6.1 — campaign_request_close runs the consolidator', () => {
-  it('stores the campaign outcome (a forced prerequisite is a surprise) and no memory', async () => {
-    const cid = (
-      await ok('campaign_create', {
-        folder: main,
-        title: 'Forced order',
-        declaredEnd: END,
-        sessionId: OWNER,
-        force: true,
-        chapters: [
-          { title: 'Migrate pages', consumes: ['images-on-cdn'] },
-          { title: 'Upload images', produces: ['images-on-cdn'] }
-        ]
-      })
-    ).campaignId as string
-    for (const chapterId of ['chp-1', 'chp-2']) {
-      const mid = (
-        await ok('mission_create', {
-          folder: main,
-          title: `Chapter ${chapterId}`,
-          declaredEnd: END,
-          sessionId: OWNER,
-          campaignId: cid,
-          chapterId,
-          steward: false
-        })
-      ).missionId as string
-      await operatorClosesMission(main, mid)
-    }
-    const ack = await ok('campaign_request_close', {
-      folder: main,
-      campaignId: cid,
-      sessionId: OWNER
-    })
-    expect(ack).toMatchObject({ ok: true, op: 'campaign_request_close', pendingClose: true })
-    expect(ack.consolidation).toBeDefined()
-    const disk = await readCampaign(main, cid)
-    expect(disk.front.outcome).toMatchObject({
-      declaredEnd: END,
-      surprises: [expect.stringContaining('images-on-cdn')]
-    })
-    expect(Array.isArray(disk.front.memoryDrafts)).toBe(true)
   })
 })
