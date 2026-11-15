@@ -19,9 +19,12 @@ import type { CompanionHostFacade } from './host-core'
 import {
   MISSION_STATE_SUBSYSTEM,
   missionStateKey,
+  missionViewInOf,
   projectMissions,
   type MissionViewIn
 } from './mission-state-core'
+import { repoRoot } from '../data-dir'
+import type { MissionDetail } from '../missions/verbs-read'
 import type { BindingView } from './session-table'
 
 const FEATURE = 'ui.quietRows'
@@ -75,14 +78,58 @@ const defaultSend: MissionStateSender = ({ sid, args }) =>
     cause: { kind: 'internal', subsystem: MISSION_STATE_SUBSYSTEM }
   })
 
+/** The id the read asks the view as: no session's, so it answers for the mission and never for a member. */
+const READER_ID = 'harnu-companion'
+
+/** How a mission's detail is read: the view channel's own builder, which gathers the facts of the steps. */
+type ReadDetail = (folder: string, missionId: string) => Promise<MissionDetailRead>
+type MissionDetailRead = MissionDetail | { ok: false } | null
+
+async function defaultReadDetail(folder: string, missionId: string): Promise<MissionDetailRead> {
+  const { buildMissionV4View } = await import('../mission-ipc')
+  const reply = await buildMissionV4View({ folder, sessionId: READER_ID, missionId })
+  return reply.state === 'mission' ? reply.detail : null
+}
+
+/**
+ * Missions v4 S-23 — the open missions of the repos of `folders` that these sessions lead or work on, read
+ * through the record store (a v4 record, or a v3 file converted in memory) and shaped for the mod. It
+ * writes nothing. `unreadable` names the files the store could not parse.
+ */
+export async function readViewsFromRecords(
+  folders: readonly string[],
+  sessions: readonly string[],
+  opts: { readDetail?: ReadDetail } = {}
+): Promise<{ views: MissionViewIn[]; unreadable: string[] }> {
+  const readDetail = opts.readDetail ?? defaultReadDetail
+  const { listMissionRecords } = await import('../missions/record-store')
+  const wanted = new Set(sessions)
+  const views: MissionViewIn[] = []
+  const unreadable: string[] = []
+  const seen = new Set<string>()
+  for (const folder of folders) {
+    const root = repoRoot(folder)
+    const listed = await listMissionRecords(root)
+    unreadable.push(...listed.unreadable)
+    for (const { record, source, sourceIds } of listed.records) {
+      if (record.status !== 'open' || seen.has(record.id)) continue
+      if (!record.sessions.some((e) => e.to === null && wanted.has(e.id))) continue
+      seen.add(record.id)
+      const detail = await readDetail(
+        folder,
+        source === 'v3-campaign' ? (sourceIds[0] ?? record.id) : record.id
+      )
+      if (detail && detail.ok) views.push(missionViewInOf(detail))
+    }
+  }
+  return { views, unreadable }
+}
+
 async function defaultListViews(
   folders: readonly string[],
   sessions: readonly string[]
 ): Promise<{ views: readonly MissionViewIn[]; unreadable: readonly string[] }> {
-  // Loaded on first use: the missions IPC pulls in Electron, which the tests of this file never need.
-  const { listMissionViews } = await import('../mission-ipc')
-  const r = await listMissionViews(folders, Date.now(), { onlySessions: new Set(sessions) })
-  return { views: r.views as unknown as MissionViewIn[], unreadable: r.unreadable }
+  return readViewsFromRecords(folders, sessions)
 }
 
 /** A binding whose session gets its missions: bound, lease live, interactive, enabled for the feature. */

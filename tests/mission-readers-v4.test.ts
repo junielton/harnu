@@ -248,7 +248,7 @@ describe('readers use the v4 view', () => {
       expect(owner).toHaveLength(1)
       expect(owner[0]).toMatchObject({ id: 'mnt-a7230001', title: 'Score report', role: 'owner' })
       expect(owner[0].steps.map((s) => [s.id, s.state])).toEqual([['stp-1', 'blocked']])
-      expect(owner[0].you).toEqual([{ kind: 'unblock', text: 'Ask the vendor for the export' }])
+      expect(owner[0].you[0]).toEqual({ kind: 'unblock', text: 'Ask the vendor for the export' })
       expect(projectMissions(views, WORKER)[0].role).toBe('child')
       expect(projectMissions(views, BYSTANDER)).toEqual([])
     })

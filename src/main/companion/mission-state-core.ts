@@ -25,18 +25,22 @@ import {
 } from './contract'
 import type { Mission, MissionStep } from '../mission-core'
 import type { MissionProgress } from '../mission-progress'
-import { describeWaiting, type WaitingItem } from '../missions/waiting'
+import type { MissionDetail } from '../missions/verbs-read'
+import { describeWaiting, type WaitingItem, type WaitingItemV4 } from '../missions/waiting'
 
 /** The cause `mission.state` is sent under; the gate row accepts nothing else. */
 export const MISSION_STATE_SUBSYSTEM = 'missionState'
 
 /** The slice of a `MissionView` (mission-ipc) the projection reads. */
 export interface MissionViewIn {
-  mission: Pick<Mission, 'id' | 'owner' | 'linkedCard' | 'blockers'> & {
+  mission: Pick<Mission, 'id' | 'linkedCard' | 'blockers'> & {
+    owner: { sessionId: string }
     steps: Pick<MissionStep, 'id' | 'title' | 'kind' | 'links' | 'blockers'>[]
   }
+  /** Session ids attached to the mission as workers (v4 keeps them on the mission, not on a step). */
+  workers?: readonly string[]
   title: string
-  progress: MissionProgress
+  progress: Pick<MissionProgress, 'total' | 'current' | 'done' | 'verified' | 'allDone' | 'states'>
   derived: {
     steps: {
       stepId: string
@@ -47,7 +51,7 @@ export interface MissionViewIn {
       >)[]
     }[]
   }
-  you: WaitingItem[]
+  you: readonly (WaitingItem | WaitingItemV4)[]
 }
 
 // A pushed string is one printable line: C0 controls, DEL, C1 and the Unicode line separators go.
@@ -64,6 +68,7 @@ function line(s: unknown, max = MISSION_STATE_TEXT_MAX, fallback = '—'): strin
 /** `owner`, `child` (a step links the session) or `null`. */
 export function relationOf(v: MissionViewIn, sid: string): 'owner' | 'child' | null {
   if (v.mission.owner.sessionId === sid) return 'owner'
+  if (v.workers?.includes(sid)) return 'child'
   const linked = v.mission.steps.some((s) =>
     s.links.some((l) => l.kind === 'session' && l.ref === sid)
   )
@@ -169,7 +174,67 @@ function project(v: MissionViewIn, role: 'owner' | 'child'): MissionStateEntry {
     // The waiting list's own words (`describeWaiting`): the mod keeps no vocabulary of Harnu's.
     you: v.you
       .slice(0, MISSION_STATE_MAX_YOU)
-      .map((y) => ({ kind: y.kind, text: line(describeWaiting(y).ask) }))
+      // A v4 item carries its one wording (`ask`); a v3 item is worded by `describeWaiting`.
+      .map((y) => ({ kind: y.kind, text: line('ask' in y ? y.ask : describeWaiting(y).ask) }))
+  }
+}
+
+/**
+ * Missions v4 S-23 — the view the mod draws from, built from the v4 detail the record store serves
+ * (`missionGet`) for a v3 and a v4 record alike. The mod's own vocabulary stays: a step waiting for
+ * review reads `waiting`, a blocked mark reads `blocked`, and nothing reads `verified` (v4 has no such
+ * state). The position is derived from the steps: the running and waiting ones, else the first to do.
+ * Executors and pull request states are not in the detail, so a step carries none.
+ */
+export function missionViewInOf(detail: MissionDetail): MissionViewIn {
+  const status = (s: MissionDetail['steps'][number]): string =>
+    s.blocked ? 'blocked' : s.state === 'waiting-review' ? 'waiting' : s.state
+  const states = Object.fromEntries(detail.steps.map((s) => [s.id, status(s)]))
+  const total = detail.steps.length
+  const active = detail.steps
+    .map((s, i) => (s.state === 'running' || s.state === 'waiting-review' ? i + 1 : 0))
+    .filter((n) => n > 0)
+  const firstTodo = detail.steps.findIndex((s) => s.state === 'todo') + 1
+  const current =
+    active.length > 0
+      ? { from: Math.min(...active), to: Math.max(...active) }
+      : firstTodo > 0
+        ? { from: firstTodo, to: firstTodo }
+        : null
+  const done = detail.steps.filter((s) => s.state === 'done').length
+  const blockerOf = (b: { reason: string; owner: 'agent' | 'operator' }) => ({
+    reason: b.reason,
+    owner: b.owner
+  })
+  return {
+    mission: {
+      id: detail.id,
+      owner: { sessionId: detail.leads ?? '' },
+      linkedCard: undefined as unknown as string,
+      blockers: detail.blockers.map(blockerOf) as never,
+      steps: detail.steps.map((s) => ({
+        id: s.id,
+        title: s.title,
+        kind: 'custom',
+        links: [
+          ...s.links.map((l) => ({ kind: l.kind, ref: l.ref })),
+          ...(s.card ? [{ kind: 'card', ref: s.card }] : [])
+        ],
+        blockers: s.blockers.map(blockerOf)
+      })) as never
+    },
+    workers: detail.sessions.filter((e) => e.to === null && e.role === 'worked').map((e) => e.id),
+    title: detail.title,
+    progress: {
+      total,
+      current,
+      done,
+      verified: 0,
+      allDone: total > 0 && done === total,
+      states: states as never
+    },
+    derived: { steps: [] },
+    you: detail.waiting.items
   }
 }
 
