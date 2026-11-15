@@ -653,6 +653,42 @@ describe('cues keep recall over quiet', () => {
     ).toBe(true)
   })
 
+  // Delta 3: a v3 blocker is numbered by position (`blk-N`), so clearing one renumbers the others. The key
+  // must survive that, or removing a blocker reads as a new one and chimes (AC-63: a decrease never chimes).
+  it('removing a mission-level blocker renumbers the step blocker and still never chimes', () => {
+    const missionLevel: V4Item = {
+      kind: 'unblock',
+      id: 'unblock:mission:blk-1',
+      stepId: null,
+      blockerId: 'blk-1',
+      ask: 'Waiting on the vendor key',
+      why: 'The mission cannot go on until then'
+    }
+    const stepLevel = (n: number): V4Item => ({
+      kind: 'unblock',
+      id: `unblock:stp-4:blk-${n}`,
+      stepId: 'stp-4',
+      blockerId: `blk-${n}`,
+      ask: 'Merge the pull request',
+      why: 'The step cannot go on until then'
+    })
+    expect(
+      cuedAt((at) => (at === 0 ? [missionLevel, stepLevel(3)] : [stepLevel(2)]), [0, POLL])
+    ).toEqual([0])
+  })
+
+  it('two blockers on different steps with the same words are two keys, not one', () => {
+    const at = (stepId: string): V4Item => ({
+      kind: 'unblock',
+      id: `unblock:${stepId}:blk-1`,
+      stepId,
+      blockerId: 'blk-1',
+      ask: 'Merge the pull request',
+      why: 'The step cannot go on until then'
+    })
+    expect(owedKeys(v4View(ID, [at('stp-1'), at('stp-2')])).size).toBe(2)
+  })
+
   it('owedKeys keys every v4 kind the operator can be waiting on, one wording', () => {
     const keys = owedKeys(
       v4View(ID, [unblock('blk-1'), attach(1), readyToClose(), mainFailing('stp-3'), reviewOf(2)])
