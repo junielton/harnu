@@ -219,6 +219,44 @@ describe('a small task is a mission with no milestones (Missions v4 S-22, AC-59)
     expect(build.criteria.every((c) => c.by === 'session')).toBe(true)
   })
 
+  it('a small task shows every step on the timeline, in plan order, with nothing folded', async () => {
+    for (const state of ['simple', 'simple-signoff'] as const) {
+      const { reply } = sampleOf(state)
+      if (reply.state !== 'mission') throw new Error('fixture')
+      const tree = buildPaneTree(reply.detail)
+      expect(tree.loose!.folded, state).toEqual([])
+      expect(
+        tree.loose!.shown.map((r) => r.title),
+        state
+      ).toEqual(['Build the table, desktop and mobile', 'Get the sign-offs'])
+    }
+    await mountPane()
+    useMissionsStore().showSample('simple')
+    await settle()
+    expect(qa('[data-test="step-row"]').map((r) => r.textContent)).toEqual([
+      expect.stringContaining('Build the table, desktop and mobile'),
+      expect.stringContaining('Get the sign-offs')
+    ])
+    expect(q('[data-test="fold-more"]')).toBeNull()
+  })
+
+  it('a long list with no milestones still folds the steps nobody waits on', () => {
+    const { reply } = sampleOf('simple')
+    if (reply.state !== 'mission') throw new Error('fixture')
+    const many = JSON.parse(JSON.stringify(reply.detail)) as typeof reply.detail
+    const base = many.steps[0]
+    many.steps = Array.from({ length: 12 }, (_, i) => ({
+      ...base,
+      id: `stp-${i + 1}`,
+      title: `Step ${i + 1}`,
+      state: 'todo',
+      blockers: [],
+      blocked: false
+    }))
+    const tree = buildPaneTree(many)
+    expect(tree.loose!.folded.length).toBeGreaterThan(0)
+  })
+
   it('simple-signoff: another person’s sign-offs are marks the operator ticks, and wait for the person', async () => {
     await mountPane()
     useMissionsStore().showSample('simple-signoff')
