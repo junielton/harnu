@@ -115,15 +115,30 @@ A session can propose a new **Done when** for the mission (what has to be true f
 
 It can also say:
 
-- **This session has no mission.** The selected session is not attached to a version 4 mission. A mission you closed also ends up here.
-- **This mission cannot be read right now.** Harnu could not read the mission file. The reason is printed under it.
+- **This session has no mission.** The selected session is not attached to a version 4 mission. A mission you closed also ends up here. Under it, Harnu lists the folder's open missions so you can attach the session to one (see "A session with no mission").
+- **This mission cannot be read right now.** Harnu could not read the mission file. The reason is printed under it, with **Retry** to read it again.
 - **This mission is still a v3 mission.** The session has a version 3 mission, which the pane does not draw. Open it from the pill at the top.
+
+## A session with no mission
+
+When the session you are looking at has no mission, the pane lists the folder's **open missions**. Each row shows the mission's title, how far it is ("4 of 21 steps done") and who leads it ("led by Harnu Spec", or "nobody leads it"), with **Attach**.
+
+- **Attach** asks first: **Attach this session to "…"? It will be part of the mission, but it will not lead it.** Nothing changes until you confirm. **Cancel** closes the question. Once attached, the pane shows the mission. If the mission is gone or was closed in the meantime, the pane says so and keeps the list.
+- **Start a new mission** does not create anything. It puts one line into the session's prompt, asking it to start a new mission and to tell you what "done" will look like first. Harnu does not press Enter: you read the line and send it in the session. If the session is not running, the pane says so. Remember that an agent cannot create a version 4 mission yet, so for now this only prepares the request.
+- When the folder has no open mission, the pane says so and still offers **Start a new mission**.
+
+## When a session asks to join a mission
+
+A session can ask to join a mission that already exists. The pane then shows a box, **Asks to join**, with **Allow** and **Deny**. You see it on the pane of the session that asked, and also on the pane of a session that is already in the mission. **Allow** attaches the session so it works on the mission; **Deny** says no. A session you allow never leads the mission: only you change who leads (see "Continuing in a new session"). If someone else already answered the request, the pane says nothing changed. Harnu's attention sound for a request to join is not wired to this pane yet.
+
+## Asking a milestone a question
+
+When a session leads the mission, each open milestone has an **Ask** button next to its summary line. It opens a small box: type the question and press **Send**. Harnu puts "About the milestone "…": your question" into the prompt of the session that **leads** the mission, the way **Reference in session** does it. It does not press Enter, because the session may be waiting at a permission prompt: you press Enter there. The answer shows in that session, not in the pane. If the session that leads is not running, the pane says so and keeps your question. When nobody leads the mission there is no Ask button.
 
 ## What you cannot do yet
 
 - **Create a version 4 mission.** Agents cannot create one yet.
 - **Close the mission from the pane.** There is no button for that yet. On an open step you can mark your own criteria, mark another person's approval, clear a blocker that is yours, and approve or decline a new Done when. You can continue the mission in a new session (see "Sessions and continuing in a new session").
-- **Ask a milestone a question.** Not in the pane yet.
 
 ## Related
 

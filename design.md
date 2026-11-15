@@ -469,6 +469,9 @@ _another_ folder.
 | `list-checks`                            | Mission progress — the Topbar "Step N of M" pill's leading glyph (T370, Mission v3, §6 "Mission progress"); swaps to `check` once the headline is done or the mission delivered                                                        |
 | `target`                                 | Mission pane — the v4 Topbar pill's leading glyph, the pane header's glyph and the "no mission" empty state (Missions v4 S-17, §6 "Mission pane"); the pill swaps to `check` when the mission is ready to close                        |
 | `arrow-left-right`                       | Mission pane — "Continue in a new session…" (the hand-off), on the Sessions row, the offer and the confirmation's Start button (Missions v4 S-20, §6 "Mission pane" → Sessions and the hand-off)                                       |
+| `link`                                   | Mission pane — "Attach" on a mission of the attach picker (Missions v4 S-21, §6 "Mission pane" → Attach, the request and Ask)                                                                                                          |
+| `plus`                                   | Mission pane — "Start a new mission" (Missions v4 S-21, same section)                                                                                                                                                                  |
+| `message-square`                         | Mission pane — "Ask" on a milestone (Missions v4 S-21, same section)                                                                                                                                                                   |
 | `log-in`                                 | Mission progress — a child session row's in-app "Go to session" action (Mission v3, §6 "Mission progress"; replaces `external-link` there)                                                                                             |
 | `contrast`                               | Mission progress — the step rail's `waiting` glyph (◐, Mission v3)                                                                                                                                                                     |
 | `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                                                                                 |
@@ -7660,13 +7663,13 @@ the "Pane focus" ring (F6).
 
 All on the pane's `data-state`. Copy follows §8 and the Missions v4 writing contract.
 
-| `data-state` | When                                                 | Draws                                                                                                                                |
-| ------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `loading`    | the first answer has not come yet                    | "Reading the mission…" (`12px`, `text-text-3`)                                                                                       |
-| `mission`    | `state: 'mission'`, source `v4`, open, session in it | the head section (`padding: 14px 16px`): the title (`13.5px / 600`), the progress bar, the state tag, then "The glance" below        |
-| `none`       | `state: 'none'`, or a closed mission                 | the mockup's empty state: `target` (14px, `text-text-4`) and **"This session has no mission."** (`12.5px / 500`, `text-text`)        |
-| `refused`    | `state: 'refused'`                                   | the same empty layout: **"This mission cannot be read right now."** and the server's reason below it (`11.5px`, `text-text-3`, mono) |
-| `v3`         | the answer is a v3 record                            | the same empty layout: **"This mission is still a v3 mission."** and "Open it from the mission pill at the top." below it            |
+| `data-state` | When                                                 | Draws                                                                                                                                                         |
+| ------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loading`    | the first answer has not come yet                    | "Reading the mission…" (`12px`, `text-text-3`)                                                                                                                |
+| `mission`    | `state: 'mission'`, source `v4`, open, session in it | the head section (`padding: 14px 16px`): the title (`13.5px / 600`), the progress bar, the state tag, then "The glance" below                                 |
+| `none`       | `state: 'none'`, or a closed mission                 | the empty state: `target` (14px, `text-text-4`) and **"This session has no mission."** (`12.5px / 500`, `text-text`), then the attach picker (S-21, below)    |
+| `refused`    | `state: 'refused'`                                   | the same empty layout: **"This mission cannot be read right now."**, the server's reason below it (`11.5px`, `text-text-3`, mono) and **Retry** (S-21, below) |
+| `v3`         | the answer is a v3 record                            | the same empty layout: **"This mission is still a v3 mission."** and "Open it from the mission pill at the top." below it                                     |
 
 The **count line** is `11.5px`, `tabular-nums`, `text-text-3`: "{done} of {total} steps done" or
 "{done} of {total} milestones done" (the server's `progress.unit`), written by the
@@ -7806,9 +7809,9 @@ wrap inside their own cell) instead of beside it, so they never squeeze the titl
 letter. The summary line's `·` separators **trail** their part (`3 running ·`) and a part never
 breaks inside itself, so no `·` opens a wrapped line. The summary line wraps under itself.
 
-**Not in this slice** (drawn in the mockup, built later, so absent from the pane today): **Ask**
-on a milestone, the **Sessions** row and the hand-off, **Close mission…**, the attach picker and
-request, the sample mission. (An open step's who-settles, blocker and links are S-19, below.) v4 missions cannot be
+**Not in this slice** (drawn in the mockup, built later, so absent from the pane today): **Close
+mission…** and the sample mission. (**Ask**, the attach picker and request are S-21; the **Sessions** row and
+the hand-off are S-20; both are below.) (An open step's who-settles, blocker and links are S-19, below.) v4 missions cannot be
 created by an agent yet (the verbs land in chapter 5), so the glance has something to show only
 when a v4 record already exists on disk.
 
@@ -8068,6 +8071,100 @@ disk.
 hand-off with no live context reading. ❌ Say "memory" for the session's context. ❌ Print the code the
 door came back with. ❌ Let the dialog close while the door waits. ❌ List a step by its id. ❌ Group
 sessions into "N sessions" and hide their stops.
+
+#### Attach, the attach request and Ask (Missions v4, S-21)
+
+**S-21 (`MissionPaneAttach.vue`, `MissionPaneAsk.vue`, with `MissionPane.vue`, `MissionPaneTree.vue` and the
+store; draft mockup `docs/design/missions-v4/`, screen `mission-pane`, states `no-mission`,
+`attach-request`, `ask`).** A session only sees and touches the mission it is attached to, and attaching
+needs the operator's confirmation. **Tokens only; no new colour, radius, easing or row height.** New
+glyphs (§5): `link`, `plus`, `message-square`. The components compute nothing: the picker rows, who leads,
+the requests and the text a session is sent are built in `lib/mission-pane-view.ts`; the pane draws what the
+view said.
+
+**The picker** (state `none`, under the empty layout; `MissionPaneAttach.vue`): the eyebrow **"Open missions in
+this folder"** (`10px / 700`, uppercase, `0.07em`, `text-text-4`), then one card per open mission
+(`rounded border border-border`, `padding: 9px 10px`, `12.5px`, `text-text`; a grid of the text and one
+button, `gap: 2px 10px`): the mission's **title**, a sub line (`10.5px`, `text-text-4`) with the server's
+count (**"4 of 21 steps done"**) and who leads (**"led by Harnu Spec"**, the session's name, or **"nobody leads
+it"**), and **Attach** (the dense pill: `rounded-sm border border-border-2 bg-surface-2`, `height: 20px`,
+`padding: 0 7px`, `11px / 500`, a 10px `link`). Under the cards **"Start a new mission"** (the same pill,
+ghost, a 10px `plus`), `self-start`. The mockup's count line is the server's (it is the one English phrase the
+row owns; the reader's language does not change it).
+
+**Attach asks first** (not drawn in the mockup): **Attach** turns that card into the confirmation, in place
+(no dialog: nothing else on the pane moves): the sentence **"Attach this session to “{title}”? It will be
+part of the mission, but it will not lead it."** (`12px`, `text-text`) and two pills, **Cancel** (ghost) and
+**Attach** (primary, `bg-accent text-accent-ink`). Nothing is written until the second **Attach**. It goes
+through the `attach` door and the view is read again after the reply: the pane then shows the mission. A
+door that fails (not drawn in the mockup) keeps the card and says under it, in one box (`rounded-sm border
+border-red-line bg-red-soft`, `padding: 6px 8px`, `11.5px`, `role="alert"`), what to do, never the code:
+`NOT_FOUND` **"This mission is no longer there. Pick another one."**, `MISSION_CLOSED` **"This mission was
+closed, so a session cannot join it."**, `WRITE_CONFLICT` **"The mission changed at the same moment. Try
+again."**, anything else **"Harnu could not attach this session. Try again in a moment."**
+
+**Start a new mission** writes **no record**. It puts one instruction into this session's prompt through the
+writer **Ask** and "Reference in session" use (a bracketed paste, **no Enter**: the operator reviews the line
+and sends it), and says so under the button (`11.5px`, `text-text-3`, `role="status"`): **"Added to this
+session’s prompt. Press Enter there to send it."** A session that is not running says **"This session is not
+running. Resume it, then try again."** (`role="alert"`, same box as a failed attach). The mission itself is
+made by the session, with the operator's agreement on what done means.
+
+**A folder with no open mission** (not drawn in the mockup): no cards; one line **"There is no open mission in
+this folder to attach to."** (`12px`, `text-text-3`) and **Start a new mission**.
+
+**A refused reply** (not drawn in the mockup): the no-mission layout, **"This mission cannot be read right
+now."**, the reason below it as today, and **Retry** (the dense ghost pill, centred) that reads the view
+again. No picker: the pane does not know which missions exist.
+
+**The picker on a narrow pane** (not drawn in the mockup): the card is a **container** (`@container`); below
+**300px** the button moves under the sub line (`grid-column: 1`, `justify-self: start`) so a long title never
+squeezes it. The confirmation's two pills wrap onto a second line.
+
+**An attach request** (state `attach-request`; `MissionPaneAttach.vue`, the same component): the eyebrow
+**"Asks to join"** (`10px / 700`, uppercase, `0.07em`, `text-accent`) in a box (`rounded border
+border-accent-line bg-accent-soft`, `padding: 12px`, `gap: 8px`, `12.5px / 1.45`, `text-text`), then the
+sentence **"{session} asks to join “{mission}”. If you allow it, it works on the mission. It does not
+lead it."** and **Allow** (primary pill) and **Deny** (ghost pill). The mockup says "asks to lead … take
+over from": the spec wins — nobody asks to lead (a session that creates a mission leads it), and the
+hand-off is the operator's alone. On the pane of the session that **asked** (it has no mission) the box sits
+above the picker and says "This session asks…"; on the pane of a session **already in** the mission the same
+box sits under "Your next step" and names the session that asked. **Allow** and **Deny** go through the
+`decideAttach` door, and the view is read again after the reply. **Already answered** (not drawn in the
+mockup): when the door says nothing changed (another window answered first) the box says **"Someone already
+answered this request, so nothing changed."**; a request that is gone says **"This request is no longer
+there."** (`11.5px`, `text-text-3` / the failure box above). **The chime** is not here: Harnu's attention cue
+reads the v3 list, so a v4 request rings once S-23 moves the cue to the v4 view (AC-63).
+
+**Ask** (state `ask`): on an open milestone, in its summary line, the dense pill **Ask** (a 10px
+`message-square`, `title` **"Ask the session about this milestone"**), right-aligned. It is drawn only when
+a session **leads** the mission. It opens, under the summary line, the ask box (`MissionPaneAsk.vue`:
+`margin: 4px 0 8px`, `rounded border border-accent-line bg-bg`, `padding: 8px 10px`, `gap: 8px`): a textarea
+(`12.5px`, `text-text`, two rows, the placeholder **"What is still missing to finish this milestone?"**),
+and a footer (`10.5px`, `text-text-4`): **"Goes to the prompt of {leader}. The answer shows in that
+session."** with **Cancel** (ghost) and **Send** (primary; off while the box is empty). **Send** puts
+**About the milestone “{title}”: {question}** into the **leading** session's prompt, through the writer bus
+the way "Reference in session" does it: one bracketed paste and **no Enter**, because a session may be
+waiting at a permission prompt and an Enter there would answer it. The box then says (`role="status"`)
+**"Added to the prompt of {leader}. Press Enter there to send it. The answer shows in that session."** The
+mockup says "Sent to … The answer shows in that session": the spec wins on the mechanism. A leader that is
+not running says **"{leader} is not running. Resume it, then send the question again."** (`role="alert"`),
+and the question **stays in the box**. Ask writes no record and the first version answers in the session,
+never in the pane.
+
+**Data.** The picker is the view's `missions` (`state: 'none'`): `{ id, title, headline, leads }`. The
+requests are the `attach` items of a mission's `detail.waiting` (`requestId`, `sessionId`). The session that
+asked has no mission, so the store reads each of the folder's open missions **by name** after a `none` answer
+(the store owns that loop: the same 20 s poll, at most six missions) and keeps the requests that name the
+selected session. The doors are `window.api.missionV4Door` (`attach { sessionId }`, `decideAttach {
+requestId, decision }`) through `stores/missions.ts`, which adds the folder and the mission id **the view
+answered for** (the picked mission's id for **Attach** and for a request read by name) and reads the view
+again after every reply. v4 missions cannot be created by an agent yet (the verbs land in chapter 5), so the
+picker, the request and Ask have something to show only when a v4 record already exists on disk.
+
+**Don'ts.** ❌ Attach on one click. ❌ Write a record from **Start a new mission**. ❌ Send Enter into another
+session. ❌ Offer **Ask** when nobody leads. ❌ Let a session ask to lead. ❌ Print the code a door came back
+with. ❌ Answer the question in the pane.
 
 ### Campaign progress (pill, popover)
 
