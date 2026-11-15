@@ -14,14 +14,17 @@
  * every claim is read back from the files on disk (the board's cards and the mission's record), not
  * from an ACK. Only `electron` and the live sources are stubbed.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest'
 import { promises as fs, readFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
-const h = vi.hoisted(() => ({ userDataDir: '' }))
+const h = vi.hoisted(() => ({
+  userDataDir: '',
+  handlers: new Map<string, (...args: unknown[]) => unknown>()
+}))
 
 vi.mock('electron', () => ({
   app: {
@@ -32,7 +35,12 @@ vi.mock('electron', () => ({
   dialog: {},
   shell: {},
   BrowserWindow: class {},
-  ipcMain: { handle: (): void => {}, on: (): void => {} }
+  ipcMain: {
+    handle: (channel: string, fn: (...args: unknown[]) => unknown): void => {
+      h.handlers.set(channel, fn)
+    },
+    on: (): void => {}
+  }
 }))
 vi.mock('../src/main/claude-reader', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -50,9 +58,14 @@ import {
   dispatchStep,
   noteCardSpawn,
   realBoardIo,
+  setBootWaiter,
   stampCardForStep
 } from '../src/main/missions/dispatch'
-import { resolveRoadmap, buildManifestDisclosure } from '../src/main/roadmap-ipc'
+import {
+  resolveRoadmap,
+  buildManifestDisclosure,
+  registerRoadmapHandlers
+} from '../src/main/roadmap-ipc'
 import {
   approvalHashMatches,
   parseCard,
@@ -686,6 +699,84 @@ describe('the drain’s side: the card being spawned, its note and its session',
       expect(src, call).toContain(call)
     }
     expect(src).toContain('undoNote()')
+  })
+})
+
+describe('a board dispatch binds the step like the drain does (S-26 delta 1)', () => {
+  beforeAll(() => {
+    registerRoadmapHandlers(() => null)
+  })
+  const ipc = async (channel: string, args: unknown): Promise<any> => {
+    const fn = h.handlers.get(channel)
+    if (!fn) throw new Error(`${channel} was not registered`)
+    return fn({}, args)
+  }
+  const stamped = async (): Promise<{ id: string; slug: string }> => {
+    const id = await newMission()
+    const slug = await newCard()
+    await submitManifest([{ slug, missionId: id, stepId: 'stp-1' }])
+    return { id, slug }
+  }
+  afterEach(() => setBootWaiter(null))
+
+  it('planning the dispatch of a stamped card leaves the note its session takes as its credential', async () => {
+    const { id, slug } = await stamped()
+    const plan = await ipc('roadmap:planDispatch', { folder: repo, slug, labels: LABELS })
+    expect(plan.ok, JSON.stringify(plan)).toBe(true)
+    expect(takePendingSpawn(repo)).toEqual({ role: 'worker', missionId: id, stepId: 'stp-1' })
+  })
+
+  it('binding the session to a stamped card attaches it as the step’s worker, linked, once it has booted', async () => {
+    const { id, slug } = await stamped()
+    setBootWaiter(async (syntheticId) => ({ syntheticId, sessionId: DRAINED, folder: repo }))
+    const out = await ipc('roadmap:bindSession', {
+      folder: repo,
+      slug,
+      sessionId: 'synthetic-board'
+    })
+    expect(out.ok).toBe(true)
+    await vi.waitFor(async () => {
+      const record = await readRecord(id)
+      expect(record.sessions.find((s) => s.id === DRAINED)).toMatchObject({
+        role: 'worked',
+        to: null
+      })
+    })
+    const record = await readRecord(id)
+    const step = record.steps.find((s) => s.id === 'stp-1')!
+    expect(step.links).toContainEqual({ kind: 'session', ref: DRAINED })
+    expect(step.card).toBe(slug)
+    // The card is bound as before: in progress, with the session the board gave it.
+    const [{ card, content }] = await cardsOfStep(id, 'stp-1')
+    expect(card.status).toBe('in-progress')
+    expect(content).toContain('<!-- mission:begin stp-1 -->')
+  })
+
+  it('a card with no step is bound as before and attaches nothing, and plans no note', async () => {
+    const id = await newMission()
+    const slug = await newCard('A card for no step')
+    setBootWaiter(async (syntheticId) => ({ syntheticId, sessionId: DRAINED, folder: repo }))
+    const plan = await ipc('roadmap:planDispatch', { folder: repo, slug, labels: LABELS })
+    expect(plan.ok).toBe(true)
+    expect(takePendingSpawn(repo)).toBeUndefined()
+    const out = await ipc('roadmap:bindSession', {
+      folder: repo,
+      slug,
+      sessionId: 'synthetic-plain'
+    })
+    expect(out.ok).toBe(true)
+    expect((await boardCards()).find((c) => c.slug === slug)!.card.status).toBe('in-progress')
+    await new Promise((r) => setTimeout(r, 150))
+    expect((await readRecord(id)).sessions.map((s) => s.id)).toEqual([LEADER])
+  })
+
+  it('a card cut into a worktree plans no note: where it spawns is not known until the worktree exists', async () => {
+    const id = await newMission()
+    const slug = await newCard('A worktree card')
+    await submitManifest([{ slug, missionId: id, stepId: 'stp-1', substrate: 'worktree' }])
+    const plan = await ipc('roadmap:planDispatch', { folder: repo, slug, labels: LABELS })
+    expect(plan.ok).toBe(true)
+    expect(takePendingSpawn(repo)).toBeUndefined()
   })
 })
 
