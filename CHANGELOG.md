@@ -22,6 +22,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **Missions no longer have a steward.** New missions get none, Harnu adds nothing to your folder's `.claude/settings.local.json` for one, and no `steward` line is written to a mission's Log. The first time you start Harnu after this change it removes every steward an older version left behind (its Scheduler worker and its three hook entries; your own hooks stay) and posts **one notice** in the Activity bell naming the missions affected. No mission file is touched. The Scheduler loses its **Stewards** block with them.
+
+- `rebase_stack` now answers the session that **leads** a version 4 mission, with no steward in between. It still rebases only the branch that belongs to the step, and it still never pushes: the local branch moves and you publish it yourself. A session that only worked a step, or one that isn't attached, is refused. `rebase_stack` also takes an optional `sessionId`, like the other version 4 commands.
+
 - Adding a step to a version 4 mission after the agent has asked you to close it takes the close request back, so you are not told the mission is ready when a new step is still open.
 
 ### Fixed
