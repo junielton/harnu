@@ -154,6 +154,14 @@ import { resolveAgentTarget } from './target-scope'
 import { dataDirAt, dataDirReady, mkdirDataDir, repoRoot } from '../data-dir'
 import { listMissionRecords, readMissionRecord } from '../missions/record-store'
 import { dispatchAck, dispatchStep, realBoardIo, stampCardForStep } from '../missions/dispatch'
+import {
+  anonymousKey,
+  createProactiveTally,
+  isAttached,
+  noteWork,
+  someoneLeads,
+  type Work
+} from '../missions/proactive'
 import { hibernatedKeys, isHibernated } from '../hibernation'
 import {
   applyAddCheck,
@@ -1084,10 +1092,64 @@ async function stepSpawnOf(
   return { role: role === 'verifier' ? 'verifier' : 'worker', missionId, stepId }
 }
 
+/**
+ * Missions v4 S-34 (AC-82): what each counted caller has started since Harnu booted. The count lives in
+ * the process on purpose: a hint is a backstop, and a restart starting every caller from zero costs one
+ * sentence.
+ */
+const proactiveTally = createProactiveTally()
+
+/**
+ * The `sessionId` a call of `create_session`, `create_worktree` or `submit_manifest` declares about itself,
+ * or the refusal. Optional: these verbs never needed one, and it only lets Harnu say whether the caller
+ * leads a mission. Self-declared, like every v4 caller; a value that is not a session UUID is refused.
+ */
+function declaredCaller(
+  args: Record<string, unknown>
+): { ok: true; sessionId: string | undefined } | { ok: false; error: string } {
+  const sessionId = strField(args, 'sessionId')
+  if (sessionId !== undefined && !SESSION_UUID_RE.test(sessionId)) {
+    return { ok: false, error: badSessionIdMessage('sessionId', sessionId) }
+  }
+  return { ok: true, sessionId }
+}
+
+/**
+ * The fields the ACK gains when a session that leads no mission has started work: `{ missionHint }` once,
+ * else `{}`. Never creates a mission, never throws into the ACK. A caller the transport proved (a session
+ * Harnu spawned for a step, a steward, an observe worker) is never hinted; an anonymous caller is counted
+ * per repo and left alone where a mission is led.
+ */
+async function proactiveHintFor(
+  args: Record<string, unknown>,
+  ctx: ToolHandlerCtx,
+  work: Work
+): Promise<Record<string, unknown>> {
+  if (ctx.caller || !ctx.folder) return {}
+  try {
+    const root = missionRoot(ctx.folder)
+    if (isFolderDenied(ctx.folder, ctx.denyFolders) || isFolderDenied(root, ctx.denyFolders)) {
+      return {}
+    }
+    const sessionId = strField(args, 'sessionId')
+    const records = (await listMissionRecords(root)).records.map((r) => r.record)
+    return noteWork(
+      proactiveTally,
+      sessionId ?? anonymousKey(root),
+      work,
+      sessionId !== undefined ? isAttached(records, sessionId) : someoneLeads(records)
+    )
+  } catch {
+    return {}
+  }
+}
+
 const createSessionHandler: Handler = async (args, ctx) => {
   if (!ctx.bridge) return errorResult('NO_BRIDGE')
   const bridge = ctx.bridge
   const folder = ctx.folder
+  const caller = declaredCaller(args)
+  if (!caller.ok) return errorResult(caller.error)
   // U2.3a (design C3): a session opened in a shelved worktree brings it back first, here as well as
   // in `createPty`, so a failure is this call's error and not an `ok:true` with a session that never
   // materializes.
@@ -1162,6 +1224,10 @@ const createSessionHandler: Handler = async (args, ctx) => {
     attachSyntheticId: (f, syntheticId) => attachSyntheticId(f, syntheticId),
     release: (f) => releaseInFlight(f),
     deadlineFired: () => ctx.deadlineFlag?.fired === true,
+    // Missions v4 S-34 (AC-82): a session started for a step of a mission is already inside one.
+    ...(stepSpawn
+      ? {}
+      : { hint: () => proactiveHintFor(args, ctx, { kind: 'sessions', count: 1 }) }),
     // Missions v4 S-26 (AC-68): the session is alive, so the step it was started for is bound: its card
     // is created (or the one it has is bound) and the session is attached as a worker. A step the
     // leader does itself is never dispatched, so it never reaches here and never gets a card.
@@ -1659,6 +1725,8 @@ const sendTerminalHandler: Handler = async (args, ctx) => {
 const createWorktreeHandler: Handler = async (args, ctx) => {
   const branch = strField(args, 'branch')
   if (!branch) return errorResult('BAD_ARGS: branch is required')
+  const caller = declaredCaller(args)
+  if (!caller.ok) return errorResult(caller.error)
   // This card: optional `base` forks the new branch from an explicit ref instead
   // of the remote default (BUG-26 stays fixed: absent → unchanged behavior).
   const base = strField(args, 'base')
@@ -1709,7 +1777,9 @@ const createWorktreeHandler: Handler = async (args, ctx) => {
       // succeeded above.
       ...(result.existingWork && result.existingWork.length > 0
         ? { existingWork: result.existingWork }
-        : {})
+        : {}),
+      // Missions v4 S-34 (AC-82): a backstop, once per session; Harnu never creates the mission itself.
+      ...(await proactiveHintFor(args, ctx, { kind: 'worktree' }))
     })
   } catch (err) {
     // BUG-28: a seed/setup/delegated-create failure is a STRUCTURED provision
@@ -2447,7 +2517,9 @@ async function stampManifestAndAck(
   resolved: readonly ManifestCardResolved[],
   selectedSlugs: readonly string[],
   substrateOverrides: Readonly<Record<string, string>>,
-  shadow: { event: string; by: string; verb: string }
+  shadow: { event: string; by: string; verb: string },
+  /** Fields the ACK gains, decided once the stamped cards are known (the proactive hint, S-34). */
+  extra?: (stamped: readonly string[]) => Promise<Record<string, unknown>>
 ): Promise<CallToolResult> {
   const stampResult = await stampManifestApprovals(
     folder,
@@ -2477,7 +2549,8 @@ async function stampManifestAndAck(
     op: 'submit_manifest',
     stamped: stampResult.stamped,
     skipped,
-    ...(stampResult.failed.length ? { failed: stampResult.failed } : {})
+    ...(stampResult.failed.length ? { failed: stampResult.failed } : {}),
+    ...(extra ? await extra(stampResult.stamped) : {})
   })
 }
 
@@ -2557,6 +2630,8 @@ const submitManifestHandler: Handler = async (args, ctx) => {
   // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before
   // stamping approvals nobody will read the ACK for.
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const caller = declaredCaller(args)
+  if (!caller.ok) return errorResult(caller.error)
 
   // T104 §2.2: the Allow actuation. `ctx.opts.manifest` is populated ONLY by
   // `parkMutationConfirm`'s `actuateAllow` (reached only under "Ask before
@@ -2606,11 +2681,21 @@ const submitManifestHandler: Handler = async (args, ctx) => {
   for (const c of cards) {
     if (c.substrate) substrateOverrides[c.slug] = c.substrate
   }
-  const res = await stampManifestAndAck(folder, built.resolved, selectedSlugs, substrateOverrides, {
-    event: 'roadmap:manifest-stamp',
-    by: 'agent-silent-allow',
-    verb: 'manifest self-approved (agent, ask off)'
-  })
+  const res = await stampManifestAndAck(
+    folder,
+    built.resolved,
+    selectedSlugs,
+    substrateOverrides,
+    {
+      event: 'roadmap:manifest-stamp',
+      by: 'agent-silent-allow',
+      verb: 'manifest self-approved (agent, ask off)'
+    },
+    (stamped) =>
+      // Missions v4 S-34 (AC-82): each stamped card drains into one session. The operator's own Allow
+      // (above) is never hinted: the operator is not a session that should lead a mission.
+      proactiveHintFor(args, ctx, { kind: 'sessions', count: stamped.length })
+  )
   // T187 Change 3: the confirm modal is gone, so this is the operator's only
   // synchronous signal that a batch just self-approved and started draining.
   // Best-effort — no live renderer window (or a dispatch failure) must never

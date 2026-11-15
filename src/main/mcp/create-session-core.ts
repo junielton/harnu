@@ -50,6 +50,12 @@ export interface CreateSessionDeps {
    * session being alive either way. Omitted for a plain session.
    */
   bindMaterialized?: (mat: Materialization) => Promise<Record<string, unknown> | undefined>
+  /**
+   * Missions v4 S-34: runs once, after the session materialized, and returns the fields the ACK gains
+   * (the proactive `missionHint`). A hint never fails the ACK: a throw is dropped. Omitted for a session
+   * started for a step, and for a caller that is exempt.
+   */
+  hint?: () => Promise<Record<string, unknown> | undefined>
 }
 
 /** Echoed alongside the ACK; carried through unchanged from the resolved boot config. */
@@ -128,12 +134,21 @@ export async function runCreateSession(
         bound = { bindError: err instanceof Error ? err.message : String(err) }
       }
     }
+    let hint: Record<string, unknown> | undefined
+    if (deps.hint) {
+      try {
+        hint = await deps.hint()
+      } catch {
+        hint = undefined
+      }
+    }
     return textResult({
       ok: true,
       op: 'create_session',
       result: { ...asRecord(result), sessionId: mat.sessionId },
       ...ack,
-      ...(bound ?? {})
+      ...(bound ?? {}),
+      ...(hint ?? {})
     })
   } finally {
     if (!heldOnTimeout) deps.release(folder)
