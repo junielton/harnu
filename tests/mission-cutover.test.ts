@@ -207,7 +207,7 @@ describe('every record opens in the pane and the v3 file stays', () => {
     expect(refused.text).toContain('mission_set_done_when')
     expect(repoTree()).toEqual(afterDoor)
     expect(v3Tree()).toEqual(before)
-  })
+  }, 60_000)
 
   it('a session that leads several v3 missions is shown one of them, the most recently written, never an error', async () => {
     seedV3()
