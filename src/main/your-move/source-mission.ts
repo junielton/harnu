@@ -10,6 +10,7 @@
 
 import type { MissionListResult } from '../mission-ipc'
 import { repoRoot } from '../data-dir'
+import { leaderOf as leaderOfRecord } from '../missions/guard'
 import { describeWaiting, type MissionYouItem, type WaitingItemV4 } from '../missions/waiting'
 import type { MissionDetail } from '../missions/verbs-read'
 import {
@@ -210,9 +211,10 @@ export async function readRecordViews(
     const views: DraftView[] = []
     for (const { record, source, sourceIds } of listed.records) {
       if (record.status !== 'open') continue
-      const leader =
-        record.sessions.find((e) => e.role === 'leads' && e.to === null)?.id ??
-        record.sessions[record.sessions.length - 1]?.id
+      // Who leads is the record's own rule (`leaderOf`, the one hibernation uses): the session with an open
+      // `leads` entry. A mission nobody leads files nothing: a session that already left is not handed a
+      // card. A v3 record's owner leads it until it is closed (the conversion writes that entry).
+      const leader = leaderOfRecord(record)
       if (!leader) continue
       const detail = await readDetail(
         root,
@@ -231,19 +233,39 @@ export async function readRecordViews(
 }
 
 let refreshing: Promise<void> | null = null
+/** The roots of the latest query: what the next read is for, whichever caller asked first. */
+let latestRoots: readonly string[] = []
+let again = false
 
 /**
  * Read the records for `roots` and keep the answer for the next {@link reconcileMissions}. Single flight,
- * never throws: a failed read keeps the last good answer. The list poll that triggers it is its only clock.
+ * never throws: a failed read keeps the last good answer. Only the roots of the LATEST query are kept: a
+ * query that arrives while a read is running makes it run once more for the new roots, and the answer
+ * replaces the cache whole, so a root nobody asks about any more files no card. The list poll that
+ * triggers it is its only clock.
  */
-export function refreshRecordViews(roots: readonly string[]): Promise<void> {
-  refreshing ??= readRecordViews(roots)
-    .then((r) => {
-      lastRecordViews = new Map([...lastRecordViews, ...r])
-    })
-    .catch(() => undefined)
-    .finally(() => {
+export function refreshRecordViews(
+  roots: readonly string[],
+  opts: { readDetail?: (folder: string, missionId: string) => Promise<DetailRead> } = {}
+): Promise<void> {
+  latestRoots = roots
+  if (refreshing) {
+    again = true
+    return refreshing
+  }
+  refreshing = (async () => {
+    try {
+      do {
+        again = false
+        try {
+          lastRecordViews = await readRecordViews(latestRoots, opts)
+        } catch {
+          /* a failed read keeps the last good answer */
+        }
+      } while (again)
+    } finally {
       refreshing = null
-    })
+    }
+  })()
   return refreshing
 }

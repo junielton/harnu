@@ -399,8 +399,9 @@ describe('readers use the v4 view', () => {
     const NONE = { views: [], unreadable: [] }
     let n = 0
     const mint = (): string => `c2-${++n}`
+    // The blocker's own card (the step also owes an operator criterion, which is not what this tests).
     const asks = (s: YourMoveState): string[] =>
-      s.cards.filter((c) => c.closedAt === undefined).map((c) => c.ask)
+      s.cards.filter((c) => c.closedAt === undefined && c.kind === 'do').map((c) => c.ask)
 
     it('a mission with no open leader files nothing: a session that already left is not handed a card', async () => {
       seedV4(
