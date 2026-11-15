@@ -79,9 +79,20 @@ describe('the awareness doc mission text (AC-84)', () => {
     // Not a stub either: it carries the whole model, so a section that lost its content is also red.
     expect(words(section)).toBeGreaterThan(900)
 
-    // No campaign, steward, merge-batch or lineage-tag wording in the section.
-    expect(section).not.toMatch(/campaign/i)
-    expect(section).not.toMatch(/steward/i)
+    // No campaign, steward, merge-batch or lineage-tag wording in the section. The one place that may
+    // name them is the paragraph about records from earlier versions: the `source` value `v3-campaign`
+    // is a real answer of `mission_get`, and `steward` is one of the arguments that paragraph says is
+    // refused. There they may appear only as those backticked identifiers, never as prose.
+    const legacyStart = section.indexOf('**Records from earlier versions.**')
+    expect(legacyStart, 'the paragraph about records from earlier versions').toBeGreaterThan(-1)
+    const legacyEnd = section.indexOf('\n', legacyStart)
+    const legacy = section.slice(legacyStart, legacyEnd === -1 ? undefined : legacyEnd)
+    const rest = section.slice(0, legacyStart) + (legacyEnd === -1 ? '' : section.slice(legacyEnd))
+    expect(rest).not.toMatch(/campaign/i)
+    expect(rest).not.toMatch(/steward/i)
+    expect(legacy.replace(/`v3-campaign`/g, '').replace(/`steward`/g, '')).not.toMatch(
+      /campaign|steward/i
+    )
     expect(section).not.toMatch(/merge[ -]batch/i)
     // Lineage tags: the slice, bug, task, decision and chapter labels the v3 text carried.
     expect(section).not.toMatch(/\b(S-\d+|BUG-\d+|T\d{3,}|C\d-\d+|D-\d+|ch\.\s?\d+)\b/)

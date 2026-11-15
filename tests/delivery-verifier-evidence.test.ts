@@ -16,7 +16,6 @@ import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 
 import { parseSkillFrontmatter } from '../src/main/bundled-skills-core'
-import { evidenceBundleDir } from '../src/main/mission-gates'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 const RAW = readFileSync(
@@ -24,6 +23,10 @@ const RAW = readFileSync(
   'utf8'
 )
 const flat = (s: string): string => s.replace(/\s+/g, ' ')
+
+/** Where the verifier keeps a step's evidence bundle, relative to the repo root. */
+const evidenceBundleDir = (missionId: string, stepId: string): string =>
+  `.harnu/evidence/${missionId}/${stepId}`
 
 /** The text of one `## ` section (heading line excluded), up to the next `## `. */
 function section(heading: string): string {

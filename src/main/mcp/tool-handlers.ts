@@ -48,7 +48,10 @@ import type { FolderEntry } from '../folder-model'
 import type { TaskState, FailureReason } from '../hook-state'
 import { getTaskStates } from '../hook-bridge'
 import { gatherStepInputs } from '../missions/facts'
-import { realFactsDeps } from '../mission-ipc'
+import { getTaskState } from '../detect/task-state-hub'
+import { findMainCi, findPrsForWorktrees } from '../pr-stack'
+import { getLastKnown, ensureLinkCacheLoaded } from '../mission-link-cache'
+import type { FactsDeps } from '../missions/facts'
 import type { Actor } from '../missions/guard'
 import type { MissionV4 } from '../missions/model'
 import type { StepInput } from '../missions/state'
@@ -3735,10 +3738,15 @@ const rebaseStackHandler: Handler = async (args, ctx) => {
  * `waitsFor`, `optional`), but no v4 write for it has been built: no slice of the Missions v4 delivery
  * owns one. It refuses, names what to use instead, and writes nothing, as it already did on a v4 mission.
  */
-const missionUpdateStepUnbuilt: Handler = async () =>
-  errorResult(
+const missionUpdateStepUnbuilt: Handler = async (_args, ctx) => {
+  if (ctx.folder) {
+    const refusal = missionFolderRefusal(ctx.folder, missionRoot(ctx.folder), ctx)
+    if (refusal) return errorResult(refusal)
+  }
+  return errorResult(
     'NOT_AVAILABLE: mission_update_step has no v4 write yet. Add what is missing with mission_add_step (a new step), mission_add_ac (a criterion) or mission_link, or tell the operator.'
   )
+}
 
 /* ---- T564 U1: the browser verbs ------------------------------------------------------------------- */
 
@@ -4144,6 +4152,39 @@ let stepInputsOverride: StepInputsFor | null = null
 /** Test seam: replaces the server-side gathering of each step's facts (no `gh`, no board). */
 export function _setStepInputsForTest(fn: StepInputsFor | null): void {
   stepInputsOverride = fn
+}
+
+/**
+ * The real sources of {@link FactsDeps} for one repo: the board's files, chapter 2's pull request join
+ * (which shares the single-flight cache a `mission:list` poll already warms), its last-known cache, the
+ * filesystem and the task-state hub. `waitMs` bounds how long the join waits for GitHub.
+ */
+export async function realFactsDeps(root: string, waitMs?: number): Promise<FactsDeps> {
+  await ensureLinkCacheLoaded()
+  return {
+    board: async () => {
+      const { roadmapDir } = await resolveRoadmap(root)
+      const names = (await fs.readdir(roadmapDir)).filter((n) => n.endsWith('.md'))
+      return Promise.all(
+        names.map(async (n) => ({
+          slug: n.slice(0, -3),
+          content: await fs.readFile(path.join(roadmapDir, n), 'utf8')
+        }))
+      )
+    },
+    findPrs: (refs) => findPrsForWorktrees(root, refs, { waitMs }),
+    findMainCi: (numbers) => findMainCi(root, numbers, { waitMs }),
+    lastKnown: (kind, ref) => getLastKnown(root, kind, ref),
+    pathExists: async (abs) => {
+      try {
+        await fs.stat(abs)
+        return true
+      } catch {
+        return false
+      }
+    },
+    taskState: (id) => getTaskState(id)
+  }
 }
 
 const v4Deps: V4Deps = {

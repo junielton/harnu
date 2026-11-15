@@ -6,10 +6,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   missionStateKey,
+  missionViewInOf,
   projectMissions,
   relationOf,
   type MissionViewIn
 } from '../../src/main/companion/mission-state-core'
+import type { MissionDetail } from '../../src/main/missions/verbs-read'
 import { parseMissionState } from '../../resources/companion/hooks/lib/mission-state'
 
 const OWNER = '19cc0181-9f04-41a9-b93a-18231ee36b64'
@@ -78,9 +80,28 @@ const view = (over: Record<string, unknown> = {}): MissionViewIn =>
       ]
     },
     you: [
-      { kind: 'blocker', reason: 'cloud credentials (stp-4)', unblocks: 'phase B' },
-      { kind: 'checks', count: 2, stepIds: ['stp-2', 'stp-3'] },
-      { kind: 'close' }
+      {
+        kind: 'unblock',
+        id: 'blk-1',
+        ask: 'Unblock: cloud credentials (stp-4)',
+        why: 'phase B starts',
+        stepId: 'stp-4',
+        blockerId: 'blk-1'
+      },
+      {
+        kind: 'settle',
+        id: 'stp-2:ac-1',
+        ask: 'Tick 2 due checks on stp-2, stp-3',
+        why: 'the steps are done',
+        stepId: 'stp-2',
+        criterionId: 'ac-1'
+      },
+      {
+        kind: 'close',
+        id: 'close',
+        ask: 'Close the mission: its end is verified',
+        why: 'it is done'
+      }
     ],
     ...over
   }) as unknown as MissionViewIn
@@ -156,8 +177,8 @@ describe('the projection', () => {
   it("carries open blockers with their owner, and words what the operator owes in the waiting list's words", () => {
     expect(m.blockers).toEqual([{ reason: 'waiting for the vendor export', owner: 'agent' }])
     expect(m.you).toEqual([
-      { kind: 'blocker', text: 'Unblock: cloud credentials (stp-4)' },
-      { kind: 'checks', text: 'Tick 2 due checks on stp-2, stp-3' },
+      { kind: 'unblock', text: 'Unblock: cloud credentials (stp-4)' },
+      { kind: 'settle', text: 'Tick 2 due checks on stp-2, stp-3' },
       { kind: 'close', text: 'Close the mission: its end is verified' }
     ])
   })
@@ -167,7 +188,16 @@ describe('the projection', () => {
       [
         view({
           title: `Acme\n${'long '.repeat(60)}`,
-          you: [{ kind: 'blocker', reason: `${'r'.repeat(300)}\u0007`, unblocks: 'x' }]
+          you: [
+            {
+              kind: 'unblock',
+              id: 'blk-9',
+              ask: `${'r'.repeat(300)}\u0007`,
+              why: 'x',
+              stepId: null,
+              blockerId: 'blk-9'
+            }
+          ]
         })
       ],
       OWNER
@@ -265,5 +295,88 @@ describe('a mission with more than 40 steps (T589 review)', () => {
   it('a mission within the cap carries no offset', () => {
     const [m] = projectMissions([view()], OWNER)
     expect(m.offset).toBeUndefined()
+  })
+})
+
+// ---- Missions v4 S-40 (Decision 12): a v4 record shows its executors and its pull request badges --------------
+
+/** The slice of a v4 `mission_get` detail the companion reads; two steps, the second one running. */
+function detailOf(): MissionDetail {
+  const base = { milestone: null, optional: false, card: null, startedAt: null, waitsFor: null }
+  const crit = { criteria: [], open: [], blockers: [], blocked: false }
+  return {
+    ok: true,
+    id: 'mnt-7be1529e',
+    title: 'Score report',
+    doneWhen: 'Every candidate sees a score report',
+    status: 'open',
+    state: 'open',
+    stateLabel: 'open',
+    standing: 'leads',
+    leads: OWNER,
+    source: 'v4',
+    progress: {} as MissionDetail['progress'],
+    milestones: [],
+    steps: [
+      {
+        ...base,
+        ...crit,
+        id: 'stp-1',
+        title: 'Load the test files',
+        state: 'done',
+        stateLabel: 'done',
+        links: [{ kind: 'pr', ref: '#264' }]
+      },
+      {
+        ...base,
+        ...crit,
+        id: 'stp-2',
+        title: 'Score one file',
+        state: 'running',
+        stateLabel: 'running',
+        links: [
+          { kind: 'session', ref: CHILD },
+          { kind: 'session', ref: OWNER },
+          { kind: 'pr', ref: 'org/repo#266' }
+        ]
+      }
+    ],
+    next: null,
+    waiting: { items: [], others: [], emptyLine: '' } as unknown as MissionDetail['waiting'],
+    summary: '',
+    links: [],
+    blockers: [],
+    sessions: []
+  } as unknown as MissionDetail
+}
+
+describe('a v4 record read through the view (S-40)', () => {
+  const facts = {
+    steps: { 'stp-1': { pr: 'merged' }, 'stp-2': { pr: 'open', workerWorking: true } },
+    taskState: (sid: string): string | undefined => (sid === CHILD ? 'working' : undefined)
+  }
+
+  it('draws the executors of the running step (never the leader) and the pull request badges', () => {
+    const [m] = projectMissions([missionViewInOf(detailOf(), facts)], OWNER)
+    const running = m.steps.find((s) => s.id === 'stp-2')
+    expect(running?.children).toEqual([{ taskState: 'working', lastTransitionAt: null }])
+    expect(running?.prs).toEqual([{ number: 266, state: 'OPEN' }])
+    expect(m.steps.find((s) => s.id === 'stp-1')?.prs).toEqual([{ number: 264, state: 'MERGED' }])
+    expect(parseMissionState({ missions: [m] })).not.toBeNull()
+  })
+
+  it("without the view's facts an executor shows with an unknown state and no pull request gets a badge", () => {
+    const [m] = projectMissions([missionViewInOf(detailOf())], OWNER)
+    const running = m.steps.find((s) => s.id === 'stp-2')
+    expect(running?.children).toEqual([{ taskState: 'unknown', lastTransitionAt: null }])
+    for (const s of m.steps) expect(s.prs).toEqual([])
+  })
+
+  it('a pull request whose state was not read gets no badge', () => {
+    const [m] = projectMissions(
+      [missionViewInOf(detailOf(), { steps: { 'stp-2': { workerWorking: true } } })],
+      OWNER
+    )
+    expect(m.steps.find((s) => s.id === 'stp-2')?.prs).toEqual([])
   })
 })

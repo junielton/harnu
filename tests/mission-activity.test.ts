@@ -388,8 +388,7 @@ describe('the chip of a v3 mission with steps in several states', () => {
     const path = await import('node:path')
     repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-chip-'))
     fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
-    const { buildMissionFileContent, missionFilePath, missionsDir } =
-      await import('../src/main/mission-core')
+    const { writeV3Mission } = await import('./helpers/v3-mission-file')
     const at = '2026-11-14T09:00:00.000Z'
     const step = (id: string, ordinal: number, over: Record<string, unknown>): unknown => ({
       id,
@@ -426,11 +425,7 @@ describe('the chip of a v3 mission with steps in several states', () => {
       updatedAt: at,
       provenance: { author: 'agent', at }
     }
-    fs.mkdirSync(missionsDir(repo), { recursive: true })
-    fs.writeFileSync(
-      missionFilePath(repo, mission.id, mission.slug),
-      buildMissionFileContent(mission as never)
-    )
+    writeV3Mission(repo, mission)
   })
 
   afterEach(async () => {
@@ -483,8 +478,7 @@ describe('a delivered v3 mission with warnings, its leader not open here', () =>
     const path = await import('node:path')
     repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-delivered-'))
     fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
-    const { buildMissionFileContent, missionFilePath, missionsDir } =
-      await import('../src/main/mission-core')
+    const { writeV3Mission } = await import('./helpers/v3-mission-file')
     const at = '2026-11-14T09:00:00.000Z'
     const step = (id: string, ordinal: number, over: Record<string, unknown>): unknown => ({
       id,
@@ -517,11 +511,7 @@ describe('a delivered v3 mission with warnings, its leader not open here', () =>
       updatedAt: at,
       provenance: { author: 'agent', at }
     }
-    fs.mkdirSync(missionsDir(repo), { recursive: true })
-    fs.writeFileSync(
-      missionFilePath(repo, mission.id, mission.slug),
-      buildMissionFileContent(mission as never)
-    )
+    writeV3Mission(repo, mission)
   })
 
   afterEach(async () => {

@@ -52,17 +52,11 @@ export const MISSION_VERBS = [
   'mission_list',
   'mission_add_step',
   'mission_update_step',
-  'mission_link_child',
   'mission_log',
   'mission_set_blocker',
   'mission_clear_blocker',
-  'mission_set_end',
-  'mission_verify_step',
   'mission_request_close',
-  'mission_import_legacy',
-  'mission_add_check',
-  'mission_transfer_owner',
-  // Missions v4 S-24: the verbs that exist in v4 alone.
+  // Missions v4 S-24: the verbs that exist in v4 alone (the six v3-only verbs are gone, S-40).
   'mission_add_milestone',
   'mission_add_ac',
   'mission_link',

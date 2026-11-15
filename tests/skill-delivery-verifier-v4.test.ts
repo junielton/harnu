@@ -20,7 +20,6 @@ import { describe, expect, it } from 'vitest'
 import type { z } from 'zod'
 
 import { parseSkillFrontmatter } from '../src/main/bundled-skills-core'
-import { evidenceBundleDir } from '../src/main/mission-gates'
 import { MCP_TOOLS, toolByName } from '../src/main/mcp/tool-catalog'
 import { SCOPED_VERBS } from '../src/main/mcp/scope'
 
@@ -28,6 +27,10 @@ const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 const SKILLS = path.join(REPO_ROOT, 'resources', 'skills', 'skills')
 const readSkill = (name: string): string =>
   readFileSync(path.join(SKILLS, name, 'SKILL.md'), 'utf8')
+
+/** Where the verifier keeps a step's evidence bundle, relative to the repo root. */
+const evidenceBundleDir = (missionId: string, stepId: string): string =>
+  `.harnu/evidence/${missionId}/${stepId}`
 
 /** The operator asked for less information in a small space: both skills were far longer before S-30. */
 const VERIFIER_LINE_CAP = 300

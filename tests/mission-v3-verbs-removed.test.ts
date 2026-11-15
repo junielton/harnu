@@ -85,6 +85,11 @@ import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
 import { MCP_OPS } from '../src/main/mcp/tool-catalog'
 import { WIRED_TOOLS } from '../src/main/mcp/tool-handlers'
+import { listMissionViews } from '../src/main/mission-ipc'
+import {
+  reportUnreadableMissionFiles,
+  resetUnreadableMissionFiles
+} from '../src/main/missions/store'
 
 const ROOT = path.resolve(__dirname, '..')
 const FIXTURES = path.join(__dirname, 'fixtures', 'missions-v4-compat')
@@ -341,8 +346,13 @@ describe('AC-90 — a v3 record still opens after the removal', () => {
 
 /** The four v3 modules, named from parts so AC-93's grep never finds them in this file. */
 const MODULES = ['core', 'gates', 'progress', 'migration'].map((p) => ['mission', p].join('-'))
-/** What AC-93's grep matches: an import path ending in one of the four, quoted. */
-const IMPORT_RE = `[/'"]mission-(${['core', 'gates', 'progress', 'migration'].join('|')})(\\.ts|\\.js)?['"]`
+/**
+ * An import of one of the four, in any spelling (`from` or `import(` with a path ending in one of the four
+ * names, with or without a `.ts` or `.js` suffix). (AC-93's own grep is looser: it matches the quoted name anywhere, so it also finds a
+ * `data-test` attribute of the pane named `mission-progress`; that one is not an import and is reported
+ * separately.)
+ */
+const IMPORT_RE = `(from|import\\()[[:space:]]*['"][^'"]*/mission-(${['core', 'gates', 'progress', 'migration'].join('|')})(\\.ts|\\.js)?['"]`
 
 /** Slice S-41 deletes these; they, and the four modules themselves, may still name the modules. */
 const S41 = new Set([
@@ -408,5 +418,26 @@ describe('the v3 handlers and their wrappers no longer exist in the handler file
   ]
   it.each(NAMES)('%s is gone', (name) => {
     expect(src).not.toContain(name)
+  })
+})
+
+describe('mission:list answers no v3 view and names every file some reader could not read', () => {
+  it('lists no view, and merges the names the other readers reported, once each', async () => {
+    resetUnreadableMissionFiles()
+    const root = await fakeRepo()
+    await seedV3(root)
+    await fs.mkdir(path.join(root, '.harnu', 'missions-v4'), { recursive: true })
+    await fs.writeFile(
+      path.join(root, '.harnu', 'missions-v4', 'mnt-0badc0de-broken.md'),
+      '{ not a mission record'
+    )
+    // The hibernation check and the companion each name a file they could not read (here, the same one).
+    reportUnreadableMissionFiles('hibernation', ['mnt-0badc0de-broken.md', 'mnt-0badc0df-other.md'])
+    reportUnreadableMissionFiles('companion', ['mnt-0badc0de-broken.md'])
+    const list = await listMissionViews([root])
+    expect(list.views).toEqual([])
+    expect([...list.unreadable].sort()).toEqual(['mnt-0badc0de-broken.md', 'mnt-0badc0df-other.md'])
+    resetUnreadableMissionFiles()
+    expect((await listMissionViews([root])).unreadable).toEqual(['mnt-0badc0de-broken.md'])
   })
 })

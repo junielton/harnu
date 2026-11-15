@@ -101,15 +101,16 @@ const DENIED_VERBS = [
   'mission_create',
   'mission_add_step',
   'mission_update_step',
-  'mission_link_child',
   'mission_log',
   'mission_set_blocker',
   'mission_clear_blocker',
-  'mission_set_end',
-  'mission_verify_step',
   'mission_request_close',
-  'mission_import_legacy',
-  'mission_add_check'
+  'mission_add_milestone',
+  'mission_add_ac',
+  'mission_link',
+  'mission_set_done_when',
+  'mission_settle_ac',
+  'mission_attach'
 ]
 
 describe('observe-mode MCP allowlist', () => {
@@ -147,15 +148,16 @@ describe('observe-mode MCP allowlist', () => {
       'mission_create',
       'mission_add_step',
       'mission_update_step',
-      'mission_link_child',
       'mission_log',
       'mission_set_blocker',
       'mission_clear_blocker',
-      'mission_set_end',
-      'mission_verify_step',
       'mission_request_close',
-      'mission_import_legacy',
-      'mission_add_check'
+      'mission_add_milestone',
+      'mission_add_ac',
+      'mission_link',
+      'mission_set_done_when',
+      'mission_settle_ac',
+      'mission_attach'
     ]
     for (const op of writes) {
       expect(OBSERVE_MCP_DENY).toContain(`${prefix}${op}`)

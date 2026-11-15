@@ -11,11 +11,11 @@
  */
 
 import { promises as fs } from 'node:fs'
-import * as path from 'node:path'
 import { ipcMain } from 'electron'
 import { addTaskEventObserver } from './hook-bridge'
 import { readUserProjects } from './user-projects'
 import type { RecordResult } from './mission-record'
+import { realFactsDeps } from './mcp/tool-handlers'
 import {
   missionRoot,
   readMissionsDeduped,
@@ -26,12 +26,9 @@ import type { Mission, MissionDerived, MissionProgress } from './missions/derive
 import type { WaitingItem } from './missions/waiting'
 import { doorReply, runDoor } from './missions/doors'
 import { createMissionObserver, type MissionObserver } from './missions/observer'
-import { ensureLinkCacheLoaded, getLastKnown, rememberResolved } from './mission-link-cache'
+import { ensureLinkCacheLoaded, rememberResolved } from './mission-link-cache'
 import { hydrateMissionLedger, observedRows } from './missions/ledger-store'
-import { getTaskState } from './detect/task-state-hub'
-import { findMainCi, findPrsForWorktrees } from './pr-stack'
 import { repoRoot } from './data-dir'
-import { resolveRoadmap } from './roadmap-ipc'
 import { openEntry, leaderOf as v4LeaderOf, type Actor } from './missions/guard'
 import {
   listMissionRecords,
@@ -238,39 +235,6 @@ export async function observeOpenMissions(
 
 /** How long the view waits for GitHub; past it a step reads its sticky last-known state (like a door). */
 const VIEW_PR_WAIT_MS = 1500
-
-/**
- * The real sources of {@link FactsDeps} for one repo: the board's files, chapter 2's pull request join
- * (which shares the single-flight cache a `mission:list` poll already warms), its last-known cache, the
- * filesystem and the task-state hub. `waitMs` bounds how long the join waits for GitHub.
- */
-export async function realFactsDeps(root: string, waitMs?: number): Promise<FactsDeps> {
-  await ensureLinkCacheLoaded()
-  return {
-    board: async () => {
-      const { roadmapDir } = await resolveRoadmap(root)
-      const names = (await fs.readdir(roadmapDir)).filter((n) => n.endsWith('.md'))
-      return Promise.all(
-        names.map(async (n) => ({
-          slug: n.slice(0, -3),
-          content: await fs.readFile(path.join(roadmapDir, n), 'utf8')
-        }))
-      )
-    },
-    findPrs: (refs) => findPrsForWorktrees(root, refs, { waitMs }),
-    findMainCi: (numbers) => findMainCi(root, numbers, { waitMs }),
-    lastKnown: (kind, ref) => getLastKnown(root, kind, ref),
-    pathExists: async (abs) => {
-      try {
-        await fs.stat(abs)
-        return true
-      } catch {
-        return false
-      }
-    },
-    taskState: (id) => getTaskState(id)
-  }
-}
 
 /** What the view channel is asked: the folder the caller works in, who asks, and optionally which mission. */
 export interface MissionV4ViewRequest {

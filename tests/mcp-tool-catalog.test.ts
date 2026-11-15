@@ -75,20 +75,11 @@ const MUTATE_TOOLS = [
   'mission_create',
   'mission_add_step',
   'mission_update_step',
-  'mission_link_child',
   'mission_log',
   // T358 S4
   'mission_set_blocker',
   'mission_clear_blocker',
-  'mission_set_end',
-  'mission_verify_step',
   'mission_request_close',
-  // T358 S7
-  'mission_import_legacy',
-  // Mission v3 §3.6
-  'mission_add_check',
-  // T654: the owner-transfer recovery verbs.
-  'mission_transfer_owner',
   // Missions v4 S-24: the v4-only verbs run free like the other mission writes.
   'mission_add_milestone',
   'mission_add_ac',
@@ -338,20 +329,11 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'mission_create',
     'mission_add_step',
     'mission_update_step',
-    'mission_link_child',
     'mission_log',
     // T358 S4
     'mission_set_blocker',
     'mission_clear_blocker',
-    'mission_set_end',
-    'mission_verify_step',
     'mission_request_close',
-    // T358 S7
-    'mission_import_legacy',
-    // Mission v3 §3.6
-    'mission_add_check',
-    // T654: the owner-transfer recovery verbs run free like the other mission writes.
-    'mission_transfer_owner',
     // Missions v4 S-24: the v4-only verbs run free like the other mission writes.
     'mission_add_milestone',
     'mission_add_ac',

@@ -80,10 +80,18 @@ vi.mock('../src/main/pr-stack', async (importOriginal) => ({
 
 import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
-import { buildMissionV4View, listMissionViews } from '../src/main/mission-ipc'
+import { buildMissionV4View } from '../src/main/mission-ipc'
 
 const OWNER = '11111111-2222-4333-8444-555555555555'
-const END = { kind: 'code', target: 'every page migrated', evidence: 'the audit is green' }
+/** The owner of the frozen chapter missions and the campaign: the session that may read them. */
+const FIXTURE_LEADER = '3f1c9a52-7d4e-4b8a-9c21-5e6a0b7d8f10'
+/** A v4 mission body: the only shape `mission_create` takes now. */
+const V4_BODY = {
+  title: 'No campaign here',
+  doneWhen: 'Every page is migrated and the audit is green',
+  steps: [{ title: 'Migrate the pages', criteria: [{ text: 'The audit is green' }] }],
+  sessionId: OWNER
+}
 const FIXTURES = path.join(__dirname, 'fixtures', 'missions-v4-compat')
 
 let client: Client
@@ -201,7 +209,7 @@ const REMOVED = ['create', 'add_chapter', 'get', 'list', 'request_close', 'trans
 )
 
 describe('the six campaign verbs are not on the wire', () => {
-  it('lists none of them, and mission_create keeps its two retired arguments as optional', async () => {
+  it('lists none of them, and mission_create no longer carries the chapter binding or any v3 argument', async () => {
     const { tools } = await client.listTools()
     const names = tools.map((t) => t.name)
     for (const v of REMOVED) expect(names, v).not.toContain(v)
@@ -210,11 +218,21 @@ describe('the six campaign verbs are not on the wire', () => {
     const schema = create.inputSchema as {
       properties: Record<string, unknown>
       required?: string[]
+      additionalProperties?: unknown
     }
-    expect(schema.properties).toHaveProperty('campaignId')
-    expect(schema.properties).toHaveProperty('chapterId')
-    expect(schema.required ?? []).not.toContain('campaignId')
-    expect(schema.required ?? []).not.toContain('chapterId')
+    for (const retired of [
+      'campaignId',
+      'chapterId',
+      'declaredEnd',
+      'steward',
+      'scope',
+      'linkedCard'
+    ]) {
+      expect(schema.properties, retired).not.toHaveProperty(retired)
+    }
+    // The schema is strict: an argument it does not name is refused, not dropped.
+    expect(schema.additionalProperties).toBe(false)
+    expect(schema.required ?? []).toContain('doneWhen')
   })
 
   it.each(REMOVED)('%s answers a v3 agent with a refusal, and writes nothing', async (verb) => {
@@ -232,40 +250,33 @@ describe('mission_create no longer binds a mission to a chapter', () => {
   it.each([
     ['both ids', { campaignId: CAMPAIGN_ID, chapterId: 'chp-1' }],
     ['only the campaign', { campaignId: CAMPAIGN_ID }],
-    ['only the chapter', { chapterId: 'chp-1' }]
+    ['only the chapter', { chapterId: 'chp-1' }],
+    [
+      'an older end and steward',
+      { declaredEnd: { kind: 'code', target: 'x', evidence: 'y' }, steward: false }
+    ]
   ])(
-    'a call that names %s is refused CAMPAIGN_REMOVED, and nothing is written',
-    async (_n, ids) => {
+    'a call that names %s is refused by the strict schema, and nothing is written',
+    async (_n, extra) => {
       await seedV3(main)
       const before = tree(main)
-      const r = await call('mission_create', {
-        folder: main,
-        title: 'A chapter mission',
-        declaredEnd: END,
-        sessionId: OWNER,
-        steward: false,
-        ...ids
-      })
+      const r = await call('mission_create', { folder: main, ...V4_BODY, ...extra })
       expect(r.isError).toBe(true)
-      expect(r.text).toMatch(/^CAMPAIGN_REMOVED/)
-      expect(r.text).toMatch(/milestone/)
-      // No mission file, no change to the campaign file that was named.
+      // The refusal names the argument it does not know.
+      expect(r.text).toMatch(new RegExp(Object.keys(extra)[0]))
+      // No mission file of either format, no change to the campaign file that was named.
       expect(tree(main)).toEqual(before)
+      expect(existsSync(path.join(main, '.harnu', 'missions-v4'))).toBe(false)
     }
   )
 
-  it('a call without them still creates a mission, with no campaign field', async () => {
-    const ack = await ok('mission_create', {
-      folder: worktree,
-      title: 'No campaign here',
-      declaredEnd: END,
-      sessionId: OWNER,
-      steward: false
-    })
+  it('a v4 call still creates a mission, with no campaign field', async () => {
+    const ack = await ok('mission_create', { folder: worktree, ...V4_BODY })
     expect(ack).toMatchObject({ ok: true, op: 'mission_create' })
-    expect(ack).not.toHaveProperty('campaignId')
-    const dir = path.join(main, '.harnu', 'missions')
-    const file = readdirSync(dir).find((n) => n.startsWith(`${ack.missionId as string}-`))!
+    expect(Object.keys(ack)).not.toEqual(expect.arrayContaining(['campaignId']))
+    expect(Object.keys(ack)).not.toEqual(expect.arrayContaining(['chapterId']))
+    const dir = path.join(main, '.harnu', 'missions-v4')
+    const file = readdirSync(dir).find((n) => n.startsWith(`${ack.id as string}-`))!
     expect(readFileSync(path.join(dir, file), 'utf8')).not.toMatch(/campaignId|chapterId/)
   })
 })
@@ -279,7 +290,7 @@ describe('a campaign file already on disk stays a record, and still reads (what 
     taskState: () => undefined
   })
 
-  it('a mission that names a campaignId reads in the pane, in mission_get and in the lists, and no byte changes', async () => {
+  it('a mission that names a campaignId reads in the pane, in mission_get and in mission_list, and no byte changes', async () => {
     const root = (await fakeRepo()).main
     await seedV3(root)
     const before = tree(root)
@@ -307,21 +318,25 @@ describe('a campaign file already on disk stays a record, and still reads (what 
       ['Publish the notes', false]
     ])
 
-    // 2) mission_get on the chapter mission: the v3 record, with the campaign ids it names.
-    const got = await ok('mission_get', { folder: root, missionId: CHAPTER_MISSION })
-    const mission = got.mission as { id: string; campaignId?: string; chapterId?: string }
-    expect(mission).toMatchObject({
-      id: CHAPTER_MISSION,
-      campaignId: CAMPAIGN_ID,
-      chapterId: 'chp-2'
+    // 2) mission_get: a chapter mission reads as the campaign it belongs to (one mission, the chapters
+    // its milestones), the campaign by its own id reads as the same record, and neither is rewritten.
+    const got = await ok('mission_get', {
+      folder: root,
+      missionId: CHAPTER_MISSION,
+      sessionId: FIXTURE_LEADER
     })
+    expect(got).toMatchObject({ ok: true, source: 'v3-campaign' })
+    const gotCampaign = await ok('mission_get', {
+      folder: root,
+      missionId: CAMPAIGN_ID,
+      sessionId: FIXTURE_LEADER
+    })
+    expect(gotCampaign).toMatchObject({ ok: true, source: 'v3-campaign', id: got.id })
 
-    // 3) The sidebar and Your move read missions through `listMissionViews`; mission_list is the verb.
-    const views = await listMissionViews([root])
-    expect(views.unreadable).toEqual([])
-    expect(views.views.map((v) => v.mission.id)).toContain(CHAPTER_MISSION)
+    // 3) mission_list is the one list: the campaign is a row of it, marked as an older record.
     const listed = await ok('mission_list', { folder: root })
-    expect(JSON.stringify(listed)).toContain(CHAPTER_MISSION)
+    const rows = listed.missions as Array<{ id: string; format: string }>
+    expect(rows.find((r) => r.id === got.id)?.format).toBe('v3')
 
     // Nothing was written: the campaign and the missions are byte-identical, and no v4 record appeared.
     expect(tree(root)).toEqual(before)
@@ -331,7 +346,11 @@ describe('a campaign file already on disk stays a record, and still reads (what 
 
   it('a blocked repo is still refused for the verbs that remain', async () => {
     await seedV3(blockedMain)
-    const r = await call('mission_get', { folder: blockedMain, missionId: CHAPTER_MISSION })
+    const r = await call('mission_get', {
+      folder: blockedMain,
+      missionId: CHAPTER_MISSION,
+      sessionId: FIXTURE_LEADER
+    })
     expect(r.isError).toBe(true)
     expect(r.text).toMatch(/FOLDER_NOT_ALLOWED/)
   })

@@ -1,26 +1,24 @@
 /**
- * Campaign ch.6 (T598, spec §3.6) — close-out consolidation (AC-6.1) and recall at create (AC-6.3),
- * driven through the REAL MCP transport (lesson
- * `docs/lessons/testing/006-eval-harness-grades-state-through-the-real-transport.md`). The harness
- * is the one `campaign-verbs-transport.test.ts` uses; state is graded from the files on disk. (The campaign
- * cases went with the campaign verbs, Missions v4 S-39.)
+ * Campaign ch.6 (T598, spec §3.6) — recall at create (AC-6.3) and a superseded decision shown with its
+ * successor (AC-6.2), driven through the REAL MCP transport (lesson
+ * `docs/lessons/testing/006-eval-harness-grades-state-through-the-real-transport.md`).
  *
- * What "real" means here: `registerMcpServer` starts Harnu's own loopback HTTP server (the
- * one a spawned `claude` is pointed at), and the calls below go through the MCP SDK's
- * streamable-HTTP CLIENT with the bearer token read from the `harnu.mcp.json` the server
- * wrote — so the catalog schema a session really receives, the bearer guard, the policy gate,
- * the audit and the wired handler are all in the path. No handler is called directly. Only
- * `electron` and the live sources (PR join, fleet scan, hook FSM) are stubbed at their seams.
+ * Missions v4 S-40 dropped the close-out half of this file (AC-6.1: `mission_request_close` running the
+ * consolidator and storing an outcome and memory drafts on a v3 record): that pass lived in the v3
+ * handler, which is gone, and the v4 `mission_request_close` records a request and nothing else. The
+ * consolidator itself (`consolidator-core.ts`) is still pinned by `consolidator-core.test.ts`.
  *
- * State is graded from the files on disk with js-yaml directly — never through
- * the product's parser — so a parser drift cannot make the grader agree with the product, and
- * an ACK is evidence, never the verdict (lesson rule 1).
+ * What "real" means here: `registerMcpServer` starts Harnu's own loopback HTTP server (the one a spawned
+ * `claude` is pointed at), and the calls below go through the MCP SDK's streamable-HTTP CLIENT with the
+ * bearer token read from the `harnu.mcp.json` the server wrote, so the catalog schema a session really
+ * receives, the bearer guard, the policy gate, the audit and the wired handler are all in the path. No
+ * handler is called directly. Only `electron` and the live sources (PR join, fleet scan, hook FSM) are
+ * stubbed at their seams.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import yaml from 'js-yaml'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
@@ -80,15 +78,17 @@ vi.mock('../src/main/pr-stack', async (importOriginal) => ({
 
 import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
-import {
-  buildMissionFileContent,
-  parseMissionFile,
-  readMissionLog,
-  type Mission
-} from '../src/main/mission-core'
-
 const OWNER = '11111111-2222-4333-8444-555555555555'
-const END = { kind: 'code', target: 'every page migrated', evidence: 'the audit is green' }
+// A session leads one mission at a time (a second create answers the first), so each case that
+// creates a mission has its own leader.
+const OWNER_2 = '22222222-2222-4333-8444-555555555555'
+const OWNER_3 = '33333333-2222-4333-8444-555555555555'
+const DONE_WHEN = 'Every page is migrated and the audit is green'
+/** A step with one criterion: `mission_create` needs at least one. */
+const STEP = (title: string): { title: string; criteria: Array<{ text: string }> } => ({
+  title,
+  criteria: [{ text: 'The audit is green for the page' }]
+})
 
 let client: Client
 let main = ''
@@ -137,16 +137,6 @@ async function fakeRepo(): Promise<{ main: string; worktree: string }> {
   return { main: repo, worktree: wt }
 }
 
-// ---- grading from disk (js-yaml, not the product's parser) -----------------
-
-async function missionFile(root: string, id: string): Promise<string> {
-  const dir = path.join(root, '.harnu', 'missions')
-  return path.join(
-    dir,
-    (await fs.readdir(dir)).find((n) => n.startsWith(`${id}-`))!
-  )
-}
-
 beforeAll(async () => {
   h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-campaign-ud-'))
   ;({ main } = await fakeRepo())
@@ -178,53 +168,6 @@ afterAll(async () => {
   await closeMcpServer()
 })
 
-const STEP = (title: string) => ({ title, verification: 'existence' })
-
-/** Make a freshly created mission closable: every custom step and the fixed end verified, plus a Log and ledger. */
-async function arm(
-  root: string,
-  id: string,
-  opts: { log?: string; ledger?: Array<Record<string, unknown>>; selfVerifyStep2?: boolean } = {}
-): Promise<void> {
-  const file = await missionFile(root, id)
-  const raw = await fs.readFile(file, 'utf8')
-  const m = parseMissionFile(raw) as Mission
-  for (const s of m.steps) {
-    s.proof = s.id === 'stp-2' && opts.selfVerifyStep2 ? 'self-verified' : 'verified'
-    if (s.kind === 'fixed-end') {
-      s.verifiedBy = {
-        sessionId: 'aaaaaaaa-2222-4333-8444-555555555555',
-        at: '2026-11-01T12:00:00.000Z',
-        verdict: 'met'
-      }
-    }
-  }
-  m.ledger = (opts.ledger ?? []) as Mission['ledger']
-  await fs.writeFile(
-    file,
-    buildMissionFileContent(m, readMissionLog(raw) + (opts.log ?? '')),
-    'utf8'
-  )
-}
-
-type Front = Record<string, unknown> & {
-  status: string
-  outcome: Record<string, unknown>
-  memoryDrafts?: Array<{ kind: string; cites: Array<{ kind: string; ref: string }> }>
-}
-interface MissionDisk {
-  front: Front
-  log: string
-}
-async function readMission(root: string, id: string): Promise<MissionDisk> {
-  const raw = await fs.readFile(await missionFile(root, id), 'utf8')
-  const parts = raw.split(/^---\n/m)
-  return {
-    front: yaml.load(parts[1], { schema: yaml.CORE_SCHEMA }) as Front,
-    log: parts.slice(2).join('---\n')
-  }
-}
-
 describe('AC-6.3 — recall at create', () => {
   it('mission_create lists the decisions whose watches overlap its scope — and not the others', async () => {
     await ok('memory_append', {
@@ -232,7 +175,7 @@ describe('AC-6.3 — recall at create', () => {
       page: 'decisions',
       entry:
         '## Gates govern verified\nA step reads verified only when every applicable gate is green.',
-      watches: ['src/main/mission-gates.ts']
+      watches: ['src/main/missions/derive.ts']
     })
     await ok('memory_append', {
       folder: main,
@@ -244,10 +187,11 @@ describe('AC-6.3 — recall at create', () => {
     const ack = await ok('mission_create', {
       folder: main,
       title: 'Touch the gates',
-      declaredEnd: END,
+      doneWhen: DONE_WHEN,
       sessionId: OWNER,
-      scope: ['src/main/mission-gates.ts'],
-      steward: false
+      steps: [STEP('Read the gates')],
+      // The paths a mission is about are its doc and worktree links.
+      links: [{ kind: 'doc', ref: 'src/main/missions/derive.ts' }]
     })
     expect(ack.recall).toEqual([
       { page: 'decisions', line: expect.any(Number), text: 'Gates govern verified' }
@@ -262,10 +206,10 @@ describe('AC-6.3 — recall at create', () => {
     const ack = await ok('mission_create', {
       folder: main,
       title: 'Nothing to recall',
-      declaredEnd: END,
-      sessionId: OWNER,
-      scope: ['docs/elsewhere.md'],
-      steward: false
+      doneWhen: DONE_WHEN,
+      sessionId: OWNER_2,
+      steps: [STEP('Write it down')],
+      links: [{ kind: 'doc', ref: 'docs/elsewhere.md' }]
     })
     expect(ack.recall).toEqual([])
   })
@@ -287,11 +231,11 @@ describe('AC-6.3 — recall at create', () => {
     expect(next.entryId).toMatch(/^e-[0-9a-f]{8}$/)
     const ack = await ok('mission_create', {
       folder: main,
-      title: 'Steward work',
-      declaredEnd: END,
-      sessionId: OWNER,
-      scope: ['src/main/scheduler-core.ts'],
-      steward: false
+      title: 'Scheduler work',
+      doneWhen: DONE_WHEN,
+      sessionId: OWNER_3,
+      steps: [STEP('Tune the tick')],
+      links: [{ kind: 'doc', ref: 'src/main/scheduler-core.ts' }]
     })
     expect((ack.recall as Array<{ text: string }>).map((r) => r.text)).toEqual([
       'Wake the steward on events'
@@ -305,106 +249,5 @@ describe('AC-6.2 — memory_query shows a superseded decision with its successor
     const matches = r.matches as Array<{ supersededBy?: { text: string } }>
     expect(matches).toHaveLength(1)
     expect(matches[0].supersededBy?.text).toBe('Wake the steward on events')
-  })
-})
-
-describe('AC-6.1 — mission_request_close runs the consolidator', () => {
-  it('stores the outcome and the drafts on the mission, citing steps and PRs, and writes NO memory', async () => {
-    const created = await ok('mission_create', {
-      folder: main,
-      title: 'Close-out fixture',
-      declaredEnd: END,
-      sessionId: OWNER,
-      scope: ['src/main/close-fixture.ts'],
-      steps: [STEP('Entry schema'), STEP('Brief budget')],
-      steward: false
-    })
-    const id = created.missionId as string
-    const decisionsBefore = await fs
-      .readFile(path.join(main, '.harnu', 'memory', 'decisions.md'), 'utf8')
-      .catch(() => '')
-    await arm(main, id, {
-      selfVerifyStep2: true,
-      log:
-        '\n### 2026-11-01T09:00:00.000Z · decision · stp-1\n\nWatch paths, not text.\n' +
-        '\n### 2026-11-01T10:30:00.000Z · surprise · stp-2\n\nThe Brief cap was already spent.\n',
-      ledger: [
-        {
-          at: '2026-11-01T08:30:00.000Z',
-          kind: 'pr-opened',
-          stepId: 'stp-1',
-          ref: '#176',
-          pr: 176
-        },
-        { at: '2026-11-01T12:00:00.000Z', kind: 'pr-merged', stepId: 'stp-1', ref: '#176', pr: 176 }
-      ]
-    })
-
-    const ack = await ok('mission_request_close', { folder: main, missionId: id, sessionId: OWNER })
-    expect(ack).toMatchObject({ ok: true, op: 'mission_request_close', pendingClose: true })
-    expect(ack.consolidation).toMatchObject({ drafts: 3, nothingNotable: false })
-
-    const disk = await readMission(main, id)
-    expect(disk.front.status).toBe('delivered')
-    expect(disk.front.outcome).toMatchObject({
-      declaredEnd: END,
-      surprises: ['The Brief cap was already spent.'],
-      perStep: expect.arrayContaining([
-        expect.objectContaining({ stepId: 'stp-1', mergedAt: '2026-11-01T12:00:00.000Z' })
-      ])
-    })
-    const drafts = disk.front.memoryDrafts as Array<{
-      kind: string
-      cites: Array<{ kind: string; ref: string }>
-    }>
-    expect(drafts.map((d) => d.kind).sort()).toEqual(['decision', 'hot', 'lesson'])
-    const decision = drafts.find((d) => d.kind === 'decision')!
-    expect(decision.cites).toEqual(
-      expect.arrayContaining([
-        { kind: 'step', ref: 'stp-1' },
-        { kind: 'pr', ref: '#176' }
-      ])
-    )
-
-    // Nothing is written without a tick: memory is byte-identical.
-    const decisionsAfter = await fs
-      .readFile(path.join(main, '.harnu', 'memory', 'decisions.md'), 'utf8')
-      .catch(() => '')
-    expect(decisionsAfter).toBe(decisionsBefore)
-    expect(decisionsAfter).not.toContain('Watch paths')
-  })
-
-  it('a quiet mission says nothingNotable and carries no drafts', async () => {
-    const id = (
-      await ok('mission_create', {
-        folder: main,
-        title: 'Quiet one',
-        declaredEnd: END,
-        sessionId: OWNER,
-        steps: [STEP('Only step')],
-        steward: false
-      })
-    ).missionId as string
-    await arm(main, id)
-    const ack = await ok('mission_request_close', { folder: main, missionId: id })
-    expect(ack.consolidation).toMatchObject({ drafts: 0, nothingNotable: true })
-    const disk = await readMission(main, id)
-    expect(disk.front.outcome.nothingNotable).toBe(true)
-    expect(disk.front.memoryDrafts ?? []).toEqual([])
-  })
-
-  it('a refused close writes no outcome', async () => {
-    const id = (
-      await ok('mission_create', {
-        folder: main,
-        title: 'Not ready',
-        declaredEnd: END,
-        sessionId: OWNER,
-        steward: false
-      })
-    ).missionId as string
-    const r = await call('mission_request_close', { folder: main, missionId: id })
-    expect(r.text).toMatch(/^END_NOT_VERIFIED/)
-    expect((await readMission(main, id)).front).not.toHaveProperty('outcome')
   })
 })

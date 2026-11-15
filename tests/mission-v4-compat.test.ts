@@ -30,7 +30,6 @@ import {
 } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { parseMissionFile } from '../src/main/mission-core'
 import {
   buildMissionRecordContent,
   parseMissionRecordFile,
@@ -184,10 +183,18 @@ const V3_CAMPAIGN_NAMES = [
 ]
 
 describe('the frozen v3 reader agrees with the v3 parser', () => {
-  it('parses every mission fixture to exactly what mission-core parses, and every campaign fixture without error', () => {
+  // S-40: the live v3 parser (`mission-core.ts`) goes with S-41, so the agreement is held by a frozen
+  // snapshot of what it parsed each fixture to, taken at S-40's base (`tests/fixtures/missions-v4-compat-golden/`,
+  // one JSON file per mission). What this still catches: the frozen reader drifting from the parser v3 used
+  // (a changed field, default or status rule). What it no longer catches: a later change to the v3 parser, which
+  // nothing runs any more.
+  const GOLDEN = path.join(__dirname, 'fixtures', 'missions-v4-compat-golden')
+
+  it('parses every mission fixture to exactly what mission-core parsed, and every campaign fixture without error', () => {
     for (const name of V3_MISSION_NAMES) {
       const raw = readFixture(`missions/${name}.md`)
-      expect(parseV3MissionFile(raw), name).toEqual(parseMissionFile(raw))
+      const golden = JSON.parse(readFileSync(path.join(GOLDEN, `${name}.json`), 'utf8')) as unknown
+      expect(JSON.parse(JSON.stringify(parseV3MissionFile(raw))), name).toEqual(golden)
     }
     for (const name of V3_CAMPAIGN_NAMES) {
       const raw = readFixture(`campaigns/${name}.md`)
@@ -199,6 +206,14 @@ describe('the frozen v3 reader agrees with the v3 parser', () => {
         `${(parsed as { id: string }).id}-${(parsed as { slug: string }).slug}.md`
       )
     }
+  })
+
+  it('has a snapshot for every mission fixture and none for a fixture that is not there', () => {
+    expect(
+      readdirSync(GOLDEN)
+        .map((n) => n.replace(/\.json$/, ''))
+        .sort()
+    ).toEqual([...V3_MISSION_NAMES].sort())
   })
 
   it('reads a legacy draft as active, as the v3 parser does, and reports a bad file as an error', () => {
@@ -706,7 +721,7 @@ describe('no v4 write path touches a v3 file', () => {
 describe('v3 concepts map to v4', () => {
   it('maps a modern active mission: title, Done when, status, steps, scope and the kept rows', () => {
     const { record, log } = convertFixture('mnt-5c0de001-modern-active')
-    const v3 = parseMissionFile(readFixture('missions/mnt-5c0de001-modern-active.md'))
+    const v3 = parseV3MissionFile(readFixture('missions/mnt-5c0de001-modern-active.md'))
     if ('error' in v3) throw new Error(v3.error)
 
     expect(record.schemaVersion).toBe(4)
@@ -888,7 +903,7 @@ describe('v3 concepts map to v4', () => {
     expect(delivered.status).toBe('open')
     expect(delivered.closeRequested).toEqual({ at: '2026-10-22T12:00:00.000Z' })
     expect(delivered.doneWhenVerified).toEqual({ by: VERIFIER, at: '2026-10-22T11:50:00.000Z' })
-    const v3 = parseMissionFile(readFixture('missions/mnt-5c0de003-delivered-pending-close.md'))
+    const v3 = parseV3MissionFile(readFixture('missions/mnt-5c0de003-delivered-pending-close.md'))
     if ('error' in v3) throw new Error(v3.error)
     const deliveredLegacy = delivered.legacyV3 as Record<string, unknown>
     expect(deliveredLegacy.outcome).toEqual(v3.outcome)
@@ -1192,10 +1207,10 @@ function importSpecifiers(source: string): string[] {
 
 /** The v3 modules a v4 module must not import (spec AC-26), by resolved base name. */
 const FORBIDDEN_V3 = new Set([
-  'mission-core',
-  'mission-gates',
-  'mission-progress',
-  'mission-migration',
+  ['mission', 'core'].join('-'),
+  ['mission', 'gates'].join('-'),
+  ['mission', 'progress'].join('-'),
+  ['mission', 'migration'].join('-'),
   ['campaign', 'core'].join('-'),
   ['campaign', 'progress'].join('-')
 ])
@@ -1217,23 +1232,17 @@ describe('v4 modules import v3 code only through v3-read', () => {
   const dir = path.resolve(__dirname, '..', 'src', 'main', 'missions')
 
   /**
-   * The chapter 2 modules are the listed exception: they are repointed by the slice that deletes the
-   * v3 modules (S-40). `waiting.ts` is one of them: chapter 2 created it (S-5) and S-8 rewrites it.
+   * There is no exception any more: the chapter 2 modules (`store.ts`, `derive.ts`, `observer.ts`,
+   * `ledger-store.ts`, `waiting.ts`) were repointed by S-40, the slice before the one that deletes the v3 modules.
    */
-  const CHAPTER_2_EXCEPTION = new Set([
-    'store.ts',
-    'derive.ts',
-    'observer.ts',
-    'ledger-store.ts',
-    'waiting.ts'
-  ])
+  const CHAPTER_2_EXCEPTION = new Set<string>()
 
   it('the scanner sees a forbidden import (a proof that fails against the code it replaces)', () => {
     const bad = [
-      "import { parseMissionFile } from '../mission-core'",
-      "import type { Mission } from '../mission-core'",
+      `import { parseMissionFile } from '../${['mission', 'core'].join('-')}'`,
+      `import type { Mission } from '../${['mission', 'core'].join('-')}'`,
       `export { campaignFilePath } from '../${['campaign', 'core'].join('-')}'`,
-      "const m = await import('../mission-gates')",
+      `const m = await import('../${['mission', 'gates'].join('-')}')`,
       `import { x } from '../${['steward', 'core'].join('-')}'`
     ]
     for (const line of bad) expect(v3Imports(line, dir), line).toHaveLength(1)
