@@ -17,7 +17,7 @@ import {
   recordWake,
   parkHistory
 } from '../src/main/hibernation'
-import { missionOwnersWithLiveChildren, ownsMissionWithLiveChild } from '../src/main/hibernation'
+import { missionOwnersWithLiveChildren, openMissionLeaders } from '../src/main/hibernation'
 import {
   evaluateFleet,
   explainFleet,
@@ -317,15 +317,17 @@ describe('hibernation — mission owners with live children (T363)', () => {
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([BYSTANDER])
   })
 
-  it('an owner whose linked children all finished (no live PTY) is still eligible', async () => {
+  // Missions v4 S-23 (AC-62): the leader of an open mission is never parked, whether or not a session of
+  // its own still runs under it. These three used to say "eligible"; the rule is no longer "has a live child".
+  it('a leader whose linked children all finished (no live PTY) is still never parked', async () => {
     await writeMission(mission({}, [{ kind: 'session', ref: CHILD }]))
     const fleet = stamp([cold(OWNER, 600, repo), cold(BYSTANDER, 1, repo)])
 
-    expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([OWNER])
-    expect(evaluateFleet(fleet, NOW, POLICY, 'cap')).toEqual([OWNER])
+    expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
+    expect(evaluateFleet(fleet, NOW, POLICY, 'cap')).toEqual([])
   })
 
-  it('an owner of an active mission with no session ever linked is still eligible', async () => {
+  it('a leader of an active mission with no session ever linked is never parked', async () => {
     await writeMission(
       mission({}, [
         { kind: 'worktree', ref: '/tmp/wt' },
@@ -335,14 +337,14 @@ describe('hibernation — mission owners with live children (T363)', () => {
     )
     const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
 
-    expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([OWNER])
+    expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
   })
 
-  it('an owner that links only ITSELF is still eligible — a self-link is not a child', async () => {
+  it('a leader that links only ITSELF is never parked either', async () => {
     await writeMission(mission({}, [{ kind: 'session', ref: OWNER }]))
     const fleet = stamp([cold(OWNER, 600, repo)])
 
-    expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([OWNER])
+    expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
   })
 
   it('Mission v3 §3.4: a legacy draft mission reads active, so it pins its owner like one', async () => {
@@ -352,13 +354,23 @@ describe('hibernation — mission owners with live children (T363)', () => {
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
   })
 
-  it.each(['stale', 'delivered', 'closed'] as const)(
-    'a %s mission does not pin its owner, even with a live child',
+  // A stored `stale` or `delivered` mission is OPEN in v4 (delivered is "ready to close"), so its leader
+  // is pinned; only a closed mission frees it. (C2-02 said the delivered leader was not exempt: that was
+  // the v3 rule, and AC-62 supersedes it, "ready to close included".)
+  it('a closed mission does not pin its owner, even with a live child', async () => {
+    await writeMission(mission({ status: 'closed' }, [{ kind: 'session', ref: CHILD }]))
+    const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
+
+    expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([OWNER])
+  })
+
+  it.each(['stale', 'delivered'] as const)(
+    'a %s mission pins its leader (open in v4)',
     async (status) => {
       await writeMission(mission({ status }, [{ kind: 'session', ref: CHILD }]))
       const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
 
-      expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([OWNER])
+      expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
     }
   )
 
@@ -397,12 +409,10 @@ describe('hibernation — mission owners with live children (T363)', () => {
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([OWNER])
   })
 
-  it('ownsMissionWithLiveChild is a pure read of the missions and the live set', () => {
-    const m = mission({}, [{ kind: 'session', ref: CHILD }])
-    expect(ownsMissionWithLiveChild(OWNER, [m], new Set([OWNER, CHILD]))).toBe(true)
-    expect(ownsMissionWithLiveChild(OWNER, [m], new Set([OWNER]))).toBe(false)
-    expect(ownsMissionWithLiveChild(CHILD, [m], new Set([OWNER, CHILD]))).toBe(false)
-    expect(ownsMissionWithLiveChild(OWNER, [], new Set([OWNER, CHILD]))).toBe(false)
+  it('openMissionLeaders names the leaders of the repo, and nobody else', async () => {
+    await writeMission(mission({}, [{ kind: 'session', ref: CHILD }]))
+    expect(openMissionLeaders([repo])).toEqual(new Set([OWNER]))
+    expect(openMissionLeaders([])).toEqual(new Set())
   })
 
   it('AC-3e: the first sweep over an unpinned repo with a legacy data dir misses its missions, and the next sweep self-heals', async () => {

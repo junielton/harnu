@@ -177,7 +177,12 @@ describe('readers use the v4 view', () => {
     })
 
     it('a v3 mission waiting for the operator to close it (delivered) is ready to close: its leader is pinned', () => {
-      seedV3(v3Mission({ status: 'delivered', pendingClose: { at: NOW } } as Partial<Mission>))
+      seedV3(
+        v3Mission({
+          status: 'delivered',
+          pendingClose: { at: NOW, requestedBy: LEADER }
+        } as Partial<Mission>)
+      )
       expect(exempt(LEADER)).toEqual([LEADER])
     })
 
