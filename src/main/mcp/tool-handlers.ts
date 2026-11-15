@@ -45,6 +45,22 @@ import type { TaskState, FailureReason } from '../hook-state'
 import { addTaskEventObserver, getTaskStates } from '../hook-bridge'
 import { lastSubagentActivity } from '../subagent-activity'
 import { withHelperActivity } from '../mission-pulse'
+import { getTaskState } from '../detect/task-state-hub'
+import { findMainCi, findPrsForWorktrees } from '../pr-stack'
+import { getLastKnown } from '../mission-link-cache'
+import { gatherStepInputs, type FactsDeps } from '../missions/facts'
+import type { Actor } from '../missions/guard'
+import type { MissionV4 } from '../missions/model'
+import type { StepInput } from '../missions/state'
+import {
+  formatOf,
+  mixedRefusal,
+  runV4,
+  shapeOf,
+  v3Refusal,
+  type V4Deps,
+  type V4Op
+} from '../missions/verbs'
 import { waitingList, youLine } from '../missions/waiting'
 import { listPendingApprovals } from '../approval-resolver'
 import { githubBudget } from '../github-budget-tracker'
@@ -361,6 +377,13 @@ import { getSessionArchive } from '../session-archive-core'
 import { planArchiveSession, summarizeArchive, type ArchivePlan } from './archive-session-core'
 import { planHideFolder, summarizeHide } from './hide-folder-core'
 
+/** The caller a steward's bearer proves: its worker and the mission it is bound to. */
+export interface HandlerCaller {
+  kind: 'steward'
+  workerId: string
+  missionId: string
+}
+
 /** Everything a handler may need beyond its own validated `input`. */
 export interface ToolHandlerCtx {
   /** The resolved gate/target folder for a mutation; `''` if unresolved. */
@@ -386,6 +409,12 @@ export interface ToolHandlerCtx {
    * from the double-apply this card exists to close.
    */
   deadlineFlag?: DeadlineFlag
+  /**
+   * Who is calling, as the TRANSPORT knows it (Missions v4 S-24): present only for a steward's own
+   * bearer, bound to its mission. Absent = an ordinary MCP client (the main bearer). The v4 mission
+   * verbs build the caller's `Actor` from this and never from an argument.
+   */
+  caller?: HandlerCaller
   /**
    * Present ONLY on the human-confirm actuation path (T61/T104) — see
    * `server.ts`'s `parkMutationConfirm`/`runOptsFor` for how these are built.
@@ -6701,6 +6730,208 @@ async function bindMissionToChapter(
   })
 }
 
+// ---- Missions v4 S-24: the v4 verbs registered beside the v3 ones (AC-66, AC-67) -------------------
+//
+// `missions/verbs.ts` decides which format a call is and runs the v4 verbs; this block is the MCP
+// side of it: the caller built from the transport, the facts gathered on the server, and the routing
+// of every mission verb to its v4 handler or to the v3 one that is still here (until S-40).
+
+/** How long a v4 verb waits for GitHub; past it a step reads its last-known state (like the view). */
+const V4_PR_WAIT_MS = 1500
+
+type StepInputsFor = (root: string, record: MissionV4) => Promise<Record<string, StepInput>>
+
+let stepInputsOverride: StepInputsFor | null = null
+/** Test seam: replaces the server-side gathering of each step's facts (no `gh`, no board). */
+export function _setStepInputsForTest(fn: StepInputsFor | null): void {
+  stepInputsOverride = fn
+}
+
+/**
+ * The real sources of the step facts for one repo: the board's files, chapter 2's pull request join
+ * and its last-known cache, the filesystem and the task-state hub. The same sources `mission-ipc.ts`
+ * reads for the pane (its copy is private to that module), with a bounded wait for GitHub.
+ */
+async function realFactsDeps(root: string, waitMs: number): Promise<FactsDeps> {
+  await ensureLinkCacheLoaded()
+  return {
+    board: async () => {
+      const { roadmapDir } = await resolveRoadmap(root)
+      const names = (await fs.readdir(roadmapDir)).filter((n) => n.endsWith('.md'))
+      return Promise.all(
+        names.map(async (n) => ({
+          slug: n.slice(0, -3),
+          content: await fs.readFile(path.join(roadmapDir, n), 'utf8')
+        }))
+      )
+    },
+    findPrs: (refs) => findPrsForWorktrees(root, refs, { waitMs }),
+    findMainCi: (numbers) => findMainCi(root, numbers, { waitMs }),
+    lastKnown: (kind, ref) => getLastKnown(root, kind, ref),
+    pathExists: async (abs) => {
+      try {
+        await fs.stat(abs)
+        return true
+      } catch {
+        return false
+      }
+    },
+    taskState: (id) => getTaskState(id)
+  }
+}
+
+const v4Deps: V4Deps = {
+  inputsFor: async (root, record) => {
+    if (stepInputsOverride) return stepInputsOverride(root, record)
+    try {
+      return await gatherStepInputs(root, record, await realFactsDeps(root, V4_PR_WAIT_MS))
+    } catch (err) {
+      // A source that cannot be read leaves its fact out: absent is not false.
+      console.warn('[mission] could not gather step facts:', err)
+      return {}
+    }
+  },
+  recall: async (folder, query) => (await recallFor(folder, query)).map((h) => ({ ...h }))
+}
+
+/**
+ * The caller of a v4 verb, built from the transport and never from the call's arguments. A steward's
+ * bearer is a `worker` bound to its mission (it reads and never writes). Any other client is a
+ * `session`, and this transport has no per-session identity, so the only id it can have is the call's
+ * own `sessionId` argument: self-declared, like v3's owner ids (S-25 makes it real for the sessions
+ * Harnu spawns). The argument names WHICH session; it never changes WHAT the caller is: `operator`
+ * and `harnu` are not reachable here at all (the operator acts through the app's own interface, and
+ * Harnu's own writes are made in-process), and a value that is not a session UUID is refused.
+ */
+function actorOf(
+  args: Record<string, unknown>,
+  ctx: ToolHandlerCtx,
+  opts: { optional?: boolean } = {}
+): { ok: true; actor: Actor } | { ok: false; error: string } {
+  if (ctx.caller?.kind === 'steward') {
+    return { ok: true, actor: { kind: 'worker', missionId: ctx.caller.missionId } }
+  }
+  const sessionId = strField(args, 'sessionId')
+  if (sessionId === undefined) {
+    if (opts.optional) return { ok: true, actor: { kind: 'session', sessionId: '' } }
+    return {
+      ok: false,
+      error:
+        'BAD_ARGS: sessionId is required — pass your own Claude session UUID (the transcript id get_fleet reports). A v4 mission answers the sessions attached to it, so it has to know which one is asking. It is self-declared, not authenticated.'
+    }
+  }
+  if (!SESSION_UUID_RE.test(sessionId)) {
+    return { ok: false, error: badSessionIdMessage('sessionId', sessionId) }
+  }
+  return { ok: true, actor: { kind: 'session', sessionId } }
+}
+
+/** Run one v4 verb: the folder's gate, the caller from the transport, then S-24's `runV4`. */
+async function runV4Call(
+  op: V4Op,
+  args: Record<string, unknown>,
+  ctx: ToolHandlerCtx
+): Promise<CallToolResult> {
+  const folder = ctx.folder
+  if (!folder) return errorResult('BAD_ARGS: folder is required')
+  const refusal = missionFolderRefusal(folder, missionRoot(folder), ctx)
+  if (refusal) return errorResult(refusal)
+  const who = actorOf(args, ctx, { optional: op === 'mission_list' })
+  if (!who.ok) return errorResult(who.error)
+  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  const out = await runV4(op, folder, who.actor, args, v4Deps)
+  return out.ok ? textResult(out) : errorResult(out.error)
+}
+
+/** A verb that exists in v4 alone: always v4-shaped, and a v3 mission is converted by its first write. */
+const v4OnlyVerb =
+  (op: V4Op): Handler =>
+  (args, ctx) =>
+    runV4Call(op, args, ctx)
+
+/**
+ * A kept name that takes both shapes. A call that carries a v4-only argument is v4 (and converts a
+ * v3 mission by copy on its first write); one that carries a v3-only argument is v3, and is refused
+ * `MISSION_IS_V4` when the mission already has a v4 record; one that reads the same in both serves the
+ * record in the format it is in and never converts it.
+ */
+const sharedVerb =
+  (op: Exclude<V4Op, 'mission_list'>, v3: Handler): Handler =>
+  async (args, ctx) => {
+    const shape = shapeOf(op, args)
+    if (shape === 'mixed') return errorResult((mixedRefusal(op) as { error: string }).error)
+    if (shape === 'v4') return runV4Call(op, args, ctx)
+
+    const folder = ctx.folder
+    const id = strField(args, 'missionId')
+    if (folder && id !== undefined && (await formatOf(folder, id)) === 'v4') {
+      return shape === 'v3'
+        ? errorResult((v3Refusal(op, id) as { error: string }).error)
+        : runV4Call(op, args, ctx)
+    }
+    // `mission_get` with no id at all is the v4 lookup (the mission this session is attached to).
+    if (
+      op === 'mission_get' &&
+      id === undefined &&
+      strField(args, 'ownerSessionId') === undefined
+    ) {
+      return runV4Call(op, args, ctx)
+    }
+    // A v3 `mission_create` that names a campaign the v4 store already holds is refused too.
+    if (op === 'mission_create' && folder) {
+      const campaignId = strField(args, 'campaignId')
+      if (campaignId !== undefined && (await formatOf(folder, campaignId)) === 'v4') {
+        return errorResult((v3Refusal(op, campaignId) as { error: string }).error)
+      }
+    }
+    return v3(args, ctx)
+  }
+
+/**
+ * A verb that is v3 alone: it goes to the v3 handler unless the mission (or campaign) it names has a
+ * v4 record, which it never reaches: `MISSION_IS_V4`, with the verb to use, and nothing written.
+ */
+const v3OnlyVerb =
+  (op: string, v3: Handler): Handler =>
+  async (args, ctx) => {
+    const folder = ctx.folder
+    if (folder) {
+      for (const key of ['missionId', 'campaignId']) {
+        const id = strField(args, key)
+        if (id !== undefined && (await formatOf(folder, id)) === 'v4') {
+          return errorResult((v3Refusal(op, id) as { error: string }).error)
+        }
+      }
+    }
+    return v3(args, ctx)
+  }
+
+/**
+ * `mission_list`: the v3 rows as before, minus the missions that have a v4 record now (the v3 file is
+ * a snapshot), plus, with a `folder`, one v4 row each (`format: 'v4'`: id, title, headline, leads).
+ */
+const missionListBoth: Handler = async (args, ctx) => {
+  const v3 = await missionListHandler(args, ctx)
+  if (v3.isError) return v3
+  const payload = JSON.parse((v3.content[0] as { text: string }).text) as {
+    missions: Array<Record<string, unknown>>
+  }
+  const kept: Array<Record<string, unknown>> = []
+  for (const row of payload.missions) {
+    const home = typeof row.folder === 'string' ? row.folder : ctx.folder
+    if (home && typeof row.id === 'string' && (await formatOf(home, row.id)) === 'v4') continue
+    kept.push(row)
+  }
+  let rows: Array<Record<string, unknown>> = []
+  if (ctx.folder) {
+    const v4 = await runV4Call('mission_list', args, ctx)
+    if (v4.isError) return v4
+    rows = (JSON.parse((v4.content[0] as { text: string }).text) as { missions: [] }).missions
+  }
+  return textResult({ ...payload, missions: [...kept, ...rows] })
+}
+
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
   get_fleet: getFleetHandler,
   get_session: getSessionHandler,
@@ -6764,28 +6995,34 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   delete_worker: deleteWorkerHandler,
   orchestrator_arm: orchestratorArmHandler,
   orchestrator_disarm: orchestratorDisarmHandler,
-  mission_create: missionCreateHandler,
-  mission_get: missionGetHandler,
-  mission_list: missionListHandler,
-  mission_add_step: missionAddStepHandler,
-  mission_update_step: missionUpdateStepHandler,
-  mission_link_child: missionLinkChildHandler,
-  mission_log: missionLogHandler,
-  mission_set_blocker: missionSetBlockerHandler,
-  mission_clear_blocker: missionClearBlockerHandler,
-  mission_set_end: missionSetEndHandler,
-  mission_verify_step: missionVerifyStepHandler,
-  mission_request_close: missionRequestCloseHandler,
+  mission_create: sharedVerb('mission_create', missionCreateHandler),
+  mission_get: sharedVerb('mission_get', missionGetHandler),
+  mission_list: missionListBoth,
+  mission_add_step: sharedVerb('mission_add_step', missionAddStepHandler),
+  mission_update_step: v3OnlyVerb('mission_update_step', missionUpdateStepHandler),
+  mission_link_child: v3OnlyVerb('mission_link_child', missionLinkChildHandler),
+  mission_log: sharedVerb('mission_log', missionLogHandler),
+  mission_set_blocker: sharedVerb('mission_set_blocker', missionSetBlockerHandler),
+  mission_clear_blocker: sharedVerb('mission_clear_blocker', missionClearBlockerHandler),
+  mission_set_end: v3OnlyVerb('mission_set_end', missionSetEndHandler),
+  mission_verify_step: v3OnlyVerb('mission_verify_step', missionVerifyStepHandler),
+  mission_request_close: sharedVerb('mission_request_close', missionRequestCloseHandler),
   mission_import_legacy: missionImportLegacyHandler,
-  mission_add_check: missionAddCheckHandler,
+  mission_add_check: v3OnlyVerb('mission_add_check', missionAddCheckHandler),
   campaign_create: campaignCreateHandler,
-  campaign_add_chapter: campaignAddChapterHandler,
-  campaign_get: campaignGetHandler,
+  campaign_add_chapter: v3OnlyVerb('campaign_add_chapter', campaignAddChapterHandler),
+  campaign_get: v3OnlyVerb('campaign_get', campaignGetHandler),
   rebase_stack: rebaseStackHandler,
   campaign_list: campaignListHandler,
-  campaign_request_close: campaignRequestCloseHandler,
-  mission_transfer_owner: missionTransferOwnerHandler,
-  campaign_transfer_owner: campaignTransferOwnerHandler
+  campaign_request_close: v3OnlyVerb('campaign_request_close', campaignRequestCloseHandler),
+  mission_transfer_owner: v3OnlyVerb('mission_transfer_owner', missionTransferOwnerHandler),
+  campaign_transfer_owner: v3OnlyVerb('campaign_transfer_owner', campaignTransferOwnerHandler),
+  mission_add_milestone: v4OnlyVerb('mission_add_milestone'),
+  mission_add_ac: v4OnlyVerb('mission_add_ac'),
+  mission_link: v4OnlyVerb('mission_link'),
+  mission_set_done_when: v4OnlyVerb('mission_set_done_when'),
+  mission_settle_ac: v4OnlyVerb('mission_settle_ac'),
+  mission_attach: v4OnlyVerb('mission_attach')
 }
 
 /**

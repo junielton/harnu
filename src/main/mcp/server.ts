@@ -45,6 +45,7 @@
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { promises as fs, existsSync } from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
@@ -55,7 +56,13 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import { parseMcpRequest, BODY_MAX } from './http-guard'
 import { type McpOp, type McpToolDef } from './tool-catalog'
-import { WIRED_TOOLS, appendStewardLog, missionRoot, type ToolHandlerCtx } from './tool-handlers'
+import {
+  WIRED_TOOLS,
+  appendStewardLog,
+  missionRoot,
+  type HandlerCaller,
+  type ToolHandlerCtx
+} from './tool-handlers'
 import { getContainersService } from '../containers/containers-ipc'
 import { containersConfirmPrompt } from './containers-listing'
 import { planToolCall } from './plan-tool-call'
@@ -208,6 +215,14 @@ export interface McpCaller {
   kind: 'steward'
   workerId: string
 }
+
+/**
+ * Missions v4 S-24: who is calling the tool call now in flight, as the transport proved it. Set in
+ * {@link handleToolCall} around the whole pipeline (so the confirm and queue paths inherit it) and
+ * read by {@link actuate}, which puts it in the handler's `ctx.caller`: the v4 mission verbs build
+ * the caller's actor from it, never from an argument. Absent = an ordinary client.
+ */
+const callerOfCall = new AsyncLocalStorage<HandlerCaller>()
 
 /** The caller each open MCP session was opened by ('' = ordinary), so a session id cannot be borrowed. */
 const transportCallers = new Map<string, string>()
@@ -918,7 +933,8 @@ export async function actuate(
   }
 
   const deadlineFlag = createDeadlineFlag()
-  const work = def.handler(args, { ...ctx, deadlineFlag })
+  const caller = callerOfCall.getStore()
+  const work = def.handler(args, { ...ctx, deadlineFlag, ...(caller ? { caller } : {}) })
   const raced = await withDeadline(
     work,
     TOOL_CALL_DEADLINE_MS,
@@ -1055,7 +1071,12 @@ export async function handleToolCall(
   const browserPaneId = QUEUED_BROWSER_OPS.has(def.op) ? strField(args, 'paneId') : undefined
   if (browserPaneId) browserWriteQueue.reserve(args, browserPaneId)
   try {
-    const result = await runToolCall(def, args)
+    const result = await (steward && caller
+      ? callerOfCall.run(
+          { kind: 'steward', workerId: caller.workerId, missionId: steward.missionId },
+          () => runToolCall(def, args)
+        )
+      : runToolCall(def, args))
     // Every action a steward takes is a `steward` Log entry on its mission — written here so it
     // exists whether or not the model remembers to write one. Reads and `mission_log` itself are not actions.
     if (steward && def.mutates && def.op !== 'mission_log' && ackIsSuccess(result)) {

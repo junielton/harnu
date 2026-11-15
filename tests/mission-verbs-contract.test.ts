@@ -32,6 +32,11 @@ import { MCP_OPS, toolByName, type McpOp } from '../src/main/mcp/tool-catalog'
 import { buildPlanInput } from '../src/main/mcp/plan-input'
 import { parseToolInput } from '../src/main/mcp/validate'
 import {
+  buildMissionRecordContent,
+  parseMissionRecordFile,
+  readMissionRecordLog
+} from '../src/main/missions/model'
+import {
   buildMissionFileContent,
   missionsDir,
   parseMissionFile,
@@ -180,6 +185,8 @@ interface ScenarioState {
   sessionId: string
   missionId?: string
   stepId?: string
+  /** Missions v4 S-24: the v4 mission the last rows run against (made by the first of them). */
+  v4Id?: string
 }
 
 interface ContractRow {
@@ -219,6 +226,40 @@ async function callOk(op: McpOp, s: ScenarioState, args: Record<string, unknown>
     { folder: s.folder, folders: [], denyFolders: [], bridge: undefined }
   )
   expect(res.isError, res.content[0]?.text).not.toBe(true)
+}
+
+/** A v4 mission with one milestone and one step, led by the scenario's session. */
+async function createV4Mission(s: ScenarioState): Promise<string> {
+  const res = await handlers.mission_create(
+    {
+      folder: s.folder,
+      sessionId: s.sessionId,
+      title: 'Export the report as CSV',
+      doneWhen: 'The CSV export is merged and a spreadsheet opens it',
+      milestones: [{ title: 'Plan the work' }],
+      steps: [
+        {
+          title: 'Add the CSV exporter',
+          milestone: 'mls-1',
+          criteria: [{ text: 'The export is reviewed by another session' }]
+        }
+      ]
+    },
+    { folder: s.folder, folders: [], denyFolders: [], bridge: undefined }
+  )
+  expect(res.isError, res.content[0]?.text).not.toBe(true)
+  return (JSON.parse(res.content[0].text!) as { id: string }).id
+}
+
+/** Attach a session to the scenario's v4 mission on disk (the operator's door has no verb). */
+async function attachOnDisk(s: ScenarioState, sessionId: string): Promise<void> {
+  const dir = path.join(s.folder, '.harnu', 'missions-v4')
+  const name = (await fs.readdir(dir)).find((n) => n.startsWith(`${s.v4Id}-`))!
+  const file = path.join(dir, name)
+  const raw = await fs.readFile(file, 'utf8')
+  const record = parseMissionRecordFile(raw)
+  record.sessions.push({ id: sessionId, role: 'worked', from: '2026-11-15T09:00:00Z', to: null })
+  await fs.writeFile(file, buildMissionRecordContent(record, readMissionRecordLog(raw)), 'utf8')
 }
 
 const CONTRACT: ContractRow[] = [
@@ -614,6 +655,108 @@ const CONTRACT: ContractRow[] = [
       toSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
       reason: 'the owner session died'
     })
+  },
+  // ---- Missions v4 S-24: the verbs that exist in v4 alone. They run on a v4 mission of their own
+  // (made by the first row), so the v3 scenario above is never converted under the rows that follow.
+  {
+    op: 'mission_add_milestone',
+    ack: ack('mission_add_milestone', {
+      milestoneId: z.literal('mls-2'),
+      totalMilestones: z.literal(2)
+    }),
+    setup: async (s) => {
+      s.v4Id = await createV4Mission(s)
+    },
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.v4Id,
+      sessionId: s.sessionId,
+      title: 'Ship the report'
+    })
+  },
+  {
+    op: 'mission_add_ac',
+    ack: ack('mission_add_ac', {
+      stepId: z.literal('stp-1'),
+      criterionId: z.literal('ac-2'),
+      totalCriteria: z.literal(2)
+    }),
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.v4Id,
+      sessionId: s.sessionId,
+      stepId: 'stp-1',
+      text: 'The export opens in a spreadsheet',
+      by: 'operator'
+    })
+  },
+  {
+    op: 'mission_link',
+    ack: ack('mission_link', {
+      stepId: z.literal('stp-1'),
+      link: z.object({ kind: z.literal('pr'), ref: z.string() }).passthrough(),
+      added: z.literal(true)
+    }),
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.v4Id,
+      sessionId: s.sessionId,
+      stepId: 'stp-1',
+      link: { kind: 'pr', ref: '12' }
+    })
+  },
+  {
+    op: 'mission_set_done_when',
+    ack: ack('mission_set_done_when', {
+      staged: z.object({
+        text: z.string().min(1),
+        reason: z.string().min(1),
+        at: z.iso.datetime(),
+        by: z.string().min(1)
+      }),
+      deduped: z.literal(false)
+    }),
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.v4Id,
+      sessionId: s.sessionId,
+      doneWhen: 'A score report opens for every candidate',
+      reason: 'The first Done when missed the report'
+    })
+  },
+  {
+    op: 'mission_settle_ac',
+    // A second session (not the leader, not a builder) settles a criterion a session settles.
+    ack: ack('mission_settle_ac', {
+      outcome: z.literal('settled'),
+      stepId: z.literal('stp-1'),
+      criterionId: z.literal('ac-1')
+    }),
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.v4Id,
+      sessionId: VERIFIER_ID,
+      stepId: 'stp-1',
+      criterionId: 'ac-1',
+      evidence: 'Opened the export and read every row'
+    }),
+    setup: async (s) => {
+      // The verifier has to be attached to write: the leader's own dispatch is not a verb, so the
+      // contract attaches it the way the operator's door does, on disk.
+      await attachOnDisk(s, VERIFIER_ID)
+    }
+  },
+  {
+    op: 'mission_attach',
+    ack: ack('mission_attach', {
+      requestId: z.string().regex(/^atr-\d+$/),
+      deduped: z.literal(false)
+    }),
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.v4Id,
+      sessionId: 'dddddddd-eeee-4fff-8000-111111111111'
+    })
   }
 ]
 
@@ -707,4 +850,66 @@ describe('mission_* contract — a blocked repo refuses every verb, from any wor
       expect(await missionsSnapshot(state.folder)).toEqual(before)
     })
   }
+})
+
+// ---- Missions v4 S-24 (AC-66): both sets are registered, nothing is removed ----------------------
+
+/** Every `mission_*`, `campaign_*` and `rebase_stack` verb the catalog held before v4 (spec "Verb fate table"). */
+const V3_VERBS = [
+  'mission_create',
+  'mission_get',
+  'mission_list',
+  'mission_add_step',
+  'mission_update_step',
+  'mission_link_child',
+  'mission_log',
+  'mission_set_blocker',
+  'mission_clear_blocker',
+  'mission_set_end',
+  'mission_verify_step',
+  'mission_add_check',
+  'mission_request_close',
+  'mission_import_legacy',
+  'mission_transfer_owner',
+  'campaign_create',
+  'campaign_add_chapter',
+  'campaign_get',
+  'campaign_list',
+  'campaign_request_close',
+  'campaign_transfer_owner',
+  'rebase_stack'
+] as const
+
+/** The verbs v4 adds (S-24). The kept names take both shapes; these exist in v4 alone. */
+const V4_VERBS = [
+  'mission_add_milestone',
+  'mission_add_ac',
+  'mission_link',
+  'mission_set_done_when',
+  'mission_settle_ac',
+  'mission_attach'
+] as const
+
+describe('Missions v4 · the verbs registered beside the v3 ones', () => {
+  it('the catalog holds both sets', async () => {
+    const registered = new Set<string>(MCP_OPS)
+    for (const op of V3_VERBS) expect(registered.has(op), `${op} is still registered`).toBe(true)
+    for (const op of V4_VERBS) expect(registered.has(op), `${op} is registered`).toBe(true)
+
+    // Registered means wired: the catalog entry and a handler, on the array the server registers.
+    for (const op of [...V3_VERBS, ...V4_VERBS]) {
+      expect(toolByName(op as McpOp)?.name, op).toBe(op)
+      expect(typeof handlers[op], `${op} has a handler`).toBe('function')
+    }
+
+    // The awareness verb index names every one of them (the roster test asserts the whole catalog).
+    const doc = await fs.readFile(path.join(__dirname, '..', 'docs', 'harnu-features.md'), 'utf8')
+    const start = doc.indexOf('The core verbs are available from the first turn:')
+    const end = doc.indexOf('Resources:', start)
+    expect(start).toBeGreaterThan(-1)
+    const index = doc.slice(start, end)
+    for (const op of [...V3_VERBS, ...V4_VERBS]) {
+      expect(index.includes(`\`${op}\``), `${op} is in the awareness index`).toBe(true)
+    }
+  })
 })

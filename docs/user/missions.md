@@ -2,7 +2,7 @@
 
 A **mission** is one body of work that an agent keeps track of for you across sessions: what it is for, how far it has got and what is waiting on you. This page covers the **Mission pane**, the way you see a mission in Harnu.
 
-> **Where this stands.** Harnu is moving to a new kind of mission (version 4) and the Mission pane is the first piece you can see. Agents cannot create a version 4 mission yet (the commands for that arrive in a later update), so today the pane has a mission to show only if a version 4 mission file already exists in your repo; the buttons below work on such a file, and on nothing else. Missions you already have (version 3) are unchanged: they keep their pill and their popover. This page says what the pane does today; it grows as the rest lands.
+> **Where this stands.** Harnu is moving to a new kind of mission (version 4) and the Mission pane is the first piece you can see. Agents can create a version 4 mission now (with `mission_create`, in the version 4 shape), and a version 3 mission turns into one the first time an agent uses a command that only exists in version 4, so the pane has a mission to show once one exists in your repo; the buttons below work on such a mission, and on nothing else. Missions you already have (version 3) are unchanged: they keep their pill and their popover. This page says what the pane does today; it grows as the rest lands.
 
 ## The pill
 
@@ -125,7 +125,7 @@ It can also say:
 When the session you are looking at has no mission, the pane lists the folder's **open missions**. Each row shows the mission's title, how far it is ("4 of 21 steps done") and who leads it ("led by Harnu Spec", or "nobody leads it"), with **Attach**.
 
 - **Attach** asks first: **Attach this session to "…"? It will be part of the mission, but it will not lead it.** Nothing changes until you confirm. **Cancel** closes the question. Once attached, the pane shows the mission. If the mission is gone or was closed in the meantime, the pane says so and keeps the list.
-- **Start a new mission** does not create anything. It puts one line into the session's prompt, asking it to start a new mission and to tell you what "done" will look like first. Harnu does not press Enter: you read the line and send it in the session. If the session is not running, the pane says so. Remember that an agent cannot create a version 4 mission yet, so for now this only prepares the request.
+- **Start a new mission** does not create anything. It puts one line into the session's prompt, asking it to start a new mission and to tell you what "done" will look like first. Harnu does not press Enter: you read the line and send it in the session. If the session is not running, the pane says so. The session's agent creates the mission with `mission_create`.
 - When the folder has no open mission, the pane says so and still offers **Start a new mission**.
 
 ## When a session asks to join a mission
@@ -157,7 +157,7 @@ A mission does not need milestones. A small task, such as one scoped from a trac
 
 ## A sample mission
 
-An agent cannot create a version 4 mission yet, so most of the pane has nothing to show. To see what it will look like, open the pane on a session that has no mission and press **See a sample mission**. A strip at the top says "Sample mission" and has a **State** chooser: a mission with something waiting, a step open, a step blocked, a milestone being asked about, the hand-off offered and confirmed, nothing waiting, everything done and ready to close, another session, a small task, a small task with sign-offs, a large mission, a session with no mission, a request to join, and a closed mission. Three of them (the next-step list, every step of a milestone, and the Sessions row) are one click away on the default mission, and the strip says which click. The data is made up. **Nothing you press on a sample is saved**: marks, approvals, the hand-off and the close all answer "nothing changed" without touching any file. **Leave the sample** brings the real answer back.
+Most of the pane only has something to show once a version 4 mission is in a particular state. To see every state, open the pane on a session that has no mission and press **See a sample mission**. A strip at the top says "Sample mission" and has a **State** chooser: a mission with something waiting, a step open, a step blocked, a milestone being asked about, the hand-off offered and confirmed, nothing waiting, everything done and ready to close, another session, a small task, a small task with sign-offs, a large mission, a session with no mission, a request to join, and a closed mission. Three of them (the next-step list, every step of a milestone, and the Sessions row) are one click away on the default mission, and the strip says which click. The data is made up. **Nothing you press on a sample is saved**: marks, approvals, the hand-off and the close all answer "nothing changed" without touching any file. **Leave the sample** brings the real answer back.
 
 ## Elsewhere in Harnu
 
@@ -171,7 +171,7 @@ The same waiting list shows up outside the pane:
 
 ## What you cannot do yet
 
-- **Create a version 4 mission.** Agents cannot create one yet.
+- **Create a version 4 mission from the pane.** Agents create one; the pane's **Start a new mission** does not write a file.
 - **Reopen a closed mission.** A closed mission stays closed. You can close a mission from the pane (see "Closing a mission"), mark your own criteria and another person's approval on an open step, clear a blocker that is yours, approve or decline a new Done when, and continue the mission in a new session (see "Sessions and continuing in a new session").
 - **Confirm a plan from the pane.** The pane has no button for that; the sample's "Confirm the plan" step only offers **Open step**.
 

@@ -61,7 +61,14 @@ export const MISSION_VERBS = [
   'mission_request_close',
   'mission_import_legacy',
   'mission_add_check',
-  'mission_transfer_owner'
+  'mission_transfer_owner',
+  // Missions v4 S-24: the verbs that exist in v4 alone.
+  'mission_add_milestone',
+  'mission_add_ac',
+  'mission_link',
+  'mission_set_done_when',
+  'mission_settle_ac',
+  'mission_attach'
 ]
 
 /**

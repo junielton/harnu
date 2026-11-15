@@ -642,9 +642,13 @@ export function addStep(
         : {})
     }
     const steps = [...record.steps.slice(0, at), added, ...record.steps.slice(at)]
+    // A step added after a close request makes the request stale: "every step is done" is no longer
+    // true. The request goes, so the operator is never told the session is ready when it is not;
+    // asking again is one call once the new step is done.
+    const { closeRequested: _stale, ...rest } = record
     return {
       next: {
-        record: { ...record, steps },
+        record: { ...rest, steps },
         log: started
           ? appendLogEntry(log, 'note', id, `Added ${id} after work started. Reason: ${reason}`)
           : log

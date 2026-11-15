@@ -7618,8 +7618,9 @@ land in later slices and add their own sections here.
 
 **Until the cut-over** a **v3** record is served by the v3 stack unchanged: its pill
 (§6 "Mission progress") opens the popover, its doors are the popover's, and no v4 code
-writes it. v4 records cannot be created by an agent yet (the verbs land in chapter 5), so
-the pane has a v4 mission to show only when a v4 record already exists on disk.
+writes it. An agent creates a v4 record with `mission_create` in the v4 shape (registered in S-24), and a
+v3 mission becomes one on the first write of a verb that exists in v4 alone, so the pane has a v4 mission
+to show once such a record exists on disk.
 
 **Data.** `window.api.missionV4View({ folder, sessionId, missionId? })` (channel
 `mission:v4View`); the reply is `{ state: 'mission' | 'none' | 'refused' }`. There is **no
@@ -7820,9 +7821,9 @@ breaks inside itself, so no `·` opens a wrapped line. The summary line wraps un
 
 **Not in this slice** (drawn in the mockup, built later, so absent from the pane today): **Close
 mission…** and the sample mission. (**Ask**, the attach picker and request are S-21; the **Sessions** row and
-the hand-off are S-20; both are below.) (An open step's who-settles, blocker and links are S-19, below.) v4 missions cannot be
-created by an agent yet (the verbs land in chapter 5), so the glance has something to show only
-when a v4 record already exists on disk.
+the hand-off are S-20; both are below.) (An open step's who-settles, blocker and links are S-19, below.) An agent creates a v4
+mission with `mission_create` in the v4 shape (S-24), so the glance has something to show once a v4
+record exists on disk.
 
 **Don'ts.** ❌ Show a v3 mission in the pane, or write a v3 record from it. ❌ Open the pane
 for a v3 pill. ❌ Print `stateLabel`, `progress.headline`, `waiting.moreLine` or any English word
@@ -7943,8 +7944,8 @@ nothing has a fixed width.
 (`runV4Door`), which adds the folder (the selected session's) and the mission id **the view answered
 for** (never `detail.id`), and reads the view again after the reply. The links come from
 `window.api.sessionLinksList` for the selected session (`useSessionLinks`, the footer shelf's own
-composable). v4 missions cannot be created by an agent yet (the verbs land in chapter 5), so an open
-step has something to show only when a v4 record already exists on disk.
+composable). An agent creates a v4 mission with `mission_create` in the v4 shape (S-24), so an open
+step has something to show once a v4 record exists on disk.
 
 **Don'ts.** ❌ Draw every verified criterion. ❌ Print the code a door came back with. ❌ Offer "Done,
 continue" on a blocker that is the session's. ❌ Draw a button on a criterion a fact or a second
@@ -8080,9 +8081,9 @@ the rows are the view's `sessions`; the summary is `detail.summary`. The door is
 `stores/missions.ts` (`runHandOff`), which adds the folder (the selected session's) and the mission id
 **the view answered for**, refuses a second call while one waits, and reads the view again after every
 reply. The session the door starts is a normal one (the operator's permission mode and Harnu's MCP
-server), not an agent-controlled one. v4 missions cannot be created by an agent yet (the verbs land in
-chapter 5), so the row and the hand-off have something to show only when a v4 record already exists on
-disk.
+server), not an agent-controlled one. An agent creates a v4 mission with
+`mission_create` in the v4 shape (S-24), so the row and the hand-off have something to show once a v4
+record exists on disk.
 
 **Don'ts.** ❌ Start a session or change who leads from anywhere but the confirmation. ❌ Offer a
 hand-off with no live context reading. ❌ Say "memory" for the session's context. ❌ Print the code the
@@ -8179,8 +8180,8 @@ asked has no mission, so the store reads each of the folder's open missions **by
 selected session. The doors are `window.api.missionV4Door` (`attach { sessionId }`, `decideAttach {
 requestId, decision }`) through `stores/missions.ts`, which adds the folder and the mission id **the view
 answered for** (the picked mission's id for **Attach** and for a request read by name) and reads the view
-again after every reply. v4 missions cannot be created by an agent yet (the verbs land in chapter 5), so the
-picker, the request and Ask have something to show only when a v4 record already exists on disk.
+again after every reply. An agent creates a v4 mission with `mission_create` in the v4 shape (S-24), so the
+picker, the request and Ask have something to show once a v4 record exists on disk.
 
 **Don'ts.** ❌ Attach on one click. ❌ Write a record from **Start a new mission**. ❌ Send Enter into another
 session. ❌ Offer **Ask** when nobody leads. ❌ Let a session ask to lead. ❌ Print the code a door came back
@@ -8246,8 +8247,8 @@ marked folds into "{n} criteria verified" like any settled criterion. Progress c
 "N more"). No new element: it is the tree and the step the pane already draws.
 
 **The sample** (`lib/mission-sample.ts`) is a view object shaped like the view channel's answer, built in the
-renderer from nothing: **no file, no IPC, no store**. It exists because an agent cannot create a v4 mission yet,
-so most of the pane could not be seen. It covers **every state of the mockup** (`simple`, `simple-signoff`,
+renderer from nothing: **no file, no IPC, no store**. It exists so the whole pane can be seen without a real
+mission in each state (an agent can create a v4 mission since S-24, but most states are rare). It covers **every state of the mockup** (`simple`, `simple-signoff`,
 `done`, `clear` and `closed` included), with made-up names. A state that is only a click on another one opens
 that part for you (`step-open`, `step-blocked`, `ask`, `handoff-confirm`); the three the pane cannot open for you
 (`waiting`, `all-steps`, `sessions`) show the default data and say which click reaches them.

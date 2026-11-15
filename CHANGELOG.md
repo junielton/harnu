@@ -10,6 +10,16 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-15
+
+### Added
+
+- Agents can now create and work on version 4 missions. Six new commands are available beside the old ones — `mission_add_milestone`, `mission_add_ac`, `mission_link`, `mission_set_done_when`, `mission_settle_ac` and `mission_attach` — and `mission_create`, `mission_get`, `mission_list`, `mission_add_step` and the blocker, log and close-request commands accept both shapes. A mission is in one format at a time: the first version 4 command on a version 3 mission makes a version 4 copy and leaves the version 3 file exactly as it was, and an old command aimed at a mission that has a version 4 copy is refused with the new command to use. The Mission pane now has real missions to show, and the hand-off to a new session can be tried on one.
+
+### Changed
+
+- Adding a step to a version 4 mission after the agent has asked you to close it takes the close request back, so you are not told the mission is ready when a new step is still open.
+
 ## 2026-11-14
 
 ### Added
