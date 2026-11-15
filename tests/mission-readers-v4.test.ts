@@ -17,6 +17,8 @@ import { missionOwnersWithLiveChildren } from '../src/main/hibernation'
 import { readViewsFromRecords } from '../src/main/companion/mission-state'
 import { projectMissions } from '../src/main/companion/mission-state-core'
 import { missionGet } from '../src/main/missions/verbs-read'
+import { emptyState, type YourMoveState } from '../src/main/your-move/core'
+import { readRecordViews, reconcileMissions } from '../src/main/your-move/source-mission'
 import { buildMissionRecordContent, type MissionV4 } from '../src/main/missions/model'
 import {
   buildMissionFileContent,
@@ -269,6 +271,104 @@ describe('readers use the v4 view', () => {
       seedV4(v4Record({}, true))
       const { views } = await readViewsFromRecords([repo], [LEADER], { readDetail })
       expect(projectMissions(views, LEADER)[0].you.map((y) => y.kind)).toEqual(['close'])
+    })
+  })
+
+  describe('Your move: the cards of what a mission owes, read from the records', () => {
+    const readDetail = async (folder: string, missionId: string) =>
+      missionGet(folder, { kind: 'operator' }, { missionId })
+    const blocker = {
+      id: 'blk-1',
+      reason: 'The vendor export is late',
+      ask: 'Ask the vendor for the export',
+      unblocks: 'Step 1 can load the files',
+      owner: 'operator' as const
+    }
+    let n = 0
+    const mint = (): string => `card-${++n}`
+    const open = (
+      s: YourMoveState
+    ): { kind: string; ask: string; sessionId: string; key?: string }[] =>
+      s.cards
+        .filter((c) => c.closedAt === undefined)
+        .map((c) => ({ kind: c.kind, ask: c.ask, sessionId: c.sessionId, key: c.sourceKey }))
+    const NONE = { views: [], unreadable: [] }
+
+    it('a v4 record files a card per thing it owes, in the one wording, for its leader', async () => {
+      seedV4(
+        v4Record({
+          steps: [{ ...v4Record().steps[0], blockers: [blocker] }],
+          attachRequests: [
+            {
+              id: 'atr-1',
+              missionId: 'mnt-a7230001',
+              sessionId: BYSTANDER,
+              at: NOW,
+              decision: null
+            }
+          ]
+        })
+      )
+      const views = await readRecordViews([repo], { readDetail })
+      const s = reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 1, views)
+      const cards = open(s)
+      expect(cards.find((c) => c.kind === 'do')?.ask).toBe('Ask the vendor for the export')
+      expect(cards.some((c) => c.kind === 'go_no_go' && c.key?.includes('attach:atr-1'))).toBe(true)
+      expect(new Set(cards.map((c) => c.sessionId))).toEqual(new Set([LEADER]))
+    })
+
+    it('a v3 file files its cards through the same read, in the same wording', async () => {
+      seedV3(
+        v3Mission({
+          blockers: [
+            { reason: 'Waiting on the vendor', unblocks: 'a key', owner: 'operator' } as never
+          ]
+        })
+      )
+      const views = await readRecordViews([repo], { readDetail })
+      const s = reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 1, views)
+      expect(open(s).map((c) => c.ask)).toContain('Waiting on the vendor')
+    })
+
+    it('a card closes when the record stops owing the item', async () => {
+      seedV4(v4Record({ steps: [{ ...v4Record().steps[0], blockers: [blocker] }] }))
+      let s = reconcileMissions(
+        emptyState(),
+        NONE,
+        [repo],
+        'live',
+        mint,
+        1,
+        await readRecordViews([repo], { readDetail })
+      )
+      expect(open(s).some((c) => c.kind === 'do')).toBe(true)
+      rmSync(path.join(repo, '.harnu', 'missions-v4'), { recursive: true, force: true })
+      seedV4(v4Record({ steps: [{ ...v4Record().steps[0], blockers: [] }] }))
+      s = reconcileMissions(
+        s,
+        NONE,
+        [repo],
+        'live',
+        mint,
+        2,
+        await readRecordViews([repo], { readDetail })
+      )
+      expect(open(s).some((c) => c.kind === 'do')).toBe(false)
+    })
+
+    it('one format at a time: a v3 snapshot beside a closed v4 copy files nothing', async () => {
+      seedV3(
+        v3Mission({
+          blockers: [
+            { reason: 'Waiting on the vendor', unblocks: 'a key', owner: 'operator' } as never
+          ]
+        })
+      )
+      seedV4(v4Record({ id: 'mnt-0a1b2c3d', status: 'closed', closedAs: 'delivered' }, true))
+      const views = await readRecordViews([repo], { readDetail })
+      expect(open(reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 1, views))).toEqual(
+        []
+      )
     })
   })
 })
