@@ -207,8 +207,9 @@ const KIND: Record<string, string> = {
         </button>
         <span
           v-if="words(item).why"
-          class="min-w-0 break-words text-text-4"
+          class="col-start-1 min-w-0 break-words text-text-4"
           style="font-size: 10.5px"
+          data-test="next-rest-why"
           >{{ words(item).why }}</span
         >
       </div>
