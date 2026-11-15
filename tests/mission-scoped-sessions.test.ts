@@ -39,7 +39,7 @@ vi.mock('../src/main/claude-reader', async (importOriginal) => ({
   scanFolders: async (): Promise<unknown[]> => []
 }))
 
-import { registerMcpServer, closeMcpServer } from '../src/main/mcp/server'
+import { registerMcpServer, closeMcpServer, writeScopedMcpConfig } from '../src/main/mcp/server'
 import { createConfirmCore } from '../src/main/mcp/confirm-core'
 import { _setStepInputsForTest, WIRED_TOOLS } from '../src/main/mcp/tool-handlers'
 import { toolByName } from '../src/main/mcp/tool-catalog'
@@ -694,5 +694,30 @@ describe('the leader that did a step itself checks it, it does not settle it (ca
     })
     expect(r.body.outcome).toBe('settled')
     expect((await readRecord(repo, id)).steps[0].acs[0].settled?.by).toBe(LEADER)
+  })
+})
+
+describe('the config a spawned session reads holds its credential and not ours', () => {
+  it('is a 0600 file with a bearer that proves exactly that scope, never the server secret', async () => {
+    const id = await newMission(repo)
+    const scope = scopeOf('worker', WORKER, id)
+    const file = await writeScopedMcpConfig(scope)
+    expect(file).toBeTruthy()
+    expect((await fs.stat(file as string)).mode & 0o777).toBe(0o600)
+    expect(path.dirname(file as string)).toBe(path.join(h.userDataDir, 'scoped-mcp'))
+
+    const doc = JSON.parse(await fs.readFile(file as string, 'utf8')) as {
+      mcpServers: { harnu: { url: string; headers: { Authorization: string } } }
+    }
+    const bearer = doc.mcpServers.harnu.headers.Authorization.replace(/^Bearer /, '')
+    expect(bearer).not.toBe(serverToken)
+    expect(verifyScopedBearer(serverToken, bearer)).toEqual(scope)
+    expect(doc.mcpServers.harnu.url).toBe(serverUrl)
+
+    // The same file's bearer really opens a session that holds the role's verbs.
+    await attachAsBuilder(repo, id, WORKER, 'stp-1')
+    const worker = await connectAs(bearer)
+    const got = await okOn(worker, 'mission_get', { folder: repo, missionId: id })
+    expect(got.body.id).toBe(id)
   })
 })
