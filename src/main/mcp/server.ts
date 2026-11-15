@@ -1124,7 +1124,15 @@ export async function handleToolCall(
   // is in its role, the folder, mission and step are its own, and the arguments it runs with are the
   // scope's (a step it left out is its own). Its session id is the credential's, never an argument.
   if (caller?.kind === 'scoped') {
-    const judged = scopeCallRefusal({ op: def.op, args, scope: caller.scope })
+    const judged = scopeCallRefusal({
+      op: def.op,
+      args,
+      scope: caller.scope,
+      lookups: {
+        paneFolder: (id) => browserRegistry.get(id)?.folder,
+        terminalFolder: (id) => terminalRegistry.get(id)?.folder
+      }
+    })
     if (!judged.ok) return errorResult(judged.error)
     args = judged.args
   }
