@@ -73,14 +73,14 @@ describe('missionDrafts', () => {
     })
   })
 
-  it('writes the ask as the English sentence the mission would say', () => {
+  it("writes the ask in the waiting list's one wording (no second sentence)", () => {
     const drafts = missionDrafts(
       view('mnt-1', [
         { kind: 'blocker', reason: 'need the API key', unblocks: 'the key is in the vault' }
       ]),
       'live'
     )
-    expect(drafts[0].ask).toBe('Unblock: need the API key — unblocks when the key is in the vault.')
+    expect(drafts[0].ask).toBe('Unblock: need the API key')
   })
 
   it('two operator blockers with different reasons are two cards', () => {

@@ -7570,7 +7570,16 @@ at width `min(480px, 90vw)`.
 
 The **last** (rightmost) entry of the session row's trailing chip cluster:
 StopFailure → subagent count → orchestrator crown → teammate count → **mission
-chip**. The compact headline (`{n}/{m}`, `{n}–{to}/{m}`, `{m}/{m} ✓`),
+chip**. **Missions v4 (S-23):** the chip is drawn from the v4 view. For a **v4
+record** it shows the **pill's own text and tone** ("4/21 · 3 for you",
+"21/21 · ready to close": `missionPillText` / `missionPillTone`,
+`lib/mission-pane-view.ts`) on the session that **leads** the mission. For a
+**v3 mission** it shows exactly what that mission's own Topbar pill shows (the
+v3 headline below, as on main) until the popover is retired, so one mission
+never carries two different counts on one screen; `chipFor` in
+`stores/missions.ts` picks by the record's source. The paragraph
+below describes the v3 headline (it also serves a build without the v4
+channel). The compact headline (`{n}/{m}`, `{n}–{to}/{m}`, `{m}/{m} ✓`),
 `10.5px`, `tabular-nums`, `gap: 3px`, colored with the **pill's tone** (the
 same `text-*` class as the pill: `text-accent`, `text-warning`, `text-green`)
 — the separate amber "flagged" variant is gone, so the chip and the pill can
