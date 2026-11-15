@@ -503,7 +503,11 @@ export const ROUTES_BOARD_MISSIONS = [
       await tidy(page)
       const pane = page.locator('[data-dsqa="mission-pane"]')
       if (!(await pane.isVisible().catch(() => false))) await pill(page).click()
-      await page.locator('[data-test="sessions-toggle"]').click()
+      // Idempotent: the Sessions row keeps its open state between runs in one app (the 900px run leaves it
+      // open for the 560px one), so it is opened only when it is not open.
+      const toggle = page.locator('[data-test="sessions-toggle"]')
+      await toggle.waitFor({ state: 'visible', timeout: 15000 })
+      if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
       await page.locator('[data-test="handoff-open"]').click()
       await page
         .locator('[data-test="handoff-dialog"]')
