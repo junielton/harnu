@@ -27,6 +27,8 @@ import { getFleetFolders } from './fleet-model'
 import { isHibernated } from './hibernation'
 import { liveSessionKeys, resolveSessionAlias } from './pty'
 import { getUserProjectWipLimit } from './user-projects'
+import { bindCardSession, noteCardSpawn } from './missions/dispatch'
+import { dropPendingSpawn } from './mcp/scope'
 
 /**
  * T113 — the env-bound shell wiring the pure drain driver (`manifest-drain.ts`)
@@ -127,6 +129,29 @@ export async function loadFolderWip(folder: string, now = Date.now()): Promise<F
   return { cards, verdict }
 }
 
+/**
+ * Missions v4 S-26 (AC-68): a card was bound to its session. When the card is the work of a step, the
+ * session is attached to that step as a worker once it has booted (the id bound here is the synthetic
+ * one the drain spawned, and the scoped credential carries the real one). Detached on purpose: a boot may
+ * queue behind others for minutes, and the drain never waits on it; a failure is logged, and the
+ * operator can attach the session from the Mission pane.
+ */
+function bindStepWorker(
+  bridge: CommandBridge,
+  folder: string,
+  slug: string,
+  sessionId: string
+): void {
+  void bindCardSession(folder, slug, sessionId, {
+    waitForBoot: (syntheticId, timeoutMs) => bridge.awaitMaterialization(syntheticId, timeoutMs)
+  })
+    .then((res) => {
+      if (!res.ok)
+        console.warn(`[manifest-drain] ${slug} was not attached to its step: ${res.error}`)
+    })
+    .catch((err) => console.warn(`[manifest-drain] ${slug} was not attached to its step:`, err))
+}
+
 export function registerManifestDrain(
   bridge: CommandBridge,
   getWindow: () => BrowserWindow | null
@@ -136,6 +161,11 @@ export function registerManifestDrain(
   ipcMain.handle('roadmap:wipState', async (_e, args: { folder?: string }): Promise<WipVerdict> => {
     return (await loadFolderWip(args?.folder ?? '')).verdict
   })
+
+  // Missions v4 S-26: the card a drain pass is dispatching, by the folder its session will spawn in.
+  // `plan` and `createWorktree` know the card's slug and `spawnSession` does not, so the slug waits here
+  // (one card is dispatched at a time within a pass) and is taken by the spawn that follows it.
+  const dispatching = new Map<string, { home: string; slug: string }>()
 
   const deps: DrainPassDeps = {
     loadState: async (folder) => {
@@ -154,6 +184,7 @@ export function registerManifestDrain(
       if (!isLabels(labels)) return { ok: false }
       const res = await planDispatchCore(folder, slug, labels)
       if (!res.ok) return { ok: false }
+      dispatching.set(folder, { home: folder, slug })
       if (res.mode === 'auto') {
         return {
           ok: true,
@@ -187,6 +218,7 @@ export function registerManifestDrain(
           }
         )
         if (!created.path) return null
+        dispatching.set(created.path, { home: folder, slug })
         return {
           path: created.path,
           repoRoot: created.repoRoot,
@@ -204,6 +236,11 @@ export function registerManifestDrain(
     },
 
     spawnSession: async (folder, prompt, routing, adopted) => {
+      // A card that is the work of a step spawns a session with the scoped verbs of that step (and not the
+      // whole server): leave the note `pty:create` turns into its credential, keyed by where it spawns.
+      const card = dispatching.get(folder)
+      dispatching.delete(folder)
+      const noted = card ? await noteCardSpawn(folder, card.home, card.slug) : false
       try {
         const ack = await bridge.dispatch<{ sessionId?: string; error?: string }>(
           'session.dispatchCard',
@@ -220,6 +257,7 @@ export function registerManifestDrain(
         if (ack && typeof ack.sessionId === 'string' && ack.sessionId) {
           return { ok: true, sessionId: ack.sessionId }
         }
+        if (noted) dropPendingSpawn(folder)
         // BUG-62: an ack without a sessionId is a NAMED failure (e.g.
         // `FOLDER_NOT_FOUND`), never a bare null — the reason must survive so
         // the drain result and the operator-facing event can show it.
@@ -229,6 +267,7 @@ export function registerManifestDrain(
             : 'session.dispatchCard returned no sessionId'
         return { ok: false, reason }
       } catch (err) {
+        if (noted) dropPendingSpawn(folder)
         // A `CommandBridgeError` (`NO_WINDOW`/`TIMEOUT`) or any other throw —
         // its message IS the reason, never discarded (BUG-62).
         return { ok: false, reason: err instanceof Error ? err.message : String(err) }
@@ -238,8 +277,13 @@ export function registerManifestDrain(
     rollbackWorktree: async (repoRoot, path, createdBranch) =>
       rollbackWorktree(repoRoot, path, createdBranch),
 
-    bindSession: async (folder, slug, sessionId, dispatchedWith, substrate, executedIn) =>
-      (await bindSessionCore(folder, slug, sessionId, dispatchedWith, substrate, executedIn)).ok,
+    bindSession: async (folder, slug, sessionId, dispatchedWith, substrate, executedIn) => {
+      const bound = (
+        await bindSessionCore(folder, slug, sessionId, dispatchedWith, substrate, executedIn)
+      ).ok
+      if (bound) bindStepWorker(bridge, folder, slug, sessionId)
+      return bound
+    },
 
     // T190: probe the SPAWN folder (not the card's home `folder`) for its short
     // branch name — works for both same-folder dispatch and a freshly cut

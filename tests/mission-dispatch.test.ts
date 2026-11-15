@@ -308,7 +308,6 @@ describe('dispatch creates the card and attaches the worker', () => {
 
   it('the worker it attached holds the verbs of its own step and no other', async () => {
     const id = await newMission()
-    await okOn(mainClient, 'mission_get', { folder: repo, missionId: id })
     await createSession({ missionId: id, stepId: 'stp-1' })
 
     const worker = await connectAs(
@@ -461,7 +460,7 @@ describe('submit_manifest with a step binds the card at the stamp and the worker
     )
 
     const r = await submitManifest([
-      { slug: free, missionId: id, stepId: 'stp-1' },
+      { slug: free },
       { slug: taken, missionId: id, stepId: 'stp-1' }
     ])
     expect(r.isError).toBe(true)
@@ -469,6 +468,19 @@ describe('submit_manifest with a step binds the card at the stamp and the worker
     expect(await cardsOfStep(id, 'stp-1')).toHaveLength(0)
     const freeCard = (await boardCards()).find((c) => c.slug === free)!
     expect(freeCard.card.approved).toBeFalsy()
+  })
+
+  it('two cards for one step are refused: a step has one card', async () => {
+    const id = await newMission()
+    const a = await newCard('First card')
+    const b = await newCard('Second card')
+    const r = await submitManifest([
+      { slug: a, missionId: id, stepId: 'stp-1' },
+      { slug: b, missionId: id, stepId: 'stp-1' }
+    ])
+    expect(r.isError).toBe(true)
+    expect(r.text).toMatch(/a step has one card/)
+    expect(await cardsOfStep(id, 'stp-1')).toHaveLength(0)
   })
 
   it('a mission or step that does not exist refuses the batch before anything is stamped', async () => {
@@ -490,7 +502,7 @@ describe('submit_manifest with a step binds the card at the stamp and the worker
 
     // The drain binds with the synthetic id it spawned; the real one arrives when the session boots.
     const out = await bindCardSession(repo, slug, 'synthetic-drained', {
-      awaitMaterialization: async (synthetic) => ({
+      waitForBoot: async (synthetic) => ({
         syntheticId: synthetic,
         sessionId: DRAINED,
         folder: repo

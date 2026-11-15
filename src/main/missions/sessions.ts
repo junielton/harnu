@@ -114,6 +114,14 @@ export function logEntry(log: string, at: string, what: string): string {
   return `${base}${base === '' ? '' : '\n'}### ${oneLine(at)} · ${oneLine(what)}\n`
 }
 
+/**
+ * `"<title>"` of the mission, the way a reader sees it in the Log. The Log names a mission or a step
+ * by its title and never by a raw session id: a session id means nothing to the person reading.
+ */
+export function quotedMission(record: MissionV4): string {
+  return `"${record.title}"`
+}
+
 /** `"<title>"` of a step, the way a reader sees it in the Log; its id only when the record lost the step. */
 export function quotedTitle(record: MissionV4, stepId: string): string {
   const step = record.steps.find((s) => s.id === stepId)
@@ -235,25 +243,38 @@ export async function attachFromPicker(
     if (openEntry(record, args.sessionId)) return null
     return {
       record: { ...record, sessions: appendWorked(record.sessions, args.sessionId, at) },
-      log: logEntry(log, at, `operator attached session ${args.sessionId} as a worker`)
+      log: logEntry(log, at, `operator attached a session to ${quotedMission(record)} as a worker`)
     }
   })
 }
 
 /**
  * Attaches a dispatched session as a worker on its step, with no prompt: a session started through
- * `submit_manifest`, a board dispatch, or `create_session` by the leader. The step links the session
- * (it is a builder of that step, so what it says of it is a self-check). `actor` is who dispatched: the
- * leader (a session, which needs to lead) or the app acting for the operator. Idempotent. The role is
- * `worked` and the entry of a session that is already attached, the leader included, is left alone.
+ * `create_session` by the leader, `submit_manifest` or a board dispatch (`dispatch.ts`). The step links
+ * the session (it is a builder of that step, so what it says of it is a self-check), unless `link` is
+ * false: a verifier is attached to the mission and never linked to the step it checks, so what it
+ * settles is not a self-check. `card` is the slug of the step's board card, written onto the step in
+ * the same write (a step has a card only when it is dispatched). `actor` is who dispatched: the leader
+ * (a session, which needs to lead) or Harnu acting for the operator. Idempotent. The role is `worked`
+ * and the entry of a session that is already attached, the leader included, is left alone.
+ *
+ * The Log line names the step by its quoted title and never the session's id.
  */
 export async function attachDispatchedWorker(
   folder: string,
   missionId: string,
-  args: { sessionId: string; stepId: string; actor: Actor; at?: string }
+  args: {
+    sessionId: string
+    stepId: string
+    actor: Actor
+    at?: string
+    card?: string
+    link?: boolean
+  }
 ): Promise<DoorResult<{ stepId: string }>> {
   const at = args.at ?? new Date().toISOString()
   const need = args.actor.kind === 'session' ? 'lead' : 'operator'
+  const wantsLink = args.link !== false
   const result = await applyChange(folder, missionId, args.actor, need, (record, log) => {
     const stepId = resolveStepId(record, args.stepId)
     if (stepId === null) {
@@ -261,22 +282,29 @@ export async function attachDispatchedWorker(
     }
     const link = { kind: 'session', ref: args.sessionId } as const
     const step = record.steps.find((s) => s.id === stepId) as StepV4
-    const linked = step.links.some((l) => l.kind === link.kind && l.ref === link.ref)
+    const linked = !wantsLink || step.links.some((l) => l.kind === link.kind && l.ref === link.ref)
     const attached = openEntry(record, args.sessionId) !== undefined
-    if (linked && attached) return null
+    const carded = args.card === undefined || step.card === args.card
+    if (linked && attached && carded) return null
     return {
       record: {
         ...record,
         sessions: appendWorked(record.sessions, args.sessionId, at),
         steps: record.steps.map((s) =>
-          s.id === stepId && !linked ? { ...s, links: [...s.links, link] } : s
+          s.id === stepId
+            ? {
+                ...s,
+                ...(linked ? {} : { links: [...s.links, link] }),
+                ...(args.card !== undefined ? { card: args.card } : {})
+              }
+            : s
         )
       },
       log: entryBy(
         log,
         at,
         args.actor,
-        `attached session ${args.sessionId} as a worker on step ${quotedTitle(record, stepId)}`
+        `attached a ${wantsLink ? 'worker' : 'verifier'} to step ${quotedTitle(record, stepId)}${args.card !== undefined ? `, card ${args.card}` : ''}`
       )
     }
   })

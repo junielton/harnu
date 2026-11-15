@@ -736,6 +736,9 @@ export interface ManifestCardArgs {
   substrate?: CardSubstrate
   model?: string
   effort?: string
+  /** Missions v4 S-26: the card is the work of this step of this mission (both, or neither). */
+  missionId?: string
+  stepId?: string
 }
 
 /** Validated args for the `submit_manifest` mutation tool (T104 §2.1). */
@@ -748,12 +751,18 @@ export interface SubmitManifestArgs {
 /** Bound on how many cards one manifest may declare (a lot, but not unbounded — no wildcard). */
 export const MAX_MANIFEST_CARDS = 50
 
-const ManifestCardSchema = z.object({
-  slug: z.string().min(1),
-  substrate: z.enum(CARD_SUBSTRATES).optional(),
-  model: z.string().min(1).max(64).optional(),
-  effort: z.string().min(1).max(32).optional()
-})
+const ManifestCardSchema = z
+  .object({
+    slug: z.string().min(1),
+    substrate: z.enum(CARD_SUBSTRATES).optional(),
+    model: z.string().min(1).max(64).optional(),
+    effort: z.string().min(1).max(32).optional(),
+    missionId: z.string().min(1).optional(),
+    stepId: z.string().min(1).optional()
+  })
+  .refine((c) => (c.missionId === undefined) === (c.stepId === undefined), {
+    message: 'pass missionId and stepId together: a card is the work of one step of one mission'
+  })
 
 const SubmitManifestSchema = z.object({
   folder: absolutePathSchema,

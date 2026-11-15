@@ -23,7 +23,11 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { MCP_TOOLS, type McpOp, type McpToolDef } from './tool-catalog'
 import { strField } from './plan-input'
 import { asRecord, dispatchSucceeded, errorResult, steerError, textResult } from './tool-result'
-import { runCreateSession, type CreateSessionDeps } from './create-session-core'
+import {
+  runCreateSession,
+  type CreateSessionDeps,
+  type Materialization
+} from './create-session-core'
 import type { DeadlineFlag } from './deadline'
 import {
   attachSyntheticId,
@@ -149,6 +153,7 @@ import { arm, disarm, listArmedSessionIds } from '../orchestrator-guard'
 import { resolveAgentTarget } from './target-scope'
 import { dataDirAt, dataDirReady, mkdirDataDir, repoRoot } from '../data-dir'
 import { readMissionRecord } from '../missions/record-store'
+import { dispatchAck, dispatchStep, realBoardIo, stampCardForStep } from '../missions/dispatch'
 import { hibernatedKeys, isHibernated } from '../hibernation'
 import {
   applyAddCheck,
@@ -1066,6 +1071,11 @@ async function stepSpawnOf(
       error: `MISSION_NOT_V4: ${missionId} is a v3 mission, and a session on one of its steps would convert it by its first write. Convert it first with a v4 verb such as mission_add_milestone, or start the session without missionId and stepId.`
     }
   }
+  if (read.record.status === 'closed') {
+    return {
+      error: `MISSION_CLOSED: ${missionId} is closed; no session is started for one of its steps. Start a new mission instead.`
+    }
+  }
   if (!read.record.steps.some((st) => st.id === stepId)) {
     return {
       error: `STEP_NOT_FOUND: ${missionId} has no step ${stepId}; it has ${read.record.steps.map((st) => st.id).join(', ') || 'no steps'}.`
@@ -1151,7 +1161,28 @@ const createSessionHandler: Handler = async (args, ctx) => {
     tryReserve: (f) => tryReserveInFlight(f),
     attachSyntheticId: (f, syntheticId) => attachSyntheticId(f, syntheticId),
     release: (f) => releaseInFlight(f),
-    deadlineFired: () => ctx.deadlineFlag?.fired === true
+    deadlineFired: () => ctx.deadlineFlag?.fired === true,
+    // Missions v4 S-26 (AC-68): the session is alive, so the step it was started for is bound: its card
+    // is created (or the one it has is bound) and the session is attached as a worker. A step the
+    // leader does itself is never dispatched, so it never reaches here and never gets a card.
+    ...(stepSpawn
+      ? {
+          bindMaterialized: async (mat: Materialization): Promise<Record<string, unknown>> => {
+            const done = await dispatchStep(
+              folder,
+              {
+                missionId: stepSpawn.missionId,
+                stepId: stepSpawn.stepId,
+                sessionId: mat.sessionId,
+                role: stepSpawn.role,
+                to: 'session'
+              },
+              await realBoardIo(folder)
+            )
+            return done.ok ? dispatchAck(done) : { bindError: done.error }
+          }
+        }
+      : {})
   }
   const res = await runCreateSession(
     folder,
@@ -2450,6 +2481,77 @@ async function stampManifestAndAck(
   })
 }
 
+/**
+ * Missions v4 S-26 (AC-68): the step a manifest card is the work of. A card entry that carries
+ * `missionId` and `stepId` is stamped for that step when the manifest is stamped, so the session the
+ * drain starts for it is attached to the step as a worker. Read from the raw args, since the confirm's
+ * disclosure rows (which the Allow reuses) carry no step.
+ */
+interface ManifestStepBinding {
+  slug: string
+  missionId: string
+  stepId: string
+}
+
+function manifestStepsFromArgs(args: Record<string, unknown>): ManifestStepBinding[] {
+  if (!Array.isArray(args.cards)) return []
+  const out: ManifestStepBinding[] = []
+  for (const raw of args.cards) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const rec = raw as Record<string, unknown>
+    const slug = strField(rec, 'slug')
+    const missionId = strField(rec, 'missionId')
+    const stepId = strField(rec, 'stepId')
+    if (slug && missionId && stepId) out.push({ slug, missionId, stepId })
+  }
+  return out
+}
+
+/**
+ * Judge every card of the manifest that names a step, and only when they all hold, stamp each one for its
+ * step. A refusal names the card and stamps nothing, so a batch is never half bound. `selected` are the
+ * cards that will be stamped `approved` (an operator may have unchecked some: those are left alone).
+ */
+async function bindManifestSteps(
+  folder: string,
+  args: Record<string, unknown>,
+  resolved: readonly ManifestCardResolved[],
+  selected: readonly string[]
+): Promise<string | null> {
+  const steps = manifestStepsFromArgs(args).filter((st) => selected.includes(st.slug))
+  if (steps.length === 0) return null
+  const seen = new Set<string>()
+  for (const st of steps) {
+    const key = `${st.missionId}/${st.stepId}`
+    if (seen.has(key)) {
+      return `BAD_ARGS: two cards of this manifest name the step ${st.stepId} of ${st.missionId}; a step has one card.`
+    }
+    seen.add(key)
+  }
+  const board = await realBoardIo(folder)
+  const to = (slug: string): CardSubstrate | undefined => {
+    const substrate = resolved.find((r) => r.slug === slug)?.substrate
+    return substrate !== undefined && isCardSubstrate(substrate) ? substrate : undefined
+  }
+  for (const dryRun of [true, false]) {
+    for (const st of steps) {
+      const res = await stampCardForStep(
+        folder,
+        {
+          slug: st.slug,
+          missionId: st.missionId,
+          stepId: st.stepId,
+          ...(to(st.slug) ? { to: to(st.slug) } : {}),
+          dryRun
+        },
+        board
+      )
+      if (!res.ok) return `${res.error} (card "${st.slug}": nothing in this manifest was stamped.)`
+    }
+  }
+  return null
+}
+
 const submitManifestHandler: Handler = async (args, ctx) => {
   const folder = ctx.folder
   // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before
@@ -2466,6 +2568,8 @@ const submitManifestHandler: Handler = async (args, ctx) => {
     if (resolved.length === 0) {
       return errorResult('BAD_ARGS: no cards to stamp — this manifest was never disclosed.')
     }
+    const refusedStep = await bindManifestSteps(folder, args, resolved, selectedSlugs)
+    if (refusedStep) return errorResult(refusedStep)
     // Partial-go (§2.2): unchecked cards are UNTOUCHED, not denied — including
     // the all-unchecked case, which is a legal no-op Allow, never an error.
     return stampManifestAndAck(folder, resolved, selectedSlugs, substrateOverrides, {
@@ -2492,6 +2596,8 @@ const submitManifestHandler: Handler = async (args, ctx) => {
     return errorResult(manifestBuildErrorMessage(built))
   }
   const selectedSlugs = built.resolved.map((r) => r.slug)
+  const refusedStep = await bindManifestSteps(folder, args, built.resolved, selectedSlugs)
+  if (refusedStep) return errorResult(refusedStep)
   // The agent's own per-card substrate request (`cards[].substrate`) already
   // shaped `row.substrate` in the disclosure above; carry it through to the
   // actual stamp too — there is no operator substrate-picker on this path to

@@ -633,7 +633,7 @@ describe('Harnu writes what Harnu does, and the operator what the operator does'
     })
     expect(record.steps[0].links).toContainEqual({ kind: 'session', ref: DISPATCHED })
     expect(lastHeading(log)).toBe(
-      `### ${AT} · Harnu attached session ${DISPATCHED} as a worker on step "Load the test files"`
+      `### ${AT} · Harnu attached a worker to step "Load the test files"`
     )
     expect(lastHeading(log)).not.toContain('operator')
     expect(lastHeading(log)).not.toContain('stp-1')
@@ -662,9 +662,7 @@ describe('Harnu writes what Harnu does, and the operator what the operator does'
     expect(r.ok).toBe(true)
     const { log } = await reread()
     expect(lastHeading(log)).toBe(`### ${AT} · note`)
-    expect(log).toContain(
-      `attached session ${DISPATCHED} as a worker on step "Load the test files"`
-    )
+    expect(log).toContain(`attached a worker to step "Load the test files"`)
   })
 
   it('the end of a session is recorded by Harnu, never as the operator', async () => {
@@ -696,7 +694,7 @@ describe('Harnu writes what Harnu does, and the operator what the operator does'
       actor: harnu,
       at: AT
     })
-    expect(lastHeading((await reread()).log)).toContain('on step "Show the score"')
+    expect(lastHeading((await reread()).log)).toContain('to step "Show the score"')
   })
 })
 
