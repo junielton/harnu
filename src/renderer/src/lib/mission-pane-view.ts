@@ -941,7 +941,12 @@ export function attachRequestsOf(detail: Detail): AttachRequestRow[] {
 }
 
 /** The codes the attach and decide-attach doors answer that the pane words one by one; any other reads as `other`. */
-export const ATTACH_CODES = ['NOT_FOUND', 'MISSION_CLOSED', 'WRITE_CONFLICT'] as const
+export const ATTACH_CODES = [
+  'NOT_FOUND',
+  'MISSION_NOT_FOUND',
+  'MISSION_CLOSED',
+  'WRITE_CONFLICT'
+] as const
 
 /** The i18n key (under `missionPane.attach.error`) that says what to do after a door answered `code`. */
 export function attachErrorKey(code: string): (typeof ATTACH_CODES)[number] | 'other' {

@@ -552,6 +552,7 @@
       "empty": "Não há missão aberta nesta pasta para anexar.",
       "error": {
         "NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
+        "MISSION_NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
         "MISSION_CLOSED": "Esta missão foi encerrada, então uma sessão não pode entrar nela.",
         "WRITE_CONFLICT": "A missão mudou no mesmo instante. Tente de novo.",
         "other": "O Harnu não conseguiu anexar esta sessão. Tente de novo em instantes."
@@ -565,6 +566,7 @@
         "already": "Alguém já respondeu a este pedido, então nada mudou.",
         "error": {
           "NOT_FOUND": "Este pedido não existe mais.",
+          "MISSION_NOT_FOUND": "Esta missão não existe mais.",
           "MISSION_CLOSED": "Esta missão foi encerrada, então não há nada para entrar.",
           "WRITE_CONFLICT": "A missão mudou no mesmo instante. Tente de novo.",
           "other": "O Harnu não conseguiu salvar sua resposta. Tente de novo em instantes."

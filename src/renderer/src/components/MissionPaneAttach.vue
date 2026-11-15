@@ -64,6 +64,7 @@ const confirmTitle = computed(
 
 function askAttach(id: string): void {
   attachError.value = null
+  startState.value = null
   confirming.value = id
 }
 function cancelAttach(): void {
@@ -265,16 +266,18 @@ const PILL_GHOST = `${PILL} text-text-3 hover:bg-surface-2 hover:text-text`
               {{ $t('missionPane.attach.confirm.yes') }}
             </button>
           </span>
-          <span
-            v-if="attachError"
-            class="break-words rounded-sm border border-red-line bg-red-soft text-text"
-            style="padding: 6px 8px; font-size: 11.5px; line-height: 1.4"
-            role="alert"
-            data-test="attach-error"
-            >{{ attachError }}</span
-          >
         </div>
       </div>
+
+      <!-- Under the list, not inside a row: a mission that is gone leaves the list, and its row with it. -->
+      <span
+        v-if="attachError"
+        class="break-words rounded-sm border border-red-line bg-red-soft text-text"
+        style="padding: 6px 8px; font-size: 11.5px; line-height: 1.4"
+        role="alert"
+        data-test="attach-error"
+        >{{ attachError }}</span
+      >
 
       <!-- It writes no record: the session makes the mission, once the operator agrees what done means. -->
       <button

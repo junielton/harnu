@@ -8097,16 +8097,18 @@ row owns; the reader's language does not change it).
 part of the mission, but it will not lead it."** (`12px`, `text-text`) and two pills, **Cancel** (ghost) and
 **Attach** (primary, `bg-accent text-accent-ink`). Nothing is written until the second **Attach**. It goes
 through the `attach` door and the view is read again after the reply: the pane then shows the mission. A
-door that fails (not drawn in the mockup) keeps the card and says under it, in one box (`rounded-sm border
-border-red-line bg-red-soft`, `padding: 6px 8px`, `11.5px`, `role="alert"`), what to do, never the code:
-`NOT_FOUND` **"This mission is no longer there. Pick another one."**, `MISSION_CLOSED` **"This mission was
+door that fails (not drawn in the mockup) says, in one box **under the list** (`rounded-sm border
+border-red-line bg-red-soft`, `padding: 6px 8px`, `11.5px`, `role="alert"`), what to do, never the code. The box
+is not inside the card on purpose: a mission that is gone leaves the list with its card, and the sentence
+must stay:
+`NOT_FOUND` and `MISSION_NOT_FOUND` (the mission file is gone) **"This mission is no longer there. Pick another one."**, `MISSION_CLOSED` **"This mission was
 closed, so a session cannot join it."**, `WRITE_CONFLICT` **"The mission changed at the same moment. Try
 again."**, anything else **"Harnu could not attach this session. Try again in a moment."**
 
 **Start a new mission** writes **no record**. It puts one instruction into this session's prompt through the
 writer **Ask** and "Reference in session" use (a bracketed paste, **no Enter**: the operator reviews the line
 and sends it), and says so under the button (`11.5px`, `text-text-3`, `role="status"`): **"Added to this
-session’s prompt. Press Enter there to send it."** A session that is not running says **"This session is not
+session’s prompt. Press Enter there to send it."** The line goes away when the operator starts attaching instead. A session that is not running says **"This session is not
 running. Resume it, then try again."** (`role="alert"`, same box as a failed attach). The mission itself is
 made by the session, with the operator's agreement on what done means.
 
@@ -8127,8 +8129,9 @@ border-accent-line bg-accent-soft`, `padding: 12px`, `gap: 8px`, `12.5px / 1.45`
 sentence **"{session} asks to join “{mission}”. If you allow it, it works on the mission. It does not
 lead it."** and **Allow** (primary pill) and **Deny** (ghost pill). The mockup says "asks to lead … take
 over from": the spec wins — nobody asks to lead (a session that creates a mission leads it), and the
-hand-off is the operator's alone. On the pane of the session that **asked** (it has no mission) the box sits
-above the picker and says "This session asks…"; on the pane of a session **already in** the mission the same
+hand-off is the operator's alone. On the pane of the session that **asked** (it has no mission) the box is **the whole
+state** under "This session has no mission." (the mockup's `attach-request` draws no picker: it comes back
+once the request is answered) and says "This session asks…"; on the pane of a session **already in** the mission the same
 box sits under "Your next step" and names the session that asked. **Allow** and **Deny** go through the
 `decideAttach` door, and the view is read again after the reply. **Already answered** (not drawn in the
 mockup): when the door says nothing changed (another window answered first) the box says **"Someone already

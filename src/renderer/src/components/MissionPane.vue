@@ -473,7 +473,13 @@ useFocusRegion(props.pane.id, rootEl, {
           <Target :size="14" :stroke-width="1.6" class="shrink-0 text-text-4" />
           <b class="text-text" style="font-weight: 500">{{ $t('missionPane.none.title') }}</b>
         </span>
-        <MissionPaneAttach :session-id="sessionId" :missions="picker" :requests="requestRows" />
+        <!-- A request waiting for the operator's answer is the whole state: the picker comes back once it is answered. -->
+        <MissionPaneAttach
+          :key="sessionId"
+          :session-id="sessionId"
+          :missions="requestRows.length > 0 ? null : picker"
+          :requests="requestRows"
+        />
       </div>
 
       <!-- A refusal, a v3 record, or no session: the same empty layout (design.md §6 "Mission pane" → States). -->

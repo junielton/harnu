@@ -129,7 +129,7 @@ When the session you are looking at has no mission, the pane lists the folder's 
 
 ## When a session asks to join a mission
 
-A session can ask to join a mission that already exists. The pane then shows a box, **Asks to join**, with **Allow** and **Deny**. You see it on the pane of the session that asked, and also on the pane of a session that is already in the mission. **Allow** attaches the session so it works on the mission; **Deny** says no. A session you allow never leads the mission: only you change who leads (see "Continuing in a new session"). If someone else already answered the request, the pane says nothing changed. Harnu's attention sound for a request to join is not wired to this pane yet.
+A session can ask to join a mission that already exists. The pane then shows a box, **Asks to join**, with **Allow** and **Deny**. You see it on the pane of the session that asked (where it replaces the list of missions until you answer), and also on the pane of a session that is already in the mission. **Allow** attaches the session so it works on the mission; **Deny** says no. A session you allow never leads the mission: only you change who leads (see "Continuing in a new session"). If someone else already answered the request, the pane says nothing changed. Harnu's attention sound for a request to join is not wired to this pane yet.
 
 ## Asking a milestone a question
 
