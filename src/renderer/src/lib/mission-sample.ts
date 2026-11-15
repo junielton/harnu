@@ -160,6 +160,20 @@ interface MissionSpec {
   closeWarnings?: Array<{ kind: string; count: number; text: string }>
 }
 
+/** What the close door would count as open on these steps: the ones not done, and the blockers still up. */
+function openMatters(steps: StepSpec[]): Array<{ kind: string; count: number; text: string }> {
+  const unfinished = steps.filter((s) => s.state !== 'done').length
+  const blockers = steps.filter((s) => s.blocker !== undefined && s.state !== 'done').length
+  return [
+    ...(unfinished > 0
+      ? [{ kind: 'unfinished-steps', count: unfinished, text: `${unfinished} not done` }]
+      : []),
+    ...(blockers > 0
+      ? [{ kind: 'open-blockers', count: blockers, text: `${blockers} still open` }]
+      : [])
+  ]
+}
+
 function buildMission(spec: MissionSpec): MissionV4ViewReply {
   const loose = spec.loose ?? []
   const allSteps = [
@@ -233,7 +247,7 @@ function buildMission(spec: MissionSpec): MissionV4ViewReply {
       blockers: [],
       sessions: []
     },
-    closeWarnings: spec.closeWarnings ?? [],
+    closeWarnings: spec.closeWarnings ?? openMatters(allSteps),
     pendingDoneWhen: spec.pendingDoneWhen ?? null,
     sessions: sessions.map((s) => ({
       id: s.id,

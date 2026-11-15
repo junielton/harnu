@@ -8223,7 +8223,10 @@ keep the file. After the reply the store reads the view again, so the pane shows
 criteria", each settled by a second session), and another person's sign-off is a criterion **the operator ticks**:
 **"Waiting for {person}"** with **Mark approved**, the operator's own with **Mark done**; a sign-off already
 marked folds into "{n} criteria verified" like any settled criterion. Progress counts steps ("1 of 2 steps done").
-No new element: it is the tree and the step the pane already draws.
+**Every step shows, in plan order**, when there are **eight or fewer** (`LOOSE_ALL_SHOWN` in
+`lib/mission-pane-view.ts`): a small task is its timeline, so a done step or one still to do is never hidden behind
+"N more steps". Past eight the order and fold of §6 "The glance" apply (owed first, then running, the rest behind
+"N more"). No new element: it is the tree and the step the pane already draws.
 
 **The sample** (`lib/mission-sample.ts`) is a view object shaped like the view channel's answer, built in the
 renderer from nothing: **no file, no IPC, no store**. It exists because an agent cannot create a v4 mission yet,
@@ -8255,6 +8258,10 @@ bg-bg`, `height: 22px`, `11.5px`). A state that needs a click adds one line sayi
    pane says "Acceptance criteria" and "Links from the session" (S-19's wording) because the view does not say
    where a criterion came from.
 5. A person's sign-off reads **"Waiting for {person}"**, and the hand-off offer says "context", never "memory".
+6. The mockup's small task, waiting on a person, heads its next-step box "Next step · waiting for other people"
+   with a sentence about the designer. The pane's next-step box does not read the view's `people` list (S-18
+   drew it from `waiting.next` only), so it says "N steps are running. Nothing for you right now." and the
+   sign-offs are in the open step. Not changed here: S-22's extension of that box is the close action only.
 
 **Don'ts.** ❌ Disable or hide the confirm because something is open. ❌ Print the server's English `text` of an
 open matter or a door's code. ❌ Close on one click: the buttons only open the dialog. ❌ Let a sample call a

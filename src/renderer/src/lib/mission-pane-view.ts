@@ -534,6 +534,9 @@ export interface PaneTree {
   loose: StepGroups | null
 }
 
+/** A mission with no milestones and at most this many steps shows all of them (Missions v4 S-22). */
+export const LOOSE_ALL_SHOWN = 8
+
 export function buildPaneTree(detail: Detail, ctx: StepContext = {}): PaneTree {
   const owed = owedStepIds(detail)
   const sessionLinks = ctx.sessionLinks ?? []
@@ -581,7 +584,11 @@ export function buildPaneTree(detail: Detail, ctx: StepContext = {}): PaneTree {
   }
 
   if (detail.milestones.length === 0) {
-    return { milestones: [], optional: [], loose: orderSteps(detail.steps.map(rowOf)) }
+    const rows = detail.steps.map(rowOf)
+    // A small task IS its timeline (R-19): every step shows, in plan order. The fold behind "N more" is for a
+    // long list, where the steps nobody waits on would bury the ones that matter.
+    const loose = rows.length <= LOOSE_ALL_SHOWN ? { shown: rows, folded: [] } : orderSteps(rows)
+    return { milestones: [], optional: [], loose }
   }
 
   const byMilestone = detail.progress.unit === 'milestones'
