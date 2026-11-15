@@ -46,6 +46,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - A steward an older version left in the Scheduler's list never shows as one of your workers.
 
+- **The Mission pane now reads at a glance in a small space.** The first screenful is the mission's title and progress bar, **Your next step**, and anything else that waits on you. **Steps and timeline**, **Sessions** and **N more waiting on you** are one click away, start closed, and stay as you left them, even after a restart. The closed **Steps and timeline** line says where the mission is, and **Open step** opens it for you. Nothing was removed.
+
 ### Removed
 
 - **The old mission screens are gone.** The mission and campaign popovers, the step rail, the Missions review and bulk-close dialogs, the steward pause dialog and the **Stewards** block in the Scheduler are removed. Every mission, including the ones you started before this version, opens in the Mission pane, and nothing else lists your missions across a repo except the pane's own picker when a session has no mission.
@@ -53,6 +55,22 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - A leader that did a step itself, with no other session linked to it, no longer settles that step's criteria as if it were a second session: its check is recorded as a self-check and the criterion stays open.
+
+- The Mission pane no longer clips anything when it is very narrow. It has no minimum width: below about 240 pixels it tightens its padding, wraps or shortens text (the full text is in a tooltip), wraps its buttons and never scrolls sideways, so a pane 110 pixels wide is still readable.
+
+- The progress bar's marker no longer cuts through the count. The count stays on one line (full text in a tooltip) and the marker is a thin line under it.
+
+- A link in an open step no longer breaks in the middle of a word: a long address wraps at its slashes, dots and dashes.
+
+- With Harnu in Portuguese, the next-step box, its list of more things waiting, the headings of the hand-off summary and the count line of the mission picker are now in Portuguese, not English.
+
+- The sample mission uses the pane's own words, and its strip no longer squeezes its note into a narrow column.
+
+- The session a hand-off starts is now named after the mission in the Sessions row, not after the instruction it received.
+
+- The chooser of the missions a session leads now sits under its label and takes the full width, so its text is no longer cut off at about 290 pixels.
+
+- An Activity row of a mission whose leading session is not open here shows a notice that names the mission, and the user guide now says so (it still said an older review opened).
 
 ## 2026-11-14
 

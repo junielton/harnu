@@ -28,19 +28,29 @@ There is one Mission pane per folder or worktree.
 
 The pane **follows the session you have selected** and shows only that session's mission. Pick another session in the sidebar and the pane changes with it. It checks for changes about every 20 seconds, so a number can lag the real state by a little.
 
-When the session leads more than one mission, a line above the title says **This session leads 3 missions** and lets you choose which one to show. The pane opens on the one that changed last. Choosing another only changes what the pane shows: it writes nothing to any mission. A session that only works on several missions has no chooser and shows the one that changed last.
+When the session leads more than one mission, a label above the title says **This session leads 3 missions**, with a chooser under it that takes the whole width (its text is never squeezed out of view; hold the pointer over it to read the full title). The pane opens on the one that changed last. Choosing another only changes what the pane shows: it writes nothing to any mission. A session that only works on several missions has no chooser and shows the one that changed last.
 
-At a glance, from top to bottom:
+The pane is built to be read in a small space (it usually sits at 300 to 420 pixels wide), so the first screenful is the part you need and the rest is one click away. Nothing is removed.
+
+**The first screenful**, from top to bottom:
 
 - the mission's **title**;
-- a **progress bar** with the count written inside it: **4 of 21 steps done**, or **1 of 10 milestones done** when the mission has milestones. The bar fills in as steps are done. There is no "Done when" paragraph;
+- a **progress bar** with the count written inside it: **4 of 21 steps done**, or **1 of 10 milestones done** when the mission has milestones. The bar fills in as steps are done, with a thin green line under the count that shows where the fill ends. The count is a single line; hold the pointer over it for the full text. There is no "Done when" paragraph;
 - **Ready to close** when every step is done;
 - **Your next step**: one box with what to do and why it matters. If more than one thing waits on you, **N more waiting on you** opens the rest right there, and **Show less** folds them again. When nothing waits on you, the box says what is running instead ("2 steps are running. Nothing for you right now.");
-- the **tree** of the mission.
+- anything else that waits on you and is not a line of that list: a session asking to join, and a new Done when to approve (see below).
+
+**One click away.** These start closed, and the pane remembers what you open, even after a restart:
+
+- **Steps and timeline**: the tree of the mission (next section). The closed line shows where the mission is, on its right: the current milestone, or "Every step is done". **Open step** in the next-step box opens this part for you and opens that step.
+- **Sessions**: who worked on the mission (see [Hand-off](#hand-off)).
+- **N more waiting on you**, in the next-step box.
+
+In Portuguese, the words of the next-step box are Harnu's own, in Portuguese. What an agent wrote (a blocker's reason, a criterion, a step's title) is shown exactly as written.
 
 #### The tree
 
-Below the next step, the mission is a tree: milestone, then step, then criteria. Every row has a chevron: click it to open or close the row.
+Under **Steps and timeline**, the mission is a tree: milestone, then step, then criteria. Every row has a chevron: click it to open or close the row.
 
 - **Only the current milestone opens by itself.** That is the first milestone that is neither done nor optional. Open any other one with its chevron.
 - A line joins the milestone dots like a timeline. It is **green behind a finished milestone** and grey ahead, and it runs down through an open milestone's steps.
@@ -52,6 +62,8 @@ Below the next step, the mission is a tree: milestone, then step, then criteria.
 - A mission with no milestones shows its steps directly, in the same order.
 
 In a narrow pane the tree wraps: step titles take up to two lines and a step's marks move under its title.
+
+**A very narrow pane.** The pane has no minimum width. Below about 240 pixels it switches to a tighter layout: less padding at the sides, text that wraps or shortens (hold the pointer over it for the full text), buttons that wrap onto their own line, and no sideways scrolling. The same controls are there at 110 pixels as at 420.
 
 Your next step has one button, **Open step**: it opens that step in the tree and brings it into view. Items that need another action (closing the mission, letting a session join) show their text but no button yet.
 
@@ -115,7 +127,7 @@ A mission does not need milestones. A small task, such as one scoped from a trac
 
 ### A sample mission
 
-Most of the pane only has something to show once a mission is in a particular state. To see every state, open the pane on a session that has no mission and press **See a sample mission**. A strip at the top says "Sample mission" and has a **State** chooser: a mission with something waiting, a step open, a step blocked, a milestone being asked about, the hand-off offered and confirmed, nothing waiting, everything done and ready to close, another session, a small task, a small task with sign-offs, a large mission, a session with no mission, a request to join, and a closed mission. Three of them (the next-step list, every step of a milestone, and the Sessions row) are one click away on the default mission, and the strip says which click. The data is made up. **Nothing you press on a sample is saved**: marks, approvals, the hand-off and the close all answer "nothing changed" without touching any file. **Leave the sample** brings the real answer back.
+Most of the pane only has something to show once a mission is in a particular state. To see every state, open the pane on a session that has no mission and press **See a sample mission**. A strip at the top says "Sample mission" and has a **State** chooser: a mission with something waiting, a step open, a step blocked, a milestone being asked about, the hand-off offered and confirmed, nothing waiting, everything done and ready to close, another session, a small task, a small task with sign-offs, a large mission, a session with no mission, a request to join, and a closed mission. Three of them (the next-step list, every step of a milestone, and the Sessions row) are one click away on the default mission, and the strip says which click, using the pane's own words for the thing to press. The data is made up. **Nothing you press on a sample is saved**: marks, approvals, the hand-off and the close all answer "nothing changed" without touching any file. **Leave the sample** brings the real answer back.
 
 ## Acceptance criteria
 
@@ -138,7 +150,7 @@ A mission outlives the session that works on it. The pane keeps the list of the 
 
 At the bottom of the pane, **Sessions** is one line: how many sessions worked on the mission and which one leads it, for example **4 · led by this session**, **4 · led by orch-1** or **4 · nobody leads it**. Click it to open the list. Each session shows:
 
-- its **name** (**Session** and the first eight characters of its id when the session is not loaded any more; a session that a hand-off started reads **Took over "…"** with the mission's title instead of its opening message);
+- its **name** (**Session** and the first eight characters of its id when the session is not loaded any more; a session that a hand-off started is named after the mission, with the mission's title instead of its opening message);
 - what it is or was in the mission: **Leads the mission** / **Led the mission** (the one that leads, or used to) and **Works on the mission** / **Worked on the mission**, with **this session** on the one you are looking at;
 - **when it worked**: **Since Nov 13** while it is attached, **Nov 11 to Nov 12** once it stopped (with the hours when it started and stopped on the same day);
 - for a session that stopped, **where it stopped**: **Stopped at "Run the tool on the whole test set"** and, when it was waiting for something, **Waiting for: the corpus folder path**. If the record does not say, it says **Stopped. The record does not say where.**
