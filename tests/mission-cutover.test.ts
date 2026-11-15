@@ -682,6 +682,21 @@ describe('delta 1 · one mission everywhere (Open mission, chip, pill and pane)'
     expect(store.chipFor(SESSION)?.text).toBe('2/5')
   })
 
+  it('a mission chosen in the pane stays the one even when the other one waits on the operator', async () => {
+    itemsOf = { [NEWEST]: waits(2), [OLDER]: [] }
+    const store = useMissionsStore()
+    await store.refresh()
+    await store.refreshV4()
+    // By the rule the newest, which waits, is shown.
+    expect(shown(store)).toBe(NEWEST)
+    expect(store.chipFor(SESSION)?.text).toBe('2/5 · 2 for you')
+    // The operator picks the other one: both the pane and the chip follow, whatever waits.
+    await store.chooseMission(SESSION, OLDER)
+    await store.refresh()
+    expect(shown(store)).toBe(OLDER)
+    expect(store.chipFor(SESSION)?.text).toBe('2/5')
+  })
+
   /** The pill's text for what the pane shows (the pill reads the same reply). */
   function missionPillTextOf(store: ReturnType<typeof useMissionsStore>): string {
     const m = store.v4MissionForSession(SESSION)
