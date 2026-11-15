@@ -15,6 +15,7 @@ import {
   handoffErrorKey,
   handoffOfferView,
   missionNumbers,
+  missionSummaryText,
   missionProgressLine,
   missionStateKey,
   progressPercent,
@@ -140,13 +141,13 @@ const newLeader = ref<string | null>(null)
 // (it closed under the dialog, the session was released), the dialog still shows what it was asked about.
 const lastSummary = ref('')
 watch(
-  () => mission.value?.detail.summary,
-  (summary) => {
-    if (summary !== undefined) lastSummary.value = summary
+  () => missionSummaryText(mission.value),
+  (text) => {
+    if (text !== undefined) lastSummary.value = text
   },
   { immediate: true }
 )
-const handoffSummary = computed(() => mission.value?.detail.summary ?? lastSummary.value)
+const handoffSummary = computed(() => missionSummaryText(mission.value) ?? lastSummary.value)
 const newLeaderLoaded = computed(
   () =>
     newLeader.value !== null && sessions.allSessions.some((s) => s.sessionId === newLeader.value)
@@ -459,7 +460,7 @@ useFocusRegion(props.pane.id, rootEl, {
          shows no mission, and the dialog is still the one that says what happened. -->
     <MissionHandoffDialog
       :open="handoffOpen"
-      :summary="handoffSummary"
+      :brief="handoffSummary"
       :pending="missions.handOffPending"
       :error-key="handoffError"
       :done="handoffDone"

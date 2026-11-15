@@ -20,8 +20,8 @@ import Dialog from './ui/Dialog.vue'
  */
 const props = defineProps<{
   open: boolean
-  /** The server's mission summary (`detail.summary`): what the new session starts with. */
-  summary: string
+  /** The server's mission summary: the text the new session starts with. */
+  brief: string
   /** The door is waiting. */
   pending: boolean
   /** The `missionPane.handoff.error` key that says what went wrong, or `null`. */
@@ -33,7 +33,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ cancel: []; confirm: []; close: []; openNew: [] }>()
 
-const parsed = computed(() => parseSummary(props.summary))
+const parsed = computed(() => parseSummary(props.brief))
 
 function onDialogClose(): void {
   // A dialog that is waiting for the door is not dismissible (the shell ignores it); this runs for the rest.
@@ -117,7 +117,7 @@ function onDialogClose(): void {
         <span
           class="block uppercase text-text-4"
           style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em; margin-bottom: 6px"
-          >{{ $t('missionPane.handoff.summary.heading') }}</span
+          >{{ $t('missionPane.handoff.brief.heading') }}</span
         >
         <div
           v-if="parsed.sections.length > 0"
@@ -134,10 +134,10 @@ function onDialogClose(): void {
             >
           </template>
         </div>
-        <span v-else-if="summary.trim() !== ''" class="block whitespace-pre-line break-words">{{
-          summary.trim()
+        <span v-else-if="brief.trim() !== ''" class="block whitespace-pre-line break-words">{{
+          brief.trim()
         }}</span>
-        <span v-else class="block text-text-3">{{ $t('missionPane.handoff.summary.empty') }}</span>
+        <span v-else class="block text-text-3">{{ $t('missionPane.handoff.brief.empty') }}</span>
       </div>
     </div>
 

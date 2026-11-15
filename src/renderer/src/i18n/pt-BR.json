@@ -506,7 +506,7 @@
         "two": "Uma nova sessão abre com o resumo abaixo e lidera a missão.",
         "three": "A sessão antiga é liberada. Ela continua no histórico de sessões da missão."
       },
-      "summary": {
+      "brief": {
         "heading": "Resumo da missão — com o que a nova sessão começa",
         "empty": "O Harnu não tem um resumo desta missão para dar à nova sessão."
       },

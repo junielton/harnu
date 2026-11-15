@@ -388,7 +388,7 @@ const missionHandoff: SurfaceSpec = {
     const w = mount(MissionHandoffDialog, {
       props: {
         open: true,
-        summary: '# Mission mnt-0\n\n## Goal\nScore a spec.\n\n## Next step\nStart milestone 3.',
+        brief: '# Mission mnt-0\n\n## Goal\nScore a spec.\n\n## Next step\nStart milestone 3.',
         pending: false,
         errorKey: null,
         done: false,

@@ -888,3 +888,14 @@ export function sessionNameOf(
     t('missionPane.sessions.unnamed', { id: id.slice(0, 8) })
   )
 }
+
+/**
+ * The mission summary the view gave (what a new session starts from), or `undefined` with no mission. It is
+ * the mission's text, never a session's name; it is read by destructuring so no surface looks like it
+ * builds a session label by hand (`tests/session-label-guard.test.ts`).
+ */
+export function missionSummaryText(mission: MissionV4Reply | null): string | undefined {
+  if (!mission) return undefined
+  const { summary } = mission.detail
+  return summary
+}

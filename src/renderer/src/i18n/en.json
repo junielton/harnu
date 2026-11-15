@@ -506,7 +506,7 @@
         "two": "A new session opens with the summary below and leads the mission.",
         "three": "The old session is released. It stays in the mission’s session history."
       },
-      "summary": {
+      "brief": {
         "heading": "Mission summary — what the new session starts with",
         "empty": "Harnu has no summary of this mission to give the new session."
       },
