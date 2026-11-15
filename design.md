@@ -7964,7 +7964,9 @@ row per session (`gap: 8px`, `12px`, `text-text-2`), a grid of a 7px dot and the
 - **dot**: `bg-green` while the session is still attached; a hollow ring (`border-[1.5px]
 border-text-4`) once it stopped;
 - **line 1**: the session's **name** (`font-weight: 500`, `text-text`; **"Session 22222222"**, the first
-  eight characters of its id, when it is not loaded) · its **role**, in the tense of whether it still is:
+  eight characters of its id, when it is not loaded; a session a hand-off started is named after its first
+  prompt, the hand-off's instruction line, so the row says **"Took over “Score a spec with a test set”"**
+  instead, while the sidebar still shows the first prompt) · its **role**, in the tense of whether it still is:
   **"Leads the mission"** / **"Led the mission"** / **"Works on the mission"** / **"Worked on the mission"**,
   and **" · this session"** on the one the pane follows;
 - **sub line** (`10.5px`, `text-text-4`): when it worked, from and to: **"Since Nov 13"** (attached),
@@ -8041,10 +8043,16 @@ and above the summary one box (`rounded border border-red-line bg-red-soft`, `pa
 | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MISSION_CLOSED`                                                                          | "This mission is closed, so there is nothing to continue."                                                                                                                                           |
 | `HANDOFF_START_FAILED`                                                                    | "The new session did not start. Nothing changed: the same session still leads. Try again in a moment."                                                                                               |
+| `HANDOFF_START_FAILED`, when the reply names a session that **was started**               | "The new session was started, but it did not take over in time. The same session still leads. Open the new session to see what happened, or close it. Then try again."                               |
 | `HANDOFF_IN_PROGRESS`                                                                     | "A hand-off of this mission is already starting a session. Wait for it to finish, then look at the Sessions row."                                                                                    |
 | `HANDOFF_UNAVAILABLE`                                                                     | "Harnu cannot start a session right now. Nothing changed. Try again in a moment."                                                                                                                    |
 | `LEADER_CHANGED`                                                                          | "Who leads the mission changed while the new session was starting, so Harnu did not attach it. The new session is open but is not part of the mission. Look at the Sessions row, then decide again." |
 | anything else (`OPERATOR_ONLY`, `BAD_ARGS`, a write refusal, a channel that is not there) | "Harnu could not finish the hand-off. Look at the Sessions row to see who leads, then try again."                                                                                                    |
+
+When the reply names a session the door **started** but did not attach (it did not take over in time, or the
+leader changed under it), the footer also has **Open the new session** (left-aligned, ghost): it selects that
+session when it is loaded in the sidebar, so the operator can see what happened or close it. The door's reply
+carries its id (`started`); a start that never began has none, and keeps "did not start. Nothing changed".
 
 **A hand-off that took effect** (not drawn in the mockup): the pane reads the view again, and **this session
 is released**, so the pane now shows "This session has no mission." The dialog stays, because it is the one

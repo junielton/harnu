@@ -28,7 +28,7 @@ const props = defineProps<{
   errorKey: string | null
   /** The hand-off took effect. */
   done: boolean
-  /** The new session is loaded in the sidebar, so it can be opened from here. */
+  /** The session the door started is loaded in the sidebar, so it can be opened from here. */
   canOpenNew: boolean
 }>()
 const emit = defineEmits<{ cancel: []; confirm: []; close: []; openNew: [] }>()
@@ -177,6 +177,23 @@ function onDialogClose(): void {
         </button>
       </template>
       <template v-else>
+        <!-- A session the door started that did not take over: the way to it, to look at it or close it. -->
+        <button
+          v-if="errorKey && canOpenNew && !pending"
+          type="button"
+          class="mr-auto border border-border bg-transparent text-text-2 transition hover:text-text"
+          style="
+            padding: 7px 14px;
+            font-size: 12.5px;
+            font-weight: 500;
+            border-radius: 5px;
+            height: 28px;
+          "
+          data-test="handoff-open-new"
+          @click="emit('openNew')"
+        >
+          {{ $t('missionPane.handoff.done.open') }}
+        </button>
         <button
           type="button"
           class="border border-border bg-transparent text-text-2 transition hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
