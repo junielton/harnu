@@ -178,9 +178,10 @@ onBeforeUnmount(stopDrag)
            --color-warning). The slot is the title and whatever sits beside it; the chevron is
            pushed to the right end and always stays visible, collapsed or not. Expanded it has
            8px above / 4px below (it heads a body); collapsed it is the whole row, so the padding
-           is symmetric (6px) and the text sits on the vertical center. -->
+           is symmetric (6px) and the text sits on the vertical center. The row never wraps
+           (BUG-276): a slot's title may truncate, everything else keeps its width. -->
       <div
-        class="flex shrink-0 items-center"
+        class="flex min-w-0 shrink-0 items-center whitespace-nowrap"
         :class="tone === 'warning' ? 'text-warning' : 'text-text-4'"
         :style="{ padding: collapsed ? '6px 12px' : '8px 12px 4px 12px' }"
         style="

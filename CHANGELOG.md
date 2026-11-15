@@ -30,6 +30,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- The "Return here" header no longer wraps onto two lines in a narrow sidebar: when space runs out the title shortens with an ellipsis while the count, the oldest clock and the collapse chevron stay whole.
 - A leader that did a step itself, with no other session linked to it, no longer settles that step's criteria as if it were a second session: its check is recorded as a self-check and the criterion stays open.
 
 ## 2026-11-14

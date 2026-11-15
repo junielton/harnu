@@ -88,15 +88,16 @@ function labelFor(s: Session): string {
     data-island="sidebar-return"
   >
     <!-- Title · count (· oldest clock in Your move mode Live). `contents` keeps the three spans
-         flex children of the eyebrow while giving the tests one node to read the whole line from. -->
+         flex children of the eyebrow while giving the tests one node to read the whole line from. Only the
+         title gives way when the sidebar is narrow (ellipsis); the rest stays whole (BUG-276). -->
     <template #eyebrow>
       <span class="contents" data-testid="your-move-eyebrow">
-        <span>{{ $t('sidebar.returnHere.title') }}</span>
-        <span aria-hidden="true">·</span>
-        <span class="tabular-nums">{{ count }}</span>
+        <span class="min-w-0 truncate">{{ $t('sidebar.returnHere.title') }}</span>
+        <span class="shrink-0" aria-hidden="true">·</span>
+        <span class="shrink-0 tabular-nums">{{ count }}</span>
         <template v-if="live">
-          <span aria-hidden="true">·</span>
-          <span class="tabular-nums">{{ oldestClock }}</span>
+          <span class="shrink-0" aria-hidden="true">·</span>
+          <span class="shrink-0 tabular-nums">{{ oldestClock }}</span>
         </template>
       </span>
     </template>
