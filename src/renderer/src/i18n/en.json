@@ -589,10 +589,6 @@
       "notRunning": "{name} is not running. Resume it, then send the question again.",
       "close": "Close"
     },
-    "v3": {
-      "title": "This mission is still a v3 mission.",
-      "body": "Open it from the mission pill at the top."
-    },
     "close": {
       "open": "Close mission…",
       "title": "Close this mission?",
@@ -646,6 +642,10 @@
         "sessions": "Press the Sessions row at the bottom.",
         "big-waiting": "Press “N more waiting on you” in the next-step box."
       }
+    },
+    "leads": {
+      "label": "This session leads {n} missions",
+      "choose": "Choose the mission to show"
     }
   },
   "memoryPane": {
@@ -5302,6 +5302,10 @@
         "session-died": "Session ended",
         "compaction": "Compacted"
       }
+    },
+    "unreadable": {
+      "title": "A mission file can't be read",
+      "body": "{files}. The mission it holds stays hidden until the file is fixed or removed."
     }
   },
   "campaign": {

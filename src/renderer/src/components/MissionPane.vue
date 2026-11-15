@@ -95,6 +95,15 @@ const kind = computed<PaneKind>(() =>
 const mission = computed(() => (sessionId.value ? v4MissionOf(reply.value, sessionId.value) : null))
 const refusal = computed(() => (reply.value?.state === 'refused' ? reply.value.error : ''))
 
+// A session that leads several missions (the normal case for an old leader, S-35) is shown the one written most
+// recently and may switch here: the choice is the store's, and nothing is written.
+const led = computed(() => (sample.value ? [] : missions.ledMissionsFor(sessionId.value)))
+const ledChosen = computed(() => mission.value?.missionId ?? '')
+async function chooseLed(ev: Event): Promise<void> {
+  const id = (ev.target as HTMLSelectElement).value
+  if (sessionId.value && id) await missions.chooseMission(sessionId.value, id)
+}
+
 const progressLine = computed(() =>
   mission.value ? missionProgressLine(t, mission.value.detail) : ''
 )
@@ -466,6 +475,25 @@ useFocusRegion(props.pane.id, rootEl, {
           style="padding: 14px 16px"
           data-dsqa-part="mission-head"
         >
+          <!-- Several missions led by this session: the one shown, and the others to switch to. -->
+          <label
+            v-if="led.length > 1"
+            class="flex items-center text-text-3"
+            style="gap: 8px; margin-bottom: 8px; font-size: 11.5px"
+            data-test="mission-leads"
+          >
+            <span class="shrink-0">{{ $t('missionPane.leads.label', { n: led.length }) }}</span>
+            <select
+              class="min-w-0 flex-1 rounded-sm border border-border-2 bg-bg text-text outline-none focus:border-accent-line"
+              style="height: 22px; padding: 0 4px; font-size: 11.5px"
+              :value="ledChosen"
+              :aria-label="$t('missionPane.leads.choose')"
+              data-test="mission-leads-select"
+              @change="chooseLed"
+            >
+              <option v-for="m in led" :key="m.id" :value="m.id">{{ m.title }}</option>
+            </select>
+          </label>
           <h2
             class="m-0 break-words text-text"
             style="font-size: 13.5px; font-weight: 600; line-height: 1.35"
@@ -642,7 +670,7 @@ useFocusRegion(props.pane.id, rootEl, {
         </div>
       </div>
 
-      <!-- A refusal, a v3 record, or no session: the same empty layout (design.md §6 "Mission pane" → States). -->
+      <!-- A refusal, or no session: the same empty layout (design.md §6 "Mission pane" → States). -->
       <div
         v-else
         class="flex flex-col items-center text-center text-text-3"
@@ -651,8 +679,7 @@ useFocusRegion(props.pane.id, rootEl, {
       >
         <Target :size="14" :stroke-width="1.6" class="text-text-4" />
         <b class="text-text" style="font-weight: 500">{{ $t(`missionPane.${kind}.title`) }}</b>
-        <span v-if="kind === 'v3'">{{ $t('missionPane.v3.body') }}</span>
-        <template v-else-if="kind === 'refused'">
+        <template v-if="kind === 'refused'">
           <span
             v-if="refusal"
             class="break-words font-mono text-text-3"

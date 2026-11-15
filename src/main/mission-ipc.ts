@@ -76,6 +76,7 @@ import { resolveRoadmap } from './roadmap-ipc'
 import { openEntry, leaderOf as v4LeaderOf, type Actor } from './missions/guard'
 import {
   listMissionRecords,
+  unreadableRecordFiles,
   readMissionRecord,
   v4RecordsDir,
   type MissionRecordView,
@@ -298,7 +299,10 @@ export async function listMissionViews(
     readMissionsDeduped(roots, { includeClosed: false }),
     scanFoldersMemo()
   ])
-  const unreadable = read.unreadable.map((u) => u.name)
+  // A v4 record the store cannot read is named too (S-35): every reader that skips it would hide a mission, so
+  // the app raises one notice for the file (and Your move closes nothing by absence while one exists).
+  const v4Unreadable = (await Promise.all(roots.map((r) => unreadableRecordFiles(r)))).flat()
+  const unreadable = [...new Set([...read.unreadable.map((u) => u.name), ...v4Unreadable])]
   const jobs = pickJobs(read.missions, opts.onlySessions)
   const views = await mapLimit(jobs, LIST_CONCURRENCY, ({ root, mission, log }) =>
     // The operator's own view: no folder is blocked from them (denyFolders is
@@ -765,15 +769,16 @@ const refusedView = (code: string, message: string): MissionV4ViewReply => ({
  * The open mission a session is attached to when it names none: the one it leads, else the only one.
  * (The unnamed lookup lists every record of the repo and converts each unconverted v3 file in memory:
  * the channel answers `missionId`, and a call that names it reads one record.)
+ *
+ * A session attached to several (after the cut-over an old leader leads one mission per v3 file it ever
+ * started, the normal case for old records) is never refused: the pane draws the one written most recently
+ * (the newest file, a v3 file included; the id breaks a tie), among the ones it leads, else among the
+ * ones it is in. The reply names it (`missionId`) and the pane offers the others.
  */
 async function missionOfSession(
   root: string,
   sessionId: string
-): Promise<
-  | { ok: true; view: MissionRecordView }
-  | { ok: false; code: string; error: string }
-  | { ok: 'none' }
-> {
+): Promise<{ ok: true; view: MissionRecordView } | { ok: 'none' }> {
   const { records } = await listMissionRecords(root)
   const mine = records.filter(
     (v) => v.record.status === 'open' && openEntry(v.record, sessionId) !== undefined
@@ -781,14 +786,19 @@ async function missionOfSession(
   if (mine.length === 0) return { ok: 'none' }
   if (mine.length === 1) return { ok: true, view: mine[0] }
   const leading = mine.filter((v) => v4LeaderOf(v.record) === sessionId)
-  if (leading.length === 1) return { ok: true, view: leading[0] }
-  return {
-    ok: false,
-    code: 'AMBIGUOUS_MISSION',
-    error: `this session is attached to ${mine.length} open missions (${mine
-      .map((v) => v.record.id)
-      .join(', ')}); name one with missionId.`
-  }
+  const pool = leading.length > 0 ? leading : mine
+  if (pool.length === 1) return { ok: true, view: pool[0] }
+  const written = await Promise.all(
+    pool.map(async (view) => ({
+      view,
+      at: await fs.stat(view.file).then(
+        (st) => st.mtimeMs,
+        () => 0
+      )
+    }))
+  )
+  written.sort((a, b) => b.at - a.at || a.view.record.id.localeCompare(b.view.record.id))
+  return { ok: true, view: written[0].view }
 }
 
 /** The status line's LIVE readings: one record per running session. The last-known ones are never used. */
@@ -842,7 +852,6 @@ export async function buildMissionV4View(
           ? { state: 'none', missions: list.missions }
           : { state: 'refused', code: list.code, error: list.error }
       }
-      if (found.ok === false) return refusedView(found.code, found.error)
       view = found.view
     }
     const { record } = view

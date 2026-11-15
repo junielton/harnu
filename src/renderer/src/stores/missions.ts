@@ -76,6 +76,7 @@ import {
   type NotificationItem,
   type NotificationRecord
 } from './notifications'
+import { useHelpersStore } from './helpers'
 import { persistedRef } from './persisted'
 import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
@@ -176,6 +177,8 @@ function cueViewsFrom(readers: readonly ReaderMission[], v3: readonly MissionVie
 /** One mission the readers know through the v4 view: what the cue reads, and the detail the chip is drawn from. */
 export interface ReaderMission extends ReaderView {
   detail: Extract<MissionV4ViewReply, { state: 'mission' }>['detail']
+  /** The id a named read of this mission uses (a converted campaign's differs from `mission.id`). */
+  lookupId?: string
 }
 
 /** The session id the readers ask the view as: no session's, so it answers for the mission, never for a member. */
@@ -700,7 +703,8 @@ export const useMissionsStore = defineStore('missions', () => {
         mission: { id: d.id, owner: { sessionId: d.leads ?? '' }, updatedAt: '' },
         title: d.title,
         you: d.waiting.items,
-        detail: d
+        detail: d,
+        lookupId: row.id
       })
     }
     return out
@@ -726,27 +730,14 @@ export const useMissionsStore = defineStore('missions', () => {
   }
 
   /**
-   * Whether `missionId` is a v3 mission: its pill and popover stay v3 and **Open mission** opens the popover only,
-   * never the pane (the pane would answer for a session that leads several v3 missions with an error). A v4
-   * record is the one thing the readers positively know (`source: 'v4'`); a mission the readers read as a v3 file,
-   * or one only the v3 list serves (a campaign's chapter mission is another id in the v4 view, and the readers
-   * read a bounded number of missions per repo), is v3. An id nobody knows is not claimed.
-   */
-  function isV3Mission(missionId: string): boolean {
-    const r = readers.value?.find((m) => m.mission.id === missionId)
-    if (r) return isV3Source(r)
-    return views.value.some((v) => v.mission.id === missionId)
-  }
-
-  /**
-   * The chip of `sessionId`: the leader of an open mission. A **v3** mission shows exactly what its own Topbar
-   * pill shows (the v3 words and numbers, as on main) until the popover is retired; a **v4** record shows the
-   * pill's v4 text and tone. `null` for anyone else.
+   * The chip of `sessionId`: the leader of an open mission. Every record, a v3 file included (S-35), shows
+   * what its Topbar pill shows: the view's counts and tone ("2/5 · 1 for you"). Only a build without the view
+   * channel (`readers` is `null`) keeps the v3 words. `null` for anyone else.
    */
   function chipFor(sessionId: string | null | undefined): ChipModel | null {
     if (!sessionId) return null
     const { t } = i18n.global
-    const v3Chip = (): ChipModel | null => {
+    if (readers.value === null) {
       const m = modelForSession(sessionId)
       if (!m || m.headline.kind === 'empty') return null
       return {
@@ -756,15 +747,64 @@ export const useMissionsStore = defineStore('missions', () => {
         needsYou: m.needsYou
       }
     }
-    if (readers.value === null) return v3Chip()
     const r = readers.value.find((m) => m.detail.leads === sessionId)
     if (!r) return null
-    if (isV3Mission(r.mission.id)) {
-      const own = v3Chip()
-      if (own) return own
-    }
     const text = missionPillText(t, r.detail)
     return { text, compact: text, tone: missionPillTone(r.detail), needsYou: r.you.length > 0 }
+  }
+
+  /**
+   * The open missions `sessionId` leads, as the readers know them. A session that leads several (the normal case
+   * for an old leader: one mission per v3 file it ever started) is shown the most recently written by the view
+   * and lists the others here, so the pane can offer the choice instead of an error.
+   */
+  function ledMissionsFor(
+    sessionId: string | null | undefined
+  ): Array<{ id: string; title: string }> {
+    if (!sessionId) return []
+    return (readers.value ?? [])
+      .filter((r) => r.detail.leads === sessionId)
+      .map((r) => ({ id: r.lookupId ?? r.mission.id, title: r.title }))
+  }
+
+  /** The pane follows `missionId` for `sessionId` from now on: the next read names it. Never writes. */
+  async function chooseMission(sessionId: string, missionId: string): Promise<void> {
+    v4Ids.set(sessionId, missionId)
+    await loadV4()
+  }
+
+  /** The Activity notice of the mission files nobody can read: one entry, named, quiet until the set changes. */
+  const UNREADABLE_GROUP = 'mission-unreadable'
+  let unreadableKey = ''
+  function syncUnreadable(names: unknown): void {
+    const files = Array.isArray(names)
+      ? [...new Set(names.filter((n): n is string => typeof n === 'string'))].sort()
+      : []
+    const activity = useNotificationsStore()
+    if (files.length === 0) {
+      unreadableKey = ''
+      activity.removeGroup(UNREADABLE_GROUP)
+      return
+    }
+    const { t } = i18n.global
+    const entry = {
+      title: t('mission.unreadable.title'),
+      description: t('mission.unreadable.body', { files: files.join(', ') })
+    }
+    const key = files.join('|')
+    if (key === unreadableKey) {
+      // The same files are not news: rewrite quietly, never bring back an entry the operator dismissed.
+      activity.updateGroup(UNREADABLE_GROUP, entry)
+      return
+    }
+    unreadableKey = key
+    activity.notify({
+      ts: Date.now(),
+      source: 'app',
+      kind: 'warning',
+      group: UNREADABLE_GROUP,
+      ...entry
+    })
   }
 
   async function load(): Promise<void> {
@@ -782,6 +822,7 @@ export const useMissionsStore = defineStore('missions', () => {
       views.value = list
       refreshedAt.value = Date.now()
       refreshSeq.value++
+      syncUnreadable(res.unreadable)
       // Sidebar folders not loaded yet: the list says nothing about reality, and a
       // decision now would rebuild the memory empty and re-cue the backlog later.
       if (folders.length === 0) return
@@ -837,11 +878,29 @@ export const useMissionsStore = defineStore('missions', () => {
     popoverRequest.value = null
   }
 
-  /** Ask the pill that owns `missionId` to open its popover; a newer request replaces an older one. */
+  /**
+   * Open the Mission pane in the selected session's stack (a no-op when it is open or no worktree is
+   * selected). Every record lives there since the cut-over (S-35): the pane follows the selected session, so a
+   * caller selects the mission's leader first.
+   */
+  function openMissionPane(): void {
+    const helpers = useHelpersStore()
+    const worktree = helpers.currentWorktreePath
+    if (worktree && !helpers.panesForCurrentWorktree.some((p) => p.type === 'mission')) {
+      helpers.toggleMissionHelper(worktree)
+    }
+  }
+
+  /**
+   * "Open this mission" (an Activity row names it through `openNavigableView('mission')`): opens the pane. The
+   * name is the popover's, kept until S-37 deletes the popover and its request; the record of the request is
+   * still kept and expires on its own, but nothing consumes it any more.
+   */
   function requestPopover(missionId: string): void {
     clearPopoverRequest()
     popoverRequest.value = { missionId, at: Date.now() }
     popoverTimer = setTimeout(clearPopoverRequest, POPOVER_REQUEST_TTL_MS)
+    openMissionPane()
   }
 
   /**
@@ -1022,7 +1081,8 @@ export const useMissionsStore = defineStore('missions', () => {
     modelForSession,
     readers,
     chipFor,
-    isV3Mission,
+    ledMissionsFor,
+    chooseMission,
     refreshV4,
     v4ReplyForSession,
     v4MissionForSession,

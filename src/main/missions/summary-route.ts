@@ -8,10 +8,10 @@
  * Claude Code adds to the session's context. Nothing is written to any folder: the blob is rebuilt with
  * the live port and token at every spawn.
  *
- * **Who gets it.** Only the OPEN LEADER of an OPEN v4 mission, and only after a compaction (`source` is
+ * **Who gets it.** Only the OPEN LEADER of an OPEN mission, and only after a compaction (`source` is
  * `compact`). A worker, a session that was handed off, a stranger, a session that leads a closed mission:
- * nothing, so a worker is never handed its leader's state. Only records whose source is `v4` are served
- * until the cut-over (S-35): a leader of a v3 mission sees no change, and no v3 file is read.
+ * nothing, so a worker is never handed its leader's state. Since the cut-over (S-35) every record is
+ * served: a v3 file is read as v4 in memory and never written, so an old leader gets its summary too.
  *
  * **Never throws, never blocks.** A hook runs inside someone's session: the worst it may do is print
  * nothing. A bad body, a failing or slow store, a throw: all answer `''`. The whole answer is under
@@ -21,11 +21,10 @@
  * Imports no steward file (AC-26). Electron-free.
  */
 
-import { promises as fs } from 'node:fs'
 import { repoRoot } from '../data-dir'
 import { openEntry } from './guard'
 import type { MissionV4 } from './model'
-import { readMissionRecord, v4RecordsDir, type RecordSource } from './record-store'
+import { listMissionRecords, type RecordSource } from './record-store'
 import type { StepInput } from './state'
 import { buildMissionSummary } from './summary'
 
@@ -44,7 +43,7 @@ export interface SummaryRouteRecord {
 }
 
 export interface SummaryRouteDeps {
-  /** The repo's records that exist as v4 (never converts or writes a v3 one). `cwd` is the session's folder. */
+  /** The repo's records, a v3 file read as v4 in memory (never written). `cwd` is the session's folder. */
   records(cwd: string): Promise<SummaryRouteRecord[]>
   /** The facts of each step, so the summary reads what Harnu knows. Optional and best effort. */
   inputsFor?(cwd: string, record: MissionV4): Promise<Readonly<Record<string, StepInput>>>
@@ -95,10 +94,7 @@ async function answer(body: unknown, deps: SummaryRouteDeps): Promise<string> {
   if (sessionId === '' || cwd === '' || str(b.source) !== 'compact') return ''
 
   const led = (await deps.records(cwd)).filter(
-    (r) =>
-      r.source === 'v4' &&
-      r.record.status === 'open' &&
-      openEntry(r.record, sessionId)?.role === 'leads'
+    (r) => r.record.status === 'open' && openEntry(r.record, sessionId)?.role === 'leads'
   )
   if (led.length === 0) return ''
 
@@ -135,28 +131,19 @@ export async function summaryRoute(body: unknown, deps: SummaryRouteDeps): Promi
 
 // ---- The real store -----------------------------------------------------------------------------
 
-/** `mnt-<8 hex>` at the start of a v4 record's file name. */
-const FILE_ID = /^(mnt-[0-9a-f]{8})-/
-
 /**
- * The v4 store as the route reads it: the ids of `.harnu/missions-v4/` and one read of each. A repo
- * with no such directory answers none without reading a v3 file or creating anything, and a v3 mission
- * that was never converted is never listed (the listing that would convert it is not used here).
+ * The store as the route reads it: every record of the repo, a v4 record or a v3 file converted in memory
+ * (the listing never writes). A file it cannot read is named in the log, and in the app's Activity by the
+ * list poll, so an old leader that gets no summary is never silent.
  */
 export function defaultSummaryRouteDeps(): SummaryRouteDeps {
   return {
     async records(cwd) {
-      const root = repoRoot(cwd)
-      const names = await fs.readdir(v4RecordsDir(root)).catch(() => [] as string[])
-      const ids = [...new Set(names.flatMap((n) => FILE_ID.exec(n)?.[1] ?? []))]
-      const out: SummaryRouteRecord[] = []
-      for (const id of ids) {
-        const read = await readMissionRecord(root, id)
-        if (read.ok && read.source === 'v4') {
-          out.push({ record: read.record, log: read.log, source: read.source })
-        }
+      const { records, unreadable } = await listMissionRecords(repoRoot(cwd))
+      for (const name of unreadable) {
+        console.warn(`[mission] summary route: ${name} cannot be read, so it is not served`)
       }
-      return out
+      return records.map((r) => ({ record: r.record, log: r.log, source: r.source }))
     }
   }
 }

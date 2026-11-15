@@ -608,7 +608,7 @@ describe('a delivered v3 mission with warnings, its leader not open here', () =>
   })
 })
 
-// ---- Missions v4 S-23 delta 3: a v3 mission keeps main's cue keys, its own chip words and its popover ---------
+// ---- Missions v4 S-23 delta 3, S-35: a v3 mission keeps main's cue keys; its chip reads like its pill ----------------
 
 describe('a v3 mission read through the v4 view keeps what main did', () => {
   const OWNER = '8f2c1e4a-1111-4222-8333-944455556666'
@@ -763,21 +763,17 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
     expect(playNotificationSound).not.toHaveBeenCalled()
   })
 
-  it('the chip of a v3 mission is its own pill\u2019s words, and a v4 one keeps the v4 text', async () => {
+  it('the chip of a v3 mission reads like its pill: the view\u2019s counts, the same as a v4 record (S-35)', async () => {
     const store = mountStore()
     v3Views = [v3([{ kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }])]
     v4Items = [blockerItem(1, null, 'Waiting on the vendor key')]
     wire()
     await store.refresh()
-    const model = store.modelForSession(OWNER)
-    expect(model).not.toBeNull()
-    const chip = store.chipFor(OWNER)
-    const { headlineText } = await import('../src/renderer/src/lib/mission-view')
-    expect(chip?.text).toBe(headlineText(i18n.global.t as never, model!.headline))
-    expect(chip?.compact).toBe(headlineText(i18n.global.t as never, model!.headline, true))
-    expect(chip?.text).not.toBe('2/5 · 1 for you')
-    expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(true)
-    // The same record once it is a v4 record (a v4 file exists): the v4 text, and the pane.
+    // The v3 list still serves the file for the cue (main's keys), but the chip is the pill's text.
+    expect(store.modelForSession(OWNER)).not.toBeNull()
+    expect(store.chipFor(OWNER)?.text).toBe('2/5 · 1 for you')
+    expect(store.chipFor(OWNER)?.compact).toBe('2/5 · 1 for you')
+    // The same record once a v4 record exists (the first door use): the same text.
     const detail = detailOf(v4Items) as { source: string }
     detail.source = 'v4'
     ;(window as unknown as { api: Record<string, unknown> }).api.missionV4View = vi.fn(
@@ -793,28 +789,7 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
     )
     await store.refresh()
     expect(store.chipFor(OWNER)?.text).toBe('2/5 · 1 for you')
-    expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(false)
-  })
-
-  // Delta 5: Open mission on a v3 card must open only the popover. The mission the card names is the one the
-  // v3 list serves; it need not be one the v4 readers read by that id (a campaign's chapter mission is a
-  // milestone of another id there, and the readers read a bounded number of missions per repo).
-  it('a mission only the v3 list knows is a v3 mission: Open mission is the popover, never the pane', async () => {
-    const store = mountStore()
-    v3Views = [
-      v3([{ kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }]),
-      fixtureView('parallel', {
-        mission: { id: 'mnt-0c0c0c0c', owner: { sessionId: OWNER, folder: '/repo' } } as never,
-        view: { you: [{ kind: 'close' }] as never }
-      })
-    ]
-    v4Items = []
-    wire()
-    await store.refresh()
-    // The second id is in no reader (the view channel answers only for the first).
-    expect(store.isV3Mission('mnt-0c0c0c0c')).toBe(true)
-    expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(true)
-    // An id nobody knows is not claimed for the popover.
-    expect(store.isV3Mission('mnt-deadbeef')).toBe(false)
+    // There is no v3/v4 switch any more: every record opens the pane.
+    expect('isV3Mission' in store).toBe(false)
   })
 })

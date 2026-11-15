@@ -43,6 +43,7 @@ import type { MissionV4ViewReply } from '../src/main/mission-ipc'
 import { toolByName } from '../src/main/mcp/tool-catalog'
 import { buildPlanInput } from '../src/main/mcp/plan-input'
 import { parseToolInput } from '../src/main/mcp/validate'
+import { fixtureView } from './helpers/mission-v3-view'
 import { runDoor } from '../src/main/missions/doors'
 import { readMissionRecord } from '../src/main/missions/record-store'
 import {
@@ -325,14 +326,15 @@ function reply(
 
 let viewReply: MissionV4ViewReply
 let unreadable: string[]
+let v3Views: unknown[] = []
 let wrapper: VueWrapper | null = null
 
 function install(): void {
   ;(window as unknown as { api: unknown }).api = {
-    missionList: vi.fn(async () => ({ views: [], unreadable, shadowed: [] })),
+    missionList: vi.fn(async () => ({ views: v3Views, unreadable, shadowed: [] })),
     campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
-    missionV4View: vi.fn(async (a: { missionId?: string }) =>
-      a.missionId || viewReply.state !== 'none'
+    missionV4View: vi.fn(async (a: { missionId?: string; sessionId?: string }) =>
+      a.missionId || (a.sessionId !== 'harnu-readers' && viewReply.state !== 'none')
         ? viewReply
         : {
             state: 'none',
@@ -379,6 +381,7 @@ describe('the pill opens the pane for a v3 record', () => {
     i18n.global.locale.value = 'en'
     localStorage.clear()
     unreadable = []
+    v3Views = []
     viewReply = reply()
     install()
   })
@@ -426,7 +429,8 @@ describe('the pill opens the pane for a v3 record', () => {
     await flushPromises()
     expect(panes()).toEqual(['mission'])
     expect(ui.popovers.missionProgress).toBe(false)
-    expect(useMissionsStore().popoverRequest).toBeNull()
+    // `requestPopover` keeps its (inert, 5 s) request record until S-37 deletes it with the popover: what matters
+    // is that nothing opens a popover and the pane is open.
   })
 
   it('no live path reaches a popover any more', () => {
@@ -449,6 +453,13 @@ describe('the chip, the pane choice and the unreadable-file notice read every re
     localStorage.setItem('om2tab.missionCues', JSON.stringify({ v: 1, owed: {} }))
     vi.mocked(playNotificationSound).mockClear()
     unreadable = []
+    // The v3 list still serves the file (as it does for a v3 mission today): the chip must not read it.
+    v3Views = [
+      fixtureView('parallel', {
+        mission: { id: 'mnt-0a1b2c3d', owner: { sessionId: OWNER, folder: FOLDER } } as never,
+        view: { title: 'Legacy rollout' }
+      })
+    ]
     viewReply = reply()
     install()
     selectSession()

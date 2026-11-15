@@ -229,8 +229,8 @@ describe('AC-42 — the pill toggles the pane for a v4 record', () => {
   })
 })
 
-describe('AC-42 — a v3 record keeps its popover, and v4 code never writes it', () => {
-  it('a v3 record keeps its popover and v4 code never writes it', async () => {
+describe('AC-42 — a v3 record opens the pane too (S-35), and v4 code never writes it until a door is used', () => {
+  it('a v3 record is read as v4 by the view, opens the pane, and nothing is written', async () => {
     v3Views = [
       fixtureView('faq-like', { mission: { owner: { sessionId: SESSION, folder: FOLDER } } })
     ]
@@ -240,39 +240,24 @@ describe('AC-42 — a v3 record keeps its popover, and v4 code never writes it',
     const helpers = useHelpersStore()
     const ui = useUiStore()
 
-    expect(w.find('button').exists()).toBe(true)
-    // Not the v4 pill: no count line, the v3 headline stays.
-    expect(w.find('[data-test="mission-pill-label"]').exists()).toBe(false)
-
+    // The v4 pill: the count line, not the v3 headline.
+    expect(w.get('[data-test="mission-pill-label"]').text()).toBe('4/21 · 3 for you')
     await w.get('button').trigger('click')
-    expect(ui.popovers.missionProgress).toBe(true)
-    expect(w.get('button').attributes('aria-expanded')).toBe('true')
-    // The pane did not open for a v3 record.
-    expect(helpers.panesForCurrentWorktree).toEqual([])
+    expect(helpers.panesForCurrentWorktree.map((p) => p.type)).toEqual(['mission'])
+    expect(ui.popovers.missionProgress).toBe(false)
 
-    // v4 code wrote nothing: neither the v4 door nor the v3 operator door was called.
+    // Opening the pane wrote nothing: neither the v4 door nor the v3 operator door was called.
     expect(api().missionV4Door).not.toHaveBeenCalled()
     expect(api().missionOperatorDoor).not.toHaveBeenCalled()
   })
 
-  it('a v3 record whose view says there is no v4 mission also keeps its popover', async () => {
+  it('a session whose view says there is no mission shows no pill', async () => {
     v3Views = [
       fixtureView('faq-like', { mission: { owner: { sessionId: SESSION, folder: FOLDER } } })
     ]
     viewReply = { state: 'none', missions: [] }
     const w = await mountPill()
-    await w.get('button').trigger('click')
-    expect(useUiStore().popovers.missionProgress).toBe(true)
-    expect(useHelpersStore().panesForCurrentWorktree).toEqual([])
-  })
-
-  it('survives a build without the view channel: the v3 pill is unchanged', async () => {
-    v3Views = [
-      fixtureView('faq-like', { mission: { owner: { sessionId: SESSION, folder: FOLDER } } })
-    ]
-    delete (window.api as unknown as Record<string, unknown>).missionV4View
-    const w = await mountPill()
-    await w.get('button').trigger('click')
-    expect(useUiStore().popovers.missionProgress).toBe(true)
+    expect(w.find('button').exists()).toBe(false)
+    expect(useUiStore().popovers.missionProgress).toBe(false)
   })
 })

@@ -184,7 +184,7 @@ describe('the leader gets the summary after compaction', () => {
     expect(await summaryRoute(body(STRANGER), real())).toContain('Score report')
   })
 
-  it('serves a v4 record only: the leader of a v3 mission sees no change, and nothing is read from v3', async () => {
+  it('serves a v3 record too (S-35): its leader gets the summary, and nothing is written', async () => {
     cpSync(path.join(FIXTURES, 'missions'), path.join(root, '.harnu', 'missions'), {
       recursive: true
     })
@@ -197,23 +197,19 @@ describe('the leader gets the summary after compaction', () => {
     if (!read.ok) throw new Error(read.error)
     const v3Leader = read.record.sessions.find((s) => s.role === 'leads' && s.to === null)?.id
     expect(v3Leader, 'the fixture has an open leader').toBeDefined()
-    expect(await summaryRoute(body(v3Leader as string), real())).toBe('')
-    // a route that served v3 would also have had to list it; it never converts one
+    expect((await summaryRoute(body(v3Leader as string), real())).length).toBeGreaterThan(0)
+    // a v3 file is read as v4 in memory: nothing is converted or written
     expect(snapshot()).toEqual(before)
     expect(existsSync(v4Dir())).toBe(false)
   })
 
-  it('a record that is not a v4 one is never served, even to its own leader, until the cut-over', async () => {
-    for (const source of ['v3-mission', 'v3-campaign'] as const) {
+  it('every record is served to its own leader, whatever file it came from (S-35)', async () => {
+    for (const source of ['v4', 'v3-mission', 'v3-campaign'] as const) {
       const out = await summaryRoute(body(LEADER), {
         records: async () => [{ record: missionOf(), log: '# Log\n', source }]
       })
-      expect(out, source).toBe('')
+      expect(out, source).toContain('Score report')
     }
-    const v4 = await summaryRoute(body(LEADER), {
-      records: async () => [{ record: missionOf(), log: '# Log\n', source: 'v4' as const }]
-    })
-    expect(v4).toContain('Score report')
   })
 
   it('writes no file anywhere: a v4 answer leaves every byte and every directory as it was', async () => {
@@ -355,15 +351,16 @@ describe('the route never throws and never blocks', () => {
 })
 
 describe('the default store of the route', () => {
-  it('reads the v4 records only, with no v3 file touched when none is converted', async () => {
+  it('reads every record, a v3 file as v4 in memory, and touches no v3 file', async () => {
     cpSync(path.join(FIXTURES, 'missions'), path.join(root, '.harnu', 'missions'), {
       recursive: true
     })
     seed(missionOf())
     const before = snapshot(path.join(root, '.harnu', 'missions'))
     const records = await defaultSummaryRouteDeps().records(root)
-    expect(records.map((r) => r.record.id)).toEqual([ID])
-    expect(records.every((r) => r.source === 'v4')).toBe(true)
+    expect(records.map((r) => r.record.id)).toContain(ID)
+    expect(records.some((r) => r.source === 'v3-mission')).toBe(true)
+    expect(records.find((r) => r.record.id === ID)?.source).toBe('v4')
     expect(snapshot(path.join(root, '.harnu', 'missions'))).toEqual(before)
   })
 
