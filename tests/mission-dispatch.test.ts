@@ -15,7 +15,7 @@
  * from an ACK. Only `electron` and the live sources are stubbed.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
-import { promises as fs } from 'node:fs'
+import { promises as fs, readFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -46,6 +46,7 @@ import { dropPendingSpawn, mintScopedBearer, takePendingSpawn } from '../src/mai
 import { readMissionRecord } from '../src/main/missions/record-store'
 import {
   bindCardSession,
+  createDrainBinder,
   dispatchStep,
   noteCardSpawn,
   realBoardIo,
@@ -470,6 +471,26 @@ describe('submit_manifest with a step binds the card at the stamp and the worker
     expect(freeCard.card.approved).toBeFalsy()
   })
 
+  it('a batch with one bad card binds none of its good ones', async () => {
+    const id = await newMission()
+    const holder = await newCard('Holds the second step')
+    const free = await newCard('Free card')
+    const intruder = await newCard('Another card for the second step')
+    expect((await submitManifest([{ slug: holder, missionId: id, stepId: 'stp-2' }])).isError).toBe(
+      false
+    )
+
+    const r = await submitManifest([
+      { slug: free, missionId: id, stepId: 'stp-1' },
+      { slug: intruder, missionId: id, stepId: 'stp-2' }
+    ])
+    expect(r.isError).toBe(true)
+    expect(r.text).toMatch(/CARD_BOUND_ELSEWHERE/)
+    // The good card was judged with the bad one and stamped with neither: no step, no approval.
+    expect(await cardsOfStep(id, 'stp-1')).toHaveLength(0)
+    expect((await boardCards()).find((c) => c.slug === free)!.card.approved).toBeFalsy()
+  })
+
   it('two cards for one step are refused: a step has one card', async () => {
     const id = await newMission()
     const a = await newCard('First card')
@@ -570,6 +591,101 @@ describe('a session the drain or the board spawns for a step is noted for its cr
     expect(await noteCardSpawn(worktree, repo, slug)).toBe(true)
     expect(takePendingSpawn(worktree)).toMatchObject({ missionId: id, stepId: 'stp-1' })
     expect(takePendingSpawn(repo)).toBeUndefined()
+  })
+})
+
+describe('the drain’s side: the card being spawned, its note and its session', () => {
+  const waitFor = async (
+    syntheticId: string
+  ): Promise<{ syntheticId: string; sessionId: string; folder: string }> => ({
+    syntheticId,
+    sessionId: DRAINED,
+    folder: repo
+  })
+
+  it('in the order the drain calls it: a stamped card is noted where it spawns, then its session is attached', async () => {
+    const id = await newMission()
+    const slug = await newCard()
+    await submitManifest([{ slug, missionId: id, stepId: 'stp-1' }])
+    const binder = createDrainBinder({ waitForBoot: waitFor, warn: () => {} })
+
+    binder.planned(repo, slug)
+    const undo = await binder.beforeSpawn(repo)
+    expect(takePendingSpawn(repo)).toEqual({ role: 'worker', missionId: id, stepId: 'stp-1' })
+    undo()
+
+    await binder.afterBind(repo, slug, 'synthetic-drained')
+    const record = await readRecord(id)
+    expect(record.sessions.find((s) => s.id === DRAINED)).toMatchObject({
+      role: 'worked',
+      to: null
+    })
+    expect(record.steps.find((s) => s.id === 'stp-1')!.card).toBe(slug)
+  })
+
+  it('a spawn that fails takes its note back, so the next spawn in the folder is not scoped to it', async () => {
+    const id = await newMission()
+    const slug = await newCard()
+    await submitManifest([{ slug, missionId: id, stepId: 'stp-1' }])
+    const binder = createDrainBinder({ waitForBoot: waitFor, warn: () => {} })
+    binder.planned(repo, slug)
+    const undo = await binder.beforeSpawn(repo)
+    undo()
+    expect(takePendingSpawn(repo)).toBeUndefined()
+  })
+
+  it('a worktree card is noted for the worktree it was cut into, and its session attached all the same', async () => {
+    const id = await newMission()
+    const slug = await newCard()
+    await submitManifest([{ slug, missionId: id, stepId: 'stp-1' }])
+    const worktree = path.join(path.dirname(repo), 'wt-card')
+    const binder = createDrainBinder({ waitForBoot: waitFor, warn: () => {} })
+    binder.planned(repo, slug)
+    binder.cut(worktree, repo, slug)
+    await binder.beforeSpawn(worktree)
+    expect(takePendingSpawn(worktree)).toMatchObject({ missionId: id, stepId: 'stp-1' })
+    expect(takePendingSpawn(repo)).toBeUndefined()
+  })
+
+  it('a card with no step is neither noted nor attached', async () => {
+    const id = await newMission()
+    const slug = await newCard('A card for no step')
+    const binder = createDrainBinder({ waitForBoot: waitFor, warn: () => {} })
+    binder.planned(repo, slug)
+    await binder.beforeSpawn(repo)
+    expect(takePendingSpawn(repo)).toBeUndefined()
+    await binder.afterBind(repo, slug, 'synthetic-plain')
+    expect((await readRecord(id)).sessions.map((s) => s.id)).toEqual([LEADER])
+  })
+
+  it('a session that never boots is said, not thrown: the drain goes on', async () => {
+    const id = await newMission()
+    const slug = await newCard()
+    await submitManifest([{ slug, missionId: id, stepId: 'stp-1' }])
+    const warnings: string[] = []
+    const binder = createDrainBinder({
+      waitForBoot: async () => null,
+      warn: (m) => warnings.push(m)
+    })
+    await binder.afterBind(repo, slug, 'synthetic-never')
+    expect(warnings.join('\n')).toMatch(/not attached to its step/)
+    expect((await readRecord(id)).sessions.map((s) => s.id)).toEqual([LEADER])
+  })
+
+  it('the drain’s shell calls the binder at each point of a dispatch', () => {
+    const src = readFileSync(
+      path.join(__dirname, '..', 'src', 'main', 'manifest-drain-shell.ts'),
+      'utf8'
+    )
+    for (const call of [
+      'binder.planned(',
+      'binder.cut(',
+      'binder.beforeSpawn(',
+      'binder.afterBind('
+    ]) {
+      expect(src, call).toContain(call)
+    }
+    expect(src).toContain('undoNote()')
   })
 })
 

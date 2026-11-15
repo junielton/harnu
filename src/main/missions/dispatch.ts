@@ -38,7 +38,7 @@ import {
   updateFrontmatterFields,
   type CardSubstrate
 } from '../roadmap-core'
-import { registerPendingSpawn } from '../mcp/scope'
+import { dropPendingSpawn, registerPendingSpawn } from '../mcp/scope'
 import { findStepCard, planStepCard, type CardFile } from './cards'
 import type { StepV4 } from './model'
 import { readMissionRecord } from './record-store'
@@ -435,5 +435,55 @@ export async function noteCardSpawn(
     return true
   } catch {
     return false
+  }
+}
+
+// ---- The drain's side of it: which card is being spawned, and attaching its session ---------------------
+
+/**
+ * What the manifest drain's shell does around a card's session, in the order the drain calls it:
+ * `planned` (the card is next), `cut` (its worktree exists, for a worktree card), `beforeSpawn` (leave
+ * the credential note, in the folder it spawns in), then `afterBind` (the card is bound to its session:
+ * attach it to the step once it has booted). The drain's `spawnSession` is not told which card it is
+ * spawning for, so the card waits here by the folder its session spawns in (one card is dispatched at a
+ * time within a pass). A card with no step is untouched by all of it.
+ */
+export function createDrainBinder(deps: {
+  waitForBoot: NonNullable<BindCardDeps['waitForBoot']>
+  /** Where a failure to attach is said (the operator can attach the session from the Mission pane). */
+  warn?: (message: string) => void
+}): {
+  planned(folder: string, slug: string): void
+  cut(worktreePath: string, home: string, slug: string): void
+  /** Take the card waiting for `spawnFolder` and leave its note. The returned function undoes the note. */
+  beforeSpawn(spawnFolder: string): Promise<() => void>
+  /** Resolves when the attach has settled; the drain never waits on it. */
+  afterBind(folder: string, slug: string, sessionId: string): Promise<void>
+} {
+  const dispatching = new Map<string, { home: string; slug: string }>()
+  const warn = deps.warn ?? ((m: string) => console.warn(`[manifest-drain] ${m}`))
+  return {
+    planned: (folder, slug) => void dispatching.set(folder, { home: folder, slug }),
+    cut: (worktreePath, home, slug) => void dispatching.set(worktreePath, { home, slug }),
+    async beforeSpawn(spawnFolder) {
+      const card = dispatching.get(spawnFolder)
+      dispatching.delete(spawnFolder)
+      const noted = card ? await noteCardSpawn(spawnFolder, card.home, card.slug) : false
+      return () => {
+        if (noted) dropPendingSpawn(spawnFolder)
+      }
+    },
+    async afterBind(folder, slug, sessionId) {
+      try {
+        const res = await bindCardSession(folder, slug, sessionId, {
+          waitForBoot: deps.waitForBoot
+        })
+        if (!res.ok) warn(`${slug} was not attached to its step: ${res.error}`)
+      } catch (err) {
+        warn(
+          `${slug} was not attached to its step: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+    }
   }
 }
