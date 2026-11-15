@@ -22,6 +22,10 @@ const sessionsFake = vi.hoisted(() => ({
     )
   }
 }))
+const missionsFake = vi.hoisted(() => ({
+  requestPopover: vi.fn(),
+  isV3Mission: vi.fn((_id: string) => false)
+}))
 const helpersFake = vi.hoisted(() => ({
   currentWorktreePath: '/org/proj/www',
   panesForCurrentWorktree: [] as { type: string }[],
@@ -29,6 +33,7 @@ const helpersFake = vi.hoisted(() => ({
 }))
 vi.mock('../../src/renderer/src/stores/sessions', () => ({ useSessionsStore: () => sessionsFake }))
 vi.mock('../../src/renderer/src/stores/helpers', () => ({ useHelpersStore: () => helpersFake }))
+vi.mock('../../src/renderer/src/stores/missions', () => ({ useMissionsStore: () => missionsFake }))
 
 const NOW = 1_800_000_000_000
 
@@ -95,6 +100,8 @@ beforeEach(() => {
   sessionsFake.activateSession.mockClear()
   sessionsFake.markSessionSeen.mockClear()
   helpersFake.toggleMissionHelper.mockClear()
+  missionsFake.requestPopover.mockClear()
+  missionsFake.isV3Mission.mockReturnValue(false)
   helpersFake.panesForCurrentWorktree = []
 })
 afterEach(() => {
@@ -319,6 +326,21 @@ describe('YourMoveCard in the Return here zone', () => {
     expect(sessionsFake.activateSession).toHaveBeenCalledWith('sess-0001')
     // The mission lives in the pane beside its leader: the card opens the session, then the pane.
     expect(helpersFake.toggleMissionHelper).toHaveBeenCalledWith('/org/proj/www')
+  })
+
+  it('Open mission on a v3 mission opens its popover, as it always did, not the pane', async () => {
+    missionsFake.isV3Mission.mockReturnValue(true)
+    const w = await mountZone([
+      card({ id: 'c4', source: 'mission', mission: { missionId: 'mnt-1' } })
+    ])
+    await expand(w, 0)
+    await cardEls(w)[0]
+      .findAll('button')
+      .find((b) => b.text() === 'Open mission')!
+      .trigger('click')
+    expect(sessionsFake.activateSession).toHaveBeenCalledWith('sess-0001')
+    expect(missionsFake.requestPopover).toHaveBeenCalledWith('mnt-1')
+    expect(helpersFake.toggleMissionHelper).not.toHaveBeenCalled()
   })
 
   it('Open mission leaves the pane alone when it is already open', async () => {

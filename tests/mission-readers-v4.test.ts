@@ -432,6 +432,72 @@ describe('readers use the v4 view', () => {
       expect(views.get(repo)?.views[0]?.mission.owner.sessionId).toBe(LEADER)
     })
 
+    it("a v3 blocker keeps main's card key, and clearing a neighbour never closes and re-files it", async () => {
+      const blockers = (rs: string[]): never =>
+        rs.map((reason) => ({
+          reason,
+          unblocks: 'a key',
+          owner: 'operator',
+          raisedAt: NOW
+        })) as never
+      const stepWith = (blk: unknown[]): unknown => ({
+        id: 'stp-2',
+        ordinal: 2,
+        kind: 'custom',
+        title: 'Build',
+        verification: 'verifier',
+        proof: 'unproven',
+        links: [],
+        blockers: blk
+      })
+      const base = v3Mission({ blockers: blockers(['Waiting on the vendor key']) })
+      const withStep = (m: ReturnType<typeof v3Mission>, step: unknown) => ({
+        ...m,
+        steps: [m.steps[0], step, m.steps[1]]
+      })
+      seedV3(withStep(base, stepWith(blockers(['Merge the pull request']))) as never)
+      let s = reconcileMissions(
+        emptyState(),
+        NONE,
+        [repo],
+        'live',
+        mint,
+        1,
+        await readRecordViews([repo], { readDetail })
+      )
+      // Main's key for a v3 blocker: `<mission id>:blocker:<reason>`.
+      expect(
+        s.cards
+          .filter((c) => c.closedAt === undefined)
+          .map((c) => c.sourceKey)
+          .sort()
+      ).toEqual([
+        'mnt-0a1b2c3d:blocker:Merge the pull request',
+        'mnt-0a1b2c3d:blocker:Waiting on the vendor key'
+      ])
+      const stepCard = s.cards.find((c) => c.sourceKey?.endsWith('Merge the pull request'))!
+      // The operator clears the mission-level blocker: the step blocker is renumbered, and its card stays.
+      rmSync(missionsDir(repo), { recursive: true, force: true })
+      seedV3(
+        withStep(
+          v3Mission({ blockers: [] }),
+          stepWith(blockers(['Merge the pull request']))
+        ) as never
+      )
+      s = reconcileMissions(
+        s,
+        NONE,
+        [repo],
+        'live',
+        mint,
+        2,
+        await readRecordViews([repo], { readDetail })
+      )
+      const still = s.cards.find((c) => c.id === stepCard.id)!
+      expect(still.closedAt).toBeUndefined()
+      expect(s.cards.filter((c) => c.sourceKey?.endsWith('Merge the pull request'))).toHaveLength(1)
+    })
+
     it('only the roots of the latest query are remembered, even when two queries overlap', async () => {
       const other = mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-other-'))
       try {
