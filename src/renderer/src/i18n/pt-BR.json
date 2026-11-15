@@ -467,6 +467,70 @@
       "approve": "Aprovar",
       "decline": "Recusar"
     },
+    "sessions": {
+      "label": "Sessões",
+      "meta": {
+        "this": "{count} · liderada por esta sessão",
+        "other": "{count} · liderada por {name}",
+        "none": "{count} · ninguém a lidera"
+      },
+      "role": {
+        "leads": "Lidera a missão",
+        "leadsPast": "Liderou a missão",
+        "works": "Trabalha na missão",
+        "worked": "Trabalhou na missão"
+      },
+      "thisSession": "esta sessão",
+      "unnamed": "Sessão {id}",
+      "tookOver": "Assumiu “{title}”",
+      "since": "Desde {day}",
+      "span": "{from} a {to}",
+      "sameDay": "{day}, {from} a {to}",
+      "stoppedAt": "Parou em “{step}”",
+      "stoppedUnknown": "Parou. O registro não diz onde.",
+      "waitingFor": "Esperando: {what}",
+      "more": "Mais {n} sessão | Mais {n} sessões",
+      "less": "Mostrar menos",
+      "continue": "Continuar em uma nova sessão…"
+    },
+    "handoff": {
+      "offer": {
+        "thisSession": "O contexto desta sessão está {percent}% cheio. Você pode continuar a missão em uma sessão nova. Ela começa pelo resumo da missão, então nada se perde.",
+        "otherSession": "O contexto de {name}, a sessão que lidera, está {percent}% cheio. Você pode continuar a missão em uma sessão nova. Ela começa pelo resumo da missão, então nada se perde.",
+        "leaderUnnamed": "a sessão que lidera",
+        "open": "Continuar em uma nova sessão…",
+        "later": "Agora não"
+      },
+      "title": "Continuar esta missão em uma nova sessão",
+      "steps": {
+        "one": "O Harnu guarda onde a sessão que lidera parou.",
+        "two": "Uma nova sessão abre com o resumo abaixo e lidera a missão.",
+        "three": "A sessão antiga é liberada. Ela continua no histórico de sessões da missão."
+      },
+      "brief": {
+        "heading": "Resumo da missão — com o que a nova sessão começa",
+        "empty": "O Harnu não tem um resumo desta missão para dar à nova sessão."
+      },
+      "cancel": "Cancelar",
+      "confirm": "Iniciar nova sessão",
+      "pending": "Iniciando a nova sessão…",
+      "pendingHint": "Isso pode levar até 90 segundos. Mantenha esta janela aberta.",
+      "done": {
+        "title": "A nova sessão lidera a missão",
+        "body": "O Harnu a iniciou com o resumo da missão e liberou a sessão antiga. Ela continua no histórico de sessões da missão.",
+        "open": "Abrir a nova sessão",
+        "close": "Fechar"
+      },
+      "error": {
+        "MISSION_CLOSED": "Esta missão está fechada, então não há o que continuar.",
+        "HANDOFF_START_FAILED": "A nova sessão não iniciou. Nada mudou: a mesma sessão continua liderando. Tente de novo em instantes.",
+        "STARTED_NOT_ATTACHED": "A nova sessão foi iniciada, mas não assumiu a tempo. A mesma sessão continua liderando. Abra a nova sessão para ver o que aconteceu, ou feche-a. Depois tente de novo.",
+        "HANDOFF_IN_PROGRESS": "Uma transferência desta missão já está iniciando uma sessão. Espere terminar e olhe a linha Sessões.",
+        "HANDOFF_UNAVAILABLE": "O Harnu não consegue iniciar uma sessão agora. Nada mudou. Tente de novo em instantes.",
+        "LEADER_CHANGED": "Quem lidera a missão mudou enquanto a nova sessão iniciava, então o Harnu não a vinculou. A nova sessão está aberta, mas não faz parte da missão. Olhe a linha Sessões e decida de novo.",
+        "other": "O Harnu não conseguiu concluir a transferência. Olhe a linha Sessões para ver quem lidera e tente de novo."
+      }
+    },
     "none": {
       "title": "Esta sessão não tem missão."
     },

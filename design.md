@@ -468,6 +468,7 @@ _another_ folder.
 | `volume-x`                               | Nothing was spoken (Settings → Voice — the `dropped` / `stopped` outcome of a Test or a per-voice preview)                                                                                                                             |
 | `list-checks`                            | Mission progress — the Topbar "Step N of M" pill's leading glyph (T370, Mission v3, §6 "Mission progress"); swaps to `check` once the headline is done or the mission delivered                                                        |
 | `target`                                 | Mission pane — the v4 Topbar pill's leading glyph, the pane header's glyph and the "no mission" empty state (Missions v4 S-17, §6 "Mission pane"); the pill swaps to `check` when the mission is ready to close                        |
+| `arrow-left-right`                       | Mission pane — "Continue in a new session…" (the hand-off), on the Sessions row, the offer and the confirmation's Start button (Missions v4 S-20, §6 "Mission pane" → Sessions and the hand-off)                                       |
 | `log-in`                                 | Mission progress — a child session row's in-app "Go to session" action (Mission v3, §6 "Mission progress"; replaces `external-link` there)                                                                                             |
 | `contrast`                               | Mission progress — the step rail's `waiting` glyph (◐, Mission v3)                                                                                                                                                                     |
 | `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                                                                                 |
@@ -7938,6 +7939,143 @@ continue" on a blocker that is the session's. ❌ Draw a button on a criterion a
 session settles. ❌ Open an address that is not http or https. ❌ Guess a pull request's repository
 to make its number a link. ❌ List a link the operator pasted as "from the session". ❌ Call the
 approval of another person a "sign-off" in the pane.
+
+#### Sessions and the hand-off (Missions v4, S-20)
+
+**S-20 (`MissionPaneSessions.vue`, `MissionHandoffDialog.vue`, with `MissionPane.vue` and the store; draft
+mockup `docs/design/missions-v4/`, screen `mission-pane`, states `sessions`, `handoff-suggest`,
+`handoff-confirm`).** The mission is durable and a session is disposable: the mission keeps the list of
+the sessions that worked on it, and the operator alone decides to continue it in a new one. **Tokens
+only; no new colour, radius, easing or row height.** The one new glyph is `arrow-left-right` (§5). The
+components compute nothing: the rows, the order, the fold and who leads are built in `lib/mission-pane-view.ts`
+from the server's `sessions` history, and the confirmation shows the server's `detail.summary`.
+
+**The Sessions row** is the last section of the pane body (`border-t border-border`, `padding: 12px
+16px`). Folded it is one line: a chevron (10px, `text-text-4`), the eyebrow **Sessions** (`10.5px / 500`,
+uppercase, `0.07em`, `text-text-4`) and, right-aligned, **how many and who leads** (`11px`,
+`text-text-4`, truncates): **"4 · led by this session"**, **"4 · led by orch-1"** (the session's name, the
+one every surface shows) or **"4 · nobody leads it"**. A click unfolds it (`aria-expanded`). Opened, one
+row per session (`gap: 8px`, `12px`, `text-text-2`), a grid of a 7px dot and the text (`8px 1fr`, `gap: 0
+9px`):
+
+- **dot**: `bg-green` while the session is still attached; a hollow ring (`border-[1.5px]
+border-text-4`) once it stopped;
+- **line 1**: the session's **name** (`font-weight: 500`, `text-text`; **"Session 22222222"**, the first
+  eight characters of its id, when it is not loaded; a session a hand-off started is named after its first
+  prompt, the hand-off's instruction line, so the row says **"Took over “Score a spec with a test set”"**
+  instead, while the sidebar still shows the first prompt) · its **role**, in the tense of whether it still is:
+  **"Leads the mission"** / **"Led the mission"** / **"Works on the mission"** / **"Worked on the mission"**,
+  and **" · this session"** on the one the pane follows;
+- **sub line** (`10.5px`, `text-text-4`): when it worked, from and to: **"Since Nov 13"** (attached),
+  **"Nov 11 to Nov 12"**, or **"Nov 13, 09:00 to 12:00"** when both are one day;
+- **where it stopped**, only for a session that is no longer attached (`10.5px`, `text-text-4`): **"Stopped
+  at “Run the tool on the whole test set”"** (the step's **title** in quotes, never its id) and **"Waiting
+  for: the corpus folder path"** when the record says what it waited for; **"Stopped. The record does not
+  say where."** when it names neither.
+
+**Order**: the session that leads first, then the ones still attached (oldest first), then the stopped ones,
+the latest to stop first. Every attached session always shows; the stopped ones show five at a time and
+the rest fold behind **"3 more sessions"** (`11.5px`, `text-text-3`; **"Show less"** folds them again). The
+mockup draws a group line "4 sessions · each running one step"; the spec wins: **every session is listed**,
+each with its own role, from, to and stop.
+
+Under the rows, **"Continue in a new session…"**: the dense pill (`rounded-sm border border-border-2
+bg-surface-2`, `height: 20px`, `padding: 0 7px`, `11px / 500`, a 10px `arrow-left-right`), `self-start`. It
+only opens the confirmation; it is off (`disabled:opacity-40`) while a hand-off waits for the door. **A
+mission with one session** (not drawn in the mockup) is one row and the same button: "1 · led by this
+session".
+
+**The offer** — the view decides: when the leader's context is **80 percent or more** (a live reading,
+never a stale one) the pane pins a notice under the scroll body (`margin: 0 12px 10px`, `rounded border
+border-warning-line bg-warning-soft`, `padding: 10px 12px`, `gap: 8px`, `12px`, `text-text`): **"This
+session’s context is 82% full. You can continue the mission in a fresh session. It starts from the
+mission summary, so nothing is lost."** The mockup says "82% of its memory is used"; the spec wins: the
+offer speaks of the **session’s context**, never "memory". When the pane follows a session that is not the
+leader, the first sentence names the leader: **"The context of orch-1, the session that leads, is 90%
+full."** Two buttons, which wrap onto a second line in a narrow pane (a label never wraps inside its pill):
+**"Continue in a new session…"** (primary pill, `bg-accent text-accent-ink`) opens the
+same confirmation, and **"Not now"** (ghost pill) keeps the offer quiet and **does nothing else**: it
+stores the percentage it was said at, per mission and per leader (kept across a restart), and sends it
+with the next read of the view (`dismissedPercent`). The view offers again only once the context has grown
+**five points**; the pane itself stays quiet at a reading no higher than the one dismissed. With **no
+context reading** there is no offer, and a hand-off clears the dismissal (the new leader starts fresh).
+Nothing in the pane starts a session or changes who leads on its own.
+
+**The confirmation** (`MissionHandoffDialog.vue`) is a **Confirm** on the shared `Dialog` (§6 "Dialog":
+size `md`, scrim, focus trap, Esc, the 84vh cap; the body is the one scroller; **initial focus: Cancel**).
+The mockup draws it 520px wide; the shell has no 520, so it takes `md` (560px; `min(560px, 90vw)`).
+Title **"Continue this mission in a new session"**; body, top to bottom:
+
+1. a numbered list (`12.5px`, `text-text-2`, `gap: 4px`): "Harnu saves where the session that leads
+   stopped." · "A new session opens with the summary below and leads the mission." · "The old session is
+   released. It stays in the mission’s session history." (the mockup says "this session"; the leader may not
+   be the session the pane follows);
+2. **the status box**, between the list and the summary, only while the door waits or after it refused
+   (below): it is above the summary on purpose, because a long summary scrolls and would push it out of
+   sight;
+3. **the summary the new session starts with** — a box (`rounded border border-border bg-bg`, `padding: 10px
+12px`, `12px`): the eyebrow **"Mission summary — what the new session starts with"** (`10px / 700`,
+   uppercase, `0.07em`, `text-text-4`) over a grid of the label (`82px`, `text-text-4`) and the section's text
+   (`whitespace-pre-line`, wraps) for each section the server wrote (Goal, Where it is, Decided, Stopped
+   at, Next step, and the open criteria and links when they fit). It is the text of `detail.summary`, so the
+   operator can judge whether it is enough to start a session cold; a summary with no sections shows whole,
+   an empty one says **"Harnu has no summary of this mission to give the new session."**.
+
+Footer: **Cancel** (ghost) and **Start new session** (primary, a 14px `arrow-left-right`): the dialog's
+28px footer box. Nothing starts until **Start new session**.
+
+**Pending** (not drawn in the mockup): the door waits up to **90 seconds** for the new session to appear.
+The dialog stays open and says so: a box above the summary (`rounded border border-accent-line
+bg-accent-soft`, `padding: 8px 10px`, `role="status"`) with a spinning `loader-2` (14px, `text-accent`), **"Starting
+the new session…"** (`12px / 500`) and **"This can take up to 90 seconds. Keep this window open."**
+(`11.5px`, `text-text-3`). Both buttons are off, the ✕ is gone and Esc and the scrim do nothing while it
+waits (the shell's `dismissible=false`), so a second press starts nothing and the operator cannot close
+the only place that will say how it ended.
+
+**A hand-off that did not happen** (not drawn in the mockup): the dialog stays open, the buttons are back,
+and above the summary one box (`rounded border border-red-line bg-red-soft`, `padding: 8px 10px`, `12px`,
+`role="alert"`) says **what to do next, never the code**:
+
+| Code                                                                                      | Words                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MISSION_CLOSED`                                                                          | "This mission is closed, so there is nothing to continue."                                                                                                                                           |
+| `HANDOFF_START_FAILED`                                                                    | "The new session did not start. Nothing changed: the same session still leads. Try again in a moment."                                                                                               |
+| `HANDOFF_START_FAILED`, when the reply names a session that **was started**               | "The new session was started, but it did not take over in time. The same session still leads. Open the new session to see what happened, or close it. Then try again."                               |
+| `HANDOFF_IN_PROGRESS`                                                                     | "A hand-off of this mission is already starting a session. Wait for it to finish, then look at the Sessions row."                                                                                    |
+| `HANDOFF_UNAVAILABLE`                                                                     | "Harnu cannot start a session right now. Nothing changed. Try again in a moment."                                                                                                                    |
+| `LEADER_CHANGED`                                                                          | "Who leads the mission changed while the new session was starting, so Harnu did not attach it. The new session is open but is not part of the mission. Look at the Sessions row, then decide again." |
+| anything else (`OPERATOR_ONLY`, `BAD_ARGS`, a write refusal, a channel that is not there) | "Harnu could not finish the hand-off. Look at the Sessions row to see who leads, then try again."                                                                                                    |
+
+When the reply names a session the door **started** but did not attach (it did not take over in time, or the
+leader changed under it), the footer also has **Open the new session** (left-aligned, ghost): it selects that
+session when it is loaded in the sidebar, so the operator can see what happened or close it. The door's reply
+carries its id (`started`); a start that never began has none, and keeps "did not start. Nothing changed".
+
+**A hand-off that took effect** (not drawn in the mockup): the pane reads the view again, and **this session
+is released**, so the pane now shows "This session has no mission." The dialog stays, because it is the one
+place that says what happened: **"The new session leads the mission"** (`12.5px / 500`, `text-text`) and
+**"Harnu started it with the mission summary and released the old session. It stays in the mission’s
+session history."**; footer **Open the new session** (ghost; only when the new session is already loaded
+in the sidebar; it selects it) and **Close** (primary).
+
+**Narrow** (not drawn in the mockup): the pane's Sessions row wraps its text and truncates only the count
+line; the dialog is `min(560px, 90vw)`, so at a phone-narrow window the card is 90vw, the label column keeps
+`82px`, the text wraps (`break-words`, `min-w-0`), header and footer stay pinned and the summary scrolls.
+
+**Data.** The offer is the view's `handoff { offer, percent }` (the request carries `dismissedPercent`);
+the rows are the view's `sessions`; the summary is `detail.summary`. The door is `window.api.missionHandOff`
+(channel `mission:handOff`), reached **only** from the confirmation's Start button through
+`stores/missions.ts` (`runHandOff`), which adds the folder (the selected session's) and the mission id
+**the view answered for**, refuses a second call while one waits, and reads the view again after every
+reply. The session the door starts is a normal one (the operator's permission mode and Harnu's MCP
+server), not an agent-controlled one. v4 missions cannot be created by an agent yet (the verbs land in
+chapter 5), so the row and the hand-off have something to show only when a v4 record already exists on
+disk.
+
+**Don'ts.** ❌ Start a session or change who leads from anywhere but the confirmation. ❌ Offer a
+hand-off with no live context reading. ❌ Say "memory" for the session's context. ❌ Print the code the
+door came back with. ❌ Let the dialog close while the door waits. ❌ List a step by its id. ❌ Group
+sessions into "N sessions" and hide their stops.
 
 ### Campaign progress (pill, popover)
 

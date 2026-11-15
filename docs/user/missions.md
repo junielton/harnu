@@ -70,6 +70,46 @@ If the session says it is done with a criterion but nothing independent has chec
 
 **When a button does not work.** If something changed under you (someone else cleared the blocker a moment ago, or the mission was closed), the pane says what to do in plain words, shows the latest, and leaves the step as it now is. Nothing is lost.
 
+## Sessions and continuing in a new session
+
+A mission outlives the session that works on it. The pane keeps the list of the sessions that worked on the mission, and you are the only one who decides to move it to a new one.
+
+### The Sessions line
+
+At the bottom of the pane, **Sessions** is one line: how many sessions worked on the mission and which one leads it, for example **4 · led by this session**, **4 · led by orch-1** or **4 · nobody leads it**. Click it to open the list. Each session shows:
+
+- its **name** (**Session** and the first eight characters of its id when the session is not loaded any more; a session that a hand-off started reads **Took over "…"** with the mission's title instead of its opening message);
+- what it is or was in the mission: **Leads the mission** / **Led the mission** (the one that leads, or used to) and **Works on the mission** / **Worked on the mission**, with **this session** on the one you are looking at;
+- **when it worked**: **Since Nov 13** while it is attached, **Nov 11 to Nov 12** once it stopped (with the hours when it started and stopped on the same day);
+- for a session that stopped, **where it stopped**: **Stopped at "Run the tool on the whole test set"** and, when it was waiting for something, **Waiting for: the corpus folder path**. If the record does not say, it says **Stopped. The record does not say where.**
+
+The session that leads is first, then the ones still attached, then the ones that stopped, the latest first. When more than five have stopped, the older ones fold behind **N more sessions**.
+
+### Continuing in a new session
+
+Under the list, **Continue in a new session…** opens a confirmation. It says what will happen, in three lines, and shows **the summary the new session starts from**: the goal, where the mission is, what was decided, where each session stopped and the next step. Read it: it is all the new session knows, so if something important is missing, cancel and say it in the current session first.
+
+Nothing happens until you press **Start new session**. Then Harnu:
+
+1. saves where the session that leads stopped;
+2. starts a new session in the same folder, in your usual permission mode, with that summary as its first message, and attaches it as the one that leads the mission;
+3. releases the old session. It is **not closed or interrupted**: it stays open in the sidebar and in the Sessions list as one that worked on the mission.
+
+Starting a session can take **up to 90 seconds**. The window says so, stays open and cannot be closed while it waits, so you cannot press the button twice. When it is done the window says **The new session leads the mission**, and offers **Open the new session**. The pane you are looking at then shows **This session has no mission**, because the session you were following has been released: select the new session to see the mission again.
+
+If it does not work, the window stays open and says what to do. In every case the old session still leads, unless the window says the lead changed:
+
+- **The new session did not start.** Nothing changed. Try again in a moment.
+- **The new session was started, but it did not take over in time.** The same session still leads. Harnu did not see the new session begin, so it did not attach it, and it is running on its own. **Open the new session** takes you to it so you can see what happened or close it. Then try again.
+- **A hand-off of this mission is already starting a session.** Wait for it to finish, then look at the Sessions line.
+- **Harnu cannot start a session right now.** Nothing changed. Try again in a moment.
+- **Who leads the mission changed while the new session was starting.** Harnu did not attach the new session, so it is open but is not part of the mission (**Open the new session** takes you to it). Look at the Sessions line and decide again.
+- **This mission is closed.** There is nothing to continue.
+
+### When Harnu offers it
+
+When the context of the session that leads is **80 percent full or more**, the pane shows a notice under the mission: **This session's context is 82% full. You can continue the mission in a fresh session.** (When you are looking at another session, it names the one that leads.) **Continue in a new session…** opens the same confirmation. **Not now** keeps the notice away until that session's context grows by **five more points**, and does nothing else: it does not start a session or change who leads. If Harnu has no reading of the context (the session is not running, or it has just started), there is no notice. Harnu never switches sessions by itself.
+
 ### A new Done when
 
 A session can propose a new **Done when** for the mission (what has to be true for it to be finished). It never takes effect by itself: the pane shows a box under **Your next step** with the proposed text, **Approve** and **Decline**. Approve makes it the mission's Done when; Decline keeps the current one.
@@ -83,8 +123,8 @@ It can also say:
 ## What you cannot do yet
 
 - **Create a version 4 mission.** Agents cannot create one yet.
-- **Close the mission or hand it to a new session from the pane.** There are no buttons for those yet. On an open step you can mark your own criteria, mark another person's approval, clear a blocker that is yours, and approve or decline a new Done when.
-- **Ask a milestone a question, see the sessions that worked on it or move it to a new session.** Not in the pane yet.
+- **Close the mission from the pane.** There is no button for that yet. On an open step you can mark your own criteria, mark another person's approval, clear a blocker that is yours, and approve or decline a new Done when. You can continue the mission in a new session (see "Sessions and continuing in a new session").
+- **Ask a milestone a question.** Not in the pane yet.
 
 ## Related
 

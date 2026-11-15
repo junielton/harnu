@@ -718,7 +718,11 @@ describe('bridgeStarter', () => {
 
   it('no materialization before the deadline is a failure named timeout', async () => {
     const t = make({ wait: async () => null })
-    expect(await t.start({ folder: '/x', prompt: 'p' })).toEqual({ ok: false, reason: 'timeout' })
+    expect(await t.start({ folder: '/x', prompt: 'p' })).toEqual({
+      ok: false,
+      reason: 'timeout',
+      started: 'synthetic-q'
+    })
   })
 
   it('a materialization with no real id is a failure', async () => {
@@ -862,12 +866,30 @@ describe('nothing releases a session but the hand-off', () => {
   it('handoff.ts subscribes to no process or PTY exit, and imports nothing that could', () => {
     const code = codeOf(read(path.join('missions', 'handoff.ts')))
     expect(code).not.toMatch(
-      /\b(process\.(on|once)|onExit|onDidExit|addTaskEventObserver|SessionEnd|node-pty|killAllPtys)\b|['"`]exit['"`]|from\s+['"][^'"]*(pty|hook-bridge|detect\/|hibernation)/
+      /\b(process\.(on|once)|onExit|onDidExit|SessionEnd|node-pty|killAllPtys)\b|['"`]exit['"`]|from\s+['"][^'"]*(pty|hook-bridge|hibernation)/
     )
     const imports = [...code.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1])
     for (const spec of imports) {
-      expect(spec, spec).toMatch(/^\.\.\/data-dir$|^\.\/[a-z-]+$/)
+      expect(spec, spec).toMatch(/^\.\.\/data-dir$|^\.\/[a-z-]+$|^node:path$/)
     }
+  })
+
+  it('its one subscription (S-20 delta 2) only learns the new session’s id: a first prompt, resolving a promise', () => {
+    // The hand-off's session is not agent-controlled, so the renderer never reports its materialization; the
+    // starter hears the session's own first prompt instead. That is the ONLY event it subscribes to, it is
+    // loaded on use from the hub, and its callback can do nothing but hand an id to the waiting starter.
+    const code = codeOf(read(path.join('missions', 'handoff.ts')))
+    expect([...code.matchAll(/addTaskEventObserver/g)]).toHaveLength(2) // the import and the call
+    expect([...code.matchAll(/import\('([^']+)'\)/g)].map((m) => m[1])).toEqual([
+      '../detect/task-state-hub'
+    ])
+    expect(code).toContain("ev.event !== 'UserPromptSubmit'")
+    const hub = code.slice(
+      code.indexOf('async function hubObserve'),
+      code.indexOf('export function bridgeStarter')
+    )
+    // nothing in the subscription writes, releases, kills or messages
+    expect(hub).not.toMatch(/releaseEntry|applyChange|writeMission|kill|destroy|handOff\(/)
   })
 })
 
@@ -911,5 +933,221 @@ describe('the offer cannot reach the session starter', () => {
       .map((m) => m[1])
       .filter((name) => name !== 'handoffOffer' && name !== 'if')
     expect(new Set(calls)).toEqual(new Set(['isReading']))
+  })
+})
+
+// ---- The real dispatch: not agent-controlled, so the renderer never reports materialization -------------
+
+/**
+ * The hand-off's `session.dispatchCard` session is a normal one: the renderer reports a synthetic's
+ * materialization back to main only for an `agentControlled` one (`collapseSyntheticInto`), so
+ * `awaitMaterialization` of this path never settles. The door learns the real id from the new session's
+ * own first prompt, which Claude Code's `UserPromptSubmit` hook delivers to main with the real
+ * `session_id`, the `cwd` and the prompt. (Missions v4 S-20, delta 2.)
+ */
+describe('a hand-off whose dispatch is not agent-controlled', () => {
+  interface Sighting {
+    sessionId: string
+    prompt: string
+    cwd?: string
+  }
+
+  /** A bridge like the real one: it dispatches, and its materialization wait NEVER settles before the deadline. */
+  function realPath(
+    opts: {
+      sight?: (sent: string) => Sighting | null
+      sightDuringDispatch?: boolean
+      dispatch?: () => unknown
+    } = {}
+  ): {
+    start: HandoffStart
+    listeners: Set<(s: Sighting) => void>
+    dispatched: string[]
+  } {
+    const listeners = new Set<(s: Sighting) => void>()
+    const dispatched: string[] = []
+    const emit = (s: Sighting): void => listeners.forEach((l) => l(s))
+    const bridge = {
+      dispatch: async (_op: string, payload: unknown): Promise<unknown> => {
+        const sent = (payload as { prompt: string }).prompt
+        dispatched.push(sent)
+        const s = opts.sight?.(sent) ?? null
+        if (s && opts.sightDuringDispatch) emit(s)
+        else if (s) setTimeout(() => emit(s), 20)
+        return opts.dispatch ? opts.dispatch() : { sessionId: 'synthetic-real' }
+      },
+      // the renderer reports nothing for this path: the wait ends at its deadline
+      awaitMaterialization: (_id: string, ms: number) =>
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))
+    }
+    const observe = (cb: (s: Sighting) => void): (() => void) => {
+      listeners.add(cb)
+      return () => listeners.delete(cb)
+    }
+    return {
+      listeners,
+      dispatched,
+      start: bridgeStarter(bridge, { timeoutMs: 300, observe } as never)
+    }
+  }
+
+  const seen = (sent: string): Sighting => ({ sessionId: NEW_ONE, prompt: sent, cwd: root })
+
+  it('settles the awaiting door once the new session shows up: it attaches the leader, releases the old one and answers success', async () => {
+    seed(missionOf())
+    const t = realPath({ sight: seen })
+    const reply = await runHandOff({ folder: root, missionId: ID }, { start: t.start, inputs })
+    expect(reply).toMatchObject({
+      ok: true,
+      changed: true,
+      sessionId: NEW_ONE,
+      previousLeader: LEADER
+    })
+    const { record } = await reread()
+    expect(leaderOf(record)).toBe(NEW_ONE)
+    const old = record.sessions.find((s) => s.id === LEADER)
+    expect(old?.role).toBe('worked')
+    expect(old?.to).not.toBeNull()
+  })
+
+  it('does not miss a first prompt that arrives while the dispatch is still being answered', async () => {
+    seed(missionOf())
+    const t = realPath({ sight: seen, sightDuringDispatch: true })
+    const r = await t.start({ folder: root, prompt: 'the first prompt' })
+    expect(r).toEqual({ ok: true, sessionId: NEW_ONE })
+  })
+
+  it('takes the prompt as Claude Code delivers it: trailing whitespace is not a difference', async () => {
+    const t = realPath({
+      sight: (sent) => ({ sessionId: NEW_ONE, prompt: `${sent}\n`, cwd: root })
+    })
+    expect(await t.start({ folder: root, prompt: 'p one' })).toEqual({
+      ok: true,
+      sessionId: NEW_ONE
+    })
+  })
+
+  it('ignores another session’s prompt in the same folder, and the same prompt from another folder', async () => {
+    for (const other of [
+      (): Sighting => ({ sessionId: NEW_ONE, prompt: 'something else entirely', cwd: root }),
+      (sent: string): Sighting => ({
+        sessionId: NEW_ONE,
+        prompt: sent,
+        cwd: path.join(root, 'elsewhere')
+      })
+    ]) {
+      const t = realPath({ sight: other })
+      const r = await t.start({ folder: root, prompt: 'the first prompt' })
+      expect(r.ok).toBe(false)
+    }
+  })
+
+  describe('how much of the prompt a sighting must hold', () => {
+    // a prompt as long as a real hand-off's: the instruction line and a summary, well over 200 characters
+    const LONG = `${HANDOFF_INSTRUCTION}\n\n## Goal\n${'Score a spec with a test set. '.repeat(30)}`
+
+    const trial = async (
+      seenOf: (sent: string) => string
+    ): Promise<Awaited<ReturnType<HandoffStart>>> => {
+      const t = realPath({
+        sight: (sent) => ({ sessionId: NEW_ONE, prompt: seenOf(sent), cwd: root })
+      })
+      return t.start({ folder: root, prompt: LONG })
+    }
+
+    it('a prompt equal to the one sent settles the door', async () => {
+      expect(LONG.length).toBeGreaterThan(400)
+      expect(await trial((sent) => sent)).toEqual({ ok: true, sessionId: NEW_ONE })
+    })
+
+    it('a prefix of at least 200 characters settles it: a long prompt may reach the hook cut short', async () => {
+      for (const n of [200, 201, 250, 399]) {
+        expect(await trial((sent) => sent.slice(0, n)), `${n} characters`).toEqual({
+          ok: true,
+          sessionId: NEW_ONE
+        })
+      }
+    })
+
+    it('a prefix shorter than 200 characters does not: a short prompt in the same folder is another session', async () => {
+      for (const n of [1, 3, 20, 100, 199]) {
+        const r = await trial((sent) => sent.slice(0, n))
+        expect(r, `${n} characters`).toMatchObject({ ok: false, reason: 'timeout' })
+      }
+      // and the plainest case: someone types "You" in a session of the same folder
+      expect(await trial(() => 'You')).toMatchObject({ ok: false, reason: 'timeout' })
+    })
+
+    it('a prefix is judged after whitespace is squashed, so the 200 characters are counted on the same text', async () => {
+      const spaced = (sent: string): string => sent.slice(0, 250).replace(/ /g, '   ')
+      expect(await trial(spaced)).toEqual({ ok: true, sessionId: NEW_ONE })
+    })
+  })
+
+  it('stops listening once it has settled, whichever way it went', async () => {
+    const yes = realPath({ sight: seen })
+    await yes.start({ folder: root, prompt: 'p' })
+    expect(yes.listeners.size).toBe(0)
+    const no = realPath({})
+    await no.start({ folder: root, prompt: 'p' })
+    expect(no.listeners.size).toBe(0)
+  })
+
+  it('names the session it started when nothing showed up in time, and the door says what is true', async () => {
+    seed(missionOf())
+    const before = snapshot()
+    const t = realPath({})
+    const r = await t.start({ folder: root, prompt: 'p' })
+    expect(r).toEqual({ ok: false, reason: 'timeout', started: 'synthetic-real' })
+    const reply = await runHandOff({ folder: root, missionId: ID }, { start: t.start })
+    expect(reply).toMatchObject({
+      ok: false,
+      code: 'HANDOFF_START_FAILED',
+      started: 'synthetic-real'
+    })
+    const text = (reply as { error: string }).error
+    expect(text).not.toMatch(/Nothing changed/i)
+    expect(text).toMatch(/was started/)
+    expect(text).toMatch(/did not take over/)
+    expect(text).toContain(LEADER)
+    expect(text).toMatch(/still leads/)
+    expect(text).toContain('synthetic-real')
+    // the record is exactly as it was
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('a start that never began keeps saying so: nothing was started, nothing changed', async () => {
+    seed(missionOf())
+    const t = realPath({ dispatch: () => ({ error: 'FOLDER_NOT_FOUND' }) })
+    const reply = await runHandOff({ folder: root, missionId: ID }, { start: t.start })
+    expect(reply).toMatchObject({ ok: false, code: 'HANDOFF_START_FAILED' })
+    expect(reply).not.toHaveProperty('started')
+    expect((reply as { error: string }).error).toMatch(/did not start/)
+    expect((reply as { error: string }).error).toMatch(/Nothing changed/)
+  })
+
+  it('a leader that changed while the session started names that session in the reply', async () => {
+    seed(missionOf())
+    const swap = async (): Promise<unknown> => {
+      const { record, log } = await reread()
+      const other = record.sessions.map((s) =>
+        s.id === LEADER
+          ? { ...s, role: 'worked' as const }
+          : s.id === WORKER
+            ? { ...s, role: 'leads' as const }
+            : s
+      )
+      writeFileSync(
+        path.join(v4Dir(), `${ID}-score-report.md`),
+        buildMissionRecordContent({ ...record, sessions: other }, log)
+      )
+      return ok()
+    }
+    const reply = await runHandOff(
+      { folder: root, missionId: ID },
+      { start: async () => (await swap()) as Awaited<ReturnType<HandoffStart>> }
+    )
+    expect(reply).toMatchObject({ ok: false, code: 'LEADER_CHANGED', started: NEW_ONE })
+    expect((reply as { error: string }).error).toContain(NEW_ONE)
   })
 })

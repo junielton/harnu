@@ -26,6 +26,7 @@ import DehydrateConfirmDialog from '../../src/renderer/src/components/DehydrateC
 import SweepConfirmDialog from '../../src/renderer/src/components/SweepConfirmDialog.vue'
 import MissionBulkCloseConfirmDialog from '../../src/renderer/src/components/MissionBulkCloseConfirmDialog.vue'
 import MissionCloseConfirmDialog from '../../src/renderer/src/components/MissionCloseConfirmDialog.vue'
+import MissionHandoffDialog from '../../src/renderer/src/components/MissionHandoffDialog.vue'
 import StewardPauseDialog from '../../src/renderer/src/components/StewardPauseDialog.vue'
 import MissionsReviewDialog from '../../src/renderer/src/components/MissionsReviewDialog.vue'
 import HarnuModExternal from '../../src/renderer/src/components/HarnuModExternal.vue'
@@ -378,6 +379,32 @@ const missionClose: SurfaceSpec = {
   }
 }
 
+// ---- MissionHandoffDialog (Missions v4 S-20) --------------------------------------------------------
+// On the shared `Dialog`: the standard behaviour, no deviation. Cancel is the first focus (a confirm).
+
+const missionHandoff: SurfaceSpec = {
+  file: 'MissionHandoffDialog.vue',
+  async open(): Promise<OpenedSurface> {
+    const w = mount(MissionHandoffDialog, {
+      props: {
+        open: true,
+        brief: '# Mission mnt-0\n\n## Goal\nScore a spec.\n\n## Next step\nStart milestone 3.',
+        pending: false,
+        errorKey: null,
+        done: false,
+        canOpenNew: false
+      },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    return emitSurface(w, ['cancel'], {
+      cancel: () => q('[data-test="handoff-cancel"]'),
+      confirm: () => q('[data-test="handoff-confirm"]'),
+      close: () => q('[role="dialog"] header button')
+    })
+  }
+}
+
 // ---- StewardPauseDialog (T609) ----------------------------------------------------------
 
 const stewardPause: SurfaceSpec = {
@@ -510,6 +537,7 @@ export const SURFACES_B: SurfaceSpec[] = [
   harnuModExternal,
   missionBulkClose,
   missionClose,
+  missionHandoff,
   missionsReview,
   stewardPause,
   sweepConfirm

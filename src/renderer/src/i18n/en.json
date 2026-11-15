@@ -467,6 +467,70 @@
       "approve": "Approve",
       "decline": "Decline"
     },
+    "sessions": {
+      "label": "Sessions",
+      "meta": {
+        "this": "{count} · led by this session",
+        "other": "{count} · led by {name}",
+        "none": "{count} · nobody leads it"
+      },
+      "role": {
+        "leads": "Leads the mission",
+        "leadsPast": "Led the mission",
+        "works": "Works on the mission",
+        "worked": "Worked on the mission"
+      },
+      "thisSession": "this session",
+      "unnamed": "Session {id}",
+      "tookOver": "Took over “{title}”",
+      "since": "Since {day}",
+      "span": "{from} to {to}",
+      "sameDay": "{day}, {from} to {to}",
+      "stoppedAt": "Stopped at “{step}”",
+      "stoppedUnknown": "Stopped. The record does not say where.",
+      "waitingFor": "Waiting for: {what}",
+      "more": "{n} more session | {n} more sessions",
+      "less": "Show less",
+      "continue": "Continue in a new session…"
+    },
+    "handoff": {
+      "offer": {
+        "thisSession": "This session’s context is {percent}% full. You can continue the mission in a fresh session. It starts from the mission summary, so nothing is lost.",
+        "otherSession": "The context of {name}, the session that leads, is {percent}% full. You can continue the mission in a fresh session. It starts from the mission summary, so nothing is lost.",
+        "leaderUnnamed": "the session that leads",
+        "open": "Continue in a new session…",
+        "later": "Not now"
+      },
+      "title": "Continue this mission in a new session",
+      "steps": {
+        "one": "Harnu saves where the session that leads stopped.",
+        "two": "A new session opens with the summary below and leads the mission.",
+        "three": "The old session is released. It stays in the mission’s session history."
+      },
+      "brief": {
+        "heading": "Mission summary — what the new session starts with",
+        "empty": "Harnu has no summary of this mission to give the new session."
+      },
+      "cancel": "Cancel",
+      "confirm": "Start new session",
+      "pending": "Starting the new session…",
+      "pendingHint": "This can take up to 90 seconds. Keep this window open.",
+      "done": {
+        "title": "The new session leads the mission",
+        "body": "Harnu started it with the mission summary and released the old session. It stays in the mission’s session history.",
+        "open": "Open the new session",
+        "close": "Close"
+      },
+      "error": {
+        "MISSION_CLOSED": "This mission is closed, so there is nothing to continue.",
+        "HANDOFF_START_FAILED": "The new session did not start. Nothing changed: the same session still leads. Try again in a moment.",
+        "STARTED_NOT_ATTACHED": "The new session was started, but it did not take over in time. The same session still leads. Open the new session to see what happened, or close it. Then try again.",
+        "HANDOFF_IN_PROGRESS": "A hand-off of this mission is already starting a session. Wait for it to finish, then look at the Sessions row.",
+        "HANDOFF_UNAVAILABLE": "Harnu cannot start a session right now. Nothing changed. Try again in a moment.",
+        "LEADER_CHANGED": "Who leads the mission changed while the new session was starting, so Harnu did not attach it. The new session is open but is not part of the mission. Look at the Sessions row, then decide again.",
+        "other": "Harnu could not finish the hand-off. Look at the Sessions row to see who leads, then try again."
+      }
+    },
     "none": {
       "title": "This session has no mission."
     },
