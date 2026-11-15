@@ -609,7 +609,6 @@ describe('cues keep recall over quiet', () => {
     ['a mission whose agent asked to close', () => [readyToClose(true)]],
     ['a merged step whose main is red', () => [mainFailing('stp-3')]]
   ])('%s chimes when it appears and re-nudges on the back-off, then stops', (_name, you) => {
-    const at = [0, 29 * MIN, 30 * MIN, 91 * MIN, 92 * MIN, 213 * MIN, 454 * MIN, 455 * MIN]
     // Appears at 0; 30 min after that cue; 60 min after the next (at 90); then 2 h, then 4 h; then silent.
     const times = [
       0,
@@ -623,7 +622,6 @@ describe('cues keep recall over quiet', () => {
       450 * MIN,
       700 * MIN
     ]
-    void at
     expect(cuedAt(you, times)).toEqual([0, 30 * MIN, 90 * MIN, 210 * MIN, 450 * MIN])
   })
 
@@ -660,7 +658,13 @@ describe('cues keep recall over quiet', () => {
       v4View(ID, [unblock('blk-1'), attach(1), readyToClose(), mainFailing('stp-3'), reviewOf(2)])
     )
     expect([...keys.keys()].sort()).toEqual(
-      ['attach:atr-1', 'close', 'main-failing:stp-3', 'review', 'unblock:stp-2:blk-1'].sort()
+      [
+        'attach:atr-1',
+        'main-failing:stp-3',
+        'ready-to-close',
+        'review',
+        'unblock:stp-2:blk-1'
+      ].sort()
     )
     expect(keys.get('review')).toBe(2)
     expect(firstOwed(v4View(ID, [attach(1)]))?.ask).toBe('Let a session join')
