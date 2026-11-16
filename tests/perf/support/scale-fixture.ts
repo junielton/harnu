@@ -14,11 +14,11 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  buildMissionFileContent,
-  missionFilePath,
-  type Mission
-} from '../../../src/main/mission-core'
+import type { V3Mission } from '../../../src/main/missions/v3-read'
+import { buildV3MissionFile, v3MissionPath } from '../../helpers/v3-mission-file'
+
+/** The shape of a v3 mission file: what an old repo still holds, and what the record store reads in memory. */
+type Mission = V3Mission
 
 export interface ScaleSpec {
   slugs: number
@@ -146,8 +146,8 @@ export async function buildScaleFixture(spec: ScaleSpec): Promise<ScaleFixture> 
     const mission = missionOf(id, slug, repoRoot, owner, [
       liveSessionIds[(m + 1) % liveSessionIds.length]
     ])
-    const file = missionFilePath(repoRoot, id, slug)
-    await writeFile(file, buildMissionFileContent(mission))
+    const file = v3MissionPath(repoRoot, id, slug)
+    await writeFile(file, buildV3MissionFile(mission))
     missionFiles.push(file)
   }
 

@@ -28,15 +28,12 @@
  */
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
-import { dataDirReady } from '../data-dir'
-import {
-  LEDGER_KINDS,
-  MISSION_ID_RE,
-  missionsDir,
-  type LedgerRow,
-  type Mission
-} from '../mission-core'
-import { mergeLedger } from '../mission-ledger'
+import { dataDirAt, dataDirReady } from '../data-dir'
+import { LEDGER_KINDS, mergeLedger, type LedgerRow } from '../mission-ledger'
+import { V3_MISSION_ID_RE as MISSION_ID_RE } from './v3-read'
+
+/** `<root>/.harnu/missions`: where a mission's observed rows are stored beside it. */
+const missionsDir = (root: string): string => path.join(dataDirAt(root), 'missions')
 
 /** Bound on one mission's rows held in memory; past it the oldest are dropped (the file keeps them). */
 export const OBSERVED_LEDGER_MAX = 500
@@ -258,7 +255,7 @@ export async function hydrateMissionLedger(root: string, missionId: string): Pro
  */
 export async function readMissionLedger(
   root: string,
-  mission: Pick<Mission, 'id' | 'ledger'>
+  mission: { id: string; ledger?: readonly LedgerRow[] }
 ): Promise<LedgerRow[]> {
   return mergeLedger(mission.ledger, await readObservedLedger(root, mission.id))
 }
@@ -274,7 +271,7 @@ const CLOSED_COUNTS_MAX = 5000
  */
 export async function missionLedgerCount(
   root: string,
-  mission: Pick<Mission, 'id' | 'ledger' | 'status'>
+  mission: { id: string; ledger?: readonly LedgerRow[]; status: string }
 ): Promise<number> {
   const key = `${root}\u0000${mission.id}`
   const closed = mission.status === 'closed'

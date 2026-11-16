@@ -7309,7 +7309,7 @@ item whose record is gone, or a kind this build does not know, shows the server'
 running. Nothing for you right now." (or "Nothing is running. Nothing for you right now."), counted
 from the server's `progress.counts.running`.
 
-**A staged Done when** (an older mission's re-scope reads the same) is the next step when `waiting.next` is `null`: the ask is "Approve or decline the new Done when", the why "A session proposed it. It becomes the mission's end only if you approve.", and the one button is **Review it**, which scrolls the staged box below into view and focuses **Approve**. The box never reads "Nothing for you right now" above it. When other items wait, the staged box stays below as before.
+**A staged Done when** (an older mission's re-scope reads the same) is the next step when `waiting.next` is `null`, or is the older mission's own `rescope` item (S-40: that item IS the staged Done when, so it is never drawn a second time as a row of its own): the ask is "Approve or decline the new Done when", the why "A session proposed it. It becomes the mission's end only if you approve.", and the one button is **Review it**, which scrolls the staged box below into view and focuses **Approve**. The box never reads "Nothing for you right now" above it. When other items wait and the `rescope` item is not first, it is one row of "{n} more waiting on you" (kind label "Done when", the same ask, one **Review it** button); the staged box stays below as before. The staged Done when is always one line and one button in the box, never two.
 
 The action row is `flex`, `gap: 10px`: **one button** (`ui/Button`, variant `primary`), and the
 **"{n} more waiting on you"** link at the right (`11.5px`, `text-text-3`, hover `text-text`; `n` is

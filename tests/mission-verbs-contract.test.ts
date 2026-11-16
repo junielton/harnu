@@ -1,29 +1,29 @@
 /**
- * T358 — the `mission_*` CONTRACT suite (plan "Eval gate — contract", decision
- * 19 layer 1): every verb's ACK checked against design
- * `docs/specs/2026-09-26-mission-progress/design.md` §4, one call per verb.
+ * The `mission_*` CONTRACT suite (T358 decision 19 layer 1, rewritten for Missions v4 by S-40): every
+ * verb's ACK checked, one call per verb, on a v4 mission.
  *
- * Why this is a vitest suite and not a `claude plugin eval` case: plugin evals
- * start only the MCP servers a plugin DECLARES, and Harnu's server is declared by
- * no plugin — it is a loopback HTTP server the running app hands each session
- * through a per-spawn `--mcp-config` (port + bearer token). An eval could only
- * reach it through a mock, and a grader checking a mocked ACK checks the mock.
- * See T364's report (AC-S3-8) for the evidence.
+ * Why this is a vitest suite and not a `claude plugin eval` case: plugin evals start only the MCP
+ * servers a plugin DECLARES, and Harnu's server is declared by no plugin; it is a loopback HTTP server
+ * the running app hands each session through a per-spawn `--mcp-config` (port + bearer token). An eval
+ * could only reach it through a mock, and a grader checking a mocked ACK checks the mock.
  *
- * What this suite exercises instead is the whole in-process call path a real
- * call takes after the HTTP transport, per verb:
+ * What this suite exercises instead is the whole in-process call path a real call takes after the HTTP
+ * transport, per verb:
  *   1. the catalog `inputSchema` (what the MCP SDK validates on the way in);
- *   2. the gate translation + validation (`buildPlanInput` → `parseToolInput`);
+ *   2. the gate translation + validation (`buildPlanInput` -> `parseToolInput`);
  *   3. the handler wired in `WIRED_TOOLS` (the array `server.ts` registers);
- * and then checks the ACK against a schema written from the design §4 table.
+ * and then checks the ACK against a schema written from the verb's contract.
  *
- * EXTENDING IT (S4, S7 — done): add the new verb's row to `CONTRACT` — its §4 ACK
- * schema and a `call` that builds its args from the scenario state — in the
- * order it should run (and a `setup` when its success path needs prior state).
- * The coverage guard below fails until every `mission_*`
- * op in `MCP_OPS` has a row, so a verb cannot ship without its contract.
+ * EXTENDING IT: add the new verb's row to `CONTRACT` (its ACK schema and a `call` that builds its args
+ * from the scenario state), in the order it should run (and a `setup` when its success path needs
+ * prior state). The coverage guard below fails until every `mission_*` op in `MCP_OPS` has a row, so a
+ * verb cannot ship without its contract. A verb the catalog keeps but no slice built (`mission_update_step`)
+ * has a row that asserts its refusal instead of an ACK.
+ *
+ * The last describe is AC-89's proof: the catalog is the fate table's sixteen verbs, no more.
  */
-import { describe, it, expect, beforeAll, vi } from 'vitest'
+
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -36,13 +36,8 @@ import {
   parseMissionRecordFile,
   readMissionRecordLog
 } from '../src/main/missions/model'
-import {
-  buildMissionFileContent,
-  missionsDir,
-  parseMissionFile,
-  readMissionLog,
-  type Mission as MissionRecord
-} from '../src/main/mission-core'
+
+import type { StepInput } from '../src/main/missions/state'
 
 const h = vi.hoisted(() => ({ userDataDir: '' }))
 
@@ -58,120 +53,9 @@ vi.mock('electron', () => ({
   ipcMain: { handle: (): void => {}, on: (): void => {} }
 }))
 
-// ---- design §4 / §1 shapes ---------------------------------------------------
+// ---- the shapes the ACKs share ------------------------------------------------
 
-const StepLink = z.object({
-  kind: z.enum(['session', 'worktree', 'card', 'pr']),
-  ref: z.string()
-})
-
-const Blocker = z.object({
-  reason: z.string(),
-  unblocks: z.string(),
-  owner: z.enum(['agent', 'operator']),
-  raisedAt: z.string()
-})
-
-const MissionStep = z.object({
-  id: z.string().regex(/^stp-\d+$/),
-  ordinal: z.number().int(),
-  kind: z.enum(['fixed-start', 'fixed-end', 'custom']),
-  title: z.string(),
-  verification: z.enum(['existence', 'verifier', 'human']),
-  proof: z.enum(['unproven', 'claimed', 'verified', 'self-verified']),
-  links: z.array(StepLink),
-  blockers: z.array(Blocker)
-})
-
-const DeclaredEnd = z.object({
-  kind: z.enum(['code', 'ui', 'research', 'decision', 'other']),
-  target: z.string().min(1),
-  evidence: z.string().min(1)
-})
-
-/** design §1.1 — the full Mission projection `mission_get` returns. */
-const Mission = z.object({
-  id: z.string().regex(/^mnt-[0-9a-f]{8}$/),
-  slug: z.string(),
-  folder: z.string(),
-  owner: z.object({ sessionId: z.string(), folder: z.string() }),
-  status: z.enum(['draft', 'active', 'stale', 'delivered', 'closed']),
-  declaredEnd: DeclaredEnd,
-  // Mission v3 §3.3: at least the fixed end; no fixed start.
-  steps: z.array(MissionStep).min(1),
-  blockers: z.array(Blocker),
-  openQuestions: z.array(z.string()),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  provenance: z.object({ author: z.enum(['agent', 'human']), at: z.string() })
-})
-
-/** design §7 — one linked child's live state (the scoped fleet projection's row). */
-const GateStateSchema = z.enum(['green', 'red', 'running', 'off', 'na'])
-
-const ChildState = z
-  .object({
-    sessionId: z.string(),
-    known: z.boolean(),
-    folderAlias: z.string().optional(),
-    status: z.enum(['active', 'idle', 'archived']).optional(),
-    taskState: z
-      .enum(['working', 'needs-input', 'idle', 'completed', 'failed', 'stopped'])
-      .optional(),
-    failureReason: z.string().optional(),
-    hibernated: z.literal(true).optional(),
-    inflight: z.literal(true).optional(),
-    peer: z.object({ pid: z.number(), socket: z.string() }).optional(),
-    modified: z.string().optional(),
-    pendingApprovals: z.number().int().min(0),
-    lastTransitionAt: z.iso.datetime().optional(),
-    // T547: hook activity of the session's own subagents; set when they keep an idle parent working.
-    helperActivityAt: z.iso.datetime().optional(),
-    waitingOnHelpers: z.literal(true).optional()
-  })
-  .strict()
-
-const PrSummary = z.object({
-  number: z.number().int(),
-  title: z.string(),
-  state: z.enum(['OPEN', 'MERGED', 'CLOSED']),
-  isDraft: z.boolean(),
-  ci: z.string(),
-  url: z.string(),
-  // Mission v2 §3.6: the branch the PR merges into.
-  baseRefName: z.string()
-})
-
-/** design §7 — a resolved worktree / card / pr link. */
-const LinkSignal = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('worktree'),
-    ref: z.string(),
-    exists: z.boolean(),
-    branch: z.string().nullable(),
-    head: z.object({ sha: z.string(), subject: z.string(), at: z.string() }).nullable(),
-    // T547: commits beyond the open PR's base, else the default branch; absent when git could not count.
-    commits: z.number().int().min(0).optional(),
-    prs: z.array(PrSummary)
-  }),
-  z.object({
-    kind: z.literal('card'),
-    ref: z.string(),
-    exists: z.boolean(),
-    status: z.string().optional(),
-    executedIn: z.string().optional(),
-    prs: z.array(PrSummary)
-  }),
-  z.object({
-    kind: z.literal('pr'),
-    ref: z.string(),
-    number: z.number().int().nullable(),
-    exists: z.boolean(),
-    state: z.enum(['OPEN', 'MERGED', 'CLOSED']).optional(),
-    url: z.string().optional(),
-    baseRefName: z.string().optional()
-  })
-])
+const Headline = z.string().min(1)
 
 /** Every ACK carries `ok: true` and its `op` (the convention all verbs share). */
 function ack<T extends z.ZodRawShape>(op: McpOp, shape: T): z.ZodType {
@@ -183,55 +67,73 @@ function ack<T extends z.ZodRawShape>(op: McpOp, shape: T): z.ZodType {
 interface ScenarioState {
   folder: string
   sessionId: string
+  /** The v4 mission the rows run against (made by the first of them). */
   missionId?: string
-  stepId?: string
-  /** Missions v4 S-24: the v4 mission the last rows run against (made by the first of them). */
-  v4Id?: string
+  /** An agent-owned blocker raised by a setup, for `mission_clear_blocker`. */
+  agentBlockerId?: string
+  /** The second mission, led by CLOSER_ID, that the close request runs on. */
+  closeMissionId?: string
 }
 
 interface ContractRow {
   op: McpOp
-  /** design §4 ACK column, as a schema. */
-  ack: z.ZodType
+  /** The ACK, as a schema. */
+  ack?: z.ZodType
+  /** For a verb that is in the catalog but refuses by design: the refusal's text, and no ACK. */
+  refuses?: RegExp
   /** The call's args, built from what earlier rows left in the state. */
   call: (s: ScenarioState) => Record<string, unknown>
   /** Pull what later rows need out of this row's ACK. */
   capture?: (ackPayload: Record<string, unknown>, s: ScenarioState) => void
   /**
-   * Bring the scenario to the state this row's SUCCESS path needs, before the
-   * call — through the wired handlers where a verb exists, and on disk only for
-   * a transition no verb makes (an operator UI door).
+   * Bring the scenario to the state this row's SUCCESS path needs, before the call: through the wired
+   * handlers where a verb exists, and on disk only for a transition no verb makes (an operator door).
    */
   setup?: (s: ScenarioState) => Promise<void>
 }
 
-/** The id the contract's verifier declares — not the child linked to the step. */
+/** The id the contract's second session declares: not the leader, not a builder. */
 const VERIFIER_ID = 'cccccccc-dddd-4eee-8fff-000000000000'
-
-/** Rewrite the scenario's mission on disk — stands in for an operator UI door. */
-async function mutateMission(s: ScenarioState, fn: (m: MissionRecord) => void): Promise<void> {
-  const dir = missionsDir(s.folder)
-  const name = (await fs.readdir(dir)).find((n) => n.startsWith(`${s.missionId}-`))!
-  const file = path.join(dir, name)
-  const raw = await fs.readFile(file, 'utf8')
-  const mission = parseMissionFile(raw) as MissionRecord
-  fn(mission)
-  await fs.writeFile(file, buildMissionFileContent(mission, readMissionLog(raw)), 'utf8')
-}
+/** The leader of the second mission, the one a close is requested on. */
+const CLOSER_ID = 'e1e1e1e1-2f2f-4000-8111-222222222222'
+/** A session that asks to join. */
+const JOINER_ID = 'dddddddd-eeee-4fff-8000-111111111111'
 
 /** Call a wired handler outside a row (setup), failing loudly on a refusal. */
-async function callOk(op: McpOp, s: ScenarioState, args: Record<string, unknown>): Promise<void> {
+async function callOk(
+  op: McpOp,
+  s: ScenarioState,
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const res = await handlers[op](
     { folder: s.folder, missionId: s.missionId, ...args },
     { folder: s.folder, folders: [], denyFolders: [], bridge: undefined }
   )
   expect(res.isError, res.content[0]?.text).not.toBe(true)
+  return JSON.parse(res.content[0].text!) as Record<string, unknown>
 }
 
-/** A v4 mission with one milestone and one step, led by the scenario's session. */
-async function createV4Mission(s: ScenarioState): Promise<string> {
-  const res = await handlers.mission_create(
-    {
+/** Attach a session to the scenario's mission on disk (the operator's door has no verb). */
+async function attachOnDisk(s: ScenarioState, sessionId: string): Promise<void> {
+  const dir = path.join(s.folder, '.harnu', 'missions-v4')
+  const name = (await fs.readdir(dir)).find((n) => n.startsWith(`${s.missionId}-`))!
+  const file = path.join(dir, name)
+  const raw = await fs.readFile(file, 'utf8')
+  const record = parseMissionRecordFile(raw)
+  record.sessions.push({ id: sessionId, role: 'worked', from: '2026-11-15T09:00:00Z', to: null })
+  await fs.writeFile(file, buildMissionRecordContent(record, readMissionRecordLog(raw)), 'utf8')
+}
+
+const CONTRACT: ContractRow[] = [
+  {
+    op: 'mission_create',
+    ack: ack('mission_create', {
+      id: z.string().regex(/^mnt-[0-9a-f]{8}$/),
+      headline: Headline,
+      summary: z.string().min(1),
+      recall: z.array(z.unknown())
+    }),
+    call: (s) => ({
       folder: s.folder,
       sessionId: s.sessionId,
       title: 'Export the report as CSV',
@@ -244,434 +146,52 @@ async function createV4Mission(s: ScenarioState): Promise<string> {
           criteria: [{ text: 'The export is reviewed by another session' }]
         }
       ]
-    },
-    { folder: s.folder, folders: [], denyFolders: [], bridge: undefined }
-  )
-  expect(res.isError, res.content[0]?.text).not.toBe(true)
-  return (JSON.parse(res.content[0].text!) as { id: string }).id
-}
-
-/** Attach a session to the scenario's v4 mission on disk (the operator's door has no verb). */
-async function attachOnDisk(s: ScenarioState, sessionId: string): Promise<void> {
-  const dir = path.join(s.folder, '.harnu', 'missions-v4')
-  const name = (await fs.readdir(dir)).find((n) => n.startsWith(`${s.v4Id}-`))!
-  const file = path.join(dir, name)
-  const raw = await fs.readFile(file, 'utf8')
-  const record = parseMissionRecordFile(raw)
-  record.sessions.push({ id: sessionId, role: 'worked', from: '2026-11-15T09:00:00Z', to: null })
-  await fs.writeFile(file, buildMissionRecordContent(record, readMissionRecordLog(raw)), 'utf8')
-}
-
-const CONTRACT: ContractRow[] = [
-  {
-    op: 'mission_create',
-    // §4: { ok, missionId, slug, steps } — Mission v3 §3.3: the declared plan then
-    // the fixed end, no fixed start; `scope` is an attachment echoed in the ACK.
-    ack: ack('mission_create', {
-      missionId: z.string().regex(/^mnt-[0-9a-f]{8}$/),
-      slug: z.string().min(1),
-      steps: z.tuple([
-        MissionStep.extend({
-          id: z.literal('stp-1'),
-          kind: z.literal('custom'),
-          verification: z.literal('verifier'),
-          links: z.tuple([])
-        }),
-        MissionStep.extend({
-          id: z.literal('stp-2'),
-          kind: z.literal('fixed-end'),
-          verification: z.literal('verifier')
-        })
-      ]),
-      scope: z.tuple([z.object({ kind: z.literal('worktree'), ref: z.literal('docs/spec.md') })])
-    }),
-    call: (s) => ({
-      folder: s.folder,
-      title: 'Contract eval mission',
-      declaredEnd: { kind: 'code', target: 'the verb catalog', evidence: 'this suite green' },
-      sessionId: s.sessionId,
-      scope: ['docs/spec.md'],
-      steps: [{ title: 'Build', verification: 'verifier' }]
     }),
     capture: (p, s) => {
-      s.missionId = p.missionId as string
+      s.missionId = p.id as string
     }
   },
-  {
-    op: 'mission_add_step',
-    // §4: { ok, stepId, totalSteps }
-    ack: ack('mission_add_step', {
-      stepId: z.string().regex(/^stp-\d+$/),
-      totalSteps: z.number().int().min(3)
-    }),
-    call: (s) => ({
-      folder: s.folder,
-      missionId: s.missionId,
-      title: 'Implement',
-      verification: 'verifier',
-      // Mission v3 §3.9: a step can be born with its links.
-      links: [{ kind: 'pr', ref: 'owner/repo#1' }]
-    }),
-    capture: (p, s) => {
-      s.stepId = p.stepId as string
-    }
-  },
-  {
-    op: 'mission_update_step',
-    // §4: { ok, stepId }
-    ack: ack('mission_update_step', { stepId: z.string().regex(/^stp-\d+$/) }),
-    call: (s) => ({
-      folder: s.folder,
-      missionId: s.missionId,
-      stepId: s.stepId,
-      set: { proof: 'claimed' }
-    })
-  },
-  {
-    op: 'mission_link_child',
-    // §4: { ok, stepId, links }
-    ack: ack('mission_link_child', {
-      stepId: z.string().regex(/^stp-\d+$/),
-      links: z.array(StepLink).min(1)
-    }),
-    call: (s) => ({
-      folder: s.folder,
-      missionId: s.missionId,
-      stepId: s.stepId,
-      link: { kind: 'session', ref: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }
-    })
-  },
-  {
-    op: 'mission_add_check',
-    // Mission v3 §3.6: { ok, stepId, checks } — no input can write `ticked`.
-    ack: ack('mission_add_check', {
-      stepId: z.string().regex(/^stp-\d+$/),
-      checks: z
-        .array(
-          z
-            .object({
-              id: z.string().regex(/^chk-\d+$/),
-              label: z.string().min(1).max(200),
-              source: z.literal('agent'),
-              createdAt: z.iso.datetime()
-            })
-            .strict()
-        )
-        .min(1)
-    }),
-    call: (s) => ({
-      folder: s.folder,
-      missionId: s.missionId,
-      stepId: s.stepId,
-      label: 'Validated visually'
-    })
-  },
-  {
-    op: 'mission_log',
-    // §4: { ok }
-    ack: ack('mission_log', {}),
-    call: (s) => ({ folder: s.folder, missionId: s.missionId, stepId: s.stepId, note: 'done' })
-  },
-  // ---- S4 (T365): blockers, re-scope, verify, close ----
-  {
-    op: 'mission_set_blocker',
-    // §4: { ok, blockers }
-    ack: ack('mission_set_blocker', { blockers: z.array(Blocker).min(1) }),
-    call: (s) => ({
-      folder: s.folder,
-      missionId: s.missionId,
-      reason: 'waiting on a review',
-      unblocks: 'a reviewer approves',
-      owner: 'operator'
-    })
-  },
-  {
-    op: 'mission_clear_blocker',
-    // §4: { ok, blockers } — what is still open
-    ack: ack('mission_clear_blocker', { blockers: z.array(Blocker) }),
-    call: (s) => ({ folder: s.folder, missionId: s.missionId, reason: 'waiting on a review' })
-  },
-  {
-    op: 'mission_set_end',
-    // §4: { ok, pendingRescope: true }
-    ack: ack('mission_set_end', { pendingRescope: z.literal(true) }),
-    call: (s) => ({
-      folder: s.folder,
-      missionId: s.missionId,
-      declaredEnd: { kind: 'research', target: 'a go/no-go memo', evidence: 'memo merged' },
-      reason: 'the scope moved'
-    })
-  },
-  {
-    op: 'mission_verify_step',
-    // §4: { ok, stepId, proof: 'verified' | 'self-verified' } — plus `unproven` for a
-    // non-met verdict and the verdict itself (design §1.3, S4 "Verdict").
-    ack: ack('mission_verify_step', {
-      stepId: z.string().regex(/^stp-\d+$/),
-      proof: z.enum(['verified', 'self-verified', 'unproven']),
-      verdict: z.enum(['met', 'unmet', 'blocked', 'needs-human'])
-    }),
-    call: (s) => ({
-      folder: s.folder,
-      missionId: s.missionId,
-      stepId: s.stepId,
-      verdict: 'met',
-      evidence: 'contract suite green',
-      sessionId: VERIFIER_ID
-    })
-  },
-  {
-    op: 'mission_request_close',
-    // §4: { ok, pendingClose: true } — the success path needs an active mission
-    // (operator door, no verb) and an independently verified fixed end (verbs).
-    // The mission_set_end row staged a re-scope, which a close request refuses
-    // (Mission v2 §3.5, RESCOPE_PENDING) — the operator approves it first, the
-    // way the UI door does: the staged end becomes the declared end.
-    ack: ack('mission_request_close', { pendingClose: z.literal(true) }),
-    setup: async (s) => {
-      await mutateMission(s, (m) => {
-        m.status = 'active'
-        if (m.pendingRescope) m.declaredEnd = m.pendingRescope
-        delete m.pendingRescope
-      })
-      const link = { kind: 'session', ref: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }
-      await callOk('mission_link_child', s, { stepId: 'stp-2', link })
-      await callOk('mission_verify_step', s, {
-        stepId: 'stp-2',
-        verdict: 'met',
-        evidence: 'delivered',
-        sessionId: VERIFIER_ID
-      })
-    },
-    call: (s) => ({ folder: s.folder, missionId: s.missionId })
-  },
-  {
-    op: 'mission_get',
-    // §4 + §7 (S6): the full Mission projection, the COMPUTED derived fields
-    // (per-step live children, resolved links, existence proofs, the §8 stall
-    // verdict) and the always-present you line.
-    ack: ack('mission_get', {
-      mission: Mission,
-      title: z.string().min(1),
-      log: z.string(),
-      derived: z
-        .object({
-          live: z.literal(true),
-          computedAt: z.iso.datetime(),
-          stale: z.boolean(),
-          stall: z
-            .object({
-              stale: z.boolean(),
-              lastEvidenceAt: z.iso.datetime().nullable(),
-              thresholdMs: z.literal(60 * 60 * 1000),
-              workingSessions: z.array(z.string())
-            })
-            .strict(),
-          gh: z.enum(['available', 'unavailable', 'not-needed']),
-          pendingApprovals: z.number().int().min(0),
-          // Mission v3 §3.3: the scope attachment, resolved.
-          scope: z
-            .object({
-              links: z.array(LinkSignal),
-              resolved: z.object({ proven: z.boolean(), reason: z.string().optional() }).strict()
-            })
-            .strict(),
-          // Mission v3 §3.1: the server's progress.
-          progress: z
-            .object({
-              total: z.number().int().min(1),
-              current: z.object({ from: z.number().int(), to: z.number().int() }).nullable(),
-              allDone: z.boolean(),
-              done: z.number().int(),
-              verified: z.number().int(),
-              states: z.record(
-                z.string(),
-                z.enum(['verified', 'done', 'running', 'waiting', 'blocked', 'todo'])
-              ),
-              leftBehind: z.array(z.string()),
-              unprovable: z.array(z.string()),
-              computedAt: z.iso.datetime()
-            })
-            .strict(),
-          steps: z
-            .array(
-              z
-                .object({
-                  stepId: z.string().regex(/^stp-\d+$/),
-                  children: z.array(ChildState),
-                  links: z.array(LinkSignal),
-                  existence: z
-                    .object({ proven: z.boolean(), reason: z.string().optional() })
-                    .strict()
-                    .nullable(),
-                  // T547: signs of movement inside the step.
-                  pulse: z
-                    .object({
-                      commits: z.number().int().min(0).nullable(),
-                      lastCommitAt: z.string().nullable(),
-                      lastActivityAt: z.string().nullable()
-                    })
-                    .strict(),
-                  // Campaign spec §3.2: the derived gates + the PR they read.
-                  gates: z
-                    .object({
-                      pr: GateStateSchema,
-                      ci: GateStateSchema,
-                      main: GateStateSchema,
-                      verifier: GateStateSchema,
-                      checks: GateStateSchema,
-                      stale: z.literal(true).optional()
-                    })
-                    .strict(),
-                  prNumber: z.number().int().nullable()
-                })
-                .strict()
-            )
-            .min(2)
-        })
-        .strict(),
-      you: z.string().min(1),
-      // Mission v3 §3.12: the ordered list behind the `you` line.
-      youItems: z.array(
-        z
-          .object({
-            kind: z.enum([
-              'rescope',
-              'close',
-              'steward-paused',
-              'blocker',
-              'decide',
-              'checks',
-              'human-steps',
-              'review-import',
-              'main-red',
-              'approvals',
-              'needs-input'
-            ])
-          })
-          .passthrough()
-      ),
-      // Campaign spec §3.2: the ledger tail (last 20) and the total row count.
-      ledger: z.array(
-        z.object({ at: z.string(), kind: z.string(), ref: z.string() }).passthrough()
-      ),
-      ledgerCount: z.number().int().min(0),
-      // Mission v2 §3.5: what mission_request_close would refuse now, or null.
-      closeReadiness: z
-        .object({
-          // Mission v3 §3.4: no draft refusal.
-          code: z.enum(['MISSION_CLOSED', 'END_NOT_VERIFIED', 'OPEN_BLOCKERS', 'RESCOPE_PENDING']),
-          reason: z.string().min(1)
-        })
-        .strict()
-        .nullable()
-    }),
-    // A scope document (Mission v3 §3.3) and an existence-level step linked to a
-    // path, so the resolved-link and existence-proof halves of the shape are
-    // exercised, not just empty. Scope names a document in the repo: the repo root
-    // itself is refused (BUG-145).
-    setup: async (s) => {
-      await fs.mkdir(path.join(s.folder, 'docs'), { recursive: true })
-      await fs.writeFile(path.join(s.folder, 'docs', 'spec.md'), '# spec\n', 'utf8')
-      await callOk('mission_link_child', s, {
-        scope: true,
-        link: { kind: 'worktree', ref: path.join(s.folder, 'docs', 'prd.md') }
-      })
-      await callOk('mission_add_step', s, {
-        title: 'Spec on disk',
-        verification: 'existence',
-        reason: 'the contract needs an existence step',
-        links: [{ kind: 'worktree', ref: 'docs/spec.md' }]
-      })
-    },
-    call: (s) => ({ folder: s.folder, missionId: s.missionId })
-  },
-  {
-    op: 'mission_list',
-    // §4: Mission[] (id, slug, status, step counts)
-    ack: ack('mission_list', {
-      missions: z
-        .array(
-          z.object({
-            id: z.string().regex(/^mnt-[0-9a-f]{8}$/),
-            slug: z.string(),
-            status: z.enum(['draft', 'active', 'stale', 'delivered', 'closed']),
-            // Mission v3 §3.10: the progress of the last observer pass (a read does not remember it).
-            progress: z
-              .object({ total: z.number().int(), computedAt: z.iso.datetime() })
-              .passthrough(),
-            steps: z.object({ total: z.number().int(), verified: z.number().int() })
-          })
-        )
-        .min(1)
-    }),
-    // Missions v4 S-3 (AC-4): a read remembers nothing, so the progress this row carries is the
-    // one an observer pass computed — the pass the app runs once a minute.
-    setup: async (s) => {
-      const { observeOpenMissions } = await import('../src/main/mission-ipc')
-      await observeOpenMissions([s.folder], Date.now(), { scan: async () => [] })
-    },
-    call: (s) => ({ folder: s.folder })
-  },
-  // ---- S7 (T368): legacy goal-file migration ----
-  {
-    op: 'mission_import_legacy',
-    // §4: { ok, missionId, extractedFields: string[], legacyPreserved: true } — plus
-    // the new mission's slug and which fields need review (§9).
-    ack: ack('mission_import_legacy', {
-      missionId: z.string().regex(/^mnt-[0-9a-f]{8}$/),
-      slug: z.string().min(1),
-      extractedFields: z.array(z.string()),
-      needsReview: z.array(z.literal('declaredEnd')),
-      legacyPreserved: z.literal(true)
-    }),
-    setup: async (s) => {
-      const goals = path.join(s.folder, '.harnu', 'goals')
-      await fs.mkdir(goals, { recursive: true })
-      await fs.writeFile(
-        path.join(goals, 'contract.md'),
-        '# Goal — contract import\n\n## North star\n\nMerge the PR.\n\n## Done criteria\n\n- CI green\n',
-        'utf8'
-      )
-    },
-    call: (s) => ({
-      folder: s.folder,
-      legacyPath: '.harnu/goals/contract.md',
-      sessionId: s.sessionId
-    })
-  },
-  // ---- T654: the owner recovery path (last: it moves the owner the rows above are keyed on) ----
-  {
-    op: 'mission_transfer_owner',
-    // { ok, op, missionId, from, to } — the old owner and the new one.
-    ack: ack('mission_transfer_owner', {
-      missionId: z.string().regex(/^mnt-[0-9a-f]{8}$/),
-      from: z.string().uuid(),
-      to: z.literal('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')
-    }),
-    call: (s) => ({
-      folder: s.folder,
-      missionId: s.missionId,
-      toSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-      reason: 'the owner session died'
-    })
-  },
-  // ---- Missions v4 S-24: the verbs that exist in v4 alone. They run on a v4 mission of their own
-  // (made by the first row), so the v3 scenario above is never converted under the rows that follow.
   {
     op: 'mission_add_milestone',
     ack: ack('mission_add_milestone', {
       milestoneId: z.literal('mls-2'),
       totalMilestones: z.literal(2)
     }),
-    setup: async (s) => {
-      s.v4Id = await createV4Mission(s)
-    },
     call: (s) => ({
       folder: s.folder,
-      missionId: s.v4Id,
+      missionId: s.missionId,
       sessionId: s.sessionId,
       title: 'Ship the report'
+    })
+  },
+  {
+    op: 'mission_add_step',
+    ack: ack('mission_add_step', {
+      stepId: z.literal('stp-2'),
+      totalSteps: z.literal(2)
+    }),
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.missionId,
+      sessionId: s.sessionId,
+      title: 'Document the export',
+      milestone: 'mls-2',
+      criteria: [{ text: 'The README names the export', fact: 'pr-merged' }],
+      reason: 'the reviewer asked for docs',
+      // A step can be born with its links.
+      links: [{ kind: 'pr', ref: '12' }]
+    })
+  },
+  {
+    // Kept in the catalog, built by no slice: a call is refused and writes nothing.
+    op: 'mission_update_step',
+    refuses: /^NOT_AVAILABLE:/,
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.missionId,
+      sessionId: s.sessionId,
+      stepId: 'stp-1',
+      set: { title: 'Export the report' }
     })
   },
   {
@@ -683,7 +203,7 @@ const CONTRACT: ContractRow[] = [
     }),
     call: (s) => ({
       folder: s.folder,
-      missionId: s.v4Id,
+      missionId: s.missionId,
       sessionId: s.sessionId,
       stepId: 'stp-1',
       text: 'The export opens in a spreadsheet',
@@ -699,10 +219,57 @@ const CONTRACT: ContractRow[] = [
     }),
     call: (s) => ({
       folder: s.folder,
-      missionId: s.v4Id,
+      missionId: s.missionId,
       sessionId: s.sessionId,
       stepId: 'stp-1',
-      link: { kind: 'pr', ref: '12' }
+      link: { kind: 'pr', ref: '13' }
+    })
+  },
+  {
+    op: 'mission_log',
+    ack: ack('mission_log', {}),
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.missionId,
+      sessionId: s.sessionId,
+      stepId: 'stp-1',
+      kind: 'decision',
+      note: 'Export one file per report, not one per row'
+    })
+  },
+  {
+    op: 'mission_set_blocker',
+    ack: ack('mission_set_blocker', { blockerId: z.string().regex(/^blk-\d+$/) }),
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.missionId,
+      sessionId: s.sessionId,
+      reason: 'The STAGING_API_KEY is missing from the shared vault',
+      ask: 'Add the staging key',
+      unblocks: 'the export can run',
+      owner: 'operator'
+    })
+  },
+  {
+    // An agent-owned blocker is the session's own to clear (an operator-owned one is refused
+    // OPERATOR_ONLY, which the dual suite proves).
+    op: 'mission_clear_blocker',
+    ack: ack('mission_clear_blocker', {}),
+    setup: async (s) => {
+      const raised = await callOk('mission_set_blocker', s, {
+        sessionId: s.sessionId,
+        reason: 'The export waits on a second review of `export-name-rules.md`',
+        ask: 'Review the file name rules',
+        unblocks: 'the export is named',
+        owner: 'agent'
+      })
+      s.agentBlockerId = raised.blockerId as string
+    },
+    call: (s) => ({
+      folder: s.folder,
+      missionId: s.missionId,
+      sessionId: s.sessionId,
+      blockerId: s.agentBlockerId
     })
   },
   {
@@ -718,7 +285,7 @@ const CONTRACT: ContractRow[] = [
     }),
     call: (s) => ({
       folder: s.folder,
-      missionId: s.v4Id,
+      missionId: s.missionId,
       sessionId: s.sessionId,
       doneWhen: 'A score report opens for every candidate',
       reason: 'The first Done when missed the report'
@@ -732,19 +299,19 @@ const CONTRACT: ContractRow[] = [
       stepId: z.literal('stp-1'),
       criterionId: z.literal('ac-1')
     }),
+    // The verifier has to be attached to write: the leader's own dispatch is not a verb, so the
+    // contract attaches it the way the operator's door does, on disk.
+    setup: async (s) => {
+      await attachOnDisk(s, VERIFIER_ID)
+    },
     call: (s) => ({
       folder: s.folder,
-      missionId: s.v4Id,
+      missionId: s.missionId,
       sessionId: VERIFIER_ID,
       stepId: 'stp-1',
       criterionId: 'ac-1',
       evidence: 'Opened the export and read every row'
-    }),
-    setup: async (s) => {
-      // The verifier has to be attached to write: the leader's own dispatch is not a verb, so the
-      // contract attaches it the way the operator's door does, on disk.
-      await attachOnDisk(s, VERIFIER_ID)
-    }
+    })
   },
   {
     op: 'mission_attach',
@@ -752,11 +319,66 @@ const CONTRACT: ContractRow[] = [
       requestId: z.string().regex(/^atr-\d+$/),
       deduped: z.literal(false)
     }),
-    call: (s) => ({
-      folder: s.folder,
-      missionId: s.v4Id,
-      sessionId: 'dddddddd-eeee-4fff-8000-111111111111'
-    })
+    call: (s) => ({ folder: s.folder, missionId: s.missionId, sessionId: JOINER_ID })
+  },
+  {
+    op: 'mission_get',
+    ack: ack('mission_get', {
+      id: z.string().regex(/^mnt-[0-9a-f]{8}$/),
+      title: z.string().min(1),
+      doneWhen: z.string().min(1),
+      source: z.literal('v4'),
+      status: z.string(),
+      steps: z.array(z.object({ id: z.string().regex(/^stp-\d+$/) }).passthrough()).min(2),
+      milestones: z.array(z.object({ id: z.string().regex(/^mls-\d+$/) }).passthrough()).min(2),
+      progress: z.object({ headline: Headline }).passthrough(),
+      waiting: z.unknown(),
+      summary: z.string().min(1)
+    }),
+    call: (s) => ({ folder: s.folder, missionId: s.missionId, sessionId: s.sessionId })
+  },
+  {
+    op: 'mission_list',
+    ack: ack('mission_list', {
+      missions: z
+        .array(
+          z.object({
+            id: z.string().regex(/^mnt-[0-9a-f]{8}$/),
+            title: z.string().min(1),
+            headline: Headline,
+            leads: z.string(),
+            format: z.enum(['v4', 'v3'])
+          })
+        )
+        .min(1)
+    }),
+    call: (s) => ({ folder: s.folder, sessionId: s.sessionId })
+  },
+  {
+    // Last: the close request needs every required step done, so it runs on a mission of its own
+    // (a second leader), with the facts read on the server stubbed to a merged pull request.
+    op: 'mission_request_close',
+    ack: ack('mission_request_close', {
+      closeRequested: z.object({ at: z.iso.datetime() }),
+      deduped: z.literal(false)
+    }),
+    setup: async (s) => {
+      const made = await callOk('mission_create', s, {
+        missionId: undefined,
+        sessionId: CLOSER_ID,
+        title: 'Fix the date parser',
+        doneWhen: 'The date parser fix is merged',
+        steps: [
+          {
+            title: 'Fix the parser',
+            criteria: [{ text: 'The pull request is merged', fact: 'pr-merged' }]
+          }
+        ]
+      })
+      s.closeMissionId = made.id as string
+      setInputs(() => ({ 'stp-1': { pr: 'merged' } }))
+    },
+    call: (s) => ({ folder: s.folder, missionId: s.closeMissionId, sessionId: CLOSER_ID })
   }
 ]
 
@@ -769,6 +391,7 @@ type Handler = (
 
 let handlers: Record<string, Handler>
 const state: ScenarioState = { folder: '', sessionId: '11111111-2222-4333-8444-555555555555' }
+let setInputs: (fn: ((root: string) => Record<string, StepInput>) | null) => void
 let detachedWorktree = ''
 
 beforeAll(async () => {
@@ -786,8 +409,17 @@ beforeAll(async () => {
     `gitdir: ${path.join(repo, '.git', 'worktrees', 'wt')}\n`,
     'utf8'
   )
-  const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
-  handlers = Object.fromEntries(WIRED_TOOLS.map((t) => [t.op, t.handler as unknown as Handler]))
+  const mod = await import('../src/main/mcp/tool-handlers')
+  handlers = Object.fromEntries(mod.WIRED_TOOLS.map((t) => [t.op, t.handler as unknown as Handler]))
+  // The facts a verb reads (card column, pull request, CI) are computed on the server; the contract
+  // runs without `gh` or a board, so it replaces that gathering with an empty one.
+  setInputs = (fn) => mod._setStepInputsForTest(fn ? async (root) => fn(root) : null)
+  setInputs(() => ({}))
+})
+
+afterAll(async () => {
+  setInputs(null)
+  await fs.rm(h.userDataDir, { recursive: true, force: true })
 })
 
 describe('mission_* contract (design §4 ACKs, one call per verb)', () => {
@@ -815,18 +447,23 @@ describe('mission_* contract (design §4 ACKs, one call per verb)', () => {
         denyFolders: [],
         bridge: undefined
       })
+      if (row.refuses) {
+        expect(res.isError, res.content[0]?.text).toBe(true)
+        expect(res.content[0]?.text).toMatch(row.refuses)
+        return
+      }
       expect(res.isError, res.content[0]?.text).not.toBe(true)
       const payload = JSON.parse(res.content[0].text!) as Record<string, unknown>
-      const checked = row.ack.safeParse(payload)
+      const checked = row.ack!.safeParse(payload)
       expect(checked.success, JSON.stringify(checked.error?.issues)).toBe(true)
       row.capture?.(payload, state)
     })
   }
 })
 
-/** Every file under the repo's missions dir, with its bytes — to prove a refusal wrote nothing. */
+/** Every file under the repo's v4 missions dir, with its bytes: to prove a refusal wrote nothing. */
 async function missionsSnapshot(root: string): Promise<Record<string, string>> {
-  const dir = path.join(root, '.harnu', 'missions')
+  const dir = path.join(root, '.harnu', 'missions-v4')
   const out: Record<string, string> = {}
   for (const name of await fs.readdir(dir).catch(() => [] as string[])) {
     out[name] = await fs.readFile(path.join(dir, name), 'utf8')
@@ -846,64 +483,90 @@ describe('mission_* contract — a blocked repo refuses every verb, from any wor
         bridge: undefined
       })
       expect(res.isError).toBe(true)
+      // Every verb, the one that refuses by design (`mission_update_step`) included, is stopped by the folder gate.
       expect(res.content[0]?.text).toMatch(/^FOLDER_NOT_ALLOWED/)
       expect(await missionsSnapshot(state.folder)).toEqual(before)
     })
   }
 })
 
-// ---- Missions v4 S-24 (AC-66): both sets are registered, nothing is removed ----------------------
+// ---- Missions v4 S-40 (AC-89): the catalog is the fate table's sixteen --------------------------
 
-/** Every `mission_*` and `rebase_stack` verb the catalog still holds from before v4 (the six `campaign_*` verbs left with S-39) (spec "Verb fate table"). */
-const V3_VERBS = [
+/** The fate table's verbs that stay (spec "Verb fate table": 10 keep, 5 rename, 1 replace, rebase_stack). */
+const FATE_TABLE_VERBS = [
   'mission_create',
   'mission_get',
   'mission_list',
+  'mission_add_milestone',
   'mission_add_step',
   'mission_update_step',
-  'mission_link_child',
+  'mission_add_ac',
+  'mission_link',
   'mission_log',
   'mission_set_blocker',
   'mission_clear_blocker',
-  'mission_set_end',
-  'mission_verify_step',
-  'mission_add_check',
+  'mission_set_done_when',
+  'mission_settle_ac',
   'mission_request_close',
-  'mission_import_legacy',
-  'mission_transfer_owner',
+  'mission_attach',
   'rebase_stack'
 ] as const
 
-/** The verbs v4 adds (S-24). The kept names take both shapes; these exist in v4 alone. */
-const V4_VERBS = [
-  'mission_add_milestone',
-  'mission_add_ac',
-  'mission_link',
-  'mission_set_done_when',
-  'mission_settle_ac',
-  'mission_attach'
-] as const
+/** The six verbs with no v4 verb of the same name (renamed, merged, replaced or removed), from parts. */
+const FATE_TABLE_REMOVED = [
+  ['link', 'child'],
+  ['set', 'end'],
+  ['verify', 'step'],
+  ['add', 'check'],
+  ['transfer', 'owner'],
+  ['import', 'legacy']
+].map((parts) => ['mission', ...parts].join('_'))
 
-describe('Missions v4 · the verbs registered beside the v3 ones', () => {
-  it('the catalog holds both sets', async () => {
-    const registered = new Set<string>(MCP_OPS)
-    for (const op of V3_VERBS) expect(registered.has(op), `${op} is still registered`).toBe(true)
-    for (const op of V4_VERBS) expect(registered.has(op), `${op} is registered`).toBe(true)
-
-    // Registered means wired: the catalog entry and a handler, on the array the server registers.
-    for (const op of [...V3_VERBS, ...V4_VERBS]) {
+describe('Missions v4 · the verbs after S-40', () => {
+  it('the catalog matches the fate table', async () => {
+    const registered = (MCP_OPS as readonly string[]).filter((o) =>
+      /^(mission_|rebase_stack$)/.test(o)
+    )
+    // Exactly the sixteen: each registered, each wired to a handler, none of the six, and no seventeenth.
+    expect([...registered].sort()).toEqual([...FATE_TABLE_VERBS].sort())
+    expect(registered).toHaveLength(16)
+    for (const op of FATE_TABLE_VERBS) {
       expect(toolByName(op as McpOp)?.name, op).toBe(op)
       expect(typeof handlers[op], `${op} has a handler`).toBe('function')
     }
+    for (const op of FATE_TABLE_REMOVED) {
+      expect(registered, op).not.toContain(op)
+      expect(handlers[op], `${op} has no handler`).toBeUndefined()
+    }
 
-    // The awareness verb index names every one of them (the roster test asserts the whole catalog).
-    const doc = await fs.readFile(path.join(__dirname, '..', 'docs', 'harnu-features.md'), 'utf8')
+    // The v3 handlers, the v3 writers and the steward files are gone; the frozen reader stays.
+    const root = path.join(__dirname, '..')
+    for (const gone of [
+      'src/main/steward-bridge.ts',
+      'src/main/steward-core.ts',
+      'src/main/steward-hooks.ts',
+      'src/main/steward-pause.ts',
+      'src/main/steward-rebase.ts',
+      'src/main/steward-routes.ts',
+      'src/main/steward-shell.ts'
+    ]) {
+      await expect(fs.access(path.join(root, gone)), gone).rejects.toThrow()
+    }
+    await expect(
+      fs.access(path.join(root, 'src/main/missions/v3-read.ts'))
+    ).resolves.toBeUndefined()
+
+    // The awareness verb index lists the sixteen, and none of the six.
+    const doc = await fs.readFile(path.join(root, 'docs', 'harnu-features.md'), 'utf8')
     const start = doc.indexOf('The core verbs are available from the first turn:')
     const end = doc.indexOf('Resources:', start)
     expect(start).toBeGreaterThan(-1)
     const index = doc.slice(start, end)
-    for (const op of [...V3_VERBS, ...V4_VERBS]) {
+    for (const op of FATE_TABLE_VERBS) {
       expect(index.includes(`\`${op}\``), `${op} is in the awareness index`).toBe(true)
+    }
+    for (const op of FATE_TABLE_REMOVED) {
+      expect(index.includes(`\`${op}\``), `${op} is not in the awareness index`).toBe(false)
     }
   })
 })

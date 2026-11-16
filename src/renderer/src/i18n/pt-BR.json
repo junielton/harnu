@@ -398,6 +398,7 @@
       "kind": {
         "main-failing": "Corrigir",
         "unblock": "Destravar",
+        "rescope": "Pronto quando",
         "settle": "Conferir",
         "review": "Revisar",
         "close": "Fechar",
@@ -5102,7 +5103,6 @@
       "checks": "Marque a checagem pendente em {steps}. | Marque as {count} checagens pendentes em {steps}.",
       "humanSteps": "Confirme o passo humano: {steps}. | Confirme os passos humanos: {steps}.",
       "reviewImport": "Revise o fim importado — ele é provisório até você aprovar um re-escopo.",
-      "stewardPaused": "Steward pausado {age}: {reason}",
       "mainRed": "main está vermelha após #{pr} — {step} foi mergeado, mas o commit de merge falha no CI da main.",
       "approvals": "Responda às aprovações pendentes ({count}) de {session} no Approval Inbox.",
       "needsInput": "{session} está esperando por você — abra e responda.",

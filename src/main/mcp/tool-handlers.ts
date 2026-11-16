@@ -16,7 +16,7 @@
 import * as path from 'node:path'
 import * as os from 'node:os'
 import { promises as fs, constants as fsConstants } from 'node:fs'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { app } from 'electron'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
@@ -46,37 +46,19 @@ import type { ManifestCardDisclosure } from './confirm-core'
 import type { CommandBridge } from '../command-bridge'
 import type { FolderEntry } from '../folder-model'
 import type { TaskState, FailureReason } from '../hook-state'
-import { addTaskEventObserver, getTaskStates } from '../hook-bridge'
-import { lastSubagentActivity } from '../subagent-activity'
-import { withHelperActivity } from '../mission-pulse'
+import { getTaskStates } from '../hook-bridge'
+import { gatherStepInputs } from '../missions/facts'
 import { getTaskState } from '../detect/task-state-hub'
 import { findMainCi, findPrsForWorktrees } from '../pr-stack'
-import { getLastKnown } from '../mission-link-cache'
-import { gatherStepInputs, type FactsDeps } from '../missions/facts'
+import { getLastKnown, ensureLinkCacheLoaded } from '../mission-link-cache'
+import type { FactsDeps } from '../missions/facts'
 import type { Actor } from '../missions/guard'
 import type { MissionV4 } from '../missions/model'
 import type { StepInput } from '../missions/state'
-import {
-  formatOf,
-  mixedRefusal,
-  runV4,
-  shapeOf,
-  v3Refusal,
-  type V4Deps,
-  type V4Op
-} from '../missions/verbs'
-import { waitingList, youLine } from '../missions/waiting'
+import { runV4, type V4Deps, type V4Op } from '../missions/verbs'
 import { listPendingApprovals } from '../approval-resolver'
 import { githubBudget } from '../github-budget-tracker'
 import { githubBudgetPayload } from './github-budget-view'
-import {
-  appendLedgerRow,
-  ledgerTail,
-  mergeLedger,
-  pickLedgerTargets,
-  type LedgerHints,
-  type LedgerRowInput
-} from '../mission-ledger'
 import { getScreenStates, getShellSessions } from '../detect/screen-detect'
 import {
   createTerminalPty,
@@ -151,7 +133,7 @@ import {
 } from '../messaging-socket'
 import { arm, disarm, listArmedSessionIds } from '../orchestrator-guard'
 import { resolveAgentTarget } from './target-scope'
-import { dataDirAt, dataDirReady, mkdirDataDir, repoRoot } from '../data-dir'
+import { dataDirReady, mkdirDataDir, repoRoot } from '../data-dir'
 import { listMissionRecords, readMissionRecord } from '../missions/record-store'
 import { dispatchAck, dispatchStep, realBoardIo, stampCardForStep } from '../missions/dispatch'
 import {
@@ -163,68 +145,21 @@ import {
   type Work
 } from '../missions/proactive'
 import { hibernatedKeys, isHibernated } from '../hibernation'
-import {
-  applyAddCheck,
-  buildMissionFileContent,
-  CHECK_LABEL_MAX,
-  createMissionFile,
-  declaredEndHash,
-  isStarted,
-  missionScope,
-  mintMissionId,
-  missionsDir,
-  requestCloseRefusal,
-  withMissionIdMintLock,
-  MISSION_STEP_CONTROLLED_FIELDS,
-  STEP_ID_RE,
-  type Blocker,
-  type DeclaredEnd,
-  type LedgerRow,
-  type Mission,
-  type MissionStep,
-  type StepDecision,
-  type StepEdge,
-  type StepLink
-} from '../mission-core'
-import { probeGitMeta } from '../git-probe'
-import { ensureLinkCacheLoaded } from '../mission-link-cache'
-import { missionLedgerCount, readMissionLedger, readObservedLedger } from '../missions/ledger-store'
-import { lastKnownProgress, wakeSteward } from '../missions/observer'
-import {
-  MAIN_CI_GET_WAIT_MS,
-  isInside,
-  pathExists,
-  scopeTargetProblem,
-  deriveMission,
-  linkPath,
-  type MissionDerived,
-  type MissionReading,
-  type ScopeTargetProblem
-} from '../missions/derive'
+import { bindMissionRoot, recordObserved } from '../missions/ledger-store'
+import { pickLedgerTargets, type LedgerHints, type LedgerRowInput } from '../mission-ledger'
 // Missions v4 S-2 (R-25): the mission-file readers live in `missions/store.ts`. They are
 // re-exported so the callers that still import them from here keep working.
-import {
-  leaderOf,
-  listMissionEntries,
-  loadMission,
-  missionRoot,
-  missionsLedBy,
-  readAllMissions,
-  readMissionsDeduped,
-  type MissionFileEntry
-} from '../missions/store'
+import { loadMission, missionRoot, readAllMissions } from '../missions/store'
 export { loadMission, missionRoot, readAllMissions }
-import { progressSteps } from '../mission-progress'
-import { importLegacyGoalFile } from '../mission-migration'
-import { atomicWriteFile } from './atomic-write'
+// Types the retired v3 view still names (the list's wire, Your move's stored pointer, the pulse). No runtime.
+export type { MissionDerived, MissionLinkSignal } from '../missions/derive'
+export type { MissionYouItem, WaitingItem } from '../missions/waiting'
 import {
   buildFleetSnapshot,
-  buildMissionFleetProjection,
   filterFleetSnapshot,
   terminalsOfSession,
   toTerminalListing,
   type FleetFolderInput,
-  type MissionChildState,
   type FleetSessionInput,
   type SessionStatus
 } from './fleet-snapshot'
@@ -252,12 +187,6 @@ import {
   resolveMemoryLocation
 } from './memory-store'
 import type { RecallHit, RecallQuery } from './memory-entries'
-import {
-  consolidate,
-  parseLogEntries,
-  type Consolidation,
-  type ConsolidatorInput
-} from '../consolidator-core'
 import { checkMarkdownReadAllowed, markdownKnownRoots } from '../markdown-read'
 import { readAgentSpeechPrefs } from '../speech'
 import { resolveSpeakGate, speakUnspokenHint, SPEAK_GATE_ERRORS } from '../speech-gate-core'
@@ -308,7 +237,6 @@ import {
   resolveCardAssetDestination,
   resolveCardAssetSource,
   resolveUniqueSlug,
-  serializeByKey,
   shouldSeedTemplate,
   slugifyTitle,
   CARD_ASSET_MAX_BYTES,
@@ -350,7 +278,6 @@ import {
   type UpdateWorkerPatch
 } from '../scheduler-shell'
 import { rebaseStackV4 } from '../missions/rebase'
-import { runFile } from '../spawn-runner'
 import type { Effort, NotifyOn, WorkerMode } from '../scheduler-core'
 import { getContainersService } from '../containers/containers-ipc'
 import type { AgentActVerb } from '../containers/containers-wire'
@@ -369,12 +296,11 @@ import { planArchiveSession, summarizeArchive, type ArchivePlan } from './archiv
 import { planHideFolder, summarizeHide } from './hide-folder-core'
 
 /**
- * The caller the transport proved. A steward's bearer proves its worker and the mission it is bound to;
- * a scoped bearer (Missions v4 S-25) proves a session Harnu spawned (its own session id, the mission and
- * the step it was started for) or the observe worker of a folder.
+ * The caller the transport proved: a session Harnu spawned (its own session id, the mission and the step it
+ * was started for) or the observe worker of a folder (a scoped bearer, Missions v4 S-25). Absent = an ordinary MCP
+ * client (the main bearer).
  */
-export type HandlerCaller =
-  { kind: 'steward'; workerId: string; missionId: string } | { kind: 'scoped'; scope: Scope }
+export type HandlerCaller = { kind: 'scoped'; scope: Scope }
 
 /** Everything a handler may need beyond its own validated `input`. */
 export interface ToolHandlerCtx {
@@ -402,9 +328,9 @@ export interface ToolHandlerCtx {
    */
   deadlineFlag?: DeadlineFlag
   /**
-   * Who is calling, as the TRANSPORT knows it (Missions v4 S-24): present only for a steward's own
-   * bearer, bound to its mission. Absent = an ordinary MCP client (the main bearer). The v4 mission
-   * verbs build the caller's `Actor` from this and never from an argument.
+   * Who is calling, as the TRANSPORT knows it (Missions v4 S-24): present only for a scoped bearer (a
+   * session Harnu spawned for a step, or an observe worker). Absent = an ordinary MCP client (the main
+   * bearer). The v4 mission verbs build the caller's `Actor` from this and never from an argument.
    */
   caller?: HandlerCaller
   /**
@@ -1093,7 +1019,7 @@ function declaredCaller(
 /**
  * The fields the ACK gains when a session that leads no mission has started work: `{ missionHint }` once,
  * else `{}`. Never creates a mission, never throws into the ACK. A caller the transport proved (a session
- * Harnu spawned for a step, a steward, an observe worker) is never hinted; an anonymous caller is counted
+ * Harnu spawned for a step, an observe worker) is never hinted; an anonymous caller is counted
  * per repo and left alone where a mission is led.
  */
 async function proactiveHintFor(
@@ -1864,7 +1790,7 @@ const memoryAppendHandler: Handler = async (args, ctx) => {
     ...(branch ? { branch } : {}),
     // T89: central storage seeds a `where.md` backlink to the source project.
     ...(mode === 'central' ? { backlink: { sourcePath: checkout } } : {}),
-    // Campaign ch.6: the entry's chain and recall metadata (validated at the gate).
+    // The entry's chain and recall metadata (validated at the gate).
     ...(strField(args, 'supersedes') ? { supersedes: strField(args, 'supersedes') } : {}),
     ...(Array.isArray(args.watches) ? { watches: args.watches.map(String) } : {}),
     ...(strField(args, 'mission') ? { mission: strField(args, 'mission') } : {}),
@@ -3703,325 +3629,23 @@ const yourMoveHandler: Handler = async (args) => {
   }
 }
 
-// ---- mission_* verbs (T358 S3 — design.md §4) -------------------------------
+// ---- mission_* verbs (Missions v4) ---------------------------------------------------------
 //
-// Missions are repo-scoped and shared by every worktree (design §9, decision 17):
-// each handler resolves the MAIN checkout from the gate `folder` with the SAME
-// resolver S2's hibernation exemption reads through (`mainCheckoutRoot`), so a
-// mission written from a worktree is the mission the exemption finds. Outside a
-// git repo the folder itself is the root.
-//
-// Every read-modify-write runs under `withMissionIdMintLock(id)` exactly ONCE —
-// the lock is not re-entrant (S1 F3), so no helper below takes it on its own
-// and `createMissionFile` (which takes it internally) is never called inside it.
+// Every mission verb is a v4 verb (`missions/verbs.ts` runs them). This file is the MCP side: the
+// caller built from the transport, the facts gathered on the server and the folder's gate. A mission
+// still held in a v3 file answers the same verbs: the store reads it in memory and the first write
+// converts it by copy (spec "Design · Compatibility with records written by v3").
 
-/** A Claude session UUID — the id shape S2's exemption and `get_fleet` key sessions by. */
+/** A Claude session UUID — the id shape `get_fleet` keys sessions by. */
 const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const DECLARED_END_KINDS: readonly DeclaredEnd['kind'][] = [
-  'code',
-  'ui',
-  'research',
-  'decision',
-  'other'
-]
-
-/** The fixed end's title (design §1.2, decision 4). Mission v3 §3.3: there is no fixed start. */
-const FIXED_END_TITLE = 'Delivered and verified'
-
 function badSessionIdMessage(field: string, value: string): string {
-  return `BAD_SESSION_ID: ${field} "${value}" is not a Claude session UUID — pass the session's transcript id (the uuid get_fleet reports, never a synthetic-… id). Mission owners and session links are matched by that id; any other shape silently never matches.`
-}
-
-/** Which `declaredEnd` fields are missing or invalid (`[]` = complete). */
-function declaredEndProblems(raw: unknown): string[] {
-  if (typeof raw !== 'object' || raw === null) return ['declaredEnd']
-  const end = raw as Record<string, unknown>
-  const problems: string[] = []
-  if (!DECLARED_END_KINDS.includes(end.kind as DeclaredEnd['kind'])) problems.push('kind')
-  for (const key of ['target', 'evidence'] as const) {
-    const v = end[key]
-    if (typeof v !== 'string' || v.trim().length === 0) problems.push(key)
-  }
-  return problems
-}
-
-/** Per-repo create lock: serializes id-mint + slug pick so concurrent creates stay unique. */
-const missionCreateLocks = new Map<string, Promise<unknown>>()
-
-/** A mission slug from its title; `mission` when the title has nothing slug-able. */
-function missionSlugBase(title: string): string {
-  const slug = slugifyTitle(title)
-  // `slugifyTitle` falls back to `card` for an empty result — wrong noun here.
-  return slug === 'card' && !/card/i.test(title) ? 'mission' : slug
+  return `BAD_SESSION_ID: ${field} "${value}" is not a Claude session UUID — pass the session's transcript id (the uuid get_fleet reports, never a synthetic-… id). Mission leaders and session links are matched by that id; any other shape silently never matches.`
 }
 
 /**
- * A new mission's steps (Mission v3 §3.3): its plan, numbered from `stp-1`, then
- * the fixed end. No fixed start — scope is an attachment, not a step. Planning
- * steps carry no `addedReason`: they are the plan, not growth (§3.4).
- */
-function planWithEnd(
-  plan: readonly Pick<MissionStep, 'title' | 'verification' | 'links'>[]
-): MissionStep[] {
-  const steps: MissionStep[] = plan.map((p, i) => ({
-    id: `stp-${i + 1}`,
-    ordinal: i + 1,
-    kind: 'custom',
-    title: p.title,
-    verification: p.verification,
-    proof: 'unproven',
-    links: p.links,
-    blockers: []
-  }))
-  steps.push({
-    id: `stp-${plan.length + 1}`,
-    ordinal: plan.length + 1,
-    kind: 'fixed-end',
-    title: FIXED_END_TITLE,
-    verification: 'verifier',
-    proof: 'unproven',
-    links: [],
-    blockers: []
-  })
-  return steps
-}
-
-/** Most steps `mission_create { steps }` takes in one call. */
-const MISSION_PLAN_MAX = 50
-const STEP_VERIFICATIONS: readonly MissionStep['verification'][] = [
-  'existence',
-  'verifier',
-  'human'
-]
-
-/** `mission_create`'s `steps`: `{ title, verification }[]`, or a BAD_ARGS refusal. */
-function parsePlan(
-  raw: unknown
-):
-  | { ok: true; plan: Pick<MissionStep, 'title' | 'verification' | 'links'>[] }
-  | { ok: false; error: string } {
-  if (raw === undefined) return { ok: true, plan: [] }
-  const bad = {
-    ok: false as const,
-    error: `BAD_ARGS: steps must be an array of at most ${MISSION_PLAN_MAX} { title (1..200 chars), verification (${STEP_VERIFICATIONS.join(' | ')}) }.`
-  }
-  if (!Array.isArray(raw) || raw.length > MISSION_PLAN_MAX) return bad
-  const plan: Pick<MissionStep, 'title' | 'verification' | 'links'>[] = []
-  for (const item of raw) {
-    if (typeof item !== 'object' || item === null) return bad
-    const r = item as Record<string, unknown>
-    const title = typeof r.title === 'string' ? r.title.replace(/\s+/g, ' ').trim() : ''
-    if (!title || title.length > 200) return bad
-    if (!STEP_VERIFICATIONS.includes(r.verification as MissionStep['verification'])) return bad
-    plan.push({ title, verification: r.verification as MissionStep['verification'], links: [] })
-  }
-  return { ok: true, plan }
-}
-
-/**
- * `mission_add_step`'s `links` (Mission v3 §3.9 — a step can be born provable):
- * the same shapes `mission_link_child` takes, deduped. A session ref must be a
- * Claude session UUID, like everywhere else.
- */
-function parseStepLinks(
-  raw: unknown
-): { ok: true; links: StepLink[] } | { ok: false; error: string } {
-  if (raw === undefined) return { ok: true, links: [] }
-  const bad = {
-    ok: false as const,
-    error:
-      'BAD_ARGS: links must be an array of at most 20 { kind: session | worktree | card | pr, ref }.'
-  }
-  if (!Array.isArray(raw) || raw.length > 20) return bad
-  const links: StepLink[] = []
-  for (const item of raw) {
-    if (typeof item !== 'object' || item === null) return bad
-    const r = item as Record<string, unknown>
-    const ref = typeof r.ref === 'string' ? r.ref.trim() : ''
-    const kind = r.kind
-    if (kind !== 'session' && kind !== 'worktree' && kind !== 'card' && kind !== 'pr') return bad
-    if (!ref) return bad
-    if (kind === 'session' && !SESSION_UUID_RE.test(ref)) {
-      return { ok: false, error: badSessionIdMessage('links.ref', ref) }
-    }
-    if (!links.some((l) => l.kind === kind && l.ref === ref)) links.push({ kind, ref })
-  }
-  return { ok: true, links }
-}
-
-/** Most scope documents `mission_create` attaches (Mission v2 §3.1, v3 §3.3). */
-const MISSION_SCOPE_MAX = 20
-
-function badScopePathMessage(p: string, problem: ScopeTargetProblem): string {
-  const why: Record<ScopeTargetProblem, string> = {
-    outside:
-      'is outside this repo — scope paths (and paths linked to the fixed start) are files or directories inside the repo.',
-    root: 'is the repo root — name the scope documents, not the repo.',
-    internal:
-      "is inside .git, .harnu or .capy — git internals and Harnu's own state exist in every repo and prove nothing about the scope; name the scope documents.",
-    checkout:
-      "is a worktree checkout (or inside one) — a linked worktree, a nested clone or Harnu's .claude/worktrees is another checkout, not this repo's scope documents."
-  }
-  return `BAD_SCOPE_PATH: ${JSON.stringify(p)} ${why[problem]}`
-}
-
-/** Most symlinks one scope path may traverse before it counts as a loop (Linux's MAXSYMLINKS). */
-const SCOPE_MAX_SYMLINKS = 40
-
-/** `x`'s components after its root, e.g. `/a/b/../c` → `['a', 'b', '..', 'c']`. */
-function pathComponents(x: string): string[] {
-  return x
-    .slice(path.parse(x).root.length)
-    .split(/[\\/]+/)
-    .filter((c) => c !== '' && c !== '.')
-}
-
-/**
- * Where `p` (absolute, NOT normalized) lands on disk, resolved one component at
- * a time the way the kernel does: every symlink is followed through `readlink`
- * (relative to the link's directory), `..` is taken physically, and a DANGLING
- * link is resolved to its would-be target instead of being dropped — so a link
- * whose target outside the repo does not exist yet still resolves outside. The
- * first missing component ends the walk; the rest joins lexically. Throws after
- * {@link SCOPE_MAX_SYMLINKS} links (a loop).
- */
-async function resolvePhysicalPath(p: string): Promise<string> {
-  let cur = path.parse(p).root
-  const pending = pathComponents(p)
-  let links = 0
-  while (pending.length > 0) {
-    const comp = pending.shift()!
-    if (comp === '..') {
-      cur = path.dirname(cur)
-      continue
-    }
-    const next = path.join(cur, comp)
-    let isLink: boolean
-    try {
-      isLink = (await fs.lstat(next)).isSymbolicLink()
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      if (code === 'ENOENT' || code === 'ENOTDIR') return path.resolve(next, ...pending)
-      throw err
-    }
-    if (!isLink) {
-      cur = next
-      continue
-    }
-    if (++links > SCOPE_MAX_SYMLINKS) throw new Error(`too many symlinks resolving ${p}`)
-    const target = await fs.readlink(next)
-    if (path.isAbsolute(target)) cur = path.parse(target).root
-    pending.unshift(...pathComponents(target))
-  }
-  return cur
-}
-
-/**
- * One path for the fixed start — a `scope` entry, or a `worktree` link placed on
- * the fixed start by `mission_link_child` (Mission v2 §3.1, BUG-145). Resolved
- * PHYSICALLY ({@link resolvePhysicalPath}): a symlink anywhere on the path is
- * followed to its target, existing or not, and `..` climbs from where a link
- * lands. Refused `BAD_SCOPE_PATH` when that lands outside the repo, on the repo
- * root, or under `.git` / `.harnu` / `.capy` ({@link scopeTargetProblem}). What is returned
- * — and stored — is the repo-relative path that was checked, never the caller's
- * spelling, so what is stored is what is proven. A path that does not exist yet
- * is accepted: the fixed start stays unproven until it does. This only probes
- * paths, never reads a file, so it is not the legacy import's O_NOFOLLOW reader.
- */
-async function checkScopePath(
-  root: string,
-  p: string
-): Promise<{ ok: true; ref: string } | { ok: false; error: string }> {
-  const trimmed = p.trim()
-  // Unnormalized on purpose: `link/..` must climb from where the link lands.
-  const unnormalized = path.isAbsolute(trimmed) ? trimmed : `${root}${path.sep}${trimmed}`
-  let realRoot: string
-  let real: string
-  try {
-    realRoot = await fs.realpath(root)
-    real = await resolvePhysicalPath(unnormalized)
-  } catch {
-    return { ok: false, error: badScopePathMessage(p, 'outside') }
-  }
-  const problem = await scopeTargetProblem(real, realRoot)
-  if (problem) return { ok: false, error: badScopePathMessage(p, problem) }
-  return { ok: true, ref: path.relative(realRoot, real) }
-}
-
-/**
- * `mission_create`'s `scope` as `worktree` links for the fixed start (Mission v2
- * §3.1): each entry checked by {@link checkScopePath}, deduped by the stored
- * path. Read time re-checks containment ({@link scopeLinkProblems}), since a
- * path accepted here can later be swapped for a symlink.
- */
-async function resolveScopeLinks(
-  root: string,
-  raw: unknown
-): Promise<{ ok: true; links: StepLink[] } | { ok: false; error: string }> {
-  if (raw === undefined) return { ok: true, links: [] }
-  if (
-    !Array.isArray(raw) ||
-    raw.length > MISSION_SCOPE_MAX ||
-    raw.some((p) => typeof p !== 'string' || p.trim().length === 0)
-  ) {
-    return {
-      ok: false,
-      error: `BAD_ARGS: scope must be an array of at most ${MISSION_SCOPE_MAX} non-empty repo-relative paths.`
-    }
-  }
-  const refs: string[] = []
-  for (const p of raw as string[]) {
-    const checked = await checkScopePath(root, p)
-    if (!checked.ok) return checked
-    if (!refs.includes(checked.ref)) refs.push(checked.ref)
-  }
-  return { ok: true, links: refs.map((ref) => ({ kind: 'worktree', ref })) }
-}
-
-type MissionWrite = { ok: true; mission: Mission } | { ok: false; error: string }
-
-/**
- * Mint a fresh id and a repo-unique slug (from `title`) and exclusively write the
- * mission `build` returns, with `log` as its body. Runs under the repo's create
- * lock, so concurrent creates never pick the same slug; `precheck` (a refusal it
- * returns aborts the write) runs inside that lock too, so a check against the
- * missions already on disk cannot race another create. `createMissionFile`
- * rejects EEXIST on a genuine id collision (another Harnu process, or a file this
- * scan raced) — the id is redrawn rather than failing the call.
- */
-async function writeNewMission(
-  root: string,
-  title: string,
-  build: (id: string, slug: string, now: string) => Mission,
-  log: string,
-  precheck?: (entries: MissionFileEntry[]) => Promise<string | null>
-): Promise<MissionWrite> {
-  return serializeByKey(missionCreateLocks, root, async (): Promise<MissionWrite> => {
-    const entries = await listMissionEntries(root)
-    const refused = precheck ? await precheck(entries) : null
-    if (refused) return { ok: false, error: refused }
-    const takenIds = entries.map((e) => e.id)
-    const slug = resolveUniqueSlug(missionSlugBase(title), new Set(entries.map((e) => e.slug)))
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const mission = build(mintMissionId(takenIds), slug, new Date().toISOString())
-      try {
-        await createMissionFile(root, mission, log)
-        return { ok: true, mission }
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
-          return { ok: false, error: `WRITE_FAILED: ${(err as Error).message}` }
-        }
-        takenIds.push(mission.id)
-      }
-    }
-    return { ok: false, error: 'WRITE_FAILED: could not mint a free mission id' }
-  })
-}
-
-/**
- * Campaign ch.6 (AC-6.3): the live memory entries whose `watches` overlap what a new mission or
- * campaign is about. Best-effort — memory trouble must never fail a create, so it recalls nothing.
+ * The live memory entries whose `watches` overlap what a new mission is about. Best-effort — memory
+ * trouble must never fail a create, so it recalls nothing.
  */
 async function recallFor(folder: string, query: RecallQuery): Promise<RecallHit[]> {
   try {
@@ -4033,533 +3657,6 @@ async function recallFor(folder: string, query: RecallQuery): Promise<RecallHit[
   }
 }
 
-/**
- * The steward Brief's recall (AC-6.3): the same match `mission_create` ran, redone at compaction
- * time so a decision recorded since still reaches the resumed owner. Titles and scope only.
- */
-export async function recallForMission(mission: Mission, title: string): Promise<RecallHit[]> {
-  return recallFor(mission.owner.folder, {
-    paths: scopePaths(missionScope(mission)),
-    topics: [title, ...mission.steps.map((s) => s.title)]
-  })
-}
-
-/** The repo paths a scope attachment names. */
-const scopePaths = (links: readonly StepLink[]): string[] =>
-  links.filter((l) => l.kind === 'worktree').map((l) => l.ref)
-
-/** The current `hot.md` body, for the consolidator's refresh; `undefined` when there is none. */
-async function readHotBody(folder: string): Promise<string | undefined> {
-  try {
-    const { memoryDir } = await resolveMemoryLocation(folder)
-    return await fs.readFile(path.join(memoryDir, 'hot.md'), 'utf8')
-  } catch {
-    return undefined
-  }
-}
-
-const missionConsolidatorInput = (
-  m: Mission,
-  log: string,
-  currentHot: string | undefined,
-  /** The whole ledger: the rows in the file and the rows Harnu observed. */
-  ledger: readonly LedgerRow[]
-): ConsolidatorInput => ({
-  kind: 'mission',
-  id: m.id,
-  title: log.match(/^# (.+)$/m)?.[1] ?? m.slug,
-  declaredEnd: m.declaredEnd,
-  createdAt: m.createdAt,
-  scopePaths: scopePaths(missionScope(m)),
-  steps: m.steps.map((s) => ({
-    id: s.id,
-    title: s.title,
-    kind: s.kind,
-    proof: s.proof,
-    required: s.required !== false,
-    ...(s.addedAt ? { addedAt: s.addedAt } : {}),
-    ...(s.addedReason ? { addedReason: s.addedReason } : {}),
-    ...(s.decision
-      ? {
-          decision: {
-            title: s.decision.title,
-            options: s.decision.options,
-            ...(s.decision.chosen !== undefined ? { chosen: s.decision.chosen } : {})
-          }
-        }
-      : {})
-  })),
-  log: parseLogEntries(log),
-  ledger: [...ledger],
-  ...(currentHot ? { currentHot } : {})
-})
-
-const consolidationAck = (c: Consolidation): Record<string, unknown> => ({
-  drafts: c.drafts.length,
-  nothingNotable: c.nothingNotable
-})
-
-/** What a v3 call that still names a campaign or a chapter is told: the way out, in one sentence. */
-const CAMPAIGN_REMOVED_MESSAGE =
-  'CAMPAIGN_REMOVED: campaigns and chapters no longer exist, so campaignId and chapterId are refused and nothing was written. Plan the stages as milestones: mission_create with milestones, or mission_add_milestone on the mission.'
-
-const missionCreateHandler: Handler = async (args, ctx) => {
-  const folder = ctx.folder
-  if (!folder) return errorResult('BAD_ARGS: folder is required')
-  const title = strField(args, 'title')?.replace(/\s+/g, ' ').trim()
-  if (!title) return errorResult('BAD_ARGS: title is required')
-  const problems = declaredEndProblems(args.declaredEnd)
-  if (problems.length > 0) {
-    return errorResult(
-      `DECLARED_END_INCOMPLETE: missing or invalid ${problems.join(', ')} — a mission needs a complete declared end at creation: kind (${DECLARED_END_KINDS.join(' | ')}), a concrete target, and the evidence that proves it (design decision 5). There is no "draft with no target" state.`
-    )
-  }
-  const rawEnd = args.declaredEnd as Record<string, string>
-  const declaredEnd: DeclaredEnd = {
-    kind: rawEnd.kind as DeclaredEnd['kind'],
-    target: rawEnd.target.trim(),
-    evidence: rawEnd.evidence.trim()
-  }
-  const sessionId = strField(args, 'sessionId') ?? ''
-  if (!SESSION_UUID_RE.test(sessionId))
-    return errorResult(badSessionIdMessage('sessionId', sessionId))
-  const linkedCard = strField(args, 'linkedCard')
-  // Missions v4 S-39: campaigns and chapters are gone, so a mission can no longer BE a chapter. A call
-  // that still names one is refused with the way out, and nothing is written (a campaign file already
-  // on disk is a record that stays; it is never touched).
-  if (strField(args, 'campaignId') !== undefined || strField(args, 'chapterId') !== undefined) {
-    return errorResult(CAMPAIGN_REMOVED_MESSAGE)
-  }
-
-  const root = missionRoot(folder)
-  // The gate checked the raw `folder` arg; a worktree outside its main checkout's
-  // tree would slip past it and write into a blocked root. Check the root too.
-  const refusal = missionFolderRefusal(folder, root, ctx)
-  if (refusal) return errorResult(refusal)
-  const plan = parsePlan(args.steps)
-  if (!plan.ok) return errorResult(plan.error)
-  const scope = await resolveScopeLinks(root, args.scope)
-  if (!scope.ok) return errorResult(scope.error)
-  const { gitBranch } = await probeGitMeta(folder)
-
-  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
-  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
-
-  const created: MissionWrite = await writeNewMission(
-    root,
-    title,
-    (id, slug, now) => ({
-      id,
-      slug,
-      folder: root,
-      owner: { sessionId, folder: path.resolve(folder) },
-      ...(linkedCard ? { linkedCard } : {}),
-      // Mission v3 §3.4: born active — the end agreed in chat is the agreement.
-      status: 'active',
-      declaredEnd,
-      declaredEndApproval: { at: now, bodyHash: declaredEndHash(declaredEnd), via: 'chat' },
-      // Mission v3 §3.3: scope is an attachment, never a step.
-      ...(scope.links.length > 0 ? { scope: scope.links } : {}),
-      steps: planWithEnd(plan.plan),
-      blockers: [],
-      openQuestions: [],
-      createdAt: now,
-      updatedAt: now,
-      provenance: { author: 'agent', at: now, ...(gitBranch ? { branch: gitBranch } : {}) }
-    }),
-    // The title has no Mission field (design §1.1); it heads the Log body.
-    `# ${title}\n\n## Log\n`
-  )
-  if (!created.ok) return errorResult(created.error)
-  // Missions v4 S-27: no mission gets a steward any more (`steward` is accepted and ignored). The ACK
-  // keeps its `steward` field so a caller that reads it still finds it.
-  const steward = { created: false }
-  // Campaign ch.6 (AC-6.3): what memory already knows about this scope.
-  const recall = await recallFor(folder, {
-    paths: scopePaths(created.mission.scope ?? []),
-    topics: [title, ...created.mission.steps.map((s) => s.title)]
-  })
-  return textResult({
-    ok: true,
-    op: 'mission_create',
-    missionId: created.mission.id,
-    slug: created.mission.slug,
-    steps: created.mission.steps,
-    ...(created.mission.scope ? { scope: created.mission.scope } : {}),
-    steward,
-    recall
-  })
-}
-
-// ---- T358 S7: legacy goal-file migration (design §9) -------------------------
-
-/** Past this, a legacy file is refused rather than carried in every mission rewrite. */
-const LEGACY_MAX_BYTES = 1024 * 1024
-
-/** A bare board id (`T231`, `BUG-42`) — a card link the import may resolve to a slug. */
-const BARE_CARD_ID_RE = /^(?:T\d+|BUG-\d+)$/
-
-function badLegacyPathMessage(legacyPath: string): string {
-  return `BAD_LEGACY_PATH: "${legacyPath}" is not a .md file under this folder's (or its main checkout's) .harnu/goals/ — mission_import_legacy only reads legacy goal files.`
-}
-
-/** Test seam: runs between validation and the open (TOCTOU tests only). */
-let legacyImportBeforeOpen: (() => Promise<void>) | null = null
-export function _setLegacyImportBeforeOpen(fn: (() => Promise<void>) | null): void {
-  legacyImportBeforeOpen = fn
-}
-
-type LegacyRead = { ok: true; file: string; bytes: Buffer } | { ok: false; error: string }
-
-/**
- * Validate `legacyPath` and read it — reading exactly what was validated. The
- * target must be a `.md` file inside `<folder>/.harnu/goals/` or
- * `<root>/.harnu/goals/`, checked lexically (no `..` escape, no other directory),
- * with `.harnu` and `.harnu/goals` themselves real directories (never symlinks),
- * and after `realpath` (a symlink planted in goals/ must not reach outside it).
- * Every check after the lexical one is against the ONE base whose goals/ holds
- * the path — never "inside any goals dir": the realpath must sit under the
- * realpath of that same base's goals/.
- *
- * Check-then-read would let a process that can write goals/ swap a path between
- * the check and the read (PR #385 review). So the file is opened ONCE, by the
- * validated real path with `O_NOFOLLOW` (the final component cannot be a symlink
- * swapped in since), the handle is `fstat`ed (regular file, size cap), and after
- * the open the path must STILL resolve inside goals/ to the very inode the
- * handle holds — a directory swapped for a symlink in between fails that. The
- * bytes then come from the handle, never from a fresh path lookup. Returns the
- * lexical absolute path — the one recorded as `source`.
- */
-async function readLegacyGoalFile(
-  folder: string,
-  root: string,
-  legacyPath: string
-): Promise<LegacyRead> {
-  const bad: LegacyRead = { ok: false, error: badLegacyPathMessage(legacyPath) }
-  await Promise.all([dataDirReady(folder), dataDirReady(root)])
-  const file = path.resolve(folder, legacyPath)
-  const goalDirs = [...new Set([path.resolve(folder), root])].map((b) =>
-    path.join(dataDirAt(b), 'goals')
-  )
-  // The ONE base whose goals/ lexically holds `file`. Containment is then judged
-  // against that base alone: a union across bases would let a symlink in one
-  // base's goals/ reach through the other base's symlinked goals/ (delta 3).
-  const holders = goalDirs.filter((d) => isInside(file, d))
-  if (!/\.md$/i.test(file) || holders.length !== 1) return bad
-  const goals = holders[0]
-  // `.harnu` and `.harnu/goals` of that base must be real directories: were either a
-  // symlink already, realpath would resolve "inside goals/" to wherever it points
-  // (delta 2 of the S7 review).
-  for (const dir of [path.dirname(goals), goals]) {
-    const st = await fs.lstat(dir).catch(() => null)
-    if (st?.isSymbolicLink()) return bad
-  }
-  // Resolved ONCE, at validation: re-resolving after the open would let a goals/
-  // directory swapped for a symlink redefine what "inside goals/" means.
-  const realGoals = await fs.realpath(goals).catch(() => goals)
-  let real: string
-  try {
-    real = await fs.realpath(file)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {
-        ok: false,
-        error: `LEGACY_NOT_FOUND: no goal file at ${file} — list .harnu/goals/ to see the ones that exist.`
-      }
-    }
-    throw err
-  }
-  if (!isInside(real, realGoals)) return bad
-
-  await legacyImportBeforeOpen?.()
-  let handle: Awaited<ReturnType<typeof fs.open>>
-  try {
-    handle = await fs.open(real, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') {
-      return {
-        ok: false,
-        error: `LEGACY_NOT_FOUND: no goal file at ${file} — it disappeared during the import.`
-      }
-    }
-    if (code === 'ELOOP' || code === 'EISDIR') return bad
-    throw err
-  }
-  try {
-    const held = await handle.stat()
-    if (!held.isFile()) return bad
-    // The opened path must still resolve inside the same goals/, to the inode this handle holds.
-    const again = await fs.realpath(real).catch(() => null)
-    const now = again && isInside(again, realGoals) ? await fs.stat(again).catch(() => null) : null
-    if (!now || now.dev !== held.dev || now.ino !== held.ino) return bad
-    if (held.size > LEGACY_MAX_BYTES) {
-      return {
-        ok: false,
-        error: `LEGACY_TOO_LARGE: ${file} is ${held.size} bytes — over the ${LEGACY_MAX_BYTES}-byte cap a mission record carries. Nothing was written.`
-      }
-    }
-    // Read-only, and only ever read: the source is never written, moved or deleted.
-    const bytes = await handle.readFile()
-    if (bytes.length > LEGACY_MAX_BYTES) {
-      return {
-        ok: false,
-        error: `LEGACY_TOO_LARGE: ${file} grew past the ${LEGACY_MAX_BYTES}-byte cap while it was read. Nothing was written.`
-      }
-    }
-    return { ok: true, file, bytes }
-  } finally {
-    await handle.close()
-  }
-}
-
-const missionImportLegacyHandler: Handler = async (args, ctx) => {
-  const folder = ctx.folder
-  if (!folder) return errorResult('BAD_ARGS: folder is required')
-  const legacyPath = strField(args, 'legacyPath')?.trim()
-  if (!legacyPath) return errorResult('BAD_ARGS: legacyPath is required')
-  const root = missionRoot(folder)
-  const refusal = missionFolderRefusal(folder, root, ctx)
-  if (refusal) return errorResult(refusal)
-  const sessionArg = strField(args, 'sessionId')
-  if (sessionArg !== undefined && !SESSION_UUID_RE.test(sessionArg)) {
-    return errorResult(badSessionIdMessage('sessionId', sessionArg))
-  }
-
-  const read = await readLegacyGoalFile(folder, root, legacyPath)
-  if (!read.ok) return errorResult(read.error)
-  const { file: source, bytes } = read
-  const raw = bytes.toString('utf8')
-  if (!Buffer.from(raw, 'utf8').equals(bytes)) {
-    return errorResult(
-      `LEGACY_NOT_UTF8: ${source} is not valid UTF-8, so it cannot be kept byte-for-byte in legacyRaw — nothing was written. Re-save it as UTF-8 and import again.`
-    )
-  }
-  const sha256 = `sha256:${createHash('sha256').update(bytes).digest('hex')}`
-  const imported = importLegacyGoalFile(raw, {
-    now: new Date().toISOString(),
-    fileName: path.basename(source)
-  })
-  const owner = sessionArg ?? imported.session
-  if (!owner) {
-    return errorResult(
-      `BAD_SESSION_ID: ${source} names no session UUID in its frontmatter — pass sessionId (your own Claude session UUID) to own the imported mission.`
-    )
-  }
-
-  // A bare card id resolves to its board slug when exactly one card carries it,
-  // so the derived signals (design §7) can read that card's state.
-  const slugs = await listCardSlugs(root).catch(() => [] as string[])
-  const steps = imported.steps.map((step) => ({
-    ...step,
-    links: step.links.map((l) => {
-      if (l.kind !== 'card' || !BARE_CARD_ID_RE.test(l.ref)) return l
-      const hits = slugs.filter((sl) => sl === l.ref || sl.startsWith(`${l.ref}-`))
-      return hits.length === 1 ? { kind: l.kind, ref: hits[0] } : l
-    })
-  }))
-  // Mission v3 §3.3: the v3 shape — the imported units, numbered from stp-1, then
-  // the fixed end; no fixed start (a goal file names no scope documents).
-  const ends = planWithEnd([])
-  const allSteps: MissionStep[] = [
-    ...steps.map((st, i) => ({ ...st, id: `stp-${i + 1}`, ordinal: i + 1 })),
-    { ...ends[0], id: `stp-${steps.length + 1}`, ordinal: steps.length + 1 }
-  ]
-  const { gitBranch } = await probeGitMeta(folder)
-
-  // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
-  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
-
-  const created = await writeNewMission(
-    root,
-    imported.title,
-    (id, slug, now) => ({
-      id,
-      slug,
-      folder: root,
-      owner: { sessionId: owner, folder: path.resolve(folder) },
-      // Mission v3 §3.4: no draft. A placeholder end (legacy.needsReview) is put
-      // on the operator's `you` list instead, until a re-scope is approved.
-      status: 'active',
-      declaredEnd: imported.declaredEnd,
-      steps: allSteps,
-      blockers: imported.blockers,
-      openQuestions: imported.openQuestions,
-      createdAt: now,
-      updatedAt: now,
-      provenance: { author: 'agent', at: now, ...(gitBranch ? { branch: gitBranch } : {}) },
-      legacy: { source, sha256, needsReview: imported.needsReview },
-      legacyRaw: imported.legacyRaw
-    }),
-    // The legacy Log section is carried over verbatim (design §9), under the title.
-    `# ${imported.title}\n\n## Log\n${imported.log}`,
-    async (entries) => {
-      for (const e of entries) {
-        const loaded = await loadMission(root, e.id)
-        if (loaded.ok && loaded.mission.legacy?.source === source) {
-          return `ALREADY_IMPORTED: ${source} was already imported as mission ${e.id} — mission_get it instead of importing twice.`
-        }
-      }
-      return null
-    }
-  )
-  if (!created.ok) return errorResult(created.error)
-  return textResult({
-    ok: true,
-    op: 'mission_import_legacy',
-    missionId: created.mission.id,
-    slug: created.mission.slug,
-    extractedFields: imported.extractedFields,
-    needsReview: imported.needsReview,
-    legacyPreserved: true
-  })
-}
-
-// Missions v4 S-5 (R-25): the list of what waits on the operator is built once, in
-// `missions/waiting.ts`; the names other modules import from here are re-exported.
-export {
-  YOU_CLEAR,
-  describeWaiting,
-  waitingList,
-  waitingList as youItems,
-  youLine,
-  youSentence,
-  type MissionYouItem,
-  type WaitingItem
-} from '../missions/waiting'
-
-// ---- T358 S6: derived live signals + the stall rule (design §7, §8) ---------
-
-// Missions v4 S-3 (R-25): the read moved to `missions/derive.ts` (no side effects) and what it
-// learned is acted on by `missions/observer.ts`. What other modules import from here is re-exported.
-export {
-  MISSION_STALL_AFTER_MS,
-  evaluateMissionStall,
-  linkPath,
-  type MissionDerived,
-  type MissionLinkSignal,
-  type MissionPrSummary,
-  type MissionScopeSignals,
-  type MissionStall,
-  type MissionStepSignals
-} from '../missions/derive'
-
-/**
- * The last observed `taskState` TRANSITION per session — design §8's "any
- * linked session's last taskState transition". Fed by the hook FSM's in-main
- * edge; a repeated event that leaves the state unchanged is not a transition.
- * In-memory: after a Harnu restart only transitions since then are known, which
- * can only make evidence look OLDER, never fresher than it is.
- */
-const lastTransitions = new Map<string, { state: TaskState; at: number }>()
-/** Bound on {@link lastTransitions} — the oldest entry is dropped past it. */
-const LAST_TRANSITIONS_MAX = 2000
-
-addTaskEventObserver((ev) => {
-  const prev = lastTransitions.get(ev.sessionId)
-  if (prev?.state === ev.taskState) return
-  lastTransitions.delete(ev.sessionId) // re-insert last: Map order = recency
-  lastTransitions.set(ev.sessionId, { state: ev.taskState, at: ev.ts })
-  if (lastTransitions.size > LAST_TRANSITIONS_MAX) {
-    const oldest = lastTransitions.keys().next().value
-    if (oldest !== undefined) lastTransitions.delete(oldest)
-  }
-})
-
-/** The scoped live state of `ids` — never the unscoped fleet (design §7, T360 Q4). */
-async function missionChildren(
-  missionId: string,
-  ids: readonly string[],
-  ctx: ToolHandlerCtx
-): Promise<MissionChildState[]> {
-  if (ids.length === 0) return []
-  const peers = new Map<string, { pid: number; socket: string }>()
-  for (const id of ids) for (const [k, v] of await resolvePeerAddresses(id)) peers.set(k, v)
-  const { sessionInputs } = toFleetInputs(ctx.folders, new Set(), hibernatedKeys(), peers)
-  const lastTransitionAt: Record<string, number> = {}
-  for (const id of ids) {
-    const t = lastTransitions.get(id)
-    if (t) lastTransitionAt[id] = t.at
-  }
-  const projected = buildMissionFleetProjection(
-    missionId,
-    ids,
-    {
-      folders: [],
-      sessions: sessionInputs,
-      taskStates: taskStateRecord(),
-      failureReasons: failureReasonRecord(),
-      inflightAgentSessions: inflightToFleetInputs(listInflightSessions()),
-      pendingApprovals: listPendingApprovals(),
-      lastTransitionAt
-    },
-    { redactPaths: true, denyFolders: ctx.denyFolders, home: os.homedir() }
-  ).sessions
-  // T547: an idle main thread whose own subagents are still calling tools is working.
-  const now = Date.now()
-  return projected.map((c) => withHelperActivity(c, lastSubagentActivity(c.sessionId), now))
-}
-
-/**
- * A mission's live reading: the derived view, the sessions it read, and what the read saw
- * ({@link MissionReading.observation}). Writes nothing (AC-4). The scoped session projection is
- * the one live source that belongs to this layer, so it is injected into the derive.
- */
-export async function deriveMissionReading(
-  root: string,
-  mission: Mission,
-  log: string,
-  ctx: ToolHandlerCtx,
-  now: number,
-  /** `prWaitMs`: how long to wait for GitHub before reading the sticky last-known states. */
-  opts: { prWaitMs?: number; mainCiWaitMs?: number } = {}
-): Promise<MissionReading> {
-  return deriveMission(
-    root,
-    mission,
-    log,
-    { children: (missionId, ids) => missionChildren(missionId, ids, ctx) },
-    now,
-    opts
-  )
-}
-
-/**
- * A mission's ledger as a reader sees it: the rows written into the mission file and the rows
- * observed, stored beside it (`missions/ledger-store.ts`). The close-out consolidator, `mission_get`
- * and `mission_list` all read it through here.
- */
-async function missionLedgerOf(
-  root: string,
-  mission: Pick<Mission, 'id' | 'ledger'>
-): Promise<LedgerRow[]> {
-  await ensureLinkCacheLoaded()
-  return readMissionLedger(root, mission)
-}
-
-/**
- * What every read of a mission calls (`mission_get`, the list polls, the steward
- * bridge): the pure derive, and nothing else. Looking at a mission never writes a file, a sidecar
- * row or the sticky cache and never wakes a steward; the observer pass does that
- * (`missions/observer.ts`, started by `mission-ipc.ts`).
- */
-export async function deriveMissionSignals(
-  root: string,
-  mission: Mission,
-  log: string,
-  ctx: ToolHandlerCtx,
-  now: number,
-  opts: { prWaitMs?: number; mainCiWaitMs?: number } = {}
-): Promise<{ derived: MissionDerived; children: MissionChildState[] }> {
-  const { derived, children } = await deriveMissionReading(root, mission, log, ctx, now, opts)
-  return { derived, children }
-}
-
-/** The mission title — the `# <title>` heading its Log body opens with (no Mission field holds it). */
-export function missionTitle(log: string, fallback: string): string {
-  return /^# (.+)$/m.exec(log)?.[1]?.trim() ?? fallback
-}
-
 /** A refusal for a folder (or its repo root) the operator blocked for agents. */
 function missionFolderRefusal(folder: string, root: string, ctx: ToolHandlerCtx): string | null {
   if (isFolderDenied(folder, ctx.denyFolders) || isFolderDenied(root, ctx.denyFolders)) {
@@ -4569,54 +3666,10 @@ function missionFolderRefusal(folder: string, root: string, ctx: ToolHandlerCtx)
 }
 
 /**
- * Campaign spec §3.2 — append one ledger row to each target mission, under its lock.
- * The ledger is Harnu's own record, so this is called by the handlers that DO the
- * thing (never from a verb argument), and it never fails the action it describes:
- * a mission that cannot be read or written is skipped with a warning. The append also
- * stamps `updatedAt` — a dispatch is real evidence the mission is moving (the stall
- * rule's input). A closed mission is a record and never receives a row.
- */
-async function appendLedgerTo(
-  root: string,
-  targets: readonly { missionId: string; stepId?: string }[],
-  row: LedgerRowInput
-): Promise<void> {
-  for (const t of targets) {
-    try {
-      await withMissionIdMintLock(t.missionId, async () => {
-        const loaded = await loadMission(root, t.missionId)
-        if (!loaded.ok || loaded.mission.status === 'closed') return
-        const at = new Date().toISOString()
-        const next: Mission = {
-          ...appendLedgerRow(
-            loaded.mission,
-            { ...row, ...(t.stepId ? { stepId: t.stepId } : {}) },
-            at
-          ),
-          updatedAt: at
-        }
-        await atomicWriteFile(loaded.file, buildMissionFileContent(next, loaded.log), 0o644)
-      })
-      // Campaign ch.5a: a ledger row is an event the mission's steward wakes on.
-      await wakeSteward(t.missionId, row.kind === 'ci' ? 'ci' : 'ledger')
-    } catch (err) {
-      console.warn(`[mission-ledger] could not record ${row.kind} on ${t.missionId}:`, err)
-    }
-  }
-}
-
-/** The open missions of `folder`'s repo, without creating a data dir where there is none. */
-async function openMissionsOf(root: string): Promise<Mission[]> {
-  if (!(await pathExists(missionsDir(root)))) return []
-  return (await readAllMissions(root)).missions
-    .map((m) => m.mission)
-    .filter((m) => m.status !== 'closed')
-}
-
-/**
- * Campaign spec §3.2 — record a write-time event (dispatch, worktree cut, manifest
- * drain) on the mission it belongs to: the one whose step links the worktree or card,
- * else the repo's only open mission. Best-effort; never throws.
+ * Record a write-time event (dispatch, worktree cut, manifest drain) on the mission it belongs to: the
+ * one whose step links the worktree or names the card, else the repo's only open mission. The row goes
+ * to the ledger store beside the mission (`missions/ledger-store.ts`); no mission file is written, so a
+ * v3 file stays as a v3 build left it. Best-effort; never throws.
  */
 export async function recordLedgerEvent(
   folder: string,
@@ -4625,1061 +3678,23 @@ export async function recordLedgerEvent(
 ): Promise<void> {
   try {
     const root = missionRoot(folder)
-    const missions = await openMissionsOf(root)
-    await appendLedgerTo(root, pickLedgerTargets(missions, hints), row)
+    const open = (await listMissionRecords(root)).records
+      .map((r) => r.record)
+      .filter((r) => r.status === 'open')
+    const at = new Date().toISOString()
+    for (const t of pickLedgerTargets(open, hints)) {
+      bindMissionRoot(t.missionId, root)
+      recordObserved(t.missionId, [{ at, ...row, ...(t.stepId ? { stepId: t.stepId } : {}) }])
+    }
   } catch (err) {
     console.warn(`[mission-ledger] could not record ${row.kind}:`, err)
   }
 }
 
 /**
- * Campaign spec §3.2 — a session's context was compacted: note it on the open
- * mission(s) that session OWNS. Called by the compaction hook (chapter 5 installs it).
+ * `rebase_stack`: the leader of a mission rebases one of its steps' own worktrees, never pushing. The
+ * git half and the ownership rules are `missions/rebase.ts`'s; this is the transport around it.
  */
-export async function recordMissionCompaction(folder: string, sessionId: string): Promise<void> {
-  try {
-    const root = missionRoot(folder)
-    const owned = (await openMissionsOf(root))
-      .filter((m) => leaderOf(m) === sessionId)
-      .map((m) => ({ missionId: m.id }))
-    await appendLedgerTo(root, owned, { kind: 'compaction', ref: sessionId, sessionId })
-  } catch (err) {
-    console.warn('[mission-ledger] could not record compaction:', err)
-  }
-}
-
-const missionGetHandler: Handler = async (args, ctx) => {
-  const folder = ctx.folder
-  if (!folder) return errorResult('BAD_ARGS: folder is required')
-  const missionId = strField(args, 'missionId')
-  const ownerSessionId = strField(args, 'ownerSessionId')
-  if (!missionId === !ownerSessionId) {
-    return errorResult('BAD_ARGS: pass exactly one of missionId / ownerSessionId')
-  }
-  const root = missionRoot(folder)
-  const refusal = missionFolderRefusal(folder, root, ctx)
-  if (refusal) return errorResult(refusal)
-
-  let found: { mission: Mission; log: string; file: string }
-  if (missionId) {
-    const loaded = await loadMission(root, missionId)
-    if (!loaded.ok) return errorResult(loaded.error)
-    found = loaded
-  } else {
-    const owned = missionsLedBy((await readAllMissions(root)).missions, ownerSessionId ?? '')
-    if (owned.length === 0) {
-      return errorResult(
-        `MISSION_NOT_FOUND: session ${ownerSessionId} owns no open mission in this repo.`
-      )
-    }
-    found = owned[0]
-  }
-  const { mission, log, file } = found
-  // design §3/§8: `active ↔ stale` is derived on every read and NEVER written back —
-  // the stored status stays `active`, so nothing that reads it (S2's never-park
-  // exemption) loses a mission exactly when it stalls.
-  // An agent reading one mission waits a moment for the merge-commit CI of a merged PR;
-  // the 20 s polls do not (the lookup runs on and lands in the cache for the next read).
-  const { derived, children } = await deriveMissionSignals(root, mission, log, ctx, Date.now(), {
-    mainCiWaitMs: MAIN_CI_GET_WAIT_MS
-  })
-  const items = waitingList(mission, children, derived.progress, derived.steps)
-  // design §9: an imported mission's legacyRaw (up to the whole legacy file) is
-  // left out of the projection — every tick reads this — and pointed at instead. The
-  // ledger is left out too: the tail below is the read (campaign spec §3.2).
-  const { legacyRaw, ledger: _ledger, ...projected } = mission
-  void _ledger
-  const ledger = await missionLedgerOf(root, mission)
-  return textResult({
-    ok: true,
-    op: 'mission_get',
-    mission: projected,
-    ...(legacyRaw !== undefined
-      ? { legacyRaw: { bytes: Buffer.byteLength(legacyRaw, 'utf8'), file } }
-      : {}),
-    title: missionTitle(log, mission.slug),
-    log,
-    derived,
-    // Campaign spec §3.2: what Harnu did and saw, last 20 rows (oldest first) + the total.
-    ledger: ledgerTail({ ledger }),
-    ledgerCount: ledger.length,
-    // Mission v3 §3.12: the ordered list, and its first item as the one line.
-    you: youLine(items),
-    youItems: items,
-    // Mission v2 §3.5: what mission_request_close would refuse right now, or null.
-    closeReadiness: requestCloseRefusal(mission)
-  })
-}
-
-const missionListHandler: Handler = async (_args, ctx) => {
-  const folder = ctx.folder
-  let roots: string[]
-  if (folder) {
-    const root = missionRoot(folder)
-    const refusal = missionFolderRefusal(folder, root, ctx)
-    if (refusal) return errorResult(refusal)
-    roots = [root]
-  } else {
-    roots = [...new Set(ctx.folders.map((f) => missionRoot(f.path)))].filter(
-      (root) => !isFolderDenied(root, ctx.denyFolders)
-    )
-  }
-  const read = await readMissionsDeduped(roots, { includeClosed: true })
-  const unreadable = read.unreadable.map((u) => path.join(missionsDir(u.root), u.name))
-  // The ledger of each mission is read from the repo store, beside its file; a closed mission's
-  // count is read once and kept (the poll must not read a file per closed mission each tick).
-  await ensureLinkCacheLoaded()
-  const ledgerCounts = new Map<string, number>(
-    await Promise.all(
-      read.missions.map(async ({ mission: m, root }): Promise<[string, number]> => [
-        m.id,
-        await missionLedgerCount(root, m)
-      ])
-    )
-  )
-  const missions: Record<string, unknown>[] = read.missions.map(({ mission: m, log }) => ({
-    id: m.id,
-    slug: m.slug,
-    title: missionTitle(log, m.slug),
-    status: m.status,
-    folder: m.folder,
-    ownerSessionId: m.owner.sessionId,
-    ...(m.linkedCard ? { linkedCard: m.linkedCard } : {}),
-    // Mission v3 §3.10: the last derive's progress (null before any derive);
-    // read mission_get for exact numbers.
-    progress: lastKnownProgress(m.id) ?? null,
-    // Deprecated (kept one release): proof counts, a legacy fixed start excluded.
-    steps: {
-      total: progressSteps(m).length,
-      verified: progressSteps(m).filter((s) => s.proof === 'verified').length,
-      claimed: progressSteps(m).filter((s) => s.proof === 'claimed').length
-    },
-    blocked: m.blockers.length > 0 || m.steps.some((s) => s.blockers.length > 0),
-    // Campaign spec §3.2: how many rows the ledger holds; mission_get returns the tail.
-    ledgerCount: ledgerCounts.get(m.id) ?? 0,
-    updatedAt: m.updatedAt
-  }))
-  return textResult({
-    ok: true,
-    op: 'mission_list',
-    missions,
-    ...(unreadable.length > 0 ? { unreadable } : {})
-  })
-}
-
-/**
- * `logAppend`, when set, is appended to the Log body in the same locked write.
- * `unchanged: true` — the verb changed nothing (a deduped check): skip the write
- * entirely, so `updatedAt` (the stall rule's evidence) and the file stay as they were.
- */
-type MissionEdit =
-  | {
-      ok: true
-      mission: Mission
-      ack: Record<string, unknown>
-      logAppend?: string
-      unchanged?: true
-    }
-  | { ok: false; error: string }
-
-/** The step fields `mission_update_step` may set (anything else is refused). */
-const MISSION_STEP_EDITABLE_FIELDS = [
-  'title',
-  'proof',
-  'required',
-  'discoveredFrom',
-  'edges',
-  'decision'
-] as const
-
-function missionClosedMessage(id: string): string {
-  return `MISSION_CLOSED: mission ${id} was closed by the operator — a closed mission is immutable by verb.`
-}
-
-function stepNotFoundMessage(id: string, stepId: string): string {
-  return `STEP_NOT_FOUND: mission ${id} has no step ${stepId} — mission_get lists its steps.`
-}
-
-/** Campaign spec §3.2 — the optional relation fields a step can be declared with. */
-interface StepRelations {
-  required?: boolean
-  discoveredFrom?: string
-  edges?: StepEdge[]
-  decision?: StepDecision
-}
-
-const STEP_EDGE_KINDS: readonly string[] = ['blocks', 'validates', 'related']
-const isStepId = (v: unknown): v is string => typeof v === 'string' && STEP_ID_RE.test(v)
-
-/**
- * Parse `required` / `discoveredFrom` / `edges` / `decision` from a verb's args (add)
- * or `set` (update). Shape only — whether the referenced steps exist is checked
- * against the mission in {@link checkStepRelations}. A `decision` that already carries
- * `chosen` is CONTROLLED_FIELD: only the operator's Choose door writes it.
- */
-function parseStepRelations(
-  src: Record<string, unknown>
-): { ok: true; relations: StepRelations } | { ok: false; error: string } {
-  const bad = (what: string): { ok: false; error: string } => ({
-    ok: false,
-    error: `BAD_ARGS: ${what}`
-  })
-  const relations: StepRelations = {}
-  if (src.required !== undefined) {
-    if (typeof src.required !== 'boolean') return bad('required must be a boolean')
-    relations.required = src.required
-  }
-  if (src.discoveredFrom !== undefined) {
-    if (!isStepId(src.discoveredFrom)) return bad('discoveredFrom must be a step id (stp-<n>)')
-    relations.discoveredFrom = src.discoveredFrom
-  }
-  if (src.edges !== undefined) {
-    if (!Array.isArray(src.edges) || src.edges.length > 20) {
-      return bad('edges must be an array of at most 20 { kind: blocks | validates | related, to }')
-    }
-    const edges: StepEdge[] = []
-    for (const e of src.edges as unknown[]) {
-      const o = (typeof e === 'object' && e !== null ? e : {}) as Record<string, unknown>
-      if (typeof o.kind !== 'string' || !STEP_EDGE_KINDS.includes(o.kind) || !isStepId(o.to)) {
-        return bad('each edge needs kind (blocks | validates | related) and to (a step id)')
-      }
-      edges.push({ kind: o.kind as StepEdge['kind'], to: o.to })
-    }
-    relations.edges = edges
-  }
-  if (src.decision !== undefined) {
-    const d = (
-      typeof src.decision === 'object' && src.decision !== null ? src.decision : null
-    ) as Record<string, unknown> | null
-    if (!d) return bad('decision must be { title, options, blocks }')
-    if ('chosen' in d) {
-      return {
-        ok: false,
-        error:
-          "CONTROLLED_FIELD: chosen is the operator's — a decision is declared without it, and only the Choose door in the UI records which option was picked."
-      }
-    }
-    const title = typeof d.title === 'string' ? d.title.replace(/\s+/g, ' ').trim() : ''
-    const options = d.options
-    const blocks = d.blocks ?? []
-    if (!title || title.length > 200) return bad('decision.title must be 1..200 chars')
-    if (
-      !Array.isArray(options) ||
-      options.length < 2 ||
-      options.length > 10 ||
-      !options.every((o) => typeof o === 'string' && o.trim().length > 0 && o.length <= 200)
-    ) {
-      return bad('decision.options must be 2..10 non-empty strings (≤ 200 chars)')
-    }
-    if (!Array.isArray(blocks) || blocks.length > 20 || !blocks.every(isStepId)) {
-      return bad('decision.blocks must be an array of at most 20 step ids')
-    }
-    relations.decision = {
-      title,
-      options: (options as string[]).map((o) => o.trim()),
-      blocks: blocks as string[]
-    }
-  }
-  return { ok: true, relations }
-}
-
-/** What a step stores of its relations: a default (`required: true`) or an empty list is not written. */
-function storedRelations(r: StepRelations): StepRelations {
-  return {
-    ...(r.required === false ? { required: false } : {}),
-    ...(r.discoveredFrom ? { discoveredFrom: r.discoveredFrom } : {}),
-    ...(r.edges && r.edges.length > 0 ? { edges: r.edges } : {}),
-    ...(r.decision ? { decision: r.decision } : {})
-  }
-}
-
-/** Every step a relation names must exist in the mission, and none may name `selfId`. */
-function checkStepRelations(m: Mission, r: StepRelations, selfId?: string): string | null {
-  const named = [
-    ...(r.discoveredFrom ? [r.discoveredFrom] : []),
-    ...(r.edges ?? []).map((e) => e.to),
-    ...(r.decision?.blocks ?? [])
-  ]
-  for (const id of named) {
-    if (id === selfId) {
-      return `BAD_ARGS: ${id} cannot name itself — a step is not its own origin, edge target or lock.`
-    }
-    if (!m.steps.some((s) => s.id === id)) return stepNotFoundMessage(m.id, id)
-  }
-  return null
-}
-
-/** Next free `stp-<n>` — ids are never reused, even when ordinals shift. */
-function nextStepId(steps: readonly MissionStep[]): string {
-  const max = steps.reduce((n, s) => Math.max(n, Number(/^stp-(\d+)$/.exec(s.id)?.[1] ?? 0)), 0)
-  return `stp-${max + 1}`
-}
-
-/**
- * One locked read → mutate → write of a mission's frontmatter (design §9).
- * `fn` gets a private copy; its result is re-validated by
- * `buildMissionFileContent` before an atomic replace, and `updatedAt` is
- * stamped here so no verb forgets it. The Log body is carried over unchanged.
- */
-async function editMission(
-  args: Record<string, unknown>,
-  ctx: ToolHandlerCtx,
-  fn: (mission: Mission, log: string) => MissionEdit
-): Promise<CallToolResult> {
-  const folder = ctx.folder
-  if (!folder) return errorResult('BAD_ARGS: folder is required')
-  const id = strField(args, 'missionId') ?? ''
-  const root = missionRoot(folder)
-  const refusal = missionFolderRefusal(folder, root, ctx)
-  if (refusal) return errorResult(refusal)
-  return withMissionIdMintLock(id, async () => {
-    const loaded = await loadMission(root, id)
-    if (!loaded.ok) return errorResult(loaded.error)
-    if (loaded.mission.status === 'closed') return errorResult(missionClosedMessage(id))
-    const edit = fn(structuredClone(loaded.mission), loaded.log)
-    if (!edit.ok) return errorResult(edit.error)
-    if (edit.unchanged) return textResult(edit.ack)
-    const next: Mission = { ...edit.mission, updatedAt: new Date().toISOString() }
-    let content: string
-    try {
-      content = buildMissionFileContent(next, loaded.log + (edit.logAppend ?? ''))
-    } catch (err) {
-      return errorResult(`BAD_ARGS: ${(err as Error).message}`)
-    }
-    // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort the write.
-    if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
-    await atomicWriteFile(loaded.file, content, 0o644)
-    return textResult(edit.ack)
-  })
-}
-
-const missionAddStepHandler: Handler = async (args, ctx) => {
-  const title = strField(args, 'title')?.replace(/\s+/g, ' ').trim()
-  if (!title) return errorResult('BAD_ARGS: title is required')
-  const verification = args.verification
-  if (verification !== 'existence' && verification !== 'verifier' && verification !== 'human') {
-    return errorResult('BAD_ARGS: verification must be one of existence | verifier | human')
-  }
-  const reason = strField(args, 'reason')?.trim() || undefined
-  const afterStepId = strField(args, 'afterStepId')
-  const links = parseStepLinks(args.links)
-  if (!links.ok) return errorResult(links.error)
-  const relations = parseStepRelations(args)
-  if (!relations.ok) return errorResult(relations.error)
-  return editMission(args, ctx, (m) => {
-    const dangling = checkStepRelations(m, relations.relations)
-    if (dangling) return { ok: false, error: dangling }
-    // Mission v3 §3.4: keyed on "started" (a step has a link or a proof), never on
-    // a status — planning steps added before any work need no reason.
-    const started = isStarted(m)
-    if (started && !reason) {
-      return {
-        ok: false,
-        error: `REASON_REQUIRED: mission ${m.id} has started (a step has a link or a proof) — a step added after the mission started needs a reason (design decision 7); it is shown next to the new total.`
-      }
-    }
-    // The fixed end is always last (design §1.2); a new step never goes after it.
-    let insertAt = m.steps.findIndex((s) => s.kind === 'fixed-end')
-    if (insertAt < 0) insertAt = m.steps.length
-    if (afterStepId) {
-      const idx = m.steps.findIndex((s) => s.id === afterStepId)
-      if (idx < 0) return { ok: false, error: stepNotFoundMessage(m.id, afterStepId) }
-      if (m.steps[idx].kind === 'fixed-end') {
-        return {
-          ok: false,
-          error: `BAD_POSITION: ${afterStepId} is the fixed end — "Delivered and verified" is always the last step.`
-        }
-      }
-      insertAt = idx + 1
-    }
-    const step: MissionStep = {
-      id: nextStepId(m.steps),
-      ordinal: 0,
-      kind: 'custom',
-      title,
-      verification,
-      proof: 'unproven',
-      links: links.links,
-      blockers: [],
-      // Only real growth carries a reason (the "total changed" marker); a
-      // planning step added before the start carries none.
-      ...(started && reason ? { addedReason: reason } : {}),
-      addedAt: new Date().toISOString(),
-      ...storedRelations(relations.relations)
-    }
-    m.steps.splice(insertAt, 0, step)
-    m.steps.forEach((s, i) => (s.ordinal = i + 1))
-    return {
-      ok: true,
-      mission: m,
-      ack: { ok: true, op: 'mission_add_step', stepId: step.id, totalSteps: m.steps.length }
-    }
-  })
-}
-
-const missionUpdateStepHandler: Handler = async (args, ctx) => {
-  const stepId = strField(args, 'stepId')
-  if (!stepId) return errorResult('BAD_ARGS: stepId is required')
-  const set =
-    typeof args.set === 'object' && args.set !== null && !Array.isArray(args.set)
-      ? (args.set as Record<string, unknown>)
-      : undefined
-  const keys = set ? Object.keys(set) : []
-  if (!set || keys.length === 0) return errorResult('BAD_ARGS: set must contain at least one field')
-  // `proof` is controlled EXCEPT the owner's one claim (design §1.3: unproven → claimed).
-  const controlled = keys.filter(
-    (k) =>
-      (MISSION_STEP_CONTROLLED_FIELDS as readonly string[]).includes(k) &&
-      !(k === 'proof' && set.proof === 'claimed')
-  )
-  if (controlled.length > 0) {
-    return errorResult(
-      `CONTROLLED_FIELD: mission_update_step cannot write ${controlled.join(', ')} — proof reaches verified/self-verified only through verification (and a human step only through the operator), and verifiedBy is recorded by that same path. The one proof value this verb sets is 'claimed'. A decision's chosen option is the operator's (the Choose door), never a verb's.`
-    )
-  }
-  const unknown = keys.filter(
-    (k) => !(MISSION_STEP_EDITABLE_FIELDS as readonly string[]).includes(k)
-  )
-  if (unknown.length > 0) {
-    return errorResult(
-      `BAD_ARGS: unknown set field(s) ${unknown.join(', ')} — editable fields are title | proof ('claimed') | required | discoveredFrom | edges | decision.`
-    )
-  }
-  let title: string | undefined
-  if ('title' in set) {
-    title = typeof set.title === 'string' ? set.title.replace(/\s+/g, ' ').trim() : ''
-    if (!title || title.length > 200) return errorResult('BAD_ARGS: title must be 1..200 chars')
-  }
-  const relations = parseStepRelations(set)
-  if (!relations.ok) return errorResult(relations.error)
-  const rel = relations.relations
-  return editMission(args, ctx, (m) => {
-    const step = m.steps.find((s) => s.id === stepId)
-    if (!step) return { ok: false, error: stepNotFoundMessage(m.id, stepId) }
-    const dangling = checkStepRelations(m, rel, stepId)
-    if (dangling) return { ok: false, error: dangling }
-    if (rel.required === false && step.kind !== 'custom') {
-      return {
-        ok: false,
-        error: `FIXED_STEP: ${stepId} is the mission's fixed ${step.kind === 'fixed-start' ? 'start' : 'end'} — it is part of the frame and cannot be a side step.`
-      }
-    }
-    if (rel.decision && step.decision?.chosen !== undefined) {
-      return {
-        ok: false,
-        error: `DECISION_CHOSEN: ${stepId} was already decided by the operator — its decision can no longer be rewritten.`
-      }
-    }
-    const changed: string[] = []
-    if (title !== undefined) {
-      if (step.kind !== 'custom') {
-        return {
-          ok: false,
-          error: `FIXED_STEP: ${stepId} is the mission's fixed ${step.kind === 'fixed-start' ? 'start' : 'end'} — its title is part of the frame and cannot change.`
-        }
-      }
-      step.title = title
-      changed.push('title')
-    }
-    if (set.proof === 'claimed') {
-      if (step.verification === 'existence') {
-        return {
-          ok: false,
-          error: `PROOF_NOT_CLAIMABLE: ${stepId} is an existence step — Harnu proves it from its links at read time; there is nothing to claim.`
-        }
-      }
-      if (step.proof !== 'unproven' && step.proof !== 'claimed') {
-        return {
-          ok: false,
-          error: `PROOF_NOT_CLAIMABLE: ${stepId} is already ${step.proof} — a claim never overwrites a verification.`
-        }
-      }
-      step.proof = 'claimed'
-      changed.push('proof')
-    }
-    if (rel.required !== undefined) {
-      // The default is not stored: `required: true` clears the key.
-      if (rel.required) delete step.required
-      else step.required = false
-      changed.push('required')
-    }
-    if (rel.discoveredFrom !== undefined) {
-      step.discoveredFrom = rel.discoveredFrom
-      changed.push('discoveredFrom')
-    }
-    if (rel.edges !== undefined) {
-      if (rel.edges.length > 0) step.edges = rel.edges
-      else delete step.edges
-      changed.push('edges')
-    }
-    if (rel.decision !== undefined) {
-      step.decision = rel.decision
-      changed.push('decision')
-    }
-    return { ok: true, mission: m, ack: { ok: true, op: 'mission_update_step', stepId, changed } }
-  })
-}
-
-const missionLinkChildHandler: Handler = async (args, ctx) => {
-  const stepId = strField(args, 'stepId')
-  const toScope = args.scope === true
-  if (toScope && stepId) {
-    return errorResult(
-      'BAD_ARGS: pass stepId OR scope: true — a scope link belongs to the mission, not to a step.'
-    )
-  }
-  if (!toScope && !stepId) {
-    return errorResult('BAD_ARGS: stepId is required (or scope: true to attach a scope document)')
-  }
-  const raw =
-    typeof args.link === 'object' && args.link !== null
-      ? (args.link as Record<string, unknown>)
-      : {}
-  const kind = raw.kind
-  const ref = typeof raw.ref === 'string' ? raw.ref.trim() : ''
-  if (kind !== 'session' && kind !== 'worktree' && kind !== 'card' && kind !== 'pr') {
-    return errorResult('BAD_ARGS: link.kind must be one of session | worktree | card | pr')
-  }
-  if (!ref) return errorResult('BAD_ARGS: link.ref is required')
-  if (kind === 'session' && !SESSION_UUID_RE.test(ref)) {
-    return errorResult(badSessionIdMessage('link.ref', ref))
-  }
-  if (toScope) {
-    // Mission v3 §3.3: scope documents are paths in the repo, under BUG-145's rules.
-    if (kind !== 'worktree') {
-      return errorResult(
-        'BAD_ARGS: a scope link is a path (kind: worktree) — the spec / PRD / ADR documents in the repo.'
-      )
-    }
-    const checked = ctx.folder ? await checkScopePath(missionRoot(ctx.folder), ref) : null
-    if (checked && !checked.ok) return errorResult(checked.error)
-    const stored = checked?.ref ?? ref
-    return editMission(args, ctx, (m) => {
-      // A legacy mission's scope lives on its fixed start: carry it over first.
-      const scope = [...missionScope(m)]
-      if (!scope.some((l) => l.kind === 'worktree' && l.ref === stored)) {
-        scope.push({ kind: 'worktree', ref: stored })
-      }
-      m.scope = scope
-      return { ok: true, mission: m, ack: { ok: true, op: 'mission_link_child', scope } }
-    })
-  }
-  // BUG-145: a path on the fixed start is a scope path, whichever verb put it
-  // there. The check is async and the edit is not, so it runs up front; its
-  // verdict applies only if the step turns out to be the fixed start.
-  const scoped =
-    kind === 'worktree' && ctx.folder ? await checkScopePath(missionRoot(ctx.folder), ref) : null
-  return editMission(args, ctx, (m) => {
-    const step = m.steps.find((s) => s.id === stepId)
-    if (!step || !stepId) return { ok: false, error: stepNotFoundMessage(m.id, stepId ?? '') }
-    let stored = ref
-    if (scoped && step.kind === 'fixed-start') {
-      if (!scoped.ok) return { ok: false, error: scoped.error }
-      stored = scoped.ref
-    }
-    if (!step.links.some((l) => l.kind === kind && l.ref === stored)) {
-      step.links.push({ kind, ref: stored })
-    }
-    return {
-      ok: true,
-      mission: m,
-      ack: { ok: true, op: 'mission_link_child', stepId, links: step.links }
-    }
-  })
-}
-
-/**
- * The blocker list a blocker verb targets: the step's with `stepId`, else the
- * mission's own (design §1.4 — a blocker flags a mission OR a step).
- */
-function blockerTarget(
-  m: Mission,
-  stepId: string | undefined
-): { ok: true; blockers: Blocker[] } | { ok: false; error: string } {
-  if (!stepId) return { ok: true, blockers: m.blockers }
-  const step = m.steps.find((s) => s.id === stepId)
-  if (!step) return { ok: false, error: stepNotFoundMessage(m.id, stepId) }
-  return { ok: true, blockers: step.blockers }
-}
-
-const missionSetBlockerHandler: Handler = async (args, ctx) => {
-  const reason = strField(args, 'reason')?.trim()
-  const unblocks = strField(args, 'unblocks')?.trim()
-  const owner = args.owner
-  if (!reason) return errorResult('BAD_ARGS: reason is required')
-  if (!unblocks) return errorResult('BAD_ARGS: unblocks is required')
-  if (owner !== 'agent' && owner !== 'operator') {
-    return errorResult('BAD_ARGS: owner must be agent | operator')
-  }
-  const stepId = strField(args, 'stepId')
-  return editMission(args, ctx, (m) => {
-    const target = blockerTarget(m, stepId)
-    if (!target.ok) return target
-    // A flag, never a status (design §1.4): `m.status` is deliberately untouched.
-    const existing = target.blockers.find((b) => b.reason === reason)
-    if (existing) {
-      existing.unblocks = unblocks
-      existing.owner = owner
-    } else {
-      target.blockers.push({ reason, unblocks, owner, raisedAt: new Date().toISOString() })
-    }
-    return {
-      ok: true,
-      mission: m,
-      ack: {
-        ok: true,
-        op: 'mission_set_blocker',
-        ...(stepId ? { stepId } : {}),
-        blockers: target.blockers
-      }
-    }
-  })
-}
-
-const missionClearBlockerHandler: Handler = async (args, ctx) => {
-  const reason = strField(args, 'reason')
-  const index = typeof args.index === 'number' ? args.index : undefined
-  if ((reason === undefined) === (index === undefined)) {
-    return errorResult('BAD_ARGS: pass exactly one of reason / index')
-  }
-  const stepId = strField(args, 'stepId')
-  const cleared = await editMission(args, ctx, (m) => {
-    const target = blockerTarget(m, stepId)
-    if (!target.ok) return target
-    const at =
-      index !== undefined
-        ? Number.isInteger(index) && index >= 0 && index < target.blockers.length
-          ? index
-          : -1
-        : target.blockers.findIndex((b) => b.reason === reason)
-    if (at < 0) {
-      return {
-        ok: false,
-        error: `BLOCKER_NOT_FOUND: no blocker ${index !== undefined ? `at index ${index}` : `with reason "${reason}"`} on ${stepId ?? `mission ${m.id}`} — mission_get lists the open ones.`
-      }
-    }
-    target.blockers.splice(at, 1)
-    return {
-      ok: true,
-      mission: m,
-      ack: {
-        ok: true,
-        op: 'mission_clear_blocker',
-        ...(stepId ? { stepId } : {}),
-        blockers: target.blockers
-      }
-    }
-  })
-  // Campaign ch.5a: a cleared blocker is a steward wake-up, once the write has landed.
-  const missionId = strField(args, 'missionId')
-  if (!cleared.isError && missionId) await wakeSteward(missionId, 'blocker-cleared')
-  return cleared
-}
-
-/** One timestamped Log entry, led by a newline when `before` does not end with one. */
-function missionLogEntry(before: string, tag: string, text: string): string {
-  const lead = before.endsWith('\n') ? '' : '\n'
-  return `${lead}\n### ${new Date().toISOString()}${tag}\n\n${text}\n`
-}
-
-function formatDeclaredEnd(end: DeclaredEnd): string {
-  return `${end.kind} · ${end.target} · evidence: ${end.evidence}`
-}
-
-const missionSetEndHandler: Handler = async (args, ctx) => {
-  const problems = declaredEndProblems(args.declaredEnd)
-  if (problems.length > 0) {
-    return errorResult(
-      `DECLARED_END_INCOMPLETE: missing or invalid ${problems.join(', ')} — a re-scope needs a complete declared end: kind (${DECLARED_END_KINDS.join(' | ')}), a concrete target, and the evidence that proves it.`
-    )
-  }
-  const reason = strField(args, 'reason')?.trim()
-  if (!reason) return errorResult('BAD_ARGS: reason is required — say why the end changes')
-  const rawEnd = args.declaredEnd as Record<string, string>
-  const proposed: DeclaredEnd = {
-    kind: rawEnd.kind as DeclaredEnd['kind'],
-    target: rawEnd.target.trim(),
-    evidence: rawEnd.evidence.trim()
-  }
-  return editMission(args, ctx, (m) => {
-    const cur = m.declaredEnd
-    if (
-      cur.kind === proposed.kind &&
-      cur.target === proposed.target &&
-      cur.evidence === proposed.evidence
-    ) {
-      return {
-        ok: false,
-        error: `END_UNCHANGED: that is already mission ${m.id}'s declared end — nothing to re-scope.`
-      }
-    }
-    // Staged, never applied (design §3): `declaredEnd` is deliberately untouched —
-    // only the operator's approval (`applyApprovedRescope`, UI-only) promotes it.
-    m.pendingRescope = proposed
-    return {
-      ok: true,
-      mission: m,
-      ack: { ok: true, op: 'mission_set_end', pendingRescope: true },
-      logAppend: `\n### ${new Date().toISOString()} · re-scope requested\n\nwas: ${formatDeclaredEnd(cur)}\nnow: ${formatDeclaredEnd(proposed)}\n\nReason: ${reason}\n`
-    }
-  })
-}
-
-/**
- * Mission v3 §3.6 — the agent adds a human check to a step. It can never tick or
- * delete one: those are the operator's doors (`mission-ipc.ts`), and no input of
- * this verb carries `ticked`. A label already on the step (any case) is kept.
- */
-const missionAddCheckHandler: Handler = async (args, ctx) => {
-  const stepId = strField(args, 'stepId')
-  if (!stepId) return errorResult('BAD_ARGS: stepId is required')
-  const label = strField(args, 'label') ?? ''
-  return editMission(args, ctx, (m) => {
-    let next: Mission
-    try {
-      next = applyAddCheck(m, stepId, label, 'agent', new Date().toISOString())
-    } catch (err) {
-      return { ok: false, error: (err as Error).message }
-    }
-    const checks = next.steps.find((s) => s.id === stepId)?.checks ?? []
-    // The label was already on the step (any case): nothing changed, nothing is
-    // written, and the ACK says so — the first creator's check stands.
-    const before = m.steps.find((s) => s.id === stepId)?.checks?.length ?? 0
-    if (checks.length === before) {
-      return {
-        ok: true,
-        mission: m,
-        unchanged: true,
-        ack: { ok: true, op: 'mission_add_check', stepId, checks, deduped: true }
-      }
-    }
-    return { ok: true, mission: next, ack: { ok: true, op: 'mission_add_check', stepId, checks } }
-  })
-}
-
-const MISSION_VERDICTS = ['met', 'unmet', 'blocked', 'needs-human'] as const
-type MissionVerdict = (typeof MISSION_VERDICTS)[number]
-
-/**
- * design §1.3 / §13 Resolved A — `verified` only when the step has at least one
- * author session and the DECLARED caller id is none of them; otherwise
- * `self-verified`. A custom step's authors are its own `session` links. The
- * fixed end is built by the whole mission, so its authors are its own `session`
- * links plus every custom step's (Mission v2 §3.5) — the owner, who built none,
- * lands `verified`; with no author at all the end stays `self-verified`. The id
- * is self-declared (no per-session identity on this transport), so this labels
- * by convention + audit — it never refuses.
- */
-function verificationLabel(
-  mission: Mission,
-  step: MissionStep,
-  callerId: string
-): 'verified' | 'self-verified' {
-  const sources =
-    step.kind === 'fixed-end' ? [step, ...mission.steps.filter((s) => s.kind === 'custom')] : [step]
-  const authors = sources.flatMap((s) =>
-    s.links.filter((l) => l.kind === 'session').map((l) => l.ref)
-  )
-  return authors.length > 0 && !authors.includes(callerId) ? 'verified' : 'self-verified'
-}
-
-const missionVerifyStepHandler: Handler = async (args, ctx) => {
-  const stepId = strField(args, 'stepId')
-  if (!stepId) return errorResult('BAD_ARGS: stepId is required')
-  const verdict = args.verdict as MissionVerdict
-  if (!MISSION_VERDICTS.includes(verdict)) {
-    return errorResult(`BAD_ARGS: verdict must be one of ${MISSION_VERDICTS.join(' | ')}`)
-  }
-  const evidence = strField(args, 'evidence')?.trim()
-  if (!evidence) return errorResult('BAD_ARGS: evidence is required — say what you checked')
-  const callerId = strField(args, 'sessionId') ?? ''
-  if (!SESSION_UUID_RE.test(callerId))
-    return errorResult(badSessionIdMessage('sessionId', callerId))
-  // Mission v3 §3.6: a needs-human verdict creates a check — `checkLabel`, else
-  // the first line of the evidence (clamped to a label's length).
-  const checkLabel =
-    strField(args, 'checkLabel')?.replace(/\s+/g, ' ').trim() ||
-    (evidence.split('\n').find((l) => l.trim().length > 0) ?? evidence)
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, CHECK_LABEL_MAX)
-  return editMission(args, ctx, (m) => {
-    const step = m.steps.find((s) => s.id === stepId)
-    if (!step) return { ok: false, error: stepNotFoundMessage(m.id, stepId) }
-    // Not a self-verification refusal (there is none, §13 A): a step's level is
-    // fixed at plan time, and only a verifier-level step is proven by this verb.
-    if (step.verification === 'human') {
-      return {
-        ok: false,
-        error: `WRONG_VERIFICATION_LEVEL: ${stepId} is a human step — only the operator marks it proven, from the UI. Claim it with mission_update_step (proof: 'claimed') and tell them.`
-      }
-    }
-    if (step.verification === 'existence') {
-      return {
-        ok: false,
-        error: `WRONG_VERIFICATION_LEVEL: ${stepId} is an existence step — Harnu proves it from its links every time the mission is read; there is nothing to verify by hand.`
-      }
-    }
-    const label = verificationLabel(m, step, callerId)
-    const at = new Date().toISOString()
-    // A verification that did not find the step done is no proof: the claim it
-    // tested (if any) is void, and mission_request_close keeps refusing.
-    // Mission v3 §3.6: `needs-human` means the machine part is met — the proof
-    // keeps its label — and the human part becomes a check on the step.
-    step.proof = verdict === 'met' || verdict === 'needs-human' ? label : 'unproven'
-    step.verifiedBy = { sessionId: callerId, at, verdict, evidenceRequired: true }
-    // Campaign spec §3.2: the verdict is a ledger event, written here — not by an argument.
-    const withVerdict = (mm: Mission): Mission =>
-      appendLedgerRow(
-        mm,
-        { kind: 'verified', stepId, ref: callerId, sessionId: callerId, detail: verdict },
-        at
-      )
-    if (verdict === 'needs-human') {
-      try {
-        m = applyAddCheck(m, stepId, checkLabel, 'verifier', at)
-      } catch (err) {
-        return { ok: false, error: (err as Error).message }
-      }
-    }
-    return {
-      ok: true,
-      mission: withVerdict(m),
-      ack: { ok: true, op: 'mission_verify_step', stepId, proof: step.proof, verdict },
-      logAppend: `\n### ${at} · ${stepId} · ${step.proof} (${verdict}) by ${callerId}\n\n${evidence}\n`
-    }
-  })
-}
-
-// ---- the git half of rebase_stack (the v3 path) --------------------------------
-//
-// Moved here from the retired steward module (Missions v4 S-38). A v4 mission's `rebase_stack` runs
-// `missions/rebase.ts`; this copy serves the v3 handler below and goes with it in S-40.
-//
-// Runs `git rebase --onto <onto> <from>` in one LINKED worktree, and nothing else. On a conflict it
-// aborts the rebase and verifies HEAD is back where it started. It NEVER pushes (the local branch is
-// rewritten and `pushed: false` is reported), never rebases the main checkout, a detached HEAD or a
-// dirty tree. Refs reach git as separate argv entries (no shell), are shape-checked first and
-// resolved to a commit before the rebase starts; hooks and fsmonitor are off for the run.
-
-type RebaseResult =
-  | { ok: true; branch: string; before: string; after: string; rebased: boolean; pushed: false }
-  | {
-      ok: false
-      code: 'REBASE_CONFLICT'
-      branch: string
-      head: string
-      conflicts: string[]
-    }
-  | {
-      ok: false
-      code:
-        | 'BAD_ONTO'
-        | 'REBASE_DIRTY'
-        | 'DETACHED_HEAD'
-        | 'NOT_A_LINKED_WORKTREE'
-        | 'NOT_A_WORKTREE'
-        | 'REBASE_ABORT_FAILED'
-        | 'GIT_FAILED'
-      detail: string
-    }
-
-/** A branch, tag, remote ref or commit id: no option shape, no shell metacharacters, no whitespace. */
-const REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/@^~{}+-]*$/
-
-const GIT_ARGS = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false']
-
-async function git(
-  cwd: string,
-  args: string[]
-): Promise<{ ok: true; out: string } | { ok: false; out: string; err: string }> {
-  try {
-    const { stdout } = await runFile('git', [...GIT_ARGS, ...args], {
-      cwd,
-      env: { ...process.env, GIT_EDITOR: 'true', GIT_TERMINAL_PROMPT: '0' },
-      maxBuffer: 8 * 1024 * 1024
-    })
-    return { ok: true, out: stdout.trim() }
-  } catch (e) {
-    const err = e as { stdout?: string; stderr?: string; message: string }
-    return { ok: false, out: (err.stdout ?? '').trim(), err: (err.stderr ?? err.message).trim() }
-  }
-}
-
-async function commitOf(cwd: string, ref: string): Promise<string | null> {
-  if (!REF_RE.test(ref)) return null
-  const r = await git(cwd, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
-  return r.ok && r.out ? r.out : null
-}
-
-/** Rebase the branch checked out in `worktree` onto `onto`, replaying only the commits after `from` (default: `onto`). */
-export async function rebaseStack(input: {
-  worktree: string
-  onto: string
-  from?: string
-}): Promise<RebaseResult> {
-  const { worktree, onto } = input
-
-  const top = await git(worktree, ['rev-parse', '--show-toplevel'])
-  if (!top.ok)
-    return { ok: false, code: 'NOT_A_WORKTREE', detail: `${worktree} is not a git checkout.` }
-
-  const gitDir = await git(worktree, ['rev-parse', '--absolute-git-dir'])
-  const common = await git(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
-  if (!gitDir.ok || !common.ok) {
-    return {
-      ok: false,
-      code: 'NOT_A_WORKTREE',
-      detail: `Could not read ${worktree}'s git directory.`
-    }
-  }
-  if (path.resolve(gitDir.out) === path.resolve(common.out)) {
-    return {
-      ok: false,
-      code: 'NOT_A_LINKED_WORKTREE',
-      detail: "This is the main checkout. rebase_stack only rebases a step's own linked worktree."
-    }
-  }
-
-  const branch = await git(worktree, ['symbolic-ref', '--short', '-q', 'HEAD'])
-  if (!branch.ok || !branch.out) {
-    return { ok: false, code: 'DETACHED_HEAD', detail: 'The worktree has no branch checked out.' }
-  }
-
-  const ontoCommit = await commitOf(worktree, onto)
-  if (!ontoCommit) {
-    return {
-      ok: false,
-      code: 'BAD_ONTO',
-      detail: `"${onto}" is not a ref or commit in this repository.`
-    }
-  }
-  if (input.from !== undefined && !(await commitOf(worktree, input.from))) {
-    return {
-      ok: false,
-      code: 'BAD_ONTO',
-      detail: `"${input.from}" is not a ref or commit in this repository.`
-    }
-  }
-
-  const dirty = await git(worktree, ['status', '--porcelain', '--untracked-files=no'])
-  if (!dirty.ok || dirty.out !== '') {
-    return {
-      ok: false,
-      code: 'REBASE_DIRTY',
-      detail: 'The worktree has uncommitted changes to tracked files; commit or stash them first.'
-    }
-  }
-
-  const before = (await git(worktree, ['rev-parse', 'HEAD'])).out
-  const upstream = input.from ?? onto
-  const run = await git(worktree, ['rebase', '--onto', onto, upstream])
-  if (run.ok) {
-    const after = (await git(worktree, ['rev-parse', 'HEAD'])).out
-    return { ok: true, branch: branch.out, before, after, rebased: after !== before, pushed: false }
-  }
-
-  // Failed: name the conflicting files, abort, and verify the tree is exactly where it was.
-  const unmerged = await git(worktree, ['diff', '--name-only', '--diff-filter=U'])
-  const conflicts =
-    unmerged.ok && unmerged.out ? unmerged.out.split('\n').filter(Boolean).sort() : []
-  const abort = await git(worktree, ['rebase', '--abort'])
-  const head = (await git(worktree, ['rev-parse', 'HEAD'])).out
-  const restored =
-    head === before &&
-    (await git(worktree, ['symbolic-ref', '--short', '-q', 'HEAD'])).out === branch.out
-  if (!abort.ok && !restored) {
-    return {
-      ok: false,
-      code: 'REBASE_ABORT_FAILED',
-      detail: `git rebase --abort failed (${abort.err}); the worktree may be mid-rebase — look at it before anything else touches it.`
-    }
-  }
-  if (conflicts.length > 0)
-    return { ok: false, code: 'REBASE_CONFLICT', branch: branch.out, head, conflicts }
-  return { ok: false, code: 'GIT_FAILED', detail: run.err || 'git rebase failed.' }
-}
-
-/** The top-level directory of the checkout containing `dir`, or `null` when it is not in one. */
-async function worktreeToplevel(dir: string): Promise<string | null> {
-  const r = await git(dir, ['rev-parse', '--show-toplevel'])
-  return r.ok && r.out ? r.out : null
-}
-
-/** The repository a checkout belongs to (its absolute common git dir), or `null`. */
-async function repoCommonDir(dir: string): Promise<string | null> {
-  const r = await git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
-  return r.ok && r.out ? r.out : null
-}
-
-/** The branch checked out in `dir`, or `null` when detached (or not a checkout). */
-async function currentBranch(dir: string): Promise<string | null> {
-  const r = await git(dir, ['symbolic-ref', '--short', '-q', 'HEAD'])
-  return r.ok && r.out ? r.out : null
-}
-
-// ---- rebase_stack ---------------------------------------------
-
-/** A step that is still open (its proof is not final). */
-const stepIsOpen = (s: MissionStep): boolean =>
-  s.kind === 'custom' && s.proof !== 'verified' && s.proof !== 'self-verified'
-
-/** The linked worktrees (not the main checkout) a step's `worktree` links resolve to. */
-async function stepWorktrees(root: string, step: MissionStep): Promise<string[]> {
-  const found = new Set<string>()
-  for (const l of step.links) {
-    if (l.kind !== 'worktree') continue
-    const p = linkPath(root, l.ref)
-    const st = await fs.stat(p).catch(() => null)
-    if (!st) continue
-    const top = await worktreeToplevel(st.isDirectory() ? p : path.dirname(p))
-    if (top) found.add(top)
-  }
-  return [...found]
-}
-
-/**
- * Why `worktree` is NOT `step`'s own (a reason), or `null` when it is. A worktree being linked on the
- * step proves little — a step may link a sibling it only reads — so ownership needs evidence:
- *
- *  1. if a card the step links was dispatched (`executedIn` is the owner branch Harnu stamped), the
- *     worktree's branch must be exactly that branch;
- *  2. otherwise (nothing names the branch) the worktree must be claimed by THIS step alone — not
- *     linked by any other step of this or another open mission — and must not be a trunk branch.
- */
-async function foreignWorktreeReason(
-  root: string,
-  mission: Mission,
-  step: MissionStep,
-  worktree: string
-): Promise<string | null> {
-  const branch = await currentBranch(worktree)
-  if (branch === 'main' || branch === 'master') return `it is on ${branch}`
-  const owned = new Set<string>()
-  for (const l of step.links) {
-    if (l.kind !== 'card') continue
-    const read = await readCard(root, l.ref).catch(() => null)
-    if (read?.ok && read.card.executedIn) owned.add(read.card.executedIn)
-  }
-  if (owned.size > 0) {
-    return branch && owned.has(branch)
-      ? null
-      : `its branch ${branch ?? '(detached)'} is not the branch ${[...owned].join(', ')} the step's card was dispatched to`
-  }
-  const others = (await readAllMissions(root)).missions
-    .map((m) => m.mission)
-    .filter((m) => m.status !== 'closed')
-  for (const m of others) {
-    for (const s of m.steps) {
-      if (m.id === mission.id && s.id === step.id) continue
-      if ((await stepWorktrees(root, s)).includes(worktree)) {
-        return `${m.id === mission.id ? s.id : `${m.id}/${s.id}`} links it too, and nothing names which branch is this step's`
-      }
-    }
-  }
-  return null
-}
-
 const rebaseStackHandler: Handler = async (args, ctx) => {
   const folder = ctx.folder
   if (!folder) return errorResult('BAD_ARGS: folder is required')
@@ -5691,207 +3706,46 @@ const rebaseStackHandler: Handler = async (args, ctx) => {
   const refusal = missionFolderRefusal(folder, root, ctx)
   if (refusal) return errorResult(refusal)
 
-  // Missions v4 S-27: a v4 mission answers the session that leads it (no steward in between).
-  if ((await formatOf(folder, missionId)) === 'v4') {
-    const who = actorOf(args, ctx)
-    if (!who.ok) return errorResult(who.error)
-    const read = await readMissionRecord(root, missionId)
-    if (!read.ok) return errorResult(read.error)
-    const out = await rebaseStackV4(
-      {
-        root,
-        record: read.record,
-        actor: who.actor,
-        onto,
-        ...(from ? { from } : {}),
-        ...(wantedStep ? { stepId: wantedStep } : {})
+  const who = actorOf(args, ctx)
+  if (!who.ok) return errorResult(who.error)
+  const read = await readMissionRecord(root, missionId)
+  if (!read.ok) return errorResult(read.error)
+  const out = await rebaseStackV4(
+    {
+      root,
+      record: read.record,
+      actor: who.actor,
+      onto,
+      ...(from ? { from } : {}),
+      ...(wantedStep ? { stepId: wantedStep } : {})
+    },
+    {
+      executedIn: async (slug) => {
+        const card = await readCard(root, slug).catch(() => null)
+        return card?.ok ? card.card.executedIn : undefined
       },
-      {
-        executedIn: async (slug) => {
-          const card = await readCard(root, slug).catch(() => null)
-          return card?.ok ? card.card.executedIn : undefined
-        },
-        otherOpenMissions: async () =>
-          (await listMissionRecords(root)).records
-            .map((r) => r.record)
-            .filter((r) => r.id !== missionId)
-      }
-    )
-    return out.ok ? textResult(out.ack) : errorResult(out.error)
-  }
-
-  const loaded = await loadMission(root, missionId)
-  if (!loaded.ok) return errorResult(loaded.error)
-  if (loaded.mission.status === 'closed') return errorResult(missionClosedMessage(missionId))
-  const mission = loaded.mission
-
-  // Which step, and which of its linked worktrees.
-  const candidates: Array<{ step: MissionStep; worktree: string }> = []
-  const pool = wantedStep
-    ? mission.steps.filter((s) => s.id === wantedStep)
-    : mission.steps.filter(stepIsOpen)
-  if (wantedStep && pool.length === 0)
-    return errorResult(stepNotFoundMessage(missionId, wantedStep))
-  const repoDir = await repoCommonDir(root)
-  // Fail CLOSED: if the mission's own repository cannot be identified, no worktree can be shown to
-  // belong to it, so nothing is rebased.
-  if (!repoDir) {
-    return errorResult(
-      `WORKTREE_NOT_IN_REPO: could not identify the repository of ${root}, so no worktree can be shown to belong to it — rebase_stack rebases nothing.`
-    )
-  }
-  for (const step of pool) {
-    for (const wt of await stepWorktrees(root, step)) {
-      if (wt === root) continue // never the main checkout: the rebase core would refuse it anyway
-      if ((await repoCommonDir(wt)) !== repoDir) {
-        return errorResult(
-          `WORKTREE_NOT_IN_REPO: ${wt}, linked on ${step.id}, belongs to a different repository than this mission — rebase_stack only rebases this repo's own worktrees.`
-        )
-      }
-      candidates.push({ step, worktree: wt })
+      otherOpenMissions: async () =>
+        (await listMissionRecords(root)).records
+          .map((r) => r.record)
+          .filter((r) => r.id !== missionId)
     }
-  }
-  if (candidates.length === 0) {
-    return errorResult(
-      `NO_STEP_WORKTREE: ${wantedStep ? wantedStep : 'no open step of this mission'} links a linked worktree — mission_link_child { kind: 'worktree', ref: <path> } the step's worktree first.`
-    )
-  }
-  // Path trust: a worktree linked on the step is not yet the step's OWN. Keep only the ones that are —
-  // a sibling (the operator's, another mission's) is never rewritten.
-  const own: typeof candidates = []
-  const foreign: string[] = []
-  for (const c of candidates) {
-    const why = await foreignWorktreeReason(root, mission, c.step, c.worktree)
-    if (why) foreign.push(`${c.worktree} (${why})`)
-    else own.push(c)
-  }
-  if (own.length === 0) {
-    return errorResult(
-      `NOT_STEP_WORKTREE: none of the worktrees linked on ${wantedStep ?? 'the open steps'} is this step's own — ${foreign.join('; ')}. rebase_stack rewrites only a step's own branch.`
-    )
-  }
-  candidates.splice(0, candidates.length, ...own)
-  if (candidates.length > 1) {
-    return errorResult(
-      `STEP_AMBIGUOUS: several steps link a worktree (${candidates.map((c) => `${c.step.id} → ${c.worktree}`).join('; ')}) — pass stepId.`
-    )
-  }
-  const { step, worktree } = candidates[0]
-
-  const res = await rebaseStack({ worktree, onto, ...(from ? { from } : {}) })
-  if (res.ok) {
-    return textResult({
-      ok: true,
-      op: 'rebase_stack',
-      stepId: step.id,
-      branch: res.branch,
-      before: res.before,
-      after: res.after,
-      rebased: res.rebased,
-      // The local branch moved; no remote ref did. Publishing is the owner's move.
-      pushed: false
-    })
-  }
-  if (res.code === 'REBASE_CONFLICT') {
-    const reason = `Rebase of ${res.branch} onto ${onto} conflicted in ${res.conflicts.join(', ')}`
-    // The tree is exactly as it was (the core verified). Flag the step, once; the retry of an
-    // unchanged conflict updates the existing blocker instead of stacking a second.
-    await editMission(args, ctx, (m) => {
-      const target = m.steps.find((s) => s.id === step.id)
-      if (!target) return { ok: false, error: stepNotFoundMessage(m.id, step.id) }
-      const unblocks =
-        'Resolve the conflict by hand (rebase the branch yourself, or fix the overlap), then clear this blocker.'
-      const existing = target.blockers.find((b) => b.reason === reason)
-      if (existing) {
-        existing.unblocks = unblocks
-        return { ok: true, mission: m, unchanged: true, ack: { ok: true } }
-      }
-      target.blockers.push({ reason, unblocks, owner: 'agent', raisedAt: new Date().toISOString() })
-      return { ok: true, mission: m, ack: { ok: true } }
-    })
-    return errorResult(
-      `REBASE_CONFLICT: ${reason}. The rebase was aborted and ${worktree} is exactly as it was (HEAD ${res.head}). An agent-owned blocker is set on ${step.id}; do not retry — tell the operator.`
-    )
-  }
-  return errorResult(`${res.code}: ${res.detail}`)
+  )
+  return out.ok ? textResult(out.ack) : errorResult(out.error)
 }
 
-const missionRequestCloseHandler: Handler = async (args, ctx) => {
-  const requestedBy = strField(args, 'sessionId')
-  if (requestedBy !== undefined && !SESSION_UUID_RE.test(requestedBy)) {
-    return errorResult(badSessionIdMessage('sessionId', requestedBy))
+/**
+ * `mission_update_step` stays in the catalog (fate table: keep, shrink to `title`, `milestone`,
+ * `waitsFor`, `optional`), but no v4 write for it has been built: no slice of the Missions v4 delivery
+ * owns one. It refuses, names what to use instead, and writes nothing, as it already did on a v4 mission.
+ */
+const missionUpdateStepUnbuilt: Handler = async (_args, ctx) => {
+  if (ctx.folder) {
+    const refusal = missionFolderRefusal(ctx.folder, missionRoot(ctx.folder), ctx)
+    if (refusal) return errorResult(refusal)
   }
-  const currentHot = ctx.folder ? await readHotBody(ctx.folder) : undefined
-  // Missions v4 S-4: the consolidator reads the observed rows too, from the repo store.
-  // The cache is read first: a close asked before any observer pass in this process must still see
-  // the rows only the userData cache holds.
-  await ensureLinkCacheLoaded()
-  const observed = ctx.folder
-    ? await readObservedLedger(missionRoot(ctx.folder), strField(args, 'missionId') ?? '')
-    : []
-  return editMission(args, ctx, (m, log) => {
-    // The same checks mission_get reports as `closeReadiness` (Mission v2 §3.5).
-    const refused = requestCloseRefusal(m)
-    if (refused) return { ok: false, error: `${refused.code}: ${refused.reason}` }
-    // The store says who leads a mission (null once closed, which the refusal above already caught).
-    const leader = leaderOf(m)
-    if (leader === null) return { ok: false, error: 'MISSION_CLOSED: the mission is closed.' }
-    // design §3: the agent's request lands on `delivered` + `pendingClose`; only
-    // the operator's UI (`applyOperatorEnd`) reaches `closed`.
-    m.status = 'delivered'
-    m.pendingClose = { at: new Date().toISOString(), requestedBy: requestedBy ?? leader }
-    // Campaign ch.6 (AC-6.1): one consolidation pass over the structured record. It stores the
-    // outcome and the drafts; writing any of them to memory is the operator's tick (AC-6.2).
-    const c = consolidate(
-      missionConsolidatorInput(m, log, currentHot, mergeLedger(m.ledger, observed)),
-      new Date().toISOString().slice(0, 10)
-    )
-    m.outcome = c.outcome
-    if (c.drafts.length > 0) m.memoryDrafts = c.drafts
-    else delete m.memoryDrafts
-    return {
-      ok: true,
-      mission: m,
-      ack: {
-        ok: true,
-        op: 'mission_request_close',
-        pendingClose: true,
-        consolidation: consolidationAck(c)
-      }
-    }
-  })
-}
-
-/** Campaign spec §3.2: what a Log entry can be. */
-const LOG_KINDS: ReadonlySet<string> = new Set(['note', 'decision', 'surprise', 'steward'])
-
-const missionLogHandler: Handler = async (args, ctx) => {
-  const folder = ctx.folder
-  if (!folder) return errorResult('BAD_ARGS: folder is required')
-  const note = strField(args, 'note')?.trim()
-  if (!note) return errorResult('BAD_ARGS: note is required')
-  const id = strField(args, 'missionId') ?? ''
-  const stepId = strField(args, 'stepId')
-  const root = missionRoot(folder)
-  const refusal = missionFolderRefusal(folder, root, ctx)
-  if (refusal) return errorResult(refusal)
-  return withMissionIdMintLock(id, async () => {
-    const loaded = await loadMission(root, id)
-    if (!loaded.ok) return errorResult(loaded.error)
-    if (loaded.mission.status === 'closed') return errorResult(missionClosedMessage(id))
-    if (stepId && !loaded.mission.steps.some((s) => s.id === stepId)) {
-      return errorResult(stepNotFoundMessage(id, stepId))
-    }
-    // Append to the raw file: the frontmatter bytes stay exactly as they were. The heading carries the
-    // entry's kind (`### <time> · steward · stp-2`), so the Log can be read by kind; a plain note keeps
-    // the heading it always had.
-    const kind = strField(args, 'kind')
-    const kindTag = kind && kind !== 'note' && LOG_KINDS.has(kind) ? ` · ${kind}` : ''
-    const entry = missionLogEntry(loaded.raw, `${kindTag}${stepId ? ` · ${stepId}` : ''}`, note)
-    if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
-    await atomicWriteFile(loaded.file, loaded.raw + entry, 0o644)
-    return textResult({ ok: true, op: 'mission_log' })
-  })
+  return errorResult(
+    'NOT_AVAILABLE: mission_update_step has no v4 write yet. Add what is missing with mission_add_step (a new step), mission_add_ac (a criterion) or mission_link, or tell the operator.'
+  )
 }
 
 /* ---- T564 U1: the browser verbs ------------------------------------------------------------------- */
@@ -6284,69 +4138,10 @@ const browserPatchHandler: Handler = async (args, ctx) => {
   return browserResult({ op: 'browser_patch', ...res })
 }
 
-// ---- T654: owner transfer (the recovery path) ----------------------------------------------
-
-/** The validated new owner and reason of a transfer call, or the refusal. */
-function parseOwnerTransfer(
-  args: Record<string, unknown>
-): { ok: true; to: string; reason: string } | { ok: false; error: string } {
-  const to = strField(args, 'toSessionId') ?? ''
-  if (!SESSION_UUID_RE.test(to)) return { ok: false, error: badSessionIdMessage('toSessionId', to) }
-  // One line: it is written into a Log heading.
-  const reason = (strField(args, 'reason') ?? '').replace(/\s+/g, ' ').trim()
-  if (!reason) {
-    return {
-      ok: false,
-      error: 'BAD_ARGS: reason is required — say why the owner changes (one line).'
-    }
-  }
-  return { ok: true, to, reason }
-}
-
-const sameOwnerMessage = (kind: 'mission' | 'campaign', id: string, to: string): string =>
-  `SAME_OWNER: session ${to} already owns ${kind} ${id} — nothing to transfer.`
-
-/** The Log entry both verbs append: `### <time> · owner transfer: <from> → <to> (<reason>)`. */
-const ownerTransferLog = (at: string, from: string, to: string, reason: string): string =>
-  `\n### ${at} · owner transfer: ${from} → ${to} (${reason})\n\nOwner moved from ${from} to ${to}. Reason: ${reason}\n`
-
-/**
- * Move a mission's owner (a private copy) and record the ledger row. Only `owner.sessionId`
- * changes: `owner.folder` stays, as it names where the mission was started.
- */
-function withOwnerTransferred(m: Mission, to: string, at: string): Mission {
-  const from = m.owner.sessionId
-  const moved = structuredClone(m)
-  moved.owner = { ...moved.owner, sessionId: to }
-  return appendLedgerRow(
-    moved,
-    { kind: 'owner-transfer', ref: to, sessionId: to, detail: `from ${from}` },
-    at
-  )
-}
-
-const missionTransferOwnerHandler: Handler = async (args, ctx) => {
-  const parsed = parseOwnerTransfer(args)
-  if (!parsed.ok) return errorResult(parsed.error)
-  const { to, reason } = parsed
-  return editMission(args, ctx, (m) => {
-    const from = m.owner.sessionId
-    if (from === to) return { ok: false, error: sameOwnerMessage('mission', m.id, to) }
-    const at = new Date().toISOString()
-    return {
-      ok: true,
-      mission: withOwnerTransferred(m, to, at),
-      ack: { ok: true, op: 'mission_transfer_owner', missionId: m.id, from, to },
-      logAppend: ownerTransferLog(at, from, to, reason)
-    }
-  })
-}
-
-// ---- Missions v4 S-24: the v4 verbs registered beside the v3 ones (AC-66, AC-67) -------------------
+// ---- Missions v4: the verbs' MCP side (S-24, S-40) ----------------------------------------------------
 //
-// `missions/verbs.ts` decides which format a call is and runs the v4 verbs; this block is the MCP
-// side of it: the caller built from the transport, the facts gathered on the server, and the routing
-// of every mission verb to its v4 handler or to the v3 one that is still here (until S-40).
+// `missions/verbs.ts` runs the v4 verbs; this block is the MCP side of it: the caller built from the
+// transport and the facts gathered on the server.
 
 /** How long a v4 verb waits for GitHub; past it a step reads its last-known state (like the view). */
 const V4_PR_WAIT_MS = 1500
@@ -6360,11 +4155,11 @@ export function _setStepInputsForTest(fn: StepInputsFor | null): void {
 }
 
 /**
- * The real sources of the step facts for one repo: the board's files, chapter 2's pull request join
- * and its last-known cache, the filesystem and the task-state hub. The same sources `mission-ipc.ts`
- * reads for the pane (its copy is private to that module), with a bounded wait for GitHub.
+ * The real sources of {@link FactsDeps} for one repo: the board's files, chapter 2's pull request join
+ * (which shares the single-flight cache a `mission:list` poll already warms), its last-known cache, the
+ * filesystem and the task-state hub. `waitMs` bounds how long the join waits for GitHub.
  */
-async function realFactsDeps(root: string, waitMs: number): Promise<FactsDeps> {
+export async function realFactsDeps(root: string, waitMs?: number): Promise<FactsDeps> {
   await ensureLinkCacheLoaded()
   return {
     board: async () => {
@@ -6407,8 +4202,7 @@ const v4Deps: V4Deps = {
 }
 
 /**
- * The caller of a v4 verb, built from the transport and never from the call's arguments. A steward's
- * bearer is a `worker` bound to its mission (it reads and never writes). Any other client is a
+ * The caller of a v4 verb, built from the transport and never from the call's arguments. Any other client is a
  * `session`, and this transport has no per-session identity, so the only id it can have is the call's
  * own `sessionId` argument: self-declared, like v3's owner ids (S-25 makes it real for the sessions
  * Harnu spawns). The argument names WHICH session; it never changes WHAT the caller is: `operator`
@@ -6420,9 +4214,6 @@ function actorOf(
   ctx: ToolHandlerCtx,
   opts: { optional?: boolean } = {}
 ): { ok: true; actor: Actor } | { ok: false; error: string } {
-  if (ctx.caller?.kind === 'steward') {
-    return { ok: true, actor: { kind: 'worker', missionId: ctx.caller.missionId } }
-  }
   // Missions v4 S-25: a session Harnu spawned IS the session id in its credential. An argument never
   // names it (so a verifier that built its step stays a builder), and the observe worker of a folder is
   // a Harnu worker bound to that folder: it reads any mission of it and never writes.
@@ -6465,93 +4256,11 @@ async function runV4Call(
   return out.ok ? textResult(out) : errorResult(out.error)
 }
 
-/** A verb that exists in v4 alone: always v4-shaped, and a v3 mission is converted by its first write. */
-const v4OnlyVerb =
+/** A mission verb: always the v4 verb. A mission still held in a v3 file is read in memory and converted by its first write. */
+const missionVerb =
   (op: V4Op): Handler =>
   (args, ctx) =>
     runV4Call(op, args, ctx)
-
-/**
- * A kept name that takes both shapes. A call that carries a v4-only argument is v4 (and converts a
- * v3 mission by copy on its first write); one that carries a v3-only argument is v3, and is refused
- * `MISSION_IS_V4` when the mission already has a v4 record; one that reads the same in both serves the
- * record in the format it is in and never converts it.
- */
-const sharedVerb =
-  (op: Exclude<V4Op, 'mission_list'>, v3: Handler): Handler =>
-  async (args, ctx) => {
-    const shape = shapeOf(op, args)
-    if (shape === 'mixed') return errorResult((mixedRefusal(op) as { error: string }).error)
-    if (shape === 'v4') return runV4Call(op, args, ctx)
-
-    const folder = ctx.folder
-    const id = strField(args, 'missionId')
-    if (folder && id !== undefined && (await formatOf(folder, id)) === 'v4') {
-      return shape === 'v3'
-        ? errorResult((v3Refusal(op, id) as { error: string }).error)
-        : runV4Call(op, args, ctx)
-    }
-    // `mission_get` with no id at all is the v4 lookup (the mission this session is attached to).
-    if (
-      op === 'mission_get' &&
-      id === undefined &&
-      strField(args, 'ownerSessionId') === undefined
-    ) {
-      return runV4Call(op, args, ctx)
-    }
-    // A v3 `mission_create` that names a campaign the v4 store already holds is refused too.
-    if (op === 'mission_create' && folder) {
-      const campaignId = strField(args, 'campaignId')
-      if (campaignId !== undefined && (await formatOf(folder, campaignId)) === 'v4') {
-        return errorResult((v3Refusal(op, campaignId) as { error: string }).error)
-      }
-    }
-    return v3(args, ctx)
-  }
-
-/**
- * A verb that is v3 alone: it goes to the v3 handler unless the mission (or campaign) it names has a
- * v4 record, which it never reaches: `MISSION_IS_V4`, with the verb to use, and nothing written.
- */
-const v3OnlyVerb =
-  (op: string, v3: Handler): Handler =>
-  async (args, ctx) => {
-    const folder = ctx.folder
-    if (folder) {
-      for (const key of ['missionId', 'campaignId']) {
-        const id = strField(args, key)
-        if (id !== undefined && (await formatOf(folder, id)) === 'v4') {
-          return errorResult((v3Refusal(op, id) as { error: string }).error)
-        }
-      }
-    }
-    return v3(args, ctx)
-  }
-
-/**
- * `mission_list`: the v3 rows as before, minus the missions that have a v4 record now (the v3 file is
- * a snapshot), plus, with a `folder`, one v4 row each (`format: 'v4'`: id, title, headline, leads).
- */
-const missionListBoth: Handler = async (args, ctx) => {
-  const v3 = await missionListHandler(args, ctx)
-  if (v3.isError) return v3
-  const payload = JSON.parse((v3.content[0] as { text: string }).text) as {
-    missions: Array<Record<string, unknown>>
-  }
-  const kept: Array<Record<string, unknown>> = []
-  for (const row of payload.missions) {
-    const home = typeof row.folder === 'string' ? row.folder : ctx.folder
-    if (home && typeof row.id === 'string' && (await formatOf(home, row.id)) === 'v4') continue
-    kept.push(row)
-  }
-  let rows: Array<Record<string, unknown>> = []
-  if (ctx.folder) {
-    const v4 = await runV4Call('mission_list', args, ctx)
-    if (v4.isError) return v4
-    rows = (JSON.parse((v4.content[0] as { text: string }).text) as { missions: [] }).missions
-  }
-  return textResult({ ...payload, missions: [...kept, ...rows] })
-}
 
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
 const TOOL_HANDLERS: Record<McpOp, Handler> = {
@@ -6617,28 +4326,22 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   delete_worker: deleteWorkerHandler,
   orchestrator_arm: orchestratorArmHandler,
   orchestrator_disarm: orchestratorDisarmHandler,
-  mission_create: sharedVerb('mission_create', missionCreateHandler),
-  mission_get: sharedVerb('mission_get', missionGetHandler),
-  mission_list: missionListBoth,
-  mission_add_step: sharedVerb('mission_add_step', missionAddStepHandler),
-  mission_update_step: v3OnlyVerb('mission_update_step', missionUpdateStepHandler),
-  mission_link_child: v3OnlyVerb('mission_link_child', missionLinkChildHandler),
-  mission_log: sharedVerb('mission_log', missionLogHandler),
-  mission_set_blocker: sharedVerb('mission_set_blocker', missionSetBlockerHandler),
-  mission_clear_blocker: sharedVerb('mission_clear_blocker', missionClearBlockerHandler),
-  mission_set_end: v3OnlyVerb('mission_set_end', missionSetEndHandler),
-  mission_verify_step: v3OnlyVerb('mission_verify_step', missionVerifyStepHandler),
-  mission_request_close: sharedVerb('mission_request_close', missionRequestCloseHandler),
-  mission_import_legacy: missionImportLegacyHandler,
-  mission_add_check: v3OnlyVerb('mission_add_check', missionAddCheckHandler),
+  mission_create: missionVerb('mission_create'),
+  mission_get: missionVerb('mission_get'),
+  mission_list: missionVerb('mission_list'),
+  mission_add_step: missionVerb('mission_add_step'),
+  mission_update_step: missionUpdateStepUnbuilt,
+  mission_log: missionVerb('mission_log'),
+  mission_set_blocker: missionVerb('mission_set_blocker'),
+  mission_clear_blocker: missionVerb('mission_clear_blocker'),
+  mission_request_close: missionVerb('mission_request_close'),
   rebase_stack: rebaseStackHandler,
-  mission_transfer_owner: v3OnlyVerb('mission_transfer_owner', missionTransferOwnerHandler),
-  mission_add_milestone: v4OnlyVerb('mission_add_milestone'),
-  mission_add_ac: v4OnlyVerb('mission_add_ac'),
-  mission_link: v4OnlyVerb('mission_link'),
-  mission_set_done_when: v4OnlyVerb('mission_set_done_when'),
-  mission_settle_ac: v4OnlyVerb('mission_settle_ac'),
-  mission_attach: v4OnlyVerb('mission_attach')
+  mission_add_milestone: missionVerb('mission_add_milestone'),
+  mission_add_ac: missionVerb('mission_add_ac'),
+  mission_link: missionVerb('mission_link'),
+  mission_set_done_when: missionVerb('mission_set_done_when'),
+  mission_settle_ac: missionVerb('mission_settle_ac'),
+  mission_attach: missionVerb('mission_attach')
 }
 
 /**

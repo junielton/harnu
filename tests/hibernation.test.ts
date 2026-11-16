@@ -24,13 +24,28 @@ import {
   type LiveSession,
   type Policy
 } from '../src/main/fleet-policy'
+import yaml from 'js-yaml'
 import {
-  buildMissionFileContent,
-  missionFilePath,
-  missionsDir,
-  type Mission,
-  type StepLink
-} from '../src/main/mission-core'
+  reportedUnreadableMissionFiles,
+  resetUnreadableMissionFiles
+} from '../src/main/missions/store'
+
+/** What a v3 mission file holds, as far as these cases read it (the frozen reader parses the whole). */
+type StepLink = { kind: 'session' | 'worktree' | 'card' | 'pr'; ref: string }
+type Mission = Record<string, unknown> & {
+  id: string
+  slug: string
+  owner: { sessionId: string; folder: string }
+  status: string
+  steps: Array<Record<string, unknown>>
+}
+
+/** A v3 mission file: frontmatter, then the Log (the way a v3 Harnu wrote it). */
+const buildMissionFileContent = (m: Mission, log = ''): string =>
+  `---\n${yaml.dump(m, { lineWidth: -1, noRefs: true, skipInvalid: true })}---\n${log}`
+const missionsDir = (folder: string): string => join(folder, '.harnu', 'missions')
+const missionFilePath = (folder: string, id: string, slug: string): string =>
+  join(missionsDir(folder), `${id}-${slug}.md`)
 
 describe('hibernation registry', () => {
   beforeEach(() => resetHibernation())
@@ -436,5 +451,55 @@ describe('hibernation — mission owners with live children (T363)', () => {
     } finally {
       setLazyDataDirMigration(false)
     }
+  })
+})
+
+// ---- Missions v4 S-40 (Decision 12): an unreadable mission file is named, never skipped silently ------------
+
+describe('hibernation — an unreadable mission file is named to the app (S-40)', () => {
+  const BAD_V4 = 'mnt-0badc0de-broken.md'
+  let repo: string
+
+  beforeEach(async () => {
+    resetUnreadableMissionFiles()
+    repo = await mkdtemp(join(tmpdir(), 'harnu-s40-hib-'))
+    await mkdir(join(repo, '.git'), { recursive: true })
+    await mkdir(join(repo, '.harnu', 'missions-v4'), { recursive: true })
+  })
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true })
+  })
+
+  it('fails open as before (nobody is exempted by a file it cannot read) but names the file, once', async () => {
+    await writeFile(join(repo, '.harnu', 'missions-v4', BAD_V4), '{ this is not a mission record')
+    expect(openMissionLeaders([repo]).size).toBe(0)
+    expect(reportedUnreadableMissionFiles()).toEqual([BAD_V4])
+    // Every sweep reports its whole set: the same file is still one name, not one per sweep.
+    openMissionLeaders([repo])
+    openMissionLeaders([repo])
+    expect(reportedUnreadableMissionFiles()).toEqual([BAD_V4])
+  })
+
+  it('stops naming the file once it reads again, so a later failure is news again', async () => {
+    const file = join(repo, '.harnu', 'missions-v4', BAD_V4)
+    await writeFile(file, '{ this is not a mission record')
+    openMissionLeaders([repo])
+    expect(reportedUnreadableMissionFiles()).toEqual([BAD_V4])
+    await rm(file)
+    openMissionLeaders([repo])
+    expect(reportedUnreadableMissionFiles()).toEqual([])
+    await writeFile(file, '{ broken again')
+    openMissionLeaders([repo])
+    expect(reportedUnreadableMissionFiles()).toEqual([BAD_V4])
+  })
+
+  it('names a v3 mission file it cannot parse too', async () => {
+    await mkdir(join(repo, '.harnu', 'missions'), { recursive: true })
+    await writeFile(
+      join(repo, '.harnu', 'missions', 'mnt-0badc0df-old-and-broken.md'),
+      'no frontmatter'
+    )
+    openMissionLeaders([repo])
+    expect(reportedUnreadableMissionFiles()).toContain('mnt-0badc0df-old-and-broken.md')
   })
 })

@@ -1,20 +1,22 @@
 /**
- * Missions v4 · S-24 · AC-67 — a mission is in one format at a time.
+ * Missions v4 · S-24 · AC-67 (kept by S-40) — a mission is in one format at a time.
  *
- * The v4 verbs are registered beside the v3 ones, so one call can be v4-shaped or v3-shaped. This
- * suite drives the WIRED handlers (the array `server.ts` registers) through the catalog schema and
- * the gate's translation, the way a real call arrives, and proves the routing:
+ * Every verb is v4-shaped now (S-40 removed the v3 verbs and the v3 shape of the kept ones), but a v3
+ * record may still be on disk. This suite drives the WIRED handlers (the array `server.ts` registers)
+ * through the catalog schema and the gate's translation, the way a real call arrives, and proves:
  *
- *  1. a v4-shaped verb on a v3 mission converts it on its first write: a v4 copy, the v3 file's
+ *  1. a verb that writes, on a v3 mission, converts it on its first write: a v4 copy, the v3 file's
  *     bytes untouched (AC-22);
- *  2. a v3-shaped verb on a mission that has a v4 copy is refused with the way out, and writes
- *     nothing, in either format;
- *  3. `mission_create` creates a v4 record only when given the v4 shape.
+ *  2. once a mission has a v4 copy, an older-shaped call to a kept verb is refused and writes nothing,
+ *     in either format;
+ *  3. `mission_create` takes the v4 shape alone: an older argument is refused by the strict schema.
  *
  * Plus what the routing rests on: a name both formats share serves the record in the format it is
- * in and never converts it; the caller is built from the transport and never from an argument; the
- * facts a verb reads are computed on the server; and a step added after a close request clears the
- * request (decision 14), shown through what the operator sees.
+ * in; the caller is built from the transport and never from an argument; the facts a verb reads are
+ * computed on the server; and a step added after a close request clears the request (decision 14),
+ * shown through what the operator sees.
+ *
+ * The v3 record is a copy of the frozen real file under `tests/fixtures/missions-v4-compat/`.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
@@ -42,9 +44,12 @@ vi.mock('electron', () => ({
   ipcMain: { handle: (): void => {}, on: (): void => {} }
 }))
 
+/** The owner of the frozen v3 mission `mnt-5c0de001`, so the same session leads the v3 and the v4 missions here. */
 const LEADER = '3f1c9a52-7d4e-4b8a-9c21-5e6a0b7d8f10'
 const STRANGER = 'e0e0e0e0-0000-4000-8000-000000000001'
-const VERIFIER = '8a2d4c6e-1b3f-4a5c-9d7e-2f4a6c8e0b1d'
+const FIXTURE_V3 = path.join(__dirname, 'fixtures', 'missions-v4-compat', 'missions')
+const V3_FILE = 'mnt-5c0de001-modern-active.md'
+const V3_ID = 'mnt-5c0de001'
 
 type Result = {
   isError: boolean
@@ -134,18 +139,11 @@ const readAll = (root: string, name: string): Record<string, string> =>
     filesOf(root, name).map((n) => [n, readFileSync(path.join(dir(root, name), n), 'utf8')])
   )
 
-/** A v3 mission, made by the v3-shaped `mission_create`. */
+/** A v3 mission: the frozen real file, copied under the throwaway repo's `.harnu/missions/`. */
 async function createV3(): Promise<string> {
-  const r = ok(
-    await call('mission_create', {
-      title: 'Export the report',
-      declaredEnd: { kind: 'code', target: 'the CSV export', evidence: 'the PR is merged' },
-      sessionId: LEADER,
-      steward: false,
-      steps: [{ title: 'Build the exporter', verification: 'verifier' }]
-    })
-  )
-  return r.json.missionId as string
+  await fs.mkdir(dir(repo, 'missions'), { recursive: true })
+  await fs.copyFile(path.join(FIXTURE_V3, V3_FILE), path.join(dir(repo, 'missions'), V3_FILE))
+  return V3_ID
 }
 
 const V4_CREATE = {
@@ -194,7 +192,7 @@ describe('a mission is in one format at a time', () => {
     expect(get.json.source).toBe('v4')
   })
 
-  it('a v3-shaped verb on a mission that has a v4 copy is refused with the way out, and writes nothing', async () => {
+  it('an older-shaped call to a kept verb on a mission that has a v4 copy is refused, and writes nothing', async () => {
     const id = await createV3()
     ok(
       await call('mission_add_ac', {
@@ -208,88 +206,72 @@ describe('a mission is in one format at a time', () => {
     const v3Before = readAll(repo, 'missions')
     const v4Before = readAll(repo, 'missions-v4')
 
-    const refused: Array<[string, Record<string, unknown>, string]> = [
-      [
-        'mission_link_child',
-        { missionId: id, stepId: 'stp-1', link: { kind: 'card', ref: 'T1' } },
-        'mission_link'
-      ],
+    // The v3 shape of each: a step with `verification` and no criterion, a blocker cleared by its
+    // reason, a Log entry of the v3 kind `progress`.
+    const refused: Array<[string, Record<string, unknown>]> = [
       [
         'mission_add_step',
-        { missionId: id, title: 'Add a step', verification: 'verifier', reason: 'more work' },
-        'criteria'
+        { missionId: id, title: 'Add a step', verification: 'verifier', reason: 'more work' }
       ],
-      [
-        'mission_verify_step',
-        { missionId: id, stepId: 'stp-1', verdict: 'met', evidence: 'ok', sessionId: VERIFIER },
-        'mission_settle_ac'
-      ],
-      [
-        'mission_set_end',
-        {
-          missionId: id,
-          declaredEnd: { kind: 'code', target: 'a new end', evidence: 'something' },
-          reason: 'it changed'
-        },
-        'mission_set_done_when'
-      ],
-      [
-        'mission_add_check',
-        { missionId: id, stepId: 'stp-1', label: 'Sign-off' },
-        'mission_add_ac'
-      ],
-      [
-        'mission_transfer_owner',
-        { missionId: id, toSessionId: STRANGER, reason: 'it died' },
-        'mission_attach'
-      ]
+      ['mission_clear_blocker', { missionId: id, reason: 'the key arrived' }],
+      ['mission_log', { missionId: id, kind: 'progress', note: 'Half way there' }]
     ]
-    for (const [op, args, wayOut] of refused) {
-      const r = await call(op, args)
+    for (const [op, args] of refused) {
+      const r = await call(op, { ...args, sessionId: LEADER })
       expect(r.isError, `${op}: ${r.text}`).toBe(true)
-      expect(r.text, op).toMatch(/^MISSION_IS_V4:/)
-      expect(r.text, `${op} names the way out`).toContain(wayOut)
     }
     expect(readAll(repo, 'missions')).toEqual(v3Before)
     expect(readAll(repo, 'missions-v4')).toEqual(v4Before)
   })
 
-  it('mission_create creates a v4 record only when given the v4 shape', async () => {
-    const v3 = await createV3()
-    expect(filesOf(repo, 'missions').some((n) => n.startsWith(v3))).toBe(true)
-    expect(filesOf(repo, 'missions-v4')).toEqual([])
-
+  it('mission_create takes the v4 shape alone: an older argument is refused by the strict schema, and nothing is written', async () => {
     const v4 = await createV4()
     expect(filesOf(repo, 'missions-v4').some((n) => n.startsWith(v4))).toBe(true)
-    expect(filesOf(repo, 'missions').some((n) => n.startsWith(v4))).toBe(false)
+    expect(filesOf(repo, 'missions')).toEqual([])
 
-    // Neither shape bleeds into the other: a call that mixes them is refused, and writes nothing.
     const before = [readAll(repo, 'missions'), readAll(repo, 'missions-v4')]
-    const mixed = await call('mission_create', {
-      ...V4_CREATE,
-      declaredEnd: { kind: 'code', target: 'the CSV export', evidence: 'the PR is merged' }
-    })
-    expect(mixed.isError).toBe(true)
-    expect(mixed.text).toMatch(/^BAD_ARGS:.*(v3|v4)/s)
+    for (const retired of [
+      { declaredEnd: { kind: 'code', target: 'the CSV export', evidence: 'the PR is merged' } },
+      { steward: false },
+      { campaignId: 'cmp-ca0001aa', chapterId: 'ch-1' },
+      { linkedCard: 'T358-mission-progress' },
+      { scope: [{ kind: 'worktree', ref: 'docs/spec.md' }] }
+    ]) {
+      const r = await call('mission_create', { ...V4_CREATE, ...retired })
+      expect(r.isError, JSON.stringify(retired)).toBe(true)
+      expect(r.text, JSON.stringify(retired)).toMatch(/Unrecognized key/i)
+    }
+    // A v4 call that lacks `doneWhen` is refused too: the sentence is what the mission is for.
+    const { doneWhen: _doneWhen, ...noDoneWhen } = V4_CREATE
+    const bare = await call('mission_create', noDoneWhen)
+    expect(bare.isError).toBe(true)
     expect([readAll(repo, 'missions'), readAll(repo, 'missions-v4')]).toEqual(before)
   })
 })
 
 describe('the names both formats share serve the record in the format it is in', () => {
-  it('mission_log, mission_set_blocker and mission_request_close never convert a v3 mission', async () => {
+  it('mission_get and mission_list read a v3 mission and change no byte; mission_log, as the first write, converts it by copy', async () => {
     const id = await createV3()
     const before = readAll(repo, 'missions')
-    ok(await call('mission_log', { missionId: id, note: 'A note on the v3 mission' }))
+    const read = ok(await call('mission_get', { missionId: id, sessionId: LEADER }))
+    expect(read.json.source).toBe('v3-mission')
+    ok(await call('mission_list', {}))
+    expect(filesOf(repo, 'missions-v4')).toEqual([])
+    expect(readAll(repo, 'missions')).toEqual(before)
+
     ok(
-      await call('mission_set_blocker', {
+      await call('mission_log', {
         missionId: id,
-        reason: 'waiting for the key',
-        unblocks: 'the key arrives',
-        owner: 'operator'
+        note: 'A note on the v3 mission',
+        sessionId: LEADER
       })
     )
-    expect(filesOf(repo, 'missions-v4')).toEqual([])
-    expect(readAll(repo, 'missions')).not.toEqual(before) // the v3 mission took the writes
+    // The write went to the v4 copy; the v3 file is byte for byte what it was.
+    expect(filesOf(repo, 'missions-v4')).toHaveLength(1)
+    expect(readAll(repo, 'missions')).toEqual(before)
+    const copy = (await readMissionRecord(repo, id)) as { ok: true; log: string; source: string }
+    expect(copy.source).toBe('v4')
+    expect(copy.log).toContain('A note on the v3 mission')
   })
 
   it('mission_log, mission_set_blocker and mission_clear_blocker write the v4 record of a v4 mission', async () => {
@@ -331,7 +313,8 @@ describe('the names both formats share serve the record in the format it is in',
     const v3 = await createV3()
     const v4 = await createV4()
     const rows = ok(await call('mission_list', {})).json.missions as Array<Record<string, unknown>>
-    expect(rows.find((r) => r.id === v3)?.slug).toBeTruthy()
+    // A v3-file mission is a row like any other, marked `v3`; the v4 row says `v4`.
+    expect(rows.find((r) => r.id === v3)).toMatchObject({ format: 'v3', leads: LEADER })
     const v4Row = rows.find((r) => r.id === v4)
     expect(v4Row).toMatchObject({ title: 'Export the report as CSV', leads: LEADER, format: 'v4' })
     expect(String(v4Row?.headline)).toMatch(/step/)
@@ -352,13 +335,14 @@ describe('the names both formats share serve the record in the format it is in',
 })
 
 describe('the caller is built from the transport, and the facts on the server', () => {
-  it('an ordinary client is a session and a steward bearer is a worker; an argument never changes the kind', async () => {
+  it('an ordinary client is a session and a scoped observer is a worker; an argument never changes the kind', async () => {
     const id = await createV4()
     const before = readAll(repo, 'missions-v4')
 
-    // A steward bearer is a worker bound to its mission: it reads and never writes.
-    const steward = { caller: { kind: 'steward', workerId: 'wrk-1', missionId: id } }
-    ok(await call('mission_get', { missionId: id }, steward))
+    // The Scheduler's observer is a Harnu worker bound to the folder: it reads and never writes.
+    // (A steward's bearer used to be the other worker kind; nothing authenticates as a steward now.)
+    const observer = { caller: { kind: 'scoped', scope: { role: 'observer', folder: repo } } }
+    ok(await call('mission_get', { missionId: id }, observer))
     const write = await call(
       'mission_add_ac',
       {
@@ -368,7 +352,7 @@ describe('the caller is built from the transport, and the facts on the server', 
         by: 'session',
         sessionId: LEADER
       },
-      steward
+      observer
     )
     expect(write.isError).toBe(true)
     expect(write.text).toMatch(/^READ_ONLY:/)

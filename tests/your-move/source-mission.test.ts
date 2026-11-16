@@ -1,142 +1,202 @@
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
-import { describe, expect, it } from 'vitest'
-import type { MissionListResult, MissionView } from '../../src/main/mission-ipc'
-import type { MissionYouItem } from '../../src/main/mcp/tool-handlers'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { MissionListResult } from '../../src/main/mission-ipc'
+import type { WaitingItemV4 } from '../../src/main/missions/waiting'
+import {
+  reportedUnreadableMissionFiles,
+  resetUnreadableMissionFiles
+} from '../../src/main/missions/store'
 import { emptyState, type YourMoveState } from '../../src/main/your-move/core'
 import {
   missionDrafts,
+  readRecordViews,
   reconcileMissions,
-  selectForReconcile
+  refreshRecordViews,
+  selectForReconcile,
+  type DraftView,
+  type RecordViews
 } from '../../src/main/your-move/source-mission'
+
+const ROOT = '/org/proj/www'
+
+/** One owed item, as the one waiting list words it (`ask`, `why`). */
+const item = {
+  close: (): WaitingItemV4 => ({
+    kind: 'close',
+    id: 'close',
+    ask: 'Close the mission',
+    why: 'Every step is done.'
+  }),
+  unblock: (reason: string): WaitingItemV4 => ({
+    kind: 'unblock',
+    id: `blk-${reason}`,
+    ask: `Unblock: ${reason}`,
+    why: 'Phase B starts.',
+    stepId: 'stp-2',
+    blockerId: 'blk-1'
+  }),
+  settle: (id: string): WaitingItemV4 => ({
+    kind: 'settle',
+    id,
+    ask: 'Mark the layout confirmed',
+    why: 'The step is done.',
+    stepId: 'stp-1',
+    criterionId: 'ac-1'
+  }),
+  review: (id: string): WaitingItemV4 => ({
+    kind: 'review',
+    id,
+    ask: 'Review pull request 305',
+    why: 'It unlocks the next step.',
+    stepIds: ['stp-3'],
+    prs: [305]
+  }),
+  failing: (): WaitingItemV4 => ({
+    kind: 'main-failing',
+    id: 'main-failing:stp-3',
+    ask: 'Fix main after pull request 305',
+    why: 'main is red.',
+    stepId: 'stp-3',
+    pr: '305'
+  }),
+  attach: (): WaitingItemV4 => ({
+    kind: 'attach',
+    id: 'attach:req-1',
+    ask: 'Let session 2a2a join',
+    why: 'It asked to help.',
+    requestId: 'req-1',
+    sessionId: '2a2a2a2a-0000-4000-8000-000000000002'
+  })
+} as unknown as Record<string, (...a: string[]) => WaitingItemV4>
 
 const view = (
   id: string,
-  you: MissionYouItem[],
+  you: WaitingItemV4[],
   over: { root?: string; owner?: string } = {}
-): Pick<MissionView, 'root' | 'mission' | 'you'> =>
-  ({
-    root: over.root ?? '/org/proj/www',
-    mission: { id, owner: { sessionId: over.owner ?? 'sess-owner-1', folder: '/org/proj/www' } },
-    you
-  }) as never
+): DraftView => ({
+  root: over.root ?? ROOT,
+  mission: { id, owner: { sessionId: over.owner ?? 'sess-owner-1' } },
+  you
+})
 
-const result = (views: ReturnType<typeof view>[], unreadable: string[] = []): MissionListResult =>
-  ({ views, unreadable, shadowed: [] }) as unknown as MissionListResult
+/** What the record store answered, per root: the views of that root. */
+const records = (views: DraftView[], unreadable = false): RecordViews => {
+  const byRoot = new Map<string, DraftView[]>()
+  for (const v of views) byRoot.set(v.root, [...(byRoot.get(v.root) ?? []), v])
+  return new Map([...byRoot].map(([root, vs]) => [root, { views: vs, unreadable }]))
+}
+
+const result = (unreadable: string[] = []): Pick<MissionListResult, 'unreadable'> => ({
+  unreadable
+})
 
 let n = 0
 const mint = (): string => `card-${++n}`
 
-const allKinds: MissionYouItem[] = [
-  { kind: 'rescope', end: { kind: 'code', target: 'ship the thing', evidence: 'tests' } as never },
-  { kind: 'close' },
-  { kind: 'steward-paused', reason: 'cost', at: '2026-11-09T10:00:00Z' },
-  { kind: 'blocker', reason: 'need the API key', unblocks: 'the key is in the vault' },
-  { kind: 'decide', stepId: 'stp-4', title: 'Which store?' },
-  { kind: 'checks', count: 2, stepIds: ['stp-1'] },
-  { kind: 'human-steps', stepIds: ['stp-2'] },
-  { kind: 'review-import' },
-  { kind: 'main-red', stepId: 'stp-3', pr: 305 },
-  { kind: 'approvals', count: 1, sessionId: 'sess-child-1' },
-  { kind: 'needs-input', sessionId: 'sess-child-1' }
-]
-
 const open = (s: YourMoveState) => s.cards.filter((c) => c.closedAt === undefined)
 
-/** The record store answered for these roots and holds nothing: a mission absent from the list is then really gone. */
-const readEmptyFor = (
-  roots: readonly string[]
-): ReadonlyMap<string, { views: never[]; v4Ids: Set<string>; unreadable: boolean }> =>
-  new Map(roots.map((r) => [r, { views: [], v4Ids: new Set<string>(), unreadable: false }]))
+beforeEach(() => resetUnreadableMissionFiles())
 
 describe('missionDrafts', () => {
-  it('maps each owed kind to the table above, and approvals and needs-input to nothing', () => {
-    const drafts = missionDrafts(view('mnt-1', allKinds), 'live')
+  it('maps each waiting kind to a card kind and a key, one card per item', () => {
+    const drafts = missionDrafts(
+      view('mnt-1', [
+        item.failing(),
+        item.unblock('need the API key'),
+        item.settle('stp-1:ac-1'),
+        item.review('review:305'),
+        item.close(),
+        item.attach()
+      ]),
+      'live'
+    )
     expect(drafts.map((d) => [d.kind, d.sourceKey])).toEqual([
-      ['go_no_go', 'mnt-1:rescope:ship the thing'],
+      ['do', 'mnt-1:main-failing:stp-3'],
+      ['do', 'mnt-1:blocker:Unblock: need the API key'],
+      ['check', 'mnt-1:stp-1:ac-1'],
+      ['check', 'mnt-1:review:305'],
       ['go_no_go', 'mnt-1:close'],
-      ['do', 'mnt-1:steward-paused'],
-      ['do', 'mnt-1:blocker:need the API key'],
-      ['decide', 'mnt-1:decide:stp-4'],
-      ['check', 'mnt-1:checks'],
-      ['check', 'mnt-1:human-steps'],
-      ['check', 'mnt-1:review-import'],
-      ['do', 'mnt-1:main-red:stp-3']
+      ['go_no_go', 'mnt-1:attach:req-1']
     ])
   })
 
-  it('files each card under the mission owner, in the repo root, as source mission', () => {
-    const [d] = missionDrafts(
-      view('mnt-1', [{ kind: 'close' }], { owner: 'sess-owner-9' }),
-      'observe'
-    )
+  it('files each card under the mission leader, in the repo root, as source mission', () => {
+    const [d] = missionDrafts(view('mnt-1', [item.close()], { owner: 'sess-owner-9' }), 'observe')
     expect(d).toMatchObject({
       sessionId: 'sess-owner-9',
-      folder: '/org/proj/www',
+      folder: ROOT,
       source: 'mission',
       lane: 'observe',
-      mission: { missionId: 'mnt-1', root: '/org/proj/www', item: { kind: 'close' } }
+      mission: { missionId: 'mnt-1', root: ROOT }
     })
   })
 
   it("writes the ask in the waiting list's one wording (no second sentence)", () => {
-    const drafts = missionDrafts(
-      view('mnt-1', [
-        { kind: 'blocker', reason: 'need the API key', unblocks: 'the key is in the vault' }
-      ]),
-      'live'
-    )
-    expect(drafts[0].ask).toBe('Unblock: need the API key')
+    const [d] = missionDrafts(view('mnt-1', [item.unblock('need the API key')]), 'live')
+    expect(d.ask).toBe('Unblock: need the API key')
   })
 
-  it('two operator blockers with different reasons are two cards', () => {
-    const drafts = missionDrafts(
-      view('mnt-1', [
-        { kind: 'blocker', reason: 'a', unblocks: 'x' },
-        { kind: 'blocker', reason: 'b', unblocks: 'y' }
-      ]),
-      'live'
-    )
-    expect(new Set(drafts.map((d) => d.sourceKey)).size).toBe(2)
+  it('two blockers worded the same are one card, and two worded differently are two', () => {
+    const same = missionDrafts(view('mnt-1', [item.unblock('a'), item.unblock('a')]), 'live')
+    expect(same).toHaveLength(1)
+    const two = missionDrafts(view('mnt-1', [item.unblock('a'), item.unblock('b')]), 'live')
+    expect(new Set(two.map((d) => d.sourceKey)).size).toBe(2)
   })
 })
 
 describe('reconcileMissions', () => {
-  const roots = ['/org/proj/www']
+  const roots = [ROOT]
 
   it('files the owed cards and keeps their clock across polls', () => {
-    const v = view('mnt-1', [{ kind: 'close' }])
-    const a = reconcileMissions(emptyState(), result([v]), roots, 'live', mint, 1_000)
-    const b = reconcileMissions(a, result([v]), roots, 'live', mint, 9_000)
+    const rec = records([view('mnt-1', [item.close()])])
+    const a = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, rec)
+    const b = reconcileMissions(a, result(), roots, 'live', mint, 9_000, rec)
     expect(open(b)).toHaveLength(1)
     expect(open(b)[0]).toMatchObject({ openedAt: 1_000, updatedAt: 9_000 })
   })
 
-  it('a cleared blocker closes its card as source-resolved', () => {
-    const withBlocker = view('mnt-1', [
-      { kind: 'blocker', reason: 'a', unblocks: 'x' },
-      { kind: 'close' }
+  it('files the cards of a mission read from a v3 file the same way (no second path)', () => {
+    // The record store reads a v3 file in memory, so its views arrive here like any other record's.
+    const rec = records([view('mnt-3', [item.unblock('the vendor export'), item.close()])])
+    const a = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, rec)
+    expect(open(a).map((c) => c.sourceKey)).toEqual([
+      'mnt-3:blocker:Unblock: the vendor export',
+      'mnt-3:close'
     ])
-    const a = reconcileMissions(emptyState(), result([withBlocker]), roots, 'live', mint, 1_000)
+  })
+
+  it('a cleared blocker closes its card as source-resolved', () => {
+    const withBlocker = records([view('mnt-1', [item.unblock('a'), item.close()])])
+    const a = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, withBlocker)
     expect(open(a)).toHaveLength(2)
-    const cleared = view('mnt-1', [{ kind: 'close' }])
-    const b = reconcileMissions(a, result([cleared]), roots, 'live', mint, 2_000)
+    const cleared = records([view('mnt-1', [item.close()])])
+    const b = reconcileMissions(a, result(), roots, 'live', mint, 2_000, cleared)
     expect(open(b)).toHaveLength(1)
-    const gone = b.cards.find((c) => c.sourceKey === 'mnt-1:blocker:a')
+    const gone = b.cards.find((c) => c.sourceKey === 'mnt-1:blocker:Unblock: a')
     expect(gone).toMatchObject({ closedBy: 'source-resolved', closedAt: 2_000 })
   })
 
-  it('a mission absent from the result under a queried root closes its cards', () => {
+  it('a mission absent from the records under a queried root closes its cards', () => {
     const a = reconcileMissions(
       emptyState(),
-      result([view('mnt-1', [{ kind: 'close' }])]),
+      result(),
       roots,
       'live',
       mint,
-      1_000
+      1_000,
+      records([view('mnt-1', [item.close()])])
     )
-    // The records of the repo have been read (S-35 delta 1: before that nothing closes by absence).
-    const b = reconcileMissions(a, result([]), roots, 'live', mint, 2_000, readEmptyFor(roots))
+    const b = reconcileMissions(
+      a,
+      result(),
+      roots,
+      'live',
+      mint,
+      2_000,
+      new Map([[ROOT, { views: [], unreadable: false }]])
+    )
     expect(open(b)).toHaveLength(0)
     expect(b.cards[0]).toMatchObject({ closedBy: 'source-resolved' })
   })
@@ -144,37 +204,58 @@ describe('reconcileMissions', () => {
   it('a mission under a root that was not queried is untouched', () => {
     const a = reconcileMissions(
       emptyState(),
-      result([view('mnt-9', [{ kind: 'close' }], { root: '/org/other/www' })]),
+      result(),
       ['/org/other/www'],
       'live',
       mint,
-      1_000
+      1_000,
+      records([view('mnt-9', [item.close()], { root: '/org/other/www' })])
     )
-    const b = reconcileMissions(a, result([]), roots, 'live', mint, 2_000)
+    const b = reconcileMissions(a, result(), roots, 'live', mint, 2_000, new Map())
     expect(open(b)).toHaveLength(1)
   })
 
-  it('an unreadable mission file closes nothing', () => {
+  it('an unreadable mission file closes nothing, whichever reader found it', () => {
     const a = reconcileMissions(
       emptyState(),
-      result([view('mnt-1', [{ kind: 'close' }])]),
+      result(),
       roots,
       'live',
       mint,
-      1_000
+      1_000,
+      records([view('mnt-1', [item.close()])])
     )
-    const b = reconcileMissions(a, result([], ['mnt-broken.md']), roots, 'live', mint, 2_000)
-    expect(open(b)).toHaveLength(1)
+    const viaList = reconcileMissions(
+      a,
+      result(['mnt-broken.md']),
+      roots,
+      'live',
+      mint,
+      2_000,
+      new Map()
+    )
+    expect(open(viaList)).toHaveLength(1)
+    const viaRecords = reconcileMissions(
+      a,
+      result(),
+      roots,
+      'live',
+      mint,
+      2_000,
+      new Map([[ROOT, { views: [], unreadable: true }]])
+    )
+    expect(open(viaRecords)).toHaveLength(1)
   })
 
   it('never touches a card of another source or of another mission', () => {
     const two = reconcileMissions(
       emptyState(),
-      result([view('mnt-1', [{ kind: 'close' }]), view('mnt-2', [{ kind: 'close' }])]),
+      result(),
       roots,
       'live',
       mint,
-      1_000
+      1_000,
+      records([view('mnt-1', [item.close()]), view('mnt-2', [item.close()])])
     )
     const withJudgeCard: YourMoveState = {
       ...two,
@@ -183,7 +264,7 @@ describe('reconcileMissions', () => {
         {
           id: 'judge-1',
           sessionId: 'sess-owner-1',
-          folder: '/org/proj/www',
+          folder: ROOT,
           kind: 'decide',
           ask: 'Which one?',
           source: 'judge',
@@ -195,11 +276,12 @@ describe('reconcileMissions', () => {
     }
     const next = reconcileMissions(
       withJudgeCard,
-      result([view('mnt-1', []), view('mnt-2', [{ kind: 'close' }])]),
+      result(),
       roots,
       'live',
       mint,
-      2_000
+      2_000,
+      records([view('mnt-1', []), view('mnt-2', [item.close()])])
     )
     expect(
       open(next)
@@ -213,7 +295,7 @@ describe('reconcileMissions', () => {
       path.join(__dirname, '../../src/main/your-move/source-mission.ts'),
       'utf8'
     )
-    // no door, no mission_* verb, no file write: it only reads the list the poll already made
+    // no door, no mission_* verb, no file write: it only reads
     expect(src).not.toMatch(/mission_[a-z_]+\(/)
     expect(src).not.toMatch(/runOperatorDoor|operatorDoor|atomicWrite|writeFile/)
     // types from the mission list are fine; a value import from the mission module is not
@@ -223,21 +305,22 @@ describe('reconcileMissions', () => {
 })
 
 describe('which missions the queue follows', () => {
-  const roots = ['/org/proj/www', '/org/other/www']
-  const owed = [{ kind: 'close' } as MissionYouItem]
+  const roots = [ROOT, '/org/other/www']
+  const owed = [item.close()]
 
   it('switching a folder off leaves its mission cards open', () => {
-    const a = view('mnt-1', owed, { root: '/org/proj/www' })
+    const a = view('mnt-1', owed, { root: ROOT })
     const b = view('mnt-2', owed, { root: '/org/other/www', owner: 'sess-owner-2' })
-    const filed = reconcileMissions(emptyState(), result([a, b]), roots, 'live', mint, 1_000)
+    const rec = records([a, b])
+    const filed = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, rec)
     expect(open(filed)).toHaveLength(2)
 
-    // the folder of mnt-1 is switched off: its view and its root leave the pass
-    const picked = selectForReconcile(result([a, b]), roots, {
+    // the folder of mnt-1 is switched off: its root leaves the pass
+    const picked = selectForReconcile(result(), roots, {
       ownerArchived: () => false,
-      folderOff: (root) => root === '/org/proj/www'
+      folderOff: (root) => root === ROOT
     })
-    const after = reconcileMissions(filed, picked.result, picked.roots, 'live', mint, 2_000)
+    const after = reconcileMissions(filed, picked.result, picked.roots, 'live', mint, 2_000, rec)
     // still owed, still open, same clock: nothing was resolved
     expect(
       open(after)
@@ -247,37 +330,102 @@ describe('which missions the queue follows', () => {
     expect(open(after).find((c) => c.mission?.missionId === 'mnt-1')?.openedAt).toBe(1_000)
 
     // switching it back on keeps the very same card and its clock
-    const back = reconcileMissions(after, result([a, b]), roots, 'live', mint, 3_000)
+    const back = reconcileMissions(after, result(), roots, 'live', mint, 3_000, rec)
     expect(open(back)).toHaveLength(2)
     expect(open(back).find((c) => c.mission?.missionId === 'mnt-1')?.openedAt).toBe(1_000)
   })
 
-  it('a mission whose owner is archived leaves the pass, and its cards close', () => {
+  it('a mission whose leader is archived leaves the pass, and its cards close', () => {
     const a = view('mnt-1', owed, { owner: 'sess-archived' })
     const b = view('mnt-2', owed, { owner: 'sess-live' })
-    const filed = reconcileMissions(emptyState(), result([a, b]), roots, 'live', mint, 1_000)
-    const picked = selectForReconcile(result([a, b]), roots, {
+    const rec = records([a, b])
+    const filed = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, rec)
+    const picked = selectForReconcile(result(), roots, {
       ownerArchived: (id) => id === 'sess-archived',
       folderOff: () => false
     })
-    const after = reconcileMissions(
-      filed,
-      picked.result,
-      picked.roots,
-      'live',
-      mint,
-      2_000,
-      readEmptyFor(roots)
-    )
+    const after = reconcileMissions(filed, picked.result, picked.roots, 'live', mint, 2_000, rec)
     expect(open(after).map((c) => c.mission?.missionId)).toEqual(['mnt-2'])
+    // restore the default so the module-level choice never leaks into another case
+    selectForReconcile(result(), roots, { ownerArchived: () => false, folderOff: () => false })
   })
 
   it('unreadable missions are carried through untouched', () => {
-    const picked = selectForReconcile(result([], ['broken.md']), roots, {
+    const picked = selectForReconcile(result(['broken.md']), roots, {
       ownerArchived: () => false,
       folderOff: () => false
     })
     expect(picked.result.unreadable).toEqual(['broken.md'])
     expect(picked.roots).toEqual(roots)
+  })
+})
+
+// ---- Missions v4 S-40 (Decision 12): a mission file nobody could read is named, never skipped silently ---------
+
+describe('an unreadable record file is named to the app, never skipped silently', () => {
+  let root = ''
+  const FILE = 'mnt-0badc0de-broken.md'
+  const writeBad = (): void => {
+    mkdirSync(path.join(root, '.harnu', 'missions-v4'), { recursive: true })
+    // Not valid: a record that is neither frontmatter nor JSON.
+    writeFileSync(
+      path.join(root, '.harnu', 'missions-v4', FILE),
+      '{ this is not a mission record',
+      'utf8'
+    )
+  }
+  beforeEach(() => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'harnu-ym-unreadable-'))
+    mkdirSync(path.join(root, '.git'))
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  it('names the file the store could not parse, and stops naming it once it reads again', async () => {
+    writeBad()
+    const read = await readRecordViews([root], { readDetail: async () => null })
+    expect(read.get(root)?.unreadable).toBe(true)
+    expect(reportedUnreadableMissionFiles()).toEqual([FILE])
+    // A second pass names it once, not twice: it is one failure.
+    await readRecordViews([root], { readDetail: async () => null })
+    expect(reportedUnreadableMissionFiles()).toEqual([FILE])
+    // The file is removed: the next read is whole and the name leaves the list.
+    rmSync(path.join(root, '.harnu', 'missions-v4', FILE))
+    await readRecordViews([root], { readDetail: async () => null })
+    expect(reportedUnreadableMissionFiles()).toEqual([])
+  })
+
+  it('a read that throws names the records directory instead of failing silently', async () => {
+    writeBad()
+    // Record the real answer first so a later failure has a "last good answer" to keep.
+    await refreshRecordViews([root], { readDetail: async () => null })
+    rmSync(path.join(root, '.harnu', 'missions-v4', FILE))
+    mkdirSync(path.join(root, '.harnu', 'missions-v4'), { recursive: true })
+    // A valid v3 mission so the read has a record to ask `readDetail` about; `readDetail` throws.
+    const v3 = readFileSync(
+      path.join(
+        __dirname,
+        '..',
+        'fixtures',
+        'missions-v4-compat',
+        'missions',
+        'mnt-5c0de001-modern-active.md'
+      ),
+      'utf8'
+    )
+    mkdirSync(path.join(root, '.harnu', 'missions'), { recursive: true })
+    writeFileSync(
+      path.join(root, '.harnu', 'missions', 'mnt-5c0de001-modern-active.md'),
+      v3,
+      'utf8'
+    )
+    await refreshRecordViews([root], {
+      readDetail: async () => {
+        throw new Error('boom')
+      }
+    })
+    expect(reportedUnreadableMissionFiles()).toEqual([`${root}/.harnu/missions-v4`])
+    // The next read succeeds: the name leaves the list.
+    await refreshRecordViews([root], { readDetail: async () => null })
+    expect(reportedUnreadableMissionFiles()).toEqual([])
   })
 })

@@ -41,7 +41,6 @@ import type {
   MissionView
 } from '../../../main/mission-ipc'
 import { i18n } from '../i18n'
-import { progressHeadline } from '../../../main/mission-progress'
 import {
   decideCue,
   deserializeCueMemory,
@@ -66,6 +65,7 @@ import {
   buildMissionModel,
   headlineText,
   missionForSession,
+  progressHeadline,
   youItemText,
   type MissionModel
 } from '../lib/mission-view'
@@ -187,7 +187,8 @@ const V4_BLOCKING: ReadonlySet<string> = new Set([
   'attach',
   'close',
   'main-failing',
-  'settle'
+  'settle',
+  'rescope'
 ])
 
 /** Every mission that owes the operator something the cue speaks about, once per id. */

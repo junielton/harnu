@@ -11,8 +11,8 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { MissionView } from '../src/main/mission-ipc'
-import type { MissionYouItem } from '../src/main/mcp/tool-handlers'
-import type { DeclaredEnd, Mission } from '../src/main/mission-core'
+import type { MissionYouItem } from '../src/main/missions/waiting'
+import type { DeclaredEnd, Mission } from '../src/main/missions/derive'
 import {
   ABSENT_TTL_MS,
   BLOCKING_NUDGE_MS,

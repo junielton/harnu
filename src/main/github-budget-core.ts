@@ -17,6 +17,8 @@
 /**
  * Who spent the call. `budget` is the budget feature itself: its one REST call per app run that
  * resolves the signed-in login (`gh api rate_limit`, the poll, is free and never counted).
+ * `steward` is retired (nothing spends as a steward since Missions v4 S-38) and stays a key only so a budget
+ * file an older Harnu wrote, which may carry a `steward` count, still reads: it is read, never rewritten.
  */
 export type GhConsumer = 'missions' | 'pr-stack' | 'review' | 'cleanup' | 'steward' | 'budget'
 export const GH_CONSUMERS: readonly GhConsumer[] = [

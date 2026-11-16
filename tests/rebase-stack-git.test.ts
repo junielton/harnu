@@ -1,19 +1,25 @@
 /**
- * Campaign ch.5a (T597, spec §3.4, AC-5a.2) — the git half of `rebase_stack`, against REAL
- * repositories (a mocked git would only prove the mock). What is pinned:
+ * Missions v4 S-27 / S-40 (AC-5a.2, AC-70) — the git half of `rebase_stack`, against REAL repositories
+ * (a mocked git would only prove the mock), reached the only way it is reachable now: through
+ * `rebaseStackV4`, the leader's rebase of one step's own linked worktree. (This file was
+ * `steward-rebase.test.ts`, which drove the v3 handler's git half; that handler left with S-40.)
+ * What is pinned:
  *
  *  - it runs `git rebase --onto` in the step's linked worktree;
  *  - on a conflict it aborts, leaves the tree exactly as it was and refuses `REBASE_CONFLICT`;
- *  - PUSH BEHAVIOUR (the card's clarification): `rebase_stack` NEVER pushes. It rewrites the
- *    local branch only; publishing the rewritten branch is the owner's move. So no remote ref
- *    moves, for this branch or any other.
+ *  - PUSH BEHAVIOUR: `rebase_stack` NEVER pushes. It rewrites the local branch only; publishing the
+ *    rewritten branch is the leader's move. So no remote ref moves, for this branch or any other.
+ *
+ * The leader-and-ownership rules (who may ask, which worktree counts as the step's own) are pinned by
+ * `rebase-stack-leader.test.ts`; this file holds the git mechanics.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { rebaseStack } from '../src/main/mcp/tool-handlers'
+import { rebaseStackV4, type RebaseV4Result } from '../src/main/missions/rebase'
+import type { MissionV4 } from '../src/main/missions/model'
 
 const ENV = {
   ...process.env,
@@ -71,6 +77,50 @@ function fixture(): Fixture {
   return { origin, main, wt }
 }
 
+const LEADER = '11111111-2222-4333-8444-555555555555'
+
+/** A one-step mission whose step links `worktree`, led by LEADER. */
+function missionLinking(worktree: string): MissionV4 {
+  return {
+    schemaVersion: 4,
+    id: 'mnt-0badc0de',
+    title: 'A stack',
+    doneWhen: 'the stack landed',
+    status: 'open',
+    milestones: [],
+    steps: [
+      {
+        id: 'stp-1',
+        title: 'Step one',
+        acs: [],
+        links: [{ kind: 'worktree', ref: worktree }],
+        blockers: []
+      }
+    ],
+    sessions: [{ id: LEADER, role: 'leads', from: '2026-11-15T08:00:00.000Z', to: null }],
+    links: [],
+    blockers: []
+  } as MissionV4
+}
+
+/** `rebase_stack` as the leader, for the step that links `worktree` (the repo root is the main checkout). */
+function rebaseStack(input: {
+  worktree: string
+  onto: string
+  from?: string
+}): Promise<RebaseV4Result> {
+  return rebaseStackV4(
+    {
+      root: fx.main,
+      record: missionLinking(input.worktree),
+      actor: { kind: 'session', sessionId: LEADER },
+      onto: input.onto,
+      ...(input.from !== undefined ? { from: input.from } : {})
+    },
+    { executedIn: async () => undefined, otherOpenMissions: async () => [] }
+  )
+}
+
 const refs = (cwd: string): string => git(cwd, 'for-each-ref', '--format=%(refname) %(objectname)')
 
 let fx: Fixture
@@ -83,10 +133,18 @@ describe('AC-5a.2 — rebase_stack runs git rebase --onto in the step worktree',
     const newBase = commitFile(fx.main, 'other.txt', 'other\n', 'main moved')
     const before = git(fx.wt, 'rev-parse', 'HEAD')
     const res = await rebaseStack({ worktree: fx.wt, onto: 'main' })
-    expect(res).toMatchObject({ ok: true, branch: 'step-1', before, rebased: true, pushed: false })
+    expect(res.ok).toBe(true)
     if (!res.ok) throw new Error('unreachable')
-    expect(res.after).not.toBe(before)
-    expect(git(fx.wt, 'rev-parse', 'HEAD')).toBe(res.after)
+    expect(res.ack).toMatchObject({
+      op: 'rebase_stack',
+      stepId: 'stp-1',
+      branch: 'step-1',
+      before,
+      rebased: true,
+      pushed: false
+    })
+    expect(res.ack.after).not.toBe(before)
+    expect(git(fx.wt, 'rev-parse', 'HEAD')).toBe(res.ack.after)
     // main's new commit is now an ancestor of the branch, and both step commits survive.
     expect(git(fx.wt, 'merge-base', '--is-ancestor', newBase, 'HEAD') ?? '').toBe('')
     expect(git(fx.wt, 'log', '--format=%s', '-3')).toBe('step two\nstep one\nmain moved')
@@ -112,7 +170,9 @@ describe('AC-5a.2 — rebase_stack runs git rebase --onto in the step worktree',
   it('is a no-op when the branch is already on the new base', async () => {
     const before = git(fx.wt, 'rev-parse', 'HEAD')
     const res = await rebaseStack({ worktree: fx.wt, onto: 'main' })
-    expect(res).toMatchObject({ ok: true, rebased: false, before, after: before })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error('unreachable')
+    expect(res.ack).toMatchObject({ rebased: false, before, after: before })
   })
 })
 
@@ -123,9 +183,13 @@ describe('AC-5a.2 — a conflict aborts and leaves the tree as it was', () => {
     const head = git(fx.wt, 'rev-parse', 'HEAD')
     const branchRefs = refs(fx.wt)
     const res = await rebaseStack({ worktree: fx.wt, onto: 'main' })
-    expect(res).toMatchObject({ ok: false, code: 'REBASE_CONFLICT', branch: 'step-1', head })
-    if (res.ok || res.code !== 'REBASE_CONFLICT') throw new Error('unreachable')
-    expect(res.conflicts).toEqual(['clash.txt'])
+    expect(res.ok).toBe(false)
+    if (res.ok) throw new Error('unreachable')
+    // The refusal names the branch, the conflicting files and where HEAD was left.
+    expect(res.error).toMatch(/^REBASE_CONFLICT: /)
+    expect(res.error).toContain('step-1')
+    expect(res.error).toContain(`conflicted in clash.txt.`)
+    expect(res.error).toContain(`HEAD ${head}`)
     expect(git(fx.wt, 'rev-parse', 'HEAD')).toBe(head)
     expect(git(fx.wt, 'symbolic-ref', '--short', 'HEAD')).toBe('step-1')
     expect(git(fx.wt, 'status', '--porcelain')).toBe('')
@@ -144,7 +208,9 @@ describe('AC-5a.2 — never pushes', () => {
     git(fx.main, 'push', '-q', 'origin', 'someone-elses')
     const remoteBefore = git(fx.origin, 'for-each-ref', '--format=%(refname) %(objectname)')
     const res = await rebaseStack({ worktree: fx.wt, onto: 'origin/main' })
-    expect(res).toMatchObject({ ok: true, rebased: true, pushed: false })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error('unreachable')
+    expect(res.ack).toMatchObject({ rebased: true, pushed: false })
     expect(git(fx.origin, 'for-each-ref', '--format=%(refname) %(objectname)')).toBe(remoteBefore)
     // The local branch moved on, the remote one did not: the owner publishes the rewrite.
     expect(git(fx.wt, 'rev-parse', 'HEAD')).not.toBe(git(fx.origin, 'rev-parse', 'step-1'))
@@ -167,7 +233,7 @@ describe('AC-5a.2 — refusals that change nothing', () => {
     writeFileSync(join(fx.wt, 'one.txt'), 'edited, uncommitted\n')
     const head = git(fx.wt, 'rev-parse', 'HEAD')
     const res = await rebaseStack({ worktree: fx.wt, onto: 'main' })
-    expect(res).toMatchObject({ ok: false, code: 'REBASE_DIRTY' })
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/^REBASE_DIRTY: /) })
     expect(git(fx.wt, 'rev-parse', 'HEAD')).toBe(head)
     expect(git(fx.wt, 'status', '--porcelain')).toBe('M one.txt')
   })
@@ -176,28 +242,28 @@ describe('AC-5a.2 — refusals that change nothing', () => {
     const head = git(fx.wt, 'rev-parse', 'HEAD')
     for (const onto of ['--exec=touch /tmp/pwned', '-i', 'no-such-ref', '', 'main; rm -rf /']) {
       const res = await rebaseStack({ worktree: fx.wt, onto })
-      expect(res, onto).toMatchObject({ ok: false, code: 'BAD_ONTO' })
+      expect(res, onto).toMatchObject({ ok: false, error: expect.stringMatching(/^BAD_ONTO: /) })
     }
     const res = await rebaseStack({ worktree: fx.wt, onto: 'main', from: '--abort' })
-    expect(res).toMatchObject({ ok: false, code: 'BAD_ONTO' })
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/^BAD_ONTO: /) })
     expect(git(fx.wt, 'rev-parse', 'HEAD')).toBe(head)
   })
 
-  it('NOT_A_LINKED_WORKTREE: the main checkout is never rebased', async () => {
+  it('NO_STEP_WORKTREE: a step that links the main checkout has no worktree to rebase, and main is never rebased', async () => {
     const mainHead = git(fx.main, 'rev-parse', 'HEAD')
     const res = await rebaseStack({ worktree: fx.main, onto: 'main' })
-    expect(res).toMatchObject({ ok: false, code: 'NOT_A_LINKED_WORKTREE' })
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/^NO_STEP_WORKTREE: /) })
     expect(git(fx.main, 'rev-parse', 'HEAD')).toBe(mainHead)
   })
 
   it('DETACHED_HEAD: no branch to rewrite', async () => {
     git(fx.wt, 'checkout', '-q', '--detach')
     const res = await rebaseStack({ worktree: fx.wt, onto: 'main' })
-    expect(res).toMatchObject({ ok: false, code: 'DETACHED_HEAD' })
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/^DETACHED_HEAD: /) })
   })
 
-  it('NOT_A_WORKTREE: a path that is not a git checkout', async () => {
+  it('NO_STEP_WORKTREE: a linked path that is not a git checkout is no worktree', async () => {
     const res = await rebaseStack({ worktree: tmpdir(), onto: 'main' })
-    expect(res).toMatchObject({ ok: false, code: 'NOT_A_WORKTREE' })
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/^NO_STEP_WORKTREE: /) })
   })
 })

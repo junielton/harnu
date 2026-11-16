@@ -1,38 +1,35 @@
 /**
- * Missions v4 S-3 (R-25, AC-4) — deriving a mission view writes nothing.
+ * Missions v4 S-3 (R-25, AC-4) — reading a mission writes nothing.
  *
- * `deriveMission` (src/main/missions/derive.ts) is a read: it may look at the file, git, `gh`
- * and the sessions, and it returns what it saw. The file bytes and `updatedAt` stay the same, no
- * steward is woken, no row is appended to the sidecar and no sticky fact is remembered. What a
- * read learned is handed back as a `MissionObservation`, and only the observer
- * (src/main/missions/observer.ts) acts on it.
+ * A read may look at the files, git, `gh` and the sessions, and it returns what it saw. The mission
+ * file's bytes and mtime stay the same, no row is appended to the ledger, no sticky fact is remembered and
+ * nothing appears in the user data directory. Only the observer pass (`observeOpenMissions`, started by
+ * `startMissionObserver`) records what a read would have.
  *
- * Delta 1: the claim is about every READ, not one function. `mission_get`, the
- * renderer list poll (`listMissionViews`, which the companion and Your move ride) and the steward
- * bridge's derive all write nothing (the campaign list went with S-37); the observer pass
- * (`observeOpenMissions`, started by `startMissionObserver`) records what they would have.
+ * The claim is about every READ, not one function: `mission_get`, `mission_list`, the renderer list poll
+ * (`listMissionViews`, which the companion and Your move ride) and the pane's view channel
+ * (`buildMissionV4View`) all write nothing, whether the mission lives in a v4 record or still in a v3 file.
  *
- * Run for real against a throwaway git repo; only the live sources are faked at their module
- * seams (the hook FSM, the PTY set, hibernation, the Approval Inbox, the `gh`-backed PR join and
- * the steward wake).
+ * Missions v4 S-40: the v3 derive (`deriveMission`, its `observation` hand-back and `observeMission`) is
+ * gone, so the pass that records is the v4 leg: it attaches what it found to v4 records and remembers the
+ * sticky sightings, and it never makes the first v4 write of a v3 file.
+ *
+ * Run for real against a throwaway git repo; only the live sources are faked at their module seams (the
+ * hook FSM, the PTY set, hibernation, the Approval Inbox and the `gh`-backed PR join).
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { promises as fs } from 'node:fs'
+import { existsSync, promises as fs, readdirSync, readFileSync, statSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import {
-  buildMissionFileContent,
-  missionFilePath,
-  type Mission,
-  type MissionStep,
-  type StepLink
-} from '../src/main/mission-core'
 import type { MissionPrJoin } from '../src/main/pr-stack'
+import type { FactsDeps } from '../src/main/missions/facts'
+import { buildMissionRecordContent, type MissionV4 } from '../src/main/missions/model'
+import { buildV3MissionFile, v3MissionObject, v3MissionPath } from './helpers/v3-mission-file'
 
 const h = vi.hoisted(() => ({
   userDataDir: '',
-  wakes: [] as Array<[string, string]>,
   joinCalls: 0
 }))
 
@@ -74,14 +71,6 @@ vi.mock('../src/main/approval-resolver', async (importOriginal) => ({
   listPendingApprovals: () => []
 }))
 
-vi.mock('../src/main/scheduler-shell', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/main/scheduler-shell')>()),
-  wakeStewardForMission: async (missionId: string, reason: string) => {
-    h.wakes.push([missionId, reason])
-    return { woke: true }
-  }
-}))
-
 function prEntry(number: number, state: 'OPEN' | 'MERGED', ci: string): unknown {
   return {
     number,
@@ -104,21 +93,25 @@ function prEntry(number: number, state: 'OPEN' | 'MERGED', ci: string): unknown 
   }
 }
 
+/** What the join says: #7 is open with green CI, #8 merged. Every call is counted. */
+async function joinOf(refs: { numbers: readonly number[] }): Promise<MissionPrJoin> {
+  h.joinCalls++
+  const numbers: MissionPrJoin['numbers'] = {}
+  for (const n of refs.numbers) {
+    numbers[n] = (
+      n === 7 ? prEntry(7, 'OPEN', 'passing') : prEntry(8, 'MERGED', 'passing')
+    ) as MissionPrJoin['numbers'][number]
+  }
+  return { ghAvailable: true, worktrees: {}, branches: {}, numbers }
+}
+
 vi.mock('../src/main/pr-stack', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/pr-stack')>()),
   findPrsForWorktrees: async (
     _repo: string,
     refs: { numbers: readonly number[] }
-  ): Promise<MissionPrJoin> => {
-    h.joinCalls++
-    const numbers: MissionPrJoin['numbers'] = {}
-    for (const n of refs.numbers) {
-      numbers[n] = (
-        n === 7 ? prEntry(7, 'OPEN', 'passing') : prEntry(8, 'MERGED', 'passing')
-      ) as MissionPrJoin['numbers'][number]
-    }
-    return { ghAvailable: true, worktrees: {}, branches: {}, numbers }
-  }
+  ): Promise<MissionPrJoin> => joinOf(refs),
+  findMainCi: async () => ({ ghAvailable: true, byNumber: {} })
 }))
 
 // The first import of the handlers pulls in most of the main process.
@@ -130,177 +123,131 @@ const MISSION_ID = 'mnt-0000000a'
 
 let root = ''
 
-function step(
-  id: string,
-  kind: MissionStep['kind'],
-  verification: MissionStep['verification'],
-  links: StepLink[] = []
-): MissionStep {
-  const n = Number(id.slice(4))
-  return {
+/** The facts the view and the observer gather from, with the PR join counted. */
+const factsDeps = (): FactsDeps => ({
+  findPrs: async (refs) => joinOf({ numbers: refs.numbers ?? [] }),
+  findMainCi: async () => ({ ghAvailable: true, byNumber: {} }),
+  lastKnown: () => null,
+  pathExists: async () => true,
+  taskState: () => undefined
+})
+
+const sha = (b: Buffer | string): string => createHash('sha256').update(b).digest('hex')
+
+/** Every file (bytes and mtime) and every directory under `dir`, keyed by relative path. */
+function tree(dir: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const walk = (sub: string): void => {
+    for (const e of readdirSync(path.join(dir, sub), { withFileTypes: true })) {
+      const rel = path.join(sub, e.name)
+      const abs = path.join(dir, rel)
+      if (e.isDirectory()) {
+        out[`${rel}/`] = 'dir'
+        walk(rel)
+      } else out[rel] = `${sha(readFileSync(abs))}@${statSync(abs).mtimeMs}`
+    }
+  }
+  if (existsSync(dir)) walk('')
+  return out
+}
+
+/** An active v3 mission whose steps link an open PR, a merged PR and a child session. */
+async function seedV3(): Promise<string> {
+  const at = '2026-11-01T09:00:00.000Z'
+  const step = (
+    id: string,
+    kind: string,
+    verification: string,
+    links: Array<{ kind: string; ref: string }> = []
+  ): Record<string, unknown> => ({
     id,
-    ordinal: n,
+    ordinal: Number(id.slice(4)),
     kind,
-    title: kind === 'fixed-end' ? 'Delivered and verified' : `Step ${n}`,
+    title: kind === 'fixed-end' ? 'Delivered and verified' : `Step ${id.slice(4)}`,
     verification,
     proof: 'unproven',
     links,
     blockers: []
-  }
-}
-
-/** An active mission whose steps link an open PR, a merged PR and a child session. */
-async function seed(): Promise<{ mission: Mission; log: string; file: string }> {
-  const at = '2026-11-01T09:00:00.000Z'
-  const mission: Mission = {
-    id: MISSION_ID,
-    slug: 'pure-read',
-    folder: root,
-    owner: { sessionId: OWNER, folder: root },
-    status: 'active',
-    declaredEnd: { kind: 'code', target: 't', evidence: 'e' },
-    steps: [
-      step('stp-1', 'custom', 'existence', [
-        { kind: 'pr', ref: '#7' },
-        { kind: 'session', ref: CHILD }
-      ]),
-      step('stp-2', 'custom', 'existence', [{ kind: 'pr', ref: '#8' }]),
-      step('stp-3', 'fixed-end', 'verifier')
-    ],
-    blockers: [],
-    openQuestions: [],
-    createdAt: at,
-    updatedAt: at,
-    provenance: { author: 'agent', at }
-  }
-  const log = '# Pure read\n\n## Log\n'
-  const file = missionFilePath(root, mission.id, mission.slug)
+  })
+  const file = v3MissionPath(root, MISSION_ID, 'pure-read')
   await fs.mkdir(path.dirname(file), { recursive: true })
-  await fs.writeFile(file, buildMissionFileContent(mission, log))
-  return { mission, log, file }
+  await fs.writeFile(
+    file,
+    buildV3MissionFile(
+      v3MissionObject(root, {
+        id: MISSION_ID,
+        slug: 'pure-read',
+        owner: { sessionId: OWNER, folder: root },
+        declaredEnd: { kind: 'code', target: 't', evidence: 'e' },
+        steps: [
+          step('stp-1', 'custom', 'existence', [
+            { kind: 'pr', ref: '#7' },
+            { kind: 'session', ref: CHILD }
+          ]),
+          step('stp-2', 'custom', 'existence', [{ kind: 'pr', ref: '#8' }]),
+          step('stp-3', 'fixed-end', 'verifier')
+        ],
+        createdAt: at,
+        updatedAt: at
+      }),
+      '# Pure read\n\n## Log\n'
+    )
+  )
+  return file
 }
 
-/** The scoped session projection is the MCP layer's; a read only needs something that answers it. */
-const deps = { children: async (): Promise<never[]> => [] }
+/** The same mission as an open v4 record. */
+async function seedV4(): Promise<string> {
+  const dir = path.join(root, '.harnu', 'missions-v4')
+  await fs.mkdir(dir, { recursive: true })
+  const rec = {
+    schemaVersion: 4,
+    id: MISSION_ID,
+    title: 'Pure read',
+    doneWhen: 'The pull requests are merged',
+    status: 'open',
+    milestones: [],
+    steps: [
+      {
+        id: 'stp-1',
+        title: 'Step 1',
+        acs: [{ id: 'ac-1', text: 'The pull request is merged', by: 'fact', fact: 'pr-merged' }],
+        links: [
+          { kind: 'pr', ref: '7' },
+          { kind: 'session', ref: CHILD }
+        ],
+        blockers: []
+      },
+      {
+        id: 'stp-2',
+        title: 'Step 2',
+        acs: [{ id: 'ac-1', text: 'The pull request is merged', by: 'fact', fact: 'pr-merged' }],
+        links: [{ kind: 'pr', ref: '8' }],
+        blockers: []
+      }
+    ],
+    sessions: [{ id: OWNER, role: 'leads', from: '2026-11-01T09:00:00Z', to: null }],
+    links: [],
+    blockers: []
+  } as unknown as MissionV4
+  const file = path.join(dir, `${MISSION_ID}-pure-read.md`)
+  await fs.writeFile(file, buildMissionRecordContent(rec, '# Log\n'))
+  return file
+}
 
 beforeEach(async () => {
   h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-s3-ud-'))
   root = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-s3-repo-')), 'main')
   await fs.mkdir(root)
   execFileSync('git', ['init', '-q', '-b', 'main', root])
-  h.wakes = []
   h.joinCalls = 0
   vi.resetModules()
 })
 
-describe('mission derive — a read with no side effects (AC-4)', () => {
-  it('a read has no side effects', async () => {
-    const { mission, log, file } = await seed()
-    const before = await fs.readFile(file)
-    const beforeStat = await fs.stat(file)
-    const { derive } = await loadDerive()
-    const cache = await import('../src/main/mission-link-cache')
-    await cache.ensureLinkCacheLoaded()
-
-    const reading = await derive(root, mission, log, deps, Date.now())
-
-    // The read really looked: the PRs were joined and the gates computed from them.
-    expect(h.joinCalls).toBeGreaterThan(0)
-    expect(reading.derived.steps.map((s) => s.prNumber)).toEqual([7, 8, null])
-    expect(reading.derived.steps[1].gates.pr).toBe('green')
-    // The mission file: same bytes, same `updatedAt`, same mtime.
-    expect((await fs.readFile(file)).equals(before)).toBe(true)
-    expect((await fs.stat(file)).mtimeMs).toBe(beforeStat.mtimeMs)
-    expect(mission.updatedAt).toBe('2026-11-01T09:00:00.000Z')
-    // No steward woken.
-    expect(h.wakes).toEqual([])
-    // No row in the sidecar, and no sticky fact remembered either.
-    expect(cache.getObservedLedger(MISSION_ID)).toEqual([])
-    expect(cache.getLastKnown(root, 'pr', '8')).toBeNull()
-    expect(cache.getLastKnown(root, 'pr', '7')).toBeNull()
-    // Nothing else appeared in the repo's data dir or the user data dir.
-    expect(await fs.readdir(path.join(root, '.harnu', 'missions'))).toHaveLength(1)
-    await new Promise((r) => setTimeout(r, cache.LINK_CACHE_WRITE_DEBOUNCE_MS + 200))
-    expect(await fs.readdir(h.userDataDir)).toEqual([])
-  })
-
-  it('hands back what it saw instead of recording it', async () => {
-    const { mission, log } = await seed()
-    const { derive } = await loadDerive()
-    const reading = await derive(root, mission, log, deps, Date.now())
-    // The sticky sightings and the PR facts the observer needs travel in the reading.
-    const sticky = reading.observation.sticky
-    expect(sticky).toContainEqual(
-      expect.objectContaining({
-        op: 'remember',
-        kind: 'pr',
-        ref: '8',
-        seen: expect.objectContaining({ state: 'MERGED' })
-      })
-    )
-    expect(sticky).toContainEqual(
-      expect.objectContaining({
-        op: 'remember',
-        kind: 'pr',
-        ref: '7',
-        seen: expect.objectContaining({ state: 'OPEN' })
-      })
-    )
-    expect(reading.observation.prByStep.map((p) => p?.facts.number ?? null)).toEqual([7, 8, null])
-  })
-
-  it('deriving twice gives the same answer', async () => {
-    const { mission, log } = await seed()
-    const { derive } = await loadDerive()
-    const now = Date.parse('2026-11-01T09:30:00.000Z')
-    const a = await derive(root, mission, log, deps, now)
-    const b = await derive(root, mission, log, deps, now)
-    expect(b.derived).toEqual(a.derived)
-  })
-})
-
-describe('mission observer — the only writer', () => {
-  it('records what a reading saw: sidecar rows, sticky facts, remembered progress, one wake', async () => {
-    const { mission, log, file } = await seed()
-    const before = await fs.readFile(file)
-    const { derive } = await loadDerive()
-    const { observeMission, lastKnownProgress } = await import('../src/main/missions/observer')
-    const cache = await import('../src/main/mission-link-cache')
-    const now = Date.now()
-    const reading = await derive(root, mission, log, deps, now)
-    expect(lastKnownProgress(MISSION_ID)).toBeUndefined()
-
-    observeMission(mission, reading, now)
-
-    const kinds = cache.getObservedLedger(MISSION_ID).map((r) => `${r.kind}:${r.ref}`)
-    expect(kinds).toEqual(expect.arrayContaining(['pr-opened:#7', 'pr-merged:#8', 'ci:#7']))
-    expect(cache.getLastKnown(root, 'pr', '8')?.state).toBe('MERGED')
-    expect(lastKnownProgress(MISSION_ID)).toEqual(reading.derived.progress)
-    // One wake per observation, named for the most specific thing seen.
-    expect(h.wakes).toEqual([[MISSION_ID, 'ci']])
-    // Even the observer never rewrites the mission file.
-    expect((await fs.readFile(file)).equals(before)).toBe(true)
-    // The same world observed again records nothing and wakes nobody.
-    observeMission(mission, reading, now)
-    expect(h.wakes).toHaveLength(1)
-  })
-})
-
-async function loadDerive(): Promise<
-  typeof import('../src/main/missions/derive') & {
-    derive: typeof import('../src/main/missions/derive').deriveMission
-  }
-> {
-  const mod = await import('../src/main/missions/derive')
-  return { ...mod, derive: mod.deriveMission }
-}
-
-// ---- Delta 1: every read path is pure; the observer pass records ---------------------------------
+// ---- Every read path is pure; the observer pass records ------------------------------------------
 
 type ToolResult = { isError?: boolean; content: Array<{ type: string; text?: string }> }
 type Handler = (args: Record<string, unknown>, ctx: Record<string, unknown>) => Promise<ToolResult>
-
-const CAMPAIGN_ID = 'cmp-0000000b'
 
 /** The handler-facing context: a scanned fleet with no sessions in it. */
 const handlerCtx = (): Record<string, unknown> => ({
@@ -310,55 +257,9 @@ const handlerCtx = (): Record<string, unknown> => ({
   bridge: undefined
 })
 
-/**
- * A v3 campaign file as a record on disk, written as plain text: the campaign code is gone (S-39), so
- * no builder writes it. Returns its path, so a read can be proven not to touch it either.
- */
-async function seedCampaign(missionId: string): Promise<string> {
-  const at = '2026-11-01T09:00:00.000Z'
-  const dir = path.join(root, '.harnu', 'campaigns')
-  await fs.mkdir(dir, { recursive: true })
-  const file = path.join(dir, `${CAMPAIGN_ID}-pure.md`)
-  await fs.writeFile(
-    file,
-    [
-      '---',
-      `id: ${CAMPAIGN_ID}`,
-      'slug: pure',
-      `folder: ${root}`,
-      'owner:',
-      `  sessionId: ${OWNER}`,
-      `  folder: ${root}`,
-      'title: Pure',
-      'declaredEnd:',
-      '  kind: code',
-      '  target: t',
-      '  evidence: e',
-      'chapters:',
-      '  - id: chp-1',
-      '    ordinal: 1',
-      '    title: One',
-      `    missionId: ${missionId}`,
-      '    required: true',
-      'status: active',
-      `createdAt: '${at}'`,
-      `updatedAt: '${at}'`,
-      'provenance:',
-      '  author: agent',
-      `  at: '${at}'`,
-      '---',
-      '# Pure',
-      '',
-      '## Log',
-      ''
-    ].join('\n')
-  )
-  return file
-}
-
 interface ReadPath {
   name: string
-  run: (mission: Mission, log: string) => Promise<void>
+  run: () => Promise<void>
 }
 
 async function readPaths(): Promise<ReadPath[]> {
@@ -367,65 +268,101 @@ async function readPaths(): Promise<ReadPath[]> {
     WIRED_TOOLS.map((t) => [t.op, t.handler as unknown as Handler])
   )
   const ok = (res: ToolResult): void => expect(res.isError, res.content[0]?.text).not.toBe(true)
-  const { deriveMissionSignals } = await import('../src/main/mcp/tool-handlers')
   const ipc = await import('../src/main/mission-ipc')
   return [
     {
       name: 'mission_get',
       run: async () =>
-        ok(await handlers.mission_get({ folder: root, missionId: MISSION_ID }, handlerCtx()))
+        ok(
+          await handlers.mission_get(
+            { folder: root, missionId: MISSION_ID, sessionId: OWNER },
+            handlerCtx()
+          )
+        )
     },
     {
-      // What the steward bridge's `gatesFor` calls.
-      name: 'deriveMissionSignals',
-      run: async (mission, log) => {
-        await deriveMissionSignals(root, mission, log, handlerCtx() as never, Date.now())
-      }
+      name: 'mission_list',
+      run: async () => ok(await handlers.mission_list({ folder: root }, handlerCtx()))
     },
     {
       // The 20-second `mission:list` poll, the companion poll and Your move's source.
       name: 'listMissionViews',
       run: async () => {
         const r = await ipc.listMissionViews([root])
-        expect(r.views).toHaveLength(1)
+        expect(r.views).toEqual([])
+        expect(r.unreadable).toEqual([])
+      }
+    },
+    {
+      // The Mission pane's view channel: it gathers the facts, and still writes nothing.
+      name: 'buildMissionV4View',
+      run: async () => {
+        const r = await ipc.buildMissionV4View(
+          { folder: root, sessionId: OWNER, missionId: MISSION_ID },
+          { facts: factsDeps }
+        )
+        expect(r.state).toBe('mission')
       }
     }
   ]
 }
 
-const READ_PATHS = ['mission_get', 'deriveMissionSignals', 'listMissionViews']
+const READ_PATHS = ['mission_get', 'mission_list', 'listMissionViews', 'buildMissionV4View']
 
-describe('every read path is a read with no side effects (AC-4, delta 1)', () => {
+describe.each([
+  ['a v3 file', seedV3],
+  ['a v4 record', seedV4]
+] as const)('every read path is a read with no side effects (AC-4) — %s', (_label, seed) => {
   it.each(READ_PATHS)('a read has no side effects through %s', async (name) => {
-    const { mission, log, file } = await seed()
-    const campaignFile = await seedCampaign(mission.id)
-    const campaignBefore = await fs.readFile(campaignFile)
-    const before = await fs.readFile(file)
-    const beforeStat = await fs.stat(file)
+    await seed()
     const cache = await import('../src/main/mission-link-cache')
     await cache.ensureLinkCacheLoaded()
     const path_ = (await readPaths()).find((p) => p.name === name)!
+    const before = { repo: tree(root), userData: tree(h.userDataDir) }
 
-    await path_.run(mission, log)
-    await path_.run(mission, log)
+    await path_.run()
+    await path_.run()
 
-    expect(h.joinCalls).toBeGreaterThan(0)
-    expect((await fs.readFile(file)).equals(before)).toBe(true)
-    expect((await fs.stat(file)).mtimeMs).toBe(beforeStat.mtimeMs)
-    // The campaign file naming this mission stays a record: no read path rewrites it.
-    expect((await fs.readFile(campaignFile)).equals(campaignBefore)).toBe(true)
-    expect(h.wakes).toEqual([])
+    // The same bytes, the same mtimes, the same directories, in the repo and in userData.
+    expect({ repo: tree(root), userData: tree(h.userDataDir) }).toEqual(before)
+    // No row in the ledger, and no sticky fact remembered either.
     expect(cache.getObservedLedger(MISSION_ID)).toEqual([])
     expect(cache.getLastKnown(root, 'pr', '8')).toBeNull()
     expect(cache.getLastKnown(root, 'pr', '7')).toBeNull()
     await new Promise((r) => setTimeout(r, cache.LINK_CACHE_WRITE_DEBOUNCE_MS + 200))
     expect(await fs.readdir(h.userDataDir)).toEqual([])
+    expect(tree(root)).toEqual(before.repo)
   })
 
-  it('the read modules do not import the observer', async () => {
+  it('the pane view really looked: it joined the pull requests, and still wrote nothing', async () => {
+    await seed()
+    const before = tree(root)
+    const ipc = await import('../src/main/mission-ipc')
+    const view = await ipc.buildMissionV4View(
+      { folder: root, sessionId: OWNER, missionId: MISSION_ID },
+      { facts: factsDeps }
+    )
+    expect(view.state).toBe('mission')
+    expect(h.joinCalls).toBeGreaterThan(0)
+    expect(tree(root)).toEqual(before)
+  })
+
+  it('reading twice gives the same answer', async () => {
+    await seed()
+    const { missionGet } = await import('../src/main/missions/verbs-read')
+    const a = await missionGet(root, { kind: 'operator' }, { missionId: MISSION_ID })
+    const b = await missionGet(root, { kind: 'operator' }, { missionId: MISSION_ID })
+    expect(a.ok).toBe(true)
+    expect(b).toEqual(a)
+  })
+})
+
+describe('the read modules do not import the observer', () => {
+  it('no read verb derives through it', async () => {
     const read = async (f: string): Promise<string> =>
       fs.readFile(path.join(__dirname, '..', 'src', 'main', f), 'utf8')
     expect(await read('missions/derive.ts')).not.toMatch(/from '\.\/observer'/)
+    expect(await read('missions/verbs-read.ts')).not.toMatch(/from '\.\/observer'/)
     // `mission_list` and the wake wiring are the observer's readers; no read verb derives through it.
     const th = await read('mcp/tool-handlers.ts')
     expect(th).not.toContain('deriveAndObserve')
@@ -433,54 +370,36 @@ describe('every read path is a read with no side effects (AC-4, delta 1)', () =>
   })
 })
 
-describe('the observer pass records what a read would have (delta 1)', () => {
-  it('records the rows, the sticky facts and the progress, and wakes once', async () => {
-    const { mission, file } = await seed()
+describe('the observer pass records what a read would have', () => {
+  it('remembers the sticky sightings of a v4 record, writes only what it found, and does it once', async () => {
+    const file = await seedV4()
     const before = await fs.readFile(file)
     const ipc = await import('../src/main/mission-ipc')
     const cache = await import('../src/main/mission-link-cache')
-    const { lastKnownProgress } = await import('../src/main/missions/observer')
 
-    const seen = await ipc.observeOpenMissions([root])
+    const seen = await ipc.observeOpenMissions([root], Date.now(), { v4Facts: factsDeps })
 
     expect(seen).toBe(1)
-    const kinds = cache.getObservedLedger(MISSION_ID).map((r) => `${r.kind}:${r.ref}`)
-    expect(kinds).toEqual(expect.arrayContaining(['pr-opened:#7', 'pr-merged:#8', 'ci:#7']))
+    // What the pass saw is remembered, and only the pass does that.
     expect(cache.getLastKnown(root, 'pr', '8')?.state).toBe('MERGED')
-    expect(lastKnownProgress(mission.id)?.total).toBe(3)
-    expect(h.wakes).toEqual([[MISSION_ID, 'ci']])
+    expect(cache.getLastKnown(root, 'pr', '7')?.state).toBe('OPEN')
+    // Both pull requests are already on the steps, so there is nothing to attach: the record is untouched.
     expect((await fs.readFile(file)).equals(before)).toBe(true)
-    // The same world again records nothing and wakes nobody.
-    await ipc.observeOpenMissions([root])
-    expect(h.wakes).toHaveLength(1)
+    // The same world again leaves the record as it was.
+    await ipc.observeOpenMissions([root], Date.now(), { v4Facts: factsDeps })
+    expect((await fs.readFile(file)).equals(before)).toBe(true)
   })
 
-  it('mission_list reports no progress until a pass has run, then the observed one', async () => {
-    await seed()
-    const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
-    const list = WIRED_TOOLS.find((t) => t.op === 'mission_list')!.handler as unknown as Handler
-    const progressOf = async (): Promise<unknown> => {
-      const res = await list({ folder: root }, handlerCtx())
-      return (JSON.parse(res.content[0].text!).missions as Array<{ progress: unknown }>)[0].progress
-    }
-    expect(await progressOf()).toBeNull()
+  it('never makes the first v4 write of a v3 file: it observes none and leaves the file alone', async () => {
+    const file = await seedV3()
+    const before = await fs.readFile(file)
     const ipc = await import('../src/main/mission-ipc')
-    await ipc.observeOpenMissions([root])
-    expect(await progressOf()).not.toBeNull()
+    expect(await ipc.observeOpenMissions([root], Date.now(), { v4Facts: factsDeps })).toBe(0)
+    expect((await fs.readFile(file)).equals(before)).toBe(true)
+    expect(existsSync(path.join(root, '.harnu', 'missions-v4'))).toBe(false)
   })
 
-  it('an observer pass costs one derive per open mission, like one read', async () => {
-    await seed()
-    const ipc = await import('../src/main/mission-ipc')
-    h.joinCalls = 0
-    await ipc.listMissionViews([root])
-    const oneRead = h.joinCalls
-    h.joinCalls = 0
-    await ipc.observeOpenMissions([root])
-    expect(h.joinCalls).toBe(oneRead)
-  })
-
-  it('does nothing when no mission is open: no fleet scan, no derive', async () => {
+  it('does nothing when no mission is open: no fleet scan, no join', async () => {
     const ipc = await import('../src/main/mission-ipc')
     h.joinCalls = 0
     expect(await ipc.observeOpenMissions([root])).toBe(0)

@@ -21,11 +21,11 @@
  * the `mission-core` import, in S-40.
  *
  * Runs under vite-node (see the `eval:mission` script) so the operator doors can
- * use the product's own `mission-core.ts` transitions instead of a copy of them.
+ * use the v3 file helpers declared below (the product's v3 core is gone from the app).
  * Exit code: 0 when every non-skipped scenario passes, 1 otherwise.
  */
 import { execFileSync } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import {
   cpSync,
   existsSync,
@@ -39,14 +39,11 @@ import {
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import yaml from 'js-yaml'
 import {
-  applyApprovedRescope,
-  buildMissionFileContent,
-  declaredEndHash,
-  mintMissionId,
-  parseMissionFile,
-  readMissionLog
-} from '../../../src/main/mission-core.ts'
+  parseV3MissionFile as parseMissionFile,
+  readV3MissionLog as readMissionLog
+} from '../../../src/main/missions/v3-read.ts'
 import { buildApp, killAllLaunched, startHarnu } from './harnu.mjs'
 import { killAgents, replyAsks, runAgent, turnRecord } from './agent.mjs'
 import {
@@ -66,6 +63,58 @@ const SCENARIO_DIR = path.join(HERE, 'scenarios')
 const LEGACY_FIXTURE_DIR = path.join(REPO_ROOT, 'tests', 'fixtures', 'mission-migration')
 const AGENT_TIMEOUT_MS = 180_000
 const CHILD_TIMEOUT_MS = 240_000
+
+// ---- the v3 file helpers this harness needs (Missions v4 S-40) ---------------------------------
+// The v3 core module is gone from the app's import graph, so the few things a scripted operator and a
+// seeded legacy mission need live here: the same frontmatter dump a v3 Harnu wrote, the id mint, the
+// declared-end stamp and the re-scope approval. Reading goes through the frozen v3 reader.
+
+/** The frontmatter YAML a v3 Harnu wrote, then the Log. */
+const buildMissionFileContent = (mission, log = '') =>
+  `---\n${yaml.dump(mission, { lineWidth: -1, noRefs: true, skipInvalid: true })}---\n${log}`
+
+/** `mnt-<8 hex>` not in `existingIds`. */
+function mintMissionId(existingIds) {
+  const taken = new Set(existingIds)
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const id = `mnt-${randomBytes(4).toString('hex')}`
+    if (!taken.has(id)) return id
+  }
+  throw new Error('could not mint a free mission id')
+}
+
+/** `sha256:<hex>` of a declared end: the approval stamp a re-scope voids. */
+function declaredEndHash(end) {
+  return `sha256:${createHash('sha256')
+    .update(JSON.stringify([end.kind, end.target, end.evidence]))
+    .digest('hex')}`
+}
+
+/** What the operator's approval of a staged re-scope does to a v3 mission file. */
+function applyApprovedRescope(mission, approval) {
+  if (!mission.pendingRescope)
+    throw new Error(`mission ${mission.id} has no pending re-scope to approve`)
+  const next = structuredClone(mission)
+  const declaredEnd = next.pendingRescope
+  delete next.pendingRescope
+  delete next.pendingClose
+  next.declaredEnd = declaredEnd
+  next.declaredEndApproval = {
+    at: approval.at,
+    bodyHash: declaredEndHash(declaredEnd),
+    via: 'operator'
+  }
+  for (const step of next.steps) {
+    if (step.kind !== 'fixed-end') continue
+    step.proof = 'unproven'
+    delete step.verifiedBy
+  }
+  if (next.status === 'delivered') next.status = 'active'
+  if (next.legacy)
+    next.legacy.needsReview = next.legacy.needsReview.filter((f) => f !== 'declaredEnd')
+  next.updatedAt = approval.at
+  return next
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -152,7 +201,7 @@ function missionFileBySlug(folder, slug) {
 }
 
 /**
- * Apply an operator transition through `mission-core`'s own parse/build, the way
+ * Apply an operator transition through the frozen v3 reader and the file helpers above, the way
  * the UI door does: parse → transition → build (validated) → atomic write. Mission
  * v3 retired the draft → active door (a mission is born active), so the only
  * transition left to simulate is the re-scope approval.
@@ -177,8 +226,7 @@ function operatorDoor(folder, slug, action) {
 // ---- seeded missions (a state no verb can reach) --------------------------------
 
 /**
- * Write a mission straight to disk through `mission-core`'s own validated
- * builder, for a state no verb reaches: AGE — the stall rule (design §8) turns on
+ * Write a mission straight to disk through the v3 file helpers above, for a state no verb reaches: AGE — the stall rule (design §8) turns on
  * `updatedAt` being over an hour old, which a scripted session cannot wait out —
  * and a LEGACY file written before Mission v3 (`legacy: true`: a fixed start
  * "Scope confirmed" before the end, and, with `status: "draft"`, no approval

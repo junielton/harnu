@@ -59,6 +59,7 @@ import { readMissionRecord } from '../src/main/missions/record-store'
 import { writeMission } from '../src/main/missions/write'
 import { appendWorked, attachDispatchedWorker } from '../src/main/missions/sessions'
 import type { MissionV4 } from '../src/main/missions/model'
+import { v3MissionObject, writeV3Mission } from './helpers/v3-mission-file'
 
 const LEADER = '3f1c9a52-7d4e-4b8a-9c21-5e6a0b7d8f10'
 const WORKER = '5b7d9f11-2a4c-4e6a-8b0d-1c3e5a7c9e21'
@@ -634,18 +635,23 @@ describe('a create_session for a step asks for the credential of its role', () =
   })
 
   it('a v3 mission is refused: a worker on it would convert it', async () => {
-    const v3 = await okOn(mainClient, 'mission_create', {
-      folder: repo,
-      title: 'An older mission',
-      declaredEnd: { kind: 'code', target: 'the export', evidence: 'the PR is merged' },
-      sessionId: LEADER,
-      steward: false,
-      steps: [{ title: 'Build the exporter', verification: 'verifier' }]
-    })
-    const r = await start({ missionId: v3.body.missionId as string, stepId: 'stp-1' })
+    // No verb makes a v3 mission any more (S-40): an old repo holds one as a file, which the store reads.
+    const v3 = writeV3Mission(
+      repo,
+      v3MissionObject(repo, {
+        id: 'mnt-0a1b2c3d',
+        slug: 'older-mission',
+        owner: { sessionId: LEADER, folder: repo }
+      })
+    )
+    const before = await fs.readFile(v3)
+    const r = await start({ missionId: 'mnt-0a1b2c3d', stepId: 'stp-1' })
     expect(r.isError).toBe(true)
     expect(r.text).toMatch(/MISSION_NOT_V4/)
     expect(dispatched).toBe(0)
+    // Refused before anything changed: the file is untouched and no v4 record was made from it.
+    expect((await fs.readFile(v3)).equals(before)).toBe(true)
+    await expect(fs.stat(path.join(repo, '.harnu', 'missions-v4'))).rejects.toThrow()
   })
 
   it('a spawn that fails leaves no credential waiting', async () => {

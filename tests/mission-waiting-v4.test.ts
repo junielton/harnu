@@ -3,8 +3,8 @@
  * and a person's sign-off that is never the operator's move.
  *
  * `waitingListV4` (src/main/missions/waiting.ts) is pure: a v4 record plus plain input facts in, a list
- * out. It sits BESIDE the v3 `waitingList`, which `tests/mission-waiting.test.ts` still pins. Named
- * `-v4` for that reason.
+ * out. (The v3 `waitingList` it once sat beside went with S-40; `tests/mission-waiting.test.ts` pins how the
+ * readers draw this list.)
  *
  * The purity test at the bottom instruments `child_process`, `fs`, `fs/promises` and the clock, and
  * proves the instrumentation itself fails when something does read them.
@@ -396,10 +396,11 @@ describe('AC-18 · one next step, the rest in a fixed order', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('exports the rank once, in the order the spec fixes', () => {
+  it('exports the rank once, in the order the spec fixes (and the re-scope of an older mission, S-40)', () => {
     expect(waiting.WAITING_RANK).toEqual([
       'main-failing',
       'unblock',
+      'rescope',
       'settle',
       'review',
       'close',
@@ -614,13 +615,6 @@ describe('the wording', () => {
     expect(settle.ask).toBe(`Mark done: ${longCrit}`)
     expect(longAsk.length).toBeGreaterThan(waiting.WAITING_ASK_MAX)
     for (const i of [unblock, settle]) expect(i.ask).not.toContain('…')
-  })
-
-  it('keeps the v3 list’s own cap for the v3 list only', () => {
-    const long = 'x'.repeat(200)
-    const text = waiting.describeWaiting({ kind: 'blocker', reason: long, unblocks: 'it works' })
-    expect(text.ask.length).toBeLessThanOrEqual(waiting.WAITING_ASK_MAX)
-    expect(text.ask.endsWith('…')).toBe(true)
   })
 })
 

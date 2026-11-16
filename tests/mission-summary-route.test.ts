@@ -147,10 +147,7 @@ describe('the leader gets the summary after compaction', () => {
       expect(path.basename(spec), spec).not.toMatch(/^steward/)
       // The two campaign modules are named from parts: the file no longer exists, and AC-92 greps the names.
       const forbidden = [
-        'mission-core',
-        'mission-gates',
-        'mission-progress',
-        'mission-migration',
+        ...['core', 'gates', 'progress', 'migration'].map((part) => ['mission', part].join('-')),
         ['campaign', 'core'].join('-'),
         ['campaign', 'progress'].join('-')
       ]

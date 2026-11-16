@@ -1,20 +1,22 @@
 /**
- * Mission v3 S2 (§3.8, AC-8) — the read-latency benchmark: `mission:list` over
- * 9 open fixture missions with a `gh` that takes 5 s, through the REAL path —
- * `listMissionViews` → `mapLimit` → `deriveMissionSignals` → `findPrsForWorktrees`
- * → the single-flight PR cache. Only `gh` itself is stubbed (at the `execFile`
- * seam, like tests/pr-stack-mission-join.test.ts); `git` runs for real.
+ * Mission v3 S2 (§3.8, AC-8) — the read-latency benchmark, over 9 open fixture missions with a `gh` that
+ * takes 5 s, through the REAL path: only `gh` itself is stubbed (at the `execFile` seam, like
+ * tests/pr-stack-mission-join.test.ts); `git` runs for real.
  *
- * Smoke S-4 measured 3.5–11 s per mission derive, run one after another
- * (≈ 46 s a pass), and up to ~90 s before the close dialog dismissed.
- * Targets: ≤ 12 s cold, ≤ 1 s warm, doors within 2 s.
+ * Smoke S-4 measured 3.5–11 s per mission derive, run one after another (≈ 46 s a pass), and up to ~90 s
+ * before the close dialog dismissed.
+ *
+ * Missions v4 S-40: the v3 poll that derived every mission (`listMissionViews` → `deriveMissionSignals` →
+ * `findPrsForWorktrees`) and the v3 operator doors are gone. What the targets bound now: the poll answers
+ * no view and starts no `gh` (≤ 1 s, cold or warm, so the 5 s `gh` cannot reach it); the Mission pane's
+ * view waits for GitHub no longer than its bound (≈ 1.5 s) and then reads each step's last-known state;
+ * and one observer pass costs one `gh` call per repo, however many missions the repo holds.
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { createMissionFile, type Mission, type MissionStep } from '../src/main/mission-core'
-import type { MissionV4, StepV4 } from '../src/main/missions/model'
+import { buildMissionRecordContent, type MissionV4, type StepV4 } from '../src/main/missions/model'
 import { deriveProgress } from '../src/main/missions/progress'
 import type { StepInput } from '../src/main/missions/state'
 import { buildMissionSummary, missionListRow } from '../src/main/missions/summary'
@@ -101,6 +103,11 @@ vi.mock('node:child_process', async (importOriginal) => {
       // The claim is about the PR LIST (single-flight per repo); the merge-commit CI
       // lookups of the campaign `main` gate (spec §3.2) are separate, cached calls.
       if (args[0] === 'pr' && args[1] === 'list') h.ghCalls++
+      else {
+        // Anything else (a merge commit's workflow runs) answers at once: the claim is about the list.
+        setTimeout(() => cb(null, { stdout: '[]', stderr: '' }), 5)
+        return
+      }
       const prs = [7, 8, 9].map((n) => ({
         number: n,
         headRefName: `feat/b${n}`,
@@ -146,50 +153,42 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 const OWNER = '11111111-2222-4333-8444-555555555555'
 
-function step(id: string, ordinal: number, links: MissionStep['links']): MissionStep {
+function fixture(id: string, n: number, status: 'open' | 'closed' = 'open'): MissionV4 {
+  const ac = { id: 'ac-1', text: 'The pull request is merged', by: 'fact', fact: 'pr-merged' }
   return {
+    schemaVersion: 4,
     id,
-    ordinal,
-    kind: 'custom',
-    title: `Step ${ordinal}`,
-    verification: 'existence',
-    proof: 'unproven',
-    links,
-    blockers: []
-  }
-}
-
-function fixture(id: string, root: string, n: number): Mission {
-  return {
-    id,
-    slug: `bench-${n}`,
-    folder: root,
-    owner: { sessionId: OWNER, folder: root },
-    status: 'active',
-    declaredEnd: { kind: 'code', target: 'a PR', evidence: 'merged' },
+    title: `Bench ${n}`,
+    doneWhen: 'A pull request is merged',
+    status,
+    ...(status === 'closed' ? { closedAs: 'delivered' } : {}),
+    milestones: [],
     steps: [
-      step('stp-1', 1, [{ kind: 'pr', ref: '#8' }]),
-      step('stp-2', 2, [
-        { kind: 'pr', ref: `org/proj#${7 + (n % 3)}` },
-        { kind: 'worktree', ref: 'spec.md' }
-      ]),
+      { id: 'stp-1', title: 'Step 1', acs: [ac], links: [{ kind: 'pr', ref: '8' }], blockers: [] },
       {
-        id: 'stp-3',
-        ordinal: 3,
-        kind: 'fixed-end',
-        title: 'Delivered and verified',
-        verification: 'verifier',
-        proof: 'unproven',
-        links: [],
+        id: 'stp-2',
+        title: 'Step 2',
+        acs: [ac],
+        links: [
+          { kind: 'pr', ref: String(7 + (n % 3)) },
+          { kind: 'doc', ref: 'spec.md' }
+        ],
         blockers: []
       }
     ],
-    blockers: [],
-    openQuestions: [],
-    createdAt: '2026-10-01T10:00:00.000Z',
-    updatedAt: `2026-10-01T10:0${n}:00.000Z`,
-    provenance: { author: 'agent', at: '2026-10-01T10:00:00.000Z' }
-  }
+    sessions: [{ id: OWNER, role: 'leads', from: '2026-10-01T10:00:00Z', to: null }],
+    links: [],
+    blockers: []
+  } as unknown as MissionV4
+}
+
+async function writeRecord(root: string, rec: MissionV4): Promise<void> {
+  const dir = path.join(root, '.harnu', 'missions-v4')
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(
+    path.join(dir, `${rec.id}-bench.md`),
+    buildMissionRecordContent(rec, `# ${rec.title}\n`)
+  )
 }
 
 const roots: string[] = []
@@ -197,98 +196,89 @@ let ipc: typeof import('../src/main/mission-ipc')
 
 beforeAll(async () => {
   h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-bench-ud-'))
-  // 9 open missions across 3 repos (plus a closed one that must not cost a derive).
+  // 9 open missions across 3 repos (plus a closed one that must not cost a read).
   for (let r = 0; r < 3; r++) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), `harnu-bench-${r}-`))
+    await fs.mkdir(path.join(root, '.git'), { recursive: true })
     await fs.writeFile(path.join(root, 'spec.md'), '# spec')
     roots.push(root)
   }
   for (let n = 1; n <= 9; n++) {
     const root = roots[n % 3]
-    await createMissionFile(root, fixture(`mnt-0000b00${n}`, root, n), `# Bench ${n}\n`)
+    await writeRecord(root, fixture(`mnt-0000b00${n}`, n))
   }
-  await createMissionFile(roots[0], { ...fixture('mnt-0000b0ff', roots[0], 0), status: 'closed' })
+  await writeRecord(roots[0], fixture('mnt-0000b0ff', 0, 'closed'))
   ipc = await import('../src/main/mission-ipc')
 })
 
-describe('mission:list read latency (Mission v3 §3.8, AC-8)', () => {
-  it(`cold: 9 missions with a ${GH_MS / 1000} s gh complete in ≤ 12 s — one gh call per repo`, async () => {
+describe('mission read latency (Mission v3 §3.8, AC-8; Missions v4 S-40)', () => {
+  it(`the poll: 9 missions with a ${GH_MS / 1000} s gh answer in ≤ 1 s and start no gh`, async () => {
     const t0 = Date.now()
-    const { views } = await ipc.listMissionViews(roots)
+    const { views, unreadable } = await ipc.listMissionViews(roots)
     const cold = Date.now() - t0
-    console.info(
-      `[bench] mission:list cold: ${cold} ms (${views.length} missions, gh ${h.ghCalls}×)`
-    )
-    expect(views).toHaveLength(9)
-    expect(cold).toBeLessThanOrEqual(12_000)
-    expect(h.ghCalls).toBe(3)
-    // Resolved for real, not degraded: #8 MERGED proves stp-1 everywhere.
-    expect(views.every((v) => v.derived.gh === 'available')).toBe(true)
-    expect(views.every((v) => v.derived.steps[0].existence?.proven === true)).toBe(true)
+    console.info(`[bench] mission:list: ${cold} ms (gh ${h.ghCalls}×)`)
+    expect(views).toEqual([])
+    expect(unreadable).toEqual([])
+    expect(cold).toBeLessThanOrEqual(1000)
+    expect(h.ghCalls).toBe(0)
   }, 30_000)
 
-  it('warm: the same pass within 60 s completes in ≤ 1 s with no gh call', async () => {
+  it('the one-line rows (mission_list) cost no gh either: 3 repos, 9 open missions', async () => {
+    const { missionList } = await import('../src/main/missions/verbs-read')
+    const t0 = Date.now()
+    const rows = (
+      await Promise.all(roots.map((r) => missionList(r, { kind: 'operator' })))
+    ).flatMap((l) => (l.ok ? l.missions : []))
+    const ms = Date.now() - t0
+    console.info(`[bench] mission_list rows: ${ms} ms`)
+    expect(rows).toHaveLength(9)
+    expect(ms).toBeLessThanOrEqual(1000)
+    expect(h.ghCalls).toBe(0)
+  })
+
+  it('the pane view returns within its bound on a COLD cache: no step waits out the 5 s gh', async () => {
+    const t0 = Date.now()
+    const reply = await ipc.buildMissionV4View({
+      folder: roots[1],
+      sessionId: OWNER,
+      missionId: 'mnt-0000b001'
+    })
+    const ms = Date.now() - t0
+    console.info(`[bench] pane view, cold PR cache: ${ms} ms`)
+    expect(reply.state).toBe('mission')
+    // The view waits 1.5 s for GitHub at most; the 5 s gh is still running when it answers.
+    expect(ms).toBeLessThanOrEqual(3000)
+    expect(ms).toBeLessThan(GH_MS)
+  })
+
+  it('one observer pass costs one gh call per repo, and the next view reads the last-known state within its bound', async () => {
     const before = h.ghCalls
     const t0 = Date.now()
-    const { views } = await ipc.listMissionViews(roots)
-    const warm = Date.now() - t0
-    console.info(`[bench] mission:list warm: ${warm} ms`)
-    expect(views).toHaveLength(9)
-    expect(warm).toBeLessThanOrEqual(1000)
-    expect(h.ghCalls).toBe(before)
-  })
+    // Three open missions of one repo: one `pr list`, shared (single-flight).
+    expect(await ipc.observeOpenMissions([roots[2]])).toBe(3)
+    const passMs = Date.now() - t0
+    console.info(`[bench] observer pass, one repo: ${passMs} ms (gh ${h.ghCalls - before}×)`)
+    expect(h.ghCalls - before).toBe(1)
+    expect(passMs).toBeLessThanOrEqual(GH_MS + 4000) // one 5 s list, not one per mission
 
-  it('doors return within 2 s: a tick answers with its view, an end with null', async () => {
-    const root = roots[1]
-    let t0 = Date.now()
-    const tick = await ipc.runOperatorDoor({
-      door: 'addCheck',
-      root,
-      missionId: 'mnt-0000b001',
-      stepId: 'stp-2',
-      label: 'Validated visually'
-    })
-    const tickMs = Date.now() - t0
-    t0 = Date.now()
-    const end = await ipc.runOperatorDoor({
-      door: 'end',
-      root,
-      missionId: 'mnt-0000b004',
-      closedAs: 'discarded'
-    })
-    const endMs = Date.now() - t0
-    console.info(`[bench] door tick: ${tickMs} ms, door end: ${endMs} ms`)
-    expect(tick).toMatchObject({ ok: true, view: { mission: { id: 'mnt-0000b001' } } })
-    expect(end).toEqual({ ok: true, view: null })
-    expect(tickMs).toBeLessThanOrEqual(2000)
-    expect(endMs).toBeLessThanOrEqual(2000)
-  })
-
-  it('doors return within 2 s on a COLD PR cache too: sticky last-known proof, marked stale', async () => {
-    // A fresh process: empty PR cache, but the sidecar remembers what resolved — the observer
-    // pass remembers it (a read does not, AC-4), as it does every minute in the app.
-    const warm = await import('../src/main/mission-ipc')
-    await warm.observeOpenMissions(roots)
+    // A fresh process: empty PR cache, but the sidecar remembers what the pass resolved.
     const { flushLinkCache } = await import('../src/main/mission-link-cache')
     await flushLinkCache()
     vi.resetModules()
     const fresh = await import('../src/main/mission-ipc')
-    const t0 = Date.now()
-    const tick = await fresh.runOperatorDoor({
-      door: 'addCheck',
-      root: roots[2],
-      missionId: 'mnt-0000b002',
-      stepId: 'stp-1',
-      label: 'DSQA done'
+    const t1 = Date.now()
+    const reply = await fresh.buildMissionV4View({
+      folder: roots[2],
+      sessionId: OWNER,
+      missionId: 'mnt-0000b002'
     })
-    const ms = Date.now() - t0
-    console.info(`[bench] door tick, cold PR cache: ${ms} ms`)
-    expect(ms).toBeLessThanOrEqual(2000)
-    if (!tick.ok || !tick.view) throw new Error(JSON.stringify(tick))
-    const first = tick.view.derived.steps[0]
-    expect(first.existence?.proven).toBe(true)
-    expect(first.links[0]).toMatchObject({ kind: 'pr', state: 'MERGED', stale: true })
-  })
+    const ms = Date.now() - t1
+    console.info(`[bench] pane view, last-known cache: ${ms} ms`)
+    expect(ms).toBeLessThanOrEqual(3000)
+    if (reply.state !== 'mission') throw new Error(JSON.stringify(reply))
+    // #8 was seen merged: the step reads that, not "unknown", though the gh is still slow.
+    expect(reply.stepFacts?.['stp-1']).toMatchObject({ pr: 'merged' })
+  }, 30_000)
 })
 
 /**

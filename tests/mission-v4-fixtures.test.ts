@@ -19,16 +19,25 @@ import { describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import * as path from 'node:path'
-import {
-  buildMissionFileContent,
-  parseMissionFile,
-  readMissionLog,
-  type Mission
-} from '../src/main/mission-core'
+import yaml from 'js-yaml'
 import {
   parseV3CampaignFile as parseCampaignFile,
-  type V3Campaign as Campaign
+  parseV3MissionFile as parseMissionFile,
+  readV3MissionLog as readMissionLog,
+  type V3Campaign as Campaign,
+  type V3Mission as Mission
 } from '../src/main/missions/v3-read'
+
+/**
+ * Missions v4 S-40 (C2-08b, W11): the v3 builder (`buildMissionFileContent`, in `mission-core.ts`, which S-41
+ * deletes) is replaced by the same two lines it was: the frontmatter YAML a v3 Harnu wrote, then the Log.
+ * The round trip below is therefore proven against the frozen reader (`v3-read.ts`) and the sha256 pins, not
+ * against the live v3 writer. What it still catches: a fixture whose bytes are not what a v3 writer would
+ * produce from what the frozen reader parses (so a hand-edited fixture, or a reader that loses or reorders a
+ * field, fails). What it no longer catches: a change to the v3 writer itself, which nothing runs any more.
+ */
+const buildMissionFileContent = (m: Mission, log = ''): string =>
+  `---\n${yaml.dump(m, { lineWidth: -1, noRefs: true, skipInvalid: true })}---\n${log}`
 
 const DIR = path.join(__dirname, 'fixtures', 'missions-v4-compat')
 

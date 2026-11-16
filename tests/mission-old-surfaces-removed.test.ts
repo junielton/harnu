@@ -32,23 +32,17 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
-  writeFileSync
+  statSync
 } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import {
-  buildMissionFileContent,
-  missionFilePath,
-  missionsDir,
-  type Mission
-} from '../src/main/mission-core'
-import { computeProgress } from '../src/main/mission-progress'
-import { waitingList } from '../src/main/missions/waiting'
+import type { V3Mission } from '../src/main/missions/v3-read'
+import { missionGet } from '../src/main/missions/verbs-read'
 import { emptyState, type YourMoveState } from '../src/main/your-move/core'
-import { reconcileMissions } from '../src/main/your-move/source-mission'
-import { owedKeys } from '../src/renderer/src/lib/mission-cue'
-import { fixtureView } from './helpers/mission-v3-view'
+import { readRecordViews, reconcileMissions } from '../src/main/your-move/source-mission'
+import { writeV3Mission } from './helpers/v3-mission-file'
+
+type Mission = V3Mission
 
 const ROOT = path.join(__dirname, '..')
 const read = (rel: string): string => readFileSync(path.join(ROOT, rel), 'utf8')
@@ -173,6 +167,7 @@ const REMOVED_KEY_PREFIXES = [
   'mission.visual',
   'mission.was',
   'mission.you.clear',
+  'mission.you.stewardPaused',
   'mission.you.label'
 ]
 
@@ -364,7 +359,8 @@ function pausedV3(over: Partial<Mission> = {}): Mission {
         kind: 'custom',
         title: 'Load the files',
         verification: 'verifier',
-        proof: 'unproven',
+        proof: 'verified',
+        verifiedBy: { sessionId: 'sess-checker', at: AT, verdict: 'met' },
         links: [],
         blockers: []
       },
@@ -374,7 +370,8 @@ function pausedV3(over: Partial<Mission> = {}): Mission {
         kind: 'fixed-end',
         title: 'Delivered and verified',
         verification: 'verifier',
-        proof: 'unproven',
+        proof: 'verified',
+        verifiedBy: { sessionId: 'sess-checker', at: AT, verdict: 'met' },
         links: [],
         blockers: []
       }
@@ -393,29 +390,32 @@ function pausedV3(over: Partial<Mission> = {}): Mission {
 }
 
 function seed(m: Mission): string {
-  mkdirSync(missionsDir(repo), { recursive: true })
-  const file = missionFilePath(repo, m.id, m.slug)
-  writeFileSync(file, buildMissionFileContent(m))
-  return file
+  return writeV3Mission(repo, m)
 }
 
 const kinds = (items: readonly { kind: string }[]): string[] => items.map((i) => i.kind)
 
+const readDetail = async (folder: string, missionId: string) =>
+  missionGet(folder, { kind: 'operator' }, { missionId })
+
 describe('a v3 mission paused with a steward: the pause is not owed any more', () => {
-  it('the waiting list derives no steward item, and keeps every other item in its order', () => {
-    const m = pausedV3()
-    const list = waitingList(m, [], computeProgress(m, [], Date.parse(AT)))
-    expect(kinds(list)).toEqual(['close', 'blocker'])
+  it('the waiting list derives no steward item, and keeps every other item in its order', async () => {
+    seed(pausedV3())
+    const detail = await missionGet(repo, { kind: 'operator' }, { missionId: 'mnt-0a1b2c3d' })
+    if (!detail.ok) throw new Error(detail.error)
+    // The blocker the operator owes, then the close the agent asked for: nothing about a steward.
+    expect(kinds(detail.waiting.items)).toEqual(['unblock', 'close'])
   })
 
-  it('the list read of a v3 file shows no steward item, and reading wrote nothing', async () => {
+  it('the read of a v3 file shows no steward item, and reading wrote nothing', async () => {
     const file = seed(pausedV3())
     const before = `${sha(readFileSync(file))}@${statSync(file).mtimeMs}`
     const ipc = await import('../src/main/mission-ipc')
     const list = await ipc.listMissionViews([repo])
-    const view = list.views.find((v) => v.mission.id === 'mnt-0a1b2c3d')
-    expect(view).toBeDefined()
-    expect(kinds(view!.you)).toEqual(['close', 'blocker'])
+    expect(list.views).toEqual([])
+    const detail = await missionGet(repo, { kind: 'operator' }, { missionId: 'mnt-0a1b2c3d' })
+    if (!detail.ok) throw new Error(detail.error)
+    expect(JSON.stringify(detail)).not.toMatch(/steward/i)
     expect(`${sha(readFileSync(file))}@${statSync(file).mtimeMs}`).toBe(before)
     // The stored pause is still in the file: it is never edited, only no longer read as owed.
     expect(readFileSync(file, 'utf8')).toContain('stewardPause')
@@ -424,74 +424,41 @@ describe('a v3 mission paused with a steward: the pause is not owed any more', (
 
   it('a Your move card filed for the pause before the upgrade closes, and no other card is lost or re-filed', async () => {
     const m = pausedV3()
-    const ipc = await import('../src/main/mission-ipc')
     seed(m)
-    const live = await ipc.listMissionViews([repo])
-    const view = live.views.find((v) => v.mission.id === m.id)!
-    // What main filed: one card per item it derived then, the steward's included.
-    const owedBefore = [
-      { kind: 'close' },
-      { kind: 'steward-paused', reason: 'cost', at: AT },
-      { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }
-    ]
     let n = 0
     const mint = (): string => `card-${++n}`
-    const asView = (you: unknown[]): never =>
-      fixtureView('parallel', {
-        mission: { id: m.id, owner: { sessionId: LEADER, folder: repo } } as never,
-        view: { root: repo, you: you as never }
-      }) as never
-    const filed = reconcileMissions(
-      emptyState(),
-      { views: [asView(owedBefore)], unreadable: [] },
-      [repo],
-      'live',
-      mint,
-      1,
-      new Map()
-    )
+    const none = { unreadable: [] }
     const keysOf = (s: YourMoveState): string[] =>
       s.cards
         .filter((c) => c.closedAt === undefined)
         .map((c) => c.sourceKey ?? '')
         .sort()
-    expect(keysOf(filed)).toEqual([
-      `${m.id}:blocker:Waiting on the vendor key`,
-      `${m.id}:close`,
-      `${m.id}:steward-paused`
-    ])
-    const idsBefore = new Map(filed.cards.map((c) => [c.sourceKey, c.id]))
+    const records = await readRecordViews([repo], { readDetail })
+    // What the upgraded build files for the mission: the blocker and the close, from the one waiting list.
+    const filed = reconcileMissions(emptyState(), none, [repo], 'live', mint, 1, records)
+    expect(keysOf(filed)).toEqual([`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:close`])
+    // What main filed before the upgrade also held a card for the steward's pause (its key is main's).
+    const close = filed.cards.find((c) => c.sourceKey === `${m.id}:close`)!
+    const before: YourMoveState = {
+      ...filed,
+      cards: [
+        ...filed.cards,
+        { ...close, id: 'card-pause', sourceKey: `${m.id}:steward-paused`, kind: 'do' }
+      ]
+    }
+    expect(keysOf(before)).toHaveLength(3)
+    const idsBefore = new Map(before.cards.map((c) => [c.sourceKey, c.id]))
 
-    // After the upgrade main derives the list without the pause.
-    const after = reconcileMissions(
-      filed,
-      { views: [asView(view.you as unknown[])], unreadable: [] },
-      [repo],
-      'live',
-      mint,
-      2,
-      new Map()
-    )
+    // After the upgrade the list has no pause: that card closes by itself, instead of being stranded.
+    const after = reconcileMissions(before, none, [repo], 'live', mint, 2, records)
     expect(keysOf(after)).toEqual([`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:close`])
+    expect(after.cards.find((c) => c.id === 'card-pause')!.closedAt).toBeDefined()
     // The two that stay are the same cards, not closed and re-filed.
     for (const c of after.cards.filter((c) => c.closedAt === undefined)) {
       expect(c.id).toBe(idsBefore.get(c.sourceKey))
     }
+    expect(after.cards).toHaveLength(before.cards.length)
   }, 60_000)
-
-  it('the cue keys and the chime memory are those of main for every other item', () => {
-    const view = (you: unknown[]): never =>
-      fixtureView('parallel', {
-        mission: { id: 'mnt-0a1b2c3d', owner: { sessionId: LEADER, folder: repo } } as never,
-        view: { root: repo, you: you as never }
-      }) as never
-    const withPause = owedKeys(
-      view([{ kind: 'close' }, { kind: 'steward-paused', reason: 'cost', at: AT }])
-    )
-    const without = owedKeys(view([{ kind: 'close' }]))
-    // The pause was standing, never news: it never had a key, so no chime is lost by it leaving.
-    expect(without).toEqual(withPause)
-  })
 })
 
 // ==========================================================================================================
@@ -618,52 +585,60 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
     expect(existsSync(path.join(repo, '.harnu', 'missions-v4'))).toBe(false)
   }, 60_000)
 
-  it('the Your move card for the re-scope closes when it is approved, and no other card is touched', async () => {
+  it('the Your move card for the re-scope closes when it is approved, and the blocker card is not touched', async () => {
     const m = rescopeV3()
     m.blockers = [
       { reason: 'Waiting on the vendor key', unblocks: 'a key', owner: 'operator', raisedAt: AT }
     ]
     seed(m)
     const ipc = await import('../src/main/mission-ipc')
-    const asView = (you: unknown[]): never =>
-      fixtureView('parallel', {
-        mission: { id: m.id, owner: { sessionId: LEADER, folder: repo } } as never,
-        view: { root: repo, you: you as never }
-      }) as never
-    const before = (await ipc.listMissionViews([repo])).views.find((v) => v.mission.id === m.id)!
-    expect(before.you.map((i) => i.kind)).toEqual(['rescope', 'blocker'])
     let n = 0
     const mint = (): string => `card-${++n}`
-    const filed = reconcileMissions(
-      emptyState(),
-      { views: [asView(before.you as unknown[])], unreadable: [] },
-      [repo],
-      'live',
-      mint,
-      1,
-      new Map()
-    )
     const open = (s: YourMoveState): string[] =>
       s.cards
         .filter((c) => c.closedAt === undefined)
         .map((c) => c.sourceKey ?? '')
         .sort()
-    expect(open(filed)).toHaveLength(2)
+    // S-40: the list poll serves no v3 view; Your move reads the records, a v3 file converted in memory.
+    const records = (): ReturnType<typeof readRecordViews> =>
+      readRecordViews([repo], { readDetail })
+    const filed = reconcileMissions(
+      emptyState(),
+      { unreadable: [] },
+      [repo],
+      'live',
+      mint,
+      1,
+      await records()
+    )
+    // Every step is verified, so the converted record also derives a close: it is owed beside the re-scope.
+    expect(open(filed)).toEqual(
+      [
+        `${m.id}:blocker:Waiting on the vendor key`,
+        `${m.id}:close`,
+        `${m.id}:rescope:${NEW_END.target}`
+      ].sort()
+    )
 
     const res = await ipc.runPaneDoor({ folder: repo, missionId: m.id, door: 'approveDoneWhen' })
     expect(res).toMatchObject({ ok: true })
-    const after = (await ipc.listMissionViews([repo])).views.find((v) => v.mission.id === m.id)!
-    expect(after.you.map((i) => i.kind)).toEqual(['blocker'])
     const next = reconcileMissions(
       filed,
-      { views: [asView(after.you as unknown[])], unreadable: [] },
+      { unreadable: [] },
       [repo],
       'live',
       mint,
       2,
-      new Map()
+      await records()
     )
-    expect(open(next)).toEqual([`${m.id}:blocker:Waiting on the vendor key`])
+    // Only the re-scope card closes; the close and the blocker cards are the same cards, not re-filed.
+    expect(open(next)).toEqual(
+      [`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:close`].sort()
+    )
+    for (const key of ['blocker', 'close']) {
+      const before = filed.cards.find((c) => c.sourceKey?.includes(`:${key}`))!
+      expect(next.cards.find((c) => c.id === before.id)?.closedAt).toBeUndefined()
+    }
     const blockerCard = filed.cards.find((c) => c.sourceKey?.includes(':blocker:'))!
     expect(next.cards.find((c) => c.id === blockerCard.id)?.closedAt).toBeUndefined()
   }, 60_000)

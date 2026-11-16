@@ -398,6 +398,7 @@
       "kind": {
         "main-failing": "Fix",
         "unblock": "Unblock",
+        "rescope": "Done when",
         "settle": "Check",
         "review": "Review",
         "close": "Close",
@@ -5102,7 +5103,6 @@
       "checks": "Tick the due check on {steps}. | Tick {count} due checks on {steps}.",
       "humanSteps": "Confirm the human step: {steps}. | Confirm the human steps: {steps}.",
       "reviewImport": "Review the imported end — it is a placeholder until you approve a re-scope.",
-      "stewardPaused": "Steward paused {age}: {reason}",
       "mainRed": "main is red after #{pr} — {step} is merged, but its merge commit fails CI on main.",
       "approvals": "Answer the pending approvals ({count}) from {session} in the Approval Inbox.",
       "needsInput": "{session} is waiting on you — open it and answer.",

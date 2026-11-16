@@ -173,7 +173,7 @@ async function mcp(
 }
 
 describe('every record opens in the pane and the v3 file stays', () => {
-  it('the first door use on a v3 mission creates its v4 copy and leaves every v3 byte alone; a v3-shaped verb is then refused with the way out', async () => {
+  it('the first door use on a v3 mission creates its v4 copy and leaves every v3 byte alone; a verb that writes is then refused on the closed copy', async () => {
     seedV3()
     const before = v3Tree()
     expect(existsSync(v4Dir())).toBe(false)
@@ -201,16 +201,17 @@ describe('every record opens in the pane and the v3 file stays', () => {
     expect(readdirSync(v4Dir()).some((n) => n.startsWith(V3_ID))).toBe(true)
     expect(v3Tree()).toEqual(before)
 
-    // A v3-shaped verb on it is refused with the way out, and writes nothing in either format.
+    // The door closed it, so a verb that writes is now refused MISSION_CLOSED, and writes nothing in
+    // either format (the v3-shaped verbs that used to answer MISSION_IS_V4 are no longer in the catalog).
     const afterDoor = repoTree()
-    const refused = await mcp('mission_set_end', {
+    const refused = await mcp('mission_set_done_when', {
       missionId: V3_ID,
-      declaredEnd: { kind: 'code', target: 'a new end', evidence: 'something' },
-      reason: 'it changed'
+      doneWhen: 'A new end that is true when this is finished',
+      reason: 'it changed',
+      sessionId: LEADER
     })
     expect(refused.isError, refused.text).toBe(true)
-    expect(refused.text).toMatch(/^MISSION_IS_V4:/)
-    expect(refused.text).toContain('mission_set_done_when')
+    expect(refused.text).toMatch(/^MISSION_CLOSED:/)
     expect(repoTree()).toEqual(afterDoor)
     expect(v3Tree()).toEqual(before)
   }, 60_000)
