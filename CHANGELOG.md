@@ -14,6 +14,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- Approving or declining a re-scope on a mission from an older version no longer rewrites its old file; the change goes to its new copy.
 - A mission an earlier version wrote still tells you everything it was waiting for after the old mission view is gone. A new end an agent proposed and you have not answered still shows in the Mission pane with **Approve** and **Decline**, and now also counts on the pill and the chip, gets a card in **Your move** and a row in Activity, and keeps its place if the mission is copied to the new format before you answer. In **Your next step** that re-scope is one line with one **Review it** button (in English and Portuguese), never repeated and never in the agent's English wording. A mission imported from a goal file whose finish line nobody reviewed asks for that review as a blocker of yours. The other things it owed (a choice nobody made, checks, a human step) already came through as blockers and criteria; tests now pin each of them.
 
 - **In a very narrow Mission pane the opened "N more waiting on you" list is readable again.** At about 110 pixels its rows kept a button column and the text shrank until it stacked one letter per line. Now the button moves under the text.

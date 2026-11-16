@@ -549,8 +549,19 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
     expect(existsSync(path.join(repo, '.harnu', 'missions-v4'))).toBe(false)
   }, 60_000)
 
-  it('Approve applies it as the old popover did: the same file write and the same Log line, no v4 copy', async () => {
+  /** The one v4 copy of the mission in the throwaway repo (its text), or null before any write. */
+  const v4Copy = (): string | null => {
+    const dir = path.join(repo, '.harnu', 'missions-v4')
+    if (!existsSync(dir)) return null
+    const f = readdirSync(dir).find((n) => n.startsWith('mnt-0a1b2c3d-') && n.endsWith('.md'))
+    return f ? readFileSync(path.join(dir, f), 'utf8') : null
+  }
+  const fingerprint = (file: string): string =>
+    `${sha(readFileSync(file))}@${statSync(file).mtimeMs}`
+
+  it('Approve converts by copy: the v3 file stays byte- and mtime-identical, the v4 copy takes the new end', async () => {
     const file = seed(rescopeV3())
+    const before = fingerprint(file)
     const ipc = await import('../src/main/mission-ipc')
     const res = await ipc.runPaneDoor({
       folder: repo,
@@ -558,19 +569,24 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
       door: 'approveDoneWhen'
     })
     expect(res).toMatchObject({ ok: true })
-    const text = readFileSync(file, 'utf8')
-    expect(text).not.toContain('pendingRescope')
-    expect(text).toMatch(/target: The slice is merged and live/)
-    expect(text).toMatch(/via: operator/)
-    expect(text).toMatch(/### \S+ · operator approved the re-scope/)
-    expect(existsSync(path.join(repo, '.harnu', 'missions-v4'))).toBe(false)
-    // The box is gone from the pane afterwards.
+    // NG-8 / AC-22: no v4 code writes a v3 file.
+    expect(fingerprint(file)).toBe(before)
+    expect(readFileSync(file, 'utf8')).toContain('pendingRescope')
+    // The v4 copy carries the approved end, no staging, and the operator's Log line as before.
+    const copy = v4Copy()
+    expect(copy).not.toBeNull()
+    expect(copy).not.toMatch(/pendingDoneWhen/)
+    expect(copy).toContain(NEW_END.target)
+    expect(copy).toMatch(/### \S+ · operator approved the re-scope/)
+    // The box is gone from the pane afterwards, and the pane now reads the v4 copy.
     const reply = await view()
     expect(reply.state === 'mission' && reply.pendingDoneWhen).toBeNull()
+    expect(reply.state === 'mission' && reply.source).toBe('v4')
   }, 60_000)
 
-  it('Decline drops the staged re-scope, keeps the declared end and leaves its own Log line', async () => {
+  it('Decline converts by copy: the v3 file stays byte- and mtime-identical, the v4 copy keeps the end', async () => {
     const file = seed(rescopeV3())
+    const before = fingerprint(file)
     const ipc = await import('../src/main/mission-ipc')
     const res = await ipc.runPaneDoor({
       folder: repo,
@@ -578,11 +594,17 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
       door: 'declineDoneWhen'
     })
     expect(res).toMatchObject({ ok: true })
-    const text = readFileSync(file, 'utf8')
-    expect(text).not.toContain('pendingRescope')
-    expect(text).toMatch(/target: PR merging the slice/)
-    expect(text).toMatch(/### \S+ · operator declined the re-scope/)
-    expect(existsSync(path.join(repo, '.harnu', 'missions-v4'))).toBe(false)
+    expect(fingerprint(file)).toBe(before)
+    expect(readFileSync(file, 'utf8')).toContain('pendingRescope')
+    const copy = v4Copy()
+    expect(copy).not.toBeNull()
+    expect(copy).not.toMatch(/pendingDoneWhen/)
+    expect(copy).toContain('PR merging the slice')
+    // The frozen v3 snapshot keeps what was staged; the live Done when is the old one.
+    expect(copy).toMatch(/doneWhen: .*PR merging the slice/)
+    expect(copy).toMatch(/### \S+ · operator declined the re-scope/)
+    const reply = await view()
+    expect(reply.state === 'mission' && reply.pendingDoneWhen).toBeNull()
   }, 60_000)
 
   it('the Your move card for the re-scope closes when it is approved, and the blocker card is not touched', async () => {
