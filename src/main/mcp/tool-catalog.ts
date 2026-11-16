@@ -2069,7 +2069,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_workers',
     description:
-      "List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome. A STEWARD an older Harnu left (none is created any more; boot removes it) is listed with `category: 'steward'`, its `missionId` and `agentControllable: false`: it is a system worker, and update_worker / delete_worker refuse it (WORKER_IS_STEWARD).",
+      'List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome. `agentControllable` is false for a worker whose folder the operator blocked.',
     inputSchema: z.object({
       folder: z.string().min(1).optional().describe('Absolute path to scope the listing.')
     }),
@@ -2336,7 +2336,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'delete_worker',
     description:
-      "Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. A steward an older Harnu left (category 'steward') is refused WORKER_IS_STEWARD: boot removes it, none is created any more. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.",
+      'Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.',
     inputSchema: z.object({
       id: z.string().min(1).describe("The worker's id, from create_worker or list_workers.")
     }),
