@@ -591,43 +591,39 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
     ]
     seed(m)
     const ipc = await import('../src/main/mission-ipc')
-    const asView = (you: unknown[]): never =>
-      fixtureView('parallel', {
-        mission: { id: m.id, owner: { sessionId: LEADER, folder: repo } } as never,
-        view: { root: repo, you: you as never }
-      }) as never
-    const before = (await ipc.listMissionViews([repo])).views.find((v) => v.mission.id === m.id)!
-    expect(before.you.map((i) => i.kind)).toEqual(['rescope', 'blocker'])
     let n = 0
     const mint = (): string => `card-${++n}`
-    const filed = reconcileMissions(
-      emptyState(),
-      { views: [asView(before.you as unknown[])], unreadable: [] },
-      [repo],
-      'live',
-      mint,
-      1,
-      new Map()
-    )
     const open = (s: YourMoveState): string[] =>
       s.cards
         .filter((c) => c.closedAt === undefined)
         .map((c) => c.sourceKey ?? '')
         .sort()
-    expect(open(filed)).toHaveLength(2)
+    // S-40: the list poll serves no v3 view; Your move reads the records, a v3 file converted in memory.
+    const records = (): ReturnType<typeof readRecordViews> =>
+      readRecordViews([repo], { readDetail })
+    const filed = reconcileMissions(
+      emptyState(),
+      { unreadable: [] },
+      [repo],
+      'live',
+      mint,
+      1,
+      await records()
+    )
+    expect(open(filed)).toEqual(
+      [`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:rescope:${NEW_END.target}`].sort()
+    )
 
     const res = await ipc.runPaneDoor({ folder: repo, missionId: m.id, door: 'approveDoneWhen' })
     expect(res).toMatchObject({ ok: true })
-    const after = (await ipc.listMissionViews([repo])).views.find((v) => v.mission.id === m.id)!
-    expect(after.you.map((i) => i.kind)).toEqual(['blocker'])
     const next = reconcileMissions(
       filed,
-      { views: [asView(after.you as unknown[])], unreadable: [] },
+      { unreadable: [] },
       [repo],
       'live',
       mint,
       2,
-      new Map()
+      await records()
     )
     expect(open(next)).toEqual([`${m.id}:blocker:Waiting on the vendor key`])
     const blockerCard = filed.cards.find((c) => c.sourceKey?.includes(':blocker:'))!
