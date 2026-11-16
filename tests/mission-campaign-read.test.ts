@@ -17,6 +17,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -234,5 +235,21 @@ describe('a campaign read as one mission counts its chapters like the campaign d
     const byChapter = await readMissionRecord(root, 'mnt-cb000001')
     expect(byChapter.ok).toBe(true)
     expect(snapshot(root)).toEqual(before)
+  })
+
+  it('reads the frozen fixture campaign with its closed-as-delivered chapter 1 done', async () => {
+    const frozen = path.join(__dirname, 'fixtures', 'missions-v4-compat')
+    rmSync(path.join(root, '.harnu'), { recursive: true, force: true })
+    cpSync(path.join(frozen, 'campaigns'), path.join(root, '.harnu', 'campaigns'), {
+      recursive: true
+    })
+    cpSync(path.join(frozen, 'missions'), path.join(root, '.harnu', 'missions'), {
+      recursive: true
+    })
+    const read = await readMissionRecord(root, 'cmp-ca0001aa')
+    if (!read.ok) throw new Error(read.error)
+    const p = deriveProgress(read.record, {})
+    expect(p.milestones.map((m) => [m.title, m.state])).toContainEqual(['Import core', 'done'])
+    expect(p.done).toBeGreaterThanOrEqual(1)
   })
 })

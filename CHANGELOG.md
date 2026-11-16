@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-16
+
+### Fixed
+
+- An existing campaign shown in the Mission pane now counts its delivered chapters as done milestones. Before, every milestone read not started ("0 of 5 milestones done"), even a chapter whose mission was delivered. A chapter that was discarded no longer counts toward the total, and a side quest stays outside it. Nothing on disk changes: the campaign file and its chapter missions are only read.
+
 ## 2026-11-15
 
 ### Added
