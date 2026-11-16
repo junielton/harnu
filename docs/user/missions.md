@@ -37,7 +37,7 @@ The pane is built to be read in a small space (it usually sits at 300 to 420 pix
 - the mission's **title**;
 - a **progress bar** with the count written inside it: **4 of 21 steps done**, or **1 of 10 milestones done** when the mission has milestones. The bar fills in as steps are done, with a thin green line under the count that shows where the fill ends. The count is a single line; hold the pointer over it for the full text. There is no "Done when" paragraph;
 - **Ready to close** when every step is done. **Your next step** then reads **Close the mission: every step is done** (or **Close the mission: the session says it is ready** once the session has asked you), with a **Close mission…** button, and the Your move card says the same;
-- **Your next step**: one box with what to do and why it matters. If more than one thing waits on you, **N more waiting on you** opens the rest right there, and **Show less** folds them again. When nothing waits on you, the box says what is running instead ("2 steps are running. Nothing for you right now.");
+- **Your next step**: one box with what to do and why it matters. If more than one thing waits on you, **N more waiting on you** opens the rest right there, and **Show less** folds them again. When nothing waits on you, the box says what is running instead ("2 steps are running. Nothing for you right now."). When the only thing waiting is a new Done when to approve, the box says so (**Approve or decline the new Done when**) with a **Review it** button that brings the Approve and Decline box into view;
 - anything else that waits on you and is not a line of that list: a session asking to join, and a new Done when to approve (see below).
 
 **One click away.** These start closed, and the pane remembers what you open, even after a restart:
@@ -63,7 +63,7 @@ Under **Steps and timeline**, the mission is a tree: milestone, then step, then 
 
 In a narrow pane the tree wraps: step titles take up to two lines and a step's marks move under its title.
 
-**A very narrow pane.** The pane has no minimum width. Below about 240 pixels it switches to a tighter layout: less padding at the sides, text that wraps or shortens (hold the pointer over it for the full text), buttons that wrap onto their own line, and no sideways scrolling. The same controls are there at 110 pixels as at 420.
+**A very narrow pane.** The pane has no minimum width. Below about 240 pixels it switches to a tighter layout: less padding at the sides, text that wraps or shortens (hold the pointer over it for the full text), buttons that wrap onto their own line (in the opened **N more waiting on you** list, a row's button sits under its text), and no sideways scrolling. The same controls are there at 110 pixels as at 420.
 
 Your next step has one button, **Open step**: it opens that step in the tree and brings it into view. Items that need another action (letting a session join) show their text but no button yet.
 
@@ -81,7 +81,7 @@ Click a step to open it. It shows up to three parts, in this order: the blocker,
 
 ### A new Done when
 
-A session can propose a new **Done when** for the mission (what has to be true for it to be finished). It never takes effect by itself: the pane shows a box under **Your next step** with the proposed text, **Approve** and **Decline**. Approve makes it the mission's Done when; Decline keeps the current one.
+A session can propose a new **Done when** for the mission (what has to be true for it to be finished). It never takes effect by itself: the pane shows a box under **Your next step** with the proposed text, **Approve** and **Decline**. Approve makes it the mission's Done when; Decline keeps the current one. If nothing else waits on you, **Your next step** says the same and its **Review it** button takes you to that box. This holds for an older mission with a new end waiting too.
 
 ### Other things the pane says
 

@@ -7293,11 +7293,11 @@ the shell wrote). At 100% the label is `text-green`. The mockup bolds the number
 **Your next step (`MissionPaneNext.vue`).** One box under the bar (`margin-top: 10px`, `rounded`,
 `border`, `padding: 10px 12px`, `gap: 8px`, a column) from `detail.waiting`. Looks:
 
-| Look | When                                       | Border / background                   | Eyebrow            |
-| ---- | ------------------------------------------ | ------------------------------------- | ------------------ |
-| you  | `waiting.next` is a step the operator owes | `border-warning-line bg-warning-soft` | **Your next step** |
-| ok   | the next item is `close` (ready to close)  | `border-green-line bg-green-soft`     | **Your next step** |
-| calm | `waiting.next` is `null`                   | `border-border-2 bg-surface-2`        | **Next step**      |
+| Look | When                                                                                              | Border / background                   | Eyebrow            |
+| ---- | ------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------ |
+| you  | `waiting.next` is a step the operator owes, or `waiting.next` is `null` and a Done when is staged | `border-warning-line bg-warning-soft` | **Your next step** |
+| ok   | the next item is `close` (ready to close)                                                         | `border-green-line bg-green-soft`     | **Your next step** |
+| calm | `waiting.next` is `null` and no Done when is staged                                               | `border-border-2 bg-surface-2`        | **Next step**      |
 
 The eyebrow is `10px / 700`, uppercase, `0.07em`, `text-text-4` (`text-warning` in the `you` look,
 `text-green` in `ok`). Then **the ask** (`13px`, `text-text`, `line-height 1.4`) and **the why**
@@ -7309,14 +7309,16 @@ item whose record is gone, or a kind this build does not know, shows the server'
 running. Nothing for you right now." (or "Nothing is running. Nothing for you right now."), counted
 from the server's `progress.counts.running`.
 
+**A staged Done when** (an older mission's re-scope reads the same) is the next step when `waiting.next` is `null`: the ask is "Approve or decline the new Done when", the why "A session proposed it. It becomes the mission's end only if you approve.", and the one button is **Review it**, which scrolls the staged box below into view and focuses **Approve**. The box never reads "Nothing for you right now" above it. When other items wait, the staged box stays below as before.
+
 The action row is `flex`, `gap: 10px`: **one button** (`ui/Button`, variant `primary`), and the
 **"{n} more waiting on you"** link at the right (`11.5px`, `text-text-3`, hover `text-text`; `n` is
 the length of `waiting.more`, written by the renderer, never `waiting.moreLine`). The link expands
 **in place** (it never navigates): under the action row, a `border-t border-border` list, one row
-per other item, `Show less` replacing the link's text. A row is a two-column grid (`1fr auto`,
+per other item, `Show less` replacing the link's text. A row is a two-column grid at the regular width (`1fr auto`,
 `gap: 2px 10px`, `padding: 8px 0`, `border-t border-border` between rows): the kind in an eyebrow
 (`9.5px / 700`, uppercase, `0.06em`, `margin-right: 6px`) then the ask (`12px`); under it the why
-(`10.5px`, `text-text-4`); the row's button on the right, spanning both lines.
+(`10.5px`, `text-text-4`); the row's button on the right, spanning both lines. In a **narrow pane** (below 240 px) the row is one column (`minmax(0, 1fr)`) and the button sits on its own row under the text, left-aligned (`margin-top: 4px`), so the text keeps the whole width instead of a sliver (`restRowGrid`).
 
 | Kind (`waiting` identifier) | Eyebrow word | Eyebrow colour |
 | --------------------------- | ------------ | -------------- |

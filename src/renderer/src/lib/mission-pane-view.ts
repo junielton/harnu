@@ -677,10 +677,31 @@ export function milestoneGlyph(state: string): GlyphKind {
 /** The next-step box's look: the operator owes something, owes the close, or nothing waits. */
 export type NextLook = 'you' | 'ok' | 'calm'
 
-export function nextLook(detail: Detail): NextLook {
+/**
+ * `staged` is a Done when a session proposed (an older mission's re-scope reads the same way): it waits on the
+ * operator, so when the waiting list names nothing else the box is not calm.
+ */
+export function nextLook(detail: Detail, staged = false): NextLook {
   const next = detail.waiting.next
-  if (next === null) return 'calm'
+  if (next === null) return staged ? 'you' : 'calm'
   return next.kind === 'close' ? 'ok' : 'you'
+}
+
+/**
+ * How a row of the opened "N more waiting on you" list is laid out. Regular: the text and the button side by
+ * side (`1fr auto`). Narrow: one column and the button on its own row under the text, because a button column
+ * left the text about 10 px at 110 px and it stacked one letter per line.
+ */
+export interface RestRowGrid {
+  columns: string
+  /** The button sits beside the text, pinned to column 2 over both text rows. */
+  buttonBeside: boolean
+}
+
+export function restRowGrid(mode: PaneLayout['mode']): RestRowGrid {
+  return mode === 'narrow'
+    ? { columns: 'minmax(0, 1fr)', buttonBeside: false }
+    : { columns: '1fr auto', buttonBeside: true }
 }
 
 // ---- Sessions row and the hand-off (Missions v4, S-20) -----------------------------------------------

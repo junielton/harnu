@@ -425,6 +425,11 @@
           "askReady": "Close the mission: every step is done",
           "why": "The mission is finished once you close it"
         },
+        "doneWhen": {
+          "ask": "Approve or decline the new Done when",
+          "why": "A session proposed it. It becomes the mission’s end only if you approve.",
+          "open": "Review it"
+        },
         "attach": {
           "ask": "Let another session join this mission",
           "why": "It asked to work on it and waits for your answer"

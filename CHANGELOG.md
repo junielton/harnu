@@ -10,6 +10,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-16
+
+### Fixed
+
+- **In a very narrow Mission pane the opened "N more waiting on you" list is readable again.** At about 110 pixels its rows kept a button column and the text shrank until it stacked one letter per line. Now the button moves under the text.
+- **Your next step no longer says "Nothing for you right now" above a new Done when that waits for you.** An older mission with a re-scope waiting, or any mission with a proposed Done when, now says "Approve or decline the new Done when" with a **Review it** button that brings the Approve and Decline box into view.
+
 ## 2026-11-15
 
 ### Added

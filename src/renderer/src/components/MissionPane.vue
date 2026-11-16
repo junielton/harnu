@@ -215,6 +215,12 @@ async function revealStep(stepId: string): Promise<void> {
 }
 
 // A Done when a session staged waits for the operator: approve it or decline it (the doors never refuse).
+// Your next step names it and its button brings the box into view.
+const stagedBox = ref<HTMLElement | null>(null)
+function revealStaged(): void {
+  stagedBox.value?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+  stagedBox.value?.querySelector<HTMLElement>('[data-test="done-when-approve"]')?.focus()
+}
 const doneWhenBusy = ref(false)
 const doneWhenError = ref<string | null>(null)
 async function decideDoneWhen(door: 'approveDoneWhen' | 'declineDoneWhen'): Promise<void> {
@@ -653,6 +659,8 @@ useFocusRegion(props.pane.id, rootEl, {
             :detail="mission.detail"
             :more-open="sections.more"
             :compact="layout.mode === 'narrow'"
+            :staged="mission.pendingDoneWhen != null"
+            @open-staged="revealStaged"
             @open-step="revealStep($event)"
             @toggle-more="setSection('more', !sections.more)"
             @close="openClose"
@@ -664,6 +672,7 @@ useFocusRegion(props.pane.id, rootEl, {
           <!-- A Done when a session staged: only the operator makes it the mission's end. -->
           <section
             v-if="mission.pendingDoneWhen"
+            ref="stagedBox"
             class="flex flex-col rounded border border-accent-line bg-accent-soft"
             :style="{
               marginTop: '10px',

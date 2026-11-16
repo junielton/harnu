@@ -5,6 +5,7 @@ import { Flag } from 'lucide-vue-next'
 import Button from './ui/Button.vue'
 import {
   nextLook,
+  restRowGrid,
   waitingStepId,
   waitingText,
   type MissionV4Reply,
@@ -32,14 +33,25 @@ const props = defineProps<{
   moreOpen?: boolean
   /** The pane is narrow: the box gives its text more room. */
   compact?: boolean
+  /** A Done when a session proposed waits for the operator (an older mission's re-scope reads the same). */
+  staged?: boolean
 }>()
-const emit = defineEmits<{ openStep: [stepId: string]; close: []; toggleMore: [] }>()
+const emit = defineEmits<{
+  openStep: [stepId: string]
+  close: []
+  toggleMore: []
+  openStaged: []
+}>()
 
 const { t } = useI18n()
 
 const next = computed(() => props.detail.waiting.next)
 const more = computed(() => props.detail.waiting.more)
-const look = computed<NextLook>(() => nextLook(props.detail))
+// A staged Done when is the next step when the waiting list names nothing else (design.md §6 "Mission pane" →
+// Your next step): the box never reads "Nothing for you" above the Approve / Decline box.
+const stagedNext = computed(() => props.staged === true && next.value === null)
+const look = computed<NextLook>(() => nextLook(props.detail, props.staged === true))
+const restGrid = computed(() => restRowGrid(props.compact ? 'narrow' : 'regular'))
 const localOpen = ref(false)
 const expanded = computed(() => props.moreOpen ?? localOpen.value)
 function toggleMore(): void {
@@ -64,6 +76,15 @@ const calmLine = computed(() => {
     ? t('missionPane.next.running', { n: running }, running)
     : t('missionPane.next.idle')
 })
+
+/** Beside the text, pinned to column 2 over both text rows; narrow, on its own row under the text. */
+const restButtonStyle = computed(() => ({
+  padding: '2px 8px',
+  fontSize: '11px',
+  ...(restGrid.value.buttonBeside
+    ? { gridColumn: '2', gridRow: '1 / span 2' }
+    : { justifySelf: 'start', marginTop: '4px', order: '1' })
+}))
 
 const BOX: Record<NextLook, string> = {
   you: 'border-warning-line bg-warning-soft',
@@ -107,7 +128,17 @@ const KIND: Record<string, string> = {
       >{{ look === 'calm' ? $t('missionPane.next.calm') : $t('missionPane.next.you') }}</span
     >
 
-    <template v-if="next">
+    <template v-if="stagedNext">
+      <span class="min-w-0 break-words text-text" style="font-size: 13px; line-height: 1.4">{{
+        $t('missionPane.next.text.doneWhen.ask')
+      }}</span>
+      <span
+        class="min-w-0 break-words text-text-3"
+        style="font-size: 11.5px; line-height: 1.4; margin-top: -4px"
+        >{{ $t('missionPane.next.text.doneWhen.why') }}</span
+      >
+    </template>
+    <template v-else-if="next">
       <span class="min-w-0 break-words text-text" style="font-size: 13px; line-height: 1.4">{{
         words(next).ask
       }}</span>
@@ -127,11 +158,20 @@ const KIND: Record<string, string> = {
     >
 
     <div
-      v-if="primaryStep || nextIsClose || more.length > 0"
+      v-if="primaryStep || nextIsClose || stagedNext || more.length > 0"
       class="flex flex-wrap items-center"
       style="gap: 8px 10px"
       data-test="next-controls"
     >
+      <Button
+        v-if="stagedNext"
+        variant="primary"
+        :style="btnStyle"
+        data-test="next-open-staged"
+        @click="emit('openStaged')"
+      >
+        {{ $t('missionPane.next.text.doneWhen.open') }}
+      </Button>
       <Button
         v-if="primaryStep"
         variant="primary"
@@ -173,7 +213,7 @@ const KIND: Record<string, string> = {
         v-for="item in more"
         :key="item.id"
         class="grid items-center border-t border-border first:border-t-0"
-        style="grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 0"
+        :style="{ gridTemplateColumns: restGrid.columns, gap: '2px 10px', padding: '8px 0' }"
         data-test="next-rest-row"
         :data-kind="item.kind"
       >
@@ -188,8 +228,8 @@ const KIND: Record<string, string> = {
         <button
           v-if="waitingStepId(item)"
           type="button"
-          class="row-span-2 rounded-sm border border-border-2 text-text-2 transition hover:bg-surface-2 hover:text-text"
-          style="grid-column: 2; grid-row: 1 / span 2; padding: 2px 8px; font-size: 11px"
+          class="rounded-sm border border-border-2 text-text-2 transition hover:bg-surface-2 hover:text-text"
+          :style="restButtonStyle"
           data-test="next-rest-open"
           @click="emit('openStep', waitingStepId(item) as string)"
         >
@@ -198,8 +238,8 @@ const KIND: Record<string, string> = {
         <button
           v-else-if="item.kind === 'close'"
           type="button"
-          class="row-span-2 rounded-sm border border-border-2 text-text-2 transition hover:bg-surface-2 hover:text-text"
-          style="grid-column: 2; grid-row: 1 / span 2; padding: 2px 8px; font-size: 11px"
+          class="rounded-sm border border-border-2 text-text-2 transition hover:bg-surface-2 hover:text-text"
+          :style="restButtonStyle"
           data-test="next-close"
           @click="emit('close')"
         >

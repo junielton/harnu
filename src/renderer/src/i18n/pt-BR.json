@@ -425,6 +425,11 @@
           "askReady": "Feche a missão: todos os passos estão concluídos",
           "why": "A missão termina quando você a fecha"
         },
+        "doneWhen": {
+          "ask": "Aprove ou recuse o novo Pronto quando",
+          "why": "Uma sessão o propôs. Ele só vira o fim da missão se você aprovar.",
+          "open": "Ver proposta"
+        },
         "attach": {
           "ask": "Deixe outra sessão entrar nesta missão",
           "why": "Ela pediu para trabalhar nela e espera sua resposta"
