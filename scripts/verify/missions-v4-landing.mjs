@@ -1217,7 +1217,7 @@ async function runMain(ctx) {
       before.approve && before.decline,
       `Approve ${before.approve}, Decline ${before.decline} on the staged re-scope of ${id}`
     )
-    const target = /^pendingRescope:\n(?:.*\n)*?  target: (.+)$/m.exec(
+    const target = /^pendingRescope:\n(?:.*\n)*? {2}target: (.+)$/m.exec(
       readFileSync(copy.dest, 'utf8')
     )?.[1]
     const mtime0 = statSync(copy.dest).mtimeMs
