@@ -1,0 +1,237 @@
+{
+  "name": "settle",
+  "order": 3,
+  "title": "a second session settles a criterion; the builder only self-checks; the operator's criterion stays open",
+  "label": "v4 AC-81 (settle)",
+  "description": "Missions v4 S-33, AC-81. A v4 mission is seeded: step 1 was built by A (a `session` link) and carries three criteria (two for a second session, one for the operator); B is attached as a worker. B settles criterion 1 (stamped with B and the evidence), tries it a second time (the first settlement stands) and tries the operator's criterion (refused). A, the builder, then calls the same verb on criterion 2: it is a labelled self-check, never proof, and the criterion stays open. The grade reads the criteria: `settled` only on criterion 1 and by B, `selfCheck` only on criterion 2 and by A, nothing on the operator's.",
+  "agents": ["A", "B"],
+  "phases": [
+    {
+      "seedV4": {
+        "slug": "notes-export",
+        "title": "Notes export",
+        "doneWhen": "The notes export ships",
+        "steps": [
+          {
+            "title": "Write the CSV writer",
+            "startedAt": "now",
+            "links": [
+              {
+                "kind": "session",
+                "ref": "{{session.A}}"
+              }
+            ],
+            "acs": [
+              {
+                "text": "The writer emits one row per board"
+              },
+              {
+                "text": "The writer rejects an empty board"
+              },
+              {
+                "text": "The flag text reads well",
+                "by": "operator"
+              }
+            ]
+          }
+        ],
+        "sessions": [
+          {
+            "id": "{{session.A}}",
+            "role": "leads"
+          },
+          {
+            "id": "{{session.B}}",
+            "role": "worked"
+          }
+        ]
+      }
+    },
+    {
+      "agent": "B",
+      "prompt": "1. mcp__harnu__mission_settle_ac with folder=\"{{folder}}\", missionId=\"{{m.notes-export.id}}\", sessionId=\"{{self}}\", stepId=\"stp-1\", criterionId=\"ac-1\", evidence=\"Ran it on two boards: two rows each.\".\n2. The same call again, with evidence=\"Second look, same result.\" (it is refused: the first settlement stands).\n3. mcp__harnu__mission_settle_ac with the same folder, missionId and sessionId, stepId=\"stp-1\", criterionId=\"ac-3\", evidence=\"Read the help text.\" (it is refused: the operator settles that one)."
+    },
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_settle_ac with folder=\"{{folder}}\", missionId=\"{{m.notes-export.id}}\", sessionId=\"{{self}}\", stepId=\"stp-1\", criterionId=\"ac-2\", evidence=\"Ran it: an empty board is rejected.\"."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "mission": "notes-export",
+      "step": "id:stp-1",
+      "label": "a second session settled criterion 1",
+      "path": "acs.0.settled.by",
+      "equals": "{{session.B}}"
+    },
+    {
+      "mission": "notes-export",
+      "step": "id:stp-1",
+      "label": "with its evidence, the first one",
+      "path": "acs.0.settled.evidence",
+      "equals": "Ran it on two boards: two rows each."
+    },
+    {
+      "mission": "notes-export",
+      "step": "id:stp-1",
+      "label": "a settled criterion carries no self-check",
+      "path": "acs.0.selfCheck",
+      "exists": false
+    },
+    {
+      "mission": "notes-export",
+      "step": "id:stp-1",
+      "label": "the builder did not settle criterion 2",
+      "path": "acs.1.settled",
+      "exists": false
+    },
+    {
+      "mission": "notes-export",
+      "step": "id:stp-1",
+      "label": "the builder's check is labelled, with its author",
+      "path": "acs.1.selfCheck.by",
+      "equals": "{{session.A}}"
+    },
+    {
+      "mission": "notes-export",
+      "step": "id:stp-1",
+      "path": "acs.1.selfCheck.evidence",
+      "equals": "Ran it: an empty board is rejected."
+    },
+    {
+      "mission": "notes-export",
+      "step": "id:stp-1",
+      "label": "the operator's criterion stays open",
+      "path": "acs.2.settled",
+      "exists": false
+    },
+    {
+      "mission": "notes-export",
+      "step": "id:stp-1",
+      "path": "acs.2.selfCheck",
+      "exists": false
+    },
+    {
+      "mission": "notes-export",
+      "label": "no criterion is settled by the builder",
+      "anyCriterion": {
+        "settled": {
+          "by": "{{session.A}}"
+        }
+      },
+      "present": false
+    },
+    {
+      "mission": "notes-export",
+      "label": "exactly one criterion is settled",
+      "criterionCount": {
+        "settled": {
+          "$exists": true
+        }
+      },
+      "equals": 1
+    }
+  ],
+  "breaks": [
+    {
+      "name": "builder-settled-its-own",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "step": "id:stp-1",
+          "unset": "acs.1.selfCheck"
+        },
+        {
+          "mission": "notes-export",
+          "step": "id:stp-1",
+          "set": {
+            "acs.1.settled": {
+              "at": "2026-11-14T10:00:00.000Z",
+              "by": "{{session.A}}",
+              "evidence": "mine"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "self-check-promoted-to-proof",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "step": "id:stp-1",
+          "set": {
+            "acs.1.settled": {
+              "at": "2026-11-14T10:00:00.000Z",
+              "by": "{{session.B}}",
+              "evidence": "x"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "settlement-overwritten",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "step": "id:stp-1",
+          "set": {
+            "acs.0.settled.evidence": "Second look, same result."
+          }
+        }
+      ]
+    },
+    {
+      "name": "operator-criterion-settled",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "step": "id:stp-1",
+          "set": {
+            "acs.2.settled": {
+              "at": "2026-11-14T10:00:00.000Z",
+              "by": "{{session.B}}",
+              "evidence": "x"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "settled-by-the-builder",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "step": "id:stp-1",
+          "set": {
+            "acs.0.settled.by": "{{session.A}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "nothing-settled",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "step": "id:stp-1",
+          "unset": "acs.0.settled"
+        }
+      ]
+    },
+    {
+      "name": "no-self-check",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "step": "id:stp-1",
+          "unset": "acs.1.selfCheck"
+        }
+      ]
+    }
+  ]
+}
