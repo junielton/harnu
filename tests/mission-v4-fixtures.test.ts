@@ -2,7 +2,7 @@
  * Missions v4 · S-1 · AC-1 — the frozen v3 compatibility fixtures.
  *
  * `tests/fixtures/missions-v4-compat/` holds mission and campaign files exactly as the v3
- * builders (`buildMissionFileContent`, `buildCampaignFileContent`) write them, in the layout
+ * builders (`buildMissionFileContent`, and the campaign builder deleted by S-39) wrote them, in the layout
  * of a repo that used v3 (`missions/` and `campaigns/`; the `.harnu/` prefix is left off
  * because `.harnu/` is gitignored, and a later test copies them under it). Later slices run
  * their compatibility proofs (reads change no byte, v4 writes never touch a v3 file, the
@@ -26,11 +26,9 @@ import {
   type Mission
 } from '../src/main/mission-core'
 import {
-  buildCampaignFileContent,
-  parseCampaignFile,
-  readCampaignLog,
-  type Campaign
-} from '../src/main/campaign-core'
+  parseV3CampaignFile as parseCampaignFile,
+  type V3Campaign as Campaign
+} from '../src/main/missions/v3-read'
 
 const DIR = path.join(__dirname, 'fixtures', 'missions-v4-compat')
 
@@ -121,9 +119,8 @@ describe('fixtures are frozen v3', () => {
         file
       ).toBe(raw)
     }
-    for (const { file, campaign, raw } of campaigns()) {
-      expect(buildCampaignFileContent(campaign, readCampaignLog(raw)), file).toBe(raw)
-    }
+    // The v3 campaign builder was deleted with the campaign code (S-39): a campaign fixture's bytes are
+    // held by the sha256 pins above and by the parse in `campaigns()`, not by a second serializer.
   })
 
   it('tie every chapter mission to its campaign both ways', () => {

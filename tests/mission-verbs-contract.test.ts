@@ -854,7 +854,7 @@ describe('mission_* contract — a blocked repo refuses every verb, from any wor
 
 // ---- Missions v4 S-24 (AC-66): both sets are registered, nothing is removed ----------------------
 
-/** Every `mission_*`, `campaign_*` and `rebase_stack` verb the catalog held before v4 (spec "Verb fate table"). */
+/** Every `mission_*` and `rebase_stack` verb the catalog still holds from before v4 (the six `campaign_*` verbs left with S-39) (spec "Verb fate table"). */
 const V3_VERBS = [
   'mission_create',
   'mission_get',
@@ -871,12 +871,6 @@ const V3_VERBS = [
   'mission_request_close',
   'mission_import_legacy',
   'mission_transfer_owner',
-  'campaign_create',
-  'campaign_add_chapter',
-  'campaign_get',
-  'campaign_list',
-  'campaign_request_close',
-  'campaign_transfer_owner',
   'rebase_stack'
 ] as const
 

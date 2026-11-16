@@ -35,14 +35,14 @@ describe('AC-6.2 — memory_append supersedes + provenance.mission', () => {
   it('returns the new entry id and stamps mission and valid_from', async () => {
     const res = await append('## Poll every minute', {
       mission: 'mnt-4ba02726',
-      watches: ['src/main/steward-core.ts']
+      watches: ['src/main/scheduler-core.ts']
     })
     expect(res.ok).toBe(true)
     if (!res.ok) return
     expect(res.entryId).toMatch(/^e-[0-9a-f]{8}$/)
     const text = await fs.readFile(path.join(dir, 'decisions.md'), 'utf8')
     expect(text).toContain(
-      `> entry: ${res.entryId} · valid_from=2026-11-02 · watches=src/main/steward-core.ts`
+      `> entry: ${res.entryId} · valid_from=2026-11-02 · watches=src/main/scheduler-core.ts`
     )
     expect(text).toContain('mission=mnt-4ba02726')
   })
@@ -136,13 +136,13 @@ describe('AC-6.2 — memory_append supersedes + provenance.mission', () => {
 
 describe('AC-6.3 — recallForScope reads the real files', () => {
   it('recalls a live decision whose watches overlap the scope, and not a superseded one', async () => {
-    const old = await append('## Poll every minute', { watches: ['src/main/steward-core.ts'] })
+    const old = await append('## Poll every minute', { watches: ['src/main/scheduler-core.ts'] })
     if (!old.ok) throw new Error('setup')
     await append('## Wake on events', {
-      watches: ['src/main/steward-core.ts'],
+      watches: ['src/main/scheduler-core.ts'],
       supersedes: old.entryId
     })
-    const hits = await recallForScope(dir, { paths: ['src/main/steward-core.ts'], topics: [] })
+    const hits = await recallForScope(dir, { paths: ['src/main/scheduler-core.ts'], topics: [] })
     expect(hits.map((h) => h.text)).toEqual(['Wake on events'])
     expect(hits[0].page).toBe('decisions')
   })

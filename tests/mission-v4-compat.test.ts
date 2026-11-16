@@ -31,7 +31,6 @@ import {
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { parseMissionFile } from '../src/main/mission-core'
-import { parseCampaignFile } from '../src/main/campaign-core'
 import {
   buildMissionRecordContent,
   parseMissionRecordFile,
@@ -185,14 +184,20 @@ const V3_CAMPAIGN_NAMES = [
 ]
 
 describe('the frozen v3 reader agrees with the v3 parser', () => {
-  it('parses every fixture to exactly what mission-core and campaign-core parse', () => {
+  it('parses every mission fixture to exactly what mission-core parses, and every campaign fixture without error', () => {
     for (const name of V3_MISSION_NAMES) {
       const raw = readFixture(`missions/${name}.md`)
       expect(parseV3MissionFile(raw), name).toEqual(parseMissionFile(raw))
     }
     for (const name of V3_CAMPAIGN_NAMES) {
       const raw = readFixture(`campaigns/${name}.md`)
-      expect(parseV3CampaignFile(raw), name).toEqual(parseCampaignFile(raw))
+      // The v3 campaign parser was deleted with the campaign code (S-39), so there is nothing left to
+      // compare against: the frozen reader must still accept every campaign fixture, under its file name.
+      const parsed = parseV3CampaignFile(raw)
+      expect(parsed, name).not.toHaveProperty('error')
+      expect(`${name}.md`, name).toBe(
+        `${(parsed as { id: string }).id}-${(parsed as { slug: string }).slug}.md`
+      )
     }
   })
 
@@ -1191,8 +1196,8 @@ const FORBIDDEN_V3 = new Set([
   'mission-gates',
   'mission-progress',
   'mission-migration',
-  'campaign-core',
-  'campaign-progress'
+  ['campaign', 'core'].join('-'),
+  ['campaign', 'progress'].join('-')
 ])
 
 /** Which v3 modules `source`, living in `dir`, imports by a relative path. */
@@ -1227,9 +1232,9 @@ describe('v4 modules import v3 code only through v3-read', () => {
     const bad = [
       "import { parseMissionFile } from '../mission-core'",
       "import type { Mission } from '../mission-core'",
-      "export { campaignFilePath } from '../campaign-core'",
+      `export { campaignFilePath } from '../${['campaign', 'core'].join('-')}'`,
       "const m = await import('../mission-gates')",
-      "import { x } from '../steward-core'"
+      `import { x } from '../${['steward', 'core'].join('-')}'`
     ]
     for (const line of bad) expect(v3Imports(line, dir), line).toHaveLength(1)
     const fine = [

@@ -287,21 +287,10 @@ export const MCP_OPS = [
   // the other mission writes. Ticking and deleting a check are the operator's UI
   // doors (`mission-ipc.ts`) — no verb reaches them.
   'mission_add_check',
-  // Campaign ch.3a (T595, spec §3.3): the quest line above the mission. Same gate class as
-  // the mission verbs: direct writes of a local, gitignored record, reads with no gate field.
-  // No verb here — or anywhere — merges, chooses a decision, ticks a check or closes a
-  // campaign: `campaign_request_close` only SIGNALS (`delivered` + `pendingClose`); the end is
-  // the operator's door.
-  'campaign_create',
-  'campaign_add_chapter',
-  'campaign_get',
-  'campaign_list',
-  'campaign_request_close',
   // T654: the recovery path when an owner session must be replaced (it died, the app was closed, a
   // successor was spawned). Same gate class as the mission verbs: a local write the agent could already
   // do with its own tools. Denied to a steward and to an `observe` tick by name (derived deny lists).
   'mission_transfer_owner',
-  'campaign_transfer_owner',
   // Missions v4 S-24: the v4 verbs that exist in v4 alone, registered beside the v3 ones (nothing is
   // removed until S-40). Same gate class as the mission verbs: a local write the agent could already
   // do with its own tools. The kept names (`mission_create`, `mission_get`, `mission_add_step`, …)
@@ -453,41 +442,6 @@ const MISSION_V4_LINK_SCHEMA = z.object({
   kind: z.enum(LINK_KINDS),
   ref: z.string().min(1).max(1_000)
 })
-
-/** Campaign ch.3a: the gate folder every campaign verb is anchored to. */
-const CAMPAIGN_FOLDER_SCHEMA = z
-  .string()
-  .min(1)
-  .describe('Absolute path of any folder/worktree of the repo that holds the campaign.')
-
-/** Campaign ch.3a: prerequisite tokens (spec §3.5) — free strings agreed by the skill. */
-const CAMPAIGN_TOKENS_SCHEMA = z.array(z.string().trim().min(1).max(100)).max(20)
-
-/** Campaign ch.3a: the fields a chapter is declared with, shared by `campaign_create` and `campaign_add_chapter`. */
-const CAMPAIGN_CHAPTER_SHAPE = {
-  title: z.string().trim().min(1).max(200).describe('Chapter title (1..200 chars, single line).'),
-  required: z
-    .boolean()
-    .optional()
-    .describe(
-      'Default true. false = a SIDE-QUEST chapter: outside the headline, never "left behind".'
-    ),
-  consumes: CAMPAIGN_TOKENS_SCHEMA.optional().describe(
-    'Prerequisite tokens this chapter needs (e.g. "images-on-cdn"). Each must be produced by an EARLIER chapter, or the call is refused PREREQ_MISSING unless force: true.'
-  ),
-  produces: CAMPAIGN_TOKENS_SCHEMA.optional().describe(
-    'Tokens this chapter makes available to later chapters.'
-  ),
-  radiant: z
-    .object({
-      template: z.string().trim().min(1).max(200),
-      total: z.number().int().min(1).max(100_000)
-    })
-    .optional()
-    .describe(
-      'One template run N times, e.g. { template: "migrate page {slug}", total: 88 }. Its progress is the chapter mission\'s done steps out of total.'
-    )
-}
 
 /** One MCP tool the server registers: its name, schema, and gate/router wiring. */
 export interface McpToolDef {
@@ -1671,7 +1625,7 @@ export const MCP_TOOLS: McpToolDef[] = [
         .array(z.string())
         .optional()
         .describe(
-          'decisions only: repo paths (a file, or a directory with a trailing /) and single-word topics the entry is about. A new mission or campaign whose scope or chapter titles overlap them gets the entry back in its create ACK `recall`.'
+          'decisions only: repo paths (a file, or a directory with a trailing /) and single-word topics the entry is about. A new mission whose scope or step titles overlap them gets the entry back in its create ACK `recall`.'
         ),
       mission: z
         .string()
@@ -2115,7 +2069,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_workers',
     description:
-      "List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome. A STEWARD an older Harnu left (none is created any more; boot removes it) is listed with `category: 'steward'`, its `missionId` and `agentControllable: false`: it is a system worker, and update_worker / delete_worker refuse it (WORKER_IS_STEWARD).",
+      'List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome. `agentControllable` is false for a worker whose folder the operator blocked.',
     inputSchema: z.object({
       folder: z.string().min(1).optional().describe('Absolute path to scope the listing.')
     }),
@@ -2382,7 +2336,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'delete_worker',
     description:
-      "Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. A steward an older Harnu left (category 'steward') is refused WORKER_IS_STEWARD: boot removes it, none is created any more. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.",
+      'Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.',
     inputSchema: z.object({
       id: z.string().min(1).describe("The worker's id, from create_worker or list_workers.")
     }),
@@ -2420,7 +2374,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_create',
     description:
-      "Create a Mission — structured progress tracking for a body of work, stored repo-scoped under the main checkout's `.harnu/missions/` (every worktree of the repo shares it). DIRECT write, no confirm. TWO SHAPES (Missions v4): a call with `doneWhen`, `milestones` or steps that carry `criteria` creates a v4 mission (stored under `.harnu/missions-v4/`); a call with `declaredEnd`, `scope`, `campaignId`, `chapterId`, `steward` or steps that carry `verification` creates a v3 mission as before. Never both in one call (BAD_ARGS). v4 shape: `title`, `doneWhen` (what is true when the mission is done), optional `milestones` (`{ title, optional, waitsFor }[]`, in order), `steps` (each `{ title, criteria, milestone, optional, links, waitsFor }` with at least one criterion: a sentence a second session settles, or `{ text, by: fact | session | operator | person, fact, person }`), optional `links` (kinds session, pr, worktree, url, doc), and `sessionId` — you become the leader, with no confirmation. No `declaredEnd`, `steward`, `campaignId` or `chapterId`. The ACK carries `id`, the summary and `recall`. The rest of this text is the v3 shape. A complete `declaredEnd` is REQUIRED — kind (code | ui | research | decision | other) + a concrete target + the evidence that proves it; the call is refused (DECLARED_END_INCOMPLETE) without all three. The mission is born `active` — there is no draft and no approval step: the end you agreed with the operator in chat IS the agreement (stamped as `declaredEndApproval.via: 'chat'`). Declare the plan in the same call with `steps` — `{ title, verification }[]`, one step per deliverable that moves where the work is (1 unit = 1 PR = 1 step) — numbered from stp-1 and followed by the fixed last step \"Delivered and verified\" (verifier), found by its kind, never by id. Planning steps need no reason. Pass `scope` — the repo-relative paths of the spec / PRD / ADR — and they are attached to the mission as `scope`: an attachment, never a step, never counted in progress (`derived.scope` reports whether each path exists). `sessionId` names the OWNER: pass your own Claude session UUID. It is SELF-DECLARED and NOT authenticated — Harnu's MCP transport has no per-session identity — so a wrong id is not caught, it just means the mission-owner hibernation exemption never finds you. A Mission (`mission_*`) is unrelated to plan_mission (a capability grant); they share a word, not a mechanism. To make the mission a CHAPTER of a campaign, pass `campaignId` AND `chapterId` together (campaign spec §3.2): the mission records both and the chapter records the mission's id — a chapter takes one mission (CHAPTER_ALREADY_BOUND), the campaign must be open (CAMPAIGN_CLOSED), and an unknown campaign or chapter is CAMPAIGN_NOT_FOUND / CHAPTER_NOT_FOUND; a refusal writes no mission. The ACK echoes `campaignId` and `chapterId` when bound. Missions have no steward: none is created and no hooks are installed (`steward` is accepted and ignored); the ACK reads `steward: { created: false }`.",
+      "Create a Mission — structured progress tracking for a body of work, stored repo-scoped under the main checkout's `.harnu/missions/` (every worktree of the repo shares it). DIRECT write, no confirm. TWO SHAPES (Missions v4): a call with `doneWhen`, `milestones` or steps that carry `criteria` creates a v4 mission (stored under `.harnu/missions-v4/`); a call with `declaredEnd`, `scope`, `campaignId`, `chapterId`, `steward` or steps that carry `verification` creates a v3 mission as before. Never both in one call (BAD_ARGS). v4 shape: `title`, `doneWhen` (what is true when the mission is done), optional `milestones` (`{ title, optional, waitsFor }[]`, in order), `steps` (each `{ title, criteria, milestone, optional, links, waitsFor }` with at least one criterion: a sentence a second session settles, or `{ text, by: fact | session | operator | person, fact, person }`), optional `links` (kinds session, pr, worktree, url, doc), and `sessionId` — you become the leader, with no confirmation. No `declaredEnd`, `steward`, `campaignId` or `chapterId`. The ACK carries `id`, the summary and `recall`. The rest of this text is the v3 shape. A complete `declaredEnd` is REQUIRED — kind (code | ui | research | decision | other) + a concrete target + the evidence that proves it; the call is refused (DECLARED_END_INCOMPLETE) without all three. The mission is born `active` — there is no draft and no approval step: the end you agreed with the operator in chat IS the agreement (stamped as `declaredEndApproval.via: 'chat'`). Declare the plan in the same call with `steps` — `{ title, verification }[]`, one step per deliverable that moves where the work is (1 unit = 1 PR = 1 step) — numbered from stp-1 and followed by the fixed last step \"Delivered and verified\" (verifier), found by its kind, never by id. Planning steps need no reason. Pass `scope` — the repo-relative paths of the spec / PRD / ADR — and they are attached to the mission as `scope`: an attachment, never a step, never counted in progress (`derived.scope` reports whether each path exists). `sessionId` names the OWNER: pass your own Claude session UUID. It is SELF-DECLARED and NOT authenticated — Harnu's MCP transport has no per-session identity — so a wrong id is not caught, it just means the mission-owner hibernation exemption never finds you. A Mission (`mission_*`) is unrelated to plan_mission (a capability grant); they share a word, not a mechanism. Campaigns and chapters no longer exist: a call that passes `campaignId` or `chapterId` is refused CAMPAIGN_REMOVED and writes nothing (plan the stages as milestones). Missions have no steward: none is created and no hooks are installed (`steward` is accepted and ignored); the ACK reads `steward: { created: false }`.",
     inputSchema: z
       .object({
         folder: z
@@ -2441,13 +2395,15 @@ export const MCP_TOOLS: McpToolDef[] = [
           .min(1)
           .optional()
           .describe(
-            'The campaign (cmp-<8 hex>) this mission is a chapter of. Pass with chapterId.'
+            'Retired: campaigns no longer exist. A call that passes it is refused CAMPAIGN_REMOVED and nothing is written; plan the stages as milestones instead.'
           ),
         chapterId: z
           .string()
           .min(1)
           .optional()
-          .describe('The chapter (chp-<n>) of campaignId this mission IS. Pass with campaignId.'),
+          .describe(
+            'Retired: chapters no longer exist. A call that passes it is refused CAMPAIGN_REMOVED and nothing is written; plan the stages as milestones instead.'
+          ),
         declaredEnd: MISSION_DECLARED_END_SCHEMA.optional(),
         sessionId: z
           .string()
@@ -2936,134 +2892,6 @@ export const MCP_TOOLS: McpToolDef[] = [
     silentAllowInAgentFolder: true
   },
   {
-    name: 'campaign_create',
-    description:
-      'Create a Campaign — the quest line ABOVE a Mission, stored repo-scoped under the main checkout\'s `.harnu/campaigns/` (every worktree shares it). DIRECT write, no confirm. A campaign is an ordered list of CHAPTERS, and a chapter IS a mission: declare the chapters here, then create each chapter\'s mission with `mission_create { campaignId, chapterId }` (ids are `chp-1`, `chp-2`, … in the order given). Detail only the next chapter to steps (rolling wave). A complete `declaredEnd` (kind + target + evidence) is REQUIRED (DECLARED_END_INCOMPLETE otherwise); the campaign is born `active`. Each chapter may `consume` and `produce` free-string tokens ("images-on-cdn", "page-templates"): the PREREQUISITE PASS refuses (PREREQ_MISSING, naming every token and chapter) a chapter that consumes a token no EARLIER chapter produces — fix the order, or pass `force: true` to accept the gap, which logs a `surprise` in the campaign Log and echoes `forced` in the ACK. `sessionId` names the OWNER (your own Claude session UUID; self-declared, NOT authenticated). Refused BAD_SESSION_ID for a non-UUID. ACK: `{ ok, campaignId, slug, chapters, scope?, forced? }`. No verb merges, chooses a decision, ticks a check or ends a campaign — those are the operator\'s.',
-    inputSchema: z.object({
-      folder: z
-        .string()
-        .min(1)
-        .describe(
-          "Absolute path of the folder/worktree you are working in; the campaign is stored in its repo's main checkout."
-        ),
-      title: z.string().min(1).max(200).describe('Campaign title (1..200 chars, single line).'),
-      declaredEnd: MISSION_DECLARED_END_SCHEMA,
-      sessionId: z
-        .string()
-        .min(1)
-        .describe(
-          'The owner — your own Claude session UUID (never a synthetic-… id). Self-declared, not authenticated.'
-        ),
-      chapters: z
-        .array(z.object(CAMPAIGN_CHAPTER_SHAPE))
-        .min(1)
-        .max(50)
-        .describe(
-          'The chapters in order (1..50). Each becomes chp-<n>. Add more later with campaign_add_chapter.'
-        ),
-      scope: z
-        .array(z.string().min(1))
-        .max(20)
-        .optional()
-        .describe(
-          "Repo-relative paths of the spec / PRD / ADR, stored as the campaign's `scope` attachment under the same rules as mission_create's `scope` (BAD_SCOPE_PATH outside the repo, on the repo root, under .git/.harnu/.capy, or in a worktree checkout)."
-        ),
-      force: z
-        .boolean()
-        .optional()
-        .describe(
-          'Accept chapters whose `consumes` has no earlier producer; each gap is logged as a surprise. Default false.'
-        )
-    }),
-    mutates: true,
-    op: 'campaign_create',
-    silentAllowInAgentFolder: true
-  },
-  {
-    name: 'campaign_add_chapter',
-    description:
-      "Append a chapter to a Campaign — DIRECT write, no confirm. Chapters are append-only for agents (never removed or reordered): the new one gets the next `chp-<n>` id and ordinal. Same prerequisite pass as campaign_create, applied to the new chapter only: a `consumes` token no earlier chapter produces is refused PREREQ_MISSING (naming it) unless `force: true`, which logs a `surprise`. A detour is a SIDE-QUEST chapter: `required: false` with `discoveredFrom` naming the chapter (and optionally the step) it came from — it never counts in the headline. `unlocks: { kind: 'chapter', ref }` keeps the chapter `locked` until that chapter is done (`decision` and `pr` are recorded for later). Refused CAMPAIGN_NOT_FOUND, CAMPAIGN_CLOSED, CHAPTER_NOT_FOUND (an unknown `discoveredFrom`/`unlocks` chapter). ACK: `{ ok, campaignId, chapterId, totalChapters, forced? }`.",
-    inputSchema: z.object({
-      folder: CAMPAIGN_FOLDER_SCHEMA,
-      campaignId: z.string().min(1).describe('The campaign id (cmp-<8 hex>).'),
-      ...CAMPAIGN_CHAPTER_SHAPE,
-      discoveredFrom: z
-        .object({ chapterId: z.string().min(1), stepId: z.string().min(1).optional() })
-        .optional()
-        .describe(
-          'The chapter (and optionally its mission step) this side quest was discovered from.'
-        ),
-      unlocks: z
-        .object({ kind: z.enum(['decision', 'chapter', 'pr']), ref: z.string().min(1).max(200) })
-        .optional()
-        .describe(
-          'What the chapter waits for. `chapter` (ref = a chapter id) is resolved from the record.'
-        ),
-      force: z
-        .boolean()
-        .optional()
-        .describe(
-          'Accept a `consumes` token with no earlier producer; logged as a surprise. Default false.'
-        )
-    }),
-    mutates: true,
-    op: 'campaign_add_chapter',
-    silentAllowInAgentFolder: true
-  },
-  {
-    name: 'campaign_get',
-    description:
-      'Read one Campaign: the full stored record (declared end, chapters with their bound `missionId`, status), its free-text Log, a `derived` block and `closeReadiness`. `derived.progress` is THE campaign progress — render it, never recount: { total, current { from, to } | null, allDone, done, inReview, running, locked, side { total, done, open }, radiant? { done, total }, states, computedAt } — it counts CHAPTERS (the required ones; "Chapter N of M"). The state of a chapter rolls up from its bound mission with no second door: `done` = the mission is delivered or was closed as delivered; `inReview` = every step of the mission is done and it waits for the operator to close it; `running` = a step is running; `locked` = it consumes a token whose producers are not all done, or its `unlocks` chapter is not done; `todo` otherwise. `derived.chapters[]` has one row per chapter: `{ chapterId, state, missionId, mission: { status, headline } | null }`. `closeReadiness` is what campaign_request_close would refuse right now — `{ code, reason }` (CAMPAIGN_CLOSED | CHAPTERS_OPEN) — or `null`. Address it by `campaignId`, or by `ownerSessionId` (self-declared, NOT authenticated) for the most recently updated open campaign that session owns. Derived fresh on every read.',
-    inputSchema: z
-      .object({
-        folder: CAMPAIGN_FOLDER_SCHEMA,
-        campaignId: z.string().min(1).optional().describe('The campaign id (cmp-<8 hex>).'),
-        ownerSessionId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            'Find the open campaign this Claude session UUID owns. Self-declared, not authenticated.'
-          )
-      })
-      .refine((v) => (v.campaignId === undefined) !== (v.ownerSessionId === undefined), {
-        message: 'pass exactly one of campaignId / ownerSessionId'
-      }),
-    mutates: false,
-    op: 'campaign_get'
-  },
-  {
-    name: 'campaign_list',
-    description:
-      "List Campaigns — one row per campaign: id, slug, title, status, the repo folder it lives in, owner session, `progress` (chapter counts rolled up from what each bound mission last reported — up to one poll old; call campaign_get for exact numbers) and updatedAt. With `folder`, only that repo's campaigns (any worktree of it resolves to the same list); without it, every repo Harnu knows, skipping folders the operator blocked.",
-    inputSchema: z.object({
-      folder: z
-        .string()
-        .min(1)
-        .optional()
-        .describe('Absolute path of a folder/worktree to scope the list to its repo.')
-    }),
-    mutates: false,
-    op: 'campaign_list'
-  },
-  {
-    name: 'campaign_request_close',
-    description:
-      'Ask the operator to close a Campaign — DIRECT write, no confirm, but it never closes anything: it is your "it\'s done" signal — it sets `pendingClose` and moves the campaign to `delivered`; only the operator ends a campaign, from the UI (no verb can). Once the operator ends it, every campaign write refuses CAMPAIGN_CLOSED — stop and report. Refused CHAPTERS_OPEN unless every REQUIRED chapter reads done (an open side quest holds nothing back; a campaign with no required chapter has delivered nothing); `closeReadiness` on campaign_get reports the same refusal ahead of time. `sessionId` (optional, self-declared) is recorded as who asked; omitted, the owner. ACK: `{ ok, pendingClose: true }`.',
-    inputSchema: z.object({
-      folder: CAMPAIGN_FOLDER_SCHEMA,
-      campaignId: z.string().min(1).describe('The campaign id (cmp-<8 hex>).'),
-      sessionId: z
-        .string()
-        .min(1)
-        .optional()
-        .describe('Your Claude session UUID, recorded as who asked. Omitted: the campaign owner.')
-    }),
-    mutates: true,
-    op: 'campaign_request_close',
-    silentAllowInAgentFolder: true
-  },
-  {
     name: 'mission_transfer_owner',
     description:
       "Hand a Mission to a new owner session — the RECOVERY path for when the owner must be replaced (it died, the app was closed, a successor was spawned to resume the delivery). DIRECT write, no confirm. It moves `owner.sessionId` to `toSessionId` and everything keyed on it follows: the Topbar pill and the `you` line show on the new session's row (not the old one's), `mission_get { ownerSessionId }` answers for the new owner only, and the hibernation exemption goes with it. `owner.folder` stays. The normal path is ONE owner for the whole delivery — do not use this to share a mission. Each transfer appends a Log entry (`### <time> · owner transfer: <from> → <to> (<reason>)`) and a ledger row of kind `owner-transfer` (`ref` = the new owner). Refused `MISSION_CLOSED` once the operator ended the mission, `BAD_SESSION_ID` when `toSessionId` is not a real Claude session UUID (never a `synthetic-…` id), `SAME_OWNER` when it already owns the mission, `FOLDER_NOT_ALLOWED` in a blocked folder, `BAD_ARGS` for an empty `reason`. An `observe` worker cannot call it (STEWARD_VERB_NOT_ALLOWED). ACK `{ ok, op, missionId, from, to }`. Session ids are self-declared, not authenticated.",
@@ -3084,35 +2912,6 @@ export const MCP_TOOLS: McpToolDef[] = [
     }),
     mutates: true,
     op: 'mission_transfer_owner',
-    silentAllowInAgentFolder: true
-  },
-  {
-    name: 'campaign_transfer_owner',
-    description:
-      "Hand a Campaign to a new owner session — the RECOVERY path for when the owner must be replaced (see mission_transfer_owner). DIRECT write, no confirm. It moves the campaign's `owner.sessionId` to `toSessionId`; `campaign_get { ownerSessionId }` and the campaign popover follow. Its chapter missions keep their owner UNLESS you pass `includeChapters: true`, which also transfers every chapter mission that is not closed (each gets its own Log entry and `owner-transfer` ledger row). A campaign has no ledger: the campaign's own Log carries the entry. Refused `CAMPAIGN_CLOSED`, `BAD_SESSION_ID` (not a real session UUID / a `synthetic-…` id), `SAME_OWNER`, `FOLDER_NOT_ALLOWED`, `BAD_ARGS` (empty reason). An `observe` worker cannot call it. ACK `{ ok, op, campaignId, from, to, moved: { campaign: true, missions: [<missionId>…] } }` — `missions` lists what moved, `[]` without `includeChapters`. Session ids are self-declared, not authenticated.",
-    inputSchema: z.object({
-      folder: CAMPAIGN_FOLDER_SCHEMA,
-      campaignId: z.string().min(1).describe('The campaign id (cmp-<8 hex>).'),
-      toSessionId: z
-        .string()
-        .min(1)
-        .describe(
-          'The Claude session UUID that becomes the owner (the transcript id get_fleet reports, never a synthetic-… id).'
-        ),
-      reason: z
-        .string()
-        .min(1)
-        .max(300)
-        .describe('Why the owner changes, one line (it goes in the Log and the audit trail).'),
-      includeChapters: z
-        .boolean()
-        .optional()
-        .describe(
-          'Also transfer every non-closed chapter mission to the new owner. Default false: only the campaign moves.'
-        )
-    }),
-    mutates: true,
-    op: 'campaign_transfer_owner',
     silentAllowInAgentFolder: true
   },
   {

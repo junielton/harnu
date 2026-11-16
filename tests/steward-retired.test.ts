@@ -5,8 +5,12 @@
  * and `.harnu/missions-v4/`; nothing points at a real mission store. The mission files are planted
  * with fixed bytes and compared byte for byte (and by mtime) after the retirement.
  *
+ * Missions v4 S-38: the steward modules are deleted, and the way out they carried (retire the worker,
+ * remove the hooks, raise one notice) now lives in `scheduler-shell.ts`. The asserts below are the
+ * ones S-27 committed; only where the code is imported from changed.
+ *
  * The removal check of the delivery (AC-91) greps source, tests and scripts for the steward modules'
- * import paths, so this file builds every such path from parts and never writes one out.
+ * import paths, so this file never writes one out (the names that remain are built from parts).
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { promises as fs, statSync } from 'node:fs'
@@ -31,9 +35,6 @@ vi.mock('../src/main/pty', async (importOriginal) => ({
   liveSessionKeys: () => new Set()
 }))
 
-// The module paths, built from parts (see the header).
-const shellPath = (): string => `../src/main/${['steward', 'shell'].join('-')}`
-const hooksPath = (): string => `../src/main/${['steward', 'hooks'].join('-')}`
 const stewardName = (): string => ['stew', 'ard'].join('')
 
 interface Seed {
@@ -65,6 +66,24 @@ const stewardWorker = (id: string, folder: string, missionId: string): object =>
   allowNetwork: false,
   failureStreak: 0
 })
+
+/**
+ * The `hooks` fragment an older Harnu installed for a steward, byte for byte what it wrote: four
+ * `curl` handlers on the hook bridge's loopback port, recognised by their URL.
+ */
+function legacyHookFragment(e: { port: number; token: string }): Record<string, unknown[]> {
+  const handler = (route: string): object => ({
+    type: 'command',
+    command: `curl -s -X POST --data-binary @- http://127.0.0.1:${e.port}/${stewardName()}/${e.token}/${route} || true`,
+    timeout: 10
+  })
+  return {
+    SessionStart: [{ matcher: 'compact', hooks: [handler('brief')] }],
+    PreCompact: [{ hooks: [handler('precompact')] }],
+    Stop: [{ hooks: [handler('wake')] }],
+    SubagentStop: [{ hooks: [handler('wake')] }]
+  }
+}
 
 async function throwawayRepo(name: string): Promise<string> {
   const repo = path.join(await fs.mkdtemp(path.join(os.tmpdir(), `harnu-retired-${name}-`)), 'main')
@@ -108,10 +127,7 @@ async function seedWorld(opts: { stewards: boolean }): Promise<Seed> {
     JSON.stringify({ version: 1, workers })
   )
 
-  const { stewardHookFragment } = (await import(/* @vite-ignore */ hooksPath())) as {
-    stewardHookFragment: (e: { port: number; token: string }) => Record<string, unknown[]>
-  }
-  const fragment = stewardHookFragment({ port: 1111, token: 'old-boot-token' })
+  const fragment = legacyHookFragment({ port: 1111, token: 'old-boot-token' })
   if (opts.stewards) {
     // A's file also holds a hook of the user's own, which must survive; B's holds only ours.
     await plant(
@@ -163,8 +179,8 @@ async function boot(): Promise<{
   shell: Shell
   sched: typeof import('../src/main/scheduler-shell')
 }> {
-  const shell = (await import(/* @vite-ignore */ shellPath())) as unknown as Shell
   const sched = await import('../src/main/scheduler-shell')
+  const shell = sched as unknown as Shell
   sched.registerScheduler(() => null, { dispatch: async () => ({}) } as never)
   await sched.whenSchedulerLoaded()
   return { shell, sched }
@@ -269,8 +285,8 @@ describe('AC-69 — the steward is retired at boot', () => {
 
   it('waits for the Scheduler to have loaded instead of reading an empty list', async () => {
     const seed = await seedWorld({ stewards: true })
-    const shell = (await import(/* @vite-ignore */ shellPath())) as unknown as Shell
     const sched = await import('../src/main/scheduler-shell')
+    const shell = sched as unknown as Shell
     const dispatch = vi.fn(async () => ({}))
     const running = shell.retireStewardsOnBoot({ dispatch })
     await new Promise((r) => setTimeout(r, 40))
@@ -287,8 +303,23 @@ describe('AC-69 — the steward is retired at boot', () => {
 
 describe('AC-69 — no steward is created', () => {
   it('the shell has no way to start one', async () => {
-    const shell = (await import(/* @vite-ignore */ shellPath())) as Record<string, unknown>
+    const shell = (await import('../src/main/scheduler-shell')) as Record<string, unknown>
     const starter = ['start', 'Stew', 'ardForMission'].join('')
     expect(shell[starter]).toBeUndefined()
+  })
+
+  // Added by S-38: the Scheduler no longer has a way to create, wake or tick one either.
+  it('the Scheduler has no way to create, wake-and-tick or sign a bearer for one', async () => {
+    const sched = (await import('../src/main/scheduler-shell')) as Record<string, unknown>
+    for (const name of ['createStew', 'setStew', 'stew'].map((p) => `${p}ardForMission`)) {
+      expect(sched[name], name).toBeUndefined()
+    }
+    expect(sched[['stew', 'ardBearer'].join('')]).toBeUndefined()
+    // The one wake entry point left answers "no" and starts nothing.
+    const wake = sched[['wake', 'Stew', 'ardForMission'].join('')] as (
+      id: string,
+      reason: string
+    ) => Promise<{ woke: boolean }>
+    expect((await wake('mnt-0a0a0a0a', 'ledger')).woke).toBe(false)
   })
 })

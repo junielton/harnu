@@ -23,10 +23,8 @@
 
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
-import { retireStewardForClosedMission } from './steward-shell'
 import { ipcMain } from 'electron'
 import { addTaskEventObserver } from './hook-bridge'
-import { listStewards } from './scheduler-shell'
 import { readUserProjects } from './user-projects'
 import { scanFolders } from './claude-reader'
 import type { FolderEntry } from './folder-model'
@@ -35,8 +33,6 @@ import {
   applyAddCheck,
   applyChooseDecision,
   applyApprovedRescope,
-  applyPauseSteward,
-  applyResumeSteward,
   applyDeleteCheck,
   applyOperatorEnd,
   applyOperatorVerifyStep,
@@ -174,9 +170,6 @@ export type MissionDoor =
   | { door: 'deleteCheck'; root: string; missionId: string; stepId: string; checkId: string }
   // Campaign spec §4 — Choose: the operator picks an option of a decision node.
   | { door: 'chooseDecision'; root: string; missionId: string; stepId: string; index: number }
-  // Campaign spec §3.4 — Pause steward…: a mandatory reason; Resume steward. A mission door, not a worker switch.
-  | { door: 'pauseSteward'; root: string; missionId: string; reason: string }
-  | { door: 'resumeSteward'; root: string; missionId: string }
 
 /**
  * Mission v3 §3.2 — a door answers with the mission it changed, re-derived on
@@ -361,10 +354,6 @@ function applyDoor(door: MissionDoor, mission: Mission, at: string): Mission {
       return applyDeleteCheck(mission, door.stepId, door.checkId, { at })
     case 'chooseDecision':
       return applyChooseDecision(mission, door.stepId, door.index, { at })
-    case 'pauseSteward':
-      return applyPauseSteward(mission, door.reason, { at })
-    case 'resumeSteward':
-      return applyResumeSteward(mission, { at })
   }
 }
 
@@ -397,11 +386,6 @@ function doorLogEntry(
         return `operator deleted ${door.checkId} on ${door.stepId}`
       case 'chooseDecision':
         return `operator chose "${chosenOption(door, applied)}"`
-      // Campaign spec §3.4: these two are `steward` Log entries (the heading's kind tag).
-      case 'pauseSteward':
-        return 'steward · operator paused the steward'
-      case 'resumeSteward':
-        return 'steward · operator resumed the steward'
     }
   })()
   const body =
@@ -409,12 +393,10 @@ function doorLogEntry(
       ? [door.reason?.trim() || '(no reason given)', ...recordedLines(recorded)].join('\n')
       : door.door === 'addCheck'
         ? door.label
-        : door.door === 'pauseSteward'
-          ? (applied.stewardPause?.reason ?? '')
-          : door.door === 'chooseDecision'
-            ? // Campaign spec §3.2 — the Log entry kind: a decision, for what reads the Log.
-              `kind: decision\nstep: ${door.stepId}\n${applied.steps.find((s) => s.id === door.stepId)?.decision?.title ?? ''}`
-            : ''
+        : door.door === 'chooseDecision'
+          ? // Campaign spec §3.2 — the Log entry kind: a decision, for what reads the Log.
+            `kind: decision\nstep: ${door.stepId}\n${applied.steps.find((s) => s.id === door.stepId)?.decision?.title ?? ''}`
+          : ''
   return `\n### ${at} · ${what}\n${body ? `\n${body}\n` : ''}`
 }
 
@@ -440,9 +422,7 @@ const DOORS: ReadonlySet<string> = new Set([
   'addCheck',
   'tickCheck',
   'deleteCheck',
-  'chooseDecision',
-  'pauseSteward',
-  'resumeSteward'
+  'chooseDecision'
 ])
 
 /** A door's own required fields, or the BAD_ARGS refusal naming them. */
@@ -478,10 +458,6 @@ function doorArgsProblem(door: Partial<Record<string, unknown>>): string | null 
       return str('stepId') && typeof door.index === 'number'
         ? null
         : 'BAD_ARGS: chooseDecision needs stepId and a numeric index'
-    case 'pauseSteward':
-      return typeof door.reason === 'string' && door.reason.trim() !== ''
-        ? null
-        : 'BAD_ARGS: pauseSteward needs a reason — say why the steward is paused'
     default:
       return null
   }
@@ -566,11 +542,6 @@ export async function runOperatorDoor(
   if (!written.ok) return written
   // Ended: it leaves every surface — nothing to derive.
   if (written.mission.status === 'closed') {
-    // Campaign ch.5a: the mission's steward (a system worker) and its hooks end with the mission.
-    await retireStewardForClosedMission({
-      missionId: written.mission.id,
-      ownerFolder: written.mission.owner.folder
-    })
     return { ok: true, view: null, ...(written.recorded ? { recorded: written.recorded } : {}) }
   }
   try {
@@ -1105,14 +1076,13 @@ function noteAskedFolders(folders: readonly string[]): void {
   }
 }
 
-/** Where the observer looks for open missions: what the renderer asked about, the pinned folders, the stewards'. */
+/** Where the observer looks for open missions: what the renderer asked about and the pinned folders. */
 async function observerFolders(): Promise<string[]> {
   const out = new Set<string>(askedFolders)
-  for (const s of listStewards()) out.add(s.folder)
   try {
     for (const p of (await readUserProjects()).projects) out.add(p.path)
   } catch {
-    // No projects file yet: the other two sources still stand.
+    // No projects file yet: the asked folders still stand.
   }
   return [...out]
 }
