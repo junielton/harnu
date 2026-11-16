@@ -16,6 +16,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - A mission an earlier version wrote still tells you everything it was waiting for after the old mission view is gone. A new end an agent proposed and you have not answered still shows in the Mission pane with **Approve** and **Decline**, and now also counts on the pill and the chip, gets a card in **Your move** and a row in Activity, and keeps its place if the mission is copied to the new format before you answer. A mission imported from a goal file whose finish line nobody reviewed asks for that review as a blocker of yours. The other things it owed (a choice nobody made, checks, a human step) already came through as blockers and criteria; tests now pin each of them.
 
+- **In a very narrow Mission pane the opened "N more waiting on you" list is readable again.** At about 110 pixels its rows kept a button column and the text shrank until it stacked one letter per line. Now the button moves under the text.
+- **Your next step no longer says "Nothing for you right now" above a new Done when that waits for you.** An older mission with a re-scope waiting, or any mission with a proposed Done when, now says "Approve or decline the new Done when" with a **Review it** button that brings the Approve and Decline box into view.
 - An existing campaign shown in the Mission pane now counts its delivered chapters as done milestones. Before, every milestone read not started ("0 of 5 milestones done"), even a chapter whose mission was delivered. A chapter that was discarded no longer counts toward the total, and a side quest stays outside it. Nothing on disk changes: the campaign file and its chapter missions are only read.
 
 ## 2026-11-15
@@ -58,6 +60,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - The companion's mission card now shows each step's **executors and pull request badges** for a version 4 mission, as it did for the older ones, and a mission file that the companion, the hibernation check or Your move can't read is named in the Activity bell instead of being skipped quietly.
 
+- **The Mission pane now reads at a glance in a small space.** The first screenful is the mission's title and progress bar, **Your next step**, and anything else that waits on you. **Steps and timeline**, **Sessions** and **N more waiting on you** are one click away, start closed, and stay as you left them, even after a restart. The closed **Steps and timeline** line says where the mission is, and **Open step** opens it for you. Nothing was removed.
+
 ### Removed
 
 - **The old mission screens are gone.** The mission and campaign popovers, the step rail, the Missions review and bulk-close dialogs, the steward pause dialog and the **Stewards** block in the Scheduler are removed. Every mission, including the ones you started before this version, opens in the Mission pane, and nothing else lists your missions across a repo except the pane's own picker when a session has no mission.
@@ -73,6 +77,22 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - An **older mission whose agent proposed a new end** (a re-scope) can be **approved or declined in the Mission pane** again. The popover that used to hold those buttons is gone, so the proposal was still counted on the mission's Your move card, in Activity and on the pill, with nowhere to answer it. The pane now shows it in the same box a version 4 mission uses for a new Done when, with the agent's reason; **Approve** applies it to the old file as before (same change, same line in the mission's Log), **Decline** drops it, and neither creates a version 4 copy.
 
 - A leader that did a step itself, with no other session linked to it, no longer settles that step's criteria as if it were a second session: its check is recorded as a self-check and the criterion stays open.
+
+- The Mission pane no longer clips anything when it is very narrow. It has no minimum width: below about 240 pixels it tightens its padding, wraps or shortens text (the full text is in a tooltip), wraps its buttons and never scrolls sideways, so a pane 110 pixels wide is still readable.
+
+- The progress bar's marker no longer cuts through the count. The count stays on one line (full text in a tooltip) and the marker is a thin line under it.
+
+- A link in an open step no longer breaks in the middle of a word: a long address wraps at its slashes, dots and dashes.
+
+- With Harnu in Portuguese, the next-step box, its list of more things waiting, the headings of the hand-off summary and the count line of the mission picker are now in Portuguese, not English.
+
+- The sample mission uses the pane's own words, and its strip no longer squeezes its note into a narrow column.
+
+- The session a hand-off starts is now named after the mission in the Sessions row, not after the instruction it received.
+
+- The chooser of the missions a session leads now sits under its label and takes the full width, so its text is no longer cut off at about 290 pixels.
+
+- An Activity row of a mission whose leading session is not open here shows a notice that names the mission, and the user guide now says so (it still said an older review opened).
 
 ## 2026-11-14
 

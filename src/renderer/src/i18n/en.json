@@ -403,7 +403,42 @@
         "close": "Close",
         "attach": "Join"
       },
-      "close": "Close mission…"
+      "close": "Close mission…",
+      "text": {
+        "mainFailing": {
+          "ask": "Fix the main branch: it broke after “{title}”",
+          "why": "Everything that merges next starts from a broken base"
+        },
+        "settle": {
+          "ask": "Mark done: {text}",
+          "whyLast": "It is the last thing open on this step",
+          "whyMore": "{n} more thing is open on this step | {n} more things are open on this step"
+        },
+        "review": {
+          "askOne": "Look over the pull request for “{title}”",
+          "askMany": "Look over {n} pull requests",
+          "whyOne": "The step cannot finish until you do",
+          "whyMany": "{n} steps cannot finish until you do"
+        },
+        "close": {
+          "askRequested": "Close the mission: the session says it is ready",
+          "askReady": "Close the mission: every step is done",
+          "why": "The mission is finished once you close it"
+        },
+        "doneWhen": {
+          "ask": "Approve or decline the new Done when",
+          "why": "A session proposed it. It becomes the mission’s end only if you approve.",
+          "open": "Review it"
+        },
+        "attach": {
+          "ask": "Let another session join this mission",
+          "why": "It asked to work on it and waits for your answer"
+        },
+        "unblock": {
+          "whyStep": "The step cannot go on until then",
+          "whyMission": "The mission cannot go on until then"
+        }
+      }
     },
     "tree": {
       "label": "Steps of the mission",
@@ -428,7 +463,9 @@
         "done": "Done",
         "not-started": "Not started",
         "in-progress": "In progress"
-      }
+      },
+      "toggle": "Steps and timeline",
+      "lineSteps": "{n} step | {n} steps"
     },
     "step": {
       "criteria": "Acceptance criteria",
@@ -483,7 +520,6 @@
       },
       "thisSession": "this session",
       "unnamed": "Session {id}",
-      "tookOver": "Took over “{title}”",
       "since": "Since {day}",
       "span": "{from} to {to}",
       "sameDay": "{day}, {from} to {to}",
@@ -510,7 +546,16 @@
       },
       "brief": {
         "heading": "Mission summary — what the new session starts with",
-        "empty": "Harnu has no summary of this mission to give the new session."
+        "empty": "Harnu has no summary of this mission to give the new session.",
+        "section": {
+          "goal": "Goal",
+          "whereItIs": "Where it is",
+          "decided": "Decided",
+          "stoppedAt": "Stopped at",
+          "nextStep": "Next step",
+          "openCriteria": "Open criteria",
+          "links": "Links"
+        }
       },
       "cancel": "Cancel",
       "confirm": "Start new session",
@@ -637,10 +682,10 @@
         "closed": "Mission closed"
       },
       "hint": {
-        "waiting": "Press “N more waiting on you” in the next-step box.",
-        "all-steps": "Press “N more steps” under a milestone.",
-        "sessions": "Press the Sessions row at the bottom.",
-        "big-waiting": "Press “N more waiting on you” in the next-step box."
+        "waiting": "Press “{label}” in the next-step box.",
+        "all-steps": "Open “{tree}”, then press “{label}” under a milestone.",
+        "sessions": "Press the “{label}” line below the steps.",
+        "big-waiting": "Press “{label}” in the next-step box."
       }
     },
     "leads": {

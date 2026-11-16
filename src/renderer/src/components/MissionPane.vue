@@ -1,7 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeftRight, Expand, Flag, Maximize2, Minimize2, Target, X } from 'lucide-vue-next'
+import {
+  ArrowLeftRight,
+  ChevronDown,
+  ChevronRight,
+  Expand,
+  Flag,
+  Maximize2,
+  Minimize2,
+  Target,
+  X
+} from 'lucide-vue-next'
 import { useFocusRegion } from '../composables/useTerminalFocus'
 import { useSessionLinks } from '../composables/useSessionLinks'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
@@ -11,6 +21,7 @@ import { useSessionsStore } from '../stores/sessions'
 import {
   askLeaderOf,
   attachRequestsOf,
+  barGeometry,
   buildPaneTree,
   classifyReply,
   closeErrorKey,
@@ -19,14 +30,19 @@ import {
   handoffErrorKey,
   handoffOfferView,
   isReadyToClose,
+  loadPaneSections,
   missionNumbers,
   missionSummaryText,
   missionProgressLine,
   missionStateKey,
+  paneLayout,
   pickerRows,
   progressPercent,
+  savePaneSections,
   sessionNameOf,
+  treeLine,
   v4MissionOf,
+  type PaneDisclosure,
   type PaneKind
 } from '../lib/mission-pane-view'
 import { SAMPLE_STATES, type SampleState } from '../lib/mission-sample'
@@ -40,16 +56,17 @@ import MissionPaneSessions from './MissionPaneSessions.vue'
 import MissionPaneTree from './MissionPaneTree.vue'
 
 /**
- * The Mission pane (Missions v4 S-17, design.md §6 "Mission pane"): the one surface of a v4 mission, a
+ * The Mission pane (Missions v4 S-17, design.md §6 "Mission pane"): the one surface of a mission, a
  * non-PTY pane in the helper stack that the Topbar pill opens and closes. It FOLLOWS the selected session
  * and shows only that session's mission.
  *
  * It reads, and it holds the operator's doors. The missions store asks the view channel for the selected
  * session (when it changes and on its 20 s poll: there is no push event) and the pill reads the same
  * answer; this component never calls the view itself. A door (mark a criterion, clear a blocker, approve or
- * decline a staged Done when) goes through the store, which reads the view again after every reply. What it draws is what the server said: the numbers are the
- * server's, the state is an identifier translated through i18n, a v3 record is not drawn at all (the v3
- * popover still serves it). The Sessions row and the hand-off (S-20) live in `MissionPaneSessions` and
+ * decline a staged Done when) goes through the store, which reads the view again after every reply. What it
+ * draws is what the server said: the numbers are the server's, the state is an identifier translated through
+ * i18n, and a mission an earlier version wrote (a v3 file) is read as v4 and drawn like any other (S-35). The
+ * Sessions row and the hand-off (S-20) live in `MissionPaneSessions` and
  * `MissionHandoffDialog`: this component hosts them, holds the operator's "Not now" and calls the store's
  * hand-off only from the dialog's confirm. Attach, the attach request and Ask (S-21) live in
  * `MissionPaneAttach` and `MissionPaneAsk`: a session with no mission gets the picker, a request to join
@@ -59,8 +76,15 @@ import MissionPaneTree from './MissionPaneTree.vue'
  * mode): Close as delivered or Discard, the open matters as warnings that never block, and the door call
  * goes through the store. A closed mission is no mission here: the view answers none and the pane shows the
  * attach picker. The SAMPLE (`lib/mission-sample.ts`) is a view object built from nothing that the pane can
- * show in place of the real answer, so every state is visible while no agent can create a v4 mission; a
- * strip says so, and every door the store runs for it changes nothing.
+ * show in place of the real answer, so every state can be seen without a live mission; a strip says so, and
+ * every door the store runs for it changes nothing.
+ *
+ * At a glance in a small space (stp-21). The pane lives at about 296 to 420 px, so its first screenful is
+ * the title with the bar, the next step, and what waits on the operator (`PANE_ORDER`). The steps and
+ * timeline, the sessions row and the rest of the waiting list are one click away, closed to begin with, and
+ * the pane keeps each choice (`loadPaneSections`) so it survives a refresh. Nothing is removed: "Open step"
+ * opens the steps by itself. The pane has no minimum width: below 240 px it switches to a narrow layout
+ * (`paneLayout`) with tighter padding, text that wraps or truncates with a title, and no sideways scroll.
  */
 interface Props {
   /** The shared pane union (HelperStack routes only `type:'mission'` here). */
@@ -78,8 +102,42 @@ const missions = useMissionsStore()
 const sessions = useSessionsStore()
 const keybindings = useKeybindingsStore()
 
+// ---- The pane's own width and the disclosures the operator opens (stp-21) ----------------------------------
+// There is no minimum width: the layout follows the width the pane really has (`paneLayout`). Before the first
+// measure (and where there is no ResizeObserver) the width is unknown and reads as regular.
+const paneWidth = ref<number | null>(null)
+const layout = computed(() => paneLayout(paneWidth.value ?? Number.NaN))
+let resizeObserver: ResizeObserver | null = null
+
+const storage = (): Storage | null => {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage
+  } catch {
+    return null
+  }
+}
+const sections = reactive(loadPaneSections(storage()))
+/** Open or close one disclosure and keep the choice. */
+function setSection(id: PaneDisclosure, open: boolean): void {
+  sections[id] = open
+  savePaneSections(storage(), { ...sections })
+}
+/** The sample opens a part of the pane for you without touching what the operator kept. */
+const sampleTree = ref(false)
+const treeOpen = computed(() => sections.tree || sampleTree.value)
+
 // The store polls only once someone asks it to start; the pane is a reader like the pill.
-onMounted(() => missions.ensureStarted())
+onMounted(() => {
+  missions.ensureStarted()
+  if (typeof ResizeObserver !== 'undefined' && rootEl.value) {
+    resizeObserver = new ResizeObserver((entries) => {
+      const w = entries[entries.length - 1]?.contentRect.width
+      if (typeof w === 'number') paneWidth.value = w
+    })
+    resizeObserver.observe(rootEl.value)
+  }
+})
+onBeforeUnmount(() => resizeObserver?.disconnect())
 
 // The sample, when shown, stands in for the real answer and for the session the pane follows.
 const sample = computed(() => missions.sampleView)
@@ -115,6 +173,8 @@ const numbers = computed(() => (mission.value ? missionNumbers(mission.value.det
 const percent = computed(() =>
   numbers.value ? progressPercent(numbers.value.done, numbers.value.total) : 0
 )
+// The marker of the fill sits in its own row under the count, so it can never be drawn through it.
+const bar = computed(() => barGeometry(percent.value))
 // An open step lists the links its session wrote: the ones Harnu already collects for it (the footer's
 // Links shelf reads the same transcript). The clock is for how long a blocker has waited.
 const linkSession = computed(() => {
@@ -138,8 +198,29 @@ const hasTree = computed(
       (tree.value.loose?.shown.length ?? 0) + (tree.value.loose?.folded.length ?? 0) > 0)
 )
 const treeRef = ref<InstanceType<typeof MissionPaneTree> | null>(null)
+const treeMeta = computed(() => {
+  const line = tree.value ? treeLine(tree.value) : null
+  if (!line) return ''
+  if (line.kind === 'current') return line.title
+  if (line.kind === 'allDone') return t('missionPane.tree.allDone')
+  return t('missionPane.tree.lineSteps', { n: line.n }, line.n)
+})
+/** "Open step": open the steps if they are closed, then bring the step into view. Nothing is unreachable. */
+async function revealStep(stepId: string): Promise<void> {
+  if (!treeOpen.value) {
+    setSection('tree', true)
+    await nextTick()
+  }
+  await treeRef.value?.openStep(stepId)
+}
 
 // A Done when a session staged waits for the operator: approve it or decline it (the doors never refuse).
+// Your next step names it and its button brings the box into view.
+const stagedBox = ref<HTMLElement | null>(null)
+function revealStaged(): void {
+  stagedBox.value?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+  stagedBox.value?.querySelector<HTMLElement>('[data-test="done-when-approve"]')?.focus()
+}
 const doneWhenBusy = ref(false)
 const doneWhenError = ref<string | null>(null)
 async function decideDoneWhen(door: 'approveDoneWhen' | 'declineDoneWhen'): Promise<void> {
@@ -297,6 +378,13 @@ function openNewLeader(): void {
 
 // ---- The sample (S-22) --------------------------------------------------------------------------------
 const sampleHint = computed(() => sample.value?.hint === true)
+// The label a hint tells the operator to press is the pane's own: the hint quotes the real key, in the reader's language.
+const sampleHintLabel = computed(() => {
+  const state = sample.value?.state
+  if (state === 'all-steps') return t('missionPane.tree.more', { n: 'N' }, 2)
+  if (state === 'sessions') return t('missionPane.sessions.label')
+  return t('missionPane.next.more', { n: 'N' }, 2)
+})
 function chooseSample(ev: Event): void {
   missions.showSample((ev.target as HTMLSelectElement).value as SampleState)
 }
@@ -307,8 +395,11 @@ watch(
     askFor.value = null
     handoffOpen.value = false
     handoffDone.value = false
+    sampleTree.value = false
     if (!state || !sample.value) return
     const ui = sample.value.ui
+    // A state that is a click inside the steps opens them for you, without changing what the operator kept.
+    if (ui.openStep || ui.ask) sampleTree.value = true
     await nextTick()
     if (ui.openStep) treeRef.value?.openStep(ui.openStep)
     if (ui.ask) askFor.value = ui.ask
@@ -353,6 +444,7 @@ useFocusRegion(props.pane.id, rootEl, {
     class="flex h-full w-full flex-col overflow-hidden bg-bg group/pane no-default-ring"
     :data-focus-region="pane.id"
     :data-state="kind"
+    :data-width-mode="layout.mode"
     :data-dsqa="'mission-pane'"
     :aria-label="$t('missionPane.label')"
   >
@@ -365,7 +457,9 @@ useFocusRegion(props.pane.id, rootEl, {
       @mousedown="onHeaderMouseDown"
     >
       <Target :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-      <span class="min-w-0 flex-1 truncate">{{ $t('missionPane.title') }}</span>
+      <span class="min-w-0 flex-1 truncate" :title="$t('missionPane.title')">{{
+        $t('missionPane.title')
+      }}</span>
       <button
         class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
         :class="isExpanded ? 'text-accent' : 'text-text-3'"
@@ -420,11 +514,13 @@ useFocusRegion(props.pane.id, rootEl, {
       :aria-label="$t('missionPane.sample.label')"
       data-test="mission-sample"
     >
+      <!-- Two rows: the label and the way out, then the note across the whole strip, so it never wraps in a sliver. -->
       <span class="flex items-center" style="gap: 8px">
-        <b class="uppercase text-accent" style="font-size: 10px; letter-spacing: 0.07em">{{
-          $t('missionPane.sample.label')
-        }}</b>
-        <span class="min-w-0 flex-1 text-text-2">{{ $t('missionPane.sample.note') }}</span>
+        <b
+          class="min-w-0 flex-1 truncate uppercase text-accent"
+          style="font-size: 10px; letter-spacing: 0.07em"
+          >{{ $t('missionPane.sample.label') }}</b
+        >
         <button
           type="button"
           class="shrink-0 rounded-sm border border-border-2 bg-surface-2 text-text transition hover:border-text-4"
@@ -435,6 +531,9 @@ useFocusRegion(props.pane.id, rootEl, {
           {{ $t('missionPane.sample.leave') }}
         </button>
       </span>
+      <span class="break-words text-text-2" data-test="mission-sample-note">{{
+        $t('missionPane.sample.note')
+      }}</span>
       <label class="flex items-center" style="gap: 8px">
         <span class="shrink-0 text-text-3">{{ $t('missionPane.sample.chooser') }}</span>
         <select
@@ -449,14 +548,18 @@ useFocusRegion(props.pane.id, rootEl, {
           </option>
         </select>
       </label>
-      <span v-if="sampleHint" class="text-text-3" data-test="mission-sample-hint">{{
-        $t(`missionPane.sample.hint.${sample.state}`)
+      <!-- The hints quote the labels the pane really has, so the sample and the pane never word one thing twice. -->
+      <span v-if="sampleHint" class="break-words text-text-3" data-test="mission-sample-hint">{{
+        $t(`missionPane.sample.hint.${sample.state}`, {
+          label: sampleHintLabel,
+          tree: $t('missionPane.tree.toggle')
+        })
       }}</span>
     </section>
 
     <div
       ref="bodyEl"
-      class="scrollable no-default-ring min-h-0 flex-1 overflow-y-auto outline-none"
+      class="scrollable no-default-ring min-h-0 flex-1 overflow-y-auto overflow-x-hidden outline-none"
       tabindex="-1"
     >
       <div
@@ -472,26 +575,38 @@ useFocusRegion(props.pane.id, rootEl, {
       <template v-else-if="kind === 'mission' && mission && numbers">
         <section
           class="border-b border-border"
-          style="padding: 14px 16px"
+          :style="{
+            paddingTop: '14px',
+            paddingBottom: '14px',
+            paddingLeft: `${layout.padX}px`,
+            paddingRight: `${layout.padX}px`
+          }"
+          data-pane-section="head"
           data-dsqa-part="mission-head"
         >
           <!-- Several missions led by this session: the one shown, and the others to switch to. -->
+          <!-- Label above the control, the control the full width: its text is never squeezed out of view. -->
           <label
             v-if="led.length > 1"
-            class="flex items-center text-text-3"
-            style="gap: 8px; margin-bottom: 8px; font-size: 11.5px"
+            class="flex flex-col text-text-3"
+            style="gap: 4px; margin-bottom: 8px; font-size: 11.5px"
             data-test="mission-leads"
           >
-            <span class="shrink-0">{{ $t('missionPane.leads.label', { n: led.length }) }}</span>
+            <span class="min-w-0 break-words">{{
+              $t('missionPane.leads.label', { n: led.length })
+            }}</span>
             <select
-              class="min-w-0 flex-1 rounded-sm border border-border-2 bg-bg text-text outline-none focus:border-accent-line"
+              class="w-full min-w-0 rounded-sm border border-border-2 bg-bg text-text outline-none focus:border-accent-line"
               style="height: 22px; padding: 0 4px; font-size: 11.5px"
               :value="ledChosen"
+              :title="led.find((m) => m.id === ledChosen)?.title ?? mission.detail.title"
               :aria-label="$t('missionPane.leads.choose')"
               data-test="mission-leads-select"
               @change="chooseLed"
             >
-              <option v-for="m in led" :key="m.id" :value="m.id">{{ m.title }}</option>
+              <option v-for="m in led" :key="m.id" :value="m.id" :title="m.title">
+                {{ m.title }}
+              </option>
             </select>
           </label>
           <h2
@@ -501,10 +616,11 @@ useFocusRegion(props.pane.id, rootEl, {
           >
             {{ mission.detail.title }}
           </h2>
-          <!-- The count is INSIDE the bar (design.md §6 "Mission pane" → The glance). -->
+          <!-- The count is INSIDE the bar (design.md §6 "Mission pane" → The glance). The bar is two rows: the count
+               above, and under it a 2 px marker as wide as the fill, so the marker never runs through the text. -->
           <div
-            class="relative overflow-hidden rounded-sm border border-border bg-surface-2"
-            style="margin-top: 10px; height: 24px"
+            class="relative grid overflow-hidden rounded-sm border border-border bg-surface-2"
+            style="margin-top: 10px; height: 24px; grid-template-rows: minmax(0, 1fr) 2px"
             role="progressbar"
             :aria-label="$t('missionPane.bar.label')"
             aria-valuemin="0"
@@ -514,17 +630,23 @@ useFocusRegion(props.pane.id, rootEl, {
           >
             <i
               class="absolute inset-y-0 left-0 bg-green-soft"
-              :class="percent < 100 ? 'border-r-2 border-green' : ''"
               :style="{ width: `${percent}%` }"
               data-test="mission-bar-fill"
             />
             <span
-              class="relative flex h-full items-center tabular-nums"
+              class="relative row-start-1 block min-w-0 truncate tabular-nums"
               :class="percent >= 100 ? 'text-green' : 'text-text-2'"
-              style="padding: 0 9px; font-size: 11.5px"
+              style="padding: 0 9px; font-size: 11.5px; line-height: 22px"
+              :title="progressLine"
               data-test="mission-count"
               >{{ progressLine }}</span
             >
+            <i
+              v-if="bar.marker"
+              class="relative row-start-2 bg-green"
+              :style="{ width: `${bar.marker.widthPct}%` }"
+              data-test="mission-bar-marker"
+            />
           </div>
           <span
             v-if="stateKey"
@@ -535,18 +657,29 @@ useFocusRegion(props.pane.id, rootEl, {
           >
           <MissionPaneNext
             :detail="mission.detail"
-            @open-step="treeRef?.openStep($event)"
+            :more-open="sections.more"
+            :compact="layout.mode === 'narrow'"
+            :staged="mission.pendingDoneWhen != null"
+            @open-staged="revealStaged"
+            @open-step="revealStep($event)"
+            @toggle-more="setSection('more', !sections.more)"
             @close="openClose"
           />
           <!-- A session asked to join: only the operator answers it. -->
-          <div v-if="requestRows.length > 0" style="margin-top: 10px">
+          <div v-if="requestRows.length > 0" style="margin-top: 10px" data-pane-section="waiting">
             <MissionPaneAttach :session-id="sessionId as string" :requests="requestRows" />
           </div>
           <!-- A Done when a session staged: only the operator makes it the mission's end. -->
           <section
             v-if="mission.pendingDoneWhen"
+            ref="stagedBox"
             class="flex flex-col rounded border border-accent-line bg-accent-soft"
-            style="margin-top: 10px; padding: 10px 12px; gap: 8px"
+            :style="{
+              marginTop: '10px',
+              padding: layout.mode === 'narrow' ? '8px 8px' : '10px 12px',
+              gap: '8px'
+            }"
+            :data-pane-section="requestRows.length > 0 ? undefined : 'waiting'"
             data-test="done-when-staged"
           >
             <span
@@ -590,39 +723,75 @@ useFocusRegion(props.pane.id, rootEl, {
             >
           </section>
         </section>
-        <section v-if="hasTree && tree" style="padding: 14px 16px" data-dsqa-part="tree">
-          <!-- Keyed by the mission the reply was answered for: another mission starts with its own folds. -->
-          <MissionPaneTree
-            ref="treeRef"
-            :key="mission.missionId"
-            :tree="tree"
-            :askable="askLeader !== null"
-            @ask="toggleAsk"
+        <!-- The steps and the timeline: one line that says where the mission is, and one click to open them. -->
+        <section
+          v-if="hasTree && tree"
+          :style="{ padding: `12px ${layout.padX}px` }"
+          data-pane-section="tree"
+          data-dsqa-part="tree"
+        >
+          <button
+            type="button"
+            class="flex w-full flex-wrap items-center text-left text-text-3 transition hover:text-text"
+            style="gap: 4px 8px; font-size: 12px"
+            :aria-expanded="treeOpen"
+            data-test="tree-toggle"
+            @click="setSection('tree', !sections.tree)"
           >
-            <template #ask="{ milestone }">
-              <MissionPaneAsk
-                v-if="askLeader && askFor === milestone.id"
-                :milestone-title="milestone.title"
-                :leader-id="askLeader"
-                @close="askFor = null"
-              />
-            </template>
-          </MissionPaneTree>
+            <span class="flex shrink-0 text-text-4">
+              <ChevronDown v-if="treeOpen" :size="10" :stroke-width="1.8" />
+              <ChevronRight v-else :size="10" :stroke-width="1.8" />
+            </span>
+            <span
+              class="min-w-0 break-words uppercase text-text-4"
+              style="font-size: 10.5px; font-weight: 500; letter-spacing: 0.07em"
+              >{{ $t('missionPane.tree.toggle') }}</span
+            >
+            <span
+              class="ml-auto min-w-0 max-w-full truncate text-text-4"
+              style="font-size: 11px"
+              :title="treeMeta"
+              data-test="tree-meta"
+              >{{ treeMeta }}</span
+            >
+          </button>
+          <!-- Keyed by the mission the reply was answered for: another mission starts with its own folds. -->
+          <div v-if="treeOpen" style="margin-top: 10px">
+            <MissionPaneTree
+              ref="treeRef"
+              :key="mission.missionId"
+              :tree="tree"
+              :askable="askLeader !== null"
+              @ask="toggleAsk"
+            >
+              <template #ask="{ milestone }">
+                <MissionPaneAsk
+                  v-if="askLeader && askFor === milestone.id"
+                  :milestone-title="milestone.title"
+                  :leader-id="askLeader"
+                  @close="askFor = null"
+                />
+              </template>
+            </MissionPaneTree>
+          </div>
         </section>
         <!-- Who worked on the mission, and the way to continue it in a new session. -->
         <MissionPaneSessions
           :mission="mission"
           :selected-id="sessionId"
           :pending="missions.handOffPending"
+          :open="sections.sessions"
+          :pad-x="layout.padX"
+          @toggle="setSection('sessions', !sections.sessions)"
           @continue="openHandoff"
         />
         <!-- Ending is the operator's: always here, ready or not (a mission can be discarded at any time). -->
-        <div class="flex justify-end" style="padding: 4px 16px 14px">
+        <div class="flex justify-end" :style="{ padding: `4px ${layout.padX}px 14px` }">
           <button
             type="button"
             class="inline-flex items-center rounded-sm transition hover:bg-surface-2 hover:text-text"
             :class="readyToClose ? 'text-green' : 'text-text-3'"
-            style="height: 20px; padding: 0 7px; gap: 5px; font-size: 11px; font-weight: 500"
+            style="min-height: 20px; padding: 0 7px; gap: 5px; font-size: 11px; font-weight: 500"
             data-test="mission-close-open"
             @click="openClose"
           >
@@ -651,7 +820,7 @@ useFocusRegion(props.pane.id, rootEl, {
           :missions="requestRows.length > 0 ? null : picker"
           :requests="requestRows"
         />
-        <!-- A v4 mission cannot be created by an agent yet: the sample is how every state is seen meanwhile. -->
+        <!-- The sample shows every state of this pane with made-up data, whether or not a mission exists. -->
         <div
           v-if="!sample"
           class="flex flex-col border-t border-border text-text-3"

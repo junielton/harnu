@@ -2,10 +2,12 @@
  * Missions v4 · S-22 — the sample mission (design.md §6 "Mission pane" → The sample mission).
  *
  * A view object for the Mission pane that is built from nothing: no file, no IPC, no `window.api`, no
- * store. It exists because a v4 mission cannot be created by an agent yet (the verbs land in chapter 5), so
- * without it most of the pane could not be seen. It is shaped exactly like what `mission:v4View` answers, so
- * the pane draws it with the code it draws a real mission with; nothing about the pane knows it is a sample
- * except the strip that says so.
+ * store. It exists so every state of the pane can be seen without a live mission, including the ones a real
+ * mission is rarely in (a hand-off offered, a blocked step, a request to join). It is shaped exactly like what
+ * `mission:v4View` answers, so the pane draws it with the code it draws a real mission with; nothing about the
+ * pane knows it is a sample except the strip that says so. The words are the pane's own: a waiting item is
+ * worded by `waitingText` from its kind and the steps below, and the strip's hints quote the labels the pane
+ * really has, so the sample never writes the pane's copy a second time.
  *
  * Every state of the mockup (`docs/design/missions-v4/`, screen `mission-pane`) has an entry. The data is the
  * mockup's, with made-up names: no real folder, session or person. A state that is only a click on another
