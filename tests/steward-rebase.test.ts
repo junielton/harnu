@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { rebaseStack } from '../src/main/steward-rebase'
+import { rebaseStack } from '../src/main/mcp/tool-handlers'
 
 const ENV = {
   ...process.env,

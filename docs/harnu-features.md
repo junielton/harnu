@@ -1,4 +1,4 @@
-<!-- harnu-features v146 (2026-11-15) -->
+<!-- harnu-features v147 (2026-11-15) -->
 
 # You are running inside Harnu
 
@@ -426,7 +426,7 @@ refused mention shows on the run as `rejected skill: /name (declares hooks)`,
 `(unsafe frontmatter)` or `(unsafe files)`.
 
 **List workers — `list_workers({ folder? })`.** Returns id, name, a redacted `folderAlias`,
-`mode`, `everyMinutes`, `enabled`, the last run outcome, and `agentControllable`. A **steward** (a system worker an older Harnu gave a mission; none is created any more and boot removes the ones left, with one Activity notice) lists with `category: 'steward'`, its `missionId` and `agentControllable: false` whatever the folder. Omit
+`mode`, `everyMinutes`, `enabled`, the last run outcome, and `agentControllable`. Omit
 `folder` for every folder. `create_worker`, `list_workers`, `update_worker` and
 `delete_worker` are all absent from the `observe` allowlist — a tick can never mint,
 enumerate, change or delete heartbeats.

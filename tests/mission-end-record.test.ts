@@ -137,12 +137,14 @@ describe('Close as delivered writes only the ticked drafts (AC-6.2)', () => {
   it('stamps the mission, valid_from and watches, and the operator as the author', async () => {
     await createMissionFile(
       root,
-      mission([draft({ id: 'drf-1', entry: '## Keep it', watches: ['src/main/steward-core.ts'] })])
+      mission([
+        draft({ id: 'drf-1', entry: '## Keep it', watches: ['src/main/scheduler-core.ts'] })
+      ])
     )
     await end({ record: ['drf-1'] })
     const text = await decisions()
     expect(text).toContain('mission=mnt-4ba02726')
-    expect(text).toContain('watches=src/main/steward-core.ts')
+    expect(text).toContain('watches=src/main/scheduler-core.ts')
     expect(text).toContain('human')
   })
 

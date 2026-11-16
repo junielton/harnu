@@ -5,7 +5,7 @@
  * withheld from an agent-controlled spawn so an agent cannot start a recursive Conductor). That left a
  * dispatched worker, a verifier and the Scheduler's observe worker with no way to read their mission,
  * link their pull request, say they are blocked or settle a criterion. This module gives each of them a
- * credential of its own, a generalization of the steward's bearer (`steward-core.ts`): derived from the
+ * credential of its own, in the shape of the retired steward's bearer: derived from the
  * server secret, never the secret itself, never shown to the model (it lives in a 0600 config file the
  * `claude` process reads; argv carries only the file's path).
  *

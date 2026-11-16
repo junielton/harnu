@@ -38,7 +38,7 @@ function fixture(over: Partial<ConsolidatorInput> = {}): ConsolidatorInput {
     title: 'Recall at create',
     declaredEnd: { kind: 'code', target: 'Recall rides the create ACK', evidence: 'test green' },
     createdAt: '2026-11-01T08:00:00.000Z',
-    scopePaths: ['src/main/steward-hooks.ts'],
+    scopePaths: ['src/main/scheduler-store.ts'],
     steps: [
       { id: 'stp-1', title: 'Entry schema', kind: 'custom', proof: 'verified', required: true },
       {
@@ -138,7 +138,7 @@ describe('AC-6.1 — the drafts', () => {
     expect(d.page).toBe('decisions')
     expect(d.mission).toBe('mnt-4ba02726')
     expect(d.validFrom).toBe('2026-11-02')
-    expect(d.watches).toEqual(['src/main/steward-hooks.ts'])
+    expect(d.watches).toEqual(['src/main/scheduler-store.ts'])
     expect(d.entry).toContain('Watch paths')
     expect(d.cites).toEqual(
       expect.arrayContaining([

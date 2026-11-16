@@ -1229,7 +1229,7 @@ describe('v4 modules import v3 code only through v3-read', () => {
       "import type { Mission } from '../mission-core'",
       "export { campaignFilePath } from '../campaign-core'",
       "const m = await import('../mission-gates')",
-      "import { x } from '../steward-core'"
+      `import { x } from '../${['steward', 'core'].join('-')}'`
     ]
     for (const line of bad) expect(v3Imports(line, dir), line).toHaveLength(1)
     const fine = [
