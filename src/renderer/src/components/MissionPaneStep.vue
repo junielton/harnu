@@ -6,6 +6,7 @@ import { useMissionsStore, type V4DoorCall } from '../stores/missions'
 import {
   doorErrorKey,
   formatWaited,
+  linkLabelParts,
   type CriterionRow,
   type PaneStepRow,
   type StepLinkRow
@@ -229,7 +230,7 @@ function blockedHead(owner: 'agent' | 'operator', waitedMs: number | null, age: 
             v-if="l.url"
             type="button"
             role="link"
-            class="inline-flex max-w-full items-center rounded-sm border border-border-2 text-accent transition hover:border-accent-line"
+            class="inline-flex max-w-full items-center overflow-hidden rounded-sm border border-border-2 text-accent transition hover:border-accent-line"
             style="gap: 4px; padding: 1px 6px; font-size: 11px"
             :title="$t('missionPane.step.openLink', { label: linkText(l) })"
             data-test="step-link"
@@ -237,20 +238,24 @@ function blockedHead(owner: 'agent' | 'operator', waitedMs: number | null, age: 
             @click="openLink(l.url)"
           >
             <LinkIcon :size="10" :stroke-width="1.5" class="shrink-0" aria-hidden="true" />
-            <span class="min-w-0 break-all text-left" :class="l.kind === 'pr' ? 'font-mono' : ''">{{
-              linkText(l)
-            }}</span>
+            <!-- A break falls only after a separator (a slash, a dot, a dash) or a space, never inside a word. -->
+            <span class="min-w-0 break-normal text-left" :class="l.kind === 'pr' ? 'font-mono' : ''"
+              ><template v-for="(part, i) in linkLabelParts(linkText(l))" :key="i"
+                >{{ part }}<wbr v-if="i < linkLabelParts(linkText(l)).length - 1" /></template
+            ></span>
           </button>
           <span
             v-else
-            class="inline-flex max-w-full items-center rounded-sm border border-border-2 text-text-3"
+            class="inline-flex max-w-full items-center overflow-hidden rounded-sm border border-border-2 text-text-3"
             style="gap: 4px; padding: 1px 6px; font-size: 11px"
+            :title="linkText(l)"
             data-test="step-link"
             :data-kind="l.kind"
           >
-            <span class="min-w-0 break-all" :class="l.kind === 'pr' ? 'font-mono' : ''">{{
-              linkText(l)
-            }}</span>
+            <span class="min-w-0 break-normal" :class="l.kind === 'pr' ? 'font-mono' : ''"
+              ><template v-for="(part, i) in linkLabelParts(linkText(l))" :key="i"
+                >{{ part }}<wbr v-if="i < linkLabelParts(linkText(l)).length - 1" /></template
+            ></span>
           </span>
         </template>
       </div>

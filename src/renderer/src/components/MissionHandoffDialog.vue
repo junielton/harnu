@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ArrowLeftRight, Loader2 } from 'lucide-vue-next'
-import { parseSummary } from '../lib/mission-pane-view'
+import { parseSummary, summaryHeadingLabel } from '../lib/mission-pane-view'
 import Dialog from './ui/Dialog.vue'
 
 /**
@@ -15,6 +16,10 @@ import Dialog from './ui/Dialog.vue'
  * stays open, the buttons are off and a second press starts nothing. A refusal stays in the dialog as
  * words that say what to do next (never the code), with the buttons back. After a hand-off that took
  * effect, the dialog says the new session leads and offers to open it.
+ *
+ * The summary's headings ("Goal", "Where it is"…) are the server's English; they are shown in the reader's
+ * language by identifier (`summaryHeadingLabel`) and the section's `data-heading` stays the server's. The
+ * text under a heading is what the new session reads, shown as written.
  *
  * Controlled, on the `Dialog` shell: it never closes itself.
  */
@@ -33,6 +38,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ cancel: []; confirm: []; close: []; openNew: [] }>()
 
+const { t } = useI18n()
 const parsed = computed(() => parseSummary(props.brief))
 
 function onDialogClose(): void {
@@ -125,7 +131,9 @@ function onDialogClose(): void {
           style="grid-template-columns: 82px 1fr; gap: 6px 10px"
         >
           <template v-for="s in parsed.sections" :key="s.heading">
-            <span class="text-text-4" data-test="handoff-heading">{{ s.heading }}</span>
+            <span class="text-text-4" data-test="handoff-heading">{{
+              summaryHeadingLabel(t, s.heading)
+            }}</span>
             <span
               class="min-w-0 whitespace-pre-line break-words"
               data-test="handoff-section"

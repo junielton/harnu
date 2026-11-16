@@ -20,6 +20,8 @@ import {
  * when it worked and, for one that has stopped, where it stopped. Under the rows, "Continue in a new
  * session…", which only asks the pane to show the confirmation: this component starts nothing and decides
  * nothing about who leads. The rows are the server's history; the names are the ones every surface shows.
+ * A session a hand-off started is named after the mission, plainly (stp-21). The fold is the pane's to keep
+ * (`open`, so it survives a refresh); a standalone row keeps its own.
  */
 const props = defineProps<{
   mission: MissionV4Reply
@@ -27,13 +29,22 @@ const props = defineProps<{
   selectedId: string | null
   /** A hand-off is waiting for the door: the button is disabled so a second press starts nothing. */
   pending?: boolean
+  /** The kept state of the fold; absent, the row keeps its own. */
+  open?: boolean
+  /** The pane's side padding in px. */
+  padX?: number
 }>()
-const emit = defineEmits<{ continue: [] }>()
+const emit = defineEmits<{ continue: []; toggle: [] }>()
 
 const { t, locale } = useI18n()
 const sessions = useSessionsStore()
 
-const open = ref(false)
+const localOpen = ref(false)
+const open = computed(() => props.open ?? localOpen.value)
+function toggleOpen(): void {
+  if (props.open === undefined) localOpen.value = !localOpen.value
+  emit('toggle')
+}
 const expanded = ref(false)
 
 const rows = computed(() =>
@@ -91,30 +102,32 @@ function stopLine(r: SessionRowView): string {
 <template>
   <section
     class="border-t border-border"
-    style="padding: 12px 16px"
+    :style="{ padding: `12px ${padX ?? 16}px` }"
+    data-pane-section="sessions"
     data-dsqa-part="sessions"
     data-test="sessions"
   >
     <button
       type="button"
-      class="flex w-full items-center text-text-3 transition hover:text-text"
-      style="gap: 8px; font-size: 12px"
+      class="flex w-full flex-wrap items-center text-left text-text-3 transition hover:text-text"
+      style="gap: 4px 8px; font-size: 12px"
       :aria-expanded="open"
       data-test="sessions-toggle"
-      @click="open = !open"
+      @click="toggleOpen"
     >
       <span class="flex text-text-4">
         <ChevronDown v-if="open" :size="10" :stroke-width="1.8" />
         <ChevronRight v-else :size="10" :stroke-width="1.8" />
       </span>
       <span
-        class="uppercase text-text-4"
+        class="min-w-0 break-words uppercase text-text-4"
         style="font-size: 10.5px; font-weight: 500; letter-spacing: 0.07em"
         >{{ $t('missionPane.sessions.label') }}</span
       >
       <span
-        class="ml-auto min-w-0 truncate text-text-4"
+        class="ml-auto min-w-0 max-w-full truncate text-text-4"
         style="font-size: 11px"
+        :title="meta"
         data-test="sessions-meta"
         >{{ meta }}</span
       >
