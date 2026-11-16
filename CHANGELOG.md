@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-16
+
+### Fixed
+
+- An existing campaign shown in the Mission pane now counts its delivered chapters as done milestones. Before, every milestone read not started ("0 of 5 milestones done"), even a chapter whose mission was delivered. A chapter that was discarded no longer counts toward the total, and a side quest stays outside it. Nothing on disk changes: the campaign file and its chapter missions are only read.
+
 ## 2026-11-15
 
 ### Added
@@ -28,7 +34,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **The user guide describes missions on one page.** The Missions page now has four parts: **The pane**, **Acceptance criteria**, **Hand-off** and **Records from earlier versions**. The last one says what happens to a mission an earlier version wrote: it opens in the pane, the first change writes a copy and the old file is never touched. The agent-control page links to it and no longer carries a campaign, a steward or a popover section, and the roadmap board page now says a card can be a step.
 
-- **Every mission now opens in the Mission pane**, including the ones you started before this version. The pill at the top, the chip beside a session in the sidebar, a row in Activity and **Open mission** on a Your move card all open the pane for the session that leads it, and the old progress popover can no longer be reached. A version 3 mission's pill and chip now read like any other ("2/5 · 1 for you") instead of "Step 4 of 9". Nothing is lost on the way: your Your move cards keep their ids, nothing chimes because of the switch, a waiting item or a reminder is not dropped, and a mission whose steward you had paused still shows that item until you press Resume. Looking at an old mission writes nothing; the first time you use one of its controls (mark a criterion, clear a blocker, close it) Harnu makes a version 4 copy and leaves the old file exactly as it was. An old command aimed at a mission that has a copy is refused with the new command to use.
+- **Every mission now opens in the Mission pane**, including the ones you started before this version. The pill at the top, the chip beside a session in the sidebar, a row in Activity and **Open mission** on a Your move card all open the pane for the session that leads it, and the old progress popover can no longer be reached. A version 3 mission's pill and chip now read like any other ("2/5 · 1 for you") instead of "Step 4 of 9". Nothing is lost on the way: your Your move cards keep their ids, nothing chimes because of the switch, a waiting item or a reminder is not dropped. Looking at an old mission writes nothing; the first time you use one of its controls (mark a criterion, clear a blocker, close it) Harnu makes a version 4 copy and leaves the old file exactly as it was. An old command aimed at a mission that has a copy is refused with the new command to use.
+
+- **Open mission** on a Your move card or an Activity row now opens the mission it names, even when the session leads several, and the sidebar chip, the Topbar pill and the pane all show the same one: the mission you picked in the pane, else the one that waits on you, else the one written most recently (a draft with nothing waiting no longer hides a mission that does). A mission its agent asked to close now lists "Close the mission" in the pane, as its Your move card already did. Your move no longer closes and re-files the cards of a version 4 mission each time Harnu starts, and a duplicate left by an earlier build closes down to one.
 
 - A session that leads **several missions** (every old leader that started more than one) no longer gets an error in the pane. It shows the mission written most recently and a small list above the title to switch to another. After a compaction, an old leader now gets its mission summary too.
 
@@ -59,6 +67,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **Six more old mission commands are gone, and the old mission code behind them.** Agents can no longer call `mission_link_child`, `mission_set_end`, `mission_verify_step`, `mission_add_check`, `mission_transfer_owner` or `mission_import_legacy`: a session that still does is told the tool is not found, and nothing changes. Each has a replacement (`mission_link`, `mission_set_done_when`, `mission_settle_ac`, `mission_add_ac`, the hand-off in the Mission pane, and nothing for the goal-file import). The mission commands that stay take only the version 4 shape: `mission_create` refuses an older argument (an end of the old kind, a steward, a chapter, a step's `verification`) and writes nothing. A mission an earlier version wrote still opens, every command reads it, and the first change converts it by copy while the old file stays as it was. `mission_update_step` stays in the list but is not built yet: it is refused and writes nothing, so a session adds to the plan instead.
 
 ### Fixed
+
+- An **older mission whose agent proposed a new end** (a re-scope) can be **approved or declined in the Mission pane** again. The popover that used to hold those buttons is gone, so the proposal was still counted on the mission's Your move card, in Activity and on the pill, with nowhere to answer it. The pane now shows it in the same box a version 4 mission uses for a new Done when, with the agent's reason; **Approve** applies it to the old file as before (same change, same line in the mission's Log), **Decline** drops it, and neither creates a version 4 copy.
 
 - A leader that did a step itself, with no other session linked to it, no longer settles that step's criteria as if it were a second session: its check is recorded as a self-check and the criterion stays open.
 

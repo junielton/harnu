@@ -185,4 +185,19 @@ describe('the rest of the awareness doc agrees (AC-84, AC-97, S-36 carried findi
     expect(part).not.toMatch(/speak Mission v3|campaign_create|Ch\. N\/M|delivery map/i)
     expect(part).not.toMatch(/operator blocker, not a hand-?off/i)
   })
+
+  it("the section says only what main's code does (S-36 delta 2)", () => {
+    const flat = missionSection(DOC).replace(/\s+/g, ' ')
+    // `mission_create` makes a new mission; it never converts a record.
+    expect(flat).toContain('`mission_create` never converts')
+    expect(flat).not.toMatch(/`mission_create` or `mission_add_step` carrying/)
+    // A delivery plan gets a new id; a single mission keeps its own.
+    expect(flat).not.toMatch(/under the same id/)
+    expect(flat).toMatch(/new `mnt-` id/)
+    // `clearsWhen` ends a step blocker only.
+    expect(flat).toMatch(/`clearsWhen`[^|]*ends a step blocker/)
+    // A state word is refused only as a whole title; an internal word anywhere.
+    expect(flat).not.toMatch(/No internal or state word in a title, ask or criterion/)
+    expect(flat).toMatch(/a title is never only a state word/)
+  })
 })

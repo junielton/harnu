@@ -11,7 +11,14 @@
  * files — and the mission files stay the server's alone either way.
  *
  * The stream-json output is kept as run evidence (which verbs were called, what
- * came back) but is never graded: grading reads `.harnu/missions/*.md` only.
+ * came back) but is never graded: grading reads `.harnu/missions-v4/*.md` and the
+ * plain files a recorded turn leaves (`turnRecord`).
+ *
+ * Roles (Missions v4 S-33): `scripted` (the exact calls are listed), `owner` (a skill
+ * is read, the agent decides, framed as an orchestration), `session` (the same, framed
+ * as an ordinary session, so a proactive-mission rule is not announced by the frame)
+ * and `cold` (a fresh session with NO tool and NO Harnu server: it answers from the
+ * text in its prompt alone).
  */
 import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
@@ -45,7 +52,13 @@ export function killAgents() {
   return escalate(targets)
 }
 
-/** Every verb an eval agent may call; anything else is refused by `claude` itself. */
+/**
+ * Every verb an eval agent may call: the catalog's `mission_*` verbs less the ones the v4 fate table
+ * removes (`mission_link_child`, `mission_set_end`, `mission_verify_step`, `mission_add_check`,
+ * `mission_import_legacy`, `mission_transfer_owner`). Anything else is refused by `claude` itself.
+ * `tests/mission-v4-eval-scenarios.test.ts` pins this list to the catalog, so a verb added or removed
+ * there fails the pin until it is listed here.
+ */
 export const MISSION_VERBS = [
   'mission_create',
   'mission_get',
@@ -56,7 +69,6 @@ export const MISSION_VERBS = [
   'mission_set_blocker',
   'mission_clear_blocker',
   'mission_request_close',
-  // Missions v4 S-24: the verbs that exist in v4 alone (the six v3-only verbs are gone, S-40).
   'mission_add_milestone',
   'mission_add_ac',
   'mission_link',
@@ -64,20 +76,6 @@ export const MISSION_VERBS = [
   'mission_settle_ac',
   'mission_attach'
 ]
-
-/**
- * The verbs a mission's steward adds to the mission set (campaign spec §3.4), granted to an owner turn
- * only when its phase says `"stewardVerbs": true` — the delivery-watchdog's steward mode is graded
- * through them. `create_session` is the one a steward may call only as a verifier.
- */
-export const STEWARD_VERBS = ['create_session', 'message_session', 'rebase_stack', 'notify']
-
-/**
- * The `campaign_*` verbs. There are none any more (Missions v4 S-39 removed them from the catalog); the
- * list stays, empty, so the eval agent's allowed-tools shape and the unit suite's pin against the
- * catalog's `campaign_*` verbs keep working.
- */
-export const CAMPAIGN_VERBS = []
 
 /**
  * The fixed frame every scripted prompt runs in. Deliberately tiny: a headless
@@ -103,29 +101,21 @@ function scriptedFrame(sessionId, body) {
  * how a question to the operator is expressed instead, so a missing tool is
  * never mistaken for a rule of the skill.
  */
-function ownerFrame(sessionId, folder, body, tools = [], stewardVerbs = false) {
+export function ownerFrame(sessionId, folder, body, tools = []) {
   // A phase that grants `Bash` is testing whether the agent reaches for `gh` or the
   // fleet to learn dispatch state, so `gh` must be reachable (it fails: the sandbox
   // repo has no remote). Otherwise "no gh call" would hold only because the frame
   // said `gh` does not exist.
   const bash = tools.includes('Bash')
-  const absent = stewardVerbs
-    ? bash
-      ? 'board, worktree, memory'
-      : 'board, worktree, memory, gh'
-    : bash
-      ? 'board, worktree, session, notify, memory'
-      : 'board, worktree, session, notify, memory, gh'
+  const absent = bash
+    ? 'board, worktree, session, notify, memory'
+    : 'board, worktree, session, notify, memory, gh'
   return [
     'You are the owner session of a Harnu orchestration, running headless for a behavior test.',
     `Your own Claude session UUID is ${sessionId} — pass it wherever a verb asks for your session id.`,
     `The repo is your current directory; pass folder="${folder}" to every mcp__harnu__ verb.`,
     'Read the skill file named below first, then act exactly as it says for the situation described. Decide your calls yourself.',
-    'This sandbox has only the mcp__harnu__mission_* verbs' +
-      (stewardVerbs
-        ? ', the steward verbs (create_session — only with role: "verifier" —, message_session, rebase_stack, notify)'
-        : '') +
-      ' and the built-in tools you were given. Every other verb the skill mentions (' +
+    'This sandbox has only the mcp__harnu__mission_* verbs and the built-in tools you were given. Every other verb the skill mentions (' +
       absent +
       ') does not exist here: skip what needs it, never ask for it.' +
       (bash ? ' Bash exists, but this repo has no GitHub remote.' : ''),
@@ -138,12 +128,117 @@ function ownerFrame(sessionId, folder, body, tools = [], stewardVerbs = false) {
 }
 
 /**
+ * The frame of a `session` turn (Missions v4 S-33): the same behavior test as an `owner` turn, framed
+ * as an ordinary Claude Code session the operator is working with, NOT as an orchestration. The
+ * proactive-mission scenarios use it: if the frame said "orchestration", a model would create a mission
+ * because the frame told it to, and the rule the scenario tests (create one at the first sign of
+ * multi-step work, and none for a one-line question) would prove nothing. It names the skill file to
+ * read and states only what the sandbox lacks. It never names the verb a scenario grades.
+ */
+export function sessionFrame(sessionId, folder, body, tools = []) {
+  const bash = tools.includes('Bash')
+  return [
+    'You are a Claude Code session working with an operator in the repo that is your current directory, running headless for a behavior test.',
+    `Your own Claude session UUID is ${sessionId} — pass it wherever a verb asks for your session id.`,
+    `Harnu is connected: its verbs are the tools named mcp__harnu__*; pass folder="${folder}" to every one. The skill file named below is one of your skills: read it first, then handle the operator's message as you normally would.`,
+    'Only the mcp__harnu__mission_* verbs and the built-in tools you were given exist here' +
+      (bash ? ' (Bash exists, but this repo has no GitHub remote).' : '.') +
+      ' Any other Harnu verb a skill mentions does not exist: skip what needs it, never ask for it.',
+    'AskUserQuestion does not exist here. When you need to ask the operator something, put the question in your final reply and end your turn.',
+    'This turn has no memory of earlier turns.',
+    'End your turn with your reply to the operator.',
+    '',
+    body
+  ].join('\n')
+}
+
+/**
+ * The frame of a `cold` turn (Missions v4 S-33, AC-78): a fresh session that starts from a mission
+ * summary alone. It has no tool and no Harnu server (see {@link buildAgentArgs}), so what it can answer
+ * is exactly what the summary in its prompt says.
+ */
+export function coldFrame(body) {
+  return [
+    'You are a Claude Code session that has just started, with no memory of any earlier work, running headless for a behavior test.',
+    'You have no tools. The mission summary below is all you know: answer from it alone and invent nothing.',
+    '',
+    body
+  ].join('\n')
+}
+
+/**
  * Whether an owner's final reply puts a question to the operator: a `?`, or the
  * word "confirm". `claude -p` has no `AskUserQuestion`, so a headless owner asks
  * in its reply and ends the turn; the harness records this as `asked=<b>`.
  */
 export function replyAsks(reply) {
   return /\?/.test(reply) || /\bconfirm\b/i.test(reply)
+}
+
+/**
+ * The turn cap per role: a scripted list is short, an `owner` or `session` turn reads a skill and then
+ * decides, and a `cold` turn only answers.
+ */
+function maxTurnsOf(role) {
+  if (role === 'cold') return 3
+  return role === 'owner' || role === 'session' ? OWNER_MAX_TURNS : MAX_TURNS
+}
+
+/**
+ * The `claude` argument list of one turn. Exported so the unit suite can pin what each role is given:
+ * a `cold` turn gets NO MCP server (`--strict-mcp-config` with no `--mcp-config` loads none), no verb
+ * allowance and no built-in tool, so it cannot look anything up.
+ */
+export function buildAgentArgs({
+  sessionId,
+  folder,
+  prompt,
+  mcpConfigPath,
+  model,
+  tools = [],
+  role = 'scripted'
+}) {
+  const cold = role === 'cold'
+  const body =
+    role === 'owner'
+      ? ownerFrame(sessionId, folder, prompt, tools)
+      : role === 'session'
+        ? sessionFrame(sessionId, folder, prompt, tools)
+        : cold
+          ? coldFrame(prompt)
+          : scriptedFrame(sessionId, prompt)
+  return [
+    '-p',
+    '--model',
+    model,
+    '--session-id',
+    sessionId,
+    '--no-session-persistence',
+    '--max-turns',
+    String(maxTurnsOf(role)),
+    ...(cold ? [] : ['--mcp-config', mcpConfigPath]),
+    '--strict-mcp-config',
+    '--setting-sources',
+    'project',
+    '--tools',
+    cold ? '' : tools.join(','),
+    ...(cold
+      ? []
+      : ['--allowedTools', [...tools, ...MISSION_VERBS.map((v) => `mcp__harnu__${v}`)].join(',')]),
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    body
+  ]
+}
+
+/**
+ * What a recorded turn leaves in the sandbox (`.eval/turn-<tag>.txt`): the tools it called in order,
+ * whether its reply asks the operator something, and the reply itself. A grader reads it as a plain
+ * file, so a scenario with no mission (the one-line question) is still graded on what the turn did.
+ */
+export function turnRecord(r) {
+  return `tools=${r.toolCalls.join(',')}\nasked=${replyAsks(r.result)}\n---\n${r.result}\n`
 }
 
 /**
@@ -160,40 +255,9 @@ export function runAgent({
   logFile,
   timeoutMs,
   tools = [],
-  role = 'scripted',
-  stewardVerbs = false
+  role = 'scripted'
 }) {
-  const owner = role === 'owner'
-  const args = [
-    '-p',
-    '--model',
-    model,
-    '--session-id',
-    sessionId,
-    '--no-session-persistence',
-    '--max-turns',
-    String(owner ? OWNER_MAX_TURNS : MAX_TURNS),
-    '--mcp-config',
-    mcpConfigPath,
-    '--strict-mcp-config',
-    '--setting-sources',
-    'project',
-    '--tools',
-    tools.join(','),
-    '--allowedTools',
-    [
-      ...tools,
-      ...[...MISSION_VERBS, ...CAMPAIGN_VERBS, ...(stewardVerbs ? STEWARD_VERBS : [])].map(
-        (v) => `mcp__harnu__${v}`
-      )
-    ].join(','),
-    '--output-format',
-    'stream-json',
-    '--verbose',
-    owner
-      ? ownerFrame(sessionId, folder, prompt, tools, stewardVerbs)
-      : scriptedFrame(sessionId, prompt)
-  ]
+  const args = buildAgentArgs({ sessionId, folder, prompt, mcpConfigPath, model, tools, role })
   const started = Date.now()
   return new Promise((resolve) => {
     // ENABLE_TOOL_SEARCH=false loads the verbs up front instead of behind a

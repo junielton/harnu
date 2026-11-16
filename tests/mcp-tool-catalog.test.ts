@@ -916,3 +916,25 @@ describe('T571 delta 2 — catalog descriptions stay true to what the verbs retu
     expect(desc('browser_eval')).toContain('moving it to another host ends it')
   })
 })
+
+describe('worker verb descriptions say only what the handlers do (S-39 delta 1)', () => {
+  const text = (name: string): string => toolByName(name)?.description ?? ''
+  const retired = ['STEWARD', 'steward', 'WORKER_IS_STEWARD']
+
+  it('list_workers and delete_worker no longer describe a steward behaviour that was removed', () => {
+    for (const name of ['list_workers', 'delete_worker', 'update_worker']) {
+      for (const word of retired) expect(text(name), `${name} / ${word}`).not.toContain(word)
+    }
+  })
+
+  it('list_workers says what agentControllable means for a worker', () => {
+    expect(text('list_workers')).toContain('agentControllable')
+    expect(text('list_workers')).toContain('blocked')
+  })
+
+  it('delete_worker keeps its posture: always asks, no undo, prefer pausing', () => {
+    expect(text('delete_worker')).toContain('ALWAYS asks the operator')
+    expect(text('delete_worker')).toContain('there is no undo')
+    expect(text('delete_worker')).toContain('update_worker({ id, set: { enabled: false } })')
+  })
+})
