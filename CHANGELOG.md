@@ -14,6 +14,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- A mission an earlier version wrote still tells you everything it was waiting for after the old mission view is gone. A new end an agent proposed and you have not answered still shows in the Mission pane with **Approve** and **Decline**, and now also counts on the pill and the chip, gets a card in **Your move** and a row in Activity, and keeps its place if the mission is copied to the new format before you answer. A mission imported from a goal file whose finish line nobody reviewed asks for that review as a blocker of yours. The other things it owed (a choice nobody made, checks, a human step) already came through as blockers and criteria; tests now pin each of them.
+
 - An existing campaign shown in the Mission pane now counts its delivered chapters as done milestones. Before, every milestone read not started ("0 of 5 milestones done"), even a chapter whose mission was delivered. A chapter that was discarded no longer counts toward the total, and a side quest stays outside it. Nothing on disk changes: the campaign file and its chapter missions are only read.
 
 ## 2026-11-15

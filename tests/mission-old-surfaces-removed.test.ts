@@ -167,6 +167,7 @@ const REMOVED_KEY_PREFIXES = [
   'mission.visual',
   'mission.was',
   'mission.you.clear',
+  'mission.you.stewardPaused',
   'mission.you.label'
 ]
 
@@ -584,7 +585,7 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
     expect(existsSync(path.join(repo, '.harnu', 'missions-v4'))).toBe(false)
   }, 60_000)
 
-  it('the Your move card for the re-scope closes when it is approved, and no other card is touched', async () => {
+  it('the Your move card for the re-scope closes when it is approved, and the blocker card is not touched', async () => {
     const m = rescopeV3()
     m.blockers = [
       { reason: 'Waiting on the vendor key', unblocks: 'a key', owner: 'operator', raisedAt: AT }
@@ -610,8 +611,13 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
       1,
       await records()
     )
+    // Every step is verified, so the converted record also derives a close: it is owed beside the re-scope.
     expect(open(filed)).toEqual(
-      [`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:rescope:${NEW_END.target}`].sort()
+      [
+        `${m.id}:blocker:Waiting on the vendor key`,
+        `${m.id}:close`,
+        `${m.id}:rescope:${NEW_END.target}`
+      ].sort()
     )
 
     const res = await ipc.runPaneDoor({ folder: repo, missionId: m.id, door: 'approveDoneWhen' })
@@ -625,7 +631,14 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
       2,
       await records()
     )
-    expect(open(next)).toEqual([`${m.id}:blocker:Waiting on the vendor key`])
+    // Only the re-scope card closes; the close and the blocker cards are the same cards, not re-filed.
+    expect(open(next)).toEqual(
+      [`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:close`].sort()
+    )
+    for (const key of ['blocker', 'close']) {
+      const before = filed.cards.find((c) => c.sourceKey?.includes(`:${key}`))!
+      expect(next.cards.find((c) => c.id === before.id)?.closedAt).toBeUndefined()
+    }
     const blockerCard = filed.cards.find((c) => c.sourceKey?.includes(':blocker:'))!
     expect(next.cards.find((c) => c.id === blockerCard.id)?.closedAt).toBeUndefined()
   }, 60_000)

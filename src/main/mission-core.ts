@@ -817,40 +817,6 @@ export function applyChooseDecision(
 }
 
 /**
- * Campaign spec §3.4 — the operator pauses the mission's steward. The reason is mandatory (it is
- * what the You list shows, and what the next reader of the Log learns). Pure; throws BAD_ARGS,
- * ALREADY_PAUSED or MISSION_CLOSED.
- */
-export function applyPauseSteward(mission: Mission, reason: string, op: { at: string }): Mission {
-  assertCheckable(mission)
-  const text = typeof reason === 'string' ? reason.trim() : ''
-  if (!text) {
-    throw new Error('BAD_ARGS: a reason is required to pause the steward.')
-  }
-  if (mission.stewardPause) {
-    throw new Error(
-      `ALREADY_PAUSED: the steward of ${mission.id} is already paused (${mission.stewardPause.reason}).`
-    )
-  }
-  const next = structuredClone(mission)
-  next.stewardPause = { at: op.at, reason: text }
-  next.updatedAt = op.at
-  return next
-}
-
-/** Campaign spec §3.4 — the operator resumes a paused steward. Pure; throws NOT_PAUSED or MISSION_CLOSED. */
-export function applyResumeSteward(mission: Mission, op: { at: string }): Mission {
-  assertCheckable(mission)
-  if (!mission.stewardPause) {
-    throw new Error(`NOT_PAUSED: the steward of ${mission.id} is not paused.`)
-  }
-  const next = structuredClone(mission)
-  delete next.stewardPause
-  next.updatedAt = op.at
-  return next
-}
-
-/**
  * The operator approved a staged re-scope (design §3, decision 6): the pending
  * end becomes the declared end under a fresh approval stamp, and the fixed-end
  * step's proof is VOIDED back to `unproven` — from `verified` and from

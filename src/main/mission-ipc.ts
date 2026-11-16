@@ -521,7 +521,9 @@ export async function buildMissionV4View(
         ])
       ),
       closeWarnings: closeWarningsOf(record, inputs),
-      pendingDoneWhen: stagedDoneWhenOf(record) ?? stagedRescopeOf(view),
+      // An older mission's staging reads from its file with the reason its owner gave; once converted by copy,
+      // the record's own staged Done when stands in (the conversion writes it).
+      pendingDoneWhen: stagedRescopeOf(view) ?? stagedDoneWhenOf(record),
       sessions: sessionHistory(record),
       handoff: handoffOffer(
         leaderContextPercent((opts.contexts ?? liveContexts)(), v4LeaderOf(record)),

@@ -7,7 +7,8 @@
  * row, and the wording of an item (`ask`, `why`) is written here and nowhere else.
  *
  * The rank, stated once (spec "Progress, next step and the waiting list", D-14): `main-failing`,
- * `unblock`, `settle`, `review`, `close`, `attach`; plan order inside a rank.
+ * `unblock`, `rescope` (an older mission's staged new end, S-40), `settle`, `review`, `close`, `attach`; plan
+ * order inside a rank.
  *
  * Until S-40 a second, v3 list lived here beside it (the operator-owed kinds of Mission v3 §3.12, built
  * from a v3 mission file and its derived signals, with `youSentence` and `youLine`). The v3 handlers and
@@ -17,7 +18,7 @@
  * Pure and Electron-free: tests import it with nothing mocked.
  */
 
-import type { BlockerV4, MissionV4, StepV4 } from './model'
+import type { BlockerV4, MissionV4, StepV4, WithUnknownKeys } from './model'
 import { deriveProgress, type MissionProgress as MissionProgressV4 } from './progress'
 import {
   activeBlockers,
@@ -41,7 +42,8 @@ export const WAITING_WHY_MAX = 60
  * operator criterion to mark), `review` (pull requests that wait for the operator), `close` (ready to
  * close), `attach` (a session asks to join).
  */
-export type WaitingKind = 'main-failing' | 'unblock' | 'settle' | 'review' | 'close' | 'attach'
+export type WaitingKind =
+  'main-failing' | 'unblock' | 'rescope' | 'settle' | 'review' | 'close' | 'attach'
 
 /**
  * Mission v3 §3.12 — one thing the operator owes a mission: the detail of a waiting item, by v3
@@ -67,10 +69,11 @@ export type WaitingItem = MissionYouItem
 
 // ---- The v4 list (S-8) ------------------------------------------------------------
 
-/** The six kinds in the one rank the v4 list uses (D-14). Index = rank. */
+/** The seven kinds in the one rank the v4 list uses (D-14, and `rescope` since S-40). Index = rank. */
 export const WAITING_RANK: readonly WaitingKind[] = [
   'main-failing',
   'unblock',
+  'rescope',
   'settle',
   'review',
   'close',
@@ -90,6 +93,8 @@ interface WaitingBase {
 export type WaitingItemV4 =
   | (WaitingBase & { kind: 'main-failing'; stepId: string; pr: string | null })
   | (WaitingBase & { kind: 'unblock'; stepId: string | null; blockerId: string })
+  /** A re-scope an older mission's owner staged and the operator has not answered: Approve or Decline. */
+  | (WaitingBase & { kind: 'rescope'; end: string })
   | (WaitingBase & { kind: 'settle'; stepId: string; criterionId: string })
   | (WaitingBase & { kind: 'review'; stepIds: string[]; prs: string[] })
   | (WaitingBase & { kind: 'close'; requested: boolean })
@@ -154,6 +159,32 @@ export interface WaitingInputV4 {
 function prNumber(step: Pick<StepV4, 'links'>): string | null {
   const link = (step.links ?? []).find((l) => l.kind === 'pr')
   return link ? (/(\d+)\s*$/.exec(link.ref)?.[1] ?? null) : null
+}
+
+/**
+ * The re-scope an older (v3) mission staged and nobody answered (S-40 delta 1). It is the converted
+ * record's staged Done when, and only while the record still carries the v3 staging that made it: a
+ * Done when a v4 session staged is the pane's box, as before. Answering it (Approve or Decline) removes
+ * `pendingDoneWhen`, so the item leaves with the box. The id keeps the key Your move filed it under before
+ * the v3 view went (`rescope:<target>`), so nothing closes and re-files on the upgrade.
+ */
+function rescopeItem(mission: MissionV4): WaitingItemV4[] {
+  const record = mission as WithUnknownKeys<MissionV4>
+  const staged = (record.legacyV3 as { pendingRescope?: { target?: unknown } } | undefined)
+    ?.pendingRescope
+  const target = typeof staged?.target === 'string' ? staged.target.trim() : ''
+  const pending = (record.pendingDoneWhen as { text?: unknown } | undefined)?.text
+  if (target === '' || typeof pending !== 'string' || pending === '') return []
+  const short = target.length > 100 ? `${target.slice(0, 99).trimEnd()}…` : target
+  return [
+    {
+      kind: 'rescope',
+      id: `rescope:${target}`,
+      end: pending,
+      ask: `Approve or decline the new end: ${short}`,
+      why: 'The mission cannot close until you decide'
+    }
+  ]
 }
 
 /** A blocker as an item: its own `ask` and `unblocks` when it has them (a v3 blocker has neither). */
@@ -322,9 +353,11 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
       why: 'It asked to work on it and waits for your answer'
     }))
 
+  const rescope = rescopeItem(mission)
   const byKind: Record<WaitingKind, WaitingItemV4[]> = {
     'main-failing': mainFailing,
     unblock,
+    rescope,
     settle,
     review,
     close,

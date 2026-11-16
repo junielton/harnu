@@ -97,7 +97,11 @@ describe('AC-6.1 — the allowlist reads no transcript', () => {
       /transcript/
     )
     expect(consolidatorReadRefusal('/repo/.harnu/missions/mnt-4ba02726-x.md')).toBeNull()
-    expect(consolidatorReadRefusal('/repo/.harnu/campaigns/cmp-1-x.md')).toBeNull()
+    expect(consolidatorReadRefusal('/repo/.harnu/missions-v4/mnt-4ba02726-x.md')).toBeNull()
+    // The campaign records are gone with the campaigns (S-39): their folder is no record any more.
+    expect(consolidatorReadRefusal('/repo/.harnu/campaigns/cmp-1-x.md')).toMatch(
+      /structured record/
+    )
     expect(consolidatorReadRefusal('/repo/src/main/a.ts')).toMatch(/structured record/)
   })
 })

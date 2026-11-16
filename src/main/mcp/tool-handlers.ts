@@ -298,7 +298,7 @@ import { planHideFolder, summarizeHide } from './hide-folder-core'
 /**
  * The caller the transport proved: a session Harnu spawned (its own session id, the mission and the step it
  * was started for) or the observe worker of a folder (a scoped bearer, Missions v4 S-25). Absent = an ordinary MCP
- * client (the main bearer). The retired steward's bearer (`kind: 'steward'`) is gone with the steward.
+ * client (the main bearer).
  */
 export type HandlerCaller = { kind: 'scoped'; scope: Scope }
 
@@ -328,9 +328,9 @@ export interface ToolHandlerCtx {
    */
   deadlineFlag?: DeadlineFlag
   /**
-   * Who is calling, as the TRANSPORT knows it (Missions v4 S-24): present only for a steward's own
-   * bearer, bound to its mission. Absent = an ordinary MCP client (the main bearer). The v4 mission
-   * verbs build the caller's `Actor` from this and never from an argument.
+   * Who is calling, as the TRANSPORT knows it (Missions v4 S-24): present only for a scoped bearer (a
+   * session Harnu spawned for a step, or an observe worker). Absent = an ordinary MCP client (the main
+   * bearer). The v4 mission verbs build the caller's `Actor` from this and never from an argument.
    */
   caller?: HandlerCaller
   /**
@@ -1019,7 +1019,7 @@ function declaredCaller(
 /**
  * The fields the ACK gains when a session that leads no mission has started work: `{ missionHint }` once,
  * else `{}`. Never creates a mission, never throws into the ACK. A caller the transport proved (a session
- * Harnu spawned for a step, a steward, an observe worker) is never hinted; an anonymous caller is counted
+ * Harnu spawned for a step, an observe worker) is never hinted; an anonymous caller is counted
  * per repo and left alone where a mission is led.
  */
 async function proactiveHintFor(
@@ -1790,7 +1790,7 @@ const memoryAppendHandler: Handler = async (args, ctx) => {
     ...(branch ? { branch } : {}),
     // T89: central storage seeds a `where.md` backlink to the source project.
     ...(mode === 'central' ? { backlink: { sourcePath: checkout } } : {}),
-    // Campaign ch.6: the entry's chain and recall metadata (validated at the gate).
+    // The entry's chain and recall metadata (validated at the gate).
     ...(strField(args, 'supersedes') ? { supersedes: strField(args, 'supersedes') } : {}),
     ...(Array.isArray(args.watches) ? { watches: args.watches.map(String) } : {}),
     ...(strField(args, 'mission') ? { mission: strField(args, 'mission') } : {}),

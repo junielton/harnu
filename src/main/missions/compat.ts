@@ -147,7 +147,21 @@ function missionLevelBlockers(mission: V3Mission): BlockerDraft[] {
         unblocks: 'Closing the mission',
         owner: 'operator',
         raisedAt: c.createdAt
-      }))
+      })),
+    // An imported mission whose declared end was a best guess nobody reviewed: the review stays owed. The
+    // operator clears it with "Done, continue", as any blocker of theirs (S-40: the v3 "review the imported
+    // end" item has no v4 kind, and no verb imports a goal file any more).
+    ...(mission.legacy?.needsReview.includes('declaredEnd')
+      ? [
+          {
+            reason: 'Review the end this mission was imported with',
+            ask: 'Review the end this mission was imported with',
+            unblocks: 'Closing the mission',
+            owner: 'operator' as const,
+            raisedAt: mission.createdAt
+          }
+        ]
+      : [])
   ]
 }
 
@@ -530,8 +544,15 @@ export function convertV3Mission(mission: V3Mission, log: string): Converted {
       fixedEndLinks(mission)
     ),
     blockers,
-    legacyV3: missionLegacy(mission, true)
-  }
+    legacyV3: missionLegacy(mission, true),
+    // A re-scope staged and not yet answered is the v4 staged Done when: the operator approves or declines
+    // it where they answer any other (S-40 delta 1). `legacyV3.pendingRescope` keeps the v3 value as it was.
+    ...(mission.pendingRescope
+      ? {
+          pendingDoneWhen: { text: doneWhenOf(mission.pendingRescope), at: mission.updatedAt }
+        }
+      : {})
+  } as MissionV4
   return { record, log, slug: mission.slug }
 }
 

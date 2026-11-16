@@ -187,7 +187,8 @@ const V4_BLOCKING: ReadonlySet<string> = new Set([
   'attach',
   'close',
   'main-failing',
-  'settle'
+  'settle',
+  'rescope'
 ])
 
 /** Every mission that owes the operator something the cue speaks about, once per id. */

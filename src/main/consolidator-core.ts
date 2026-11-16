@@ -1,7 +1,7 @@
 /**
  * Campaign ch.6 (T598, spec §3.6) — the close-out consolidator, pure.
  *
- * When an agent asks to close a mission or campaign, Harnu runs ONE consolidation pass over the
+ * When an agent asks to close a mission, Harnu runs ONE consolidation pass over the
  * STRUCTURED record — steps, the Log, the ledger, the PRs and commits linked to the steps — and
  * drafts (1) the `outcome`, and (2) the memory the operator may choose to keep: `decisions.md`
  * entries, lesson candidates and a refreshed `hot.md`. Nothing here writes: the drafts wait in the
@@ -10,7 +10,7 @@
  * It never reads a transcript. That is a property of what the pass is GIVEN, not of its manners:
  * {@link ConsolidatorInput} has no transcript field, {@link CONSOLIDATOR_ALLOW_VERBS} names the two
  * structured reads and nothing that discloses a session, and {@link consolidatorReadRefusal} turns
- * away any file that is not a mission or campaign record. The consolidator is deterministic — no
+ * away any file that is not a mission record. The consolidator is deterministic — no
  * model call — so what a draft says is traceable to the line of the record it came from; every
  * draft carries that citation, and a candidate with nothing to cite is dropped, never invented.
  */
@@ -34,16 +34,16 @@ export const CONSOLIDATOR_ALLOW_VERBS = ['mission_get'] as const
 /** Built-in tools of an observe-mode tick: read-only, and only over {@link consolidatorReadRefusal}'s roots. */
 export const CONSOLIDATOR_NATIVE_TOOLS = ['Read', 'Grep', 'Glob'] as const
 
-const RECORD_FILE = /(?:^|[\\/])\.harnu[\\/](?:missions|campaigns)[\\/][^\\/]+\.md$/
+const RECORD_FILE = /(?:^|[\\/])\.harnu[\\/](?:missions|missions-v4)[\\/][^\\/]+\.md$/
 const TRANSCRIPT_PATH = /(?:[\\/]\.claude[\\/]projects[\\/]|\.jsonl$)/
 
-/** `null` when `filePath` is a mission or campaign record; otherwise why the pass must not read it. */
+/** `null` when `filePath` is a mission record; otherwise why the pass must not read it. */
 export function consolidatorReadRefusal(filePath: string): string | null {
   if (TRANSCRIPT_PATH.test(filePath)) {
     return `${filePath} is a session transcript — the consolidator reads the structured record only, never a transcript.`
   }
   if (!RECORD_FILE.test(filePath)) {
-    return `${filePath} is not the structured record — the consolidator reads .harnu/missions/*.md and .harnu/campaigns/*.md only.`
+    return `${filePath} is not the structured record — the consolidator reads .harnu/missions/*.md and .harnu/missions-v4/*.md only.`
   }
   return null
 }
@@ -58,7 +58,7 @@ export interface LogEntry {
   text: string
 }
 
-/** One step (or, for a campaign, one chapter) as the pass sees it. */
+/** One step as the pass sees it. */
 export interface ConsolidatorStep {
   id: string
   title: string
@@ -73,7 +73,7 @@ export interface ConsolidatorStep {
 
 /** Everything the pass reads. There is deliberately no transcript field. */
 export interface ConsolidatorInput {
-  kind: 'mission' | 'campaign'
+  kind: 'mission'
   id: string
   title: string
   declaredEnd: DeclaredEnd
@@ -82,8 +82,7 @@ export interface ConsolidatorInput {
   scopePaths: string[]
   steps: ConsolidatorStep[]
   /**
-   * Whether the end was reached, when the steps cannot say (a campaign has chapters, not a fixed
-   * end step). Absent → read from the `fixed-end` step's proof.
+   * Whether the end was reached, when the steps cannot say. Absent → read from the `fixed-end` step's proof.
    */
   endState?: 'verified' | 'unverified'
   log: LogEntry[]
