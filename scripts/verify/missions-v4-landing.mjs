@@ -23,7 +23,8 @@
  *          pane's, in en and pt-BR; the converted campaign shows its milestones in order and the next step.
  *   owed   what the operator owed BEFORE (the release's own `youItems`, or the v3 file's own facts) is still
  *          owed AFTER (the pane's waiting list), by kind, through the documented mapping. Nothing vanishes.
- *   doors  Approve and Decline on a staged v3 re-scope write a v4 copy and leave the v3 file untouched.
+ *   doors  Approve and Decline on a staged v3 re-scope write a v4 copy and leave the v3 file untouched
+ *          (byte- and mtime-identical), on a frozen record, a throwaway copy of it and a release record.
  *   guard  `~/.claude/settings.json` of the operator is untouched (mtime and size), the instance runs under a
  *          throwaway HOME and `--user-data-dir=/tmp/harnu-verify-landing-*`, only its own PIDs are stopped.
  *
@@ -79,6 +80,8 @@ export const FAULTS = {
   'drop-owed': 'hide one owed item from the AFTER list (nothing may vanish)',
   'reorder-milestones': 'reverse the milestones the pane read (milestones in order)',
   'pill-mismatch': 'change the pill count the check reads (pill equals pane)',
+  'rewrite-original-in-door':
+    'append a byte to the v3 file as Approve or Decline runs (the in-place write the doors no longer do)',
   'stray-v4-dir': 'create .harnu/missions-v4/ before the reads (a read writes nothing)'
 }
 
@@ -1194,16 +1197,15 @@ async function runMain(ctx) {
   void v4Sha
 
   // ---- 7. the doors on a staged v3 re-scope --------------------------------------------------------------
-  // KNOWN EXCEPTION to NG-8 as the spec words it ("no write to a v3 file by any v4 code"): S-40's owner delta
-  // keeps ONE door on an older file, Approve or Decline of a re-scope its owner staged before the upgrade. It
-  // writes the v3 file itself, in the v3 format (`src/main/missions/v3-rescope-door.ts`), so the installed build
-  // still reads it, and makes no v4 copy. The check below asserts exactly that and nothing wider: the one file
-  // changes, in the way the door documents, and every other v3 file stays byte-identical.
+  // NG-8 / AC-22 hold for the doors too (S-42 delta 1): Approve or Decline of a re-scope staged before the
+  // upgrade converts the mission by copy (the v4 record under the same id) and the door runs on that copy. The
+  // v3 file is left byte- and mtime-identical, one v4 record appears, the pane reads it as v4, the staging is
+  // gone, and the Log of the copy ends with the operator's line ("operator approved|declined the re-scope").
   const v3Changed = () => copies.filter((c) => sha256(c.dest) !== c.sha).map((c) => c.name)
   const v3Unchanged = () => v3Changed().length === 0
   const v4Files = () =>
     existsSync(v4Dir) ? readdirSync(v4Dir).filter((n) => n.endsWith('.md')) : []
-  const logHeadings = (file) => (readFileSync(file, 'utf8').match(/^### /gm) ?? []).length
+  const v4CopyOf = (id) => v4Files().find((n) => n.startsWith(`${id}-`))
   const doorCase = async (door, id, lead, title) => {
     const copy = copies.find((c) => c.name.startsWith(id))
     const before = await showMission(lead, id, title)
@@ -1215,9 +1217,14 @@ async function runMain(ctx) {
       before.approve && before.decline,
       `Approve ${before.approve}, Decline ${before.decline} on the staged re-scope of ${id}`
     )
-    const rawBefore = readFileSync(copy.dest, 'utf8')
-    const n0 = v4Files().length
-    const heads0 = logHeadings(copy.dest)
+    const target = /^pendingRescope:\n(?:.*\n)*?  target: (.+)$/m.exec(
+      readFileSync(copy.dest, 'utf8')
+    )?.[1]
+    const mtime0 = statSync(copy.dest).mtimeMs
+    const nBefore = v4Files().length
+    const hadCopy = v4CopyOf(id) !== undefined
+    if (fault('rewrite-original-in-door'))
+      writeFileSync(copy.dest, readFileSync(copy.dest, 'utf8') + ' ')
     await cdp.eval(`document.querySelector('[data-test="done-when-${door}"]')?.click()`)
     await waitFor(
       `!document.querySelector('[data-test="done-when-${door}"]')`,
@@ -1225,58 +1232,85 @@ async function runMain(ctx) {
       `the staged re-scope to clear after ${door}`
     ).catch(() => {})
     await sleep(800)
-    const changed = v3Changed()
-    const raw = readFileSync(copy.dest, 'utf8')
     const rv = await view(lead, id)
+    const v4File = v4CopyOf(id)
+    const v4Text = v4File ? readFileSync(path.join(v4Dir, v4File), 'utf8') : ''
+    check(
+      `doors.${door}-leaves-v3-file-alone`,
+      'NG-8',
+      sha256(copy.dest) === copy.sha && statSync(copy.dest).mtimeMs === mtime0,
+      `${copy.name} byte- and mtime-identical after ${door}`
+    )
+    check(
+      `doors.${door}-writes-v4-copy`,
+      'AC-94',
+      !hadCopy && v4Files().length === nBefore + 1 && v4File !== undefined && rv.source === 'v4',
+      `v4 records ${nBefore} → ${v4Files().length}; ${id} now read as ${rv.source}`
+    )
     check(
       `doors.${door}-clears-staging`,
       'AC-94',
-      !/^pendingRescope:/m.test(raw) && /^pendingRescope:/m.test(rawBefore) && !rv.pendingDoneWhen,
-      `staged re-scope gone from the file and the view after ${door}`
+      !/^pendingDoneWhen:/m.test(v4Text) && !rv.pendingDoneWhen,
+      `staged re-scope gone from the v4 copy and the view after ${door}`
     )
     check(
-      `doors.${door}-writes-v3-in-place`,
+      `doors.${door}-logs-operator-line`,
       'AC-94',
-      changed.length === 1 &&
-        changed[0] === copy.name &&
-        v4Files().length === n0 &&
-        rv.source === 'v3-mission' &&
-        logHeadings(copy.dest) === heads0 + 1,
-      `changed files: ${changed.join(', ') || 'none'}; v4 records ${n0} → ${v4Files().length}; still read as ${rv.source}; Log +${logHeadings(copy.dest) - heads0} entry`
+      new RegExp(
+        `^### \\S+ · operator ${door === 'approve' ? 'approved' : 'declined'} the re-scope$`,
+        'm'
+      ).test(v4Text),
+      `the copy's Log carries "operator ${door === 'approve' ? 'approved' : 'declined'} the re-scope"`
     )
-    if (door === 'approve')
-      check(
-        'doors.approve-stamps-operator',
-        'AC-94',
-        /via: operator/.test(raw),
-        'the declared end carries the operator approval stamp'
-      )
-    copy.sha = sha256(copy.dest) // this file was changed on purpose, by the door; track it from here
+    const doneWhen = /^doneWhen: (.*)$/m.exec(v4Text)?.[1] ?? ''
     check(
-      `ng8.${door}-leaves-every-other-v3-file`,
+      `doors.${door}-end`,
       'AC-94',
+      door === 'approve'
+        ? target !== undefined && doneWhen.includes(target)
+        : target !== undefined && !doneWhen.includes(target),
+      door === 'approve'
+        ? 'the approved end is the new Done when of the copy'
+        : 'the declined end is not the Done when of the copy'
+    )
+    check(
+      `ng8.${door}-leaves-every-v3-file`,
+      'NG-8',
       v3Unchanged(),
-      'every other v3 file is byte-identical after the door'
+      `every v3 file is byte-identical after the door (changed: ${v3Changed().join(', ') || 'none'})`
     )
   }
   const approveId = 'mnt-5c0de001'
   await doorCase('approve', approveId, LEAD_V3, replies[approveId].detail.title)
+  // Decline needs a second staged v3 re-scope. The frozen set has one (used for Approve), so a throwaway copy of
+  // that file under another id stands in: the fixture is untouched, the copy is tracked like every other.
+  const declineId = 'mnt-5c0de0d1'
+  const declineName = `${declineId}-modern-active-decline.md`
+  {
+    const src = copies.find((c) => c.name.startsWith(approveId))
+    const text = readFileSync(path.join(FIXTURES, 'missions', src.name), 'utf8')
+      .replace(/^id: mnt-5c0de001$/m, `id: ${declineId}`)
+      .replace(/^slug: modern-active$/m, 'slug: modern-active-decline')
+    const dest = path.join(missionsDir, declineName)
+    writeFileSync(dest, text)
+    copies.push({ name: declineName, src: dest, dest, sha: sha256(dest) })
+  }
+  const declineView = await view(LEAD_V3, declineId)
   check(
-    'ng8.exception.v3-rescope-door',
-    'NG-8',
-    true,
-    'RECORDED FINDING: the door rewrites the v3 file in place (S-40 owner delta, v3-rescope-door.ts); the spec text of NG-8, AC-22 and compatibility rule 4 says no v4 code writes a v3 file and has no amendment for it'
+    'doors.decline-staged-copy-reads',
+    'AC-94',
+    declineView.state === 'mission' &&
+      declineView.source === 'v3-mission' &&
+      !!declineView.pendingDoneWhen,
+    `the throwaway staged copy ${declineId} opens as a v3 mission with a staged re-scope`
   )
+  await doorCase('decline', declineId, LEAD_V3, declineView.detail?.title)
   if (release) {
     await doorCase(
       'decline',
       release.ids.m2,
       release.leaders.m2,
       pane[release.ids.m2].reply.detail.title
-    )
-  } else {
-    ctx.limits.push(
-      'Decline was not exercised: it needs a second staged v3 re-scope, which only the release phase writes (the frozen fixtures have one, used for Approve).'
     )
   }
 

@@ -600,7 +600,8 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
     expect(copy).not.toBeNull()
     expect(copy).not.toMatch(/pendingDoneWhen/)
     expect(copy).toContain('PR merging the slice')
-    expect(copy).not.toContain(NEW_END.target)
+    // The frozen v3 snapshot keeps what was staged; the live Done when is the old one.
+    expect(copy).toMatch(/doneWhen: .*PR merging the slice/)
     expect(copy).toMatch(/### \S+ · operator declined the re-scope/)
     const reply = await view()
     expect(reply.state === 'mission' && reply.pendingDoneWhen).toBeNull()

@@ -24,8 +24,7 @@ import {
 } from './missions/store'
 import type { Mission, MissionDerived, MissionProgress } from './missions/derive'
 import type { WaitingItem } from './missions/waiting'
-import { doorReply, runDoor } from './missions/doors'
-import { runV3RescopeDoor } from './missions/v3-rescope-door'
+import { approveDoneWhen, declineDoneWhen, doorReply, runDoor } from './missions/doors'
 import { createMissionObserver, type MissionObserver } from './missions/observer'
 import { ensureLinkCacheLoaded, rememberResolved } from './mission-link-cache'
 import { hydrateMissionLedger, observedRows } from './missions/ledger-store'
@@ -406,10 +405,10 @@ export function stagedRescopeOf(view: MissionRecordView): { text: string; at?: s
 }
 
 /**
- * What `mission:v4Door` runs (S-37 delta 1). A v4 record's door is the v4 door as ever. For an older (v3)
- * mission with a staged re-scope, Approve and Decline are the v3 doors on its own file: Approve is the same
- * `approveRescope` write and Log line the popover used, Decline is `declineRescope`, and neither creates a v4
- * copy. Anything else goes to the v4 doors.
+ * What `mission:v4Door` runs. Every door goes to the v4 doors, for an older (v3) mission too: the first
+ * write converts it by copy (the v4 record under the same id, the v3 file left byte-identical, NG-8 and
+ * AC-22), and for a staged re-scope the copy carries the staging as its `pendingDoneWhen`, so Approve and
+ * Decline are the v4 Done when doors (S-42 delta 1). The Log line is the one the old popover wrote.
  */
 export async function runPaneDoor(raw: unknown): Promise<Record<string, unknown>> {
   const a = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
@@ -421,20 +420,11 @@ export async function runPaneDoor(raw: unknown): Promise<Record<string, unknown>
     a.missionId !== ''
   ) {
     try {
-      const root = repoRoot(a.folder)
-      const read = await readMissionRecord(root, a.missionId)
+      // A read: it writes nothing. Only the door call below writes, and it converts by copy first.
+      const read = await readMissionRecord(repoRoot(a.folder), a.missionId)
       if (read.ok && stagedRescopeOf(read) !== null) {
-        const res = await runV3RescopeDoor(
-          root,
-          read.record.id,
-          a.door === 'approveDoneWhen' ? 'approve' : 'decline'
-        )
-        if (res.ok) return { ok: true, changed: true }
-        return {
-          ok: false,
-          code: /^([A-Z_]+):/.exec(res.error)?.[1] ?? 'DOOR_FAILED',
-          error: res.error
-        }
+        const door = a.door === 'approveDoneWhen' ? approveDoneWhen : declineDoneWhen
+        return doorReply(await door(a.folder, a.missionId, { asRescope: true }))
       }
     } catch (err) {
       return { ok: false, code: 'UNREADABLE', error: `UNREADABLE: ${(err as Error).message}` }
