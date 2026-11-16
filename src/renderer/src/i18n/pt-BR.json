@@ -398,6 +398,7 @@
       "kind": {
         "main-failing": "Corrigir",
         "unblock": "Destravar",
+        "rescope": "Pronto quando",
         "settle": "Conferir",
         "review": "Revisar",
         "close": "Fechar",

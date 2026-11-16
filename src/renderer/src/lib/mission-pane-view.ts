@@ -1291,6 +1291,12 @@ export function waitingText(t: Translate, detail: Detail, item: WaitingItem): Wa
         ),
         why: t('missionPane.next.text.close.why')
       }
+    case 'rescope':
+      // An older mission's staged re-scope is the staged Done when: the same words, the same box.
+      return {
+        ask: t('missionPane.next.text.doneWhen.ask'),
+        why: t('missionPane.next.text.doneWhen.why')
+      }
     case 'attach':
       return {
         ask: t('missionPane.next.text.attach.ask'),

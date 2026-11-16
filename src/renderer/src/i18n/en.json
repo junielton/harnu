@@ -398,6 +398,7 @@
       "kind": {
         "main-failing": "Fix",
         "unblock": "Unblock",
+        "rescope": "Done when",
         "settle": "Check",
         "review": "Review",
         "close": "Close",

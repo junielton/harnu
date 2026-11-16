@@ -47,9 +47,13 @@ const { t } = useI18n()
 
 const next = computed(() => props.detail.waiting.next)
 const more = computed(() => props.detail.waiting.more)
-// A staged Done when is the next step when the waiting list names nothing else (design.md §6 "Mission pane" →
-// Your next step): the box never reads "Nothing for you" above the Approve / Decline box.
-const stagedNext = computed(() => props.staged === true && next.value === null)
+// A staged Done when is the next step when the waiting list names nothing else, or names only the re-scope an
+// older mission staged (the `rescope` item IS that Done when): the box never reads "Nothing for you" above the
+// Approve / Decline box, and the staged Done when is one line with one button, never two (design.md §6
+// "Mission pane" → Your next step).
+const stagedNext = computed(
+  () => props.staged === true && (next.value === null || next.value.kind === 'rescope')
+)
 const look = computed<NextLook>(() => nextLook(props.detail, props.staged === true))
 const restGrid = computed(() => restRowGrid(props.compact ? 'narrow' : 'regular'))
 const localOpen = ref(false)
@@ -100,6 +104,7 @@ const EYEBROW: Record<NextLook, string> = {
 const KIND: Record<string, string> = {
   'main-failing': 'text-red',
   unblock: 'text-red',
+  rescope: 'text-warning',
   settle: 'text-warning',
   review: 'text-text-3',
   close: 'text-green',
@@ -234,6 +239,16 @@ const KIND: Record<string, string> = {
           @click="emit('openStep', waitingStepId(item) as string)"
         >
           {{ $t('missionPane.next.openStep') }}
+        </button>
+        <button
+          v-else-if="item.kind === 'rescope'"
+          type="button"
+          class="rounded-sm border border-border-2 text-text-2 transition hover:bg-surface-2 hover:text-text"
+          :style="restButtonStyle"
+          data-test="next-rest-staged"
+          @click="emit('openStaged')"
+        >
+          {{ $t('missionPane.next.text.doneWhen.open') }}
         </button>
         <button
           v-else-if="item.kind === 'close'"
