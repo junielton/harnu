@@ -21,8 +21,8 @@ import type { DeclaredEnd, LedgerRow } from './mission-core'
 
 // ── the allowlist, as data ───────────────────────────────────────────────────
 
-/** Verbs the pass may call: the two reads of the structured record. Neither exposes a transcript. */
-export const CONSOLIDATOR_ALLOW_VERBS = ['mission_get', 'campaign_get'] as const
+/** Verbs the pass may call: the read of the structured record. It exposes no transcript. */
+export const CONSOLIDATOR_ALLOW_VERBS = ['mission_get'] as const
 
 /** Built-in tools of an observe-mode tick: read-only, and only over {@link consolidatorReadRefusal}'s roots. */
 export const CONSOLIDATOR_NATIVE_TOOLS = ['Read', 'Grep', 'Glob'] as const

@@ -17,7 +17,6 @@ import {
   missionsDir,
   type Mission
 } from '../src/main/mission-core'
-import { createCampaignFile, type Campaign } from '../src/main/campaign-core'
 
 const h = vi.hoisted(() => ({ userDataDir: '' }))
 
@@ -113,23 +112,50 @@ async function fakeClone(): Promise<string> {
   return root
 }
 
-function campaign(id: string, root: string): Campaign {
-  return {
-    id,
-    slug: 'two-chapters',
-    folder: root,
-    owner: { sessionId: LEADER, folder: root },
-    title: 'Two chapters',
-    declaredEnd: { kind: 'code', target: 'both chapters live', evidence: 'merged PRs' },
-    chapters: [
-      { id: 'chp-1', ordinal: 1, title: 'Shadowed', required: true, missionId: M_SHADOW },
-      { id: 'chp-2', ordinal: 2, title: 'Closed elsewhere', required: true, missionId: M_CLOSED }
-    ],
-    status: 'active',
-    createdAt: OLD,
-    updatedAt: OLD,
-    provenance: { author: 'agent', at: OLD }
-  }
+/**
+ * A v3 campaign file naming both missions, as a record on disk. The campaign code is gone (S-39), so it
+ * is plain text; the store's readers must keep working with such a file beside the missions.
+ */
+async function seedCampaign(id: string, root: string): Promise<void> {
+  const dir = path.join(root, '.harnu', 'campaigns')
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(
+    path.join(dir, `${id}-two-chapters.md`),
+    [
+      '---',
+      `id: ${id}`,
+      'slug: two-chapters',
+      `folder: ${root}`,
+      'owner:',
+      `  sessionId: ${LEADER}`,
+      `  folder: ${root}`,
+      'title: Two chapters',
+      'declaredEnd:',
+      '  kind: code',
+      '  target: both chapters live',
+      '  evidence: merged PRs',
+      'chapters:',
+      '  - id: chp-1',
+      '    ordinal: 1',
+      '    title: Shadowed',
+      '    required: true',
+      `    missionId: ${M_SHADOW}`,
+      '  - id: chp-2',
+      '    ordinal: 2',
+      '    title: Closed elsewhere',
+      '    required: true',
+      `    missionId: ${M_CLOSED}`,
+      'status: active',
+      `createdAt: ${OLD}`,
+      `updatedAt: ${OLD}`,
+      'provenance:',
+      '  author: agent',
+      `  at: ${OLD}`,
+      '---',
+      '# Two chapters',
+      ''
+    ].join('\n')
+  )
 }
 
 type ToolResult = { isError?: boolean; content: Array<{ type: string; text?: string }> }
@@ -171,7 +197,7 @@ beforeEach(async () => {
     cloneA,
     mission(M_LONE, cloneA, { owner: { sessionId: LONE_LEADER, folder: cloneA } }, LONE_CHILD)
   )
-  await createCampaignFile(cloneA, campaign('cmp-0000000a', cloneA), '# Two chapters\n')
+  await seedCampaign('cmp-0000000a', cloneA)
 })
 
 describe('one reader for every caller', () => {

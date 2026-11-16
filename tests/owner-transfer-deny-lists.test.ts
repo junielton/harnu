@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest'
 import { MCP_TOOLS } from '../src/main/mcp/tool-catalog'
 import { OBSERVE_MCP_ALLOW, OBSERVE_MCP_DENY } from '../src/main/scheduler-core'
 
-const TRANSFER_VERBS = ['mission_transfer_owner', 'campaign_transfer_owner'] as const
+const TRANSFER_VERBS = ['mission_transfer_owner'] as const
 
 describe('the transfer verbs are in the catalog', () => {
   it.each(TRANSFER_VERBS)('%s is a mutating, ungrantable catalog verb', (verb) => {

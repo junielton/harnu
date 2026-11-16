@@ -2,7 +2,7 @@
  * Missions v4 S-9 (AC-26) — the frozen v3 reader.
  *
  * A copy of the v3 mission and campaign schemas and their two parsers, taken from `mission-core.ts`,
- * `campaign-core.ts` and `outcome-schema.ts` as they stand on main at the slice's base. It is the ONLY
+ * the v3 campaign module (deleted by S-39) and `outcome-schema.ts` as they stood on main at the slice's base. It is the ONLY
  * v3 code a v4 module may import: `compat.ts` and `record-store.ts` read v3 files through it, so the
  * day the v3 core modules are deleted (S-41) the compatibility suite and the fixtures test keep
  * running on this file alone. For that reason it imports nothing of the app, only `js-yaml` and `zod`.
@@ -223,7 +223,7 @@ export type V3Mission = z.infer<typeof MissionSchema>
 export type V3MissionStep = z.infer<typeof MissionStepSchema>
 export type V3LedgerRow = z.infer<typeof LedgerRowSchema>
 
-// ---- v3 campaign (campaign-core.ts, copied) ----------------------------------
+// ---- v3 campaign (the v3 campaign module, copied before S-39 deleted it) ----------------------------------
 
 /** `cmp-<8 hex>`. */
 export const V3_CAMPAIGN_ID_RE = /^cmp-[0-9a-f]{8}$/

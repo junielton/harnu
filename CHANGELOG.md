@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-16
+
+### Fixed
+
+- An existing campaign shown in the Mission pane now counts its delivered chapters as done milestones. Before, every milestone read not started ("0 of 5 milestones done"), even a chapter whose mission was delivered. A chapter that was discarded no longer counts toward the total, and a side quest stays outside it. Nothing on disk changes: the campaign file and its chapter missions are only read.
+
 ## 2026-11-15
 
 ### Added
@@ -53,6 +59,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **The old mission screens are gone.** The mission and campaign popovers, the step rail, the Missions review and bulk-close dialogs, the steward pause dialog and the **Stewards** block in the Scheduler are removed. Every mission, including the ones you started before this version, opens in the Mission pane, and nothing else lists your missions across a repo except the pane's own picker when a session has no mission.
 
 - **The mission steward is gone for good.** Harnu no longer contains the helper that used to wake on mission events, rebase a stack, start a verifier or nudge a session; the Scheduler keeps only your own **Observe** and **Act** workers. The first start after an upgrade still removes any steward an older version left (its Scheduler worker and its entries in the folder's `.claude/settings.local.json`, never your own hooks) and posts the one Activity notice. A session that was already open when you upgraded may still run the old steward hooks; they now answer with nothing. Closing a mission no longer looks for a steward to remove. The **Pause steward** and **Resume steward** actions are gone too. No mission or campaign file changes: a mission that was paused keeps that line in its file, and nothing reads it.
+
+- **The six campaign commands are gone.** Agents can no longer create, read, list, extend, close or hand over a campaign (`campaign_create`, `campaign_add_chapter`, `campaign_get`, `campaign_list`, `campaign_request_close`, `campaign_transfer_owner`), and `mission_create` refuses a call that names a campaign or a chapter, with a message that points to milestones; nothing is written. A large piece of work is now one mission with milestones. A campaign file an earlier version left in `.harnu/campaigns/` is kept and never changed: the Mission pane opens it as one mission with its chapters as milestones in order, and the chapter missions it names open as before.
 
 ### Fixed
 
