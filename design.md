@@ -880,7 +880,7 @@ store's existing 20 s poll — no per-mission timer):
 - **Standing vs blocking kinds** (BUG-173, spec §3.2). _Standing_ kinds —
   `close`, `checks`, `review-import` — are a to-do nobody is waiting on: they
   cue once when they appear (or `checks` grows) and **never re-nudge**; the
-  pill, the bell entry and the review dialog keep showing them. _Blocking_
+  pill and the bell entry keep showing them. _Blocking_
   kinds — `rescope`, `blocker`, `decide` (a pending decision, one key per
   decision step), `human-steps` — are something an agent or a later step waits
   on: they cue when they appear, then re-nudge with **back-off**, **30 min, 1 h,
@@ -7000,7 +7000,7 @@ no virtualization dependency needed here.
   re-cueing (a mission) lives in ONE grouped entry that is replaced in place.
 - ❌ Dismiss a grouped entry on an item click, or give it a mission-specific
   branch in `ActivityBell.vue`: rows are generic `items`, and the click goes
-  through `openNavigableView` / the store's `openReview`.
+  through `openNavigableView`.
 
 ### Mission progress (sidebar chip, Activity cue and end dialog)
 
@@ -7281,37 +7281,44 @@ sizes below are the mockup's, recorded here so the code has nothing off-system.
 mission's `doneWhen` is not drawn). `role="progressbar"` with `aria-valuemin 0`, `aria-valuemax`
 the server's `total`, `aria-valuenow` its `done`. Track: `margin-top: 10px`, `height: 24px`,
 `rounded-sm border border-border bg-surface-2`, `overflow: hidden`. Fill: `bg-green-soft`, an
-absolute box from the left, `width` = `done / total` (0 when `total` is 0), with a `2px`
-`border-green` right edge (no edge at 100%). The label sits **inside** the track, `padding: 0 9px`,
-`11.5px`, `tabular-nums`, `text-text-2` — the count line, "{done} of {total} steps done" or
-"{done} of {total} milestones done" (the same text the shell wrote). At 100% the label is
-`text-green`. The mockup bolds the number; the pane does not (one translated sentence).
+absolute box from the left, `width` = `done / total` (0 when `total` is 0). The fill's edge is marked
+by a **`2px` `bg-green` strip in a row of its own under the label** (`grid-template-rows: 1fr 2px`;
+the strip is as wide as the fill, and there is none at 0 or at 100%), so the marker is never drawn
+through the count at any fill. The label sits **inside** the track, in the first row, `padding: 0 9px`,
+`11.5px`, `tabular-nums`, `text-text-2`, one line that truncates with the full text in its `title` —
+the count line, "{done} of {total} steps done" or "{done} of {total} milestones done" (the same text
+the shell wrote). At 100% the label is `text-green`. The mockup bolds the number; the pane does not
+(one translated sentence).
 
 **Your next step (`MissionPaneNext.vue`).** One box under the bar (`margin-top: 10px`, `rounded`,
 `border`, `padding: 10px 12px`, `gap: 8px`, a column) from `detail.waiting`. Looks:
 
-| Look | When                                       | Border / background                   | Eyebrow            |
-| ---- | ------------------------------------------ | ------------------------------------- | ------------------ |
-| you  | `waiting.next` is a step the operator owes | `border-warning-line bg-warning-soft` | **Your next step** |
-| ok   | the next item is `close` (ready to close)  | `border-green-line bg-green-soft`     | **Your next step** |
-| calm | `waiting.next` is `null`                   | `border-border-2 bg-surface-2`        | **Next step**      |
+| Look | When                                                                                              | Border / background                   | Eyebrow            |
+| ---- | ------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------ |
+| you  | `waiting.next` is a step the operator owes, or `waiting.next` is `null` and a Done when is staged | `border-warning-line bg-warning-soft` | **Your next step** |
+| ok   | the next item is `close` (ready to close)                                                         | `border-green-line bg-green-soft`     | **Your next step** |
+| calm | `waiting.next` is `null` and no Done when is staged                                               | `border-border-2 bg-surface-2`        | **Next step**      |
 
 The eyebrow is `10px / 700`, uppercase, `0.07em`, `text-text-4` (`text-warning` in the `you` look,
 `text-green` in `ok`). Then **the ask** (`13px`, `text-text`, `line-height 1.4`) and **the why**
-(`11.5px`, `text-text-3`, pulled up `4px`): both are the server's wording and are shown as the
-server wrote them (`ask` and `why` are capped by the writing contract on write; the pane never
-cuts or rewrites them). The `calm` look has one sentence in place of the ask: "{n} steps are
+(`11.5px`, `text-text-3`, pulled up `4px`): both are **worded by the pane**, in the reader's language,
+from the item's kind and the record (`waitingText`): the server's `ask` and `why` are English and stay
+the text a session reads, so a Portuguese pane never shows them for a kind it knows. What an agent
+wrote (a blocker's own ask and "unblocks", a criterion's text, a step's title) is shown as written. An
+item whose record is gone, or a kind this build does not know, shows the server's words. The `calm` look has one sentence in place of the ask: "{n} steps are
 running. Nothing for you right now." (or "Nothing is running. Nothing for you right now."), counted
 from the server's `progress.counts.running`.
+
+**A staged Done when** (an older mission's re-scope reads the same) is the next step when `waiting.next` is `null`, or is the older mission's own `rescope` item (S-40: that item IS the staged Done when, so it is never drawn a second time as a row of its own): the ask is "Approve or decline the new Done when", the why "A session proposed it. It becomes the mission's end only if you approve.", and the one button is **Review it**, which scrolls the staged box below into view and focuses **Approve**. The box never reads "Nothing for you right now" above it. When other items wait and the `rescope` item is not first, it is one row of "{n} more waiting on you" (kind label "Done when", the same ask, one **Review it** button); the staged box stays below as before. The staged Done when is always one line and one button in the box, never two.
 
 The action row is `flex`, `gap: 10px`: **one button** (`ui/Button`, variant `primary`), and the
 **"{n} more waiting on you"** link at the right (`11.5px`, `text-text-3`, hover `text-text`; `n` is
 the length of `waiting.more`, written by the renderer, never `waiting.moreLine`). The link expands
 **in place** (it never navigates): under the action row, a `border-t border-border` list, one row
-per other item, `Show less` replacing the link's text. A row is a two-column grid (`1fr auto`,
+per other item, `Show less` replacing the link's text. A row is a two-column grid at the regular width (`1fr auto`,
 `gap: 2px 10px`, `padding: 8px 0`, `border-t border-border` between rows): the kind in an eyebrow
 (`9.5px / 700`, uppercase, `0.06em`, `margin-right: 6px`) then the ask (`12px`); under it the why
-(`10.5px`, `text-text-4`); the row's button on the right, spanning both lines.
+(`10.5px`, `text-text-4`); the row's button on the right, spanning both lines. In a **narrow pane** (below 240 px) the row is one column (`minmax(0, 1fr)`) and the button sits on its own row under the text, left-aligned (`margin-top: 4px`), so the text keeps the whole width instead of a sliver (`restRowGrid`).
 
 | Kind (`waiting` identifier) | Eyebrow word | Eyebrow colour |
 | --------------------------- | ------------ | -------------- |
@@ -7398,12 +7405,46 @@ the hand-off are S-20; both are below.) (An open step's who-settles, blocker and
 mission with `mission_create` in the v4 shape (S-24), so the glance has something to show once a v4
 record exists on disk.
 
-**Don'ts.** ❌ Show a v3 mission in the pane, or write a v3 record from it. ❌ Open the pane
-for a v3 pill. ❌ Print `stateLabel`, `progress.headline`, `waiting.moreLine` or any English word
+**Don'ts.** ❌ Write a v3 record from the pane. ❌ Print `stateLabel`, `progress.headline`, `waiting.moreLine` or any English word
 from the reply (the `ask` and the `why` are the one wording the server owns, shown as written).
 ❌ Poll from a loop the store does not own. ❌ Draw a Done when paragraph. ❌ Open more than the
 current milestone by itself. ❌ Count to do steps in a milestone's summary. ❌ Draw a button whose
 door is not built yet.
+
+#### At a glance in a small space (Missions v4, stp-21)
+
+**The pane lives at about 296 to 420 px, so it reads in one screenful there** (`MissionPane.vue`,
+`lib/mission-pane-view.ts`: `PANE_ORDER`, `paneLayout`, `barGeometry`, `loadPaneSections`). **Nothing is
+removed:** what left the first screenful is one click away, and the pane keeps each choice.
+
+**The first screenful** (`GLANCE_SECTIONS`), in this order, each marked `data-pane-section`:
+
+1. **`head`:** the mission's title (it wraps, never truncates) and the progress bar.
+2. **`next`:** the next-step box. Under it, **"{n} more waiting on you"** opens the rest of the waiting list in
+   place.
+3. **`waiting`:** what else waits on the operator and is not a line of the list: a session's request to join and
+   a staged Done when. Drawn only while there is one.
+
+**One click away** (closed to begin with; every one keeps its state across a refresh, in `localStorage`
+`om2tab.missionPane.sections`, per viewer): **Steps and timeline** (`tree`: the milestones, the steps, their
+criteria, links and blockers, and the Ask box on a milestone), **Sessions** (`sessions`) and **"{n} more waiting on
+you"** (`more`). The collapsed **Steps and timeline** line is a `button` (`12px`, `text-text-3`, a chevron, the
+eyebrow in `10.5px / 500` uppercase `0.07em`) with the place the mission is at on its right (`11px`,
+`text-text-4`, one line that truncates, full text in `title`): the current milestone's title, "Every step is done",
+or the step count. **Open step** in the next-step box opens the steps by itself (and keeps them open), then
+opens that step. The sample opens a part of the pane for you without changing what the operator kept. **Close
+mission…** stays at the bottom of the body.
+
+**Width.** The pane has **no minimum width**; it follows the width it really has (a `ResizeObserver` on its
+root, `data-width-mode` on the root says which): **narrow below 240 px**, regular from 240 px. Narrow changes only
+how things fit: the side padding drops from 16 to 10 px, the next-step box and a staged Done when use `8px`
+padding, a button's text may wrap, and the body never scrolls sideways (`overflow-x: hidden`). In both modes
+every text wraps (`break-words`, `min-w-0`) or truncates with its full text in a `title`, every row of controls
+wraps (`flex-wrap`), and no control is hidden to make room: the same controls exist at 110 px as at 420 px.
+
+**The selector of the missions a session leads** (`This session leads {n} missions`): the label sits above the
+control (`flex-col`, `gap: 4px`) and the control is the full width, with the mission's title in its `title`, so its
+text is never squeezed out of view at 290 px.
 
 #### An open step (Missions v4, S-19)
 
@@ -7506,11 +7547,17 @@ head, under "Your next step", not in a step): a box like the next-step box in th
 **"New Done when proposed"** (`10px / 700`, uppercase, `text-accent`), the proposed text (`13px`,
 `text-text`), one line saying what each button does (`11.5px`, `text-text-3`), then **Approve**
 (`ui/Button` primary) and **Decline** (`ui/Button` soft). It is drawn only while the view carries a
-staged Done when; the mission's own Done when is still not drawn.
+staged Done when; the mission's own Done when is still not drawn. An **older (v3) mission** that has a
+re-scope staged shows the same box (S-37): the new target and its proof, with the owner's reason in
+brackets; **Approve** applies it to the old file as the popover did and **Decline** drops it, and
+neither creates a v4 copy (`stagedRescopeOf`, `runPaneDoor` in `src/main/mission-ipc.ts`).
 
 **Narrow pane.** The open step is as narrow as its tree: the criteria's right cell moves under the
-text (above), the pills wrap and break long addresses (`break-all`), the blocker's text wraps, and
-nothing has a fixed width.
+text (above), the pills wrap and break long addresses at their separators, the blocker's text wraps, and
+nothing has a fixed width. **A link never breaks inside a word:** its label is cut after a separator
+(`/ . - _ ? & = # : @`) or a space (`<wbr>` between the parts), so a long path wraps at its slashes
+and dots; a single segment that is wider than the pane is clipped whole and its full text is in the
+`title`.
 
 **Data.** The doors are `window.api.missionV4Door` (channel `mission:v4Door`): `mark` (a criterion),
 `clearBlocker`, `approveDoneWhen`, `declineDoneWhen`. They go through `stores/missions.ts`
@@ -7548,8 +7595,9 @@ row per session (`gap: 8px`, `12px`, `text-text-2`), a grid of a 7px dot and the
 border-text-4`) once it stopped;
 - **line 1**: the session's **name** (`font-weight: 500`, `text-text`; **"Session 22222222"**, the first
   eight characters of its id, when it is not loaded; a session a hand-off started is named after its first
-  prompt, the hand-off's instruction line, so the row says **"Took over “Score a spec with a test set”"**
-  instead, while the sidebar still shows the first prompt) · its **role**, in the tense of whether it still is:
+  prompt, the hand-off's instruction line, so the row says the **mission's title** plainly ("Score a spec
+  with a test set") instead, while the sidebar still shows the first prompt; the hand-off's reply carries
+  the same name as `leaderName`) · its **role**, in the tense of whether it still is:
   **"Leads the mission"** / **"Led the mission"** / **"Works on the mission"** / **"Worked on the mission"**,
   and **" · this session"** on the one the pane follows;
 - **sub line** (`10.5px`, `text-text-4`): when it worked, from and to: **"Since Nov 13"** (attached),
@@ -7830,9 +7878,11 @@ that part for you (`step-open`, `step-blocked`, `ask`, `handoff-confirm`); the t
   one line, **"Shows every state of this pane with made-up data. Nothing is saved."**, under a `border-t`.
 - **The strip** (pinned under the header while a sample shows): `border-b border-accent-line bg-accent-soft`,
   `padding: 8px 12px`, `11.5px`. First line: the eyebrow **"Sample mission"** (`10px / 700`, uppercase, `0.07em`,
-  `text-accent`), **"Made-up data. Nothing you press here is saved."** and **"Leave the sample"** (the dense
-  pill). Second line: **"State"** and a native `select` of every state (`rounded-sm border border-border-2
-bg-bg`, `height: 22px`, `11.5px`). A state that needs a click adds one line saying which.
+  `text-accent`) and **"Leave the sample"** (the dense pill). Second line, across the whole strip so it never
+  wraps in a sliver: **"Made-up data. Nothing you press here is saved."** Third line: **"State"** and a native
+  `select` of every state (`rounded-sm border border-border-2 bg-bg`, `height: 22px`, `11.5px`). A state that needs a
+  click adds one line saying which, and it quotes the pane's own label for the thing to press (the same i18n key
+  the pane draws), so the sample never words the pane's copy a second time.
 - **Inert.** While a sample shows, every door the store runs for it answers "nothing changed" **without a call and
   without reading the view**; the hand-off refuses in words ("This is a sample mission, so no session was
   started."). The pill, the sidebar and every other reader never see it.
@@ -7910,12 +7960,12 @@ Scrim  (--color-scrim, fixed, inset 0, flex-centered)           z = layer
 Width is always `min(<size>, 90vw)` (written `w-(--dialog-w-<size>) max-w-[90vw]`). A dialog picks a
 size; it does not invent a width.
 
-| Size | Token           | Width | Use                                                            | Replaces (today)                                                                                                                                                                    |
-| ---- | --------------- | ----- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sm` | `--dialog-w-sm` | 480px | Confirms and one-field forms                                   | 440 (Mission close, mods confirm), 460 (Containers remove, Review confirm), 480 (Remove worktree, Rename ×2, Bulk close)                                                            |
-| `md` | `--dialog-w-md` | 560px | **Default.** Forms, plans, launch options                      | 520 (New folder, Memory location), 540 (New session, MCP confirm), 560 (Add folder, Claude Boot, New worktree, Open subfolder, Dehydrate, Sweep, Missions review, dispatch confirm) |
-| `lg` | `--dialog-w-lg` | 720px | Long lists with chips; the card dossier                        | 720 (Cleanup list — replaces `--gc-dialog-w`), 760 (Card create, Card detail)                                                                                                       |
-| `xl` | `--dialog-w-xl` | 940px | Tabbed/navigated surfaces. **Must pass `height`** (fixed size) | 940 (Settings)                                                                                                                                                                      |
+| Size | Token           | Width | Use                                                            | Replaces (today)                                                                                                                                                   |
+| ---- | --------------- | ----- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sm` | `--dialog-w-sm` | 480px | Confirms and one-field forms                                   | 440 (Mission close, mods confirm), 460 (Containers remove, Review confirm), 480 (Remove worktree, Rename ×2)                                                       |
+| `md` | `--dialog-w-md` | 560px | **Default.** Forms, plans, launch options                      | 520 (New folder, Memory location), 540 (New session, MCP confirm), 560 (Add folder, Claude Boot, New worktree, Open subfolder, Dehydrate, Sweep, dispatch confirm) |
+| `lg` | `--dialog-w-lg` | 720px | Long lists with chips; the card dossier                        | 720 (Cleanup list — replaces `--gc-dialog-w`), 760 (Card create, Card detail)                                                                                      |
+| `xl` | `--dialog-w-xl` | 940px | Tabbed/navigated surfaces. **Must pass `height`** (fixed size) | 940 (Settings)                                                                                                                                                     |
 
 #### Viewport cap (mandatory)
 

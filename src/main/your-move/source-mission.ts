@@ -19,6 +19,7 @@ import {
   type CardKind,
   type CardLane,
   type StructuredDraft,
+  type YourMoveCard,
   type YourMoveState
 } from './core'
 
@@ -39,6 +40,9 @@ function mapping(item: WaitingItemV4): { kind: CardKind; suffix: string } {
       return { kind: 'do', suffix: `blocker:${item.ask}` }
     case 'main-failing':
       return { kind: 'do', suffix: item.id }
+    // A re-scope an older mission staged: Approve or Decline, as before (its key is the one main filed it under).
+    case 'rescope':
+      return { kind: 'go_no_go', suffix: item.id }
     case 'settle':
     case 'review':
       return { kind: 'check', suffix: item.id }
@@ -113,8 +117,11 @@ export function reconcileMissions(
       now
     )
   }
-  if (unreadable) return next
-  const roots = new Set(queriedRoots)
+  if (unreadable) return dedupeOpenMissionCards(next, now)
+  // A root whose records are not read yet (the first poll after a start) says nothing about a v4 record: its
+  // cards are not in the list's v3 views, so closing "what is absent" would close them, and the next poll would
+  // file them again. Nothing closes by absence there until the records have been read.
+  const roots = new Set(queriedRoots.filter((r) => records.has(r)))
   const gone = [
     ...new Set(
       next.cards
@@ -129,8 +136,36 @@ export function reconcileMissions(
         .map((c) => (c.mission as { missionId: string }).missionId)
     )
   ]
-  if (gone.length === 0) return next
-  return reconcileSource(next, { source: 'mission', missionIds: gone }, [], mintId, now)
+  if (gone.length === 0) return dedupeOpenMissionCards(next, now)
+  return dedupeOpenMissionCards(
+    reconcileSource(next, { source: 'mission', missionIds: gone }, [], mintId, now),
+    now
+  )
+}
+
+/**
+ * One open card per key: when an earlier build left two open mission cards for one `sourceKey`, the older stays
+ * and the others close as resolved. Nothing else is touched, so an upgrade closes and re-files nothing.
+ */
+function dedupeOpenMissionCards(s: YourMoveState, now: number): YourMoveState {
+  const seen = new Map<string, YourMoveCard>()
+  const drop = new Set<string>()
+  for (const c of s.cards) {
+    if (c.closedAt !== undefined || c.source !== 'mission' || c.sourceKey === undefined) continue
+    const first = seen.get(c.sourceKey)
+    if (first === undefined) seen.set(c.sourceKey, c)
+    else if (c.openedAt < first.openedAt) {
+      drop.add(first.id)
+      seen.set(c.sourceKey, c)
+    } else drop.add(c.id)
+  }
+  if (drop.size === 0) return s
+  return {
+    ...s,
+    cards: s.cards.map((c) =>
+      drop.has(c.id) ? { ...c, closedAt: now, closedBy: 'source-resolved' as const } : c
+    )
+  }
 }
 
 /**

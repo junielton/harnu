@@ -216,6 +216,8 @@ beforeEach(() => {
   setActivePinia(createPinia())
   i18n.global.locale.value = 'en'
   localStorage.clear()
+  // The steps start closed (stp-21); these cases are about what is inside them.
+  localStorage.setItem('om2tab.missionPane.sections', '{"tree":true}')
 })
 
 afterEach(() => {
@@ -492,7 +494,8 @@ describe('AC-48 — a 10-milestone mission where nothing runs and five things wa
   it('shows the next step first and the other four one click away', async () => {
     const w = await mountPane(reply(ten))
     const next = w.get('[data-test="next-step"]')
-    expect(next.text()).toContain('main is failing since #16 was merged. Fix it or undo the merge.')
+    // The pane words a kind it knows itself, from the record: here the step the failing main follows.
+    expect(next.text()).toContain('Fix the main branch: it broke after “Foundation”')
     // The other four are not on the screen yet…
     expect(w.findAll('[data-test="next-rest-row"]')).toHaveLength(0)
     expect(w.get('[data-test="next-more"]').text()).toBe('4 more waiting on you')
@@ -501,8 +504,10 @@ describe('AC-48 — a 10-milestone mission where nothing runs and five things wa
     await w.get('[data-test="next-more"]').trigger('click')
     const rows = w.findAll('[data-test="next-rest-row"]')
     expect(rows).toHaveLength(4)
-    expect(rows[0].text()).toContain('Review and merge #21, sign-in and users')
-    expect(rows[3].text()).toContain('Review #27, #29 and #28')
+    expect(rows[0].text()).toContain('Look over the pull request for “Sign-in by code”')
+    // A kind with no record to word it from (here a criterion the record does not hold) keeps the server's words.
+    expect(rows[1].text()).toContain('In two browsers, switch a user off')
+    expect(rows[3].text()).toContain('Look over the pull request for “Sign-in by code”')
     expect(w.get('[data-test="next-more"]').text()).toBe('Show less')
 
     await w.get('[data-test="next-more"]').trigger('click')
@@ -534,7 +539,7 @@ describe('AC-48 — a 10-milestone mission where nothing runs and five things wa
     // (its door is the pane's, see tests/mission-close-confirm.test.ts).
     await w.get('[data-test="next-more"]').trigger('click')
     const rest = w.get('[data-test="next-rest-row"]')
-    expect(rest.text()).toContain('Everything is done')
+    expect(rest.text()).toContain('Close the mission: every step is done')
     expect(rest.find('[data-test="next-rest-open"]').exists()).toBe(false)
     expect(rest.get('[data-test="next-close"]').text()).toBe('Close mission…')
   })

@@ -398,12 +398,48 @@
       "kind": {
         "main-failing": "Corrigir",
         "unblock": "Destravar",
+        "rescope": "Pronto quando",
         "settle": "Conferir",
         "review": "Revisar",
         "close": "Fechar",
         "attach": "Entrar"
       },
-      "close": "Fechar missão…"
+      "close": "Fechar missão…",
+      "text": {
+        "mainFailing": {
+          "ask": "Corrija a branch main: ela quebrou depois de “{title}”",
+          "why": "Tudo o que for mesclado em seguida parte de uma base quebrada"
+        },
+        "settle": {
+          "ask": "Marque como feito: {text}",
+          "whyLast": "É a última coisa em aberto neste passo",
+          "whyMore": "Mais {n} coisa em aberto neste passo | Mais {n} coisas em aberto neste passo"
+        },
+        "review": {
+          "askOne": "Revise o pull request de “{title}”",
+          "askMany": "Revise {n} pull requests",
+          "whyOne": "O passo não termina até você revisar",
+          "whyMany": "{n} passos não terminam até você revisar"
+        },
+        "close": {
+          "askRequested": "Feche a missão: a sessão diz que está pronta",
+          "askReady": "Feche a missão: todos os passos estão concluídos",
+          "why": "A missão termina quando você a fecha"
+        },
+        "doneWhen": {
+          "ask": "Aprove ou recuse o novo Pronto quando",
+          "why": "Uma sessão o propôs. Ele só vira o fim da missão se você aprovar.",
+          "open": "Ver proposta"
+        },
+        "attach": {
+          "ask": "Deixe outra sessão entrar nesta missão",
+          "why": "Ela pediu para trabalhar nela e espera sua resposta"
+        },
+        "unblock": {
+          "whyStep": "O passo não pode seguir até lá",
+          "whyMission": "A missão não pode seguir até lá"
+        }
+      }
     },
     "tree": {
       "label": "Passos da missão",
@@ -428,7 +464,9 @@
         "done": "Concluído",
         "not-started": "Não iniciado",
         "in-progress": "Em andamento"
-      }
+      },
+      "toggle": "Passos e linha do tempo",
+      "lineSteps": "{n} passo | {n} passos"
     },
     "step": {
       "criteria": "Critérios de aceite",
@@ -483,7 +521,6 @@
       },
       "thisSession": "esta sessão",
       "unnamed": "Sessão {id}",
-      "tookOver": "Assumiu “{title}”",
       "since": "Desde {day}",
       "span": "{from} a {to}",
       "sameDay": "{day}, {from} a {to}",
@@ -510,7 +547,16 @@
       },
       "brief": {
         "heading": "Resumo da missão — com o que a nova sessão começa",
-        "empty": "O Harnu não tem um resumo desta missão para dar à nova sessão."
+        "empty": "O Harnu não tem um resumo desta missão para dar à nova sessão.",
+        "section": {
+          "goal": "Objetivo",
+          "whereItIs": "Onde está",
+          "decided": "Decidido",
+          "stoppedAt": "Parou em",
+          "nextStep": "Próximo passo",
+          "openCriteria": "Critérios em aberto",
+          "links": "Links"
+        }
       },
       "cancel": "Cancelar",
       "confirm": "Iniciar nova sessão",
@@ -637,10 +683,10 @@
         "closed": "Missão fechada"
       },
       "hint": {
-        "waiting": "Aperte “N esperando você” na caixa do próximo passo.",
-        "all-steps": "Aperte “N passos a mais” sob um marco.",
-        "sessions": "Aperte a linha Sessões, no fim.",
-        "big-waiting": "Aperte “N esperando você” na caixa do próximo passo."
+        "waiting": "Aperte “{label}” na caixa do próximo passo.",
+        "all-steps": "Abra “{tree}” e aperte “{label}” sob um marco.",
+        "sessions": "Aperte a linha “{label}”, depois dos passos.",
+        "big-waiting": "Aperte “{label}” na caixa do próximo passo."
       }
     },
     "leads": {
@@ -5057,7 +5103,6 @@
       "checks": "Marque a checagem pendente em {steps}. | Marque as {count} checagens pendentes em {steps}.",
       "humanSteps": "Confirme o passo humano: {steps}. | Confirme os passos humanos: {steps}.",
       "reviewImport": "Revise o fim importado — ele é provisório até você aprovar um re-escopo.",
-      "stewardPaused": "Steward pausado {age}: {reason}",
       "mainRed": "main está vermelha após #{pr} — {step} foi mergeado, mas o commit de merge falha no CI da main.",
       "approvals": "Responda às aprovações pendentes ({count}) de {session} no Approval Inbox.",
       "needsInput": "{session} está esperando por você — abra e responda.",

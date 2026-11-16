@@ -33,7 +33,13 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { i18n } from '../src/renderer/src/i18n'
 import MissionPill from '../src/renderer/src/components/MissionPill.vue'
-import { classifyReply, v4MissionOf } from '../src/renderer/src/lib/mission-pane-view'
+import {
+  classifyReply,
+  missionPillText,
+  v4MissionOf
+} from '../src/renderer/src/lib/mission-pane-view'
+import { emptyState, type YourMoveState } from '../src/main/your-move/core'
+import { reconcileMissions, type RecordViews } from '../src/main/your-move/source-mission'
 import { useHelpersStore } from '../src/renderer/src/stores/helpers'
 import { useMissionsStore } from '../src/renderer/src/stores/missions'
 import { useNotificationsStore } from '../src/renderer/src/stores/notifications'
@@ -580,5 +586,187 @@ describe('the chip, the pane choice and the unreadable-file notice read every re
     await store.refresh()
     await store.refresh()
     expect(playNotificationSound).not.toHaveBeenCalled()
+  })
+})
+
+// ===========================================================================================================
+// Delta 1: one mission, the same one, everywhere
+// ===========================================================================================================
+
+describe('delta 1 · one mission everywhere (Open mission, chip, pill and pane)', () => {
+  const NEWEST = 'mnt-0a0a0a01'
+  const OLDER = 'mnt-0b0b0b02'
+  const waits = (n: number): unknown[] => Array.from({ length: n }, (_, i) => ({ id: `w${i}` }))
+  let itemsOf: Record<string, unknown[]>
+
+  /** The view channel for a session that leads two missions: the newest one first, as the list is ordered. */
+  function wireTwo(): void {
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
+      missionV4View: vi.fn(async (a: { missionId?: string; sessionId?: string }) => {
+        const mission = (id: string): MissionV4ViewReply =>
+          reply({ id, title: id === NEWEST ? 'Newest' : 'Older', items: itemsOf[id] })
+        if (a.missionId) return mission(a.missionId)
+        if (a.sessionId === 'harnu-readers') {
+          return {
+            state: 'none',
+            missions: [NEWEST, OLDER].map((id) => ({ id, title: id, headline: '', leads: SESSION }))
+          }
+        }
+        // The main process's own default for an unnamed ask: the newest written.
+        return mission(NEWEST)
+      }),
+      missionV4Door: vi.fn(),
+      missionOperatorDoor: vi.fn(),
+      requestAttention: vi.fn(async () => undefined),
+      foldersLoad: vi.fn(async () => []),
+      helpersGet: vi.fn(async () => null),
+      helpersSet: vi.fn(async () => undefined)
+    }
+  }
+  const shown = (store: ReturnType<typeof useMissionsStore>): string | undefined =>
+    store.v4MissionForSession(SESSION)?.missionId
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    i18n.global.locale.value = 'en'
+    localStorage.clear()
+    localStorage.setItem('om2tab.missionCues', JSON.stringify({ v: 1, owed: {} }))
+    itemsOf = { [NEWEST]: [], [OLDER]: [] }
+    wireTwo()
+    selectSession()
+  })
+
+  it('Open mission (an Activity row) opens the mission it names, not the session default', async () => {
+    itemsOf = { [NEWEST]: waits(1), [OLDER]: waits(1) }
+    const store = useMissionsStore()
+    await store.refresh()
+    await store.refreshV4()
+    expect(shown(store)).toBe(NEWEST)
+    useUiStore().openNavigableView('mission', { missionId: OLDER })
+    await flushPromises()
+    expect(shown(store)).toBe(OLDER)
+    expect(useHelpersStore().panesForCurrentWorktree.map((p) => p.type)).toEqual(['mission'])
+  })
+
+  it('the chip, the pill and the pane default agree, and favour the mission that waits on the operator', async () => {
+    // The newest has nothing waiting; the older one waits on three things: a draft never hides it.
+    itemsOf = { [NEWEST]: [], [OLDER]: waits(3) }
+    const store = useMissionsStore()
+    await store.refresh()
+    await store.refreshV4()
+    expect(store.chipFor(SESSION)?.text).toBe('2/5 · 3 for you')
+    expect(shown(store)).toBe(OLDER)
+    expect(missionPillTextOf(store)).toBe(store.chipFor(SESSION)?.text)
+  })
+
+  it('with nothing waiting anywhere the newest written is the one, in the chip and in the pane', async () => {
+    const store = useMissionsStore()
+    await store.refresh()
+    await store.refreshV4()
+    expect(shown(store)).toBe(NEWEST)
+    expect(store.chipFor(SESSION)?.text).toBe('2/5')
+  })
+
+  it('a mission chosen in the pane wins over what waits, for the chip and the pane alike', async () => {
+    itemsOf = { [NEWEST]: [], [OLDER]: waits(3) }
+    const store = useMissionsStore()
+    await store.refresh()
+    await store.refreshV4()
+    await store.chooseMission(SESSION, NEWEST)
+    await store.refresh()
+    expect(shown(store)).toBe(NEWEST)
+    expect(store.chipFor(SESSION)?.text).toBe('2/5')
+  })
+
+  it('a mission chosen in the pane stays the one even when the other one waits on the operator', async () => {
+    itemsOf = { [NEWEST]: waits(2), [OLDER]: [] }
+    const store = useMissionsStore()
+    await store.refresh()
+    await store.refreshV4()
+    // By the rule the newest, which waits, is shown.
+    expect(shown(store)).toBe(NEWEST)
+    expect(store.chipFor(SESSION)?.text).toBe('2/5 · 2 for you')
+    // The operator picks the other one: both the pane and the chip follow, whatever waits.
+    await store.chooseMission(SESSION, OLDER)
+    await store.refresh()
+    expect(shown(store)).toBe(OLDER)
+    expect(store.chipFor(SESSION)?.text).toBe('2/5')
+  })
+
+  /** The pill's text for what the pane shows (the pill reads the same reply). */
+  function missionPillTextOf(store: ReturnType<typeof useMissionsStore>): string {
+    const m = store.v4MissionForSession(SESSION)
+    return m ? missionPillText(i18n.global.t as never, m.detail) : ''
+  }
+})
+
+describe('delta 1 · a mission pending close is waiting on the operator in the pane too', () => {
+  it('a v3 mission the agent asked to close (delivered) lists "Close the mission" in its waiting list', async () => {
+    seedV3()
+    const ipc = await import('../src/main/mission-ipc')
+    const reply = await ipc.buildMissionV4View({
+      folder: root,
+      sessionId: LEADER,
+      missionId: 'mnt-5c0de003'
+    })
+    if (reply.state !== 'mission') throw new Error(JSON.stringify(reply))
+    const close = reply.detail.waiting.items.find((i) => i.kind === 'close')
+    expect(close, JSON.stringify(reply.detail.waiting.items)).toBeDefined()
+    expect(close).toMatchObject({ requested: true })
+  }, 60_000)
+})
+
+describe('delta 1 · Your move files one card per waiting item of a v4 record, and an upgrade closes nothing', () => {
+  const repo = '/repo'
+  const owner = 'bbbbbbbb-1111-4222-8333-444444444444'
+  const id = 'mnt-5c0de0aa'
+  const settle = {
+    kind: 'settle',
+    id: 'settle:stp-3:ac-3',
+    stepId: 'stp-3',
+    criterionId: 'ac-3',
+    ask: 'Mark done: Validated visually',
+    why: 'w'
+  }
+  const records = (): RecordViews =>
+    new Map([
+      [
+        repo,
+        {
+          views: [{ root: repo, mission: { id, owner: { sessionId: owner } }, you: [settle] }],
+          v4Ids: new Set([id]),
+          unreadable: false
+        }
+      ]
+    ])
+  let n = 0
+  const mint = (): string => `card-${++n}`
+  const open = (s: YourMoveState): YourMoveState['cards'] =>
+    s.cards.filter((c) => c.closedAt === undefined)
+  const NONE = { views: [], unreadable: [] }
+
+  it('a poll that runs before the records are read (a restart) closes and re-files nothing', () => {
+    n = 0
+    const filed = reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 1, records())
+    expect(open(filed)).toHaveLength(1)
+    // The first poll after a restart: the repo's records are not read yet.
+    const first = reconcileMissions(filed, NONE, [repo], 'live', mint, 2, new Map())
+    expect(first.cards.map((c) => [c.id, c.closedAt])).toEqual(
+      filed.cards.map((c) => [c.id, c.closedAt])
+    )
+    // Then they are read: still the same one card.
+    const next = reconcileMissions(first, NONE, [repo], 'live', mint, 3, records())
+    expect(open(next).map((c) => c.id)).toEqual(open(filed).map((c) => c.id))
+    expect(next.cards).toHaveLength(1)
+  })
+
+  it('two open cards for one key (left by an earlier build) become one: the older stays', () => {
+    n = 0
+    const filed = reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 1, records())
+    const twin = { ...filed.cards[0], id: 'twin', openedAt: filed.cards[0].openedAt + 1000 }
+    const dirty: YourMoveState = { ...filed, cards: [...filed.cards, twin] }
+    const clean = reconcileMissions(dirty, NONE, [repo], 'live', mint, 5, records())
+    expect(open(clean).map((c) => c.id)).toEqual([filed.cards[0].id])
   })
 })

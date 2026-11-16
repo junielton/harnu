@@ -1988,7 +1988,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_workers',
     description:
-      "List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome. A STEWARD an older Harnu left (none is created any more; boot removes it) is listed with `category: 'steward'`, its `missionId` and `agentControllable: false`: it is a system worker, and update_worker / delete_worker refuse it (WORKER_IS_STEWARD).",
+      'List Scheduler workers, optionally scoped to one folder. Returns id, name, folder (redacted to an alias, like other fleet reads), mode, cadence (everyMinutes), enabled state, and the last recorded run outcome. `agentControllable` is false for a worker whose folder the operator blocked.',
     inputSchema: z.object({
       folder: z.string().min(1).optional().describe('Absolute path to scope the listing.')
     }),
@@ -2255,7 +2255,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'delete_worker',
     description:
-      "Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. A steward an older Harnu left (category 'steward') is refused WORKER_IS_STEWARD: boot removes it, none is created any more. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.",
+      'Permanently delete a Scheduler worker — its definition AND its run history — and terminate a live tick if one is running. UNLIKE update_worker, this ALWAYS asks the operator (never silently allowed, never covered by a mission grant): there is no undo, the same posture as delete_card. Prefer update_worker({ id, set: { enabled: false } }) if you might want it back.',
     inputSchema: z.object({
       id: z.string().min(1).describe("The worker's id, from create_worker or list_workers.")
     }),
@@ -2361,7 +2361,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_get',
     description:
-      "Read one Mission: `{ ok, op, id, title, doneWhen, status, state, stateLabel, standing, leads, source, progress, milestones, steps (each with its criteria, who settles each, blockers and links), next, waiting, summary, links, blockers, sessions }`. `waiting` is what the operator owes, in rank order — items of kind main-failing, unblock, settle, review, close and attach, each with `ask` and `why` — and `next` is its first. `progress` is THE progress: render it, never recount. `source` says where the record came from: `v4`, or `v3-mission` (`v3-campaign` for an older plan made of chapters, read as one mission) for a mission still in a file an older Harnu wrote (it reads the same, and its first write converts it by copy; the old file is never changed). The detail is for the sessions attached to the mission and the Harnu workers bound to it; any other caller is refused NOT_ATTACHED, with the way out (mission_attach, or mission_list for the folder's missions). Pass your `sessionId` and a `missionId`; with no `missionId` you get the open mission you are attached to (AMBIGUOUS_MISSION when it is more than one).",
+      "Read one Mission: `{ ok, op, id, title, doneWhen, status, state, stateLabel, standing, leads, source, progress, milestones, steps (each with its criteria, who settles each, blockers and links), next, waiting, summary, links, blockers, sessions }`. `waiting` is what the operator owes, in rank order — items of kind main-failing, unblock, rescope (an older mission's staged new end), settle, review, close and attach, each with `ask` and `why` — and `next` is its first. `progress` is THE progress: render it, never recount. `source` says where the record came from: `v4`, or `v3-mission` (`v3-campaign` for an older plan made of chapters, read as one mission) for a mission still in a file an older Harnu wrote (it reads the same, and its first write converts it by copy; the old file is never changed). The detail is for the sessions attached to the mission and the Harnu workers bound to it; any other caller is refused NOT_ATTACHED, with the way out (mission_attach, or mission_list for the folder's missions). Pass your `sessionId` and a `missionId`; with no `missionId` you get the open mission you are attached to (AMBIGUOUS_MISSION when it is more than one).",
     inputSchema: z.object({
       folder: z
         .string()

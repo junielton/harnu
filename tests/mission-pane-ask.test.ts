@@ -250,6 +250,8 @@ beforeEach(() => {
   setActivePinia(createPinia())
   i18n.global.locale.value = 'en'
   localStorage.clear()
+  // The steps start closed (stp-21); these cases are about what is inside them.
+  localStorage.setItem('om2tab.missionPane.sections', '{"tree":true}')
   writes = {}
 })
 

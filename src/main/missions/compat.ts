@@ -58,6 +58,7 @@ type Criterion = AcceptanceCriterion
 type Settled = NonNullable<Criterion['settled']>
 
 const CLOSED_AS_DELIVERED = 'The chapter mission was closed as delivered in v3'
+const DELIVERED_IN_V3 = 'The chapter mission was delivered in v3'
 
 // ---- Ids -------------------------------------------------------------------------
 
@@ -146,7 +147,21 @@ function missionLevelBlockers(mission: V3Mission): BlockerDraft[] {
         unblocks: 'Closing the mission',
         owner: 'operator',
         raisedAt: c.createdAt
-      }))
+      })),
+    // An imported mission whose declared end was a best guess nobody reviewed: the review stays owed. The
+    // operator clears it with "Done, continue", as any blocker of theirs (S-40: the v3 "review the imported
+    // end" item has no v4 kind, and no verb imports a goal file any more).
+    ...(mission.legacy?.needsReview.includes('declaredEnd')
+      ? [
+          {
+            reason: 'Review the end this mission was imported with',
+            ask: 'Review the end this mission was imported with',
+            unblocks: 'Closing the mission',
+            owner: 'operator' as const,
+            raisedAt: mission.createdAt
+          }
+        ]
+      : [])
   ]
 }
 
@@ -196,8 +211,12 @@ interface StepContext {
   idOf: ReadonlyMap<string, string>
   milestone?: string
   nextBlocker: () => string
-  /** True for a chapter mission closed as delivered: its human-shaped criteria are settled. */
-  closedDelivered: boolean
+  /**
+   * Set for a chapter mission that finished (delivered, or closed as delivered): the evidence its
+   * criteria are settled with. Every criterion is settled, a fact one included, because the work was
+   * accepted whatever the live facts say now (the linked worktree may be long gone).
+   */
+  deliveredEvidence: string | null
 }
 
 /** The branches of the worktrees a step links, from the ledger rows that recorded them. */
@@ -291,10 +310,23 @@ function criteriaOf(step: V3MissionStep, ctx: StepContext): Array<Omit<Criterion
     })
   }
 
-  if (ctx.closedDelivered) {
-    // The operator closed the chapter as delivered: the human-shaped criteria it left open are theirs.
-    const stamp: Settled = { at: mission.updatedAt, by: 'operator', evidence: CLOSED_AS_DELIVERED }
-    for (const c of out) if (c.by !== 'fact' && !c.settled) c.settled = stamp
+  if (ctx.deliveredEvidence !== null) {
+    // The chapter finished, as the removed campaign code read it: its mission is delivered, or the
+    // operator closed it as delivered. Every criterion it left open is settled by that, so the
+    // milestone reads done. A fact criterion becomes the operator's: a fact is settled only by the
+    // fact holding now, and the chapter's own work may no longer exist to hold it.
+    const stamp: Settled = {
+      at: mission.updatedAt,
+      by: 'operator',
+      evidence: ctx.deliveredEvidence
+    }
+    for (const c of out) {
+      if (c.by === 'fact') {
+        c.by = 'operator'
+        delete c.fact
+      }
+      if (!c.settled) c.settled = stamp
+    }
   }
   return out
 }
@@ -468,7 +500,7 @@ export function convertV3Mission(mission: V3Mission, log: string): Converted {
     mission,
     idOf: identityIds(mission),
     nextBlocker,
-    closedDelivered: false
+    deliveredEvidence: null
   })
 
   const closed = mission.status === 'closed'
@@ -512,12 +544,30 @@ export function convertV3Mission(mission: V3Mission, log: string): Converted {
       fixedEndLinks(mission)
     ),
     blockers,
-    legacyV3: missionLegacy(mission, true)
-  }
+    legacyV3: missionLegacy(mission, true),
+    // A re-scope staged and not yet answered is the v4 staged Done when: the operator approves or declines
+    // it where they answer any other (S-40 delta 1). `legacyV3.pendingRescope` keeps the v3 value as it was.
+    ...(mission.pendingRescope
+      ? {
+          pendingDoneWhen: { text: doneWhenOf(mission.pendingRescope), at: mission.updatedAt }
+        }
+      : {})
+  } as MissionV4
   return { record, log, slug: mission.slug }
 }
 
 // ---- A campaign ----------------------------------------------------------------
+
+/**
+ * The evidence a finished chapter's criteria are settled with, or `null` when it did not finish. The
+ * removed campaign code read a chapter as done when its mission was `delivered` (the close is only
+ * waiting for the operator) or closed as delivered; closed as discarded never counted.
+ */
+function chapterDeliveredEvidence(mission: V3Mission): string | null {
+  if (mission.status === 'delivered') return DELIVERED_IN_V3
+  if (mission.status === 'closed' && mission.closedAs === 'delivered') return CLOSED_AS_DELIVERED
+  return null
+}
 
 /** The unlock a chapter waits for, as a milestone's `waitsFor`. */
 function waitsForOfChapter(chapter: V3Chapter): string | null {
@@ -575,16 +625,23 @@ export function convertV3Campaign(
       idOf: idMaps.get(mission.id) as Map<string, string>,
       milestone: milestoneIdOf(chapter.id),
       nextBlocker,
-      closedDelivered: mission.status === 'closed' && mission.closedAs === 'delivered'
+      deliveredEvidence: chapterDeliveredEvidence(mission)
     })
   )
 
-  const milestones: Milestone[] = campaign.chapters.map((chapter) => ({
-    id: milestoneIdOf(chapter.id),
-    title: chapter.title,
-    optional: !chapter.required,
-    waitsFor: waitsForOfChapter(chapter)
-  }))
+  // A side quest is outside the count; so is a chapter whose mission was discarded: abandoned work
+  // never counts (the removed campaign code never counted it done). The spec is silent on how it
+  // shows, and the closed model has no other mark, so it reads as an optional milestone.
+  const milestones: Milestone[] = campaign.chapters.map((chapter) => {
+    const found = chapter.missionId ? byMissionId.get(chapter.missionId) : undefined
+    const discarded = found?.mission.status === 'closed' && found.mission.closedAs === 'discarded'
+    return {
+      id: milestoneIdOf(chapter.id),
+      title: chapter.title,
+      optional: !chapter.required || discarded,
+      waitsFor: waitsForOfChapter(chapter)
+    }
+  })
 
   const closed = campaign.status === 'closed'
   const sessions: SessionEntry[] = [

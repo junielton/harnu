@@ -167,6 +167,7 @@ const REMOVED_KEY_PREFIXES = [
   'mission.visual',
   'mission.was',
   'mission.you.clear',
+  'mission.you.stewardPaused',
   'mission.you.label'
 ]
 
@@ -511,4 +512,146 @@ describe('the Scheduler after the steward block is gone', () => {
     expect(w.find('[data-test="scheduler-steward-row"]').exists()).toBe(false)
     w.unmount()
   })
+})
+
+// ==========================================================================================================
+// A door with a home: an older (v3) mission's staged re-scope is approved or declined in the pane (S-37, delta 1)
+// ==========================================================================================================
+
+describe('an older mission with a staged re-scope has Approve and Decline in the pane', () => {
+  const NEW_END = { kind: 'code', target: 'The slice is merged and live', evidence: 'green gates' }
+
+  /** A v3 mission whose owner staged a re-scope: nothing else is owed, so the re-scope is the one item. */
+  function rescopeV3(): Mission {
+    const m = pausedV3({ pendingRescope: NEW_END as never })
+    delete (m as Partial<Mission>).pendingClose
+    delete (m as Partial<Mission>).stewardPause
+    m.blockers = []
+    return m
+  }
+
+  const view = async (): Promise<
+    Awaited<ReturnType<typeof import('../src/main/mission-ipc').buildMissionV4View>>
+  > => {
+    const ipc = await import('../src/main/mission-ipc')
+    return ipc.buildMissionV4View({ folder: repo, sessionId: LEADER, missionId: 'mnt-0a1b2c3d' })
+  }
+
+  it('the pane view carries the staged re-scope as the box a v4 mission shows, and writes nothing', async () => {
+    const file = seed(rescopeV3())
+    const before = `${sha(readFileSync(file))}@${statSync(file).mtimeMs}`
+    const reply = await view()
+    expect(reply.state).toBe('mission')
+    if (reply.state !== 'mission') return
+    expect(reply.pendingDoneWhen?.text).toContain(NEW_END.target)
+    expect(reply.pendingDoneWhen?.text).toContain(NEW_END.evidence)
+    expect(`${sha(readFileSync(file))}@${statSync(file).mtimeMs}`).toBe(before)
+    expect(existsSync(path.join(repo, '.harnu', 'missions-v4'))).toBe(false)
+  }, 60_000)
+
+  it('Approve applies it as the old popover did: the same file write and the same Log line, no v4 copy', async () => {
+    const file = seed(rescopeV3())
+    const ipc = await import('../src/main/mission-ipc')
+    const res = await ipc.runPaneDoor({
+      folder: repo,
+      missionId: 'mnt-0a1b2c3d',
+      door: 'approveDoneWhen'
+    })
+    expect(res).toMatchObject({ ok: true })
+    const text = readFileSync(file, 'utf8')
+    expect(text).not.toContain('pendingRescope')
+    expect(text).toMatch(/target: The slice is merged and live/)
+    expect(text).toMatch(/via: operator/)
+    expect(text).toMatch(/### \S+ · operator approved the re-scope/)
+    expect(existsSync(path.join(repo, '.harnu', 'missions-v4'))).toBe(false)
+    // The box is gone from the pane afterwards.
+    const reply = await view()
+    expect(reply.state === 'mission' && reply.pendingDoneWhen).toBeNull()
+  }, 60_000)
+
+  it('Decline drops the staged re-scope, keeps the declared end and leaves its own Log line', async () => {
+    const file = seed(rescopeV3())
+    const ipc = await import('../src/main/mission-ipc')
+    const res = await ipc.runPaneDoor({
+      folder: repo,
+      missionId: 'mnt-0a1b2c3d',
+      door: 'declineDoneWhen'
+    })
+    expect(res).toMatchObject({ ok: true })
+    const text = readFileSync(file, 'utf8')
+    expect(text).not.toContain('pendingRescope')
+    expect(text).toMatch(/target: PR merging the slice/)
+    expect(text).toMatch(/### \S+ · operator declined the re-scope/)
+    expect(existsSync(path.join(repo, '.harnu', 'missions-v4'))).toBe(false)
+  }, 60_000)
+
+  it('the Your move card for the re-scope closes when it is approved, and the blocker card is not touched', async () => {
+    const m = rescopeV3()
+    m.blockers = [
+      { reason: 'Waiting on the vendor key', unblocks: 'a key', owner: 'operator', raisedAt: AT }
+    ]
+    seed(m)
+    const ipc = await import('../src/main/mission-ipc')
+    let n = 0
+    const mint = (): string => `card-${++n}`
+    const open = (s: YourMoveState): string[] =>
+      s.cards
+        .filter((c) => c.closedAt === undefined)
+        .map((c) => c.sourceKey ?? '')
+        .sort()
+    // S-40: the list poll serves no v3 view; Your move reads the records, a v3 file converted in memory.
+    const records = (): ReturnType<typeof readRecordViews> =>
+      readRecordViews([repo], { readDetail })
+    const filed = reconcileMissions(
+      emptyState(),
+      { unreadable: [] },
+      [repo],
+      'live',
+      mint,
+      1,
+      await records()
+    )
+    // Every step is verified, so the converted record also derives a close: it is owed beside the re-scope.
+    expect(open(filed)).toEqual(
+      [
+        `${m.id}:blocker:Waiting on the vendor key`,
+        `${m.id}:close`,
+        `${m.id}:rescope:${NEW_END.target}`
+      ].sort()
+    )
+
+    const res = await ipc.runPaneDoor({ folder: repo, missionId: m.id, door: 'approveDoneWhen' })
+    expect(res).toMatchObject({ ok: true })
+    const next = reconcileMissions(
+      filed,
+      { unreadable: [] },
+      [repo],
+      'live',
+      mint,
+      2,
+      await records()
+    )
+    // Only the re-scope card closes; the close and the blocker cards are the same cards, not re-filed.
+    expect(open(next)).toEqual(
+      [`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:close`].sort()
+    )
+    for (const key of ['blocker', 'close']) {
+      const before = filed.cards.find((c) => c.sourceKey?.includes(`:${key}`))!
+      expect(next.cards.find((c) => c.id === before.id)?.closedAt).toBeUndefined()
+    }
+    const blockerCard = filed.cards.find((c) => c.sourceKey?.includes(':blocker:'))!
+    expect(next.cards.find((c) => c.id === blockerCard.id)?.closedAt).toBeUndefined()
+  }, 60_000)
+
+  it('a v4 mission is untouched by the new route: its Approve is still the v4 door', async () => {
+    const ipc = await import('../src/main/mission-ipc')
+    const res = await ipc.runPaneDoor({
+      folder: repo,
+      missionId: 'mnt-a7230001',
+      door: 'approveDoneWhen'
+    })
+    // No such record here: the v4 door answers its own refusal; the v3 door is never tried.
+    expect(res).toMatchObject({ ok: false })
+    expect(JSON.stringify(res)).not.toContain('re-scope')
+  }, 60_000)
 })

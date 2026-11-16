@@ -150,6 +150,7 @@ function keyOfV4(item: WaitingItemV4): [OwedKey, number] {
     case 'main-failing':
     case 'settle':
     case 'attach':
+    case 'rescope':
       return [item.id, 1]
   }
 }

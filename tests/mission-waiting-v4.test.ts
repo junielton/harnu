@@ -396,10 +396,11 @@ describe('AC-18 · one next step, the rest in a fixed order', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('exports the rank once, in the order the spec fixes', () => {
+  it('exports the rank once, in the order the spec fixes (and the re-scope of an older mission, S-40)', () => {
     expect(waiting.WAITING_RANK).toEqual([
       'main-failing',
       'unblock',
+      'rescope',
       'settle',
       'review',
       'close',
