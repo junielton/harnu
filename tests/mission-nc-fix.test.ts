@@ -12,7 +12,7 @@
  * Read through the real view channel on neutral campaigns ("Acme", "Import core"); reads write nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { promises as fs, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { promises as fs, mkdirSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { i18n } from '../src/renderer/src/i18n'
