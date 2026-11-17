@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-17
+
+### Fixed
+
+- An older campaign now reads right in the new Missions right after you upgrade. Before, a campaign with many chapters could show steps under the wrong chapter, vanish from the sidebar and Activity until something was written to it, forget which chapters were waiting on an earlier one, and count a chapter as done when its final check had never passed. Now an old step id (given with its chapter's mission) means the step it always meant, the campaign shows up in the sidebar and in Activity straight away, a chapter that needs something an earlier chapter has not delivered shows what it is waiting for, and each chapter's "Delivered and verified" step is visible and keeps the chapter from counting as done until the chapter is delivered, so the count matches what the old version showed. The first change you make to a campaign now keeps every detail of the old files (check ids and authors, who asked to close, step order); the old files are still never touched.
+
 ## 2026-11-16
 
 ### Fixed
