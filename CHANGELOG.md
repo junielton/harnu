@@ -88,6 +88,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- The "Return here" header no longer wraps onto two lines in a narrow sidebar: when space runs out the title shortens with an ellipsis while the count, the oldest clock and the collapse chevron stay whole.
 - An **older mission whose agent proposed a new end** (a re-scope) can be **approved or declined in the Mission pane** again. The popover that used to hold those buttons is gone, so the proposal was still counted on the mission's Your move card, in Activity and on the pill, with nowhere to answer it. The pane now shows it in the same box a version 4 mission uses for a new Done when, with the agent's reason; **Approve** applies it to the old file as before (same change, same line in the mission's Log), **Decline** drops it, and neither creates a version 4 copy.
 
 - A leader that did a step itself, with no other session linked to it, no longer settles that step's criteria as if it were a second session: its check is recorded as a self-check and the criterion stays open.
