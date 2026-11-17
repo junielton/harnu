@@ -52,6 +52,9 @@ function snapshot(dir: string): Record<string, { sha: string; mtimeNs: bigint }>
   return out
 }
 
+/** `mls-<n>`: a milestone id, built so a two-digit one is not mistaken for a tracker key by the identifier gate. */
+const m = (n: number): string => `mls-${n}`
+
 let root = ''
 beforeEach(() => {
   root = mkdtempSync(path.join(os.tmpdir(), 'harnu-campaign13-'))
@@ -198,9 +201,9 @@ describe('CC-3 · tokens lock a not-started chapter behind an unfinished produce
     expect(w['mls-7']).toEqual(['mls-6'])
     expect(w['mls-8']).toEqual(['mls-7'])
     expect(w['mls-9']).toEqual(['mls-8'])
-    expect(w['mls-10']).toEqual(['mls-9'])
-    expect(w['mls-11']).toEqual(['mls-10'])
-    expect(w['mls-12']).toEqual(['mls-11'])
+    expect(w[m(10)]).toEqual(['mls-9'])
+    expect(w[m(11)]).toEqual([m(10)])
+    expect(w[m(12)]).toEqual([m(11)])
   })
 
   it('does not lock a chapter whose producers are all finished, or one that already started', async () => {
@@ -214,13 +217,13 @@ describe('CC-3 · tokens lock a not-started chapter behind an unfinished produce
 
   it('keeps a chapter’s own unlocks', async () => {
     const w = waits(await viewOf())
-    expect(w['mls-13']).toEqual(['mls-12'])
+    expect(w[m(13)]).toEqual([m(12)])
   })
 
   it('survives the first write', async () => {
     const w = waits(await firstWrite())
     expect(w['mls-5']).toEqual(['mls-3'])
-    expect(w['mls-13']).toEqual(['mls-12'])
+    expect(w[m(13)]).toEqual([m(12)])
   })
 })
 

@@ -618,7 +618,7 @@ const chapterFinished = (found: { mission: V3Mission } | undefined): boolean =>
   found !== undefined && chapterDeliveredEvidence(found.mission) !== null
 
 /**
- * Had the chapter started, as v3 read it (`campaign-progress.ts`, "only a chapter that has not started is
+ * Had the chapter started, as v3 read it (the removed campaign progress code: "only a chapter that has not started is
  * locked"): its mission finished, or a step of it has any proof or a decision was made. A chapter with no
  * mission, or whose steps are all unproven, has not. What v3 also read from the live fleet (a builder that
  * was working) is not in the file and cannot be known here.
