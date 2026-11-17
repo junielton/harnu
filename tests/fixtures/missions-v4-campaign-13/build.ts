@@ -331,3 +331,69 @@ export function writeCampaign13(root: string, chapterSpecs: ChapterSpec[] = CHAP
     writeFileSync(path.join(root, '.harnu', 'missions', f.name), f.text)
   }
 }
+
+// ---- BUG-283 variants (appended; `CHAPTERS` above is untouched) -------------------------------
+
+/**
+ * The 13 chapters, with chapter 2 ("Report", delivered, close requested) still owing the operator: its first
+ * step also carries an UNTICKED check and it has a second human step nobody signed off.
+ */
+export const CHAPTERS_DELIVERED_OWING: ChapterSpec[] = CHAPTERS.map((ch) => {
+  if (ch.n !== 2 || !ch.mission) return ch
+  const [render, approve] = ch.mission.steps
+  return {
+    ...ch,
+    mission: {
+      ...ch.mission,
+      steps: [
+        {
+          ...render,
+          checks: [
+            ...(render.checks ?? []),
+            check('chk-2', 'Report figures re-read by finance', 'operator')
+          ]
+        },
+        approve,
+        { title: 'Sign off the report wording', verification: 'human', proof: 'unproven' }
+      ]
+    }
+  }
+})
+
+/**
+ * Three chapters: A and B are in progress and C consumes BOTH of their tokens, so it waits on two chapters
+ * at once (its milestone's `waitsFor` is `mls-1, mls-2`).
+ */
+export const CHAPTERS_TWO_PRODUCERS: ChapterSpec[] = [
+  {
+    n: 1,
+    title: 'Import core',
+    required: true,
+    produces: 'import-core',
+    mission: {
+      status: 'active',
+      steps: [{ title: 'Parse the export', verification: 'verifier', proof: 'claimed' }]
+    }
+  },
+  {
+    n: 2,
+    title: 'Report',
+    required: true,
+    produces: 'report',
+    mission: {
+      status: 'active',
+      steps: [{ title: 'Render the report', verification: 'verifier', proof: 'claimed' }]
+    }
+  },
+  {
+    n: 3,
+    title: 'Migrate pages A',
+    required: true,
+    produces: 'pages-a',
+    consumes: ['import-core', 'report'],
+    mission: {
+      status: 'active',
+      steps: [{ title: 'Plan the pages', verification: 'existence', proof: 'unproven' }]
+    }
+  }
+]
