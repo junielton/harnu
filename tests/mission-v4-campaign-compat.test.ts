@@ -20,7 +20,7 @@ import { parseMissionRecordFile, type MissionV4 } from '../src/main/missions/mod
 import { parseV3CampaignFile, parseV3MissionFile } from '../src/main/missions/v3-read'
 import { listMissionRecords, readMissionRecord } from '../src/main/missions/record-store'
 import { writeMission } from '../src/main/missions/write'
-import { resolveStepId } from '../src/main/missions/sessions'
+import { attachDispatchedWorker, resolveStepId } from '../src/main/missions/sessions'
 import { deriveProgress } from '../src/main/missions/progress'
 import { missionGet, missionList } from '../src/main/missions/verbs-read'
 import {
@@ -105,6 +105,21 @@ describe('CC-1 · an old step id with a chapter mission id means the same step',
       }
     })
   }
+
+  it('attaches a worker to the step a chapter mission id names, through the first write', async () => {
+    const worker = '9b3c5d7e-2a4f-4b6d-8e1a-3c5e7a9b1d2f'
+    const done = await attachDispatchedWorker(root, missionIdOf(5), {
+      sessionId: worker,
+      stepId: 'stp-1',
+      actor: { kind: 'harnu' }
+    })
+    expect(done.ok, JSON.stringify(done)).toBe(true)
+    const record = await viewOf()
+    const linked = record.steps.filter((s) =>
+      s.links.some((l) => l.kind === 'session' && l.ref === worker)
+    )
+    expect(linked.map((s) => s.title)).toEqual(['Plan the pages'])
+  })
 
   it('refuses (null) an id the chapter mission never had and the record does not have', async () => {
     const record = await viewOf()

@@ -139,19 +139,54 @@ function entryBy(log: string, at: string, actor: Actor, what: string): string {
   return logEntry(log, at, `${actor.kind === 'harnu' ? 'Harnu' : 'operator'} ${what}`)
 }
 
-/**
- * The id a step has in this record. A record converted from a v3 campaign renumbers its steps and keeps
- * the old ids in `legacyV3.stepIds` (old to new): a step id the record does not have is looked up there.
- * `null` when neither names a step.
- */
-export function resolveStepId(record: MissionV4, stepId: string): string | null {
-  if (record.steps.some((s) => s.id === stepId)) return stepId
+/** The `{ mission, step, id }` rows of `legacyV3.stepIds`, the one shape `compat.ts` writes. */
+function legacyStepRows(record: MissionV4): Array<{ mission: string; step: string; id: string }> {
   const legacy = record.legacyV3
-  if (typeof legacy !== 'object' || legacy === null) return null
-  const map = (legacy as WithUnknownKeys<object>).stepIds
-  if (typeof map !== 'object' || map === null) return null
-  const renamed = (map as Record<string, unknown>)[stepId]
-  return typeof renamed === 'string' && record.steps.some((s) => s.id === renamed) ? renamed : null
+  if (typeof legacy !== 'object' || legacy === null) return []
+  const rows = (legacy as WithUnknownKeys<object>).stepIds
+  if (!Array.isArray(rows)) return []
+  return rows.flatMap((r: unknown) => {
+    const row = r as { mission?: unknown; step?: unknown; id?: unknown } | null
+    return typeof row?.mission === 'string' &&
+      typeof row.step === 'string' &&
+      typeof row.id === 'string'
+      ? [{ mission: row.mission, step: row.step, id: row.id }]
+      : []
+  })
+}
+
+/**
+ * The id a step has in this record. A record converted from a v3 campaign renumbers its steps across
+ * the chapters and keeps every old id in `legacyV3.stepIds`, one `{ mission, step, id }` row per step:
+ * the chapter mission the old id belonged to, the old id, and the id it has now.
+ *
+ * An old id means a different step in each chapter (every chapter mission numbered its steps from
+ * `stp-1`), so when the caller names the chapter mission (`missionId`, a v3 id the record was converted
+ * from) that chapter's rows decide FIRST, and the id the record happens to have is only taken when the
+ * chapter never had it. With no chapter named the id the record has wins, and an id it does not have is
+ * looked up in the rows: one answer is returned, two or more are ambiguous and `null`.
+ * `null` when nothing names a step.
+ */
+export function resolveStepId(
+  record: MissionV4,
+  stepId: string,
+  missionId?: string
+): string | null {
+  const has = (id: string): boolean => record.steps.some((s) => s.id === id)
+  const rows = legacyStepRows(record)
+  if (missionId !== undefined && missionId !== record.id) {
+    const own = rows.filter((r) => r.mission === missionId)
+    if (own.length > 0) {
+      const hit = own.find((r) => r.step === stepId && has(r.id))
+      if (hit) return hit.id
+      return has(stepId) && !own.some((r) => r.step === stepId) ? stepId : null
+    }
+  }
+  if (has(stepId)) return stepId
+  const candidates = [
+    ...new Set(rows.filter((r) => r.step === stepId && has(r.id)).map((r) => r.id))
+  ]
+  return candidates.length === 1 ? candidates[0] : null
 }
 
 // ---- The history: pure helpers ---------------------------------------------------------
@@ -276,7 +311,7 @@ export async function attachDispatchedWorker(
   const need = args.actor.kind === 'session' ? 'lead' : 'operator'
   const wantsLink = args.link !== false
   const result = await applyChange(folder, missionId, args.actor, need, (record, log) => {
-    const stepId = resolveStepId(record, args.stepId)
+    const stepId = resolveStepId(record, args.stepId, missionId)
     if (stepId === null) {
       throw doorError('NOT_FOUND', `${record.id} has no step ${args.stepId}.`)
     }
@@ -309,7 +344,7 @@ export async function attachDispatchedWorker(
     }
   })
   return result.ok
-    ? { ...result, stepId: resolveStepId(result.record, args.stepId) ?? args.stepId }
+    ? { ...result, stepId: resolveStepId(result.record, args.stepId, missionId) ?? args.stepId }
     : result
 }
 
@@ -333,7 +368,9 @@ export async function endSession(
   return applyChange(folder, missionId, { kind: 'harnu' }, 'operator', (record, log) => {
     if (!openEntry(record, args.sessionId)) return null
     const hint: StoppedAt = {
-      ...(args.step !== undefined ? { step: resolveStepId(record, args.step) ?? args.step } : {}),
+      ...(args.step !== undefined
+        ? { step: resolveStepId(record, args.step, missionId) ?? args.step }
+        : {}),
       ...(args.waitingFor !== undefined ? { waitingFor: args.waitingFor } : {})
     }
     return {
