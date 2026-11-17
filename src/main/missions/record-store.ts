@@ -285,7 +285,12 @@ export async function readMissionRecord(root: string, id: string): Promise<Missi
   // 2. A v3 mission; a chapter of a campaign reads as the campaign.
   if (id.startsWith('mnt-')) {
     const m = await readV3Mission(root, id)
-    if (!m) return notFound(id)
+    if (!m) {
+      // Not a mission file: it may be the id a campaign that was never converted is LISTED under
+      // (`listMissionRecords` serves it under the id its source ids hash to, which no file carries).
+      const listed = await campaignListedAs(root, id)
+      return listed ? viewOrMoved(root, listed) : notFound(id)
+    }
     if ('error' in m) return unreadable(id, m.error)
     const campaignId = m.mission.campaignId
     if (campaignId) {
@@ -302,6 +307,29 @@ export async function readMissionRecord(root: string, id: string): Promise<Missi
   if (!c) return notFound(id)
   if ('error' in c) return unreadable(id, c.error)
   return viewOrMoved(root, c)
+}
+
+/**
+ * The v3 campaign a synthetic id names: the id `campaignMissionId` gives the campaign's source ids, the
+ * one an unconverted campaign is listed under. `null` when no campaign hashes to it. Reads only.
+ */
+async function campaignListedAs(root: string, id: string): Promise<V3CampaignRead | null> {
+  let entries: FileEntry[]
+  try {
+    entries = await entriesOf(v3CampaignsDir(root), CAMPAIGN_FILE_RE)
+  } catch {
+    return null
+  }
+  for (const entry of entries) {
+    const c = await readV3Campaign(root, entry.id)
+    if (!c || 'error' in c) continue
+    const sourceIds = [
+      c.campaign.id,
+      ...c.campaign.chapters.flatMap((ch) => (ch.missionId ? [ch.missionId] : []))
+    ]
+    if (campaignMissionId(sourceIds) === id) return c
+  }
+  return null
 }
 
 /**
