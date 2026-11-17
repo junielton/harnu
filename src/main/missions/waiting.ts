@@ -211,7 +211,8 @@ function blockerItem(b: BlockerV4, step: Pick<StepV4, 'id'> | null): WaitingItem
  * - `unblock`: an operator-owned blocker that still shows (a `clearsWhen` fact that holds hides it); a
  *   decision is one of these. The blocker's own `ask` and `unblocks` are the wording. A mission-level
  *   blocker's `clearsWhen` is ignored: the write path refuses it, because a fact belongs to a step.
- * - `settle`: one item per open operator criterion on a started step (not `todo`, not done).
+ * - `settle`: one item per open operator criterion on a started step (not `todo`, not done). A record converted
+ *   from v3 raises them on a `todo` step too, because its facts may be unread and its steps are not planned ahead.
  * - `review`: the pull requests the operator can look over, grouped into one item: the step waits for
  *   review, is not blocked, and its checks are not known to be red (`ci-green` read and false).
  * - `close`: the mission is ready to close (derived); `requested` says the agent asked.
@@ -250,8 +251,13 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
   for (const b of activeBlockers(mission.blockers ?? [], {})) {
     if (b.owner === 'operator') unblock.push(blockerItem(b, null))
   }
+  // An old (v3) record keeps what it owes whatever its steps read (BUG-283 OI-1): its pull request facts may be
+  // unread (offline, gh down) or absent, and a step with another criterion still open reads `todo`, which would
+  // hide an unticked check or an unproven human step the operator owes. Recall over noise: a false alarm beats a
+  // missed item. A native v4 record keeps the rule below: only a started step raises its criteria.
+  const old = mission.legacyV3 !== undefined
   for (const { step, input, result } of steps) {
-    const started = result.state !== 'todo' && result.state !== 'done'
+    const started = result.state !== 'done' && (old || result.state !== 'todo')
     // A merged step whose `main` was READ and does not hold. A `main` nobody read is never a failure.
     if (
       factReading('pr-merged', input) === 'holds' &&
