@@ -24,12 +24,20 @@ import {
   activeBlockers,
   deriveStepState,
   factReading,
+  isCarried,
   type StepInput,
   type StepStateResult
 } from './state'
 
 /** The `you` line when the operator owes this mission nothing (design §4). */
 export const YOU_CLEAR = "— nothing, you're clear"
+
+/**
+ * The criterion the conversion gives the fixed end of a v3 CHAPTER whose mission was not delivered yet: it holds
+ * the chapter back from reading done, as v3 did. It is not the operator's to confirm: the delivery has not
+ * happened, so the waiting list never raises it (BUG-284 NC-1). Worded here once; the conversion reads it from here.
+ */
+export const CHAPTER_HANDED_IN = 'The chapter mission was handed in as delivered'
 
 /** `ask`: what to do, at most this many characters (spec "Progress, next step and the waiting list"). */
 export const WAITING_ASK_MAX = 90
@@ -275,28 +283,32 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
     for (const b of result.blockers) {
       if (b.owner === 'operator') unblock.push(blockerItem(b, step))
     }
-    if (started) {
-      for (const c of result.open) {
-        if (c.by === 'operator') {
-          settle.push({
-            kind: 'settle',
-            id: `settle:${step.id}:${c.id}`,
-            stepId: step.id,
-            criterionId: c.id,
-            ask: `Mark done: ${c.text}`,
-            why:
-              result.open.length === 1
-                ? 'It is the last thing open on this step'
-                : `${result.open.length - 1} more ${result.open.length === 2 ? 'thing is' : 'things are'} open on this step`
-          })
-        } else if (c.by === 'person') {
-          people.push({
-            person: c.person ?? 'another person',
-            stepId: step.id,
-            criterionId: c.id,
-            text: c.text
-          })
-        }
+    // A step still in play raises its open criteria; a DONE step raises only the ones carried over from a
+    // delivered chapter (it was counted done, but the operator has not ticked them). The "handed in as
+    // delivered" one is never the operator's: nothing was delivered.
+    const scanned = (
+      result.state === 'done' ? result.open.filter(isCarried) : started ? result.open : []
+    ).filter((c) => c.text !== CHAPTER_HANDED_IN)
+    for (const c of scanned) {
+      if (c.by === 'operator') {
+        settle.push({
+          kind: 'settle',
+          id: `settle:${step.id}:${c.id}`,
+          stepId: step.id,
+          criterionId: c.id,
+          ask: `Mark done: ${c.text}`,
+          why:
+            scanned.length === 1
+              ? 'It is the last thing open on this step'
+              : `${scanned.length - 1} more ${scanned.length === 2 ? 'thing is' : 'things are'} open on this step`
+        })
+      } else if (c.by === 'person') {
+        people.push({
+          person: c.person ?? 'another person',
+          stepId: step.id,
+          criterionId: c.id,
+          text: c.text
+        })
       }
     }
     // A pull request the operator can look over: its step waits for review, is not blocked, and its

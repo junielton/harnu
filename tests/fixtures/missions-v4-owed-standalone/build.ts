@@ -143,3 +143,22 @@ export function manyOpenMissions(folder: string, n: number): string[] {
   }
   return ids
 }
+
+/**
+ * BUG-284: a standalone mission whose ONLY owed item is a pull request to look over. One verifier step
+ * ("Import core"), a `pr` link and nothing else: no check, no human step, no blocker. With its pull request
+ * open (the facts say so) the step waits for review and the waiting list holds one `review` item.
+ */
+export const REVIEW_ONLY = { id: 'mnt-0d000001', slug: 'review-only', pr: '4103' }
+
+export function writeReviewOnly(folder: string): typeof REVIEW_ONLY {
+  mkdirSync(path.join(folder, '.harnu', 'missions'), { recursive: true })
+  writeV3Mission(
+    folder,
+    base(folder, REVIEW_ONLY.id, REVIEW_ONLY.slug, [
+      step(1, { title: 'Import core', links: [{ kind: 'pr', ref: REVIEW_ONLY.pr }] }),
+      end(2)
+    ]) as { id: string; slug: string }
+  )
+  return REVIEW_ONLY
+}
