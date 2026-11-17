@@ -180,7 +180,7 @@ async function findStep(folder: string, missionId: string, stepId: string): Prom
   if (read.record.status === 'closed') {
     return refusal('MISSION_CLOSED', `${missionId} is closed; start a new mission instead.`)
   }
-  const resolved = resolveStepId(read.record, stepId)
+  const resolved = resolveStepId(read.record, stepId, missionId)
   const step = resolved === null ? undefined : read.record.steps.find((s) => s.id === resolved)
   if (!step) {
     return refusal(

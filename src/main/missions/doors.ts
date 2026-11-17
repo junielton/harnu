@@ -60,7 +60,7 @@ export async function markCriterion(
 ): Promise<DoorResult<{ stepId: string; criterionId: string }>> {
   const at = now(args.at)
   const result = await applyChange(folder, missionId, OPERATOR, 'operator', (record, log) => {
-    const stepId = resolveStepId(record, args.stepId)
+    const stepId = resolveStepId(record, args.stepId, missionId)
     const step = record.steps.find((s) => s.id === stepId)
     const criterion = step?.acs.find((a) => a.id === args.criterionId)
     if (!step || !criterion) {
@@ -105,7 +105,7 @@ export async function markCriterion(
   return result.ok
     ? {
         ...result,
-        stepId: resolveStepId(result.record, args.stepId) ?? args.stepId,
+        stepId: resolveStepId(result.record, args.stepId, missionId) ?? args.stepId,
         criterionId: args.criterionId
       }
     : result
@@ -130,7 +130,9 @@ export async function clearBlocker(
     let stepId: string | null = null
     let onMission = false
     if (args.stepId !== undefined) {
-      const step = record.steps.find((s) => s.id === resolveStepId(record, args.stepId as string))
+      const step = record.steps.find(
+        (s) => s.id === resolveStepId(record, args.stepId as string, missionId)
+      )
       if (step && has(step.blockers)) stepId = step.id
     } else if (has(record.blockers)) {
       onMission = true

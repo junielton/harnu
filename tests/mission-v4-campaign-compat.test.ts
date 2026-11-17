@@ -163,6 +163,11 @@ describe('CC-1 · every path resolves an old step id through the chapter mission
   const OLD_ID = 'stp-2'
   const chapter5 = missionIdOf(5)
 
+  // Every case starts from the stored (converted) record, so what changes is what the call changed.
+  beforeEach(async () => {
+    await firstWrite()
+  })
+
   /** The chapter-5 step the old id means, and the step the record itself calls by that id. */
   async function targets(): Promise<{ target: string; decoy: string }> {
     const record = await viewOf()
@@ -172,6 +177,18 @@ describe('CC-1 · every path resolves an old step id through the chapter mission
       throw new Error('the fixture lost its collision')
     expect(decoy.milestone).not.toBe(target.milestone)
     return { target: target.id, decoy: decoy.id }
+  }
+
+  /** A board that keeps its cards in memory: a worker dispatch writes its card here. */
+  function memoryBoard(): BoardIo {
+    const cards = new Map<string, string>()
+    return {
+      readAll: async () => [],
+      read: async () => null,
+      create: async (slug, content) => !cards.has(slug) && !!cards.set(slug, content),
+      write: async (slug, content) => !!cards.set(slug, content),
+      lock: (fn) => fn()
+    }
   }
 
   /** Ids of the steps whose stored copy differs between two records. */
@@ -220,15 +237,13 @@ describe('CC-1 · every path resolves an old step id through the chapter mission
   })
 
   it('a dispatch attaches to the chapter step, not the one that owns the id', async () => {
-    // A dispatch needs a v4 record: the first write converts the campaign.
-    await firstWrite()
     const { target } = await targets()
     const before = await viewOf()
     const worker = '5d7f9b1c-3e5a-4c7e-8a2b-4d6f8a0c2e4b'
     const done = await dispatchStep(
       root,
-      { missionId: chapter5, stepId: OLD_ID, sessionId: worker, role: 'verifier' },
-      {} as BoardIo
+      { missionId: chapter5, stepId: OLD_ID, sessionId: worker, role: 'worker' },
+      memoryBoard()
     )
     expect('stepId' in done && done.stepId, JSON.stringify(done)).toBe(target)
     const after = await viewOf()

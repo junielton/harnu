@@ -189,6 +189,20 @@ export function resolveStepId(
   return candidates.length === 1 ? candidates[0] : null
 }
 
+/**
+ * The ids a step id named in the files a v3 campaign came from means now, when no chapter mission is
+ * named: one per chapter that had it. Two or more are ambiguous, and a caller that refuses says them.
+ */
+export function oldStepCandidates(record: MissionV4, stepId: string): string[] {
+  return [
+    ...new Set(
+      legacyStepRows(record)
+        .filter((r) => r.step === stepId && record.steps.some((s) => s.id === r.id))
+        .map((r) => r.id)
+    )
+  ]
+}
+
 // ---- The history: pure helpers ---------------------------------------------------------
 
 /**
