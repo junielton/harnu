@@ -569,11 +569,54 @@ function chapterDeliveredEvidence(mission: V3Mission): string | null {
   return null
 }
 
-/** The unlock a chapter waits for, as a milestone's `waitsFor`. */
-function waitsForOfChapter(chapter: V3Chapter): string | null {
-  if (!chapter.unlocks) return null
-  const { kind, ref } = chapter.unlocks
-  return kind === 'chapter' ? milestoneIdOf(ref) : `${kind}:${ref}`
+/** Did the chapter's mission finish, as v3 counted it: delivered, or closed as delivered. */
+const chapterFinished = (found: { mission: V3Mission } | undefined): boolean =>
+  found !== undefined && chapterDeliveredEvidence(found.mission) !== null
+
+/**
+ * Had the chapter started, as v3 read it (`campaign-progress.ts`, "only a chapter that has not started is
+ * locked"): its mission finished, or a step of it has any proof or a decision was made. A chapter with no
+ * mission, or whose steps are all unproven, has not. What v3 also read from the live fleet (a builder that
+ * was working) is not in the file and cannot be known here.
+ */
+function chapterStarted(found: { mission: V3Mission } | undefined): boolean {
+  if (!found) return false
+  if (chapterFinished(found)) return true
+  return found.mission.steps.some(
+    (s) => s.kind === 'custom' && (s.proof !== 'unproven' || s.decision?.chosen !== undefined)
+  )
+}
+
+/**
+ * What a chapter waits for, as a milestone's `waitsFor`: the milestones of the earlier chapters that
+ * produce a token it consumes and have not finished (v3 locked a chapter that had not started behind
+ * them; a token nobody earlier produces locks nothing), then its `unlocks` target. `null` when it waits
+ * for nothing. The ids are joined with `, `, in chapter order.
+ */
+function waitsForOfChapter(
+  chapter: V3Chapter,
+  index: number,
+  chapters: readonly V3Chapter[],
+  missionOf: (chapter: V3Chapter) => { mission: V3Mission } | undefined
+): string | null {
+  const waits: string[] = []
+  if (!chapterStarted(missionOf(chapter))) {
+    for (const earlier of chapters.slice(0, index)) {
+      const produced = earlier.produces ?? []
+      if (
+        (chapter.consumes ?? []).some((t) => produced.includes(t)) &&
+        !chapterFinished(missionOf(earlier))
+      ) {
+        waits.push(milestoneIdOf(earlier.id))
+      }
+    }
+  }
+  if (chapter.unlocks) {
+    const { kind, ref } = chapter.unlocks
+    const target = kind === 'chapter' ? milestoneIdOf(ref) : `${kind}:${ref}`
+    if (!waits.includes(target)) waits.push(target)
+  }
+  return waits.length > 0 ? waits.join(', ') : null
 }
 
 /**
@@ -632,14 +675,16 @@ export function convertV3Campaign(
   // A side quest is outside the count; so is a chapter whose mission was discarded: abandoned work
   // never counts (the removed campaign code never counted it done). The spec is silent on how it
   // shows, and the closed model has no other mark, so it reads as an optional milestone.
-  const milestones: Milestone[] = campaign.chapters.map((chapter) => {
-    const found = chapter.missionId ? byMissionId.get(chapter.missionId) : undefined
+  const missionOf = (chapter: V3Chapter): { mission: V3Mission } | undefined =>
+    chapter.missionId ? byMissionId.get(chapter.missionId) : undefined
+  const milestones: Milestone[] = campaign.chapters.map((chapter, index) => {
+    const found = missionOf(chapter)
     const discarded = found?.mission.status === 'closed' && found.mission.closedAs === 'discarded'
     return {
       id: milestoneIdOf(chapter.id),
       title: chapter.title,
       optional: !chapter.required || discarded,
-      waitsFor: waitsForOfChapter(chapter)
+      waitsFor: waitsForOfChapter(chapter, index, campaign.chapters, missionOf)
     }
   })
 
