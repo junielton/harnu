@@ -40,6 +40,7 @@ import {
 import { deriveProgress } from './progress'
 import type { RecordChange } from './record-store'
 import type { StepInput } from './state'
+import { oldStepCandidates, resolveStepId } from './sessions'
 import { writeMission, type WriteCode } from './write'
 
 // ---- Results ---------------------------------------------------------------------
@@ -161,26 +162,16 @@ function nextBlockerId(record: MissionV4, log: string): string {
 
 /**
  * A step by id. A record converted from a v3 campaign renumbers its steps and keeps the old ids in
- * `legacyV3.stepIds` (old → new): an id the record does not have is looked up there. The caller reads
- * the new id from the result. An old id that was more than one step (two chapters each had a `stp-1`)
- * picks none and names the candidates.
+ * `legacyV3.stepIds`: an id the record does not have is looked up there, and when the caller names the
+ * chapter mission the old id belongs to (`missionId`) that chapter decides first (`resolveStepId`). The
+ * caller reads the new id from the result. An old id that was more than one step (two chapters each had
+ * a `stp-1`) and no chapter named picks none and names the candidates.
  */
-function resolveStep(record: MissionV4, stepId: string): StepV4 {
-  const direct = record.steps.find((s) => s.id === stepId)
-  if (direct) return direct
-  const legacy = record.legacyV3 as { stepIds?: unknown } | null | undefined
-  const entries = Array.isArray(legacy?.stepIds) ? (legacy?.stepIds as unknown[]) : []
-  const candidates = [
-    ...new Set(
-      entries.flatMap((e) => {
-        const { step, id } = (e ?? {}) as { step?: unknown; id?: unknown }
-        return step === stepId && typeof id === 'string' && record.steps.some((s) => s.id === id)
-          ? [id]
-          : []
-      })
-    )
-  ]
-  if (candidates.length === 1) return record.steps.find((s) => s.id === candidates[0]) as StepV4
+function resolveStep(record: MissionV4, stepId: string, missionId?: string): StepV4 {
+  const resolved = resolveStepId(record, stepId, missionId)
+  const step = resolved === null ? undefined : record.steps.find((s) => s.id === resolved)
+  if (step) return step
+  const candidates = oldStepCandidates(record, stepId)
   if (candidates.length > 1) {
     throw new Refusal(
       'STEP_NOT_FOUND',
@@ -249,7 +240,8 @@ export async function setBlocker(
         }
       }
 
-      const step = args.stepId === undefined ? undefined : resolveStep(record, args.stepId)
+      const step =
+        args.stepId === undefined ? undefined : resolveStep(record, args.stepId, args.missionId)
       const here = step ? step.blockers : record.blockers
       const same = here.find((b) => b.owner === args.owner && trimmed(b.reason) === reason)
       if (same) {
@@ -450,7 +442,7 @@ export async function settleCriterion(
     if (evidence === '') {
       throw new Refusal('BAD_ARGS', 'a settlement carries its evidence: say what you saw.')
     }
-    const step = resolveStep(record, args.stepId)
+    const step = resolveStep(record, args.stepId, args.missionId)
     const ac = step.acs.find((c) => c.id === args.criterionId)
     if (!ac) {
       throw new Refusal(

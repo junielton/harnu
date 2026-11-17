@@ -405,7 +405,11 @@ describe('attach needs confirmation except for the creator and dispatched worker
     })
 
     it('an old step id of a converted record finds its step and the result names the new one', async () => {
-      seed(missionOf({ legacyV3: { stepIds: { 'stp-5': 'stp-2' } } }))
+      seed(
+        missionOf({
+          legacyV3: { stepIds: [{ mission: 'mnt-ca000002', step: 'stp-5', id: 'stp-2' }] }
+        })
+      )
       const r = await attachDispatchedWorker(root, ID, {
         sessionId: DISPATCHED,
         stepId: 'stp-5',
@@ -687,7 +691,11 @@ describe('Harnu writes what Harnu does, and the operator what the operator does'
   })
 
   it('a step named by an old id is still named by its title in the Log', async () => {
-    seed(missionOf({ legacyV3: { stepIds: { 'stp-5': 'stp-2' } } }))
+    seed(
+      missionOf({
+        legacyV3: { stepIds: [{ mission: 'mnt-ca000002', step: 'stp-5', id: 'stp-2' }] }
+      })
+    )
     await attachDispatchedWorker(root, ID, {
       sessionId: DISPATCHED,
       stepId: 'stp-5',

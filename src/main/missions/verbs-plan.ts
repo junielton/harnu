@@ -43,10 +43,10 @@ import {
   type Milestone,
   type MissionLink,
   type MissionV4,
-  type StepV4,
-  type WithUnknownKeys
+  type StepV4
 } from './model'
 import { readMissionRecord, type RecordChange } from './record-store'
+import { oldStepCandidates, resolveStepId } from './sessions'
 import { deriveStepState, type StepInput } from './state'
 import { writeMission, type MissionWrite, type WriteCode } from './write'
 
@@ -203,50 +203,27 @@ export async function writePlanChange(
 
 // ---- Step ids: the new ones, and the old ones a v3 campaign had --------------------
 
-/** The `{ step, id }` rows of `legacyV3.stepIds` (a list of rows, or an old → new map). */
-function legacyStepRows(record: MissionV4): Array<{ step: string; id: string }> {
-  const raw = (record.legacyV3 as WithUnknownKeys<Record<string, unknown>> | undefined)?.stepIds
-  if (Array.isArray(raw)) {
-    return raw.flatMap((r: unknown) => {
-      const row = r as { step?: unknown; id?: unknown } | null
-      return typeof row?.step === 'string' && typeof row.id === 'string'
-        ? [{ step: row.step, id: row.id }]
-        : []
-    })
-  }
-  if (raw && typeof raw === 'object') {
-    return Object.entries(raw as Record<string, unknown>).flatMap(([step, id]) =>
-      typeof id === 'string' ? [{ step, id }] : []
-    )
-  }
-  return []
-}
-
 type StepLookup =
   { ok: true; id: string } | { ok: false; reason: 'unknown' | 'ambiguous'; candidates: string[] }
 
 /**
  * The step a caller means: the id the record has, else the one a v3 campaign had (`legacyV3.stepIds`,
- * old → new). An old id that two chapters both used is ambiguous and names the new ids.
+ * old → new). When the caller names the chapter mission an old id belongs to (`missionId`), that
+ * chapter decides first: see `resolveStepId`. An old id that two chapters both used, with no chapter
+ * named, is ambiguous and names the new ids.
  */
-function findStep(record: MissionV4, given: string): StepLookup {
-  if (record.steps.some((s) => s.id === given)) return { ok: true, id: given }
-  const candidates = [
-    ...new Set(
-      legacyStepRows(record)
-        .filter((r) => r.step === given && record.steps.some((s) => s.id === r.id))
-        .map((r) => r.id)
-    )
-  ]
-  if (candidates.length === 1) return { ok: true, id: candidates[0] }
+function findStep(record: MissionV4, given: string, missionId?: string): StepLookup {
+  const resolved = resolveStepId(record, given, missionId)
+  if (resolved !== null) return { ok: true, id: resolved }
+  const candidates = oldStepCandidates(record, given)
   return { ok: false, reason: candidates.length > 1 ? 'ambiguous' : 'unknown', candidates }
 }
 
-function resolveStep(record: MissionV4, given: unknown): string {
+function resolveStep(record: MissionV4, given: unknown, missionId?: string): string {
   if (typeof given !== 'string' || given === '') {
     throw new PlanError('BAD_ARGS', 'a step id is required.')
   }
-  const found = findStep(record, given)
+  const found = findStep(record, given, missionId)
   if (found.ok) return found.id
   const have = record.steps.map((s) => s.id).join(', ') || 'none'
   throw new PlanError(
@@ -623,7 +600,10 @@ export function addStep(
 
     let at = record.steps.length
     if (args.afterStepId !== undefined) {
-      at = record.steps.findIndex((s) => s.id === resolveStep(record, args.afterStepId)) + 1
+      at =
+        record.steps.findIndex(
+          (s) => s.id === resolveStep(record, args.afterStepId, args.missionId)
+        ) + 1
     }
     const id = nextId(
       'stp',
@@ -673,7 +653,7 @@ export function addCriterion(
   args: AddCriterionArgs
 ): Promise<PlanResult<{ stepId: string; criterionId: string; totalCriteria: number }>> {
   return run(folder, args.missionId, actor, 'lead', (record, log) => {
-    const stepId = resolveStep(record, args.stepId)
+    const stepId = resolveStep(record, args.stepId, args.missionId)
     const target = record.steps.find((s) => s.id === stepId) as StepV4
     const criterion = buildCriterion(
       args,
@@ -716,7 +696,8 @@ export function addLink(
     actor,
     'write',
     (record, log) => {
-      const stepId = args.stepId === undefined ? undefined : resolveStep(record, args.stepId)
+      const stepId =
+        args.stepId === undefined ? undefined : resolveStep(record, args.stepId, args.missionId)
       const link = checkLink(root, args.kind, args.ref)
       const have =
         stepId === undefined
@@ -770,7 +751,8 @@ export function logMission(
         `a Log entry is at most ${MAX_LOG_NOTE} characters (this one is ${note.length}): say the decision and link the document.`
       )
     }
-    const stepId = args.stepId === undefined ? undefined : resolveStep(record, args.stepId)
+    const stepId =
+      args.stepId === undefined ? undefined : resolveStep(record, args.stepId, args.missionId)
     return {
       next: { record, log: appendLogEntry(log, kind as LogKind, stepId, note) },
       out: stepId ? { stepId } : {}
@@ -812,7 +794,8 @@ export interface PrLinkPlan {
 export function planPrLinks(
   record: MissionV4,
   found: readonly FoundPr[],
-  branches: StepBranches = {}
+  branches: StepBranches = {},
+  missionId?: string
 ): PrLinkPlan {
   const plan: PrLinkPlan = { add: [], skipped: [] }
   const carried = new Set<string>(
@@ -822,7 +805,7 @@ export function planPrLinks(
   )
   const byBranch = new Map<string, string[]>()
   for (const [given, branch] of Object.entries(branches)) {
-    const step = findStep(record, given)
+    const step = findStep(record, given, missionId)
     if (step.ok) byBranch.set(branch, [...(byBranch.get(branch) ?? []), step.id])
   }
   for (const pr of found) {
@@ -837,7 +820,7 @@ export function planPrLinks(
     }
     let stepId: string | undefined
     if (pr.stepId !== undefined) {
-      const step = findStep(record, pr.stepId)
+      const step = findStep(record, pr.stepId, missionId)
       if (step.ok) stepId = step.id
     } else if (pr.branch !== undefined) {
       const owners = [...new Set(byBranch.get(pr.branch) ?? [])]
@@ -889,11 +872,11 @@ export async function attachFoundPrs(
       `${missionId} is closed; its pull requests are not attached.`
     )
   }
-  const first = planPrLinks(peek.record, found, branches)
+  const first = planPrLinks(peek.record, found, branches, missionId)
   if (first.add.length === 0) return { ok: true, added: [], skipped: first.skipped }
 
   return run(folder, missionId, actor, 'write', (record, log) => {
-    const plan = planPrLinks(record, found, branches)
+    const plan = planPrLinks(record, found, branches, missionId)
     const steps = record.steps.map((s) => {
       const links = plan.add.filter((a) => a.stepId === s.id).map((a) => a.link)
       return links.length > 0 ? { ...s, links: [...s.links, ...links] } : s

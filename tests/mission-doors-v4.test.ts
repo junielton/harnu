@@ -227,7 +227,16 @@ describe('the operator doors', () => {
     })
 
     it('an old step id from a converted record finds its new step and names it', async () => {
-      seed(missionOf({ legacyV3: { stepIds: { 'stp-7': 'stp-1', 'stp-8': 'stp-77' } } }))
+      seed(
+        missionOf({
+          legacyV3: {
+            stepIds: [
+              { mission: 'mnt-ca000002', step: 'stp-7', id: 'stp-1' },
+              { mission: 'mnt-ca000002', step: 'stp-8', id: 'stp-77' }
+            ]
+          }
+        })
+      )
       const r = await markCriterion(root, ID, { stepId: 'stp-7', criterionId: 'ac-1', at: AT })
       expect(r.ok).toBe(true)
       if (r.ok) expect(r.stepId).toBe('stp-1')

@@ -1020,11 +1020,15 @@ describe('a campaign reads as one mission', () => {
 
   it("makes the chapter missions' steps its steps, and a chapter with no mission a milestone with no steps", () => {
     const { record } = convertSampleCampaign()
-    // Chapter 1 has one custom step; chapter 2 has two. Ids are renumbered across the whole mission.
+    // Chapter 1 has one custom step; chapter 2 has two. Each chapter mission's fixed end follows its own
+    // steps (BUG-282 CC-4: a chapter whose end was never proven must not read done). Ids are renumbered
+    // across the whole mission.
     expect(record.steps.map((s) => [s.id, s.milestone, s.title])).toEqual([
       ['stp-1', 'mls-1', 'Build the import core'],
-      ['stp-2', 'mls-2', 'Render the report'],
-      ['stp-3', 'mls-2', 'Verify the report']
+      ['stp-2', 'mls-1', 'Delivered and verified'],
+      ['stp-3', 'mls-2', 'Render the report'],
+      ['stp-4', 'mls-2', 'Verify the report'],
+      ['stp-5', 'mls-2', 'Delivered and verified']
     ])
     for (const m of ['mls-3', 'mls-4', 'mls-5']) {
       expect(record.steps.filter((s) => s.milestone === m)).toEqual([])
@@ -1043,7 +1047,7 @@ describe('a campaign reads as one mission', () => {
     expect(ch2.ledger.map((r) => r.stepId)).toEqual(['stp-1'])
     // The map from the old step ids is kept so a caller can still find a step by its old id.
     const legacy = record.legacyV3 as { stepIds: Array<Record<string, unknown>> }
-    expect(legacy.stepIds).toContainEqual({ mission: CHAPTER_2, step: 'stp-1', id: 'stp-2' })
+    expect(legacy.stepIds).toContainEqual({ mission: CHAPTER_2, step: 'stp-1', id: 'stp-3' })
   })
 
   it('reads a chapter mission closed as delivered as a done milestone: only facts are left to derive', () => {

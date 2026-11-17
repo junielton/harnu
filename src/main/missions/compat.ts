@@ -407,6 +407,45 @@ function convertSteps(ctx: StepContext): StepV4[] {
   return out
 }
 
+/** The criterion a chapter's end carries until its mission is delivered (see {@link fixedEndStep}). */
+const END_HANDED_IN = 'The chapter mission was handed in as delivered'
+
+/**
+ * The fixed end of a CHAPTER mission ("Delivered and verified") as a step of its milestone. A standalone
+ * v3 mission maps its end to `doneWhenVerified` (spec table), but a campaign becomes ONE mission with one
+ * Done when, so a chapter's end has no other place to show, and a chapter whose end was never proven must
+ * not read done. v3 counted a chapter done only when its mission was delivered, or closed as delivered
+ * (`chapterDeliveredEvidence`), so:
+ *
+ * - the end's own proof shows as the same "A second session checked the work" criterion a verified step
+ *   gets, settled by `verifiedBy`, or left open for an unproven, claimed or self-verified end;
+ * - until the mission is delivered a second criterion, "handed in as delivered", stays open and is the
+ *   operator's to mark, so a verified end on a mission that is still active reads in review, as v3 did;
+ * - once the mission is delivered or closed as delivered every criterion is settled like any other.
+ *
+ * Its checks stay out of the step: they already became operator blockers (`missionLevelBlockers`), and
+ * a second copy would owe the same thing twice. Its `pr` and `worktree` links joined the mission's links.
+ */
+function fixedEndStep(ctx: StepContext): StepV4 | null {
+  const { mission } = ctx
+  const end = mission.steps.find((s) => s.kind === 'fixed-end')
+  const id = end ? ctx.idOf.get(end.id) : undefined
+  if (!end || !id) return null
+  const acs: Array<Omit<Criterion, 'id'>> = criteriaOf(
+    { ...end, verification: 'verifier', links: [], checks: [] },
+    ctx
+  )
+  if (ctx.deliveredEvidence === null) acs.push({ text: END_HANDED_IN, by: 'operator' })
+  return {
+    id,
+    ...(ctx.milestone ? { milestone: ctx.milestone } : {}),
+    title: end.title,
+    acs: acs.map((c, n) => ({ ...c, id: `ac-${n + 1}` }) as Criterion),
+    links: [],
+    blockers: []
+  }
+}
+
 /** The session links of a mission's steps, in order of appearance: the sessions that worked it. */
 function workedSessionsOf(mission: V3Mission): Array<{ id: string; from: string }> {
   const out: Array<{ id: string; from: string }> = []
@@ -425,23 +464,26 @@ function missionLegacy(mission: V3Mission, withSteps: boolean): Record<string, u
     const s = mission.steps.find((x) => x.kind === kind)
     if (!s) return undefined
     const cards = s.links.filter((l) => l.kind === 'card')
-    return {
-      id: s.id,
-      proof: s.proof,
-      ...(s.verifiedBy ? { verifiedBy: s.verifiedBy } : {}),
-      // Every check, ticked or not, with its id, source, creation time and tick stamp.
-      ...(s.checks && s.checks.length > 0 ? { checks: s.checks } : {}),
-      // A card link is not a v4 link kind; the pr and worktree links joined the mission's own.
-      ...(cards.length > 0 ? { links: cards } : {})
-    }
+    // The step as v3 held it, whole: ordinal, kind, title, verification, proof, `verifiedBy`, the checks (each
+    // with its id, source, creation time and tick stamp) and the rest. Its links are not copied here: the
+    // `pr` and `worktree` ones joined the mission's own links, and a card link is not a v4 link kind, so
+    // it is kept under `links`.
+    const { links: _links, ...rest } = s
+    return { ...rest, ...(cards.length > 0 ? { links: cards } : {}) }
   }
+  // Every custom step with what v4 has no place for: the v3 ordinal and kind, and the checks whole. A
+  // check is a v4 criterion, which gets an `ac-n` id, so the v3 id, `source` and `createdAt` live here.
   const stepsLegacy = mission.steps
     .filter((s) => s.kind === 'custom')
     .map((s) => ({
       id: s.id,
+      ordinal: s.ordinal,
+      kind: s.kind,
+      title: s.title,
       verification: s.verification,
       proof: s.proof,
       ...(s.verifiedBy ? { verifiedBy: s.verifiedBy } : {}),
+      ...(s.checks && s.checks.length > 0 ? { checks: s.checks } : {}),
       ...(s.addedAt ? { addedAt: s.addedAt } : {}),
       ...(s.addedReason ? { addedReason: s.addedReason } : {}),
       ...(s.discoveredFrom ? { discoveredFrom: s.discoveredFrom } : {}),
@@ -464,6 +506,8 @@ function missionLegacy(mission: V3Mission, withSteps: boolean): Record<string, u
     ...(mission.declaredEndApproval ? { declaredEndApproval: mission.declaredEndApproval } : {}),
     ...(mission.pendingRescope ? { pendingRescope: mission.pendingRescope } : {}),
     openQuestions: mission.openQuestions,
+    // The close request as v3 held it: `closeRequested` keeps its time, who asked is kept here.
+    ...(mission.pendingClose ? { pendingClose: mission.pendingClose } : {}),
     ...(mission.stewardPause ? { stewardPause: mission.stewardPause } : {}),
     ...(mission.legacy ? { legacy: mission.legacy } : {}),
     ...(mission.legacyRaw !== undefined ? { legacyRaw: mission.legacyRaw } : {}),
@@ -569,11 +613,54 @@ function chapterDeliveredEvidence(mission: V3Mission): string | null {
   return null
 }
 
-/** The unlock a chapter waits for, as a milestone's `waitsFor`. */
-function waitsForOfChapter(chapter: V3Chapter): string | null {
-  if (!chapter.unlocks) return null
-  const { kind, ref } = chapter.unlocks
-  return kind === 'chapter' ? milestoneIdOf(ref) : `${kind}:${ref}`
+/** Did the chapter's mission finish, as v3 counted it: delivered, or closed as delivered. */
+const chapterFinished = (found: { mission: V3Mission } | undefined): boolean =>
+  found !== undefined && chapterDeliveredEvidence(found.mission) !== null
+
+/**
+ * Had the chapter started, as v3 read it (the removed campaign progress code: "only a chapter that has not started is
+ * locked"): its mission finished, or a step of it has any proof or a decision was made. A chapter with no
+ * mission, or whose steps are all unproven, has not. What v3 also read from the live fleet (a builder that
+ * was working) is not in the file and cannot be known here.
+ */
+function chapterStarted(found: { mission: V3Mission } | undefined): boolean {
+  if (!found) return false
+  if (chapterFinished(found)) return true
+  return found.mission.steps.some(
+    (s) => s.kind === 'custom' && (s.proof !== 'unproven' || s.decision?.chosen !== undefined)
+  )
+}
+
+/**
+ * What a chapter waits for, as a milestone's `waitsFor`: the milestones of the earlier chapters that
+ * produce a token it consumes and have not finished (v3 locked a chapter that had not started behind
+ * them; a token nobody earlier produces locks nothing), then its `unlocks` target. `null` when it waits
+ * for nothing. The ids are joined with `, `, in chapter order.
+ */
+function waitsForOfChapter(
+  chapter: V3Chapter,
+  index: number,
+  chapters: readonly V3Chapter[],
+  missionOf: (chapter: V3Chapter) => { mission: V3Mission } | undefined
+): string | null {
+  const waits: string[] = []
+  if (!chapterStarted(missionOf(chapter))) {
+    for (const earlier of chapters.slice(0, index)) {
+      const produced = earlier.produces ?? []
+      if (
+        (chapter.consumes ?? []).some((t) => produced.includes(t)) &&
+        !chapterFinished(missionOf(earlier))
+      ) {
+        waits.push(milestoneIdOf(earlier.id))
+      }
+    }
+  }
+  if (chapter.unlocks) {
+    const { kind, ref } = chapter.unlocks
+    const target = kind === 'chapter' ? milestoneIdOf(ref) : `${kind}:${ref}`
+    if (!waits.includes(target)) waits.push(target)
+  }
+  return waits.length > 0 ? waits.join(', ') : null
 }
 
 /**
@@ -605,12 +692,15 @@ export function convertV3Campaign(
   const stepIds: Array<{ mission: string; step: string; id: string }> = []
   for (const { mission } of parts) {
     const map = new Map<string, string>()
-    for (const step of mission.steps) {
-      if (step.kind !== 'custom') continue
+    const number = (step: V3MissionStep): void => {
       const next = `stp-${++nextStep}`
       map.set(step.id, next)
       stepIds.push({ mission: mission.id, step: step.id, id: next })
     }
+    for (const step of mission.steps) if (step.kind === 'custom') number(step)
+    // The chapter's fixed end is a step of its milestone (see `fixedEndStep`), numbered after its own.
+    const end = mission.steps.find((s) => s.kind === 'fixed-end')
+    if (end) number(end)
     idMaps.set(mission.id, map)
   }
 
@@ -619,27 +709,31 @@ export function convertV3Campaign(
   const blockers = parts.flatMap(({ mission }) =>
     missionLevelBlockers(mission).map((b) => toBlocker(b, nextBlocker()))
   )
-  const steps = parts.flatMap(({ chapter, mission }) =>
-    convertSteps({
+  const steps = parts.flatMap(({ chapter, mission }) => {
+    const ctx: StepContext = {
       mission,
       idOf: idMaps.get(mission.id) as Map<string, string>,
       milestone: milestoneIdOf(chapter.id),
       nextBlocker,
       deliveredEvidence: chapterDeliveredEvidence(mission)
-    })
-  )
+    }
+    const end = fixedEndStep(ctx)
+    return [...convertSteps(ctx), ...(end ? [end] : [])]
+  })
 
   // A side quest is outside the count; so is a chapter whose mission was discarded: abandoned work
   // never counts (the removed campaign code never counted it done). The spec is silent on how it
   // shows, and the closed model has no other mark, so it reads as an optional milestone.
-  const milestones: Milestone[] = campaign.chapters.map((chapter) => {
-    const found = chapter.missionId ? byMissionId.get(chapter.missionId) : undefined
+  const missionOf = (chapter: V3Chapter): { mission: V3Mission } | undefined =>
+    chapter.missionId ? byMissionId.get(chapter.missionId) : undefined
+  const milestones: Milestone[] = campaign.chapters.map((chapter, index) => {
+    const found = missionOf(chapter)
     const discarded = found?.mission.status === 'closed' && found.mission.closedAs === 'discarded'
     return {
       id: milestoneIdOf(chapter.id),
       title: chapter.title,
       optional: !chapter.required || discarded,
-      waitsFor: waitsForOfChapter(chapter)
+      waitsFor: waitsForOfChapter(chapter, index, campaign.chapters, missionOf)
     }
   })
 
@@ -702,6 +796,7 @@ export function convertV3Campaign(
       createdAt: campaign.createdAt,
       updatedAt: campaign.updatedAt,
       provenance: campaign.provenance,
+      ...(campaign.pendingClose ? { pendingClose: campaign.pendingClose } : {}),
       sourceIds,
       stepIds,
       // The campaign's own outcome and memory drafts; each chapter's sit under its chapter, with its
