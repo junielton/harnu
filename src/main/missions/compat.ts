@@ -407,6 +407,45 @@ function convertSteps(ctx: StepContext): StepV4[] {
   return out
 }
 
+/** The criterion a chapter's end carries until its mission is delivered (see {@link fixedEndStep}). */
+const END_HANDED_IN = 'The chapter mission was handed in as delivered'
+
+/**
+ * The fixed end of a CHAPTER mission ("Delivered and verified") as a step of its milestone. A standalone
+ * v3 mission maps its end to `doneWhenVerified` (spec table), but a campaign becomes ONE mission with one
+ * Done when, so a chapter's end has no other place to show, and a chapter whose end was never proven must
+ * not read done. v3 counted a chapter done only when its mission was delivered, or closed as delivered
+ * (`chapterDeliveredEvidence`), so:
+ *
+ * - the end's own proof shows as the same "A second session checked the work" criterion a verified step
+ *   gets, settled by `verifiedBy`, or left open for an unproven, claimed or self-verified end;
+ * - until the mission is delivered a second criterion, "handed in as delivered", stays open and is the
+ *   operator's to mark, so a verified end on a mission that is still active reads in review, as v3 did;
+ * - once the mission is delivered or closed as delivered every criterion is settled like any other.
+ *
+ * Its checks stay out of the step: they already became operator blockers (`missionLevelBlockers`), and
+ * a second copy would owe the same thing twice. Its `pr` and `worktree` links joined the mission's links.
+ */
+function fixedEndStep(ctx: StepContext): StepV4 | null {
+  const { mission } = ctx
+  const end = mission.steps.find((s) => s.kind === 'fixed-end')
+  const id = end ? ctx.idOf.get(end.id) : undefined
+  if (!end || !id) return null
+  const acs: Array<Omit<Criterion, 'id'>> = criteriaOf(
+    { ...end, verification: 'verifier', links: [], checks: [] },
+    ctx
+  )
+  if (ctx.deliveredEvidence === null) acs.push({ text: END_HANDED_IN, by: 'operator' })
+  return {
+    id,
+    ...(ctx.milestone ? { milestone: ctx.milestone } : {}),
+    title: end.title,
+    acs: acs.map((c, n) => ({ ...c, id: `ac-${n + 1}` }) as Criterion),
+    links: [],
+    blockers: []
+  }
+}
+
 /** The session links of a mission's steps, in order of appearance: the sessions that worked it. */
 function workedSessionsOf(mission: V3Mission): Array<{ id: string; from: string }> {
   const out: Array<{ id: string; from: string }> = []
@@ -648,12 +687,15 @@ export function convertV3Campaign(
   const stepIds: Array<{ mission: string; step: string; id: string }> = []
   for (const { mission } of parts) {
     const map = new Map<string, string>()
-    for (const step of mission.steps) {
-      if (step.kind !== 'custom') continue
+    const number = (step: V3MissionStep): void => {
       const next = `stp-${++nextStep}`
       map.set(step.id, next)
       stepIds.push({ mission: mission.id, step: step.id, id: next })
     }
+    for (const step of mission.steps) if (step.kind === 'custom') number(step)
+    // The chapter's fixed end is a step of its milestone (see `fixedEndStep`), numbered after its own.
+    const end = mission.steps.find((s) => s.kind === 'fixed-end')
+    if (end) number(end)
     idMaps.set(mission.id, map)
   }
 
@@ -662,15 +704,17 @@ export function convertV3Campaign(
   const blockers = parts.flatMap(({ mission }) =>
     missionLevelBlockers(mission).map((b) => toBlocker(b, nextBlocker()))
   )
-  const steps = parts.flatMap(({ chapter, mission }) =>
-    convertSteps({
+  const steps = parts.flatMap(({ chapter, mission }) => {
+    const ctx: StepContext = {
       mission,
       idOf: idMaps.get(mission.id) as Map<string, string>,
       milestone: milestoneIdOf(chapter.id),
       nextBlocker,
       deliveredEvidence: chapterDeliveredEvidence(mission)
-    })
-  )
+    }
+    const end = fixedEndStep(ctx)
+    return [...convertSteps(ctx), ...(end ? [end] : [])]
+  })
 
   // A side quest is outside the count; so is a chapter whose mission was discarded: abandoned work
   // never counts (the removed campaign code never counted it done). The spec is silent on how it
