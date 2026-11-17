@@ -134,7 +134,7 @@ type BlockerDraft = Omit<BlockerV4, 'id'>
  * check there becomes an operator-owned blocker, texts passed through whole (caps are never applied on
  * conversion): the operator must not lose something they owe, and a false alarm beats a miss.
  */
-function missionLevelBlockers(mission: V3Mission): BlockerDraft[] {
+function missionLevelBlockers(mission: V3Mission, chapterClose?: string): BlockerDraft[] {
   const fixedEnd = mission.steps.find((s) => s.kind === 'fixed-end')
   return [
     ...mission.blockers.map(draftOf),
@@ -148,6 +148,20 @@ function missionLevelBlockers(mission: V3Mission): BlockerDraft[] {
         owner: 'operator',
         raisedAt: c.createdAt
       })),
+    // A chapter mission delivered with a close request nobody answered (BUG-283 OI-2): a campaign is ONE v4
+    // mission, so the chapter's own close has no other place to be owed. The operator clears it with "Done,
+    // continue", as any blocker of theirs.
+    ...(chapterClose !== undefined
+      ? [
+          {
+            reason: `Close the chapter "${chapterClose}": its session says it is ready`,
+            ask: `Close the chapter "${chapterClose}": its session says it is ready`,
+            unblocks: 'Closing the campaign',
+            owner: 'operator' as const,
+            raisedAt: mission.pendingClose?.at ?? mission.updatedAt
+          }
+        ]
+      : []),
     // An imported mission whose declared end was a best guess nobody reviewed: the review stays owed. The
     // operator clears it with "Done, continue", as any blocker of theirs (S-40: the v3 "review the imported
     // end" item has no v4 kind, and no verb imports a goal file any more).
@@ -217,6 +231,12 @@ interface StepContext {
    * accepted whatever the live facts say now (the linked worktree may be long gone).
    */
   deliveredEvidence: string | null
+  /**
+   * Set for a chapter mission that is delivered but not closed (BUG-283 OI-2): the operator has not ended
+   * it, so an unticked check or an unproven human step stays open and owed instead of settled by the
+   * conversion. A chapter the operator closed as delivered keeps the old rule: they ended it knowing.
+   */
+  keepOwed?: boolean
 }
 
 /** The branches of the worktrees a step links, from the ledger rows that recorded them. */
@@ -246,6 +266,8 @@ function criteriaOf(step: V3MissionStep, ctx: StepContext): Array<Omit<Criterion
   const { mission } = ctx
   const out: Array<Omit<Criterion, 'id'>> = []
   const fallbackAt = mission.updatedAt
+  // The criteria the operator owes by hand: an unproven human step and each unticked check.
+  const owed = new Set<Omit<Criterion, 'id'>>()
 
   if (step.verification === 'existence') {
     out.push({ text: 'The linked work exists', by: 'fact', fact: 'link-exists' })
@@ -293,21 +315,25 @@ function criteriaOf(step: V3MissionStep, ctx: StepContext): Array<Omit<Criterion
   }
 
   if (step.verification === 'human') {
-    out.push({
+    const c: Omit<Criterion, 'id'> = {
       text: step.title,
       by: 'operator',
       ...(step.proof === 'verified'
         ? { settled: { at: step.verifiedBy?.at ?? fallbackAt, by: 'operator' } }
         : {})
-    })
+    }
+    out.push(c)
+    if (!c.settled) owed.add(c)
   }
 
   for (const check of step.checks ?? []) {
-    out.push({
+    const c: Omit<Criterion, 'id'> = {
       text: check.label,
       by: 'operator',
       ...(check.ticked ? { settled: { at: check.ticked.at, by: 'operator' } } : {})
-    })
+    }
+    out.push(c)
+    if (!c.settled) owed.add(c)
   }
 
   if (ctx.deliveredEvidence !== null) {
@@ -325,7 +351,8 @@ function criteriaOf(step: V3MissionStep, ctx: StepContext): Array<Omit<Criterion
         c.by = 'operator'
         delete c.fact
       }
-      if (!c.settled) c.settled = stamp
+      // A delivered chapter the operator has not closed still owes what they have not ticked (OI-2).
+      if (!c.settled && !(ctx.keepOwed && owed.has(c))) c.settled = stamp
     }
   }
   return out
@@ -706,8 +733,15 @@ export function convertV3Campaign(
 
   // Blockers: mission-level ones of every chapter first, then each step's, in chapter order.
   const nextBlocker = blockerCounter()
-  const blockers = parts.flatMap(({ mission }) =>
-    missionLevelBlockers(mission).map((b) => toBlocker(b, nextBlocker()))
+  // A delivered chapter's close request is owed while the campaign is still open; once the campaign itself
+  // is delivered, the campaign's one close item stands for it.
+  const blockers = parts.flatMap(({ mission, log }) =>
+    missionLevelBlockers(
+      mission,
+      mission.status === 'delivered' && campaign.status === 'active'
+        ? titleOf(log, mission.declaredEnd.target)
+        : undefined
+    ).map((b) => toBlocker(b, nextBlocker()))
   )
   const steps = parts.flatMap(({ chapter, mission }) => {
     const ctx: StepContext = {
@@ -715,7 +749,8 @@ export function convertV3Campaign(
       idOf: idMaps.get(mission.id) as Map<string, string>,
       milestone: milestoneIdOf(chapter.id),
       nextBlocker,
-      deliveredEvidence: chapterDeliveredEvidence(mission)
+      deliveredEvidence: chapterDeliveredEvidence(mission),
+      keepOwed: mission.status === 'delivered'
     }
     const end = fixedEndStep(ctx)
     return [...convertSteps(ctx), ...(end ? [end] : [])]

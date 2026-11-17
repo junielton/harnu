@@ -378,6 +378,64 @@ describe('AC-49 — a milestone says what it waits for', () => {
   })
 })
 
+describe('BUG-283 OI-4 — a milestone that waits on two or more says so, naming each', () => {
+  const FOUR: Seed = {
+    ...THREE,
+    milestones: [
+      { id: 'mls-1', title: 'A test set we can trust', state: 'in-progress' },
+      { id: 'mls-2', title: 'A tool that scores a spec', state: 'in-progress' },
+      { id: 'mls-3', title: 'Two fixes, each proven by the score', state: 'in-progress' },
+      { id: 'mls-4', title: 'Publish the notes', state: 'not-started', waitsFor: 'mls-1, mls-2' }
+    ],
+    steps: [...THREE.steps, { id: 'stp-5', milestone: 'mls-4', title: 'Write them', state: 'todo' }]
+  }
+
+  it('the row names every milestone it waits for', async () => {
+    const w = await mountPane(reply(FOUR))
+    const line = w.get('[data-test="waits-for"][data-milestone="mls-4"]')
+    expect(line.text()).toBe('Waits for “A test set we can trust”, “A tool that scores a spec”')
+  })
+
+  it('a milestone that waits on one that is done names only the ones still open', async () => {
+    const w = await mountPane(
+      reply({
+        ...FOUR,
+        milestones: FOUR.milestones.map((m) => (m.id === 'mls-1' ? { ...m, state: 'done' } : m))
+      })
+    )
+    expect(w.get('[data-test="waits-for"]').text()).toBe('Waits for “A tool that scores a spec”')
+  })
+
+  it('says nothing when every one it waits for is done, or the previous one', async () => {
+    const w = await mountPane(
+      reply({
+        ...FOUR,
+        milestones: FOUR.milestones.map((m) =>
+          m.id === 'mls-4' ? { ...m, waitsFor: 'mls-3, mls-2' } : { ...m, state: 'done' as const }
+        )
+      })
+    )
+    expect(w.findAll('[data-test="waits-for"]')).toHaveLength(0)
+  })
+
+  it('is data first: the first is `waitsFor`, the rest `waitsForMore`, each named, never an id', () => {
+    const tree = buildPaneTree((reply(FOUR) as { detail: never }).detail)
+    expect(tree.milestones[3].waitsFor).toEqual({ id: 'mls-1', title: 'A test set we can trust' })
+    expect(tree.milestones[3].waitsForMore).toEqual([
+      { id: 'mls-2', title: 'A tool that scores a spec' }
+    ])
+    expect(tree.milestones[0].waitsForMore).toEqual([])
+  })
+
+  it('reads in Portuguese too', async () => {
+    i18n.global.locale.value = 'pt-BR'
+    const w = await mountPane(reply(FOUR))
+    expect(w.get('[data-test="waits-for"]').text()).toBe(
+      'Espera por “A test set we can trust”, “A tool that scores a spec”'
+    )
+  })
+})
+
 describe('AC-44 — the glance: title, bar with the count inside, one next step, no Done when', () => {
   const WAITING: WaitingSeed[] = [
     {
