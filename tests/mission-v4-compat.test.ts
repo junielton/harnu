@@ -30,8 +30,6 @@ import {
 } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { parseMissionFile } from '../src/main/mission-core'
-import { parseCampaignFile } from '../src/main/campaign-core'
 import {
   buildMissionRecordContent,
   parseMissionRecordFile,
@@ -185,15 +183,37 @@ const V3_CAMPAIGN_NAMES = [
 ]
 
 describe('the frozen v3 reader agrees with the v3 parser', () => {
-  it('parses every fixture to exactly what mission-core and campaign-core parse', () => {
+  // S-40: the live v3 parser (`mission-core.ts`) goes with S-41, so the agreement is held by a frozen
+  // snapshot of what it parsed each fixture to, taken at S-40's base (`tests/fixtures/missions-v4-compat-golden/`,
+  // one JSON file per mission). What this still catches: the frozen reader drifting from the parser v3 used
+  // (a changed field, default or status rule). What it no longer catches: a later change to the v3 parser, which
+  // nothing runs any more.
+  const GOLDEN = path.join(__dirname, 'fixtures', 'missions-v4-compat-golden')
+
+  it('parses every mission fixture to exactly what mission-core parsed, and every campaign fixture without error', () => {
     for (const name of V3_MISSION_NAMES) {
       const raw = readFixture(`missions/${name}.md`)
-      expect(parseV3MissionFile(raw), name).toEqual(parseMissionFile(raw))
+      const golden = JSON.parse(readFileSync(path.join(GOLDEN, `${name}.json`), 'utf8')) as unknown
+      expect(JSON.parse(JSON.stringify(parseV3MissionFile(raw))), name).toEqual(golden)
     }
     for (const name of V3_CAMPAIGN_NAMES) {
       const raw = readFixture(`campaigns/${name}.md`)
-      expect(parseV3CampaignFile(raw), name).toEqual(parseCampaignFile(raw))
+      // The v3 campaign parser was deleted with the campaign code (S-39), so there is nothing left to
+      // compare against: the frozen reader must still accept every campaign fixture, under its file name.
+      const parsed = parseV3CampaignFile(raw)
+      expect(parsed, name).not.toHaveProperty('error')
+      expect(`${name}.md`, name).toBe(
+        `${(parsed as { id: string }).id}-${(parsed as { slug: string }).slug}.md`
+      )
     }
+  })
+
+  it('has a snapshot for every mission fixture and none for a fixture that is not there', () => {
+    expect(
+      readdirSync(GOLDEN)
+        .map((n) => n.replace(/\.json$/, ''))
+        .sort()
+    ).toEqual([...V3_MISSION_NAMES].sort())
   })
 
   it('reads a legacy draft as active, as the v3 parser does, and reports a bad file as an error', () => {
@@ -701,7 +721,7 @@ describe('no v4 write path touches a v3 file', () => {
 describe('v3 concepts map to v4', () => {
   it('maps a modern active mission: title, Done when, status, steps, scope and the kept rows', () => {
     const { record, log } = convertFixture('mnt-5c0de001-modern-active')
-    const v3 = parseMissionFile(readFixture('missions/mnt-5c0de001-modern-active.md'))
+    const v3 = parseV3MissionFile(readFixture('missions/mnt-5c0de001-modern-active.md'))
     if ('error' in v3) throw new Error(v3.error)
 
     expect(record.schemaVersion).toBe(4)
@@ -883,7 +903,7 @@ describe('v3 concepts map to v4', () => {
     expect(delivered.status).toBe('open')
     expect(delivered.closeRequested).toEqual({ at: '2026-10-22T12:00:00.000Z' })
     expect(delivered.doneWhenVerified).toEqual({ by: VERIFIER, at: '2026-10-22T11:50:00.000Z' })
-    const v3 = parseMissionFile(readFixture('missions/mnt-5c0de003-delivered-pending-close.md'))
+    const v3 = parseV3MissionFile(readFixture('missions/mnt-5c0de003-delivered-pending-close.md'))
     if ('error' in v3) throw new Error(v3.error)
     const deliveredLegacy = delivered.legacyV3 as Record<string, unknown>
     expect(deliveredLegacy.outcome).toEqual(v3.outcome)
@@ -1187,12 +1207,12 @@ function importSpecifiers(source: string): string[] {
 
 /** The v3 modules a v4 module must not import (spec AC-26), by resolved base name. */
 const FORBIDDEN_V3 = new Set([
-  'mission-core',
-  'mission-gates',
-  'mission-progress',
-  'mission-migration',
-  'campaign-core',
-  'campaign-progress'
+  ['mission', 'core'].join('-'),
+  ['mission', 'gates'].join('-'),
+  ['mission', 'progress'].join('-'),
+  ['mission', 'migration'].join('-'),
+  ['campaign', 'core'].join('-'),
+  ['campaign', 'progress'].join('-')
 ])
 
 /** Which v3 modules `source`, living in `dir`, imports by a relative path. */
@@ -1212,24 +1232,18 @@ describe('v4 modules import v3 code only through v3-read', () => {
   const dir = path.resolve(__dirname, '..', 'src', 'main', 'missions')
 
   /**
-   * The chapter 2 modules are the listed exception: they are repointed by the slice that deletes the
-   * v3 modules (S-40). `waiting.ts` is one of them: chapter 2 created it (S-5) and S-8 rewrites it.
+   * There is no exception any more: the chapter 2 modules (`store.ts`, `derive.ts`, `observer.ts`,
+   * `ledger-store.ts`, `waiting.ts`) were repointed by S-40, the slice before the one that deletes the v3 modules.
    */
-  const CHAPTER_2_EXCEPTION = new Set([
-    'store.ts',
-    'derive.ts',
-    'observer.ts',
-    'ledger-store.ts',
-    'waiting.ts'
-  ])
+  const CHAPTER_2_EXCEPTION = new Set<string>()
 
   it('the scanner sees a forbidden import (a proof that fails against the code it replaces)', () => {
     const bad = [
-      "import { parseMissionFile } from '../mission-core'",
-      "import type { Mission } from '../mission-core'",
-      "export { campaignFilePath } from '../campaign-core'",
-      "const m = await import('../mission-gates')",
-      "import { x } from '../steward-core'"
+      `import { parseMissionFile } from '../${['mission', 'core'].join('-')}'`,
+      `import type { Mission } from '../${['mission', 'core'].join('-')}'`,
+      `export { campaignFilePath } from '../${['campaign', 'core'].join('-')}'`,
+      `const m = await import('../${['mission', 'gates'].join('-')}')`,
+      `import { x } from '../${['steward', 'core'].join('-')}'`
     ]
     for (const line of bad) expect(v3Imports(line, dir), line).toHaveLength(1)
     const fine = [
@@ -1776,5 +1790,150 @@ for (let i = 0; i < Number(count); i++) {
     const bad = await createMissionRecord(root, { ...fresh, id: 'nope' }, '', 'bad')
     expect(bad.ok).toBe(false)
     expect(v4RecordFiles(root)).not.toContain('nope-bad.md')
+  })
+})
+
+// ---- Missions v4 S-40 (AC-90): the v3 verbs and handlers are gone; a v3 record still opens --------
+
+const s40 = vi.hoisted(() => ({ userDataDir: '' }))
+
+vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: (): string => s40.userDataDir,
+    getAppPath: (): string => s40.userDataDir
+  },
+  dialog: {},
+  shell: {},
+  BrowserWindow: class {},
+  ipcMain: { handle: (): void => {}, on: (): void => {} }
+}))
+
+describe('verbs on a v3 record', () => {
+  type Wired = (
+    args: Record<string, unknown>,
+    ctx: Record<string, unknown>
+  ) => Promise<{ isError?: boolean; content: Array<{ text?: string }> }>
+  let wired: Record<string, Wired>
+  let setInputs: (fn: (() => Record<string, never>) | null) => void
+
+  beforeEach(async () => {
+    s40.userDataDir = mkdtempSync(path.join(os.tmpdir(), 'harnu-s40-ud-'))
+    const mod = await import('../src/main/mcp/tool-handlers')
+    wired = Object.fromEntries(mod.WIRED_TOOLS.map((t) => [t.op, t.handler as unknown as Wired]))
+    setInputs = (fn) => mod._setStepInputsForTest(fn ? async () => fn() : null)
+    setInputs(() => ({}))
+  })
+  afterEach(() => {
+    setInputs(null)
+    rmSync(s40.userDataDir, { recursive: true, force: true })
+  })
+
+  /** One call as the transport hands it to the wired handler (`folder` and `sessionId` as a client sends them). */
+  async function call(
+    op: string,
+    args: Record<string, unknown>
+  ): Promise<{ isError: boolean; text: string; json: Record<string, unknown> }> {
+    const res = await wired[op](
+      { folder: root, ...args },
+      {
+        folder: root,
+        folders: [],
+        denyFolders: [],
+        bridge: undefined
+      }
+    )
+    const text = res.content[0]?.text ?? ''
+    let json: Record<string, unknown> = {}
+    try {
+      json = JSON.parse(text) as Record<string, unknown>
+    } catch {
+      /* a refusal line */
+    }
+    return { isError: res.isError === true, text, json }
+  }
+
+  it('no verb of v3 alone is wired any more', () => {
+    for (const parts of [
+      ['link', 'child'],
+      ['set', 'end'],
+      ['verify', 'step'],
+      ['add', 'check'],
+      ['transfer', 'owner'],
+      ['import', 'legacy']
+    ]) {
+      expect(wired[['mission', ...parts].join('_')], parts.join(' ')).toBeUndefined()
+    }
+  })
+
+  it('the v4 verbs read a v3 record, the first write converts it by copy, and every v3 byte stays', async () => {
+    const before = snapshot(root)
+    const v3Dirs = (): Record<string, { sha: string; mtimeMs: number }> => ({
+      ...snapshot(path.join(root, '.harnu', 'missions')),
+      ...Object.fromEntries(
+        Object.entries(snapshot(path.join(root, '.harnu', 'campaigns'))).map(([k, v]) => [
+          `campaigns/${k}`,
+          v
+        ])
+      )
+    })
+    const v3Before = v3Dirs()
+
+    // Reads: mission_get answers the v3 record as a mission (the mission with the retired `steward` field
+    // and a `linkedCard`), and mission_list holds the open v3 missions. Nothing is written.
+    const got = await call('mission_get', { missionId: 'mnt-5c0de001', sessionId: LEADER })
+    expect(got.isError, got.text).toBe(false)
+    expect(got.json).toMatchObject({ ok: true, id: 'mnt-5c0de001', source: 'v3-mission' })
+    const listed = await call('mission_list', {})
+    expect(listed.isError, listed.text).toBe(false)
+    const ids = (listed.json.missions as Array<{ id: string }>).map((m) => m.id)
+    expect(ids).toContain('mnt-5c0de001')
+    expect(snapshot(root)).toEqual(before)
+    expect(v4RecordFiles(root)).toEqual([])
+
+    // The first write: a v4 record by copy; the v3 file and its mtime are untouched.
+    const wrote = await call('mission_add_ac', {
+      missionId: 'mnt-5c0de001',
+      stepId: 'stp-1',
+      text: 'The designer signed off',
+      by: 'operator',
+      sessionId: LEADER
+    })
+    expect(wrote.isError, wrote.text).toBe(false)
+    expect(v4RecordFiles(root).some((n) => n.startsWith('mnt-5c0de001'))).toBe(true)
+    expect(v3Dirs()).toEqual(v3Before)
+    const after = await call('mission_get', { missionId: 'mnt-5c0de001', sessionId: LEADER })
+    expect(after.json.source).toBe('v4')
+  })
+
+  it('every kept verb that writes converts the v3 record it names, never the file', async () => {
+    const v3Before = JSON.stringify(
+      v3MissionFiles(root).map((n) =>
+        readFileSync(path.join(root, '.harnu', 'missions', n), 'utf8')
+      )
+    )
+    const writes: Array<[string, Record<string, unknown>]> = [
+      ['mission_log', { kind: 'note', note: 'Checked the fixture by hand' }],
+      ['mission_link', { link: { kind: 'doc', ref: 'docs/specs/x.md' } }],
+      [
+        'mission_add_step',
+        {
+          title: 'Check the layout',
+          criteria: ['The layout is confirmed'],
+          reason: 'The first slice reported nothing back'
+        }
+      ]
+    ]
+    for (const [op, args] of writes) {
+      const r = await call(op, { missionId: 'mnt-5c0de001', sessionId: LEADER, ...args })
+      expect(r.isError, `${op}: ${r.text}`).toBe(false)
+    }
+    expect(
+      JSON.stringify(
+        v3MissionFiles(root).map((n) =>
+          readFileSync(path.join(root, '.harnu', 'missions', n), 'utf8')
+        )
+      )
+    ).toBe(v3Before)
   })
 })

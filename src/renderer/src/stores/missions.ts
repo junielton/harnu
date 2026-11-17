@@ -3,13 +3,13 @@
  *
  * Holds every open mission of the repos the sidebar knows, as `mission:list`
  * projects it, and derives one {@link MissionModel} per mission so the Topbar
- * pill, the popover and the sidebar chip read the same answer. Read-only
+ * pill and the sidebar chip read the same answer. Read-only
  * except {@link runDoor} — the operator's doors, the only writes the mission UI
  * makes.
  *
  * Polled, not pushed: the derived block (live children, the stall verdict) is
  * time-dependent, so a file watcher alone would still leave it stale. One poll
- * every {@link POLL_MS}, plus an immediate refresh on demand (popover open).
+ * every {@link POLL_MS}, plus an immediate refresh on demand.
  *
  * Doors answer with the view they changed (Mission v3 §3.2): the store patches
  * that one mission, or removes it when an end returns `view: null` — at once,
@@ -41,7 +41,6 @@ import type {
   MissionView
 } from '../../../main/mission-ipc'
 import { i18n } from '../i18n'
-import { progressHeadline } from '../../../main/mission-progress'
 import {
   decideCue,
   deserializeCueMemory,
@@ -66,6 +65,7 @@ import {
   buildMissionModel,
   headlineText,
   missionForSession,
+  progressHeadline,
   youItemText,
   type MissionModel
 } from '../lib/mission-view'
@@ -76,6 +76,7 @@ import {
   type NotificationItem,
   type NotificationRecord
 } from './notifications'
+import { useHelpersStore } from './helpers'
 import { persistedRef } from './persisted'
 import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
@@ -107,22 +108,6 @@ export interface V4Entry {
   sessionId: string
   reply: MissionV4ViewReply
   /** Wall clock of the answer. */
-  at: number
-}
-
-/** How long an open-the-popover request stays claimable (BUG-173, spec §3.4). */
-export const POPOVER_REQUEST_TTL_MS = 5_000
-
-/** "Open this mission's popover" — set by `openNavigableView('mission')`, consumed by `MissionPill`. */
-export interface PopoverRequest {
-  missionId: string
-  at: number
-}
-
-/** "Open the Missions review" — set by {@link useMissionsStore}`.openReview`, consumed by the review dialog (S5). */
-export interface ReviewRequest {
-  /** The mission the review opens focused on, or `null` for the whole pile. */
-  missionId: string | null
   at: number
 }
 
@@ -176,6 +161,8 @@ function cueViewsFrom(readers: readonly ReaderMission[], v3: readonly MissionVie
 /** One mission the readers know through the v4 view: what the cue reads, and the detail the chip is drawn from. */
 export interface ReaderMission extends ReaderView {
   detail: Extract<MissionV4ViewReply, { state: 'mission' }>['detail']
+  /** The id a named read of this mission uses (a converted campaign's differs from `mission.id`). */
+  lookupId?: string
 }
 
 /** The session id the readers ask the view as: no session's, so it answers for the mission, never for a member. */
@@ -200,7 +187,8 @@ const V4_BLOCKING: ReadonlySet<string> = new Set([
   'attach',
   'close',
   'main-failing',
-  'settle'
+  'settle',
+  'rescope'
 ])
 
 /** Every mission that owes the operator something the cue speaks about, once per id. */
@@ -286,12 +274,6 @@ export const useMissionsStore = defineStore('missions', () => {
   const views = shallowRef<MissionView[]>([])
   /** Wall clock of the last refresh — the stale callout's "now". */
   const refreshedAt = ref(Date.now())
-  /**
-   * Bumped by every successful list read (T596): the campaigns store watches it, so a campaign
-   * refreshes whenever the missions it rolls up have just been re-read — `refreshedAt` alone can
-   * repeat within one millisecond.
-   */
-  const refreshSeq = ref(0)
   /** Doors awaiting their answer — a count, so overlapping doors keep the controls disabled. */
   const doorsInFlight = ref(0)
   const doorInFlight = computed(() => doorsInFlight.value > 0)
@@ -306,13 +288,6 @@ export const useMissionsStore = defineStore('missions', () => {
     validate: (v) => isPersistedCueMemory(v)
   })
   let cueMemory: CueMemory | null = storedCues.value ? deserializeCueMemory(storedCues.value) : null
-  /**
-   * A pending request to open a mission's popover. It lives for
-   * {@link POPOVER_REQUEST_TTL_MS}, so one that never finds a pill (owner not
-   * shown) cannot pop a popover open later at a surprising moment.
-   */
-  const popoverRequest = ref<PopoverRequest | null>(null)
-  let popoverTimer: ReturnType<typeof setTimeout> | null = null
   /** Bumped by every door that took effect: a list read started before it is stale. */
   let writeSeq = 0
 
@@ -326,6 +301,8 @@ export const useMissionsStore = defineStore('missions', () => {
   const v4 = shallowRef<V4Entry | null>(null)
   /** The `missionId` each session's last answer carried: sent back so the next call reads one record. */
   const v4Ids = new Map<string, string>()
+  /** The mission each session was told to show: the pane's chooser, or "Open mission" on a card or an Activity row. */
+  const chosen = new Map<string, string>()
   /**
    * The requests to join that name the selected session while it has no mission (S-21). The session that
    * asked is not in the mission, so the view does not answer for it: the store reads the folder's open
@@ -367,12 +344,15 @@ export const useMissionsStore = defineStore('missions', () => {
     const sessionId = selected.sessionId
     const folder = selected.projectPath
     const seq = ++v4Seq
-    const named = v4Ids.get(sessionId)
+    // The one rule (S-35 delta 1): the mission chosen in the pane or named by "Open mission", else the one that
+    // waits on the operator, else the newest written. The chip reads the same rule ({@link pickedFor}).
+    const named = pickedFor(sessionId)?.lookupId ?? v4Ids.get(sessionId)
     let reply = await askV4(sessionId, folder, named)
     // The id read back may no longer be this session's (a hand-off closed its row, the operator closed
     // the mission): ask by session again, so the view never shows another session's mission.
     if (named && reply && isStaleNamedRead(reply, sessionId)) {
       v4Ids.delete(sessionId)
+      if (chosen.get(sessionId) === named) chosen.delete(sessionId)
       reply = await askV4(sessionId, folder)
     }
     // The selected session changed while this was in flight: its answer is not news.
@@ -700,7 +680,8 @@ export const useMissionsStore = defineStore('missions', () => {
         mission: { id: d.id, owner: { sessionId: d.leads ?? '' }, updatedAt: '' },
         title: d.title,
         you: d.waiting.items,
-        detail: d
+        detail: d,
+        lookupId: row.id
       })
     }
     return out
@@ -726,27 +707,31 @@ export const useMissionsStore = defineStore('missions', () => {
   }
 
   /**
-   * Whether `missionId` is a v3 mission: its pill and popover stay v3 and **Open mission** opens the popover only,
-   * never the pane (the pane would answer for a session that leads several v3 missions with an error). A v4
-   * record is the one thing the readers positively know (`source: 'v4'`); a mission the readers read as a v3 file,
-   * or one only the v3 list serves (a campaign's chapter mission is another id in the v4 view, and the readers
-   * read a bounded number of missions per repo), is v3. An id nobody knows is not claimed.
+   * The mission `sessionId` shows, from what the readers know: the one chosen (the pane's chooser, or "Open
+   * mission" on a card or an Activity row), else the one that waits on the operator, else the newest written
+   * (the readers are listed newest first). One rule for the chip, the pill and the pane: a draft with nothing
+   * waiting never hides a mission that waits on the operator. `null` when the session leads none.
    */
-  function isV3Mission(missionId: string): boolean {
-    const r = readers.value?.find((m) => m.mission.id === missionId)
-    if (r) return isV3Source(r)
-    return views.value.some((v) => v.mission.id === missionId)
+  function pickedFor(sessionId: string): ReaderMission | null {
+    const led = (readers.value ?? []).filter((r) => r.detail.leads === sessionId)
+    if (led.length === 0) return null
+    const want = chosen.get(sessionId)
+    const named = want ? led.find((r) => (r.lookupId ?? r.mission.id) === want) : undefined
+    if (named) return named
+    // A choice the readers do not know (a mission the session only works in) is the pane's to resolve.
+    if (want) return { ...led[0], lookupId: want } as ReaderMission
+    return led.find((r) => r.you.length > 0) ?? led[0]
   }
 
   /**
-   * The chip of `sessionId`: the leader of an open mission. A **v3** mission shows exactly what its own Topbar
-   * pill shows (the v3 words and numbers, as on main) until the popover is retired; a **v4** record shows the
-   * pill's v4 text and tone. `null` for anyone else.
+   * The chip of `sessionId`: the leader of an open mission. Every record, a v3 file included (S-35), shows
+   * what its Topbar pill shows: the view's counts and tone ("2/5 · 1 for you"), for the mission {@link pickedFor}
+   * names. Only a build without the view channel (`readers` is `null`) keeps the v3 words. `null` for anyone else.
    */
   function chipFor(sessionId: string | null | undefined): ChipModel | null {
     if (!sessionId) return null
     const { t } = i18n.global
-    const v3Chip = (): ChipModel | null => {
+    if (readers.value === null) {
       const m = modelForSession(sessionId)
       if (!m || m.headline.kind === 'empty') return null
       return {
@@ -756,15 +741,65 @@ export const useMissionsStore = defineStore('missions', () => {
         needsYou: m.needsYou
       }
     }
-    if (readers.value === null) return v3Chip()
-    const r = readers.value.find((m) => m.detail.leads === sessionId)
+    const r = pickedFor(sessionId)
     if (!r) return null
-    if (isV3Mission(r.mission.id)) {
-      const own = v3Chip()
-      if (own) return own
-    }
     const text = missionPillText(t, r.detail)
     return { text, compact: text, tone: missionPillTone(r.detail), needsYou: r.you.length > 0 }
+  }
+
+  /**
+   * The open missions `sessionId` leads, as the readers know them, newest written first. A session that leads
+   * several (the normal case for an old leader: one mission per v3 file it ever started) shows {@link pickedFor}
+   * and lists the others here, so the pane can offer the choice instead of an error.
+   */
+  function ledMissionsFor(
+    sessionId: string | null | undefined
+  ): Array<{ id: string; title: string }> {
+    if (!sessionId) return []
+    return (readers.value ?? [])
+      .filter((r) => r.detail.leads === sessionId)
+      .map((r) => ({ id: r.lookupId ?? r.mission.id, title: r.title }))
+  }
+
+  /** The pane follows `missionId` for `sessionId` from now on: the next read names it. Never writes. */
+  async function chooseMission(sessionId: string, missionId: string): Promise<void> {
+    chosen.set(sessionId, missionId)
+    v4Ids.set(sessionId, missionId)
+    await loadV4()
+  }
+
+  /** The Activity notice of the mission files nobody can read: one entry, named, quiet until the set changes. */
+  const UNREADABLE_GROUP = 'mission-unreadable'
+  let unreadableKey = ''
+  function syncUnreadable(names: unknown): void {
+    const files = Array.isArray(names)
+      ? [...new Set(names.filter((n): n is string => typeof n === 'string'))].sort()
+      : []
+    const activity = useNotificationsStore()
+    if (files.length === 0) {
+      unreadableKey = ''
+      activity.removeGroup(UNREADABLE_GROUP)
+      return
+    }
+    const { t } = i18n.global
+    const entry = {
+      title: t('mission.unreadable.title'),
+      description: t('mission.unreadable.body', { files: files.join(', ') })
+    }
+    const key = files.join('|')
+    if (key === unreadableKey) {
+      // The same files are not news: rewrite quietly, never bring back an entry the operator dismissed.
+      activity.updateGroup(UNREADABLE_GROUP, entry)
+      return
+    }
+    unreadableKey = key
+    activity.notify({
+      ts: Date.now(),
+      source: 'app',
+      kind: 'warning',
+      group: UNREADABLE_GROUP,
+      ...entry
+    })
   }
 
   async function load(): Promise<void> {
@@ -781,7 +816,7 @@ export const useMissionsStore = defineStore('missions', () => {
       )
       views.value = list
       refreshedAt.value = Date.now()
-      refreshSeq.value++
+      syncUnreadable(res.unreadable)
       // Sidebar folders not loaded yet: the list says nothing about reality, and a
       // decision now would rebuild the memory empty and re-cue the backlog later.
       if (folders.length === 0) return
@@ -831,45 +866,22 @@ export const useMissionsStore = defineStore('missions', () => {
     await refresh()
   }
 
-  function clearPopoverRequest(): void {
-    if (popoverTimer) clearTimeout(popoverTimer)
-    popoverTimer = null
-    popoverRequest.value = null
-  }
-
-  /** Ask the pill that owns `missionId` to open its popover; a newer request replaces an older one. */
-  function requestPopover(missionId: string): void {
-    clearPopoverRequest()
-    popoverRequest.value = { missionId, at: Date.now() }
-    popoverTimer = setTimeout(clearPopoverRequest, POPOVER_REQUEST_TTL_MS)
-  }
-
   /**
-   * Claim the pending request: returns it and clears it, or `null` when there is
-   * none or it is older than the TTL (a throttled timer must not revive it).
+   * Open the Mission pane in the selected session's stack (a no-op when it is open or no worktree is
+   * selected), on the mission `missionId` names when one is given (S-35 delta 1: "Open mission" opens the mission
+   * it names, not the session's default one). Every record lives there since the cut-over: the pane follows the
+   * selected session, so a caller selects the mission's leader first.
    */
-  function consumePopoverRequest(): PopoverRequest | null {
-    const req = popoverRequest.value
-    clearPopoverRequest()
-    return req && Date.now() - req.at < POPOVER_REQUEST_TTL_MS ? req : null
-  }
-
-  /**
-   * A pending request to open the Missions review, optionally focused on one
-   * mission. `MissionsReviewDialog` consumes it.
-   */
-  const reviewRequest = ref<ReviewRequest | null>(null)
-
-  /** Ask for the Missions review — focused on `missionId`, or the whole pile when omitted. */
-  function openReview(missionId?: string): void {
-    reviewRequest.value = { missionId: missionId ?? null, at: Date.now() }
-  }
-
-  /** Claim the pending review request: returns it and clears it, or `null` when there is none. */
-  function consumeReviewRequest(): ReviewRequest | null {
-    const req = reviewRequest.value
-    reviewRequest.value = null
-    return req
+  function openMissionPane(missionId?: string): void {
+    const helpers = useHelpersStore()
+    const worktree = helpers.currentWorktreePath
+    if (worktree && !helpers.panesForCurrentWorktree.some((p) => p.type === 'mission')) {
+      helpers.toggleMissionHelper(worktree)
+    }
+    const selected = sessions.selectedSession
+    if (missionId && selected && !selected.sessionId.startsWith('synthetic-')) {
+      void chooseMission(selected.sessionId, missionId)
+    }
   }
 
   /** Start polling once; later calls are no-ops. */
@@ -968,53 +980,9 @@ export const useMissionsStore = defineStore('missions', () => {
     return res
   }
 
-  /**
-   * Close several missions through the EXISTING end door, one after another
-   * (BUG-173 S5, spec §3.5). Never aborts on a failure: each door answers on its
-   * own. The in-flight counter is raised once for the batch, each answer is
-   * applied as it lands (rows vanish one by one), and ONE refresh follows at the
-   * end. `MISSION_CLOSED` counts as closed, as {@link runDoor} treats it. No
-   * toast here — the caller reports the batch once.
-   */
-  async function runDoors(
-    doors: readonly Extract<MissionDoor, { door: 'end' }>[],
-    onProgress?: (done: number, total: number) => void
-  ): Promise<{ closed: number; failed: { missionId: string; error: string }[] }> {
-    const failed: { missionId: string; error: string }[] = []
-    let closed = 0
-    doorsInFlight.value++
-    try {
-      for (const [i, door] of doors.entries()) {
-        let res: MissionDoorResult
-        try {
-          res = await window.api.missionOperatorDoor(door)
-        } catch (err) {
-          res = { ok: false, error: err instanceof Error ? err.message : String(err) }
-        }
-        if (res.ok) {
-          writeSeq++
-          applyDoorResult(door, res.view)
-          closed++
-        } else if (res.error.startsWith('MISSION_CLOSED')) {
-          writeSeq++
-          applyDoorResult(door, null)
-          closed++
-        } else {
-          failed.push({ missionId: door.missionId, error: res.error })
-        }
-        onProgress?.(i + 1, doors.length)
-      }
-    } finally {
-      doorsInFlight.value--
-    }
-    if (closed > 0) void refreshAfterWrite()
-    return { closed, failed }
-  }
-
   return {
     views,
     refreshedAt,
-    refreshSeq,
     doorInFlight,
     refresh,
     ensureStarted,
@@ -1022,7 +990,9 @@ export const useMissionsStore = defineStore('missions', () => {
     modelForSession,
     readers,
     chipFor,
-    isV3Mission,
+    ledMissionsFor,
+    chooseMission,
+    openMissionPane,
     refreshV4,
     v4ReplyForSession,
     v4MissionForSession,
@@ -1037,13 +1007,6 @@ export const useMissionsStore = defineStore('missions', () => {
     handoffDismissedAt,
     dismissHandoff,
     runHandOff,
-    runDoor,
-    runDoors,
-    popoverRequest,
-    requestPopover,
-    consumePopoverRequest,
-    reviewRequest,
-    openReview,
-    consumeReviewRequest
+    runDoor
   }
 })

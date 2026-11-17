@@ -2037,30 +2037,16 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   mission_list: parseMissionVerb('mission_list'),
   mission_add_step: parseMissionVerb('mission_add_step'),
   mission_update_step: parseMissionVerb('mission_update_step'),
-  mission_link_child: parseMissionVerb('mission_link_child'),
   mission_log: parseMissionVerb('mission_log'),
   mission_set_blocker: parseMissionVerb('mission_set_blocker'),
   mission_clear_blocker: parseMissionVerb('mission_clear_blocker'),
-  mission_set_end: parseMissionVerb('mission_set_end'),
-  mission_verify_step: parseMissionVerb('mission_verify_step'),
   mission_request_close: parseMissionVerb('mission_request_close'),
-  mission_import_legacy: parseMissionVerb('mission_import_legacy'),
-  mission_add_check: parseMissionVerb('mission_add_check'),
-  // Campaign ch.3a: validated against their own catalog schema, like the mission verbs.
-  campaign_create: parseMissionVerb('campaign_create'),
-  campaign_add_chapter: parseMissionVerb('campaign_add_chapter'),
-  campaign_get: parseMissionVerb('campaign_get'),
-  campaign_list: parseMissionVerb('campaign_list'),
-  campaign_request_close: parseMissionVerb('campaign_request_close'),
-  // T654: validated against their own catalog schema, like the other mission/campaign verbs.
-  mission_transfer_owner: parseMissionVerb('mission_transfer_owner'),
   mission_add_milestone: parseMissionVerb('mission_add_milestone'),
   mission_add_ac: parseMissionVerb('mission_add_ac'),
   mission_link: parseMissionVerb('mission_link'),
   mission_set_done_when: parseMissionVerb('mission_set_done_when'),
   mission_settle_ac: parseMissionVerb('mission_settle_ac'),
   mission_attach: parseMissionVerb('mission_attach'),
-  campaign_transfer_owner: parseMissionVerb('campaign_transfer_owner'),
   // Campaign ch.5a: validated against its own catalog schema, like the mission verbs.
   rebase_stack: parseMissionVerb('rebase_stack')
 }

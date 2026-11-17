@@ -1,81 +1,38 @@
 /**
- * Mission IPC (T370, T358 slice S9; Mission v3) — the renderer's read of every
- * open mission and the operator's doors, over typed `mission:*` channels.
+ * Mission IPC (T370, Missions v4) — what the renderer reads of the missions and the operator's doors, over
+ * typed `mission:*` channels.
  *
- * Read side: `mission:list` returns, per open (non-`closed`) mission in the
- * repos of the folders the renderer knows, the SAME projection `mission_get`
- * builds — stored fields, the `derived` block (live children, existence proofs,
- * the stall verdict, the server's `progress`) — plus the ordered `you` list
- * the UI translates, and the end dialog's `closeWarnings` (warnings, never
- * refusals). `stale` stays derived (`derived.stale`); nothing here writes a status.
- *
- * Write side: `mission:operatorDoor` is the ONLY write the mission UI makes —
- * approve a staged re-scope, tick a human step, end a mission (close as
- * delivered or discard), add / tick / delete a human check, and choose a decision
- * node's option (also reachable as `mission:choose`). Each is a pure
- * function in `mission-core.ts` applied under the same per-mission-id lock the
- * `mission_*` verbs use, then written atomically with a Log line saying what
- * the operator did. No MCP verb reaches this module (pinned by
- * tests/mission-operator-doors.test.ts), which is what makes these doors the
- * operator's: an agent can only stage (`mission_set_end`,
- * `mission_request_close`) or add a check, never apply.
+ * Missions v4 S-40: the v3 view is gone. `mission:list` no longer derives a v3 view of each mission (the
+ * v3 progress, gates, waiting list and end dialog it fed to the old popovers): it answers an empty
+ * `views` and the files it could not read, and every reader that wanted a mission reads the v4 view
+ * (`mission:v4View`), which serves a mission still held in a v3 file too. The operator's v3 doors
+ * (approve a re-scope, tick a check, choose a decision, end a mission as the v3 popover did) are gone
+ * with the popover; the operator's doors are `mission:v4Door` and `mission:handOff`.
  */
 
 import { promises as fs } from 'node:fs'
-import * as path from 'node:path'
-import { retireStewardForClosedMission } from './steward-shell'
 import { ipcMain } from 'electron'
 import { addTaskEventObserver } from './hook-bridge'
-import { listStewards } from './scheduler-shell'
 import { readUserProjects } from './user-projects'
-import { scanFolders } from './claude-reader'
-import type { FolderEntry } from './folder-model'
-import { mapLimit } from './map-limit'
+import type { RecordResult } from './mission-record'
+import { realFactsDeps } from './mcp/tool-handlers'
 import {
-  applyAddCheck,
-  applyChooseDecision,
-  applyApprovedRescope,
-  applyPauseSteward,
-  applyResumeSteward,
-  applyDeleteCheck,
-  applyOperatorEnd,
-  applyOperatorVerifyStep,
-  applyTickCheck,
-  buildMissionFileContent,
-  closeWarnings,
-  withMissionIdMintLock,
-  type CloseWarning,
-  type Mission
-} from './mission-core'
-import type { MissionProgress } from './mission-progress'
-import { atomicWriteFile } from './mcp/atomic-write'
-import { recordMemoryDrafts, unknownDraftIds, type RecordResult } from './mission-record'
-import {
-  deriveMissionReading,
-  deriveMissionSignals,
-  missionTitle,
-  type MissionDerived,
-  type ToolHandlerCtx
-} from './mcp/tool-handlers'
-import {
-  leaderOf,
-  loadMission,
   missionRoot,
   readMissionsDeduped,
+  reportedUnreadableMissionFiles,
   type RootedMission
 } from './missions/store'
-import { waitingList, type WaitingItem } from './missions/waiting'
-import { doorReply, runDoor } from './missions/doors'
-import { createMissionObserver, observeMission, type MissionObserver } from './missions/observer'
-import { ensureLinkCacheLoaded, getLastKnown, rememberResolved } from './mission-link-cache'
+import type { Mission, MissionDerived, MissionProgress } from './missions/derive'
+import type { WaitingItem } from './missions/waiting'
+import { approveDoneWhen, declineDoneWhen, doorReply, runDoor } from './missions/doors'
+import { createMissionObserver, type MissionObserver } from './missions/observer'
+import { ensureLinkCacheLoaded, rememberResolved } from './mission-link-cache'
 import { hydrateMissionLedger, observedRows } from './missions/ledger-store'
-import { getTaskState } from './detect/task-state-hub'
-import { findMainCi, findPrsForWorktrees } from './pr-stack'
 import { repoRoot } from './data-dir'
-import { resolveRoadmap } from './roadmap-ipc'
 import { openEntry, leaderOf as v4LeaderOf, type Actor } from './missions/guard'
 import {
   listMissionRecords,
+  unreadableRecordFiles,
   readMissionRecord,
   v4RecordsDir,
   type MissionRecordView,
@@ -112,7 +69,16 @@ export type MissionHandOffReply = HandOffReply
 import { defaultSummaryRouteDeps, summaryRoute } from './missions/summary-route'
 import { getTelemetryPayload } from './telemetry-store'
 
-/** One open mission as the renderer reads it (design.md §6 "Mission progress"). */
+/** What the retired v3 end dialog warned about. Warnings, never refusals. */
+export interface CloseWarning {
+  kind: 'end-unverified' | 'left-behind' | 'checks-open' | 'blockers-open' | 'rescope-staged'
+  detail: string
+}
+
+/**
+ * One open mission as the retired v3 list read it. `mission:list` answers no view any more (S-40); the type
+ * stays because the renderer's store still types its list by it, and goes with that code.
+ */
 export interface MissionView {
   /** The repo root whose `.harnu/missions/` holds the file — the door's `root`. */
   root: string
@@ -144,6 +110,8 @@ export interface MissionListResult {
 
 export type MissionDoor =
   | { door: 'approveRescope'; root: string; missionId: string }
+  // S-37 delta 1 — Decline: the operator drops a staged re-scope; the declared end stays as it was.
+  | { door: 'declineRescope'; root: string; missionId: string }
   // Mission v3 §3.5 — the ONE end door: close as delivered, or discard.
   | {
       door: 'end'
@@ -171,9 +139,6 @@ export type MissionDoor =
   | { door: 'deleteCheck'; root: string; missionId: string; stepId: string; checkId: string }
   // Campaign spec §4 — Choose: the operator picks an option of a decision node.
   | { door: 'chooseDecision'; root: string; missionId: string; stepId: string; index: number }
-  // Campaign spec §3.4 — Pause steward…: a mandatory reason; Resume steward. A mission door, not a worker switch.
-  | { door: 'pauseSteward'; root: string; missionId: string; reason: string }
-  | { door: 'resumeSteward'; root: string; missionId: string }
 
 /**
  * Mission v3 §3.2 — a door answers with the mission it changed, re-derived on
@@ -192,374 +157,26 @@ export type MissionDoorResult =
     }
   | { ok: false; error: string }
 
-/** How long one fleet scan serves `mission:list` passes (Mission v3 §3.8). */
-const SCAN_TTL_MS = 10_000
-/** How many missions `mission:list` derives at once (Mission v3 §3.8). */
-const LIST_CONCURRENCY = 4
 /**
- * How long a door's re-derive waits for GitHub (Mission v3 §3.8, "doors return
- * within 2 s"). The list poll keeps the 60 s PR cache warm, so this only bites
- * on a cold cache: the links then read their sticky last-known state
- * (`stale: true`) and the fetch lands in the cache for the next poll.
+ * What `mission:list` answers: no v3 view of any mission (S-40), and the files that could not be read —
+ * a v3 mission file or a v4 record the store cannot parse. A reader that skips such a file would hide a
+ * mission, so the app raises one notice that names it (the renderer's store does), and Your move closes
+ * nothing by absence while one exists.
  */
-const DOOR_PR_WAIT_MS = 1500
-
-let scanMemo: { at: number; folders: Promise<FolderEntry[]> } | null = null
-
-/**
- * `scanFolders()` memoized for {@link SCAN_TTL_MS}: the list poll and a door's
- * re-derive share one fleet scan instead of walking ~/.claude/projects each time.
- * Single-flight while pending; a failed scan is not kept.
- */
-function scanFoldersMemo(): Promise<FolderEntry[]> {
-  const now = Date.now()
-  if (scanMemo && now - scanMemo.at < SCAN_TTL_MS) return scanMemo.folders
-  const memo = { at: now, folders: scanFolders() }
-  scanMemo = memo
-  memo.folders.catch(() => {
-    if (scanMemo === memo) scanMemo = null
-  })
-  return memo.folders
-}
-
-/** One mission's view — the same projection `mission_get` builds. */
-async function buildMissionView(
-  root: string,
-  mission: Mission,
-  log: string,
-  ctx: ToolHandlerCtx,
-  now: number,
-  opts: { prWaitMs?: number } = {}
-): Promise<MissionView> {
-  const { derived, children } = await deriveMissionSignals(root, mission, log, ctx, now, opts)
-  const projected: Mission = { ...mission }
-  delete projected.legacyRaw
-  return {
-    root,
-    mission: projected,
-    title: missionTitle(log, mission.slug),
-    derived,
-    you: waitingList(mission, children, derived.progress, derived.steps),
-    progress: derived.progress,
-    closeWarnings: closeWarnings(mission, derived.progress)
-  }
-}
-
-/** One mission to derive: where its file lives, the mission and its Log. */
-interface MissionJob {
-  root: string
-  mission: Mission
-  log: string
-}
-
-/**
- * The missions to derive, taken round-robin across repos (so every repo's first `gh` fetch starts
- * in the first wave). `only`: just the missions one of these sessions owns or is linked to as a
- * child; absent: every one.
- */
-function pickJobs(missions: readonly RootedMission[], only?: ReadonlySet<string>): MissionJob[] {
-  const wanted = (m: Mission): boolean =>
-    only === undefined ||
-    only.has(leaderOf(m) ?? '') ||
-    m.steps.some((s) => s.links.some((l) => l.kind === 'session' && only.has(l.ref)))
-  const perRoot = new Map<string, RootedMission[]>()
-  for (const m of missions) {
-    if (!wanted(m.mission)) continue
-    perRoot.set(m.root, [...(perRoot.get(m.root) ?? []), m])
-  }
-  const lists = [...perRoot.values()]
-  const jobs: MissionJob[] = []
-  for (let k = 0; lists.some((list) => k < list.length); k++) {
-    for (const list of lists) if (k < list.length) jobs.push(list[k])
-  }
-  return jobs
-}
-
-/**
- * Every open mission under the repos of `folders`, newest first. Missions are
- * derived {@link LIST_CONCURRENCY} at a time (Mission v3 §3.8), taken round-robin
- * across repos so every repo's first `gh` fetch starts in the first wave — the
- * rest of that repo's missions then join the single-flight fetch in pr-stack.
- */
-export async function listMissionViews(
-  folders: readonly string[],
-  now = Date.now(),
-  opts: {
-    /**
-     * Only the missions one of these sessions owns or is linked to as a child are derived (the files
-     * are all read; the derive, the costly part, is skipped for the rest). Absent: every open mission.
-     */
-    onlySessions?: ReadonlySet<string>
-  } = {}
-): Promise<MissionListResult> {
+export async function listMissionViews(folders: readonly string[]): Promise<MissionListResult> {
   const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
   if (roots.length === 0) return { views: [], unreadable: [], shadowed: [] }
-  const [read, folderRows] = await Promise.all([
-    readMissionsDeduped(roots, { includeClosed: false }),
-    scanFoldersMemo()
-  ])
-  const unreadable = read.unreadable.map((u) => u.name)
-  const jobs = pickJobs(read.missions, opts.onlySessions)
-  const views = await mapLimit(jobs, LIST_CONCURRENCY, ({ root, mission, log }) =>
-    // The operator's own view: no folder is blocked from them (denyFolders is
-    // an AGENT policy), and the fleet scan feeds the linked children's live state.
-    buildMissionView(
-      root,
-      mission,
-      log,
-      { folder: root, folders: folderRows, denyFolders: [], bridge: undefined },
-      now
-    )
-  )
-  views.sort((a, b) => b.mission.updatedAt.localeCompare(a.mission.updatedAt))
-  return { views, unreadable, shadowed: read.shadowed }
-}
-
-function applyDoor(door: MissionDoor, mission: Mission, at: string): Mission {
-  switch (door.door) {
-    case 'approveRescope':
-      return applyApprovedRescope(mission, { at })
-    case 'end':
-      return applyOperatorEnd(mission, {
-        at,
-        closedAs: door.closedAs,
-        ...(door.reason !== undefined ? { reason: door.reason } : {})
-      })
-    case 'verifyStep':
-      return applyOperatorVerifyStep(mission, door.stepId, { at, verified: door.verified })
-    case 'addCheck':
-      return applyAddCheck(mission, door.stepId, door.label, 'operator', at)
-    case 'tickCheck':
-      return applyTickCheck(mission, door.stepId, door.checkId, { at, ticked: door.ticked })
-    case 'deleteCheck':
-      return applyDeleteCheck(mission, door.stepId, door.checkId, { at })
-    case 'chooseDecision':
-      return applyChooseDecision(mission, door.stepId, door.index, { at })
-    case 'pauseSteward':
-      return applyPauseSteward(mission, door.reason, { at })
-    case 'resumeSteward':
-      return applyResumeSteward(mission, { at })
-  }
-}
-
-/**
- * The Log line a door leaves (Mission v3 §3.5, F8): the owner reads its mission's
- * Log, so it learns what the operator did — and a closed mission refuses its
- * verbs with MISSION_CLOSED.
- */
-function doorLogEntry(
-  door: MissionDoor,
-  at: string,
-  applied: Mission,
-  recorded?: RecordResult
-): string {
-  const what = ((): string => {
-    switch (door.door) {
-      case 'approveRescope':
-        return 'operator approved the re-scope'
-      case 'end':
-        return `operator ended (${door.closedAs})`
-      case 'verifyStep':
-        return `operator ${door.verified ? 'ticked' : 'un-ticked'} ${door.stepId}`
-      case 'addCheck':
-        return `operator added a check on ${door.stepId}`
-      case 'tickCheck':
-        return `operator ${door.ticked ? 'ticked' : 'un-ticked'} ${door.checkId} on ${door.stepId}`
-      case 'deleteCheck':
-        return `operator deleted ${door.checkId} on ${door.stepId}`
-      case 'chooseDecision':
-        return `operator chose "${chosenOption(door, applied)}"`
-      // Campaign spec §3.4: these two are `steward` Log entries (the heading's kind tag).
-      case 'pauseSteward':
-        return 'steward · operator paused the steward'
-      case 'resumeSteward':
-        return 'steward · operator resumed the steward'
-    }
-  })()
-  const body =
-    door.door === 'end'
-      ? [door.reason?.trim() || '(no reason given)', ...recordedLines(recorded)].join('\n')
-      : door.door === 'addCheck'
-        ? door.label
-        : door.door === 'pauseSteward'
-          ? (applied.stewardPause?.reason ?? '')
-          : door.door === 'chooseDecision'
-            ? // Campaign spec §3.2 — the Log entry kind: a decision, for what reads the Log.
-              `kind: decision\nstep: ${door.stepId}\n${applied.steps.find((s) => s.id === door.stepId)?.decision?.title ?? ''}`
-            : ''
-  return `\n### ${at} · ${what}\n${body ? `\n${body}\n` : ''}`
-}
-
-/** The Log lines saying what "Also record" wrote to memory, and what it could not. */
-function recordedLines(recorded: RecordResult | undefined): string[] {
-  if (!recorded) return []
-  return [
-    ...(recorded.written.length ? [`recorded to memory: ${recorded.written.join(', ')}`] : []),
-    ...recorded.failed.map((f) => `not recorded: ${f.id} (${f.error})`)
+  const read = await readMissionsDeduped(roots, { includeClosed: false })
+  const v4Unreadable = (await Promise.all(roots.map((r) => unreadableRecordFiles(r)))).flat()
+  // The files the other readers (hibernation, the companion, Your move) could not read are named too.
+  const unreadable = [
+    ...new Set([
+      ...read.unreadable.map((u) => u.name),
+      ...v4Unreadable,
+      ...reportedUnreadableMissionFiles()
+    ])
   ]
-}
-
-/** The option text a Choose door picked, read off the mission it produced. */
-function chosenOption(door: Extract<MissionDoor, { door: 'chooseDecision' }>, m: Mission): string {
-  return m.steps.find((s) => s.id === door.stepId)?.decision?.options[door.index] ?? ''
-}
-
-const DOORS: ReadonlySet<string> = new Set([
-  'approveRescope',
-  'end',
-  'verifyStep',
-  'addCheck',
-  'tickCheck',
-  'deleteCheck',
-  'chooseDecision',
-  'pauseSteward',
-  'resumeSteward'
-])
-
-/** A door's own required fields, or the BAD_ARGS refusal naming them. */
-function doorArgsProblem(door: Partial<Record<string, unknown>>): string | null {
-  const str = (k: string): boolean => typeof door[k] === 'string'
-  switch (door.door) {
-    case 'end':
-      if (
-        !(door.closedAs === 'delivered' || door.closedAs === 'discarded') ||
-        !(door.reason === undefined || str('reason'))
-      ) {
-        return 'BAD_ARGS: end needs closedAs (delivered | discarded) and an optional string reason'
-      }
-      return door.record === undefined ||
-        (Array.isArray(door.record) && door.record.every((id) => typeof id === 'string'))
-        ? null
-        : 'BAD_ARGS: end record must be an array of draft ids'
-    case 'verifyStep':
-      return str('stepId') && typeof door.verified === 'boolean'
-        ? null
-        : 'BAD_ARGS: verifyStep needs stepId and verified'
-    case 'addCheck':
-      return str('stepId') && str('label') ? null : 'BAD_ARGS: addCheck needs stepId and label'
-    case 'tickCheck':
-      return str('stepId') && str('checkId') && typeof door.ticked === 'boolean'
-        ? null
-        : 'BAD_ARGS: tickCheck needs stepId, checkId and ticked'
-    case 'deleteCheck':
-      return str('stepId') && str('checkId')
-        ? null
-        : 'BAD_ARGS: deleteCheck needs stepId and checkId'
-    case 'chooseDecision':
-      return str('stepId') && typeof door.index === 'number'
-        ? null
-        : 'BAD_ARGS: chooseDecision needs stepId and a numeric index'
-    case 'pauseSteward':
-      return typeof door.reason === 'string' && door.reason.trim() !== ''
-        ? null
-        : 'BAD_ARGS: pauseSteward needs a reason — say why the steward is paused'
-    default:
-      return null
-  }
-}
-
-/**
- * Run one operator door: a locked read → apply → atomic write of the mission's
- * frontmatter, the Log body carried over unchanged — then, outside the lock,
- * re-derive THAT mission for the answer (Mission v3 §3.2). The door's own
- * refusal (nothing staged, a closed mission, the close re-validation) comes
- * back as `{ ok: false, error }`, never a throw across IPC. A second end on a
- * closed mission is `MISSION_CLOSED` — the lock serializes a double click.
- */
-export async function runOperatorDoor(
-  raw: unknown,
-  now: () => string = () => new Date().toISOString()
-): Promise<MissionDoorResult> {
-  const door = raw as Partial<MissionDoor> | null
-  if (
-    !door ||
-    typeof door.door !== 'string' ||
-    !DOORS.has(door.door) ||
-    typeof door.root !== 'string' ||
-    typeof door.missionId !== 'string'
-  ) {
-    return { ok: false, error: 'BAD_ARGS: unknown door or missing root/missionId' }
-  }
-  const argsProblem = doorArgsProblem(door as Partial<Record<string, unknown>>)
-  if (argsProblem) return { ok: false, error: argsProblem }
-  // Re-resolve the root in main — never trust a renderer-supplied storage path.
-  const root = missionRoot(door.root)
-  const missionId = door.missionId
-  const written = await withMissionIdMintLock(
-    missionId,
-    async (): Promise<
-      | { ok: true; mission: Mission; log: string; deduped?: true; recorded?: RecordResult }
-      | { ok: false; error: string }
-    > => {
-      const loaded = await loadMission(root, missionId)
-      if (!loaded.ok) return { ok: false, error: loaded.error }
-      try {
-        const at = now()
-        const mission = applyDoor(door as MissionDoor, loaded.mission, at)
-        // Campaign ch.6 (T610): "Also record" — only a delivered end writes memory, only the
-        // ticked drafts, and only after the end itself validated (a closed mission throws above).
-        let recorded: RecordResult | undefined
-        if (door.door === 'end' && door.closedAs === 'delivered' && door.record?.length) {
-          const unknown = unknownDraftIds(loaded.mission.memoryDrafts, door.record)
-          if (unknown.length) {
-            return {
-              ok: false,
-              error: `UNKNOWN_DRAFT: no stored memory draft ${unknown.join(', ')} on ${missionId}`
-            }
-          }
-          recorded = await recordMemoryDrafts(
-            root,
-            loaded.mission.memoryDrafts,
-            door.record,
-            Date.parse(at)
-          )
-        }
-        if (door.door === 'addCheck') {
-          const count = (m: Mission): number =>
-            m.steps.find((s) => s.id === door.stepId)?.checks?.length ?? 0
-          // A label already on the step (any case): no write, no log line, no
-          // updatedAt bump — the audit trail only says what actually happened.
-          if (count(mission) === count(loaded.mission)) {
-            return { ok: true, mission: loaded.mission, log: loaded.log, deduped: true }
-          }
-        }
-        const log =
-          loaded.log +
-          (loaded.log.endsWith('\n') ? '' : '\n') +
-          doorLogEntry(door as MissionDoor, at, mission, recorded)
-        await atomicWriteFile(loaded.file, buildMissionFileContent(mission, log), 0o644)
-        return { ok: true, mission, log, ...(recorded ? { recorded } : {}) }
-      } catch (err) {
-        return { ok: false, error: (err as Error).message }
-      }
-    }
-  )
-  if (!written.ok) return written
-  // Ended: it leaves every surface — nothing to derive.
-  if (written.mission.status === 'closed') {
-    // Campaign ch.5a: the mission's steward (a system worker) and its hooks end with the mission.
-    await retireStewardForClosedMission({
-      missionId: written.mission.id,
-      ownerFolder: written.mission.owner.folder
-    })
-    return { ok: true, view: null, ...(written.recorded ? { recorded: written.recorded } : {}) }
-  }
-  try {
-    const ctx: ToolHandlerCtx = {
-      folder: root,
-      folders: await scanFoldersMemo(),
-      denyFolders: [],
-      bridge: undefined
-    }
-    const view = await buildMissionView(root, written.mission, written.log, ctx, Date.now(), {
-      prWaitMs: DOOR_PR_WAIT_MS
-    })
-    return written.deduped ? { ok: true, view, deduped: true } : { ok: true, view }
-  } catch (err) {
-    // The write landed; the next list poll shows it. Never fail a door that took effect.
-    console.error('[mission-ipc] door re-derive failed', err)
-    return written.deduped ? { ok: true, view: null, deduped: true } : { ok: true, view: null }
-  }
+  return { views: [], unreadable, shadowed: read.shadowed }
 }
 
 // ---- The observer pass (S-3 delta 1) -------------------------------------------------------
@@ -584,108 +201,42 @@ async function copyClosedMissionLedgers(missions: readonly RootedMission[]): Pro
 }
 
 /**
- * One observer pass: derive every open mission of `folders` (or the ones linking `onlySessions`)
- * and let the observer record what each reading saw. It does what one `mission:list` poll does
- * — the same file read, the same fleet scan (memoized), one derive per mission, which joins the
- * same single-flight pull request cache — and nothing more: no extra `git` or `gh` call. With no
- * open mission it stops after reading the mission files. Returns how many missions it observed.
+ * One observer pass: for each open v4 record of `folders` (or the ones a session in `onlySessions` works
+ * on), read the facts and record what they show (see {@link observeV4Records}). A closed v3 mission is not
+ * derived, but the rows the userData cache still holds for it belong in the repo too, so they are copied
+ * (once per process). With no open mission it stops after reading the files. Returns how many records it
+ * observed.
  */
 export async function observeOpenMissions(
   folders: readonly string[],
-  now = Date.now(),
+  _now = Date.now(),
   opts: {
     onlySessions?: ReadonlySet<string>
-    /** Test seam: the fleet scan that feeds the linked children's live state. */
-    scan?: () => Promise<FolderEntry[]>
     /** Test seam: the sources the v4 leg gathers a step's facts from (default: the real ones). */
     v4Facts?: (root: string) => FactsDeps
   } = {}
 ): Promise<number> {
   const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
   if (roots.length === 0) return 0
-  const observed = await observeV3Missions(roots, now, opts)
-  // Missions v4 S-16a (V-4): the v4 leg runs after the v3 loop and can never fail it.
   try {
-    await observeV4Records(roots, opts)
+    await copyClosedMissionLedgers(
+      (await readMissionsDeduped([...roots], { includeClosed: true })).missions
+    )
+  } catch (err) {
+    console.warn('[mission-observer] could not copy the cached ledgers:', err)
+  }
+  try {
+    return await observeV4Records(roots, opts)
   } catch (err) {
     console.warn('[mission-observer] the v4 leg failed:', err)
+    return 0
   }
-  return observed
-}
-
-/** The v3 loop of the pass: unchanged from chapter 2. Returns how many missions it observed. */
-async function observeV3Missions(
-  roots: readonly string[],
-  now: number,
-  opts: { onlySessions?: ReadonlySet<string>; scan?: () => Promise<FolderEntry[]> }
-): Promise<number> {
-  const read = await readMissionsDeduped([...roots], { includeClosed: true })
-  await copyClosedMissionLedgers(read.missions)
-  const jobs = pickJobs(
-    read.missions.filter((m) => m.mission.status !== 'closed'),
-    opts.onlySessions
-  )
-  if (jobs.length === 0) return 0
-  const folderRows = await (opts.scan ?? scanFoldersMemo)()
-  await mapLimit(jobs, LIST_CONCURRENCY, async ({ root, mission, log }) => {
-    try {
-      const reading = await deriveMissionReading(
-        root,
-        mission,
-        log,
-        { folder: root, folders: folderRows, denyFolders: [], bridge: undefined },
-        now
-      )
-      // Missions v4 S-4: load the rows the repo already stores (and copy in what the userData
-      // cache carries) before the observer dedupes against them. Never under a read.
-      await ensureLinkCacheLoaded()
-      await hydrateMissionLedger(root, mission.id)
-      observeMission(mission, reading, now)
-    } catch (err) {
-      // One mission that cannot be read never stops the pass for the others.
-      console.warn(`[mission-observer] could not observe ${mission.id}:`, err)
-    }
-  })
-  return jobs.length
 }
 
 // ---- Missions v4 S-16a: the facts' real sources, the view channel and the observer's v4 leg ----------
 
 /** How long the view waits for GitHub; past it a step reads its sticky last-known state (like a door). */
 const VIEW_PR_WAIT_MS = 1500
-
-/**
- * The real sources of {@link FactsDeps} for one repo: the board's files, chapter 2's pull request join
- * (which shares the single-flight cache a `mission:list` poll already warms), its last-known cache, the
- * filesystem and the task-state hub. `waitMs` bounds how long the join waits for GitHub.
- */
-async function realFactsDeps(root: string, waitMs?: number): Promise<FactsDeps> {
-  await ensureLinkCacheLoaded()
-  return {
-    board: async () => {
-      const { roadmapDir } = await resolveRoadmap(root)
-      const names = (await fs.readdir(roadmapDir)).filter((n) => n.endsWith('.md'))
-      return Promise.all(
-        names.map(async (n) => ({
-          slug: n.slice(0, -3),
-          content: await fs.readFile(path.join(roadmapDir, n), 'utf8')
-        }))
-      )
-    },
-    findPrs: (refs) => findPrsForWorktrees(root, refs, { waitMs }),
-    findMainCi: (numbers) => findMainCi(root, numbers, { waitMs }),
-    lastKnown: (kind, ref) => getLastKnown(root, kind, ref),
-    pathExists: async (abs) => {
-      try {
-        await fs.stat(abs)
-        return true
-      } catch {
-        return false
-      }
-    },
-    taskState: (id) => getTaskState(id)
-  }
-}
 
 /** What the view channel is asked: the folder the caller works in, who asks, and optionally which mission. */
 export interface MissionV4ViewRequest {
@@ -708,6 +259,12 @@ export type MissionV4ViewReply =
       missionId: string
       source: RecordSource
       detail: MissionDetail
+      /**
+       * What the view read about each step beyond the record: its pull request state (`open`, `merged`,
+       * `closed` or `none`) and whether a worker is working on it. The companion draws its executors and
+       * pull request badges from it. Absent in a reply built without facts.
+       */
+      stepFacts?: Record<string, { pr?: string; workerWorking?: boolean }>
       /** What the end dialog warns about, counted with the facts (the close door's own reply has none). */
       closeWarnings: V4CloseWarning[]
       /** The Done when a session staged for the operator to approve, or `null`. */
@@ -765,15 +322,16 @@ const refusedView = (code: string, message: string): MissionV4ViewReply => ({
  * The open mission a session is attached to when it names none: the one it leads, else the only one.
  * (The unnamed lookup lists every record of the repo and converts each unconverted v3 file in memory:
  * the channel answers `missionId`, and a call that names it reads one record.)
+ *
+ * A session attached to several (after the cut-over an old leader leads one mission per v3 file it ever
+ * started, the normal case for old records) is never refused: the pane draws the one written most recently
+ * (the newest file, a v3 file included; the id breaks a tie), among the ones it leads, else among the
+ * ones it is in. The reply names it (`missionId`) and the pane offers the others.
  */
 async function missionOfSession(
   root: string,
   sessionId: string
-): Promise<
-  | { ok: true; view: MissionRecordView }
-  | { ok: false; code: string; error: string }
-  | { ok: 'none' }
-> {
+): Promise<{ ok: true; view: MissionRecordView } | { ok: 'none' }> {
   const { records } = await listMissionRecords(root)
   const mine = records.filter(
     (v) => v.record.status === 'open' && openEntry(v.record, sessionId) !== undefined
@@ -781,18 +339,99 @@ async function missionOfSession(
   if (mine.length === 0) return { ok: 'none' }
   if (mine.length === 1) return { ok: true, view: mine[0] }
   const leading = mine.filter((v) => v4LeaderOf(v.record) === sessionId)
-  if (leading.length === 1) return { ok: true, view: leading[0] }
-  return {
-    ok: false,
-    code: 'AMBIGUOUS_MISSION',
-    error: `this session is attached to ${mine.length} open missions (${mine
-      .map((v) => v.record.id)
-      .join(', ')}); name one with missionId.`
-  }
+  const pool = leading.length > 0 ? leading : mine
+  if (pool.length === 1) return { ok: true, view: pool[0] }
+  const written = await Promise.all(
+    pool.map(async (view) => ({
+      view,
+      at: await fs.stat(view.file).then(
+        (st) => st.mtimeMs,
+        () => 0
+      )
+    }))
+  )
+  written.sort((a, b) => b.at - a.at || a.view.record.id.localeCompare(b.view.record.id))
+  return { ok: true, view: written[0].view }
+}
+
+/**
+ * The folder's open missions, the most recently written first (the file's mtime, a v3 file included; the id
+ * breaks a tie): the order every reader of a session that leads several shares (S-35 delta 1), and the one
+ * {@link missionOfSession} picks from. The list is otherwise ordered by id, which says nothing.
+ */
+async function newestFirst(root: string, rows: readonly ListedMission[]): Promise<ListedMission[]> {
+  const { records } = await listMissionRecords(root)
+  const file = new Map(records.map((v) => [v.record.id, v.file]))
+  const written = await Promise.all(
+    rows.map(async (row) => ({
+      row,
+      at: await fs.stat(file.get(row.id) ?? '').then(
+        (st) => st.mtimeMs,
+        () => 0
+      )
+    }))
+  )
+  written.sort((a, b) => b.at - a.at || a.row.id.localeCompare(b.row.id))
+  return written.map((w) => w.row)
 }
 
 /** The status line's LIVE readings: one record per running session. The last-known ones are never used. */
 const liveContexts = (): readonly ContextReading[] => getTelemetryPayload().perSession
+
+/**
+ * The re-scope an older (v3) mission has staged, as the box the pane shows for a staged Done when (S-37
+ * delta 1): the new target and its proof, and the reason the owner gave when it asked (the Log's
+ * "re-scope requested" entry). `null` for a v4 record and for a v3 file with nothing staged. It reads the
+ * view and writes nothing. THIS is the function that carries the door's box: whoever removes the v3 readers
+ * keeps it (or its successor) so an owed re-scope never loses its Approve and Decline.
+ */
+export function stagedRescopeOf(view: MissionRecordView): { text: string; at?: string } | null {
+  if (view.source !== 'v3-mission') return null
+  const staged = (view.record as { legacyV3?: { pendingRescope?: unknown } }).legacyV3
+    ?.pendingRescope
+  if (typeof staged !== 'object' || staged === null) return null
+  const { target, evidence } = staged as { target?: unknown; evidence?: unknown }
+  if (typeof target !== 'string' || target.trim() === '') return null
+  const t = target.trim()
+  const sentence = /[.!?]$/.test(t) ? t : `${t}.`
+  const proof =
+    typeof evidence === 'string' && evidence.trim() !== '' ? ` Proof: ${evidence.trim()}` : ''
+  const asked = view.log
+    .split(/\n(?=### )/)
+    .filter((b) => /^### \S+ · re-scope requested/.test(b))
+    .at(-1)
+  const reason = asked ? /^Reason: (.+)$/m.exec(asked)?.[1]?.trim() : undefined
+  return { text: `${sentence}${proof}${reason ? ` (Reason: ${reason})` : ''}` }
+}
+
+/**
+ * What `mission:v4Door` runs. Every door goes to the v4 doors, for an older (v3) mission too: the first
+ * write converts it by copy (the v4 record under the same id, the v3 file left byte-identical, NG-8 and
+ * AC-22), and for a staged re-scope the copy carries the staging as its `pendingDoneWhen`, so Approve and
+ * Decline are the v4 Done when doors (S-42 delta 1). The Log line is the one the old popover wrote.
+ */
+export async function runPaneDoor(raw: unknown): Promise<Record<string, unknown>> {
+  const a = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
+  if (
+    (a.door === 'approveDoneWhen' || a.door === 'declineDoneWhen') &&
+    typeof a.folder === 'string' &&
+    a.folder !== '' &&
+    typeof a.missionId === 'string' &&
+    a.missionId !== ''
+  ) {
+    try {
+      // A read: it writes nothing. Only the door call below writes, and it converts by copy first.
+      const read = await readMissionRecord(repoRoot(a.folder), a.missionId)
+      if (read.ok && stagedRescopeOf(read) !== null) {
+        const door = a.door === 'approveDoneWhen' ? approveDoneWhen : declineDoneWhen
+        return doorReply(await door(a.folder, a.missionId, { asRescope: true }))
+      }
+    } catch (err) {
+      return { ok: false, code: 'UNREADABLE', error: `UNREADABLE: ${(err as Error).message}` }
+    }
+  }
+  return doorReply(await runDoor(raw))
+}
 
 /**
  * Missions v4 S-16a (V-1, V-3) — the view of one mission for the Mission pane. It READS and never
@@ -839,10 +478,9 @@ export async function buildMissionV4View(
       if (found.ok === 'none') {
         const list = await missionList(folder, { kind: 'operator' })
         return list.ok
-          ? { state: 'none', missions: list.missions }
+          ? { state: 'none', missions: await newestFirst(root, list.missions) }
           : { state: 'refused', code: list.code, error: list.error }
       }
-      if (found.ok === false) return refusedView(found.code, found.error)
       view = found.view
     }
     const { record } = view
@@ -863,8 +501,19 @@ export async function buildMissionV4View(
       missionId: lookupId,
       source: detail.source,
       detail,
+      stepFacts: Object.fromEntries(
+        Object.entries(inputs).map(([id, i]) => [
+          id,
+          {
+            ...(i.pr !== undefined ? { pr: i.pr } : {}),
+            ...(i.workerWorking !== undefined ? { workerWorking: i.workerWorking } : {})
+          }
+        ])
+      ),
       closeWarnings: closeWarningsOf(record, inputs),
-      pendingDoneWhen: stagedDoneWhenOf(record),
+      // An older mission's staging reads from its file with the reason its owner gave; once converted by copy,
+      // the record's own staged Done when stands in (the conversion writes it).
+      pendingDoneWhen: stagedRescopeOf(view) ?? stagedDoneWhenOf(record),
       sessions: sessionHistory(record),
       handoff: handoffOffer(
         leaderContextPercent((opts.contexts ?? liveContexts)(), v4LeaderOf(record)),
@@ -986,14 +635,13 @@ function noteAskedFolders(folders: readonly string[]): void {
   }
 }
 
-/** Where the observer looks for open missions: what the renderer asked about, the pinned folders, the stewards'. */
+/** Where the observer looks for open missions: what the renderer asked about and the pinned folders. */
 async function observerFolders(): Promise<string[]> {
   const out = new Set<string>(askedFolders)
-  for (const s of listStewards()) out.add(s.folder)
   try {
     for (const p of (await readUserProjects()).projects) out.add(p.path)
   } catch {
-    // No projects file yet: the other two sources still stand.
+    // No projects file yet: the asked folders still stand.
   }
   return [...out]
 }
@@ -1049,14 +697,20 @@ export function registerMissionIpc(): void {
     }
     return result
   })
-  ipcMain.handle('mission:operatorDoor', async (_e, door: unknown): Promise<MissionDoorResult> =>
-    runOperatorDoor(door)
-  )
+  // The v3 operator doors went with the v3 popover (S-40). The preload still names the channels, so they
+  // answer a refusal that says so instead of leaving a call unanswered.
+  const goneDoor = async (): Promise<MissionDoorResult> => ({
+    ok: false,
+    error:
+      'The v3 mission doors were removed: the operator acts on a mission in the Mission pane (mission:v4Door).'
+  })
+  ipcMain.handle('mission:operatorDoor', goneDoor)
+  ipcMain.handle('mission:choose', goneDoor)
   // Missions v4 S-15 — the operator's doors on a v4 record (mark, clear a blocker, approve a Done when,
   // close, allow or deny a join, attach from the picker). Additive: nothing above changes. It has no
   // preload entry until S-16, so the renderer cannot reach it yet. The reply carries the outcome and the
   // close warnings, never the record or a file path.
-  ipcMain.handle('mission:v4Door', async (_e, door: unknown) => doorReply(await runDoor(door)))
+  ipcMain.handle('mission:v4Door', async (_e, door: unknown) => runPaneDoor(door))
   // Missions v4 S-16a — the view of one mission for the Mission pane. It reads and never writes. No
   // renderer calls it until S-17. It also notes the folder, so the observer's v4 leg looks there.
   ipcMain.handle('mission:v4View', async (_e, args: unknown): Promise<MissionV4ViewReply> => {
@@ -1078,9 +732,4 @@ export function registerMissionIpc(): void {
           }
     )
   )
-  // Campaign spec §4 — the Choose door has its own channel; it is the same door.
-  ipcMain.handle('mission:choose', async (_e, args: unknown): Promise<MissionDoorResult> => {
-    const a = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
-    return runOperatorDoor({ ...a, door: 'chooseDecision' })
-  })
 }

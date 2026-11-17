@@ -61,12 +61,6 @@ describe('no direct gh spawn outside the shared runner (AC-1)', () => {
     }
   })
 
-  it('the steward re-attributes the shared mission derive', () => {
-    expect(readFileSync(path.join(SRC, 'steward-bridge.ts'), 'utf8')).toMatch(
-      /withGhConsumer\('steward'/
-    )
-  })
-
   it('the detector itself catches a direct spawn (so the gate cannot rot into a no-op)', () => {
     const bad = code("const out = await execFileAsync('gh', ['pr', 'list'])")
     expect(bad.some((l) => /\(\s*['"`]gh['"`]\s*[,)]/.test(l))).toBe(true)

@@ -45,7 +45,6 @@ const text = (sel: string): string => (q(sel)?.textContent ?? '').replace(/\s+/g
 async function mountPane(): Promise<VueWrapper> {
   api = {
     missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
-    campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
     missionV4View: vi.fn(async () => ({ state: 'none', missions: [] })),
     missionV4Door: vi.fn(async () => ({ ok: true, changed: true })),
     missionHandOff: vi.fn(),
@@ -83,6 +82,8 @@ beforeEach(() => {
   setActivePinia(createPinia())
   i18n.global.locale.value = 'en'
   localStorage.clear()
+  // The steps start closed (stp-21); these cases are about what is inside them.
+  localStorage.setItem('om2tab.missionPane.sections', '{"tree":true}')
 })
 afterEach(() => {
   wrapper?.unmount()
@@ -290,7 +291,6 @@ describe('the sample never reaches a real door (Missions v4 S-22, delta 1)', () 
     const real = sampleOf('default').reply
     api = {
       missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
-      campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
       missionV4View: vi.fn(async () => real),
       missionV4Door: vi.fn(async () => ({ ok: true, changed: true })),
       missionHandOff: vi.fn(async () => ({ ok: true, sessionId: 'new-session' })),

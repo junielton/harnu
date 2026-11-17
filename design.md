@@ -342,7 +342,6 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 | Inbox rail — default width             | 300px                                                         | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
 | Inbox rail — maximum width             | 440px                                                         | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
 | Inbox rail — minimized strip           | 44px                                                          | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
-| Progress popover — standard / wide     | 400px / 520px                                                 | The Mission progress popover is 400px; the Campaign popover (`.pop--wide`, §6 "Campaign progress") is the one 520px variant — two panes need the room                                                                                                                                                                                                                              |
 | Resizable divider — hit area           | 6px                                                           | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
 | Resizable divider — visible stripe     | 1px                                                           | Colored stripe (`w-px`) flush to the side panel's edge inside the 6px hit area                                                                                                                                                                                                                                                                                                     |
 | Sidebar section — minimum height       | 88px                                                          | Drag floor of a resizable sidebar section (`SidebarSection`, §6 "Sidebar sections"): its eyebrow (28px) plus one row (60px, the height of one collapsed Your move card)                                                                                                                                                                                                            |
@@ -466,17 +465,12 @@ _another_ folder.
 | `globe`                                  | Link row, kind `web` (Links popover — any other page)                                                                                                                                                                                  |
 | `volume-2`                               | Preview a voice (Settings → Voice → VOICES row — speaks the phrase in the voice already in use)                                                                                                                                        |
 | `volume-x`                               | Nothing was spoken (Settings → Voice — the `dropped` / `stopped` outcome of a Test or a per-voice preview)                                                                                                                             |
-| `list-checks`                            | Mission progress — the Topbar "Step N of M" pill's leading glyph (T370, Mission v3, §6 "Mission progress"); swaps to `check` once the headline is done or the mission delivered                                                        |
 | `target`                                 | Mission pane — the v4 Topbar pill's leading glyph, the pane header's glyph and the "no mission" empty state (Missions v4 S-17, §6 "Mission pane"); the pill swaps to `check` when the mission is ready to close                        |
 | `arrow-left-right`                       | Mission pane — "Continue in a new session…" (the hand-off), on the Sessions row, the offer and the confirmation's Start button (Missions v4 S-20, §6 "Mission pane" → Sessions and the hand-off)                                       |
 | `link`                                   | Mission pane — "Attach" on a mission of the attach picker (Missions v4 S-21, §6 "Mission pane" → Attach, the request and Ask)                                                                                                          |
 | `plus`                                   | Mission pane — "Start a new mission" (Missions v4 S-21, same section)                                                                                                                                                                  |
 | `message-square`                         | Mission pane — "Ask" on a milestone (Missions v4 S-21, same section)                                                                                                                                                                   |
-| `log-in`                                 | Mission progress — a child session row's in-app "Go to session" action (Mission v3, §6 "Mission progress"; replaces `external-link` there)                                                                                             |
-| `contrast`                               | Mission progress — the step rail's `waiting` glyph (◐, Mission v3)                                                                                                                                                                     |
-| `undo-2`                                 | Mission progress — the step rail's `left-behind` glyph (↩, Mission v3)                                                                                                                                                                 |
-| `circle-check`                           | Mission progress — the step rail's `done` glyph (✓ hollow, Mission v3)                                                                                                                                                                 |
-| `flag`                                   | Mission progress — the popover footer's "End mission…" button (Mission v3); Mission pane — "Close mission…" (Missions v4 S-22)                                                                                                         |
+| `flag`                                   | Mission pane — "Close mission…" (Missions v4 S-22)                                                                                                                                                                                     |
 | `palette`                                | Canvas properties panel → the collapsed 28px button that opens it on a narrow pane (T536 U3)                                                                                                                                           |
 | `square-round-corner`                    | Canvas properties panel → Corners: round (`square` is sharp) (T536 U3)                                                                                                                                                                 |
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
@@ -886,7 +880,7 @@ store's existing 20 s poll — no per-mission timer):
 - **Standing vs blocking kinds** (BUG-173, spec §3.2). _Standing_ kinds —
   `close`, `checks`, `review-import` — are a to-do nobody is waiting on: they
   cue once when they appear (or `checks` grows) and **never re-nudge**; the
-  pill, the bell entry and the review dialog keep showing them. _Blocking_
+  pill and the bell entry keep showing them. _Blocking_
   kinds — `rescope`, `blocker`, `decide` (a pending decision, one key per
   decision step), `human-steps` — are something an agent or a later step waits
   on: they cue when they appear, then re-nudge with **back-off**, **30 min, 1 h,
@@ -2615,7 +2609,7 @@ peek are different things and keep their own names.
 
 Every surface that names a session — sidebar row, top bar, fleet card, triage
 and `RETURN HERE` rows, Approval Inbox, jump palette, `⌘K` palette, footer,
-folder view, cloud panel, mission popover/rail, notifications — resolves it
+folder view, cloud panel, mission pane, notifications — resolves it
 through **one** function, `sessionTitle()` (`lib/session-label.ts`, BUG-78), so
 two surfaces can never show two different names for the same session. Order
 (each candidate trimmed; whitespace-only counts as empty):
@@ -2631,14 +2625,13 @@ two surfaces can never show two different names for the same session. Order
 
 Nothing left → empty, and each surface appends **its own** fallback:
 
-| Surface                                                | Fallback                             |
-| ------------------------------------------------------ | ------------------------------------ |
-| Sidebar row, fleet card, Fleet minicard                | `session.unnamed` ("Untitled")       |
-| Triage queue, `RETURN HERE` row, footer                | `session.newPlaceholder`             |
-| Jump palette, `⌘K` palette, folder view, OS/toast body | the session id                       |
-| Mission popover / step rail                            | id prefix (rail: folder alias first) |
-| Top bar, Approval Inbox, cloud panel, recents          | none (empty)                         |
-| Spoken notification                                    | none — **never** the id              |
+| Surface                                                | Fallback                       |
+| ------------------------------------------------------ | ------------------------------ |
+| Sidebar row, fleet card, Fleet minicard                | `session.unnamed` ("Untitled") |
+| Triage queue, `RETURN HERE` row, footer                | `session.newPlaceholder`       |
+| Jump palette, `⌘K` palette, folder view, OS/toast body | the session id                 |
+| Top bar, Approval Inbox, cloud panel, recents          | none (empty)                   |
+| Spoken notification                                    | none — **never** the id        |
 
 The top bar's and sidebar's **folder-terminal** label ("Terminal") is decided
 before the session name — a terminal is not a Claude session. The sidebar
@@ -6948,25 +6941,20 @@ Anatomy, inside the normal row (kind-bar, title, relative timestamp, hover ×):
 - **Title** — the record's `title` ("{n} missions need you", or the single
   mission's sentence). The title is a label, not a destination: clicking the
   entry's body or title does nothing.
-- **Item rows** — up to **5** (`MISSION_ROWS_MAX`), one per subject, under the
+- **Item rows** — one per subject (every owed mission, no cap), under the
   title, separated by the same `1px --border` rule as the rows. Each row is a
   `button` (`cursor-pointer`, `hover:bg-surface-2`, `aria-label`
   `mission.cue.itemAria`): the subject's title (`text-text`, 12px / 500, one
   line, truncated) and what it owes (`text-text-3`, 11px, one line, truncated).
   Tokens and spacing are the Activity row's; no new color, radius or row height.
-- **"Review all {n}"** — when there are more than 5, the rest collapse into a
-  `text-accent` text button (`mission.cue.reviewAll`, 11px / 500) below the rows.
-  It opens the Missions review (`useMissionsStore().openReview()`).
 - **Item click** — with the owner session loaded: `activateSession(sessionId)`
   (the BUG-31 reveal), then the item's `target` through
-  `openNavigableView('mission', { missionId })`, which asks the missions store to
-  have the selected session's pill open that mission's popover (the request
-  expires after 5 s). With the owner **not loaded** the row carries a muted
-  owner hint (`text-text-4`, tooltip `mission.cue.ownerMissing`) and the click
-  opens the review focused on that mission (`openReview(missionId)`) — never a
-  dead click. **An item click never dismisses the entry**: it is a list, and the
-  other rows are still owed. The bell popover closes once a row or "Review all" has opened
-  its destination.
+  `openNavigableView('mission', { missionId })`, which opens the Mission pane for the selected
+  session. With the owner **not loaded** the row carries a muted owner hint (`text-text-4`,
+  tooltip `mission.cue.ownerMissing`) and the click raises a **warning toast** that names the
+  mission (`mission.cue.ownerMissingTitle` / `ownerMissingBody`) — never a dead click, and no
+  second surface opens. **An item click never dismisses the entry**: it is a list, and the
+  other rows are still owed. The bell popover closes once a row has been clicked.
 - **Replaced in place, kept truthful.** `notify({ group })` is an upsert: the
   first call appends, later calls replace the record's content and keep its
   `id`, so the row state does not flicker and the badge does not grow. `ts`
@@ -7012,86 +7000,63 @@ no virtualization dependency needed here.
   re-cueing (a mission) lives in ONE grouped entry that is replaced in place.
 - ❌ Dismiss a grouped entry on an item click, or give it a mission-specific
   branch in `ActivityBell.vue`: rows are generic `items`, and the click goes
-  through `openNavigableView` / the store's `openReview`.
+  through `openNavigableView`.
 
-### Mission progress (pill, popover, sidebar indicator)
+### Mission progress (sidebar chip, Activity cue and end dialog)
 
-**T370 (T358 slice S9), rewritten for Mission v3 (T381 S3, spec
-`docs/specs/2026-10-01-mission-v3/spec.md` §3.2).** The operator's view of a
-**Mission** — the structured progress record an agent keeps with the
-`mission_*` verbs. It answers four questions at a glance: **where the work is,
-what is done, what is left, what waits on me**. Three surfaces, all reading ONE
-derived model (`lib/mission-view.ts`) built from the **server's**
-`progress` object (`derived.progress`, computed once in
-`src/main/mission-progress.ts`) — the renderer **never recounts**: it does not
-decide which step is done, which is current, or how many are left behind. A
-session that owns no open mission renders **nothing** on any of them —
-`no-mission` is a state, not a gap. A mission is matched to a session the way
-`mission_get` does it: the newest non-`closed` mission whose `owner.sessionId`
-is that session.
+**The Mission pane is the only surface of a mission** (§6 "Mission pane", next). The mission
+and campaign popovers, the step rail, the Missions review and bulk-close dialogs, the steward
+pause dialog and the Scheduler's steward block are gone (Missions v4, S-37): every mission opens
+in the pane, from the Topbar pill, an Activity row or a Your move card. What stays here is what
+reads the server's `progress` outside the pane, and none of it recounts: the **sidebar chip**, the
+**Activity cue** and the **end dialog**. A session that is in no open mission renders **nothing**
+on the chip. A mission is matched to a session the way `mission_get` does it.
 
-**Data.** Read over the `mission:*` IPC (`src/main/mission-ipc.ts`), which
-returns the same projection `mission_get` builds: stored fields, the `derived`
-block, `progress`, the ordered `you` list (spec §3.12) and the end dialog's
-`closeWarnings`. `stale` is the **derived** flag — never a stored status. The
-store polls while the app is open. **Doors answer with the view they changed**
-(spec §3.2): the store patches that one mission in place, or removes it when the
-door returns `view: null` after an end — nothing waits for the next poll. A door
-answer for a mission the store no longer holds is ignored, and a poll that
-started before a door landed is discarded (the read after the door supplies the
-truth).
+**Data.** The `mission:*` IPC (`src/main/mission-ipc.ts`) returns the same projection
+`mission_get` builds: stored fields, the `derived` block, `progress`, the ordered `you` list and the
+end dialog's `closeWarnings`. `stale` is the **derived** flag — never a stored status. The store polls
+while the app is open. **Doors answer with the view they changed**: the store patches that one
+mission in place, or removes it when the door returns `view: null` after an end — nothing waits for
+the next poll. A door answer for a mission the store no longer holds is ignored, and a poll that
+started before a door landed is discarded.
 
-There is **no draft** and no Approve door (spec §3.4): a legacy `draft` file
-reads `active`. No surface shows a draft state, callout or button.
+There is **no draft** and no Approve door: a legacy `draft` file reads `active`. No surface shows a
+draft state, callout or button.
 
 **Cue (Mission v3 §3.12).** Each poll decides whether a mission newly owes the
 operator something — chime + OS attention + **one** Activity entry that lists
-every owed mission as its own clickable row (Activity bell → _Grouped entry_);
-blocking kinds re-nudge with back-off and then stop, standing kinds never do.
-A row opens the owner session and this popover (`missions.popoverRequest`,
-consumed by the pill, 5 s expiry); an orphaned owner opens the review instead
-(`missions.openReview`). Rules under Notifications, "Mission owes the operator —
-sound + attention + Activity".
+**every** owed mission as its own clickable row (Activity bell → _Grouped entry_, no cap and no
+"Review all" row); blocking kinds re-nudge with back-off and then stop, standing kinds never do. A
+row opens the owner session and, through the one `openNavigableView('mission')` door, the Mission
+pane. When the owner session is not open in this window the click raises a warning notice that
+names the mission ("Can't open "{title}" from here"): never a dead click, never a list of missions.
+Rules under Notifications, "Mission owes the operator — sound + attention + Activity".
 
-#### The headline — "Step N of M"
+#### The sidebar headline — "Step N of M"
 
-One headline, printed by the pill, the popover header and (compactly) the
-sidebar chip, from `progressHeadline(progress)`:
+The compact headline the chip prints for a mission the view reads as v3, from
+`progressHeadline(progress)`:
 
-| Kind     | Pill / header           | Sidebar chip     | When                                                |
-| -------- | ----------------------- | ---------------- | --------------------------------------------------- |
-| `single` | "Step {n} of {m}"       | `{n}/{m}`        | one current step                                    |
-| `range`  | "Steps {n}–{to} of {m}" | `{n}–{to}/{m}`   | several steps run in parallel                       |
-| `done`   | "Step {m} of {m} ✓"     | `{m}/{m} ✓`      | `progress.allDone` only                             |
-| `empty`  | _(no text)_             | _(not rendered)_ | nothing to count (no steps, or only a legacy start) |
+| Kind     | Sidebar chip     | When                                                |
+| -------- | ---------------- | --------------------------------------------------- |
+| `single` | `{n}/{m}`        | one current step                                    |
+| `range`  | `{n}–{to}/{m}`   | several steps run in parallel                       |
+| `done`   | `{m}/{m} ✓`      | `progress.allDone` only                             |
+| `empty`  | _(not rendered)_ | nothing to count (no steps, or only a legacy start) |
 
-N is **position**, never proof: the step carrying the rail's current marker is
-always step N. Proof is a detail on the step (badges), never the headline. An
-`empty` pill still renders its icon so the operator can open the popover and
-end the mission.
+N is **position**, never proof. Proof is a detail on the step, never the headline.
 
-#### Topbar pill (`MissionPill.vue`)
+#### Tones (the sidebar chip)
 
-Byte-identical anatomy to the provider/orchestrator pills beside it: height
-`18px`, padding `1px 7px`, `rounded` (`--radius-sm`), `border` + text in one
-color, `10.5px / 500`, `tabular-nums`, a 10px leading icon (`list-checks`;
-`check` when the headline is `done` or the mission is delivered). Label: the
-headline above. It is a `<button>` and **clickable** — it toggles the popover.
-Placed after the orchestrator pill in the title row, selected session only.
+**Three tones for seven in-mission states.** The chip answers "is something here worth a glance?";
+the pane is where the difference between the warning states shows.
 
-**Five tones for seven in-mission states.** The pill answers "is something here
-worth a glance?"; the popover is where the difference between the warning
-states shows.
-
-| Pill tone | Classes                       | States                                             |
-| --------- | ----------------------------- | -------------------------------------------------- |
-| _(none)_  | not rendered                  | `no-mission` (also a `closed` mission)             |
-| accent    | `border-accent text-accent`   | `active`, `total-changed`                          |
-| warning   | `border-warning text-warning` | `blocked`, `needs-you`, `stale`, `rescope-pending` |
-| success   | `border-green text-green`     | `delivered`                                        |
-
-The neutral tone (`border-border-2 text-text-3`) is kept in the type for the
-pill anatomy but no state maps to it since draft was removed.
+| Tone     | Chip text class | States                                             |
+| -------- | --------------- | -------------------------------------------------- |
+| _(none)_ | not rendered    | `no-mission` (also a `closed` mission)             |
+| accent   | `text-accent`   | `active`, `total-changed`                          |
+| warning  | `text-warning`  | `blocked`, `needs-you`, `stale`, `rescope-pending` |
+| success  | `text-green`    | `delivered`                                        |
 
 **Primary state**, first match wins: `rescope-pending` (a `pendingRescope` is
 staged) → `needs-you` (the `you` list holds any item other than the re-scope
@@ -7100,303 +7065,12 @@ confirm, an imported end to review, a child's approvals or needs-input) →
 `blocked` (any mission- or step-level blocker) → `stale` (derived) →
 `delivered` (the requested close is the delivered state's own owed item, so it
 reads success, not warning) → `total-changed` (any step carries `addedReason`)
-→ `active`. The popover itself is **compositional**: a blocker callout, a stale
-callout, an "Added" badge render wherever their data exists, whatever the
-primary state is.
-
-#### Popover (`MissionPopover.vue`)
-
-Shell reused verbatim from the Activity bell: `anim-fade-in-scale`, `absolute
-top-full mt-1.5 z-50`, `rounded border border-border-2 bg-surface shadow-pop`,
-**400px** wide, `max-height: 560px`, body scrolls (`.scrollable`). Anchored
-left to the pill (`left-0`), flipped right when it would overflow.
-Click-outside and `Esc` close it; it never steals focus.
-
-- **Header** (`padding: 10px 14px`, `border-b border-border`): "Progress"
-  (`12.5px / 500`, `text-text`) with the **headline** right-aligned (`11px`,
-  `text-text-4`, `tabular-nums`, `data-test="mission-count"`); the mission
-  title under it, truncated (`11px`, `text-text-3`); then the **counts line**
-  (`11px`, `text-text-4`, `margin-top: 3px`): "{done} done · {verified}
-  verified", then "· {n} left behind" in `text-warning` when n > 0; then the
-  **scope links** (spec §3.3) — one `file-text` 11px + the path's last segment
-  (`font-mono 10.5px text-text-3`, the full ref in `title`), and "on a branch"
-  (`text-text-4`) for a path that does not resolve on this checkout. Optional
-  sub-line (`11px`, `text-text-4`, `margin-top: 3px`): total-changed → "Total:
-  {total} steps (was {was}) — {n} added"; delivered → "Delivered — awaiting
-  your close".
-- **Body** (`padding: 12px 14px 14px`): the step rail, a `1px --border` divider
-  (`margin: 12px 0`), the `you` block, the optional open questions.
-- **Footer** (`padding: 8px 14px`, `border-t border-border`, right-aligned):
-  **End mission…** (Button `ghost`, `flag` 14px) — the always-available end
-  door (spec §3.5). It opens the end dialog.
-
-**Step rail (`MissionStepRail.vue`).** One row per **counted** step (a legacy
-fixed start is scope, not a step — it is not in the rail). Each row: a 16px
-rail column + the body, `gap: 10px`, `padding-bottom: 16px` between rows, a
-`2px --border-2` connector line from each glyph down to the next row. The rail
-glyph is one of **seven visuals**, read from `progress.states` and
-`progress.leftBehind` (a left-behind step is `todo` before the last done one):
-
-| Visual        | Glyph                                                      | State / when             |
-| ------------- | ---------------------------------------------------------- | ------------------------ |
-| `verified`    | 12px `bg-green` disc + `check` 8px in `text-bg` (✓ filled) | `verified`               |
-| `done`        | `circle-check` 12px, `text-text-3` (✓ hollow)              | `done`                   |
-| `running`     | 8px `bg-accent` dot, `.anim-pulse-dot`                     | `running`                |
-| `waiting`     | `contrast` 12px (◐), `text-text-3`                         | `waiting`                |
-| `blocked`     | `triangle-alert` 12px, `text-warning` (⚠)                  | `blocked`                |
-| `todo`        | 8px ring, `1.5px border-text-4`, transparent (○)           | `todo`                   |
-| `left-behind` | `undo-2` 12px, `text-warning` (↩)                          | in `progress.leftBehind` |
-
-The step carrying the **current marker** (positions `current.from`…`current.to`)
-gets its label in `text-text` / 500 and `aria-current="step"`; its glyph keeps
-its visual (a current `todo` or `waiting` step adds the `ring-3
-ring-accent-soft` ring so the position reads at a glance). Labels `12.5px`:
-done/verified `text-text-3`; current `text-text` / 500; left-behind
-`text-text-2`; other future steps `text-text-4` at opacity `0.7`. Each glyph
-carries a `title` naming its visual ("Verified", "Done, not verified",
-"Running", "Waiting", "Blocked", "To do", "Left behind").
-
-The current step's label row (`flex-wrap`, `gap: 6px`) carries the **Badge**
-component's variants (§6 Badges, unchanged — no new variant): verification
-level ("Existence check" / "Verifier" / "Human", Default), proof ("Claimed",
-Default — `self-verified` renders the **same** Default "Claimed" look), "✓
-Proven" (Success, `check` 10px) for a verified `verifier`/`human` step, "Added"
-(Accent) for a step with `addedReason`, "Re-scope pending" (Warning) on the end
-step while a re-scope is staged. Captions `11px`, `text-text-4`, `line-height:
-1.5`, `margin-top: 3px`:
-
-- the **end** step (`kind: 'fixed-end'`, never found by position) carries
-  `End: {kind} · {target} · evidence: {evidence}`;
-- a verified end step names who verified it (`Verified by {session} —
-{verdict}`);
-- an added step quotes its reason (`Added — reason: {addedReason}`).
-
-**Checks** (spec §3.6) render on their step, under the captions
-(`margin-top: 5px`, `gap: 3px`): one row per check — a 12px checkbox
-(`accent-color: var(--color-accent)`), the label (`11.5px`, `text-text-2`;
-ticked → `text-text-4 line-through`), a **"due"** word (`10.5px`,
-`text-warning`) on an unticked check of a reached step (`done`, `verified`,
-`running`, `waiting`), and an `x` 11px delete button (`text-text-4
-hover:text-red`) revealed on row hover / focus. Ticking or unticking fires the
-`tickCheck` door; delete fires `deleteCheck`. **"+ check"** sits at the end of the step's label row (`ml-auto`, `11px`,
-`text-text-4 hover:text-text-2`, always shown on the current steps, revealed on
-step-row hover / focus elsewhere — it never adds a line to the rail) and opens an inline input (`11.5px`, `h-6`,
-`rounded-sm border border-border-2 bg-bg`, placeholder "What to check by hand")
-— `Enter` fires `addCheck`, `Esc` cancels. A label the step already holds
-(any case) is deduped by the server (`deduped: true`): nothing is added and no
-duplicate row appears. Checks never change the step's visual or the headline.
-
-**Gate dots (campaign spec §3.2, T593).** Four dots follow the step label on **every**
-rail row, in a fixed order: **PR · CI · main · verifier** — the facts that prove a
-step done, read from the server's derived `gates` (`derived.steps[].gates`) and never
-recomputed in the renderer (the fifth gate, `checks`, has no dot: it is the checkboxes
-below). Anatomy: an inline group (`gap: 4px`, `role="group"`, label "Step gates"),
-each dot `7px × 7px`, `rounded-full`, `1.5px` border, no text. States, tokens only:
-
-| State     | Meaning                            | Look                                                                                         |
-| --------- | ---------------------------------- | -------------------------------------------------------------------------------------------- |
-| `green`   | the fact holds                     | `bg-green` + `border-green`                                                                  |
-| `red`     | the fact failed                    | `bg-red` + `border-red`                                                                      |
-| `running` | in progress / waiting on something | `border-accent`, left half filled `accent` (`bg-linear-to-r`), `.anim-tick-pulse` (breathes) |
-| `off`     | no signal yet                      | hollow `border-text-4`                                                                       |
-| `na`      | does not apply to this step        | dashed `border-text-4`, `opacity-50`                                                         |
-
-Each dot carries a `title` (and the same `aria-label`) that names the gate and the
-state — "PR merged: green", "main green after merge: red" — never a colour alone.
-When the server marked the gates `stale: true` (GitHub was unreachable, the values
-are the last known) the title ends "(last known)". No new token, size or animation
-beyond the `7px` dot; the mockup is `parts/gates.js` / screen `v6--chapter` state
-`gate-red`. A red `main` on a done step also lands one **You** item, "main is red
-after #{pr}" — nothing stored is downgraded.
-
-**Rail letters, locked, Side bucket and decision node (campaign spec §3.2, T594).**
-Every main step's label row starts with its **rail letter** (A, B, C… by position;
-none on the end step; `10.5px`, `font-weight: 500`, `tabular-nums`, `text-text-4`) —
-the handle a side step cites as its origin. The seven rail glyphs gain an eighth,
-**locked** (`lock` icon 10px, `text-text-4`, inside the same 12px glyph slot): an
-unfinished step has a `blocks` edge into it, or an undecided decision lists it; a
-locked step never takes the current marker and is not counted as left behind.
-
-The **Side bucket** sits under the main rail after a `border-t border-border`
-(`margin-top: 14px`, `padding-top: 10px`) and appears only when a step has
-`required: false`. Header: a full-width button — chevron (12px, right = collapsed,
-down = expanded, `text-text-4`), a 10px outline `diamond` (`text-text-4`), "Side
-steps" (`11.5px`, `text-text-2`) and, right-aligned, the meta (`10.5px`, `tabular-nums`,
-`text-text-4`): collapsed "{n} open", expanded "{n} open · {m} done". It starts
-**collapsed**. Expanded, the rows hang off a dashed 2px `border-border-2` line
-(`left: 5px`): glyph (outline diamond while open, `circle-check` `text-text-3` once
-done/verified) at `left: 0`, the title (`11.5px`, `text-text-3`) over a `10.5px`
-`text-text-4` caption "discovered from {letter}" (a side origin reads its title;
-none, no caption) and, on an open row, the Badge `Open` (default variant) pushed right.
-Side steps never appear on the main rail and never move "Step N of M".
-
-The **decision node** hangs under its step, only while undecided: `rounded-sm border
-border-border-2 bg-surface-2`, `padding: 8px 10px`, `margin-top: 6px`. Header row —
-a filled 10px `diamond` (`accent`), the title (`12px`, weight 500, `text-text`,
-truncating) and, right-aligned, a warning Badge "Blocks {letters}". Each option is a
-`radio` button row (`margin-top: 6px`, `padding: 5px 8px`, `border-border-2`,
-`bg-surface`, `rounded-sm`, `11.5px`, `text-text-2`) with a 10px ring (`border-text-4`);
-the picked option takes `border-accent-line`, `text-text` and a filled `accent` ring.
-Below, the primary button **Choose…** (`h-6`, `bg-accent text-accent-ink`) is disabled
-until an option is picked; pressing it fires the `chooseDecision` door
-(`mission:choose`). Once decided the node collapses to one accent line (`11px`,
-filled diamond) "{title} · Chose {option}". No new token, size or animation; the
-mockup is screen `v6--chapter` states `side` and `decision`.
-
-**Callouts** (`padding: 6px 8px`, `rounded-sm`, `11px`, `line-height: 1.5`,
-`border`, `margin-top: 5px`, 13px icon): Warning = `bg-warning-soft
-text-warning border-warning-line`. Blocked (`triangle-alert`) — "**Blocked** —
-{reason}. Unblocks when {unblocks} · {owner}" under the step that owns it
-(mission-level blockers under the first current step). Stale (`clock`) —
-"**Stale** — no evidence in {duration}." under the first current step.
-Re-scope (`triangle-alert`) — "**End changed, awaiting approval.**" + `was:` /
-`now:` lines under the end step.
-
-**Step pulse (T547).** "Step N of M" counts units, so a long unit used to look
-exactly like a stalled one. The **current** steps therefore carry one muted line
-under their captions (`11px`, `line-height: 1.5`, `margin-top: 3px`,
-`tabular-nums`, parts joined by `·`) built from `derived.steps[].pulse` — the
-headline never changes and the pill's position is never recomputed from it:
-
-- **Commits** — "{n} commit(s)": commits on the step's linked worktree branches
-  beyond the base the step branched from (the branch its open PR merges into, else the repo's default branch — a stacked unit counts only its own commits). Left out when git could not count, and when
-  the count is `0`.
-- **Activity** — the newest sign of life: a commit, the child's last
-  transition, a write to its transcript, or a hook of its own subagents. Fresh
-  (≤ **15 min**, `PULSE_QUIET_AFTER_MS`) → "active {age} ago" / "active just now"
-  in `text-text-3`. Older → "no activity for {age}" in `text-warning`; never any
-  → "no activity seen yet" in `text-warning`. A step whose child is `working`
-  always reads fresh.
-- **Not rendered** when the step links neither a session nor a worktree — there is
-  nothing to watch, so nothing is claimed.
-
-A genuinely stalled step keeps reading stalled: the warning wording above, plus
-the mission-level Stale callout once the newest evidence is over an hour old. The pill
-itself stays byte-identical; its tooltip appends the first current step's pulse
-("… · 21 commits · active 2m ago").
-
-**PR line (T547).** A step that links a PR — directly, or through a linked
-worktree or card — shows one line per **open or merged** PR under the pulse
-(`11px`, newest first, at most 3): "PR #{n} · {open|draft|merged} · CI
-{green|red|running}". CI is `text-green` when passing, `text-red` when failing,
-`text-text-3` while running, and left out when unknown. Closed-unmerged PRs are
-noise and are not shown.
-
-**Child session rows** (a step's `session` links, from the derived
-projection): `bg-surface-2`, `rounded-sm`, `padding: 4px 8px`, `margin: 5px 0 0
-2px`, `gap: 6px`, `11.5px` — `corner-down-right` 11px `text-text-4`, a 6px
-status dot reusing §6 Session status verbatim (`working` green +
-`.anim-pulse-dot`, `needs-input` warning + `.anim-attention-dot`, anything else
-static `bg-text-4`), the session label in `font-mono 11px text-text-2`
-truncated, a short state word (`10.5px text-text-4`; "Working · helpers" for a
-session that is idle only because its own subagents are still working — it never
-reads "Idle" then), and a **go-to-session**
-icon button (`log-in` 12px, `text-text-4 hover:text-text-2`, label "Go to
-session") that selects the session in-app. **A session row appears once**: on
-the step where it is running, else on its last linked step. Every other step it
-links shows "+{n} session(s)" (`11px`, `text-text-4`) instead. When the
-renderer cannot resolve the session (not loaded in the sidebar yet), the
-go-to-session action raises an info toast ("Session not loaded yet") instead of
-doing nothing.
-
-**The `you` block never hides.** Eyebrow "You" (`9.5px / 700`, uppercase,
-`0.06em`). It is a **list** (campaign spec Amendment d, T596): the **first** owed
-item sits in the box, translated per kind — never the English string
-`mission_get` prints — and **every other item is its own row under it**, one per
-item, so nothing hides behind a "+N more" (that control is gone). A row
-(`11.5px`, `text-text-2`, `padding: 5px 0`, `border-t border-border`, `gap: 8px`)
-reads: a 10px `●` risk dot, the item, and right-aligned its **age** (`10.5px`,
-`text-text-4`, `tabular-nums`, "3h 0m"). The risk dot is `text-red` for what blocks
-others (a blocker, an undecided decision, a red `main`, a staged re-scope),
-`text-warning` for what waits on the operator's click (a requested close, a human
-step, a child's approvals or input) and `text-text-4` for the small chores (due
-checks, an imported end to review). **An age is shown only where the record holds a
-timestamp** — a blocker's `raisedAt`, the requested close's `pendingClose.at`, the
-merge of a red `main` PR from the ledger — and is left out otherwise; the UI never
-invents one. An undecided **decision node** adds a dedicated **"Decide: {title}"**
-item (campaign spec Amendment e) after the blockers, so the box can say what the
-operator must choose. Three looks: **clear** (`text-text-4`, no box — "Nothing —
-you're clear."), **warning** (`bg-warning-soft text-warning border-warning-line`,
-`padding: 8px 10px`, `triangle-alert` 13px), **success** (`bg-green-soft text-green
-border-green-line`, same padding, `check` 13px) — success only when the first item
-is a requested close and the server returns no `closeWarnings`. A requested close
-carries a **Close mission** button (Success) that opens the end dialog preset to
-"Close as delivered"; a staged re-scope carries **Approve re-scope** (Primary).
-
-**Ledger tail (campaign spec Amendment c, T596).** Under the `you` block a
-mission that has a ledger shows its **last 5 rows, newest first** — the facts
-Harnu wrote (a dispatch, a worktree, a PR opened or merged, CI, a verdict, a dead
-session, a compaction), never anything an agent said. Eyebrow "Ledger" (`10.5px /
-500`, uppercase, `0.07em`, `text-text-4`), then one row each (`11px`,
-`text-text-3`, `gap: 8px`): the event in words, the ref in `font-mono 10.5px`, and
-the age right-aligned (`10.5px`, `text-text-4`, `tabular-nums`). No ledger, no
-section.
-
-**Back link (campaign spec §5, T596).** A chapter popover opened from the
-Campaign popover starts with a **"‹ Campaign · Chapter N of M"** row above the
-title (`11px`, `text-text-3`, `chevron-left` 12px, `padding: 8px 14px 0`) — a text
-button that returns to the Campaign popover; the number comes from the campaign's
-`derived.progress`. A mission with no campaign has no such row.
-
-**Open questions** render only when non-empty: an eyebrow ("Open questions",
-`10.5px / 500`, uppercase, `0.07em`, `text-text-4`) + a plain list (`11.5px`,
-`text-text-3`, `line-height: 1.65`, `padding-left: 15px`).
-
-**Operator doors — the only writes this UI makes.** The canonical `Button`
-(`components/ui/Button.vue`, §6 Buttons, `md` size, no new size) — disabled
-(`opacity-40`) while any door is in flight. The per-row controls (the
-human-step tick, the check box, the check delete, "+ check") follow the §6
-Form-controls rule's "per-row inline control inside a dense list item": **Mark
-verified** is a button wearing the Badge **Accent** anatomy (`check` 10px) and
-**Unmark** a bare `text-text-4` text link (`hover:text-text-2`), both `11px`.
-
-| Door                   | Where                                     | Variant                 | Main-process function     |
-| ---------------------- | ----------------------------------------- | ----------------------- | ------------------------- |
-| Approve re-scope       | `you` block (warning)                     | Primary                 | `applyApprovedRescope`    |
-| End mission            | popover footer / `you` close → end dialog | Ghost → dialog          | `applyOperatorEnd`        |
-| Mark verified / Unmark | a `human`-level step's label row          | inline pill / text link | `applyOperatorVerifyStep` |
-| Add check              | "+ check" on a step                       | inline input            | `applyAddCheck`           |
-| Tick / untick check    | the check's checkbox                      | inline checkbox         | `applyTickCheck`          |
-| Delete check           | the check row's `x` (hover)               | icon button             | `applyDeleteCheck`        |
-| Pause steward…         | the steward line → reason dialog          | Ghost → dialog          | `applyPauseSteward`       |
-| Resume steward         | the steward line / the paused `you` row   | Primary (you) / link    | `applyResumeSteward`      |
-
-No MCP verb reaches any of them. A refused door, or an IPC failure, raises a
-danger toast with the reason ("Mission action refused").
-
-**Steward line (T609, campaign ch.5b; mockup `v6--campaign` owed strip).** One line **pinned above the
-footer** of the Mission popover (outside the scrolling body, `border-t border-border`, `padding: 7px 14px`, so
-Pause / Resume is never scrolled out of reach), drawn only when the mission has a steward (the Scheduler's system worker
-bound to it, §6 "Scheduler" → Stewards): the `bot` glyph (11px, `text-text-3`), "Steward" (`11.5px / 500`,
-`text-text-2`), a `·`, its last action (the last tick's one-line result, `text-text-3`, truncated), the age
-("4m ago", `text-text-4`) and the next wake ("next: on CI change" while armed). Right-aligned, a bare text
-link (`11px`, `text-text-4`, `hover:text-text-2`): **Pause steward…** while it runs, **Resume steward**
-(`text-accent`) while it is paused. A paused steward reads "Steward · paused", in `text-warning`, instead
-of its last action.
-
-**Pause steward dialog (`StewardPauseDialog.vue`).** The End dialog's anatomy, copied (Teleport, z-60,
-overlay fade, fade-in-scale card, `min(440px, 90vw)`, focus trap, `Esc` / backdrop / X cancel, **initial
-focus on the reason field**; the backdrop carries `data-mission-close-confirm` so the pill's click-outside
-leaves the popover open behind it). Header "Pause the steward?" (`13.5px / 600`); body: one sentence
-("It stops waking on events and on its 20-minute beat until you resume it. Nothing is lost — the mission
-keeps its state.") and a **mandatory Reason** field (label `11px`, `text-text-3`; a 2-row textarea in the
-End dialog's field look). The footer is **Cancel** (Ghost) + **Pause steward** (Primary), which stays
-**disabled while the reason is blank**. Pausing writes a `steward` Log entry carrying the reason.
-
-**Paused state.** While paused the mission's state is `needs-you` — the pill wears the warning tone — and
-the `you` list carries "Steward paused {age}: {reason}" (a `steward-paused` item; mid risk; the age is
-part of the sentence, so the row's own age slot stays empty). When it is the first row, it is boxed in the
-warning look with a **Resume steward** button (Primary, `play` 14px) under the sentence. Resuming writes a
-second `steward` Log entry and clears the row.
-
-**No merge door (T701).** The mission popover and the Campaign popover carry no merge row, button or dialog: PRs
-that are open with green CI add nothing to the `you` list, and merging stays the operator's, done on GitHub.
-(The T609 "Merge {n} in order…" door, its dialog and its `v6--campaign` mockup state were removed.)
+→ `active`.
 
 **End dialog (`MissionCloseConfirmDialog.vue`, spec §3.5).** One dialog ends
 any non-closed mission, with a choice. Ending is the one irreversible door
 (`closed` has no way out — the mission leaves the Topbar and the sidebar), so
-the popover's buttons only **open** it; `door: 'end'` fires from its confirm
+the pane's **Close mission…** buttons only **open** it; `door: 'end'` fires from its confirm
 and from nowhere else.
 
 - **Anatomy:** the `Dialog` variant verbatim, as "Remove worktree" uses it —
@@ -7456,9 +7130,9 @@ var(--color-accent)`, **unticked by default**) + a block with the **kind**
   dialog exists to stop a stray click or `Enter`. Everything is disabled while
   the door is in flight.
 - **Exits:** Cancel, `X`, `Esc` and a backdrop click close the dialog and **do
-  not end the mission**. The popover stays open behind it. Confirm runs the
+  not end the mission**. The pane stays open behind it. Confirm runs the
   door; on success the store removes the mission at once from the door's
-  `view: null` — the dialog, the popover, the pill and the sidebar chip go with
+  `view: null` — the dialog, the pill and the sidebar chip go with
   it in the same tick. On a refusal or an IPC failure the dialog closes and a
   danger toast carries the reason — except `MISSION_CLOSED` on an end (a double
   Close, or the mission was ended elsewhere): the mission is closed as asked, so
@@ -7468,104 +7142,6 @@ var(--color-accent)`, **unticked by default**) + a block with the **kind**
   "Safety confirms — sound + attention" pair, independent of the Sound switch.
   Once per opening.
 
-#### Missions review dialog (`MissionsReviewDialog.vue`, BUG-173 S5, spec §3.5)
-
-"Missions that need you": the whole pile of missions that owe the operator
-something, plus every finished mission nobody asked to close, in one place, and the only bulk action Harnu offers — **close
-finished missions as delivered**. It is opened from the grouped Activity entry's
-**Review all {n}** button and from an orphan row (a mission whose owner session
-is not loaded), through `useMissionsStore().openReview(focusMissionId?)`. It is
-mounted once in `App.vue` and consumes `missions.reviewRequest`, so it works with
-no session selected. It is **not** a Topbar control (a rare chore does not earn an
-always-on affordance).
-
-- **Anatomy:** the End dialog's `Dialog` variant — Teleport to `<body>`, z-60,
-  backdrop `rgba(0,0,0,0.55)` + `.anim-overlay-fade`, card `bg-surface
-border-border-2`, radius 9px, `--shadow-pop`, `.anim-fade-in-scale`, focus trap
-  — at width `min(560px, 92vw)`, `max-height: 80vh`. No new token, size or keyframe.
-- **Header** (`padding: 14px 18px 10px`, `border-b border-border`): title
-  "Missions that need you" (`13.5px / 600`) + the `X` button.
-- **Intro + selection bar** (`padding: 10px 18px`, `border-b border-border`): a
-  one-line intro (`12px`, `text-text-3`), then a row with the **Select all ready**
-  checkbox (shown only when group 1 is non-empty) on the left and the
-  **{count} selected** counter (`11px`, `tabular-nums`, `text-text-3`) on the right.
-- **Body** (scrollable, `padding: 6px 18px 12px`): up to three groups, each an
-  eyebrow heading (`9.5px / 700`, uppercase, `letter-spacing: 0.06em`,
-  `text-text-3`, `padding: 10px 0 4px`) over its rows. An empty group renders
-  nothing; with all three empty the body shows the empty line.
-  1. **Ready to close** — `status: 'delivered'` with `pendingClose`: the owner
-     verified the end and asked. **Pre-selected.**
-  2. **Finished, close never requested** — `status: 'active'` and
-     `progress.allDone`, nothing asked — listed whether or not it owes anything else
-     (its row then reads its headline, "Step N of N ✓"). **Not** pre-selected, with a hint
-     under the heading ("Nobody verified the end of these") and each row's
-     `closeWarnings` inline (Warning callout look, below).
-  3. **Waiting on you for something else** — every other owed mission. **No
-     checkbox**; the row's **Open** action (Button `ghost`, `11px`) selects the
-     owner and opens its popover like an Activity row, closing the review; when the
-     owner is not loaded the action is disabled and its tooltip says why. The
-     dialog never offers to close these in bulk.
-- **Row** (`border-t border-border` between rows, `padding: 7px 0`, `gap: 8px`): a
-  checkbox (`accent-color: var(--color-accent)`) for groups 1 and 2, the mission
-  title (`12px / 500`, `text-text`, truncated) with what it owes under it
-  (`11px`, `text-text-3`, truncated). A **focused** row (the request named a
-  mission) is scrolled into view once and wears `border-accent-line bg-accent-soft`
-  with `rounded-sm` and a `padding: 7px 8px` inset; the highlight clears when the
-  operator toggles anything.
-- **Inline warnings (group 2):** under the row, `text-warning` `11px`, one line per
-  warning with the same copy as the End dialog (`mission.end.warnings.*`: step
-  titles, never ids). They are information; they never disable a row.
-- **Footer** (`border-t border-border`, `padding: 12px 18px`, `gap: 8px`,
-  right-aligned): **Cancel** (Button `ghost`) + **Close {count} as delivered…**
-  (Button `success`, `check` 14px). The primary is **disabled at 0 selected**. It
-  only **opens** the confirm; it never closes anything itself.
-- **Exits:** Cancel, `X`, `Esc` and a backdrop click dismiss it (not while a bulk
-  close is running, and `Esc` goes to the confirm first when that is open). It also
-  closes itself when the pile is empty after a successful close.
-- **Selection state:** local to the dialog. Group 1 starts selected, group 2
-  unselected. A poll that removes a mission drops it from the selection; one that
-  adds a mission never selects it (no surprise pre-selection mid-review).
-
-#### Bulk close confirm (`MissionBulkCloseConfirmDialog.vue`, BUG-173 S5)
-
-The irreversible step of the review. The **End dialog's anatomy, copied**
-(Teleport, z-60 above the review, overlay fade, fade-in-scale card, focus trap,
-`Esc` and backdrop cancel, **initial focus on Cancel**, the confirm chime and
-`requestAttention()` once on open — an irreversible decision is never silent),
-at width `min(480px, 90vw)`.
-
-- **Header:** "Close {count} missions as delivered?" (plural) + the `X` button.
-- **Body:** one sentence ("They leave the Topbar and the sidebar and can't be
-  reopened. Each mission file stays on disk as the record."), then a list with one
-  block per mission: the title (`12px / 500`, `text-text`) and, when the server
-  returned `closeWarnings`, the same Warning callout look as the End dialog
-  (`triangle-alert` 13px, one line per warning with the step titles beneath, never
-  ids). Then **Reason (optional)** — a single label + a 2-row textarea that
-  applies to every mission and goes to every Log, prefixed `bulk close` so an
-  owner reading its Log can tell it was a batch decision. Warnings **never**
-  disable the confirm.
-- **Footer:** **Cancel** (Button `ghost`) + **Close {count} missions** (Button
-  `success`, `check` 14px). The only outcome is `closedAs: 'delivered'`. **There is
-  no Discard here**: discarding says "dead or abandoned", a per-mission judgment
-  that stays on the End dialog.
-- **In flight:** the confirm button reads "Closing {done} of {total}…" and
-  everything is disabled. Doors run **one after another**, never in parallel, and
-  never abort on the first error; rows leave the review as each answer lands.
-- **Outcome:** all closed → a **success** toast ("{count} missions closed") and the
-  confirm closes (the review closes with it when nothing is left). Any failure → a
-  **danger** toast ("{failed} of {total} could not be closed"); the confirm closes,
-  the review stays open on the failed rows with their selection kept, so the
-  operator can retry or open the mission. A mission closed elsewhere meanwhile
-  (`MISSION_CLOSED`) counts as closed.
-- **Operator-only:** no MCP verb reaches this path, now or later. An agent can only
-  stage a close (`mission_request_close`).
-
-**Don't**
-
-- ❌ Pre-select group 2, or offer a bulk **discard**.
-- ❌ Add a bulk IPC door: the batch is N calls of the existing `end` door.
-- ❌ Let the review's primary button close anything without the confirm.
-
 #### Sidebar indicator (`SidebarFolder.vue`)
 
 The **last** (rightmost) entry of the session row's trailing chip cluster:
@@ -7574,10 +7150,9 @@ chip**. **Missions v4 (S-23):** the chip is drawn from the v4 view. For a **v4
 record** it shows the **pill's own text and tone** ("4/21 · 3 for you",
 "21/21 · ready to close": `missionPillText` / `missionPillTone`,
 `lib/mission-pane-view.ts`) on the session that **leads** the mission. For a
-**v3 mission** it shows exactly what that mission's own Topbar pill shows (the
-v3 headline below, as on main) until the popover is retired, so one mission
-never carries two different counts on one screen; `chipFor` in
-`stores/missions.ts` picks by the record's source. The paragraph
+**v3 file** the view channel reads as v4 (since the cut-over) it shows the same
+text and tone, so one mission never carries two different counts on one screen;
+`chipFor` in `stores/missions.ts` picks by the record's source. The paragraph
 below describes the v3 headline (it also serves a build without the v4
 channel). The compact headline (`{n}/{m}`, `{n}–{to}/{m}`, `{m}/{m} ✓`),
 `10.5px`, `tabular-nums`, `gap: 3px`, colored with the **pill's tone** (the
@@ -7591,7 +7166,7 @@ green, pinned, without it). Otherwise it is hover-revealed like the subagent
 chip (`chipRevealClass`). An `empty` headline renders no chip.
 
 `title`/`aria-label` spell it out ("Mission: Step 8 of 9 — needs you").
-Non-interactive: the popover is reached from the Topbar pill.
+Non-interactive: the pane is reached from the Topbar pill.
 
 **Don't**
 
@@ -7616,11 +7191,9 @@ section is the shell (the pill, the pane chrome and the states around a mission)
 glance (progress bar, next step, tree, timeline) and the open step, sessions and hand-off
 land in later slices and add their own sections here.
 
-**Until the cut-over** a **v3** record is served by the v3 stack unchanged: its pill
-(§6 "Mission progress") opens the popover, its doors are the popover's, and no v4 code
-writes it. An agent creates a v4 record with `mission_create` in the v4 shape (registered in S-24), and a
-v3 mission becomes one on the first write of a verb that exists in v4 alone, so the pane has a v4 mission
-to show once such a record exists on disk.
+**Every record opens here** (the cut-over, S-35; the popovers were deleted in S-37). A **v3** file is
+read as v4 without writing it, and its first door use creates its v4 copy. An agent creates a v4
+record with `mission_create` in the v4 shape.
 
 **Data.** `window.api.missionV4View({ folder, sessionId, missionId? })` (channel
 `mission:v4View`); the reply is `{ state: 'mission' | 'none' | 'refused' }`. There is **no
@@ -7636,7 +7209,8 @@ recounts a step.
 
 #### Topbar pill — v4 (`MissionPill.vue`)
 
-The same anatomy as the pill in "Mission progress" (height `18px`, padding `1px 7px`,
+The pill is a `<button>` placed after the orchestrator pill in the title row, selected session only,
+with the anatomy of the provider and orchestrator pills beside it (height `18px`, padding `1px 7px`,
 `rounded`, `10.5px / 500`, `tabular-nums`, a 10px leading icon), with the **mockup's**
 tinted look: `border` in the tone's `-line` token, the tone's `-soft` background and its
 text colour. Label, all from the server's `progress` and `waiting`: **"{done}/{total} ·
@@ -7654,8 +7228,8 @@ says "21/21 · ready to close". No campaign or chapter wording, no tick rail, no
 It is a **toggle button** (`aria-pressed`): pressed while the pane is open in the
 selected session's stack, drawn with a `ring-2` in the tone's `-line` token. The title is
 the mission's title and its count, with the `view.missionProgress` chord appended. The
-chord toggles the same pane. A session with no v4 mission and no v3 mission renders **no
-pill**; a v3 mission renders the v3 pill and popover, unchanged.
+chord toggles the same pane. A session that is in no open mission renders **no pill**; a mission
+that was a v3 file renders the same pill.
 
 #### Pane chrome
 
@@ -7679,7 +7253,6 @@ All on the pane's `data-state`. Copy follows §8 and the Missions v4 writing con
 | `mission`    | `state: 'mission'`, source `v4`, open, session in it | the head section (`padding: 14px 16px`): the title (`13.5px / 600`), the progress bar, the state tag, then "The glance" below                                 |
 | `none`       | `state: 'none'`, or a closed mission                 | the empty state: `target` (14px, `text-text-4`) and **"This session has no mission."** (`12.5px / 500`, `text-text`), then the attach picker (S-21, below)    |
 | `refused`    | `state: 'refused'`                                   | the same empty layout: **"This mission cannot be read right now."**, the server's reason below it (`11.5px`, `text-text-3`, mono) and **Retry** (S-21, below) |
-| `v3`         | the answer is a v3 record                            | the same empty layout: **"This mission is still a v3 mission."** and "Open it from the mission pill at the top." below it                                     |
 
 The **count line** is `11.5px`, `tabular-nums`, `text-text-3`: "{done} of {total} steps done" or
 "{done} of {total} milestones done" (the server's `progress.unit`), written by the
@@ -7708,37 +7281,44 @@ sizes below are the mockup's, recorded here so the code has nothing off-system.
 mission's `doneWhen` is not drawn). `role="progressbar"` with `aria-valuemin 0`, `aria-valuemax`
 the server's `total`, `aria-valuenow` its `done`. Track: `margin-top: 10px`, `height: 24px`,
 `rounded-sm border border-border bg-surface-2`, `overflow: hidden`. Fill: `bg-green-soft`, an
-absolute box from the left, `width` = `done / total` (0 when `total` is 0), with a `2px`
-`border-green` right edge (no edge at 100%). The label sits **inside** the track, `padding: 0 9px`,
-`11.5px`, `tabular-nums`, `text-text-2` — the count line, "{done} of {total} steps done" or
-"{done} of {total} milestones done" (the same text the shell wrote). At 100% the label is
-`text-green`. The mockup bolds the number; the pane does not (one translated sentence).
+absolute box from the left, `width` = `done / total` (0 when `total` is 0). The fill's edge is marked
+by a **`2px` `bg-green` strip in a row of its own under the label** (`grid-template-rows: 1fr 2px`;
+the strip is as wide as the fill, and there is none at 0 or at 100%), so the marker is never drawn
+through the count at any fill. The label sits **inside** the track, in the first row, `padding: 0 9px`,
+`11.5px`, `tabular-nums`, `text-text-2`, one line that truncates with the full text in its `title` —
+the count line, "{done} of {total} steps done" or "{done} of {total} milestones done" (the same text
+the shell wrote). At 100% the label is `text-green`. The mockup bolds the number; the pane does not
+(one translated sentence).
 
 **Your next step (`MissionPaneNext.vue`).** One box under the bar (`margin-top: 10px`, `rounded`,
 `border`, `padding: 10px 12px`, `gap: 8px`, a column) from `detail.waiting`. Looks:
 
-| Look | When                                       | Border / background                   | Eyebrow            |
-| ---- | ------------------------------------------ | ------------------------------------- | ------------------ |
-| you  | `waiting.next` is a step the operator owes | `border-warning-line bg-warning-soft` | **Your next step** |
-| ok   | the next item is `close` (ready to close)  | `border-green-line bg-green-soft`     | **Your next step** |
-| calm | `waiting.next` is `null`                   | `border-border-2 bg-surface-2`        | **Next step**      |
+| Look | When                                                                                              | Border / background                   | Eyebrow            |
+| ---- | ------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------ |
+| you  | `waiting.next` is a step the operator owes, or `waiting.next` is `null` and a Done when is staged | `border-warning-line bg-warning-soft` | **Your next step** |
+| ok   | the next item is `close` (ready to close)                                                         | `border-green-line bg-green-soft`     | **Your next step** |
+| calm | `waiting.next` is `null` and no Done when is staged                                               | `border-border-2 bg-surface-2`        | **Next step**      |
 
 The eyebrow is `10px / 700`, uppercase, `0.07em`, `text-text-4` (`text-warning` in the `you` look,
 `text-green` in `ok`). Then **the ask** (`13px`, `text-text`, `line-height 1.4`) and **the why**
-(`11.5px`, `text-text-3`, pulled up `4px`): both are the server's wording and are shown as the
-server wrote them (`ask` and `why` are capped by the writing contract on write; the pane never
-cuts or rewrites them). The `calm` look has one sentence in place of the ask: "{n} steps are
+(`11.5px`, `text-text-3`, pulled up `4px`): both are **worded by the pane**, in the reader's language,
+from the item's kind and the record (`waitingText`): the server's `ask` and `why` are English and stay
+the text a session reads, so a Portuguese pane never shows them for a kind it knows. What an agent
+wrote (a blocker's own ask and "unblocks", a criterion's text, a step's title) is shown as written. An
+item whose record is gone, or a kind this build does not know, shows the server's words. The `calm` look has one sentence in place of the ask: "{n} steps are
 running. Nothing for you right now." (or "Nothing is running. Nothing for you right now."), counted
 from the server's `progress.counts.running`.
+
+**A staged Done when** (an older mission's re-scope reads the same) is the next step when `waiting.next` is `null`, or is the older mission's own `rescope` item (S-40: that item IS the staged Done when, so it is never drawn a second time as a row of its own): the ask is "Approve or decline the new Done when", the why "A session proposed it. It becomes the mission's end only if you approve.", and the one button is **Review it**, which scrolls the staged box below into view and focuses **Approve**. The box never reads "Nothing for you right now" above it. When other items wait and the `rescope` item is not first, it is one row of "{n} more waiting on you" (kind label "Done when", the same ask, one **Review it** button); the staged box stays below as before. The staged Done when is always one line and one button in the box, never two.
 
 The action row is `flex`, `gap: 10px`: **one button** (`ui/Button`, variant `primary`), and the
 **"{n} more waiting on you"** link at the right (`11.5px`, `text-text-3`, hover `text-text`; `n` is
 the length of `waiting.more`, written by the renderer, never `waiting.moreLine`). The link expands
 **in place** (it never navigates): under the action row, a `border-t border-border` list, one row
-per other item, `Show less` replacing the link's text. A row is a two-column grid (`1fr auto`,
+per other item, `Show less` replacing the link's text. A row is a two-column grid at the regular width (`1fr auto`,
 `gap: 2px 10px`, `padding: 8px 0`, `border-t border-border` between rows): the kind in an eyebrow
 (`9.5px / 700`, uppercase, `0.06em`, `margin-right: 6px`) then the ask (`12px`); under it the why
-(`10.5px`, `text-text-4`); the row's button on the right, spanning both lines.
+(`10.5px`, `text-text-4`); the row's button on the right, spanning both lines. In a **narrow pane** (below 240 px) the row is one column (`minmax(0, 1fr)`) and the button sits on its own row under the text, left-aligned (`margin-top: 4px`), so the text keeps the whole width instead of a sliver (`restRowGrid`).
 
 | Kind (`waiting` identifier) | Eyebrow word | Eyebrow colour |
 | --------------------------- | ------------ | -------------- |
@@ -7825,12 +7405,46 @@ the hand-off are S-20; both are below.) (An open step's who-settles, blocker and
 mission with `mission_create` in the v4 shape (S-24), so the glance has something to show once a v4
 record exists on disk.
 
-**Don'ts.** ❌ Show a v3 mission in the pane, or write a v3 record from it. ❌ Open the pane
-for a v3 pill. ❌ Print `stateLabel`, `progress.headline`, `waiting.moreLine` or any English word
+**Don'ts.** ❌ Write a v3 record from the pane. ❌ Print `stateLabel`, `progress.headline`, `waiting.moreLine` or any English word
 from the reply (the `ask` and the `why` are the one wording the server owns, shown as written).
 ❌ Poll from a loop the store does not own. ❌ Draw a Done when paragraph. ❌ Open more than the
 current milestone by itself. ❌ Count to do steps in a milestone's summary. ❌ Draw a button whose
 door is not built yet.
+
+#### At a glance in a small space (Missions v4, stp-21)
+
+**The pane lives at about 296 to 420 px, so it reads in one screenful there** (`MissionPane.vue`,
+`lib/mission-pane-view.ts`: `PANE_ORDER`, `paneLayout`, `barGeometry`, `loadPaneSections`). **Nothing is
+removed:** what left the first screenful is one click away, and the pane keeps each choice.
+
+**The first screenful** (`GLANCE_SECTIONS`), in this order, each marked `data-pane-section`:
+
+1. **`head`:** the mission's title (it wraps, never truncates) and the progress bar.
+2. **`next`:** the next-step box. Under it, **"{n} more waiting on you"** opens the rest of the waiting list in
+   place.
+3. **`waiting`:** what else waits on the operator and is not a line of the list: a session's request to join and
+   a staged Done when. Drawn only while there is one.
+
+**One click away** (closed to begin with; every one keeps its state across a refresh, in `localStorage`
+`om2tab.missionPane.sections`, per viewer): **Steps and timeline** (`tree`: the milestones, the steps, their
+criteria, links and blockers, and the Ask box on a milestone), **Sessions** (`sessions`) and **"{n} more waiting on
+you"** (`more`). The collapsed **Steps and timeline** line is a `button` (`12px`, `text-text-3`, a chevron, the
+eyebrow in `10.5px / 500` uppercase `0.07em`) with the place the mission is at on its right (`11px`,
+`text-text-4`, one line that truncates, full text in `title`): the current milestone's title, "Every step is done",
+or the step count. **Open step** in the next-step box opens the steps by itself (and keeps them open), then
+opens that step. The sample opens a part of the pane for you without changing what the operator kept. **Close
+mission…** stays at the bottom of the body.
+
+**Width.** The pane has **no minimum width**; it follows the width it really has (a `ResizeObserver` on its
+root, `data-width-mode` on the root says which): **narrow below 240 px**, regular from 240 px. Narrow changes only
+how things fit: the side padding drops from 16 to 10 px, the next-step box and a staged Done when use `8px`
+padding, a button's text may wrap, and the body never scrolls sideways (`overflow-x: hidden`). In both modes
+every text wraps (`break-words`, `min-w-0`) or truncates with its full text in a `title`, every row of controls
+wraps (`flex-wrap`), and no control is hidden to make room: the same controls exist at 110 px as at 420 px.
+
+**The selector of the missions a session leads** (`This session leads {n} missions`): the label sits above the
+control (`flex-col`, `gap: 4px`) and the control is the full width, with the mission's title in its `title`, so its
+text is never squeezed out of view at 290 px.
 
 #### An open step (Missions v4, S-19)
 
@@ -7933,11 +7547,17 @@ head, under "Your next step", not in a step): a box like the next-step box in th
 **"New Done when proposed"** (`10px / 700`, uppercase, `text-accent`), the proposed text (`13px`,
 `text-text`), one line saying what each button does (`11.5px`, `text-text-3`), then **Approve**
 (`ui/Button` primary) and **Decline** (`ui/Button` soft). It is drawn only while the view carries a
-staged Done when; the mission's own Done when is still not drawn.
+staged Done when; the mission's own Done when is still not drawn. An **older (v3) mission** that has a
+re-scope staged shows the same box (S-37): the new target and its proof, with the owner's reason in
+brackets; **Approve** applies it to the old file as the popover did and **Decline** drops it, and
+neither creates a v4 copy (`stagedRescopeOf`, `runPaneDoor` in `src/main/mission-ipc.ts`).
 
 **Narrow pane.** The open step is as narrow as its tree: the criteria's right cell moves under the
-text (above), the pills wrap and break long addresses (`break-all`), the blocker's text wraps, and
-nothing has a fixed width.
+text (above), the pills wrap and break long addresses at their separators, the blocker's text wraps, and
+nothing has a fixed width. **A link never breaks inside a word:** its label is cut after a separator
+(`/ . - _ ? & = # : @`) or a space (`<wbr>` between the parts), so a long path wraps at its slashes
+and dots; a single segment that is wider than the pane is clipped whole and its full text is in the
+`title`.
 
 **Data.** The doors are `window.api.missionV4Door` (channel `mission:v4Door`): `mark` (a criterion),
 `clearBlocker`, `approveDoneWhen`, `declineDoneWhen`. They go through `stores/missions.ts`
@@ -7975,8 +7595,9 @@ row per session (`gap: 8px`, `12px`, `text-text-2`), a grid of a 7px dot and the
 border-text-4`) once it stopped;
 - **line 1**: the session's **name** (`font-weight: 500`, `text-text`; **"Session 22222222"**, the first
   eight characters of its id, when it is not loaded; a session a hand-off started is named after its first
-  prompt, the hand-off's instruction line, so the row says **"Took over “Score a spec with a test set”"**
-  instead, while the sidebar still shows the first prompt) · its **role**, in the tense of whether it still is:
+  prompt, the hand-off's instruction line, so the row says the **mission's title** plainly ("Score a spec
+  with a test set") instead, while the sidebar still shows the first prompt; the hand-off's reply carries
+  the same name as `leaderName`) · its **role**, in the tense of whether it still is:
   **"Leads the mission"** / **"Led the mission"** / **"Works on the mission"** / **"Worked on the mission"**,
   and **" · this session"** on the one the pane follows;
 - **sub line** (`10.5px`, `text-text-4`): when it worked, from and to: **"Since Nov 13"** (attached),
@@ -8208,7 +7829,7 @@ border-border-2`, `padding: 2px 8px`, `11px`). The box only **opens the dialog**
   `height: 20px`, `padding: 0 7px`, `11px / 500`, a 11px `flag`; `text-green` when the mission is ready), right
   aligned. A mission can be discarded at any time, so this never waits for the end.
 
-**The dialog** is the one end dialog of the popover (`MissionCloseConfirmDialog.vue`, §6 "Mission progress" →
+**The dialog** is the one end dialog (`MissionCloseConfirmDialog.vue`, §6 "Mission progress" →
 End dialog: same anatomy, same hand-rolled shell until it moves to `ui/Dialog.vue`) in `mode="v4"`. What
 changes is the copy and the list, not the shell:
 
@@ -8257,9 +7878,11 @@ that part for you (`step-open`, `step-blocked`, `ask`, `handoff-confirm`); the t
   one line, **"Shows every state of this pane with made-up data. Nothing is saved."**, under a `border-t`.
 - **The strip** (pinned under the header while a sample shows): `border-b border-accent-line bg-accent-soft`,
   `padding: 8px 12px`, `11.5px`. First line: the eyebrow **"Sample mission"** (`10px / 700`, uppercase, `0.07em`,
-  `text-accent`), **"Made-up data. Nothing you press here is saved."** and **"Leave the sample"** (the dense
-  pill). Second line: **"State"** and a native `select` of every state (`rounded-sm border border-border-2
-bg-bg`, `height: 22px`, `11.5px`). A state that needs a click adds one line saying which.
+  `text-accent`) and **"Leave the sample"** (the dense pill). Second line, across the whole strip so it never
+  wraps in a sliver: **"Made-up data. Nothing you press here is saved."** Third line: **"State"** and a native
+  `select` of every state (`rounded-sm border border-border-2 bg-bg`, `height: 22px`, `11.5px`). A state that needs a
+  click adds one line saying which, and it quotes the pane's own label for the thing to press (the same i18n key
+  the pane draws), so the sample never words the pane's copy a second time.
 - **Inert.** While a sample shows, every door the store runs for it answers "nothing changed" **without a call and
   without reading the view**; the hand-off refuses in words ("This is a sample mission, so no session was
   started."). The pill, the sidebar and every other reader never see it.
@@ -8285,75 +7908,6 @@ bg-bg`, `height: 22px`, `11.5px`). A state that needs a click adds one line sayi
 open matter or a door's code. ❌ Close on one click: the buttons only open the dialog. ❌ Let a sample call a
 door, read the view or reach another surface. ❌ Show Close as delivered as the default of a mission that is not
 done.
-
-### Campaign progress (pill, popover)
-
-**T596 (campaign chapter 4b); spec `docs/specs/2026-10-30-campaign/spec.md` §5,
-approved mockup v6 (`screens/v6--pill.html`, `v6--campaign.html`,
-`v6--chapter.html`).** A **Campaign** is the quest line above a Mission; each
-chapter IS a mission. The surfaces below render the campaign's server
-`derived.progress` (`computeCampaignProgress`, `src/main/campaign-progress.ts`) and
-**never recount** — chapter numbers, states, counts and the radiant counter are
-the server's. Data: read over `campaign:list` (`src/main/campaign-ipc.ts`,
-read-only — no campaign door exists yet) into `stores/campaigns.ts`, refreshed
-whenever the mission store refreshes. A session whose mission has no campaign
-(or whose campaign is not loaded) keeps the Mission progress pill and popover
-unchanged. **Tokens only; no new color, size or animation.** The one new width is
-the wide popover (§4 Layout dimensions).
-
-**Pill (`MissionPill.vue`).** Same anatomy as the Mission pill (§6 "Topbar pill":
-height `18px`, `padding: 1px 7px`, `10.5px / 500`, `tabular-nums`, 10px leading
-icon), a `<button>` that toggles the Campaign popover. Label, from the campaign
-headline plus the own mission's headline: **"Ch. {n}/{m} · Step {a}/{b}"**
-(parallel chapters read "Ch. {n}–{to}/{m}"); the warning state appends **"· {k} for
-you"**, k being everything the campaign's open chapters owe (`you` lists, plus
-undecided decisions); delivered reads **"Ch. {m}/{m} ✓"** with no step part. Tones
-as the Mission pill: `accent` active, `warning` when anything is owed or blocked,
-`success` when delivered (`check` icon).
-
-**Pill margin rail and radiant counter (T607, mockup `v6--pill`).** After the label
-the campaign pill draws a **margin rail**: one tick per _required_ chapter, in plan
-order (side chapters are not ticks), `aria-hidden` — the label already says the
-position. A tick is `2px × 8px`, `rounded-[1px]`, `1px` apart, from the chapter's
-state in the server's `progress.states`: `done` → `bg-green`; `inReview` →
-`bg-green` at `opacity-50`; `running` or inside the server's `current` range →
-`bg-accent`, **`4px`** wide (`bg-warning` while the pill is in its warning tone);
-`locked` → `bg-border-2` at `opacity-50`; `todo` → `bg-border-2`. Delivered: every
-tick `bg-green`, none wide. A campaign with no required chapters draws no rail. When
-the server reports a radiant (`progress.radiant`, present only when some chapter
-declares one) the pill ends with the **radiant counter** `"{done}/{total}"`
-(`tabular-nums`, `opacity-70`, the pill's `10.5px`) — the server's numbers, never a
-sum of the chapters' own `radiant.total`. The tick rail and the counter are the
-only additions to the pill's anatomy; a mission with no campaign has neither.
-
-**Campaign popover (`CampaignPopover.vue`, `.pop--wide` 520px).** The Mission
-popover's shell (`rounded border border-border-2 bg-surface shadow-pop`,
-`anim-fade-in-scale`, `max-height: 560px`), width **520px**. Header
-(`padding: 10px 14px`): the campaign title (`12.5px / 500`), the headline
-"Chapter {n} of {m}" right-aligned (`11px`, `text-text-4`), the declared end
-(`11px`, `text-text-3`, truncated), the counts line (`11px`, `text-text-4`: "{done}
-done · {inReview} in review · {running} running · {locked} locked · {side} side
-({sideDone} done, {sideOpen} open)") and, when a chapter declares a radiant, a 3px
-`bg-border-2` track with an `accent` fill and "**{done} / {total}** units" beside
-it. Body, two panes: **left** (`~190px`, `border-r border-border`) the groups
-**Main quest** / **Side quests** / **Locked** (eyebrow `10.5px / 500`, uppercase,
-`0.07em`, `text-text-4`, the group count right-aligned); a chapter row is the §6
-step-rail glyph for its state (`verified`/`done`, `running`, `waiting` for in
-review, `lock` 10px for locked), its number, its title (`12px`; the open chapter
-`text-text` / 500, a click selects it) and a muted state word. **Right** the
-selected chapter's **objectives**: its mission's counted steps as compact rows
-(rail letter, title, the four gate dots of "Gate dots" above) with "{done} of
-{total} steps" and **Open chapter →** (text link, `accent`). Below both panes, the
-**You lane** (the Mission `you` block's three looks, aggregated over the open
-chapters, each row tagged "ch. {n}") and a footer (`padding: 8px 14px`,
-`border-t border-border`): **End campaign…** (Ghost, left-aligned, the footer's only
-control) — rendered **disabled with a tooltip** until main exposes a campaign end door.
-There is no map takeover (removed by T704; the Mission pane replaces it), and no merge
-row or dialog (T701). The **Steward** line stays with the chapter popover, where its Pause door lives.
-
-States (mockup `v6--campaign`): `default`; `side` (a side quest selected —
-eyebrow "Side quest · not required for the end", its origin chapter and gates);
-`needs-you` (the You lane's first item boxed in the warning look).
 
 ### Dialog
 
@@ -8406,12 +7960,12 @@ Scrim  (--color-scrim, fixed, inset 0, flex-centered)           z = layer
 Width is always `min(<size>, 90vw)` (written `w-(--dialog-w-<size>) max-w-[90vw]`). A dialog picks a
 size; it does not invent a width.
 
-| Size | Token           | Width | Use                                                            | Replaces (today)                                                                                                                                                                    |
-| ---- | --------------- | ----- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sm` | `--dialog-w-sm` | 480px | Confirms and one-field forms                                   | 440 (Mission close, mods confirm), 460 (Containers remove, Review confirm), 480 (Remove worktree, Rename ×2, Bulk close)                                                            |
-| `md` | `--dialog-w-md` | 560px | **Default.** Forms, plans, launch options                      | 520 (New folder, Memory location), 540 (New session, MCP confirm), 560 (Add folder, Claude Boot, New worktree, Open subfolder, Dehydrate, Sweep, Missions review, dispatch confirm) |
-| `lg` | `--dialog-w-lg` | 720px | Long lists with chips; the card dossier                        | 720 (Cleanup list — replaces `--gc-dialog-w`), 760 (Card create, Card detail)                                                                                                       |
-| `xl` | `--dialog-w-xl` | 940px | Tabbed/navigated surfaces. **Must pass `height`** (fixed size) | 940 (Settings)                                                                                                                                                                      |
+| Size | Token           | Width | Use                                                            | Replaces (today)                                                                                                                                                   |
+| ---- | --------------- | ----- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sm` | `--dialog-w-sm` | 480px | Confirms and one-field forms                                   | 440 (Mission close, mods confirm), 460 (Containers remove, Review confirm), 480 (Remove worktree, Rename ×2)                                                       |
+| `md` | `--dialog-w-md` | 560px | **Default.** Forms, plans, launch options                      | 520 (New folder, Memory location), 540 (New session, MCP confirm), 560 (Add folder, Claude Boot, New worktree, Open subfolder, Dehydrate, Sweep, dispatch confirm) |
+| `lg` | `--dialog-w-lg` | 720px | Long lists with chips; the card dossier                        | 720 (Cleanup list — replaces `--gc-dialog-w`), 760 (Card create, Card detail)                                                                                      |
+| `xl` | `--dialog-w-xl` | 940px | Tabbed/navigated surfaces. **Must pass `height`** (fixed size) | 940 (Settings)                                                                                                                                                     |
 
 #### Viewport cap (mandatory)
 
@@ -14183,45 +13737,6 @@ inside the first. The **Collapse all** button next to it keeps the global keyboa
 prompts.` and a `Clear filter` ghost button (`22px`, `0 8px`, `border border-border-2`, `rounded-sm`,
 11px `--text-2`) that clears both the search and the chip. (The no-workers-at-all empty state is unchanged.)
 
-**Stewards section (T609, campaign ch.5b; collapsible since T651 — `SchedulerStewards.vue`).** A mission's
-steward is a **system worker**, not a user worker (campaign spec §3.4), so it never appears among the folder
-groups, the chips, Up next or the worker counter. It has its own block at the **bottom of the list column**,
-under the scrolling folder groups: `border-t border-border`, `padding: 8px 10px 8px 12px`. Approved mockup
-`docs/design/scheduler-stewards/` (screen `scheduler--list`, states `recolhido` / `aberto`).
-
-_Header — Up next's anatomy._ A `<button aria-expanded>` (`gap: 5px`, `padding: 0`): a leading `ChevronDown`
-(11px, `text-text-4`, rotated -90° when collapsed, `--dur-fast` / `--ease`), the title "Stewards" (`10px / 600`,
-uppercase, `0.04em`, `text-text-3`, `text-text-2` on hover of the button) and a right-aligned `10px text-text-4`
-summary, truncated. The summary reads `{n} · {r} running · {a} awaiting close`: the total always, the other two
-only when their count is above 0 (13 stewards, none running or awaiting → `13`). The running part is
-`text-accent`, the awaiting part `text-text-2`. Counts follow each row's displayed state word, so the header
-never disagrees with the rows (`stewardsSummaryParts`, `lib/steward-view.ts`). The block is **collapsed by
-default** and the choice persists per viewer in `localStorage` under `om2tab.scheduler.stewardsCollapsed`
-(`'0'` = open; read and written inside the same try/catch as Up next's key).
-
-_Open._ The rows (and the hints) sit in a container with `overflow-y: auto` and
-`max-height: var(--sched-stewards-max-h)` (`232px`, ≈ 6 rows, theme-invariant, §9), with a `-6px` right margin
-and `6px` right padding so the scrollbar sits on the column's edge; the row list inside it starts `6px` under
-the header (`margin-top` on the list, so the 6px scrolls with the content and counts inside the cap). The
-folder-group list above keeps the rest of the column.
-
-_Rows._ A row is **read-only**: no enable switch, no pin, no Run now, no delete, no prompt edit, and it is not
-selectable (no detail pane). Two lines, `gap: 2px`, `7px` between rows: the mission's title (`12px`,
-`text-text-2`, truncated) with a `bot` glyph (11px, `text-text-3`) before it and, at the right, a state word
-(`11px`) — **Paused** (`text-warning`), **Running** (`text-accent`), **Awaiting close** (`text-text-3`; the
-steward's mission is `delivered` and waits for the operator to close it) or nothing. Precedence: Paused >
-Running > Awaiting close > nothing (`stewardStateOf`). Then `11px text-text-4`: "Last wake {age} ago · {last
-action}" (the last tick's first result line, truncated; "No tick yet" before the first). A **paused** row (the
-operator paused it from the mission popover) shows its reason instead of the last action, in `text-warning`.
-The block is hidden when no mission has a steward.
-
-_Hints_ (end of the open rows, `10.5px`, `text-text-4`, `margin-top: 8px`, `line-height: 1.5`): with at least
-one steward awaiting close, "Close a delivered mission to retire its steward."; when the Scheduler holds
-stewards but no user worker, "A steward belongs to its mission. Pause it from the mission's popover." The list
-column draws no empty block above the Stewards section in that case (its "No worker matches this filter" copy is
-about filtering). Hints live inside the 340px column, never in the detail pane: at 900px that pane can be
-squeezed to a sliver. The footer caption below the view is unchanged.
-
 #### Worker detail (`SchedulerWorkerDetail.vue`, remaining width)
 
 `flex: 1; min-width: 0; bg-bg`. Head block (`padding: 12px 14px 0`, column,
@@ -15587,9 +15102,6 @@ codebase is a bug to fix.
   /* Folder View scroll caps (§6 "Folder View → Height caps") */
   --fv-fanout-max-h: 380px;
   --fv-rail-list-max-h: 280px;
-
-  /* Scheduler list: the open Stewards block's scroll cap (§6 "Scheduler → Stewards section") */
-  --sched-stewards-max-h: 232px;
 
   /* Cleanup layout dimensions (§4, §6 "Workspace GC — unified Cleanup") */
   --gc-panel-w: 320px;

@@ -23,24 +23,44 @@ import {
   type MissionStateEntry,
   type MissionStepStatus
 } from './contract'
-import type { Mission, MissionStep } from '../mission-core'
-import type { MissionProgress } from '../mission-progress'
 import type { MissionDetail } from '../missions/verbs-read'
-import { describeWaiting, type WaitingItem, type WaitingItemV4 } from '../missions/waiting'
+import type { WaitingItemV4 } from '../missions/waiting'
 
 /** The cause `mission.state` is sent under; the gate row accepts nothing else. */
 export const MISSION_STATE_SUBSYSTEM = 'missionState'
 
-/** The slice of a `MissionView` (mission-ipc) the projection reads. */
+/** One step of a mission as the projection reads it. */
+interface StepIn {
+  id: string
+  title: string
+  kind: 'custom' | 'fixed-start'
+  links: { kind: string; ref: string }[]
+  blockers: { reason: string; owner: 'agent' | 'operator' }[]
+}
+
+/** What the progress of a mission says, as the projection reads it. */
+interface ProgressIn {
+  total: number
+  current: { from: number; to: number } | null
+  done: number
+  verified: number
+  allDone: boolean
+  states: Record<string, string>
+}
+
+/** The slice of a mission the projection reads: the v4 detail of one record, reshaped by {@link missionViewInOf}. */
 export interface MissionViewIn {
-  mission: Pick<Mission, 'id' | 'linkedCard' | 'blockers'> & {
+  mission: {
+    id: string
+    linkedCard?: string
+    blockers: { reason: string; owner: 'agent' | 'operator' }[]
     owner: { sessionId: string }
-    steps: Pick<MissionStep, 'id' | 'title' | 'kind' | 'links' | 'blockers'>[]
+    steps: StepIn[]
   }
   /** Session ids attached to the mission as workers (v4 keeps them on the mission, not on a step). */
   workers?: readonly string[]
   title: string
-  progress: Pick<MissionProgress, 'total' | 'current' | 'done' | 'verified' | 'allDone' | 'states'>
+  progress: ProgressIn
   derived: {
     steps: {
       stepId: string
@@ -51,7 +71,7 @@ export interface MissionViewIn {
       >)[]
     }[]
   }
-  you: readonly (WaitingItem | WaitingItemV4)[]
+  you: readonly WaitingItemV4[]
 }
 
 // A pushed string is one printable line: C0 controls, DEL, C1 and the Unicode line separators go.
@@ -65,7 +85,7 @@ function line(s: unknown, max = MISSION_STATE_TEXT_MAX, fallback = '—'): strin
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`
 }
 
-/** `owner`, `child` (a step links the session) or `null`. */
+/** `owner`, `child` (a worker of the mission, or a step links the session) or `null`. */
 export function relationOf(v: MissionViewIn, sid: string): 'owner' | 'child' | null {
   if (v.mission.owner.sessionId === sid) return 'owner'
   if (v.workers?.includes(sid)) return 'child'
@@ -171,22 +191,45 @@ function project(v: MissionViewIn, role: 'owner' | 'child'): MissionStateEntry {
     },
     steps,
     blockers,
-    // The waiting list's own words (`describeWaiting`): the mod keeps no vocabulary of Harnu's.
-    you: v.you
-      .slice(0, MISSION_STATE_MAX_YOU)
-      // A v4 item carries its one wording (`ask`); a v3 item is worded by `describeWaiting`.
-      .map((y) => ({ kind: y.kind, text: line('ask' in y ? y.ask : describeWaiting(y).ask) }))
+    // The waiting list's own words (`ask`, written once in `missions/waiting.ts`): the mod keeps no
+    // vocabulary of Harnu's.
+    you: v.you.slice(0, MISSION_STATE_MAX_YOU).map((y) => ({ kind: y.kind, text: line(y.ask) }))
   }
 }
 
 /**
- * Missions v4 S-23 — the view the mod draws from, built from the v4 detail the record store serves
+ * What the view gathered about the steps beyond the record (S-40, Decision 12): each step's pull request
+ * state and whether a worker is working on it, and the live state of a session. Read on the server by the
+ * view channel; a call never supplies it.
+ */
+export interface ViewFacts {
+  steps?: Readonly<Record<string, { pr?: string; workerWorking?: boolean }>>
+  /** The live `taskState` of a session, or `undefined` when it has none. */
+  taskState?: (sessionId: string) => string | undefined
+}
+
+/** The number a `pr` link names: `owner/repo#123`, `#123`, `123` or a `/pull/123` URL. */
+function prNumberOf(ref: string): number | null {
+  const m = /(?:#|\/pull\/|^)(\d+)\/?\s*$/.exec(ref.trim())
+  return m ? Number(m[1]) : null
+}
+
+const PR_STATE_OF: Record<string, 'OPEN' | 'MERGED' | 'CLOSED'> = {
+  open: 'OPEN',
+  merged: 'MERGED',
+  closed: 'CLOSED'
+}
+
+/**
+ * Missions v4 S-23, S-40 — the view the mod draws from, built from the v4 detail the record store serves
  * (`missionGet`) for a v3 and a v4 record alike. The mod's own vocabulary stays: a step waiting for
  * review reads `waiting`, a blocked mark reads `blocked`, and nothing reads `verified` (v4 has no such
  * state). The position is derived from the steps: the running and waiting ones, else the first to do.
- * Executors and pull request states are not in the detail, so a step carries none.
+ * With the view's facts a step carries its executors (the sessions its `session` links name, other than
+ * the leader, with their live state) and its pull request badges (the `pr` links whose state was read);
+ * without them it carries none, and the mod draws the step bare.
  */
-export function missionViewInOf(detail: MissionDetail): MissionViewIn {
+export function missionViewInOf(detail: MissionDetail, facts: ViewFacts = {}): MissionViewIn {
   const status = (s: MissionDetail['steps'][number]): string =>
     s.blocked ? 'blocked' : s.state === 'waiting-review' ? 'waiting' : s.state
   const states = Object.fromEntries(detail.steps.map((s) => [s.id, status(s)]))
@@ -236,7 +279,26 @@ export function missionViewInOf(detail: MissionDetail): MissionViewIn {
       allDone: total > 0 && done === total,
       states: states as never
     },
-    derived: { steps: [] },
+    derived: {
+      steps: detail.steps.map((s) => {
+        const fact = facts.steps?.[s.id]
+        const prState = fact?.pr !== undefined ? PR_STATE_OF[fact.pr] : undefined
+        const prLinks = s.links.filter((l) => l.kind === 'pr')
+        return {
+          stepId: s.id,
+          children: s.links
+            .filter((l) => l.kind === 'session' && l.ref !== detail.leads)
+            .map((l) => ({ sessionId: l.ref, taskState: facts.taskState?.(l.ref) })),
+          links:
+            prState === undefined
+              ? []
+              : prLinks.flatMap((l) => {
+                  const number = prNumberOf(l.ref)
+                  return number === null ? [] : [{ kind: 'pr', number, state: prState }]
+                })
+        }
+      })
+    },
     you: detail.waiting.items
   }
 }

@@ -201,7 +201,6 @@ async function mountPane(opts: MountOpts): Promise<VueWrapper> {
   door = vi.fn(async () => opts.doorReply ?? { ok: true, changed: true })
   ;(window as unknown as { api: unknown }).api = {
     missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
-    campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
     missionV4View: view,
     missionV4Door: door,
     missionHandOff: vi.fn(),
@@ -251,6 +250,8 @@ beforeEach(() => {
   setActivePinia(createPinia())
   i18n.global.locale.value = 'en'
   localStorage.clear()
+  // The steps start closed (stp-21); these cases are about what is inside them.
+  localStorage.setItem('om2tab.missionPane.sections', '{"tree":true}')
   writes = {}
 })
 

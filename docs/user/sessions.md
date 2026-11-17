@@ -293,7 +293,7 @@ can be given a shortcut as well, again with none out of the box:
 hidden), `inbox.toggleOrder` (flip the rail's newest-first / oldest-first
 order), `inbox.filter` (the **Filter states** popover), `inbox.showAll` (**Show
 all**, while a state is filtered out), `view.activity` (the Activity bell),
-`view.missionProgress` (the mission's "Step N of M" pill), `view.pastedImages`
+`view.missionProgress` (the mission pill, such as "4/21 · 3 for you"), `view.pastedImages`
 (the pasted-images pill), `view.claudeStatus` (the Claude service status dot)
 and `view.usagePanel` (the plan-usage meters). Pressing a popover's shortcut
 again closes it, and `Esc` closes it exactly as when you opened it with a

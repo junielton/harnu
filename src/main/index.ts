@@ -154,7 +154,7 @@ import {
   registerHookBridge,
   closeHookBridge,
   hookSettingsBlobJson,
-  getStewardHookEndpoint,
+  getHookBridgeEndpoint,
   getTaskStates,
   setMissionSummaryHandler
 } from './hook-bridge'
@@ -216,9 +216,11 @@ import { registerWorktreeHandlers, adoptExistingFolder } from './worktree-ipc'
 import { registerReaperHandlers } from './reaper/reaper-ipc'
 import { registerContainersHandlers } from './containers/containers-ipc'
 import { registerGcHandlers } from './gc/gc-ipc'
-import { registerScheduler, setSchedulerCompanionProvider } from './scheduler-shell'
-import { registerStewardWiring } from './steward-bridge'
-import { retireStewardsOnBoot } from './steward-shell'
+import {
+  registerScheduler,
+  retireStewardsOnBoot,
+  setSchedulerCompanionProvider
+} from './scheduler-shell'
 import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
@@ -230,7 +232,6 @@ import {
   startMissionObserver
 } from './mission-ipc'
 import { bridgeStarter } from './missions/handoff'
-import { registerCampaignIpc } from './campaign-ipc'
 import { registerReviewHandlers } from './review-ipc'
 import { resolveCliFolderArg } from './cli-folder-arg'
 import { registerMcpServer, closeMcpServer } from './mcp/server'
@@ -658,10 +659,8 @@ app.whenReady().then(async () => {
   // T370 (T358 S9): mission progress read + the operator doors.
   registerMissionIpc()
   // Missions v4 S-3: reading a mission writes nothing. This is what records what the missions' links
-  // show (ledger rows, remembered progress) and wakes the stewards: a pass on a cadence, and one
-  // after a linked session ends.
+  // show (ledger rows, remembered progress): a pass on a cadence, and one after a linked session ends.
   stopMissionObserver = startMissionObserver()
-  registerCampaignIpc()
   // T164 U2: branch-vs-base diff + the evidence header's receipts, plus the
   // per-repo blast-radius list (operator-owned, never reachable from an MCP verb).
   registerReviewHandlers(() => mainWindow)
@@ -722,10 +721,7 @@ app.whenReady().then(async () => {
   // (installs observer hooks into ~/.claude/settings.json unless disabled);
   // async + best-effort, degrades to the activity heuristic if it can't install.
   void registerHookBridge(() => mainWindow)
-    // Once the bridge is listening, keep answering the hook routes a retired steward left behind in a
-    // folder until its hooks are gone (Missions v4 S-27 removes them below, once the Scheduler loads).
     .then(async () => {
-      registerStewardWiring()
       // Missions v4 S-16b: the summary a `SessionStart` (compact) hook in every spawned session fetches
       // after a compaction. It prints something only for the open leader of an open v4 mission.
       setMissionSummaryHandler(answerMissionSummaryHook)
@@ -754,7 +750,7 @@ app.whenReady().then(async () => {
   registerBundledSkillsHandlers()
   // T2: the doc-reader feature stages an http hook to the live Hook Bridge (same port and
   // per-boot token as the steward hooks); with the bridge down it stages nothing.
-  setDocReaderEndpointProvider(() => getStewardHookEndpoint())
+  setDocReaderEndpointProvider(() => getHookBridgeEndpoint())
   // T389 P4W1: Settings → Mods. Read-only; spawns nothing until the tab is opened.
   registerModsAuditHandlers()
   // Drop the dead pre-rename `<hash>/capy/` staging dirs the userData migration carried over.

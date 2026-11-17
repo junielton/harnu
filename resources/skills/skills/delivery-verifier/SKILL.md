@@ -1,35 +1,48 @@
 ---
 name: delivery-verifier
-description: Verify that a finished unit satisfies its acceptance criteria one at a time, from evidence rather than the executor's own report, with a rubric per deliverable kind (code, UI, research, decision), record the verdict on the Mission step with mission_verify_step, then produce the Delivery Report. Use at the end of a dispatched unit or a whole fan-out wave — "check whether it really delivered", "go through the acceptance criteria", "which ACs do I still have to test by hand", "write the delivery report" — or whenever an orchestration reaches the point where PRs exist and someone has to prove the feature is done. Do NOT use to review code quality (that is a code review) or to decide whether to merge.
+description: Settle a Mission step's criteria one at a time from evidence, never from the builder's report ("check whether it really delivered", "go through the criteria"), with a rubric per kind of deliverable, then write the Delivery Report.
 ---
 
 # Delivery verifier
 
-Two jobs, in this order:
+You are the second pair of eyes: a second session or another person, never the one who built the step. You settle each
+criterion of a step with evidence you saw, then report what is proven, what a person must open the app and check, what
+is unmet and what is blocked.
 
-1. **Grade** every acceptance criterion of a unit against real evidence — blind to
-   what the executor said about itself.
-2. **Report** the result as a human handoff: what is proven, what a person must open
-   the app and check, what is unmet, what is blocked.
+Load `../mission/references/writing-contract.md` before you write a note or a blocker reason: the verbs refuse text
+over a cap and never rewrite it. Keep every output short.
 
-## The one rule everything else serves
+**Done is a property of the environment, not of the transcript.** Never read the builder's report, its commit prose or
+its PR description before you grade: they bias the verdict. Read the diff, the test output, the CI conclusion and the
+captures. If the only evidence you find is somebody saying "done", the criterion stays open.
 
-**Done is a property of the environment, not of the transcript.** An agent's "done"
-is wrong most of the time when the only check is its own claim, and almost never
-wrong when an independent control compares the claim against the environment. So:
-never read the executor's summary before grading. Read the diff, the test output,
-the CI conclusion, the screenshots. If the only evidence you can find is somebody
-saying "done", the verdict is `unmet`, not `met`.
+## Who you are
 
-## Pick the rubric — by what the unit delivers
+- **Harnu started you for a step** (`create_session` with `role: 'verifier'`): you hold a scoped credential with
+  `mission_get`, `mission_link`, `mission_log`, `mission_set_blocker` and `mission_settle_ac`, on your step only. Never
+  pass a `sessionId`: the credential's id is used and one you pass is ignored. You cannot add a criterion, ask to close
+  or touch another mission.
+- **An ordinary session, or a subagent of the leader:** pass the session id you were given. A subagent passes the
+  leader's, from its prompt, never its own `agent-<…>` id. Refused `NOT_ATTACHED`: `mission_attach` asks to join, never
+  to lead, and the operator allows it.
+- **You built the step** (a `session` link on it names you): your call is a self-check, and a self-check never settles
+  it. Stop and hand the step to another session or person.
 
-A merged PR, a rendered screen, a research memo and a decision record are proven
-by different evidence, so each kind has its own rubric below — its own packet, its
-own deterministic checks, its own reasons for `unmet`. Pick it from the kind the
-work declared: the mission's `declaredEnd.kind` for the fixed end (`mission_get`),
-the unit's card (`kind`, its ACs' `verify:` modes) for a middle step. A unit that
-mixes kinds — code that also renders a screen — is graded under each rubric that
-applies, AC by AC.
+## What you settle
+
+`by` says who settles a criterion. Only a criterion with `by: session` is yours to settle. A `fact` settles itself
+(Harnu reads it), an `operator` criterion is ticked by the operator in the Mission pane, and a `person` criterion by the
+operator when that person approves. Never settle one of those and never try.
+
+A sign-off is an operator or person criterion, never your verdict: a designer's eye, a device, the tone of a copy.
+Settle the machine criteria with their evidence and leave the sign-off open: the step reads waiting for review until the
+operator marks it. A step with no such criterion yet: `mission_log` one line for the leader, who adds it with
+`mission_add_ac`. You cannot.
+
+## Pick the rubric by kind
+
+Pick it from the step's card `kind` and from what its criteria name. A step that mixes kinds (code that also renders a
+screen) is graded under each rubric that applies, criterion by criterion.
 
 | kind       | rubric            | proven by                                                              |
 | ---------- | ----------------- | ---------------------------------------------------------------------- |
@@ -38,347 +51,220 @@ applies, AC by AC.
 | `research` | Rubric — research | an artifact that answers each declared question, with sources          |
 | `decision` | Rubric — decision | a decision record: the question, the options, the choice, the why, who |
 
-`other` has no rubric of its own: name the rubric whose evidence the artifact
-actually is and use it; when none fits, the verdict is `needs-human`, never a
-`met` argued from prose.
+`other` has no rubric of its own: use the rubric whose evidence the artifact actually is. When none fits, leave the
+criterion open and say what a person must check; never settle it from prose.
 
-## Inputs — the blind packet
+## The packet
 
-Assemble these BEFORE grading, and grade from these only (each rubric below says
-which of them it needs, and what it adds):
+Assemble it BEFORE grading and grade from it alone:
 
-- the unit's **AC list** (from the board card, the spec, or the tracker ticket);
-- the **diff** against the unit's base branch (`git diff <base>...<head>`), plus the
-  file list;
-- **test/gate output** — the actual run, fresh, not a claim of a run;
-- **CI conclusion** for the PR, if one exists
-  (`gh pr view <n> --json statusCheckRollup,mergeable,reviewDecision`);
-- **screenshots / visual artifacts** for anything design-shaped, plus the design
-  node when one is linked.
-
-Explicitly NOT in the packet: the executor's report, its commit messages' prose, its
-PR description, its self-assessment. They bias the verdict — judges flip on
-presentation cues, and confident closing language is exactly what fools them. Read
-them afterwards, if at all, only to write the summary.
+- the step and its criteria: `mission_get({ folder, missionId })`;
+- the diff against the step's base and the file list;
+- fresh test and gate output: the run, not a claim of a run;
+- the PR's CI;
+- captures of anything shown on screen, and the design it must match.
 
 ## Step 1 — Deterministic checks first
 
-Free, and they catch the dumb failures. Run these before any judgement; each is
-pass/fail with no interpretation. The table is the **code** rubric's; the other
-three rubrics below carry their own.
+Free, and they catch the dumb failures. Each is pass or fail, with no judgement.
 
-| Check                         | Command                                                | Failure means                                                      |
-| ----------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
-| Commits exist                 | `git rev-list --count <base>..<head>`                  | the unit delivered nothing — stop here, everything is `unmet`      |
-| Nothing uncommitted           | `git status --porcelain` in the worktree               | work exists but is not on the branch                               |
-| Right base                    | `gh pr view <n> --json baseRefName`                    | the PR targets the wrong branch                                    |
-| Gates green                   | the repo's own gate command                            | broken build or tests                                              |
-| Tests ran after the last edit | test-run timestamp vs. last commit time                | a "lucky pass": passing output from before the final change        |
-| Scope respected               | diff file list vs. the unit's scope boundary           | scope creep — the most common reason a grader rejects agent work   |
-| Acceptance tests untouched    | did the diff edit the tests encoding the ACs?          | the contract was edited to fit the code                            |
-| Proof changed                 | did the diff edit a test file named by an AC `proof:`? | a weak proof can pass green by being loosened — flag it, see below |
-| Visual ACs have a capture     | a screenshot exists for every AC about rendered output | nobody ever opened the page                                        |
+| Check                          | Command                                                    | Failure means                                                   |
+| ------------------------------ | ---------------------------------------------------------- | --------------------------------------------------------------- |
+| Commits exist                  | `git rev-list --count <base>..<head>`                      | nothing was delivered: stop, every criterion stays open         |
+| Nothing uncommitted            | `git status --porcelain` in the worktree                   | work exists but is not on the branch                            |
+| Right base                     | `gh pr view <n> --json baseRefName`                        | the PR targets the wrong branch                                 |
+| Gates green                    | the repo's own gate command                                | a broken build or tests                                         |
+| Tests ran after the last edit  | test-run time against the last commit time                 | a lucky pass: green output from before the final change         |
+| Scope respected                | diff file list against the step's scope boundary           | scope creep, the most common reason agent work is rejected      |
+| Acceptance tests untouched     | did the diff edit the tests that encode the criteria?      | the contract was edited to fit the code                         |
+| Proof changed                  | did the diff edit a test file a criterion's proof names?   | a weak proof can go green by being loosened: flag it, see below |
+| Visual criteria have a capture | a capture exists for every criterion about rendered output | nobody ever opened the page                                     |
 
-A failure here is a **finding on the unit**, reported regardless of how the ACs
-grade.
+A failure is a **finding on the step**, reported whatever the criteria grade.
 
-**"Proof changed" is always a visible finding, never a silent pass.** When the unit
-has a spec, each AC's `proof:` names what proves it (`test:<file>::<name>`,
-`script:<cmd>`, …). If the diff edits any test file a proof names — added, loosened,
-renamed or deleted assertions — list it as `proof changed: <AC id> · <file>` in the
-unit's findings and in the Delivery Report's "Check by hand" list, with the hunk,
-even when the AC then grades `met`. A test written by the executor in the same PR
-for a brand-new AC is the normal case and needs only the line; an _existing_ proof
-that was edited needs a reason the operator can read. Two weak proofs on Campaign
-wave 1 (a loosened benchmark, a fixture seeded instead of scrubbed) passed green
-and were noticed only because someone read the diff.
+**A changed proof is always a visible finding, never a silent pass.** When the step has a spec, each criterion's `proof:`
+names what proves it (`test:<file>::<name>`, `script:<cmd>`). If the diff edits a file a proof names (an assertion added,
+loosened, renamed or deleted), list `proof changed: <criterion> · <file>` with the hunk in the findings and in the
+report's "Check by hand" list, even when the criterion then settles. A test the builder wrote for a brand-new criterion
+needs only the line; an existing proof that was edited needs a reason the operator can read.
 
-## Step 2 — Grade one AC per call
+## Step 2 — Settle one criterion per call
 
-Spawn one verifier subagent per AC, or handle them one at a time — never batch
-several ACs into a single judgement, which measurably costs accuracy. Each gets the
-minimal prompt below. Do not add "explain your reasoning and propose a fix";
-elaborate grader prompts increase misclassification.
+Settle one criterion per call: a fresh subagent for each, or one at a time. Several in one judgement cost accuracy, and
+a long grader prompt makes it worse. For each `by: session` criterion decide ONE outcome:
 
-```
-Acceptance criterion: <verbatim text>
-Source: <spec §, design node, ticket id>
+- **Settled** — the evidence proves it. Call `mission_settle_ac` with the exact evidence (a `file:line`, a test name, a
+  sha, a capture path). The first settlement stands (`ALREADY_SETTLED`), so settle only what you are sure of.
+- **Unmet** — the evidence contradicts it, or nothing supports it. Settle nothing: `mission_log` one line,
+  `unmet <criterionId>: <what is missing>`.
+- **Blocked** — it cannot be decided until a question is answered. `mission_set_blocker` on the step: `reason` names
+  the question, `ask` what the leader or the operator does, `unblocks` the criterion.
 
-Evidence available:
-- diff: <path or inline hunks>
-- test output: <path or inline>
-- CI: <conclusion>
-- screenshots: <paths>
-
-Decide ONE verdict:
-  met         — the evidence proves it. Cite the exact evidence (file:line, test name, sha, screenshot).
-  unmet       — the evidence contradicts it, or nothing in the evidence supports it. Say what is missing.
-  blocked     — it cannot be decided until a question is answered. State the question.
-  needs-human — it is real but not machine-verifiable (visual fidelity, copy, a third-party
-                account, a device, a subjective flow). Say exactly what a person must do.
-
-Do not guess. "needs-human" and "unmet" are correct answers; a fabricated "met" is not.
+```json
+{
+  "folder": "<folder>",
+  "missionId": "mnt-<8 hex>",
+  "stepId": "stp-4",
+  "criterionId": "ac-2",
+  "evidence": "tests/blog/pagination.spec.ts::paginates red on the base, green at <sha>; ci#1234"
+}
 ```
 
-**`needs-human` is a feature, not a cop-out.** It is what becomes the manual-test
-checklist — the thing a person actually opens the app to confirm. Forcing a binary
-here is how a delivery report starts lying.
+A visual criterion with no capture is never settled: "nobody looked". Take the capture yourself if you can; with no
+browser tools at all, leave it open and say which route a person must open and what to compare. "Done" with nothing
+behind it is a wrong answer; so is a made-up citation, the worst output this skill can give.
 
-**A visual AC with no capture is never `met`.** If an AC describes something a
-person would see — a page renders, a component matches its design, copy appears, a
-state is visible — and the packet holds no screenshot of it, the verdict is `unmet`
-("nobody looked"), never `met` on a code-reading argument. It is not `needs-human`
-either: that verdict is for what a machine genuinely cannot judge, not for what
-nobody bothered to capture. Get the capture yourself first if you can — open the
-route with the browser tools and look. The one exception is a session with no
-browser tools at all: that is `needs-human`, per the UI rubric below.
+Unmet goes back to the SAME builder with your exact finding as a delta, and only that criterion is verified again. A
+criterion that comes back unmet twice is the operator's decision, not a third attempt.
 
 ## The rubrics
 
-Each rubric is the packet, the checks and the verdict rules for one kind. Grade
-every AC under the rubric of the kind it proves — one AC per call, whatever the
-rubric.
+Grade every criterion under the rubric of the kind it proves, one per call, whatever the rubric.
 
 ### Rubric — code
 
-- **Packet:** the diff against the unit's base (`git diff <base>...<head>`), the
-  file list, fresh gate/test output, the PR's CI
-  (`gh pr view <n> --json statusCheckRollup,mergeable,reviewDecision`).
-- **Checks:** the Step 1 table, all of it — commits exist, nothing uncommitted,
-  right base, gates green, tests ran after the last edit, scope respected,
-  acceptance tests untouched.
-- **`met`** cites a test name, a `file:line`, a sha or a CI run that proves the
-  behavior. **`unmet`** when the only support is code that looks right: a claim
-  about behavior with no test or run behind it is not evidence.
+- **Packet:** the diff against the step's base (`git diff <base>...<head>`), the file list, fresh gate and test output,
+  the PR's CI (`gh pr view <n> --json statusCheckRollup,mergeable,reviewDecision`).
+- **Checks:** all of Step 1: commits exist, nothing uncommitted, right base, gates green, tests ran after the last
+  edit, scope respected, acceptance tests untouched.
+- **Settled** cites a test name, a `file:line`, a sha or a CI run that proves the behaviour. **Unmet** when the only
+  support is code that looks right: a claim about behaviour with no test or run behind it is not evidence.
 
 ### Rubric — UI
 
-- **Packet:** a capture of every rendered state an AC names (screenshot, or the
-  page's text via the browser tools), the design node or mockup it must match, and
-  the route or component that renders it. Code evidence from the code rubric is
-  supporting, never sufficient.
-- **Checks:** a capture exists for every visual AC, and it was taken after the
-  last commit that touched the rendering. **Detect your browser tools before
-  grading:** the Chrome/Playwright tools come from the operator's own MCP
-  configuration, not from Harnu, and another operator may have none. With none
-  available and no capture in the packet, every visual AC is `needs-human`
-  ("open `<route>` and compare against `<design>`") — never a silent `met`, and
-  never `unmet` for a capture you had no way to take.
-- **`met`** only when the capture shows the state and it matches the design on
-  the named points. A visual AC with tools available but no capture is `unmet`
-  ("nobody looked") — get the capture yourself first. Fidelity a machine cannot
-  judge (copy tone, "feels right", a device you cannot reach) is `needs-human`.
+- **Packet:** a capture of every rendered state a criterion names (a screenshot, or the page's text through the browser
+  tools), the design or mockup it must match, and the route or component that renders it. Code evidence is supporting,
+  never sufficient.
+- **Checks:** a capture exists for every visual criterion and was taken after the last commit that touched the
+  rendering. **Detect your browser tools before grading:** they come from the operator's own MCP configuration, not from
+  Harnu, and another operator may have none. With none and no capture in the packet, every visual criterion stays open
+  ("open `<route>` and compare against `<design>`"), never a silent settle and never called unmet for a capture you
+  had no way to take.
+- **Settled** only when the capture shows the state and matches the design on the named points. Fidelity a machine
+  cannot judge (copy tone, "feels right", a device you cannot reach) is the operator's sign-off, not yours.
 
 ### Rubric — research
 
-- **Packet:** the research artifact (report, memo, study) at its committed path,
-  and the list of questions it was asked to answer — from the card, the mission's
-  declared end, or the spec. No declared questions → `blocked`: a research unit
-  cannot be graded against questions nobody wrote down.
-- **Checks:** the artifact exists where the step's links say; every claim that an
-  answer rests on carries a source (a link, a file and line, a measured run, a
-  named document); every source that is a link or a path resolves.
-- **Grade one declared question per call:** `met` when the artifact answers that
-  question directly and the answer rests on cited sources; `unmet` when it is not
-  answered, answered only in generalities, or answered without a source;
-  `needs-human` when the answer exists but judging whether it is right needs
-  domain knowledge or access the verifier lacks.
+- **Packet:** the artifact (report, memo, study) at its committed path and the questions it was asked to answer, from
+  the card, the Done when or the spec. No declared questions → `blocked`: a study cannot be graded against
+  questions nobody wrote down.
+- **Checks:** the artifact exists where the step's links say; every claim an answer rests on carries a source (a link,
+  a file and line, a measured run, a named document); every source that is a link or a path resolves.
+- **Grade one declared question per call:** settled when the artifact answers it directly and the answer rests on cited
+  sources; unmet when it is unanswered, answered in generalities, or answered without a source; left open when judging
+  the answer needs domain knowledge or access you lack.
 
 ### Rubric — decision
 
-- **Packet:** the decision record (an ADR, a decisions-page entry, a spec section)
-  and the question the decision had to settle.
-- **Checks:** the record exists at its linked path and states, each in its own
-  words: the question; the options that were actually considered (at least two,
-  or an explicit reason there was only one); the choice; the rationale, tied to
-  the options; the consequences or the conditions for revisiting it; and who made
-  it, with the date.
-- **Grade one declared question per call.** `met` when the record settles that
-  question with a traceable rationale; `unmet` when a required part is missing
-  or the rationale does not engage the rejected options. A decision that is the
-  **operator's** to make (scope, cost, product direction) is `met` only when the
-  record shows the operator made it — an agent recording its own preference as
-  decided is `needs-human` ("the operator has to confirm this choice").
+- **Packet:** the decision record (an ADR, a decisions-page entry, a spec section) and the question it had to settle.
+- **Checks:** the record exists at its linked path and states, each in its own words: the question; the options that
+  were actually considered (two at least, or the reason there was only one); the choice; the rationale, tied to the
+  options; the consequences or the condition for revisiting it; and who made it, with the date.
+- **Grade one declared question per call.** Settled when the record settles that question with a traceable rationale;
+  unmet when a part is missing or the rationale ignores the rejected options. A decision that is the **operator's** to
+  make (scope, cost, product direction) is settled only when the record shows the operator made it: an agent recording
+  its own preference as decided stays open ("the operator has to confirm this choice").
 
 ## Step 3 — Re-run the checks and keep the evidence
 
-A verdict nobody can re-read is a claim. Before you record one, **re-run the checks the
-ACs name** — the `proof:` commands, the gate command, the screens a visual AC names —
-yourself, at the PR head, in a clean worktree, and keep what they printed:
+A verdict nobody can re-read is a claim. Before you settle one, re-run the checks the criteria name (the `proof:`
+commands, the gate command, the screens a visual criterion names) yourself:
 
-1. Resolve the head: `gh pr view <n> --json headRefOid`. Cut a clean worktree at that
-   commit (`git worktree add --detach <dir> <headRefOid>`), install what the repo needs
-   there, and run each named check in it. Never run them in the executor's worktree: its
-   uncommitted state and stale build are exactly what you are checking against.
-2. Store the **evidence bundle** in the repo's main checkout, under
-   `.harnu/evidence/<missionId>/<stepId>/`: the **test output** of each run (one file per
-   check, the command on the first line), the **screenshots** a visual AC needs (browser
-   tools when you have them), the **console** output of the run or page, and a short
-   `README.md` naming the head commit and which AC each file backs. Never commit the
-   bundle — `.harnu/` is local evidence, not source.
-3. Link it on the step **before** you call `mission_verify_step`:
-   `mission_link_child({ folder, missionId, stepId, link: { kind: 'worktree', ref:
-'.harnu/evidence/<missionId>/<stepId>' } })`. The ref is that directory, relative to
-   the repo root.
+1. Resolve the PR head: `gh pr view <n> --json headRefOid`. Cut a clean worktree at that commit
+   (`git worktree add --detach <dir> <headRefOid>`), install what the repo needs there and run each check in it. Never
+   run them in the builder's worktree: its uncommitted state and stale build are what you are checking against.
+2. **Plant a fault against the code the proof replaces and show the proof red** (run it on the base, or break the line
+   it guards): a proof that stays green proves nothing, so that criterion stays open.
+3. **Pick a free port before you open one** for a debug session, a dev server or another Harnu instance: ask the OS
+   (listen on port 0) and never reuse a number you did not just see free. A verifier once drove another instance's port.
+4. Keep what the runs printed in the **exact folder** `.harnu/evidence/<missionId>/<stepId>`, in the repo's main
+   checkout, and nowhere else: a folder with another name is evidence nobody finds. Put yours under
+   `.harnu/evidence/<missionId>/<stepId>/verify/` (the test output of each run with the command on its first line,
+   the screenshots, the console); the builder's files in the step folder stay the builder's, never edit or delete one.
+   Never commit any of it: `.harnu/` is local evidence, not source.
+5. Give **every evidence folder a `README.md`**: the head commit, which criterion each file backs, and what you could
+   not run. A folder without one is a pile of files.
+6. Link the folder before you settle, so the operator can open it from the pane:
+   `mission_link({ folder, missionId, stepId, link: { kind: 'worktree', ref: '.harnu/evidence/<missionId>/<stepId>' } })`.
 
-The `verifier` gate reads that link: a step whose proof is `verified` but that has no
-bundle link reads `running`, not `green` — and so does one whose linked directory is
-gone — so the step stays `done`, never `verified`, until the evidence exists. A check you
-could not re-run (no browser, a device you cannot reach) is not a reason to skip the
-bundle: store what you did run, say in the README what is missing, and grade that AC
-`needs-human`.
+A check you could not re-run (no browser, a device out of reach) is no reason to skip the folder: store what you did
+run, say in the `README.md` what is missing, and leave that criterion open.
 
-## Step 4 — Record on the card and on the mission step
+## Step 4 — Record, and say who
 
-Write the per-AC table to the board card (`update_card` with `appendBody`). Every
-row carries its evidence reference, and every verdict carries who produced it:
+The record is the settle call itself: Harnu stores your session id, the time and your evidence on the criterion, and
+derives the step's state from the criteria. Write nothing else on the step, and never a verdict of your own for it.
 
-| AC                                | Verdict     | Evidence                                             | By       |
-| --------------------------------- | ----------- | ---------------------------------------------------- | -------- |
-| AC-1 Post list paginates 10/page  | met         | `tests/blog/pagination.spec.ts::paginates` · ci#1234 | verifier |
-| AC-4 Hero respects design spacing | needs-human | design node · screenshot `assets/AC-4.png`           | verifier |
-| AC-3 Draft visibility             | blocked     | Q-2 unanswered                                       | verifier |
+When the step has a spec, append one row per criterion to the spec's `## Amendments · Deviations`, in the step's PR so
+the row lands with the code it describes:
 
-An executor's own tick is recorded as `by: executor` and **never counted** in the
-report totals. Self-verification does not catch the failures that matter.
+| date       | kind      | what changed                                                   | by       |
+| ---------- | --------- | -------------------------------------------------------------- | -------- |
+| 2026-11-02 | deviation | ac-3 #a1b2 settled · `tests/list.test.ts::paginates` · ci#1234 | verifier |
 
-**When the unit has a spec, write the deviations into the spec too.** Besides the
-card table, append one row per AC to the spec's `## Amendments · Deviations` section,
-in the unit's PR (the shipper's branch, so the row lands with the code it describes):
+`what changed` is the criterion id with its hash, the outcome and the one-line evidence. A criterion that settled as
+written still gets its row (`settled as written`), because no row is how a silent rescope hides. Append only: never
+edit a row, the spec above it or another step's rows.
 
-| date       | kind      | what changed                                               | by       |
-| ---------- | --------- | ---------------------------------------------------------- | -------- |
-| 2026-11-02 | deviation | AC-3 #a1b2 met · `tests/list.test.ts::paginates` · ci#1234 | verifier |
-
-`what changed` is the AC id with its hash, the verdict and the one-line evidence; an
-AC that met exactly as written still gets its row (`met as written`), because the
-absence of a row is how silent rescoping hides. Append only — never edit a row, the
-spec body above, or another unit's rows. A spec without that section gets it added
-as the last section. This is how the spec learns what actually shipped, instead of
-reading `_Draft_` long after the merge.
-
-**When the unit is a Mission step, record the step's verdict on it:**
-`mission_verify_step({ folder, missionId, stepId, verdict, evidence, sessionId:
-<your own session id>, checkLabel? })`. The step's verdict follows from its ACs: any `unmet` →
-`unmet`; else any `blocked` → `blocked`; else any `needs-human` → `needs-human`;
-only all-`met` → `met`. `evidence` is the table's one-line summary plus the report
-path.
-
-**`needs-human` creates a check on the step — name it with `checkLabel`.** The
-verdict means the machine part is met and a person still has to confirm the rest.
-Pass `checkLabel` with what they must confirm, short and concrete ("Hero matches
-the design spacing", "Validated visually on a phone"); without it Harnu uses the
-first line of `evidence`, which is rarely a good label. Then the step reads `done`
-in progress, and the check lands on the operator's `you` list until they tick it
-in the app — no verb ticks a check, and you never tick one. A later `met` on the
-same step leaves the check open: the human part is still owed. Several
-`needs-human` ACs on one step → one `mission_verify_step` with the first one's
-`checkLabel`, then `mission_add_check` for each of the others (a label already on
-the step is deduped). The same checks go on the report's "Check by hand" list.
-
-**You must not be the step's author.** The verb never refuses — it labels: a
-`met` becomes `verified` only when the step already links at least one `session`
-and your declared id differs from every one of them; otherwise it lands
-`self-verified`, which the operator never sees as proven. So link the executor's
-session to the step first (`mission_link_child`), and if your own session wrote
-the work, do not record it — hand it to an independent verifier session. Pass your
-real session id (the UUID your scratchpad path ends in); the id is taken on your
-word, so a borrowed one is a lie the audit log keeps. Only a `verifier`-level step
-takes this verb: an `existence` step is proven by Harnu itself and a `human` step
-only by the operator (`WRONG_VERIFICATION_LEVEL`).
-
-**The fixed end (`Delivered and verified`) is the orchestrator's to verify**, after
-the per-unit verdicts are in: its builders are every session linked to any step,
-so the orchestrator — a session that built no step — lands `verified` with its own
-id once each unit's child session is linked to its step and the end's evidence
-exists. The end is a `verifier`-level step like any other, so it needs its own
-evidence bundle (Step 3, `<stepId>` = the end's) linked before it can read `green`. Then `mission_get`'s `closeReadiness` tells whether the close will land
-(`null`), or names what is in the way before anyone calls `mission_request_close`.
-When you run as a verifier subagent inside the orchestrator, you hand it the
-verdicts; the orchestrator records the end.
+**The last step, "Check the whole mission against Done when", is settled the same way** from the other steps' evidence,
+by a session that built none of the steps, once every step before it is done.
 
 ## Step 5 — The Delivery Report
 
-One report per wave, one per feature. Generate it from the cards and the evidence —
-never from memory or from what the sessions said. Write it to
-`.harnu/out/delivery-<feature>-<wave>.md` (or the repo's docs dir if it is a keeper),
-hand it over with `open_file`, and paste it into the integration PR's body.
-
-**Mandatory header.** The `status` skill's six-line glance card goes above
-"Where we are", built from the same evidence this report uses (the cards, the
-PRs, `mission_get`). See `status` for the card's exact shape and rules; this
-skill does not restate them.
+One report per wave and one per feature, built from the cards and the evidence, never from memory or from what the
+sessions said. Write it to `.harnu/out/delivery-<feature>-<wave>.md` (the repo's docs directory if it is a keeper),
+hand it over with `open_file` and paste it into the integration PR's body. The `status` skill's six-line glance card
+heads it, built from `mission_get`, the cards and the PRs; this skill does not restate its shape.
 
 ```markdown
 # Delivery report — <feature> · wave N of M · <date>
 
 ## Where we are
 
-Planned: X units in M waves. Done: Y. In flight: Z. Blocked: W (naming what blocks each).
+<progress.headline as mission_get returns it, and one sentence: on plan or not, and the next step.>
 Integration branch feat/<epic> @ <sha>, rebased on main @ <sha>, full suite <green|red> (<ci ref>).
-<One sentence: are we on plan, and what is the next step.>
 
-## Units
+## Steps
 
-| card | PR | CI | ACs met | needs-human | unmet | blocked |
+| step | PR | CI | settled | waits on a person | unmet | blocked |
 
 ## ✅ Verified — no action needed
 
-<ACs proven by machine evidence. Listed so nobody re-tests them.>
+<criteria a machine proved. Listed so nobody re-tests them.>
 
-## 👀 Check by hand (manual verification)
+## 👀 Check by hand
 
-- [ ] <unit> · <AC> · <what to open and what to look for> · <design link>
+- [ ] <step> · <criterion> · <what to open and what to look for> · <design link>
 
 ## ❌ Unmet — sent back
 
-- <unit> · <AC> · <the verifier's exact finding> · <who it went back to>
+- <step> · <criterion> · <the exact finding> · <who it went back to>
 
 ## ❓ Open questions
 
-- <Q-n> → blocks <AC> · asked <date>, unanswered
+- <question> → blocks <criterion> · asked <date>, unanswered
 
 ## 🧾 Tech debt raised
 
-- <unit>: <what> · <follow-up card, if one was created>
-
-## Tracker
-
-- <TICKET>: <n>/<m> ACs ticked · comment with PR <url> posted
-- <TICKET>: <n>/<m> ticked; <k> left unticked (<why — unmet / manual>)
+- <step>: <what> · <follow-up card, if one was created>
 ```
 
-The chat message stays a short checklist plus the report's path. The document is the
-durable handoff.
+The chat message stays a short checklist plus the report's path.
 
-## Step 6 — Tracker projection
+A connected tracker is a projection of this report, and a mandatory one: tick the criteria a second session or a person
+settled, never a builder's self-check, post one comment per ticket with the PR link and the three buckets (verified, check
+by hand, unmet), and leave the ticket's status alone unless the operator asked.
 
-The card is the source of truth; a connected tracker is a projection — but a
-mandatory one when it exists, because that is the surface the rest of the team
-reads. Using the tracker's own tools:
+## Return to the leader
 
-- tick the ACs whose verdict is `met` **by the verifier or a human** — never
-  `needs-human`, never `by: executor`;
-- post one comment per ticket with the PR link and the three buckets (verified /
-  check-by-hand / unmet);
-- leave the ticket's own status alone unless the operator asked for it.
-
-Then say plainly, per ticket: these N are ticked and done; these K you have to
-confirm yourself; these J are not done, and here is why.
-
-## Send-back loop
-
-`unmet` goes back to the **same executor** with the verifier's exact finding as a
-delta — not a redo from scratch, not a new session. `blocked` surfaces the question
-to the operator next to the AC it blocks. Re-verify only the ACs that changed. Stop
-condition: an AC that comes back `unmet` twice becomes an operator decision, not a
-third attempt — retry-until-green is how agents learn to game the check.
+Open with `Report for session <owner uuid> · mission <missionId> · step <stepId>` and keep it to 15 lines: a result per
+criterion with its evidence pointer, what you recorded, and what is open.
 
 ## Boundaries
 
-- Never move a card to `done` — Review→Done is the operator's Close. Your job is to
-  make that click a decision instead of a discovery.
-- Never merge, never edit product code to make an AC pass. Finding it broken IS the
-  deliverable.
-- Never invent evidence. "No evidence found" is a verdict; a plausible-sounding
-  citation that does not exist is the worst possible output of this skill.
+- Never move a card to `done`: Review to Done is the operator's close. Never merge, and never edit product code to make
+  a criterion pass: finding it broken IS the deliverable.
+- Never settle a criterion that is not `by: session`, never your own step's, and never one you could not check.
+- Never use, copy or link the operator's Claude credentials, token or login: a check that needs a logged-in Claude
+  becomes an operator criterion; leave it open and `mission_log` one line for the leader.
+- Never invent evidence. "No evidence found" is an outcome.

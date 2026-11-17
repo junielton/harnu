@@ -2,7 +2,7 @@
  * Missions v4 S-2 (R-25, AC-3) — the one reader of mission files.
  *
  * The verbs (`mcp/tool-handlers.ts`), the renderer IPC (`mission-ipc.ts`), the campaign
- * reader (`campaign-ipc.ts`) and hibernation (`hibernation.ts`) used to each walk
+ * reader (since removed) and hibernation (`hibernation.ts`) used to each walk
  * `.harnu/missions/` their own way. Two of them dedupe the copies of a mission that two clones
  * of one repo hold, the others did not, and each decided on its own who leads a mission. They
  * all read here now, so one repo gives the same answer to every caller.
@@ -12,14 +12,16 @@
  */
 import { promises as fs, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import * as path from 'node:path'
-import { dataDirReady, repoRoot } from '../data-dir'
+import { dataDirAt, dataDirReady, repoRoot } from '../data-dir'
 import {
-  MISSION_ID_RE,
-  missionsDir,
-  parseMissionFile,
-  readMissionLog,
-  type Mission
-} from '../mission-core'
+  V3_MISSION_ID_RE as MISSION_ID_RE,
+  parseV3MissionFile as parseMissionFile,
+  readV3MissionLog as readMissionLog,
+  type V3Mission as Mission
+} from './v3-read'
+
+/** `<root>/.harnu/missions`: where a v3 build stored its mission files (a v4 build never writes there). */
+const missionsDir = (root: string): string => path.join(dataDirAt(root), 'missions')
 
 /** The repo root whose `.harnu/missions/` holds `folder`'s missions. */
 export function missionRoot(folder: string): string {
@@ -292,4 +294,39 @@ export function missionsLedBy<T extends { mission: Mission }>(
   return missions
     .filter((m) => leaderOf(m.mission) === sessionId)
     .sort((a, b) => b.mission.updatedAt.localeCompare(a.mission.updatedAt))
+}
+
+// ---- Mission files nobody could read (Missions v4 S-40, Decision 12) ----------------------------------
+
+/**
+ * The files each reader found it could not parse, by reader (`hibernation`, `companion`, `your-move`).
+ * A reader that skips an unreadable mission file hides a mission, and a mission that is hidden from the
+ * hibernation exemption can have its leader parked mid-delivery. So every such skip is reported here, by
+ * file name, and `mission:list` (the poll the app's Activity notice is raised from) merges the union into
+ * its `unreadable` list: one notice that names the file, raised once while the same set stays unreadable,
+ * never once per tick. A reader reports its whole set on every read, so a file that reads again leaves
+ * the list and a later failure of it is news again.
+ */
+const unreadableBySource = new Map<string, ReadonlySet<string>>()
+
+/**
+ * Record the files `source` could not read, replacing what it reported before. Returns the names that are
+ * new to this source (the ones that were not already reported by it), so a caller can log a failure once.
+ */
+export function reportUnreadableMissionFiles(source: string, files: readonly string[]): string[] {
+  const before = unreadableBySource.get(source) ?? new Set<string>()
+  const next = new Set(files.filter((f) => f !== ''))
+  if (next.size === 0) unreadableBySource.delete(source)
+  else unreadableBySource.set(source, next)
+  return [...next].filter((f) => !before.has(f)).sort()
+}
+
+/** Every file some reader reported as unreadable and has not read since, each once, sorted. */
+export function reportedUnreadableMissionFiles(): string[] {
+  return [...new Set([...unreadableBySource.values()].flatMap((s) => [...s]))].sort()
+}
+
+/** Test seam: forget every report. */
+export function resetUnreadableMissionFiles(): void {
+  unreadableBySource.clear()
 }

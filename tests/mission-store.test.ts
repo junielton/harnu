@@ -1,6 +1,6 @@
 /**
- * Missions v4 S-2 (AC-3) — one mission store. The verbs (`mission_list`, `mission_get`), the
- * renderer IPC (`listMissionViews`), the campaign reader (`listCampaignViews`) and hibernation
+ * Missions v4 S-2 (AC-3) — one mission store. The verbs (`mission_list`, `mission_get`, which read a v3
+ * file through the v4 record store), the renderer IPC (`listMissionViews`: no v3 view any more, S-40) and hibernation
  * (`missionOwnersWithLiveChildren`) all read mission files through `src/main/missions/store.ts`,
  * so one repo, with one fixture, gives the same answer to each of them: the shadow copy of a mission
  * in a second clone loses to the newer copy, and a delivered mission still has its leader.
@@ -11,13 +11,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import {
-  buildMissionFileContent,
-  missionFilePath,
-  missionsDir,
-  type Mission
-} from '../src/main/mission-core'
-import { createCampaignFile, type Campaign } from '../src/main/campaign-core'
+import type { V3Mission } from '../src/main/missions/v3-read'
+import { v3MissionsDir, writeV3Mission } from './helpers/v3-mission-file'
+
+type Mission = V3Mission
 
 const h = vi.hoisted(() => ({ userDataDir: '' }))
 
@@ -100,11 +97,7 @@ function mission(
 }
 
 async function writeMission(root: string, m: Mission): Promise<void> {
-  await fs.mkdir(missionsDir(root), { recursive: true })
-  await fs.writeFile(
-    missionFilePath(root, m.id, m.slug),
-    buildMissionFileContent(m, `# ${m.slug}\n`)
-  )
+  writeV3Mission(root, m, `# ${m.slug}\n`)
 }
 
 async function fakeClone(): Promise<string> {
@@ -113,30 +106,57 @@ async function fakeClone(): Promise<string> {
   return root
 }
 
-function campaign(id: string, root: string): Campaign {
-  return {
-    id,
-    slug: 'two-chapters',
-    folder: root,
-    owner: { sessionId: LEADER, folder: root },
-    title: 'Two chapters',
-    declaredEnd: { kind: 'code', target: 'both chapters live', evidence: 'merged PRs' },
-    chapters: [
-      { id: 'chp-1', ordinal: 1, title: 'Shadowed', required: true, missionId: M_SHADOW },
-      { id: 'chp-2', ordinal: 2, title: 'Closed elsewhere', required: true, missionId: M_CLOSED }
-    ],
-    status: 'active',
-    createdAt: OLD,
-    updatedAt: OLD,
-    provenance: { author: 'agent', at: OLD }
-  }
+/**
+ * A v3 campaign file naming both missions, as a record on disk. The campaign code is gone (S-39), so it
+ * is plain text; the store's readers must keep working with such a file beside the missions.
+ */
+async function seedCampaign(id: string, root: string): Promise<void> {
+  const dir = path.join(root, '.harnu', 'campaigns')
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(
+    path.join(dir, `${id}-two-chapters.md`),
+    [
+      '---',
+      `id: ${id}`,
+      'slug: two-chapters',
+      `folder: ${root}`,
+      'owner:',
+      `  sessionId: ${LEADER}`,
+      `  folder: ${root}`,
+      'title: Two chapters',
+      'declaredEnd:',
+      '  kind: code',
+      '  target: both chapters live',
+      '  evidence: merged PRs',
+      'chapters:',
+      '  - id: chp-1',
+      '    ordinal: 1',
+      '    title: Shadowed',
+      '    required: true',
+      `    missionId: ${M_SHADOW}`,
+      '  - id: chp-2',
+      '    ordinal: 2',
+      '    title: Closed elsewhere',
+      '    required: true',
+      `    missionId: ${M_CLOSED}`,
+      'status: active',
+      `createdAt: ${OLD}`,
+      `updatedAt: ${OLD}`,
+      'provenance:',
+      '  author: agent',
+      `  at: ${OLD}`,
+      '---',
+      '# Two chapters',
+      ''
+    ].join('\n')
+  )
 }
 
 type ToolResult = { isError?: boolean; content: Array<{ type: string; text?: string }> }
 type Handler = (args: Record<string, unknown>, ctx: Record<string, unknown>) => Promise<ToolResult>
 
 function payloadOf(res: ToolResult): Record<string, unknown> {
-  expect(res.isError).not.toBe(true)
+  expect(res.isError, res.content[0]?.text).not.toBe(true)
   const first = res.content[0]
   if (!first || first.type !== 'text' || !first.text) throw new Error('expected text content')
   return JSON.parse(first.text) as Record<string, unknown>
@@ -171,7 +191,7 @@ beforeEach(async () => {
     cloneA,
     mission(M_LONE, cloneA, { owner: { sessionId: LONE_LEADER, folder: cloneA } }, LONE_CHILD)
   )
-  await createCampaignFile(cloneA, campaign('cmp-0000000a', cloneA), '# Two chapters\n')
+  await seedCampaign('cmp-0000000a', cloneA)
 })
 
 describe('one reader for every caller', () => {
@@ -180,7 +200,6 @@ describe('one reader for every caller', () => {
     const store = await import('../src/main/missions/store')
     const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
     const { listMissionViews } = await import('../src/main/mission-ipc')
-    const { listCampaignViews } = await import('../src/main/campaign-ipc')
     const { missionOwnersWithLiveChildren } = await import('../src/main/hibernation')
     const verbs: Record<string, Handler> = {}
     for (const t of WIRED_TOOLS) verbs[t.op] = t.handler as unknown as Handler
@@ -197,48 +216,45 @@ describe('one reader for every caller', () => {
     // A delivered mission still has its leader, and it is the winner's.
     expect(store.leaderOf(byId[M_SHADOW].mission)).toBe(LEADER)
 
-    // Verbs: mission_list sees the store's missions, statuses and leaders.
-    const listed = payloadOf(
-      await verbs.mission_list(
-        {},
-        {
-          folder: '',
-          folders: [{ path: cloneA }, { path: cloneB }],
-          denyFolders: [],
-          bridge: undefined
-        }
-      )
-    ).missions as Array<Record<string, unknown>>
-    expect(Object.fromEntries(listed.map((r) => [r.id, [r.status, r.ownerSessionId]]))).toEqual({
-      [M_SHADOW]: ['delivered', LEADER],
-      [M_CLOSED]: ['closed', STALE_LEADER],
-      [M_LONE]: ['active', LONE_LEADER]
+    // Verbs: mission_list reads the same files, per repo, through the v4 reader: a v3 file is listed as the
+    // open mission it is, led by its owner, and a closed one is not listed.
+    const listFor = async (folder: string): Promise<Array<Record<string, unknown>>> =>
+      payloadOf(
+        await verbs.mission_list(
+          { folder },
+          { folder, folders: [{ path: folder }], denyFolders: [], bridge: undefined }
+        )
+      ).missions as Array<Record<string, unknown>>
+    const inA = await listFor(cloneA)
+    const inB = await listFor(cloneB)
+    // Clone A lists its lone active mission and the campaign file beside the missions, and neither of the
+    // two ids that clone B holds a newer copy of: the stale copies lost, and the older reader's rule holds.
+    expect(inA.map((r) => r.id)).toContain(M_LONE)
+    expect(inA.map((r) => r.id)).not.toContain(M_SHADOW)
+    expect(inA.map((r) => r.id)).not.toContain(M_CLOSED)
+    expect(inA.find((r) => r.id === M_LONE)).toMatchObject({ leads: LONE_LEADER, format: 'v3' })
+    expect(inA.find((r) => r.title === 'Two chapters')).toMatchObject({
+      leads: LEADER,
+      format: 'v3'
     })
+    // Clone B lists the delivered mission under the leader of the newer copy, and not the closed one.
+    expect(inB.map((r) => r.id)).toEqual([M_SHADOW])
+    expect(inB[0]).toMatchObject({ leads: LEADER, format: 'v3' })
     // Verbs: the leader of a delivered mission is found by its session id.
     const got = payloadOf(
       await verbs.mission_get(
-        { folder: cloneB, ownerSessionId: LEADER },
+        { folder: cloneB, sessionId: LEADER },
         { folder: cloneB, folders: [], denyFolders: [], bridge: undefined }
       )
-    ).mission as Record<string, unknown>
-    expect(got.id).toBe(M_SHADOW)
+    )
+    expect(got).toMatchObject({ id: M_SHADOW, source: 'v3-mission', leads: LEADER })
 
-    // IPC: the open views are the store's open missions, with the same leaders.
-    const { views } = await listMissionViews([cloneA, cloneB])
-    expect(
-      Object.fromEntries(
-        views.map((v) => [v.mission.id, [v.mission.status, v.mission.owner.sessionId]])
-      )
-    ).toEqual({
-      [M_SHADOW]: ['delivered', LEADER],
-      [M_LONE]: ['active', LONE_LEADER]
-    })
-
-    // Campaign reader: a chapter's mission is the store's winner, so a mission closed in the
-    // other clone is done even though this clone's copy still says active.
-    const campaigns = await listCampaignViews([cloneA, cloneB])
-    expect(campaigns.views).toHaveLength(1)
-    expect(campaigns.views[0].progress.states).toMatchObject({ 'chp-1': 'done', 'chp-2': 'done' })
+    // IPC: the poll answers no v3 view any more (S-40); it still names the shadowed copies, and a file
+    // it could not read would be named in `unreadable`.
+    const { views, unreadable, shadowed } = await listMissionViews([cloneA, cloneB])
+    expect(views).toEqual([])
+    expect(unreadable).toEqual([])
+    expect(shadowed.map((s) => s.missionId).sort()).toEqual([M_SHADOW, M_CLOSED].sort())
 
     // Hibernation: only the winner of an id counts. The winner of M_SHADOW is delivered, which v4 reads
     // as ready to close, so its leader is pinned (S-23, AC-62: "ready to close included"; it was not
@@ -276,7 +292,7 @@ describe('the store', () => {
     vi.resetModules()
     const store = await import('../src/main/missions/store')
     await fs.writeFile(
-      path.join(missionsDir(cloneA), 'mnt-deadbeef-broken.md'),
+      path.join(v3MissionsDir(cloneA), 'mnt-deadbeef-broken.md'),
       '---\nstatus: [\n---\n'
     )
     const read = await store.readMissionsDeduped([cloneA], { includeClosed: true })

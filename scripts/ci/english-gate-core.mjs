@@ -37,7 +37,6 @@ export const ALLOWED_PATHS = [
   /^tests\/worktree-list\.test\.ts$/,
   /^tests\/worktree-tracker\.test\.ts$/,
   /^tests\/roadmap-core\.test\.ts$/, // accent-folding slugify fixture
-  /^tests\/mission-core\.test\.ts$/,
   /^tests\/mcp-memory-core\.test\.ts$/,
   // pt-BR report fixtures: the report card parses by shape, so it must be tested on translated labels.
   /^resources\/companion\/tests\/report-card\.test\.tsx$/,

@@ -45,12 +45,12 @@ describe('AC-6.2 — provenance.mission and the entry meta line', () => {
     const out = write('', '## Use gates', {
       id,
       validFrom: '2026-11-02',
-      watches: ['src/main/mission-gates.ts', 'gates']
+      watches: ['src/main/pr-stack.ts', 'gates']
     })
     const lines = out.trim().split('\n')
     expect(lines[0]).toBe('## Use gates')
     expect(lines[2]).toBe(
-      `> entry: ${id} · valid_from=2026-11-02 · watches=src/main/mission-gates.ts,gates`
+      `> entry: ${id} · valid_from=2026-11-02 · watches=src/main/pr-stack.ts,gates`
     )
     expect(lines[3]).toMatch(/^> provenance: .*mission=mnt-4ba02726/)
   })
@@ -160,7 +160,7 @@ describe('AC-6.3 — recall', () => {
     let decisions = write('', '## Gates govern verified\nbody', {
       id: 'e-0000000a',
       validFrom: '2026-10-20',
-      watches: ['src/main/mission-gates.ts', 'verified']
+      watches: ['src/main/pr-stack.ts', 'verified']
     })
     decisions = write(decisions, '## Unrelated\nbody', {
       id: 'e-0000000b',
@@ -172,7 +172,7 @@ describe('AC-6.3 — recall', () => {
   }
 
   it('matches a watched path against a scope path (same file, or a directory holding it)', () => {
-    const hits = recallEntries(files(), { paths: ['src/main/mission-gates.ts'], topics: [] })
+    const hits = recallEntries(files(), { paths: ['src/main/pr-stack.ts'], topics: [] })
     expect(hits.map((h) => h.text)).toEqual(['Gates govern verified'])
     const dir = recallEntries(files(), { paths: ['src/renderer/components/X.vue'], topics: [] })
     expect(dir.map((h) => h.text)).toEqual(['Unrelated'])
@@ -194,7 +194,7 @@ describe('AC-6.3 — recall', () => {
   })
 
   it('returns { page, line, text } where line points at the entry', () => {
-    const [hit] = recallEntries(files(), { paths: ['src/main/mission-gates.ts'], topics: [] })
+    const [hit] = recallEntries(files(), { paths: ['src/main/pr-stack.ts'], topics: [] })
     expect(hit).toEqual({ page: 'decisions', line: 1, text: 'Gates govern verified' })
   })
 

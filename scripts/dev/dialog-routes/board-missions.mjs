@@ -7,9 +7,7 @@
  *   CardCreateModal             CardCreateModal.vue               folder menu → Roadmap board → "New card"
  *   CardDetailModal             CardDetailModal.vue               Roadmap board → click a card
  *   RoadmapBoard.dispatch       RoadmapBoard.vue                  Roadmap board → an AGENT-authored card's "Dispatch"
- *   MissionsReviewDialog        MissionsReviewDialog.vue          Activity bell → a mission row (owner session absent)
- *   MissionBulkCloseConfirmDialog  MissionBulkCloseConfirmDialog.vue   …→ Review → "Close selected" (stacked over the review)
- *   MissionCloseConfirmDialog   MissionCloseConfirmDialog.vue     owner session selected → Topbar mission pill → End mission…
+ *   MissionCloseConfirmDialog   MissionCloseConfirmDialog.vue     owner session selected → Topbar mission pill → Mission pane → Close mission…
  *   MissionHandoffDialog        MissionHandoffDialog.vue          a v4 mission's leading session selected → Topbar pill → Sessions → "Continue in a new session…"
  *
  * A route is `{ id, file, reach, note?, open({ page, app, seed }), close?({ page }) }`. `open`
@@ -33,13 +31,11 @@
  * Dropping a card onto Ready (the other way to reach the dispatch overlay) is deliberately NOT
  * used: it rewrites the card file's status, so it would not be repeatable.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** The session that owns the seeded missions (tests/e2e/ci/fixtures/dialog-seed.ts). */
 const MISSION_OWNER_SESSION = '00000000-0000-4000-8000-000000000001'
-/** A session id that no transcript backs, so a mission it owns is "owner missing" in the bell. */
-const ABSENT_OWNER_SESSION = '00000000-0000-4000-8000-000000000099'
 
 /** The session that leads the v4 mission the hand-off route writes (a v4 record is not in the seed). */
 const V4_LEADER_SESSION = '00000000-0000-4000-8000-000000000020'
@@ -94,18 +90,9 @@ async function tidy(page) {
   await page.mouse.move(640, 450)
 }
 
-/** Clear stray dialogs, a stray bell popover and a stray mission popover. */
+/** Clear stray dialogs and a stray bell popover (the Mission pane keeps its open state between routes). */
 async function reset(page) {
   await closeAllDialogs(page)
-  if (
-    await page
-      .locator('[data-test="mission-count"]')
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await page.keyboard.press('Escape')
-    await page.waitForTimeout(200)
-  }
   const bell = page.locator('[data-dsqa="topbar-bell"]')
   if ((await bell.getAttribute('aria-expanded').catch(() => 'false')) === 'true') await bell.click()
   await tidy(page)
@@ -326,68 +313,6 @@ async function selectOwnerSession({ page, seed }) {
   await pill(page).waitFor({ state: 'visible', timeout: 15000 })
 }
 
-/**
- * Two finished missions with an ABSENT owner, written once per world. They copy the seed's
- * "finished with warnings" file, so they have the same shape the seed documents.
- */
-function ensureCueMissions(seed) {
-  const dir = join(seed.repo, '.harnu', 'missions')
-  const src = readdirSync(dir).find((f) => f.startsWith(`${seed.missions.finishedWithWarnings}-`))
-  if (!src) throw new Error('the seeded "finished with warnings" mission file is missing')
-  const raw = readFileSync(join(dir, src), 'utf8')
-  let wrote = false
-  for (const n of ['b1', 'b2']) {
-    const id = `mnt-${String(n).padStart(8, '0')}`
-    const file = join(dir, `${id}-seed-cue-mission-${n}.md`)
-    if (existsSync(file)) continue
-    writeFileSync(
-      file,
-      raw
-        .replaceAll(seed.missions.finishedWithWarnings, id)
-        .replaceAll('seed-finished-with-warnings', `seed-cue-mission-${n}`)
-        .replaceAll(MISSION_OWNER_SESSION, ABSENT_OWNER_SESSION)
-    )
-    wrote = true
-  }
-  return wrote
-}
-
-const cueItem = (page) =>
-  page.locator('[data-dsqa="activity-item"][data-owner-missing="true"]').first()
-
-/** Opens the bell and waits for the cue row of a mission whose owner session is not open here. */
-async function openBellOnMissionCue({ page, seed }) {
-  const bell = page.locator('[data-dsqa="topbar-bell"]')
-  if (ensureCueMissions(seed)) {
-    // The app's first mission poll only records what already exists; a mission that shows up
-    // afterwards is the one that cues. The poll runs every 20s.
-    await page.waitForTimeout(1500)
-  }
-  const deadline = Date.now() + 70_000
-  for (;;) {
-    if ((await bell.getAttribute('aria-expanded')) !== 'true') await bell.click()
-    if (
-      await cueItem(page)
-        .isVisible()
-        .catch(() => false)
-    )
-      return
-    if (Date.now() > deadline)
-      throw new Error('no mission cue appeared in the Activity bell within 70s')
-    await bell.click()
-    await page.waitForTimeout(3000)
-  }
-}
-
-async function openReview(ctx) {
-  const { page } = ctx
-  await reset(page)
-  await openBellOnMissionCue(ctx)
-  await cueItem(page).click()
-  await page.locator('[data-test="missions-review"]').waitFor({ state: 'visible', timeout: 8000 })
-  await dialogReady(page)
-}
-
 // ---- the routes -------------------------------------------------------------------------------
 
 /** @type {Array<{ id: string, file: string, reach: 'seed' | 'not-seedable', note?: string, open: (ctx: { page: import('@playwright/test').Page, app: import('@playwright/test').ElectronApplication, seed: any }) => Promise<void>, close?: (ctx: { page: import('@playwright/test').Page }) => Promise<void> }>} */
@@ -434,60 +359,28 @@ export const ROUTES_BOARD_MISSIONS = [
     close: async ({ page }) => closeAllDialogs(page)
   },
   {
-    id: 'MissionsReviewDialog',
-    file: 'MissionsReviewDialog.vue',
-    reach: 'seed',
-    note:
-      'Reached through a bell cue, which only fires for a mission that appears after the first poll — ' +
-      'the route writes two on first use and waits up to ~70s (one poll is 20s).',
-    open: openReview,
-    close: async ({ page }) => closeAllDialogs(page)
-  },
-  {
-    id: 'MissionBulkCloseConfirmDialog',
-    file: 'MissionBulkCloseConfirmDialog.vue',
-    reach: 'seed',
-    note: 'Stacked over MissionsReviewDialog; close() dismisses the child first, then the parent.',
-    open: async (ctx) => {
-      await openReview(ctx)
-      await ctx.page.locator('[data-test="review-close-selected"]').click()
-      await ctx.page
-        .locator('[data-test="bulk-close-confirm"]')
-        .waitFor({ state: 'visible', timeout: 8000 })
-      await dialogReady(ctx.page)
-    },
-    close: async ({ page }) => closeAllDialogs(page)
-  },
-  {
     id: 'MissionCloseConfirmDialog',
     file: 'MissionCloseConfirmDialog.vue',
     reach: 'seed',
     note:
       'Needs the mission OWNER session in the sidebar: the route writes a transcript for it (the seed does not) and selects it. ' +
-      'Selecting a session starts a `claude --resume` PTY; the pill and popover do not depend on that process.',
+      "The seeded mission is a v3 file: since the cut-over its pill opens the Mission pane like any record, and the pane's " +
+      '"Close mission…" opens the dialog. The pane keeps its open state between runs in one app, so it is opened only when it is closed. ' +
+      'Selecting a session starts a `claude --resume` PTY; the pill and the pane do not depend on that process.',
     open: async (ctx) => {
       const { page } = ctx
       await reset(page)
       await selectOwnerSession(ctx)
       await tidy(page)
-      await pill(page).click()
-      await page.locator('[data-test="mission-end-open"]').click()
+      const pane = page.locator('[data-dsqa="mission-pane"]')
+      if (!(await pane.isVisible().catch(() => false))) await pill(page).click()
+      await page.locator('[data-test="mission-close-open"]').click()
       await page
         .locator('[data-test="mission-close-confirm"]')
         .waitFor({ state: 'visible', timeout: 8000 })
       await dialogReady(page)
     },
-    close: async ({ page }) => {
-      await closeAllDialogs(page)
-      if (
-        await page
-          .locator('[data-test="mission-count"]')
-          .isVisible()
-          .catch(() => false)
-      ) {
-        await pill(page).click()
-      }
-    }
+    close: async ({ page }) => closeAllDialogs(page)
   },
   {
     id: 'MissionHandoffDialog',

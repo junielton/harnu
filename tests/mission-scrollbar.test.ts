@@ -11,17 +11,12 @@ const files = readdirSync(DIR).filter((f) => /^Mission.*\.vue$/.test(f))
 
 describe('Mission components use the app scrollbar', () => {
   it('finds the Mission components', () => {
-    expect(files).toContain('MissionPopover.vue')
+    expect(files).toContain('MissionPane.vue')
   })
 
   it.each(files)('%s: every overflow-auto/scroll element is .scrollable', (file) => {
     const src = readFileSync(`${DIR}/${file}`, 'utf8')
     const tags = src.match(/<[a-zA-Z][^<>]*\boverflow-(?:[xy]-)?(?:auto|scroll)\b[^<>]*>/g) ?? []
     for (const tag of tags) expect(tag, tag).toMatch(/\bscrollable\b/)
-  })
-
-  it('the popover body scroll container is present and .scrollable', () => {
-    const src = readFileSync(`${DIR}/MissionPopover.vue`, 'utf8')
-    expect(src).toMatch(/class="scrollable overflow-y-auto"/)
   })
 })

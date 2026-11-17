@@ -7,11 +7,10 @@
  * mission owed right now (not only the ones this poll cued), ordered cued first,
  * then blocking kinds, then newest. `ts` moves only when a poll cued; a quiet
  * sync after every poll rewrites title + items without touching `ts`, removes
- * the entry at zero and never resurrects a dismissed one. `openReview` leaves a
- * request for the review dialog (S5).
+ * the entry at zero and never resurrects a dismissed one. (The review dialog and its
+ * request are gone, S-37.)
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import type { MissionView } from '../src/main/mission-ipc'
 import { useMissionsStore } from '../src/renderer/src/stores/missions'
@@ -279,30 +278,6 @@ describe('syncMissionActivity — quiet rewrite after every poll', () => {
   })
 })
 
-describe('openReview — the request S5’s review dialog will consume', () => {
-  it('records the focused mission and a timestamp', () => {
-    const store = mountStore()
-    expect(store.reviewRequest).toBeNull()
-    store.openReview('mnt-9')
-    expect(store.reviewRequest).toEqual({ missionId: 'mnt-9', at: Date.now() })
-  })
-
-  it('with no argument asks for the whole review', () => {
-    const store = mountStore()
-    store.openReview()
-    expect(store.reviewRequest).toEqual({ missionId: null, at: Date.now() })
-  })
-
-  it('consumeReviewRequest hands it over once', async () => {
-    const store = mountStore()
-    store.openReview('mnt-9')
-    await nextTick()
-    expect(store.consumeReviewRequest()?.missionId).toBe('mnt-9')
-    expect(store.reviewRequest).toBeNull()
-    expect(store.consumeReviewRequest()).toBeNull()
-  })
-})
-
 // ---- Missions v4 S-23 (AC-62): the cue and the sidebar chip read the v4 view ----------------------------------
 
 describe('the store reads the v4 view for the cue, the Activity entry and the sidebar chip', () => {
@@ -413,8 +388,7 @@ describe('the chip of a v3 mission with steps in several states', () => {
     const path = await import('node:path')
     repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-chip-'))
     fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
-    const { buildMissionFileContent, missionFilePath, missionsDir } =
-      await import('../src/main/mission-core')
+    const { writeV3Mission } = await import('./helpers/v3-mission-file')
     const at = '2026-11-14T09:00:00.000Z'
     const step = (id: string, ordinal: number, over: Record<string, unknown>): unknown => ({
       id,
@@ -451,11 +425,7 @@ describe('the chip of a v3 mission with steps in several states', () => {
       updatedAt: at,
       provenance: { author: 'agent', at }
     }
-    fs.mkdirSync(missionsDir(repo), { recursive: true })
-    fs.writeFileSync(
-      missionFilePath(repo, mission.id, mission.slug),
-      buildMissionFileContent(mission as never)
-    )
+    writeV3Mission(repo, mission)
   })
 
   afterEach(async () => {
@@ -508,8 +478,7 @@ describe('a delivered v3 mission with warnings, its leader not open here', () =>
     const path = await import('node:path')
     repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-delivered-'))
     fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
-    const { buildMissionFileContent, missionFilePath, missionsDir } =
-      await import('../src/main/mission-core')
+    const { writeV3Mission } = await import('./helpers/v3-mission-file')
     const at = '2026-11-14T09:00:00.000Z'
     const step = (id: string, ordinal: number, over: Record<string, unknown>): unknown => ({
       id,
@@ -542,11 +511,7 @@ describe('a delivered v3 mission with warnings, its leader not open here', () =>
       updatedAt: at,
       provenance: { author: 'agent', at }
     }
-    fs.mkdirSync(missionsDir(repo), { recursive: true })
-    fs.writeFileSync(
-      missionFilePath(repo, mission.id, mission.slug),
-      buildMissionFileContent(mission as never)
-    )
+    writeV3Mission(repo, mission)
   })
 
   afterEach(async () => {
@@ -608,7 +573,7 @@ describe('a delivered v3 mission with warnings, its leader not open here', () =>
   })
 })
 
-// ---- Missions v4 S-23 delta 3: a v3 mission keeps main's cue keys, its own chip words and its popover ---------
+// ---- Missions v4 S-23 delta 3, S-35: a v3 mission keeps main's cue keys; its chip reads like its pill ----------------
 
 describe('a v3 mission read through the v4 view keeps what main did', () => {
   const OWNER = '8f2c1e4a-1111-4222-8333-944455556666'
@@ -763,21 +728,17 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
     expect(playNotificationSound).not.toHaveBeenCalled()
   })
 
-  it('the chip of a v3 mission is its own pill\u2019s words, and a v4 one keeps the v4 text', async () => {
+  it('the chip of a v3 mission reads like its pill: the view\u2019s counts, the same as a v4 record (S-35)', async () => {
     const store = mountStore()
     v3Views = [v3([{ kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }])]
     v4Items = [blockerItem(1, null, 'Waiting on the vendor key')]
     wire()
     await store.refresh()
-    const model = store.modelForSession(OWNER)
-    expect(model).not.toBeNull()
-    const chip = store.chipFor(OWNER)
-    const { headlineText } = await import('../src/renderer/src/lib/mission-view')
-    expect(chip?.text).toBe(headlineText(i18n.global.t as never, model!.headline))
-    expect(chip?.compact).toBe(headlineText(i18n.global.t as never, model!.headline, true))
-    expect(chip?.text).not.toBe('2/5 · 1 for you')
-    expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(true)
-    // The same record once it is a v4 record (a v4 file exists): the v4 text, and the pane.
+    // The v3 list still serves the file for the cue (main's keys), but the chip is the pill's text.
+    expect(store.modelForSession(OWNER)).not.toBeNull()
+    expect(store.chipFor(OWNER)?.text).toBe('2/5 · 1 for you')
+    expect(store.chipFor(OWNER)?.compact).toBe('2/5 · 1 for you')
+    // The same record once a v4 record exists (the first door use): the same text.
     const detail = detailOf(v4Items) as { source: string }
     detail.source = 'v4'
     ;(window as unknown as { api: Record<string, unknown> }).api.missionV4View = vi.fn(
@@ -793,28 +754,7 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
     )
     await store.refresh()
     expect(store.chipFor(OWNER)?.text).toBe('2/5 · 1 for you')
-    expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(false)
-  })
-
-  // Delta 5: Open mission on a v3 card must open only the popover. The mission the card names is the one the
-  // v3 list serves; it need not be one the v4 readers read by that id (a campaign's chapter mission is a
-  // milestone of another id there, and the readers read a bounded number of missions per repo).
-  it('a mission only the v3 list knows is a v3 mission: Open mission is the popover, never the pane', async () => {
-    const store = mountStore()
-    v3Views = [
-      v3([{ kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }]),
-      fixtureView('parallel', {
-        mission: { id: 'mnt-0c0c0c0c', owner: { sessionId: OWNER, folder: '/repo' } } as never,
-        view: { you: [{ kind: 'close' }] as never }
-      })
-    ]
-    v4Items = []
-    wire()
-    await store.refresh()
-    // The second id is in no reader (the view channel answers only for the first).
-    expect(store.isV3Mission('mnt-0c0c0c0c')).toBe(true)
-    expect(store.isV3Mission('mnt-0a1b2c3d')).toBe(true)
-    // An id nobody knows is not claimed for the popover.
-    expect(store.isV3Mission('mnt-deadbeef')).toBe(false)
+    // There is no v3/v4 switch any more: every record opens the pane.
+    expect('isV3Mission' in store).toBe(false)
   })
 })

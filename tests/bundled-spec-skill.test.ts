@@ -6,7 +6,8 @@
  * slice has a card, the Complex bundle at tracked paths, and the template's four conventions (D-1).
  * T601 S-5 (card T670) — the mission born at triage (its `mission_create` payload parsed against
  * the real verb schema) and the approval order: mission, `open_file`, one question, the header
- * flip and Mark verified on a yes, an operator-owned `mission_set_blocker` with nobody there.
+ * flip and the operator ticking the approval criterion in the Mission pane on a yes, an operator-owned
+ * `mission_set_blocker` with nobody there (Missions v4 S-31 moved these pins to the v4 verb shapes).
  * T601 S-8 (card T672) — the three contracts: the awareness doc's `harnu:spec` paragraph and its
  * marker, the user guide's `spec` section, and one CHANGELOG entry that names the skill.
  *
@@ -368,7 +369,8 @@ function checkVerbProblems({ skill }: Docs): string[] {
     problems.push('does not say the skill directory is the base directory')
   if (!/when this skill loads/.test(f)) problems.push('does not say when the session is told')
   if (!/\*\*Resolving `<spec-path>`\*\*/.test(f)) problems.push('no path-resolution rule')
-  if (!/mission as scope/.test(f)) problems.push('path rule skips the mission scope')
+  if (!/linked to the mission \(a `doc` link\)/.test(f))
+    problems.push('path rule skips the spec linked to the mission')
   if (!/changed on the branch/.test(f)) problems.push('path rule skips the branch diff')
   if (!/ask/i.test(f)) problems.push('path rule never asks')
   if (/by[ -]hand|manually|\b(grep|awk|sed|rg)\b/i.test(f))
@@ -782,9 +784,9 @@ const S5_MUTATIONS: Record<string, Mutation[]> = {
   missionPayload: [
     {
       target: 'skill',
-      find: '"verification": "human"',
-      replace: '"verification": "verifier"',
-      why: 'the Approve spec step is a human step'
+      find: '"by": "operator"',
+      replace: '"by": "session"',
+      why: 'the Approve spec step carries an operator criterion'
     },
     {
       target: 'skill',
@@ -794,27 +796,27 @@ const S5_MUTATIONS: Record<string, Mutation[]> = {
     },
     {
       target: 'skill',
-      find: '"declaredEnd": {',
-      replace: '"end": {',
+      find: '"doneWhen": ',
+      replace: '"end": ',
       why: 'the payload must parse against mission_create'
     },
     {
       target: 'skill',
-      pattern: ',\\s*"docs/adr/NNNN-<slug>\\.md"',
+      pattern: ',\\s*\\{ "kind": "doc", "ref": "docs/adr/NNNN-<slug>\\.md" \\}',
       replace: '',
-      why: 'the scope lists the ADR path the tier carries'
+      why: 'the links list the ADR path the tier carries'
     },
     {
       target: 'skill',
-      pattern: '"docs/prds/<card>-<slug>\\.md",\\s*',
+      pattern: '\\{ "kind": "doc", "ref": "docs/prds/<card>-<slug>\\.md" \\},\\s*',
       replace: '',
-      why: 'the scope lists the PRD path the tier carries'
+      why: 'the links list the PRD path the tier carries'
     },
     {
       target: 'skill',
       find: 'written or not',
       replace: 'once written',
-      why: 'the scope lists the paths before they are written'
+      why: 'the links list the paths before they are written'
     },
     {
       target: 'skill',
@@ -844,15 +846,15 @@ const S5_MUTATIONS: Record<string, Mutation[]> = {
     },
     {
       target: 'skill',
-      find: 'never ticks the step',
-      replace: 'ticks the step itself',
-      why: 'the skill never ticks the Approve spec step'
+      find: 'ticks the criterion',
+      replace: 'may tick the criterion',
+      why: 'the skill never ticks the Approve spec criterion'
     },
     {
       target: 'skill',
-      find: '**Mark verified**',
-      replace: '**Done**',
-      why: "the operator is pointed at the step's Mark verified control"
+      find: 'Mission pane, tick',
+      replace: 'chat, say',
+      why: 'the operator is pointed at the approval criterion in the Mission pane'
     },
     {
       target: 'skill',
@@ -874,14 +876,14 @@ const S5_MUTATIONS: Record<string, Mutation[]> = {
     },
     {
       target: 'skill',
-      find: 're-nudges with back-off, and stop.',
-      replace: 're-nudges with back-off, and wait.',
+      find: 'owed by them, and\nstop.',
+      replace: 'owed by them, and\nwait.',
       why: 'with nobody there the skill stops'
     }
   ]
 }
 
-const MISSION_CREATE_SCOPE = [
+const MISSION_CREATE_LINKS = [
   'docs/specs/YYYY-MM-DD-<slug>/spec.md',
   COMPLEX_HEADER.prd,
   COMPLEX_HEADER.adr
@@ -942,32 +944,41 @@ function verbSchemaProblems(verb: string, payload: Record<string, unknown> | und
 const missionOf = (skill: string): string => section(skill, /^## The mission\s*$/)
 const approvalOf = (skill: string): string => section(skill, /^## The approval question\s*$/)
 
-/** AC-20: the mission_create payload parses, has the human "Approve spec" step and the scope. */
+/** AC-20: the mission_create payload parses (v4), has the "Approve spec" step with an operator criterion and the links. */
 function missionPayloadProblems({ skill }: Docs): string[] {
   const sec = missionOf(skill)
   if (!sec) return ['no "## The mission" section']
-  const payload = jsonFences(sec).find((p) => 'declaredEnd' in p || 'title' in p)
+  const payload = jsonFences(sec).find((p) => 'doneWhen' in p || 'title' in p)
   const problems = verbSchemaProblems('mission_create', payload)
   if (payload) {
+    for (const v3 of ['declaredEnd', 'scope', 'steward'])
+      if (v3 in payload) problems.push(`the payload carries ${v3}, a v3 field`)
     const steps = Array.isArray(payload.steps) ? (payload.steps as Record<string, unknown>[]) : []
-    const approve = steps.filter((s) => s.title === 'Approve spec')
+    const approve = steps.filter((st) => st.title === 'Approve spec')
     if (approve.length !== 1) problems.push(`${approve.length} "Approve spec" steps (expected 1)`)
-    else if (approve[0].verification !== 'human')
-      problems.push('the "Approve spec" step is not a human step')
-    const scope = Array.isArray(payload.scope) ? (payload.scope as string[]) : []
-    if (scope.join(' | ') !== MISSION_CREATE_SCOPE.join(' | '))
-      problems.push(`the scope is ${scope.join(', ')}, not the spec, PRD and ADR paths`)
+    else {
+      const criteria = Array.isArray(approve[0].criteria)
+        ? (approve[0].criteria as Record<string, unknown>[])
+        : []
+      if (!criteria.some((c) => c.by === 'operator'))
+        problems.push('the "Approve spec" step has no operator criterion')
+    }
+    const links = (Array.isArray(payload.links) ? (payload.links as Record<string, unknown>[]) : [])
+      .filter((l) => l.kind === 'doc')
+      .map((l) => String(l.ref))
+    if (links.join(' | ') !== MISSION_CREATE_LINKS.join(' | '))
+      problems.push(`the doc links are ${links.join(', ')}, not the spec, PRD and ADR paths`)
   }
   const f = flat(sec)
   if (!/the moment the entry leaves Small/.test(f))
     problems.push('the mission is not born the moment the entry leaves Small')
-  if (!/written or not/.test(f)) problems.push('the scope does not list unwritten paths')
-  if (!/Drop the PRD and ADR paths a tier does not carry/.test(f))
-    problems.push('the scope is not sized by tier')
+  if (!/written or not/.test(f)) problems.push('the links do not list unwritten paths')
+  if (!/Drop the PRD and ADR links a tier does not carry/.test(f))
+    problems.push('the links are not sized by tier')
   if (!/the delivery's end/.test(f) || !/D-5/.test(f))
-    problems.push("the declared end is not the delivery's end (D-5)")
-  if (!/`mission_set_end`/.test(f))
-    problems.push('a changed end is not re-scoped with mission_set_end')
+    problems.push("the Done when is not the delivery's end (D-5)")
+  if (!/`mission_set_done_when`/.test(f))
+    problems.push('a changed end is not staged with mission_set_done_when')
   if (!/`stepId`/.test(f)) problems.push('the "Approve spec" step id is not kept')
   if (!/Small entry[^.]*no mission/.test(f)) problems.push('a Small entry may get a mission')
   // The authoring procedure starts from the mission.
@@ -1005,9 +1016,11 @@ function approvalOrderProblems({ skill }: Docs): string[] {
 
   const f = flat(sec)
   if (!/`status: approved`/.test(f)) problems.push('a yes does not flip the header to approved')
-  if (!/\*\*Mark verified\*\*/.test(f) || !/"Approve spec" step/.test(f))
-    problems.push('the operator is not pointed at Mark verified on the "Approve spec" step')
-  if (!/never ticks the step/.test(f)) problems.push('the skill may tick the step')
+  if (
+    !/in the Mission pane, tick _The operator approves the spec_ on the "Approve spec" step/.test(f)
+  )
+    problems.push('the operator is not pointed at the approval criterion in the Mission pane')
+  if (!/never ticks the criterion/.test(f)) problems.push('the skill may tick the criterion')
   for (const verb of ['mission_update_step', 'mission_verify_step', 'mission_add_check'])
     if (f.includes(`\`${verb}\``)) problems.push(`the approval names ${verb}`)
   if (!/`harnu:orchestrate-delivery`/.test(f)) problems.push('the next step is not named')
@@ -1019,10 +1032,11 @@ function approvalOrderProblems({ skill }: Docs): string[] {
     if (!('stepId' in blocker)) problems.push('the blocker is not on the "Approve spec" step')
   }
   if (!/`mission_set_blocker`/.test(f)) problems.push('no mission_set_blocker with nobody there')
-  if (!/chimes/.test(f) || !/re-nudges/.test(f))
-    problems.push('the blocker does not say Harnu chimes and re-nudges')
+  if (!/the Mission pane lists it as owed by them/.test(f))
+    problems.push('the blocker is not listed in the Mission pane as owed by the operator')
   if (!/and stop\./.test(f)) problems.push('with nobody there the skill does not stop')
-  if (!/`mission_clear_blocker`/.test(f)) problems.push('the blocker is never cleared')
+  if (!/`mission_clear_blocker` refuses an operator's blocker \(`OPERATOR_ONLY`\)/.test(f))
+    problems.push("the skill does not leave the operator's blocker to the operator")
 
   // The authoring step 7 hands over to this section and still opens with the no-code check.
   const step7 = authoringSteps(skill).find((s) => /^Approval question$/.test(s.label))
@@ -1074,7 +1088,13 @@ function awarenessProblems({ features }: Docs): string[] {
   // The finished skill, once: the mission at triage, the approval door, the hand-off.
   if (!/`mission_create`/.test(p) || !/"Approve spec"/.test(p))
     problems.push('the paragraph does not name the mission born at triage')
-  if (!/\*\*Mark verified\*\*/.test(p) || !/never tick/.test(p))
+  // The v4 pane has no "Mark verified" button: the operator ticks the step's criterion (Mark done).
+  if (
+    /Mark verified/.test(p) ||
+    !/Mission pane/.test(p) ||
+    !/tick the criterion/.test(p) ||
+    !/never tick/.test(p)
+  )
     problems.push('the paragraph does not leave the approval to the operator')
   if (!/`harnu:orchestrate-delivery` adopts/.test(p))
     problems.push('the paragraph does not say orchestrate-delivery adopts the mission')
@@ -1111,7 +1131,9 @@ function userGuideProblems({ userDoc, changelog, skill }: Docs): string[] {
       problems.push('the section does not say what it writes')
     if (
       !/`Approve this spec\?`|"Approve this spec\?"/.test(sec) ||
-      !/\*\*Mark verified\*\*/.test(sec)
+      !/Mission pane/.test(sec) ||
+      !/tick the criterion/.test(sec) ||
+      /Mark verified/.test(sec)
     )
       problems.push('the section does not say how to approve')
     if (!sec.includes('`/harnu:spec check`') || !sec.includes('`--cards`'))
@@ -1174,6 +1196,12 @@ const S8_MUTATIONS: Record<string, Mutation[]> = {
     },
     {
       target: 'features',
+      find: 'tick the criterion',
+      replace: 'tick the step',
+      why: 'the approval is the criterion the operator ticks in the Mission pane'
+    },
+    {
+      target: 'features',
       find: '`harnu:orchestrate-delivery` adopts',
       replace: '`harnu:orchestrate-delivery` creates',
       why: 'orchestrate-delivery adopts the spec-born mission'
@@ -1188,8 +1216,8 @@ const S8_MUTATIONS: Record<string, Mutation[]> = {
     },
     {
       target: 'userDoc',
-      find: '**Mark verified**',
-      replace: 'Verify',
+      find: 'tick the criterion',
+      replace: 'verify the step',
       why: 'the section says how to approve'
     },
     {

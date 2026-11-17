@@ -180,7 +180,7 @@ export function stagedDoneWhenOf(record: MissionV4): { text: string; at?: string
 export async function approveDoneWhen(
   folder: string,
   missionId: string,
-  args: { at?: string } = {}
+  args: { at?: string; asRescope?: boolean } = {}
 ): Promise<DoorResult> {
   const at = now(args.at)
   return applyChange(folder, missionId, OPERATOR, 'operator', (record, log) => {
@@ -193,7 +193,13 @@ export async function approveDoneWhen(
     } = record as WithUnknownKeys<MissionV4>
     return {
       record: { ...(rest as MissionV4), doneWhen: staged.text },
-      log: logEntry(log, at, `operator approved a new Done when: ${staged.text}`)
+      log: logEntry(
+        log,
+        at,
+        args.asRescope
+          ? 'operator approved the re-scope'
+          : `operator approved a new Done when: ${staged.text}`
+      )
     }
   })
 }
@@ -205,7 +211,7 @@ export async function approveDoneWhen(
 export async function declineDoneWhen(
   folder: string,
   missionId: string,
-  args: { at?: string } = {}
+  args: { at?: string; asRescope?: boolean } = {}
 ): Promise<DoorResult> {
   const at = now(args.at)
   return applyChange(folder, missionId, OPERATOR, 'operator', (record, log) => {
@@ -214,7 +220,13 @@ export async function declineDoneWhen(
     const { pendingDoneWhen: _staged, ...rest } = record as WithUnknownKeys<MissionV4>
     return {
       record: rest as MissionV4,
-      log: logEntry(log, at, `operator declined the new Done when: ${staged.text}`)
+      log: logEntry(
+        log,
+        at,
+        args.asRescope
+          ? 'operator declined the re-scope'
+          : `operator declined the new Done when: ${staged.text}`
+      )
     }
   })
 }

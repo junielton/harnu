@@ -10,6 +10,17 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-16
+
+### Fixed
+
+- Approving or declining a re-scope on a mission from an older version no longer rewrites its old file; the change goes to its new copy.
+- A mission an earlier version wrote still tells you everything it was waiting for after the old mission view is gone. A new end an agent proposed and you have not answered still shows in the Mission pane with **Approve** and **Decline**, and now also counts on the pill and the chip, gets a card in **Your move** and a row in Activity, and keeps its place if the mission is copied to the new format before you answer. In **Your next step** that re-scope is one line with one **Review it** button (in English and Portuguese), never repeated and never in the agent's English wording. A mission imported from a goal file whose finish line nobody reviewed asks for that review as a blocker of yours. The other things it owed (a choice nobody made, checks, a human step) already came through as blockers and criteria; tests now pin each of them.
+
+- **In a very narrow Mission pane the opened "N more waiting on you" list is readable again.** At about 110 pixels its rows kept a button column and the text shrank until it stacked one letter per line. Now the button moves under the text.
+- **Your next step no longer says "Nothing for you right now" above a new Done when that waits for you.** An older mission with a re-scope waiting, or any mission with a proposed Done when, now says "Approve or decline the new Done when" with a **Review it** button that brings the Approve and Decline box into view.
+- An existing campaign shown in the Mission pane now counts its delivered chapters as done milestones. Before, every milestone read not started ("0 of 5 milestones done"), even a chapter whose mission was delivered. A chapter that was discarded no longer counts toward the total, and a side quest stays outside it. Nothing on disk changes: the campaign file and its chapter missions are only read.
+
 ## 2026-11-15
 
 ### Added
@@ -20,7 +31,21 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - Handing a step of a version 4 mission to its own session now gives that step a **board card** and attaches the new session as a **worker**, with nothing for you to approve. When the leading agent starts a session for a step, the reply it reads now names the step's card (created in Backlog, or the one the step already had, marked with the mission, milestone and step and carrying the step's criteria) and the worker it attached; if the bookkeeping failed, the session still runs and the reply says why. A dispatch batch can name the step each card is the work of, and the session the board starts for it is attached once it has booted, holding only that step's commands. A step the leader does itself still gets no card, a verifier is attached but gets no card and is not linked to the step it checks, and a closed mission starts no session. The mission's Log now says `Harnu attached a worker to step "…"`, and the lines for what you do (attaching a session, allowing or denying a request) name the mission by its title instead of a session id. The board's own Dispatch button does the same for a card that is already the work of a step: the session is attached to the step once it has booted, and a card dispatched into its own folder gets only that step's commands (a card cut into a new worktree is attached but keeps the full set).
 
+- An agent that **leads no mission** and starts real work is now **reminded to start one**. When it starts its second session, cuts a worktree or sends a dispatch batch, the reply it reads carries one short sentence telling it to create a mission with its steps. It comes once per session, it never stops or delays what the agent asked for, and Harnu never creates a mission on its own: it is a nudge for the case where the agent forgot. An agent that already leads or works on a mission, and any session Harnu started for a step, never sees it. The three commands also accept an optional `sessionId`, so Harnu can tell who is asking.
+
 ### Changed
+
+- **The agents' guide to Harnu now teaches missions in one short section.** What every session reads about itself used to spend about 9,700 words on missions, delivery plans and a background helper that no longer exist. It is now one section of under 2,000 words: the sixteen commands, how a plan is written, who settles a criterion, the commands a session Harnu started for a step is offered, how a dispatched step gets its card, and what you press in the pane. It says plainly that a session's id is only a claim, and that **only you decide a hand-off** to a new session: a session never switches itself, and nobody pastes a resume prompt. The skills text agrees, and nothing sends you to a **Mark verified** button any more: you mark a criterion done in the pane.
+
+- **The user guide describes missions on one page.** The Missions page now has four parts: **The pane**, **Acceptance criteria**, **Hand-off** and **Records from earlier versions**. The last one says what happens to a mission an earlier version wrote: it opens in the pane, the first change writes a copy and the old file is never touched. The agent-control page links to it and no longer carries a campaign, a steward or a popover section, and the roadmap board page now says a card can be a step.
+
+- **Every mission now opens in the Mission pane**, including the ones you started before this version. The pill at the top, the chip beside a session in the sidebar, a row in Activity and **Open mission** on a Your move card all open the pane for the session that leads it, and the old progress popover can no longer be reached. A version 3 mission's pill and chip now read like any other ("2/5 · 1 for you") instead of "Step 4 of 9". Nothing is lost on the way: your Your move cards keep their ids, nothing chimes because of the switch, a waiting item or a reminder is not dropped. Looking at an old mission writes nothing; the first time you use one of its controls (mark a criterion, clear a blocker, close it) Harnu makes a version 4 copy and leaves the old file exactly as it was. An old command aimed at a mission that has a copy is refused with the new command to use.
+
+- **Open mission** on a Your move card or an Activity row now opens the mission it names, even when the session leads several, and the sidebar chip, the Topbar pill and the pane all show the same one: the mission you picked in the pane, else the one that waits on you, else the one written most recently (a draft with nothing waiting no longer hides a mission that does). A mission its agent asked to close now lists "Close the mission" in the pane, as its Your move card already did. Your move no longer closes and re-files the cards of a version 4 mission each time Harnu starts, and a duplicate left by an earlier build closes down to one.
+
+- A session that leads **several missions** (every old leader that started more than one) no longer gets an error in the pane. It shows the mission written most recently and a small list above the title to switch to another. After a compaction, an old leader now gets its mission summary too.
+
+- A mission file Harnu can't read is no longer skipped silently: the Activity bell shows one notice that names the file, and nothing that depended on it is closed because it went missing.
 
 - **Missions no longer have a steward.** New missions get none, Harnu adds nothing to your folder's `.claude/settings.local.json` for one, and no `steward` line is written to a mission's Log. The first time you start Harnu after this change it removes every steward an older version left behind (its Scheduler worker and its three hook entries; your own hooks stay) and posts **one notice** in the Activity bell naming the missions affected. No mission file is touched. The Scheduler loses its **Stewards** block with them.
 
@@ -28,10 +53,48 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - Adding a step to a version 4 mission after the agent has asked you to close it takes the close request back, so you are not told the mission is ready when a new step is still open.
 
+- **The skills Harnu ships now speak version 4 missions.** `mission`, `status`, `report-back`, `orchestrate-delivery`, `delivery-verifier`, `delivery-watchdog`, `spec`, `one-by-one`, `grill-me`, `step-by-step`, `your-move` and `draft-to-prompt` were rewritten, and they are much shorter. A plan is milestones and steps, and every step carries criteria; a second session settles each criterion from evidence; there is no steward, so the session that leads a mission starts its own verifiers, nudges a stalled session and rebases a stack itself, and `delivery-watchdog` is only the read-only sweep. What is yours stays yours: you tick the criteria that only you can judge, answer a blocker with **Done, continue** in the Mission pane, and decide a hand-off to a fresh session (the leader never switches itself, and there is no prompt to paste). Skills are off until you switch them on in **Settings → Skills**, and the Skills user page says all of this in plain words. A new test now reads every skill Harnu ships and fails on a retired word or a verb Harnu no longer has.
+
+- **Activity and the missions that wait on you.** A row in the Activity entry that names a mission now always lands somewhere: it opens the session that leads the mission and its Mission pane, or, when that session is not open in this window, it shows a notice that names the mission and says why it cannot open from here. The entry lists every mission that is waiting on you, with no "Review all" row and no second list to open. A mission you had paused the steward of before this version no longer shows "The steward is paused" as something you owe, and its card in Your move closes by itself, because there is no steward left to resume; nothing else it was waiting on changes, no sound plays, and the mission's file is not touched.
+
+- A steward an older version left in the Scheduler's list never shows as one of your workers.
+
+- The companion's mission card now shows each step's **executors and pull request badges** for a version 4 mission, as it did for the older ones, and a mission file that the companion, the hibernation check or Your move can't read is named in the Activity bell instead of being skipped quietly.
+
+- **The Mission pane now reads at a glance in a small space.** The first screenful is the mission's title and progress bar, **Your next step**, and anything else that waits on you. **Steps and timeline**, **Sessions** and **N more waiting on you** are one click away, start closed, and stay as you left them, even after a restart. The closed **Steps and timeline** line says where the mission is, and **Open step** opens it for you. Nothing was removed.
+
+### Removed
+
+- **The old mission screens are gone.** The mission and campaign popovers, the step rail, the Missions review and bulk-close dialogs, the steward pause dialog and the **Stewards** block in the Scheduler are removed. Every mission, including the ones you started before this version, opens in the Mission pane, and nothing else lists your missions across a repo except the pane's own picker when a session has no mission.
+
+- **The mission steward is gone for good.** Harnu no longer contains the helper that used to wake on mission events, rebase a stack, start a verifier or nudge a session; the Scheduler keeps only your own **Observe** and **Act** workers. The first start after an upgrade still removes any steward an older version left (its Scheduler worker and its entries in the folder's `.claude/settings.local.json`, never your own hooks) and posts the one Activity notice. A session that was already open when you upgraded may still run the old steward hooks; they now answer with nothing. Closing a mission no longer looks for a steward to remove. The **Pause steward** and **Resume steward** actions are gone too. No mission or campaign file changes: a mission that was paused keeps that line in its file, and nothing reads it.
+
+- **The six campaign commands are gone.** Agents can no longer create, read, list, extend, close or hand over a campaign (`campaign_create`, `campaign_add_chapter`, `campaign_get`, `campaign_list`, `campaign_request_close`, `campaign_transfer_owner`), and `mission_create` refuses a call that names a campaign or a chapter, with a message that points to milestones; nothing is written. A large piece of work is now one mission with milestones. A campaign file an earlier version left in `.harnu/campaigns/` is kept and never changed: the Mission pane opens it as one mission with its chapters as milestones in order, and the chapter missions it names open as before.
+
+- **Six more old mission commands are gone, and the old mission code behind them.** Agents can no longer call `mission_link_child`, `mission_set_end`, `mission_verify_step`, `mission_add_check`, `mission_transfer_owner` or `mission_import_legacy`: a session that still does is told the tool is not found, and nothing changes. Each has a replacement (`mission_link`, `mission_set_done_when`, `mission_settle_ac`, `mission_add_ac`, the hand-off in the Mission pane, and nothing for the goal-file import). The mission commands that stay take only the version 4 shape: `mission_create` refuses an older argument (an end of the old kind, a steward, a chapter, a step's `verification`) and writes nothing. A mission an earlier version wrote still opens, every command reads it, and the first change converts it by copy while the old file stays as it was. `mission_update_step` stays in the list but is not built yet: it is refused and writes nothing, so a session adds to the plan instead.
+
 ### Fixed
 
 - The "Return here" header no longer wraps onto two lines in a narrow sidebar: when space runs out the title shortens with an ellipsis while the count, the oldest clock and the collapse chevron stay whole.
+- An **older mission whose agent proposed a new end** (a re-scope) can be **approved or declined in the Mission pane** again. The popover that used to hold those buttons is gone, so the proposal was still counted on the mission's Your move card, in Activity and on the pill, with nowhere to answer it. The pane now shows it in the same box a version 4 mission uses for a new Done when, with the agent's reason; **Approve** applies it to the old file as before (same change, same line in the mission's Log), **Decline** drops it, and neither creates a version 4 copy.
+
 - A leader that did a step itself, with no other session linked to it, no longer settles that step's criteria as if it were a second session: its check is recorded as a self-check and the criterion stays open.
+
+- The Mission pane no longer clips anything when it is very narrow. It has no minimum width: below about 240 pixels it tightens its padding, wraps or shortens text (the full text is in a tooltip), wraps its buttons and never scrolls sideways, so a pane 110 pixels wide is still readable.
+
+- The progress bar's marker no longer cuts through the count. The count stays on one line (full text in a tooltip) and the marker is a thin line under it.
+
+- A link in an open step no longer breaks in the middle of a word: a long address wraps at its slashes, dots and dashes.
+
+- With Harnu in Portuguese, the next-step box, its list of more things waiting, the headings of the hand-off summary and the count line of the mission picker are now in Portuguese, not English.
+
+- The sample mission uses the pane's own words, and its strip no longer squeezes its note into a narrow column.
+
+- The session a hand-off starts is now named after the mission in the Sessions row, not after the instruction it received.
+
+- The chooser of the missions a session leads now sits under its label and takes the full width, so its text is no longer cut off at about 290 pixels.
+
+- An Activity row of a mission whose leading session is not open here shows a notice that names the mission, and the user guide now says so (it still said an older review opened).
 
 ## 2026-11-14
 

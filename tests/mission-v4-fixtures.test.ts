@@ -2,7 +2,7 @@
  * Missions v4 · S-1 · AC-1 — the frozen v3 compatibility fixtures.
  *
  * `tests/fixtures/missions-v4-compat/` holds mission and campaign files exactly as the v3
- * builders (`buildMissionFileContent`, `buildCampaignFileContent`) write them, in the layout
+ * builders (`buildMissionFileContent`, and the campaign builder deleted by S-39) wrote them, in the layout
  * of a repo that used v3 (`missions/` and `campaigns/`; the `.harnu/` prefix is left off
  * because `.harnu/` is gitignored, and a later test copies them under it). Later slices run
  * their compatibility proofs (reads change no byte, v4 writes never touch a v3 file, the
@@ -19,18 +19,25 @@ import { describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import * as path from 'node:path'
+import yaml from 'js-yaml'
 import {
-  buildMissionFileContent,
-  parseMissionFile,
-  readMissionLog,
-  type Mission
-} from '../src/main/mission-core'
-import {
-  buildCampaignFileContent,
-  parseCampaignFile,
-  readCampaignLog,
-  type Campaign
-} from '../src/main/campaign-core'
+  parseV3CampaignFile as parseCampaignFile,
+  parseV3MissionFile as parseMissionFile,
+  readV3MissionLog as readMissionLog,
+  type V3Campaign as Campaign,
+  type V3Mission as Mission
+} from '../src/main/missions/v3-read'
+
+/**
+ * Missions v4 S-40 (C2-08b, W11): the v3 builder (`buildMissionFileContent`, in `mission-core.ts`, which S-41
+ * deletes) is replaced by the same two lines it was: the frontmatter YAML a v3 Harnu wrote, then the Log.
+ * The round trip below is therefore proven against the frozen reader (`v3-read.ts`) and the sha256 pins, not
+ * against the live v3 writer. What it still catches: a fixture whose bytes are not what a v3 writer would
+ * produce from what the frozen reader parses (so a hand-edited fixture, or a reader that loses or reorders a
+ * field, fails). What it no longer catches: a change to the v3 writer itself, which nothing runs any more.
+ */
+const buildMissionFileContent = (m: Mission, log = ''): string =>
+  `---\n${yaml.dump(m, { lineWidth: -1, noRefs: true, skipInvalid: true })}---\n${log}`
 
 const DIR = path.join(__dirname, 'fixtures', 'missions-v4-compat')
 
@@ -121,9 +128,8 @@ describe('fixtures are frozen v3', () => {
         file
       ).toBe(raw)
     }
-    for (const { file, campaign, raw } of campaigns()) {
-      expect(buildCampaignFileContent(campaign, readCampaignLog(raw)), file).toBe(raw)
-    }
+    // The v3 campaign builder was deleted with the campaign code (S-39): a campaign fixture's bytes are
+    // held by the sha256 pins above and by the parse in `campaigns()`, not by a second serializer.
   })
 
   it('tie every chapter mission to its campaign both ways', () => {

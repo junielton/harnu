@@ -162,9 +162,14 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   mission_create: {
     folder: ALLOWED,
     title: 'Ship the verb catalog',
-    declaredEnd: { kind: 'code', target: 'PR merged', evidence: 'green gates' },
-    sessionId: '11111111-2222-4333-8444-555555555555',
-    linkedCard: 'T358-mission-progress'
+    doneWhen: 'The verb catalog is merged and every verb answers',
+    steps: [
+      {
+        title: 'Wire the handlers',
+        criteria: [{ text: 'Another session checked every handler' }]
+      }
+    ],
+    sessionId: '11111111-2222-4333-8444-555555555555'
   },
   mission_get: { folder: ALLOWED, missionId: 'mnt-0000abcd' },
   mission_list: { folder: ALLOWED },
@@ -172,7 +177,7 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     folder: ALLOWED,
     missionId: 'mnt-0000abcd',
     title: 'Wire the handlers',
-    verification: 'verifier',
+    criteria: [{ text: 'Another session checked every handler' }],
     afterStepId: 'stp-1',
     reason: 'split out of stp-1'
   },
@@ -181,12 +186,6 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     missionId: 'mnt-0000abcd',
     stepId: 'stp-3',
     set: { proof: 'claimed' }
-  },
-  mission_link_child: {
-    folder: ALLOWED,
-    missionId: 'mnt-0000abcd',
-    stepId: 'stp-3',
-    link: { kind: 'session', ref: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }
   },
   mission_log: { folder: ALLOWED, missionId: 'mnt-0000abcd', stepId: 'stp-3', note: 'child done' },
   // T358 S4
@@ -198,62 +197,10 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     unblocks: 'green gates',
     owner: 'agent'
   },
-  mission_clear_blocker: { folder: ALLOWED, missionId: 'mnt-0000abcd', reason: 'CI red' },
-  mission_set_end: {
-    folder: ALLOWED,
-    missionId: 'mnt-0000abcd',
-    declaredEnd: { kind: 'research', target: 'memo', evidence: 'memo merged' },
-    reason: 'scope moved'
-  },
-  mission_verify_step: {
-    folder: ALLOWED,
-    missionId: 'mnt-0000abcd',
-    stepId: 'stp-2',
-    verdict: 'met',
-    evidence: 'verifier report',
-    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-  },
+  mission_clear_blocker: { folder: ALLOWED, missionId: 'mnt-0000abcd', blockerId: 'blk-1' },
   mission_request_close: {
     folder: ALLOWED,
     missionId: 'mnt-0000abcd',
-    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-  },
-  mission_import_legacy: {
-    folder: ALLOWED,
-    legacyPath: '.harnu/goals/3f2a9c10-export.md',
-    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-  },
-  // Mission v3 §3.6
-  mission_add_check: {
-    folder: ALLOWED,
-    missionId: 'mnt-0000abcd',
-    stepId: 'stp-1',
-    label: 'Validated visually'
-  },
-  // Campaign ch.3a (T595)
-  campaign_create: {
-    folder: ALLOWED,
-    title: 'Content migration',
-    declaredEnd: { kind: 'code', target: 'every page migrated', evidence: 'the audit is green' },
-    sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-    chapters: [
-      { title: 'Images', produces: ['images-on-cdn'] },
-      { title: 'Pages', consumes: ['images-on-cdn'] }
-    ],
-    force: false
-  },
-  campaign_add_chapter: {
-    folder: ALLOWED,
-    campaignId: 'cmp-0000abcd',
-    title: 'Detour',
-    required: false,
-    discoveredFrom: { chapterId: 'chp-1' }
-  },
-  campaign_get: { folder: ALLOWED, campaignId: 'cmp-0000abcd' },
-  campaign_list: { folder: ALLOWED },
-  campaign_request_close: {
-    folder: ALLOWED,
-    campaignId: 'cmp-0000abcd',
     sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
   },
   // Missions v4 S-24: the six verbs that exist in v4 alone.
@@ -297,20 +244,6 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
     folder: ALLOWED,
     missionId: 'mnt-0000abcd',
     sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-  },
-  // T654
-  mission_transfer_owner: {
-    folder: ALLOWED,
-    missionId: 'mnt-0000abcd',
-    toSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-    reason: 'the owner session died'
-  },
-  campaign_transfer_owner: {
-    folder: ALLOWED,
-    campaignId: 'cmp-0000abcd',
-    toSessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-    reason: 'the owner session died',
-    includeChapters: true
   },
   // Campaign ch.5a (T597).
   rebase_stack: { folder: ALLOWED, missionId: 'mnt-0000abcd', onto: 'origin/main' }

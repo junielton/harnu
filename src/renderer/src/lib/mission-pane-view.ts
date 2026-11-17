@@ -3,8 +3,7 @@
  * (design.md §6 "Mission pane"). Pure: no store, no `window.api`.
  *
  * The channel answers `{ state: 'mission' | 'none' | 'refused' }` (`mission:v4View`). This module
- * decides what a reply MEANS for one session — a v4 mission to draw, no mission, a refusal, or a v3
- * record the popover still serves — and words the numbers the server already counted. It never recounts:
+ * decides what a reply MEANS for one session — a mission to draw, no mission or a refusal — and words the numbers the server already counted. It never recounts:
  * the pill's "4/21 · 3 for you" is `progress.done`, `progress.total` and the length of the waiting list,
  * and the state is the identifier translated through i18n, never the English words in the reply.
  */
@@ -18,7 +17,7 @@ type Translate = (key: string, values?: Record<string, unknown>, plural?: number
 export type MissionV4Reply = Extract<MissionV4ViewReply, { state: 'mission' }>
 
 /** What the pane draws: a state of its own, not a gap. */
-export type PaneKind = 'loading' | 'mission' | 'none' | 'refused' | 'v3'
+export type PaneKind = 'loading' | 'mission' | 'none' | 'refused'
 
 /**
  * What a reply means for `sessionId`.
@@ -28,7 +27,8 @@ export type PaneKind = 'loading' | 'mission' | 'none' | 'refused' | 'v3'
  *   (a hand-off closed its row) must never show another session's mission here.
  * - A mission the operator closed is `none` too: it leaves the pane and the session shows the
  *   no-mission state.
- * - A v3 record (`source` other than `v4`) is `v3`: the v3 stack serves it, the pane does not draw it.
+ * - Every other record is a `mission`, whatever file it came from (S-35): a v3 record is read as v4 by the view
+ *   channel, so the pane draws it like any other. The first door use on it creates its v4 copy.
  */
 export function classifyReply(reply: MissionV4ViewReply | null, sessionId: string): PaneKind {
   if (reply === null) return 'loading'
@@ -36,10 +36,10 @@ export function classifyReply(reply: MissionV4ViewReply | null, sessionId: strin
   if (reply.state === 'none') return 'none'
   if (!reply.sessions.some((row) => row.id === sessionId && row.open)) return 'none'
   if (reply.detail.status === 'closed') return 'none'
-  return reply.source === 'v4' ? 'mission' : 'v3'
+  return 'mission'
 }
 
-/** The v4 mission this reply holds for `sessionId`, or `null` (anything else the pane or pill shows). */
+/** The mission this reply holds for `sessionId`, or `null` (anything else the pane or pill shows). */
 export function v4MissionOf(
   reply: MissionV4ViewReply | null,
   sessionId: string
@@ -47,7 +47,7 @@ export function v4MissionOf(
   return classifyReply(reply, sessionId) === 'mission' ? (reply as MissionV4Reply) : null
 }
 
-/** Whether a NAMED read should be dropped and asked again by session: it is neither a v4 nor a v3 mission of it. */
+/** Whether a NAMED read should be dropped and asked again by session: it is not a mission of this session. */
 export function isStaleNamedRead(reply: MissionV4ViewReply | null, sessionId: string): boolean {
   const kind = classifyReply(reply, sessionId)
   return kind === 'none' || kind === 'refused'
@@ -677,10 +677,31 @@ export function milestoneGlyph(state: string): GlyphKind {
 /** The next-step box's look: the operator owes something, owes the close, or nothing waits. */
 export type NextLook = 'you' | 'ok' | 'calm'
 
-export function nextLook(detail: Detail): NextLook {
+/**
+ * `staged` is a Done when a session proposed (an older mission's re-scope reads the same way): it waits on the
+ * operator, so when the waiting list names nothing else the box is not calm.
+ */
+export function nextLook(detail: Detail, staged = false): NextLook {
   const next = detail.waiting.next
-  if (next === null) return 'calm'
+  if (next === null) return staged ? 'you' : 'calm'
   return next.kind === 'close' ? 'ok' : 'you'
+}
+
+/**
+ * How a row of the opened "N more waiting on you" list is laid out. Regular: the text and the button side by
+ * side (`1fr auto`). Narrow: one column and the button on its own row under the text, because a button column
+ * left the text about 10 px at 110 px and it stacked one letter per line.
+ */
+export interface RestRowGrid {
+  columns: string
+  /** The button sits beside the text, pinned to column 2 over both text rows. */
+  buttonBeside: boolean
+}
+
+export function restRowGrid(mode: PaneLayout['mode']): RestRowGrid {
+  return mode === 'narrow'
+    ? { columns: 'minmax(0, 1fr)', buttonBeside: false }
+    : { columns: '1fr auto', buttonBeside: true }
 }
 
 // ---- Sessions row and the hand-off (Missions v4, S-20) -----------------------------------------------
@@ -902,8 +923,9 @@ export const HANDOFF_NAME_PREFIX = 'You are taking over this mission'
 /**
  * The name a session shows in the Sessions row and the offer: the one name every surface shows
  * (`sessionTitle`), else "Session" and the first eight characters of its id, so a session that is not
- * loaded any more is never a blank. A session a hand-off started has its first prompt for a name (the
- * instruction line); with the mission's title it reads "Took over “…”" instead.
+ * loaded any more is never a blank. A session a hand-off started has its first prompt for a name, which is
+ * the instruction line; given the mission's title it is named after the mission instead, plainly (stp-21:
+ * the leader a hand-off creates is the mission's, not "You are taking over this mission…").
  */
 export function sessionNameOf(
   id: string,
@@ -913,9 +935,7 @@ export function sessionNameOf(
 ): string {
   const found = all.find((s) => s.sessionId === id)
   const own = found ? sessionTitle(found, all, t) : ''
-  if (own.startsWith(HANDOFF_NAME_PREFIX) && missionTitle) {
-    return t('missionPane.sessions.tookOver', { title: missionTitle })
-  }
+  if (own.startsWith(HANDOFF_NAME_PREFIX) && missionTitle) return missionTitle
   return own || t('missionPane.sessions.unnamed', { id: id.slice(0, 8) })
 }
 
@@ -1070,4 +1090,251 @@ export function closeErrorKey(code: string): (typeof CLOSE_CODES)[number] | 'oth
 /** Whether the server says every required step is done: the mission is ready to close as delivered. */
 export function isReadyToClose(detail: Detail): boolean {
   return detail.status === 'open' && detail.state === 'ready-to-close'
+}
+
+// ---- Missions v4 · stp-21 (T751) — the pane at a glance in a small space ---------------------------------------
+//
+// Pure rules the pane follows; the pixels are the component's, the decisions are here so a test can state them.
+
+/** Below this width (px) the pane switches to its narrow layout. */
+export const PANE_NARROW_BELOW = 240
+
+export interface PaneLayout {
+  /** `narrow` below {@link PANE_NARROW_BELOW}; the pane has no minimum width. */
+  mode: 'narrow' | 'regular'
+  /** The pane's side padding in px: tighter when narrow, so the text keeps its room. */
+  padX: number
+}
+
+/**
+ * The layout rule for a pane `width` px wide (A narrow pane stays usable): there is NO minimum width. Below
+ * 240 px the side padding drops from 16 to 10 px, every text wraps or truncates with its full text in a title,
+ * every control wraps onto its own row, and the body never scrolls sideways. A width that is not known yet
+ * (before the first measure) reads as regular.
+ */
+export function paneLayout(width: number): PaneLayout {
+  if (!Number.isFinite(width)) return { mode: 'regular', padX: 16 }
+  return width < PANE_NARROW_BELOW ? { mode: 'narrow', padX: 10 } : { mode: 'regular', padX: 16 }
+}
+
+/** Where the bar puts its count and its marker: in different rows of the bar, so they can never overlap. */
+export interface BarGeometry {
+  count: { row: 1 }
+  /** The fill-edge marker: a 2 px strip under the count, as wide as the fill. `null` at 0 and once full. */
+  marker: { row: 2; widthPct: number } | null
+}
+
+export function barGeometry(fillPct: number): BarGeometry {
+  const fill = Math.min(100, Math.max(0, Number.isFinite(fillPct) ? fillPct : 0))
+  return { count: { row: 1 }, marker: fill > 0 && fill < 100 ? { row: 2, widthPct: fill } : null }
+}
+
+/** The parts of the pane in the order they are drawn. A part may be absent (no mission, nothing waiting). */
+export const PANE_ORDER = ['head', 'next', 'waiting', 'tree', 'sessions'] as const
+export type PaneSectionName = (typeof PANE_ORDER)[number]
+
+/** The first screenful: the title with the bar, the next step, what waits on the operator. */
+export const GLANCE_SECTIONS: readonly PaneSectionName[] = ['head', 'next', 'waiting']
+
+/** The disclosures the operator opens, and whether each starts open. All start closed. */
+export type PaneDisclosure = 'tree' | 'sessions' | 'more'
+export const PANE_SECTION_DEFAULTS: Readonly<Record<PaneDisclosure, boolean>> = {
+  tree: false,
+  sessions: false,
+  more: false
+}
+
+/** Where the choices are kept: one per-viewer convenience, never the mission's. */
+export const PANE_SECTIONS_KEY = 'om2tab.missionPane.sections'
+
+type StorageRead = Pick<Storage, 'getItem'> | null
+type StorageWrite = Pick<Storage, 'setItem'> | null
+
+/** The kept choices; anything that is not a boolean for a known disclosure is ignored (the default applies). */
+export function loadPaneSections(storage: StorageRead): Record<PaneDisclosure, boolean> {
+  const out = { ...PANE_SECTION_DEFAULTS }
+  try {
+    const raw = storage?.getItem(PANE_SECTIONS_KEY)
+    if (!raw) return out
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return out
+    for (const key of Object.keys(out) as PaneDisclosure[]) {
+      const v = (parsed as Record<string, unknown>)[key]
+      if (typeof v === 'boolean') out[key] = v
+    }
+  } catch {
+    // unreadable storage or a value that is not JSON: the defaults apply
+  }
+  return out
+}
+
+export function savePaneSections(
+  storage: StorageWrite,
+  state: Readonly<Record<PaneDisclosure, boolean>>
+): void {
+  try {
+    storage?.setItem(PANE_SECTIONS_KEY, JSON.stringify(state))
+  } catch {
+    // a private window or blocked storage: the choice lasts until the pane closes
+  }
+}
+
+/** What the collapsed "Steps and timeline" line says about where the mission is. */
+export type TreeLine =
+  { kind: 'current'; title: string } | { kind: 'allDone' } | { kind: 'steps'; n: number }
+
+export function treeLine(tree: PaneTree): TreeLine {
+  const current = tree.milestones.find((m) => m.current)
+  if (current) return { kind: 'current', title: current.title }
+  if (tree.milestones.length > 0) {
+    const open = tree.milestones.find((m) => m.state !== 'done')
+    return open ? { kind: 'current', title: open.title } : { kind: 'allDone' }
+  }
+  const loose = tree.loose ? [...tree.loose.shown, ...tree.loose.folded] : []
+  const next = loose.find((s) => s.state !== 'done')
+  return next
+    ? { kind: 'current', title: next.title }
+    : loose.length > 0
+      ? { kind: 'allDone' }
+      : { kind: 'steps', n: 0 }
+}
+
+/**
+ * A link's label cut into the parts a line may break between: after a separator (`/ . - _ ? & = # : @`) or a
+ * space, never inside a word. The renderer puts a `<wbr>` between the parts, so a long path or address wraps
+ * at its slashes and dots and a short word is never split.
+ */
+export function linkLabelParts(label: string): string[] {
+  return label.match(/[^/.\-_?&=#:@ ]*[/.\-_?&=#:@ ]|[^/.\-_?&=#:@ ]+$/g) ?? []
+}
+
+// ---- Words the pane writes itself (no English from the server reaches a Portuguese pane) -------------------------
+
+/** What the Next box and its rows say for one waiting item: the ask and the why. */
+export interface WaitingWords {
+  ask: string
+  why: string
+}
+
+const nonEmpty = (s: string | undefined | null): s is string => typeof s === 'string' && s !== ''
+
+/**
+ * The ask and the why of a waiting item, worded here from its KIND and the record, in the reader's language.
+ * The server's own `ask` and `why` are English; they stay the contract of the verbs and of the text a session
+ * reads, and the pane never shows them for a kind it knows. What an agent wrote (a blocker's reason, ask and
+ * `unblocks`, a criterion's text, a step's title) is shown as written. An item this build does not know, or
+ * one whose record is gone, is shown with the server's words.
+ */
+export function waitingText(t: Translate, detail: Detail, item: WaitingItem): WaitingWords {
+  const raw: WaitingWords = { ask: item.ask, why: item.why }
+  const titleOf = (id: string | null | undefined): string | undefined =>
+    detail.steps.find((s) => s.id === id)?.title
+  switch (item.kind) {
+    case 'main-failing': {
+      const title = titleOf(item.stepId)
+      return title === undefined
+        ? raw
+        : {
+            ask: t('missionPane.next.text.mainFailing.ask', { title }),
+            why: t('missionPane.next.text.mainFailing.why')
+          }
+    }
+    case 'unblock': {
+      const step = detail.steps.find((s) => s.id === item.stepId)
+      const blocker = (step ? step.blockers : detail.blockers).find((b) => b.id === item.blockerId)
+      if (!blocker) return raw
+      return {
+        ask: nonEmpty(blocker.ask) ? blocker.ask : blocker.reason,
+        why: nonEmpty(blocker.unblocks)
+          ? blocker.unblocks
+          : t(
+              step
+                ? 'missionPane.next.text.unblock.whyStep'
+                : 'missionPane.next.text.unblock.whyMission'
+            )
+      }
+    }
+    case 'settle': {
+      const step = detail.steps.find((s) => s.id === item.stepId)
+      const criterion = step?.criteria.find((c) => c.id === item.criterionId)
+      if (!step || !criterion) return raw
+      const open = step.criteria.filter((c) => !c.settled).length
+      return {
+        ask: t('missionPane.next.text.settle.ask', { text: criterion.text }),
+        why:
+          open <= 1
+            ? t('missionPane.next.text.settle.whyLast')
+            : t('missionPane.next.text.settle.whyMore', { n: open - 1 }, open - 1)
+      }
+    }
+    case 'review': {
+      const n = item.stepIds.length
+      if (n === 1) {
+        const title = titleOf(item.stepIds[0])
+        if (title === undefined) return raw
+        return {
+          ask: t('missionPane.next.text.review.askOne', { title }),
+          why: t('missionPane.next.text.review.whyOne')
+        }
+      }
+      return {
+        ask: t('missionPane.next.text.review.askMany', { n }),
+        why: t('missionPane.next.text.review.whyMany', { n })
+      }
+    }
+    case 'close':
+      return {
+        ask: t(
+          item.requested
+            ? 'missionPane.next.text.close.askRequested'
+            : 'missionPane.next.text.close.askReady'
+        ),
+        why: t('missionPane.next.text.close.why')
+      }
+    case 'rescope':
+      // An older mission's staged re-scope is the staged Done when: the same words, the same box.
+      return {
+        ask: t('missionPane.next.text.doneWhen.ask'),
+        why: t('missionPane.next.text.doneWhen.why')
+      }
+    case 'attach':
+      return {
+        ask: t('missionPane.next.text.attach.ask'),
+        why: t('missionPane.next.text.attach.why')
+      }
+    default:
+      return raw
+  }
+}
+
+/** The headings of the mission summary the server writes (`summary.ts`), by identifier. */
+const SUMMARY_HEADINGS: Readonly<Record<string, string>> = {
+  Goal: 'goal',
+  'Where it is': 'whereItIs',
+  Decided: 'decided',
+  'Stopped at': 'stoppedAt',
+  'Next step': 'nextStep',
+  'Open criteria': 'openCriteria',
+  Links: 'links'
+}
+
+/** A summary heading in the reader's language; a heading this build does not know is shown as written. */
+export function summaryHeadingLabel(t: Translate, heading: string): string {
+  const key = SUMMARY_HEADINGS[heading]
+  return key === undefined ? heading : t(`missionPane.handoff.brief.section.${key}`)
+}
+
+/**
+ * The picker's count line ("4 of 21 steps done") in the reader's language, built from its numbers. The server
+ * writes it in English; a line of any other shape is shown as written.
+ */
+export function translateHeadline(t: Translate, headline: string): string {
+  const m = /^(\d+) of (\d+) (step|milestone)s? done$/.exec(headline.trim())
+  if (!m) return headline
+  const [done, total] = [Number(m[1]), Number(m[2])]
+  return t(
+    m[3] === 'milestone' ? 'missionPane.progress.milestones' : 'missionPane.progress.steps',
+    { done, total },
+    total
+  )
 }

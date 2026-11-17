@@ -214,7 +214,6 @@ async function mountPane(
   )
   ;(window as unknown as { api: unknown }).api = {
     missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
-    campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
     missionV4View: view,
     missionV4Door: vi.fn(async () => ({ ok: true, changed: true })),
     missionHandOff: handOff,
@@ -272,7 +271,9 @@ const qa = (sel: string): HTMLElement[] => [...body().querySelectorAll<HTMLEleme
 const text = (sel: string): string => (q(sel)?.textContent ?? '').replace(/\s+/g, ' ').trim()
 
 async function openSessions(w: VueWrapper): Promise<void> {
-  await w.get('[data-test="sessions-toggle"]').trigger('click')
+  // The pane keeps the fold across a refresh (stp-21): open it only when it is closed.
+  const toggle = w.get('[data-test="sessions-toggle"]')
+  if (toggle.attributes('aria-expanded') !== 'true') await toggle.trigger('click')
   await flushPromises()
 }
 
@@ -398,7 +399,8 @@ describe('AC-53 — the Sessions row lists every session with role, from, to and
     await openSessions(w)
     expect(qa('[data-test="session-row"]')).toHaveLength(4)
     // and folds again
-    await openSessions(w)
+    await w.get('[data-test="sessions-toggle"]').trigger('click')
+    await flushPromises()
     expect(qa('[data-test="session-row"]')).toHaveLength(0)
   })
 
@@ -443,7 +445,7 @@ describe('AC-53 — the Sessions row lists every session with role, from, to and
     })
     await openSessions(w)
     const name = rowOf(WORKER)!.querySelector('[data-test="session-name"]')!.textContent
-    expect(name).toBe('Took over “Score a spec”')
+    expect(name).toBe('Score a spec')
     expect(name).not.toMatch(/You are taking over/)
   })
 

@@ -9,6 +9,7 @@ import {
   NEW_MISSION_INSTRUCTION,
   attachErrorKey,
   sessionNameOf,
+  translateHeadline,
   writeIntoSession,
   type PickerRow
 } from '../lib/mission-pane-view'
@@ -215,7 +216,7 @@ const PILL_GHOST = `${PILL} text-text-3 hover:bg-surface-2 hover:text-text`
         >
           <span class="break-words">{{ m.title }}</span>
           <span class="col-start-1 break-words text-text-4" style="font-size: 10.5px"
-            >{{ m.headline }} ·
+            >{{ translateHeadline(t, m.headline) }} ·
             {{
               m.leaderId
                 ? $t('missionPane.attach.ledBy', { name: nameOf(m.leaderId) })

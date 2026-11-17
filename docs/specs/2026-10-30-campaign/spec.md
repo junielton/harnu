@@ -1,5 +1,10 @@
 # Campaign — a quest line above the Mission
 
+> **Superseded (2026-11-16).** This spec describes the mission model before Missions v4, kept as history.
+> The model that replaces it, with one Mission → Milestone → Step record and no Campaign, steward or
+> merge batch, is in [the Missions v4 spec](../2026-11-14-missions-v4/spec.md) and
+> [ADR-0025](../../adr/0025-missions-v4-one-model-supersedes-campaigns-and-stewards.md). Where they disagree, v4 wins.
+
 _Draft spec, 2026-10-30. Written by the orchestrator from the exploration, four research reports, one 93-hour real orchestration transcript (scrubbed) and the approved mockup v6. Both now live in this folder: this file and the mockup (`index.html`, `mockup.json`, `screens/v6--*.html`, scrubbed of client identifiers). §3.2 was aligned to the data model chapters 1 and 2 shipped (T604); later changes are recorded, append-only, in the Amendments table at the end._
 
 ## 1. Problem

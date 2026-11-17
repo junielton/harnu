@@ -45,10 +45,7 @@ import { useI18n } from 'vue-i18n'
 import { useNow } from '@vueuse/core'
 import { Clock, Plus } from 'lucide-vue-next'
 import { useSchedulerStore } from '../stores/scheduler'
-import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
-import { splitWorkers, summarizeSteward } from '../lib/steward-view'
-import SchedulerStewards from './SchedulerStewards.vue'
 import SchedulerFolderGroup from './SchedulerFolderGroup.vue'
 import SchedulerListFilters from './SchedulerListFilters.vue'
 import SchedulerUpNext from './SchedulerUpNext.vue'
@@ -71,7 +68,6 @@ import Button from './ui/Button.vue'
 import type { Worker } from '../../../preload'
 
 const scheduler = useSchedulerStore()
-const missions = useMissionsStore()
 const sessions = useSessionsStore()
 const { t } = useI18n()
 
@@ -84,8 +80,6 @@ const nowMs = computed(() => now.value.getTime())
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
-  // The Stewards section names each steward's mission and shows whether it is paused.
-  missions.ensureStarted()
   await scheduler.init()
   refreshTimer = setInterval(() => {
     void scheduler.loadAllRuns()
@@ -124,32 +118,10 @@ function folderBranchFor(path: string): string | null {
   return sessions.folders.find((f) => f.path === path)?.gitBranch ?? null
 }
 
-// Campaign ch.5b (T609): a mission's steward is a SYSTEM worker (spec §3.4) — it is not a row of the
-// folder groups, the chips, Up next or the counter; it has its own read-only Stewards section.
-const split = computed(() => splitWorkers(scheduler.workers))
-const userWorkers = computed(() => split.value.users)
-const stewardSummaries = computed(() =>
-  split.value.stewards.map((w) =>
-    summarizeSteward(
-      w,
-      scheduler.runsByWorker[w.id] ?? [],
-      scheduler.runningIds.includes(w.id),
-      missionDeliveredFor(w.missionId ?? '')
-    )
-  )
-)
-// A delivered mission is waiting for the operator to close it; its steward is retired at that close.
-function missionDeliveredFor(missionId: string): boolean {
-  return missions.views.find((v) => v.mission.id === missionId)?.mission.status === 'delivered'
-}
-function missionTitleFor(missionId: string): string | null {
-  return missions.views.find((v) => v.mission.id === missionId)?.title ?? null
-}
-function stewardPauseFor(missionId: string): string | null {
-  return (
-    missions.views.find((v) => v.mission.id === missionId)?.mission.stewardPause?.reason ?? null
-  )
-}
+// A mission's steward is a SYSTEM worker (`category: 'steward'`): it is retired (S-27) and has no section here
+// any more (S-37), but a record that an older build left in the store must never read as a worker of the
+// operator's own, so it is not a row of the folder groups, the chips, Up next or the counter.
+const userWorkers = computed(() => scheduler.workers.filter((w) => w.category !== 'steward'))
 
 const entries = computed<ListEntry[]>(() =>
   userWorkers.value.map((worker) => {
@@ -223,7 +195,6 @@ const selectedWorker = computed<Worker | undefined>(() =>
 // never touches `selectedId`. ──────────────────────────────────────────────
 const FOLDERS_COLLAPSED_KEY = 'om2tab.scheduler.collapsedFolders'
 const UPNEXT_COLLAPSED_KEY = 'om2tab.scheduler.upNextCollapsed'
-const STEWARDS_COLLAPSED_KEY = 'om2tab.scheduler.stewardsCollapsed'
 
 function readCollapsedFolders(): string[] {
   try {
@@ -238,14 +209,6 @@ function readUpNextCollapsed(): boolean {
     return localStorage.getItem(UPNEXT_COLLAPSED_KEY) === '1'
   } catch {
     return false
-  }
-}
-// Stewards (T651) is collapsed unless the viewer opened it: only an explicit '0' opens it.
-function readStewardsCollapsed(): boolean {
-  try {
-    return localStorage.getItem(STEWARDS_COLLAPSED_KEY) !== '0'
-  } catch {
-    return true
   }
 }
 function writeStorage(key: string, value: string): void {
@@ -289,11 +252,6 @@ const upNextCollapsed = ref(readUpNextCollapsed())
 function toggleUpNext(): void {
   upNextCollapsed.value = !upNextCollapsed.value
   writeStorage(UPNEXT_COLLAPSED_KEY, upNextCollapsed.value ? '1' : '0')
-}
-const stewardsCollapsed = ref(readStewardsCollapsed())
-function toggleStewards(): void {
-  stewardsCollapsed.value = !stewardsCollapsed.value
-  writeStorage(STEWARDS_COLLAPSED_KEY, stewardsCollapsed.value ? '1' : '0')
 }
 // Up next answers "what is next", not "what matches": it steps aside while filtering.
 const upNextItems = computed(() => (isFiltering.value ? [] : upNext(entries.value, nowMs.value)))
@@ -439,17 +397,6 @@ async function createWorker(): Promise<void> {
               </div>
             </div>
           </div>
-
-          <!-- T609: a mission's steward is a system worker — its own read-only section. -->
-          <SchedulerStewards
-            :stewards="stewardSummaries"
-            :now-ms="nowMs"
-            :collapsed="stewardsCollapsed"
-            :title-for="missionTitleFor"
-            :paused-for="stewardPauseFor"
-            :show-hint="userWorkers.length === 0"
-            @toggle="toggleStewards"
-          />
         </div>
 
         <SchedulerWorkerDetail

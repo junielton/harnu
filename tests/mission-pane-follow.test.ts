@@ -106,7 +106,6 @@ function answer(args: { sessionId: string }): MissionV4ViewReply {
 function install(): void {
   ;(window as unknown as { api: unknown }).api = {
     missionList: vi.fn(async () => ({ views: [], unreadable: [], shadowed: [] })),
-    campaignList: vi.fn(async () => ({ views: [], unreadable: [] })),
     missionV4View: vi.fn(
       async (args: { folder: string; sessionId: string; missionId?: string }) => {
         viewCalls.push({ ...args })
@@ -304,7 +303,7 @@ describe('the shell reads the server and translates the identifiers it gets', ()
     expect(w.text()).toContain('UNREADABLE: the file is broken')
   })
 
-  it('a v3 record is not drawn by the pane: it points at the pill’s popover', async () => {
+  it('a v3 record is drawn by the pane like any other (the cut-over, S-35)', async () => {
     replies = {
       A: [
         mission({
@@ -317,9 +316,8 @@ describe('the shell reads the server and translates the identifiers it gets', ()
     }
     seed(['A'], 'A')
     const w = await mountPane()
-    expect(w.attributes('data-state')).toBe('v3')
-    expect(w.text()).toContain('This mission is still a v3 mission.')
-    expect(w.text()).not.toContain('An old mission')
+    expect(w.attributes('data-state')).toBe('mission')
+    expect(w.text()).toContain('An old mission')
   })
 })
 

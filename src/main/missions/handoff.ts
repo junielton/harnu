@@ -309,6 +309,8 @@ export type HandoffResult =
       changed: true
       /** The new leader: the REAL id the new session has. */
       sessionId: string
+      /** The name the new leader goes by: the mission's title, never the instruction it received (stp-21). */
+      leaderName: string
       /** The session that led until now, or `null` when the mission had no open leader. */
       previousLeader: string | null
       /** Who wrote, by name: the door is the operator's. */
@@ -491,6 +493,8 @@ export async function handOff(
       ok: true,
       changed: true,
       sessionId: newId,
+      // The name the new leader goes by: the mission's title, never the instruction it received (stp-21).
+      leaderName: record.title,
       previousLeader: expectedLeader,
       standing: written.standing,
       record: written.record,
@@ -509,6 +513,8 @@ export type HandOffReply =
       ok: true
       changed: true
       sessionId: string
+      /** The mission's title: the plain name of the leader this hand-off started. */
+      leaderName: string
       previousLeader: string | null
       standing: Standing
     }
