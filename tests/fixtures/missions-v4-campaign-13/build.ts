@@ -407,3 +407,65 @@ export const CHAPTERS_TWO_PRODUCERS: ChapterSpec[] = [
     }
   }
 ]
+
+// ---- BUG-284 variants (appended; the arrays above are untouched) -------------------------------------
+
+/**
+ * The 13 chapters, with chapter 3 ("Fix the parser", active) having EVERY step done and its fixed end
+ * VERIFIED: the chapter's own work is finished and checked, but its mission was never delivered, so v3 read it
+ * in review and never done.
+ */
+export const CHAPTERS_ACTIVE_END_VERIFIED: ChapterSpec[] = CHAPTERS.map((ch) =>
+  ch.n === 3 && ch.mission
+    ? { ...ch, mission: { ...ch.mission, endProof: 'verified' as const } }
+    : ch
+)
+
+/**
+ * Three chapters, every one DELIVERED with its close request still unanswered, and chapter 2 also owing an
+ * unticked check. v3 counted all three done ("3 of 3"); the campaign itself is still active.
+ */
+export const CHAPTERS_ALL_DELIVERED_OWING: ChapterSpec[] = [
+  {
+    n: 1,
+    title: 'Import core',
+    required: true,
+    produces: 'import-core',
+    mission: {
+      status: 'delivered',
+      pendingClose: true,
+      steps: [{ title: 'Parse the export', verification: 'verifier', proof: 'verified' }]
+    }
+  },
+  {
+    n: 2,
+    title: 'Report',
+    required: true,
+    produces: 'report',
+    consumes: ['import-core'],
+    mission: {
+      status: 'delivered',
+      pendingClose: true,
+      steps: [
+        {
+          title: 'Render the report',
+          verification: 'verifier',
+          proof: 'verified',
+          checks: [check('chk-1', 'Report figures re-read by finance', 'operator')]
+        }
+      ]
+    }
+  },
+  {
+    n: 3,
+    title: 'Fix the parser',
+    required: true,
+    produces: 'parser',
+    consumes: ['report'],
+    mission: {
+      status: 'delivered',
+      pendingClose: true,
+      steps: [{ title: 'Handle quoted rows', verification: 'verifier', proof: 'verified' }]
+    }
+  }
+]
