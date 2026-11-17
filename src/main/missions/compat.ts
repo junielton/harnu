@@ -464,23 +464,26 @@ function missionLegacy(mission: V3Mission, withSteps: boolean): Record<string, u
     const s = mission.steps.find((x) => x.kind === kind)
     if (!s) return undefined
     const cards = s.links.filter((l) => l.kind === 'card')
-    return {
-      id: s.id,
-      proof: s.proof,
-      ...(s.verifiedBy ? { verifiedBy: s.verifiedBy } : {}),
-      // Every check, ticked or not, with its id, source, creation time and tick stamp.
-      ...(s.checks && s.checks.length > 0 ? { checks: s.checks } : {}),
-      // A card link is not a v4 link kind; the pr and worktree links joined the mission's own.
-      ...(cards.length > 0 ? { links: cards } : {})
-    }
+    // The step as v3 held it, whole: ordinal, kind, title, verification, proof, `verifiedBy`, the checks (each
+    // with its id, source, creation time and tick stamp) and the rest. Its links are not copied here: the
+    // `pr` and `worktree` ones joined the mission's own links, and a card link is not a v4 link kind, so
+    // it is kept under `links`.
+    const { links: _links, ...rest } = s
+    return { ...rest, ...(cards.length > 0 ? { links: cards } : {}) }
   }
+  // Every custom step with what v4 has no place for: the v3 ordinal and kind, and the checks whole. A
+  // check is a v4 criterion, which gets an `ac-n` id, so the v3 id, `source` and `createdAt` live here.
   const stepsLegacy = mission.steps
     .filter((s) => s.kind === 'custom')
     .map((s) => ({
       id: s.id,
+      ordinal: s.ordinal,
+      kind: s.kind,
+      title: s.title,
       verification: s.verification,
       proof: s.proof,
       ...(s.verifiedBy ? { verifiedBy: s.verifiedBy } : {}),
+      ...(s.checks && s.checks.length > 0 ? { checks: s.checks } : {}),
       ...(s.addedAt ? { addedAt: s.addedAt } : {}),
       ...(s.addedReason ? { addedReason: s.addedReason } : {}),
       ...(s.discoveredFrom ? { discoveredFrom: s.discoveredFrom } : {}),
@@ -503,6 +506,8 @@ function missionLegacy(mission: V3Mission, withSteps: boolean): Record<string, u
     ...(mission.declaredEndApproval ? { declaredEndApproval: mission.declaredEndApproval } : {}),
     ...(mission.pendingRescope ? { pendingRescope: mission.pendingRescope } : {}),
     openQuestions: mission.openQuestions,
+    // The close request as v3 held it: `closeRequested` keeps its time, who asked is kept here.
+    ...(mission.pendingClose ? { pendingClose: mission.pendingClose } : {}),
     ...(mission.stewardPause ? { stewardPause: mission.stewardPause } : {}),
     ...(mission.legacy ? { legacy: mission.legacy } : {}),
     ...(mission.legacyRaw !== undefined ? { legacyRaw: mission.legacyRaw } : {}),
@@ -791,6 +796,7 @@ export function convertV3Campaign(
       createdAt: campaign.createdAt,
       updatedAt: campaign.updatedAt,
       provenance: campaign.provenance,
+      ...(campaign.pendingClose ? { pendingClose: campaign.pendingClose } : {}),
       sourceIds,
       stepIds,
       // The campaign's own outcome and memory drafts; each chapter's sit under its chapter, with its
