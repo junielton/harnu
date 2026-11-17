@@ -314,7 +314,13 @@ defineExpose({ openStep })
               :data-milestone="block.milestone.id"
               data-test="waits-for"
               >{{
-                $t('missionPane.tree.waitsFor', { title: block.milestone.waitsFor.title })
+                block.milestone.waitsForMore.length === 0
+                  ? $t('missionPane.tree.waitsFor', { title: block.milestone.waitsFor.title })
+                  : $t('missionPane.tree.waitsForMany', {
+                      titles: [block.milestone.waitsFor, ...block.milestone.waitsForMore]
+                        .map((w) => `“${w.title}”`)
+                        .join(', ')
+                    })
               }}</span
             >
           </span>

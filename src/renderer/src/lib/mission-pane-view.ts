@@ -521,8 +521,13 @@ export interface PaneMilestoneRow extends StepGroups {
   total: number
   /** The server's counts: running, waiting for review and blocked. To do is never counted. */
   counts: { running: number; waitingReview: number; blocked: number }
-  /** The milestone it waits for, only when that is not the previous one and is not done yet. */
+  /** The first milestone it waits for, only when that is not the previous one and is not done yet. */
   waitsFor: { id: string; title: string } | null
+  /**
+   * The others, when it waits on two or more (BUG-283 OI-4): the server joins their ids with `, `. Same rule
+   * for each: not the previous milestone, not done. Empty when it waits on at most one.
+   */
+  waitsForMore: Array<{ id: string; title: string }>
 }
 
 export interface PaneTree {
@@ -597,12 +602,19 @@ export function buildPaneTree(detail: Detail, ctx: StepContext = {}): PaneTree {
     // The server's rule: the required steps decide; a milestone of optional steps reads from all of them.
     const required = own.filter((s) => !s.optional)
     const counted = required.length > 0 ? required : own
-    const target = m.waitsFor ? detail.milestones.find((x) => x.id === m.waitsFor) : undefined
     const previous = i > 0 ? detail.milestones[i - 1] : undefined
-    const waitsFor =
-      target && target.id !== previous?.id && target.state !== 'done'
-        ? { id: target.id, title: target.title }
-        : null
+    // The server joins several ids with `, ` (the conversion of a v3 campaign does): name each one.
+    const waited = (m.waitsFor ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id !== '')
+      .flatMap((id) => {
+        const target = detail.milestones.find((x) => x.id === id)
+        return target && target.id !== previous?.id && target.state !== 'done'
+          ? [{ id: target.id, title: target.title }]
+          : []
+      })
+    const waitsFor = waited[0] ?? null
     const current = byMilestone && detail.progress.current?.id === m.id
     return {
       id: m.id,
@@ -615,6 +627,7 @@ export function buildPaneTree(detail: Detail, ctx: StepContext = {}): PaneTree {
       total: counted.length,
       counts: m.counts,
       waitsFor,
+      waitsForMore: waited.slice(1),
       ...orderSteps(own.map(rowOf))
     }
   })

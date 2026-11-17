@@ -444,6 +444,7 @@
     "tree": {
       "label": "Passos da missão",
       "waitsFor": "Espera por “{title}”",
+      "waitsForMany": "Espera por {titles}",
       "running": "{n} em andamento",
       "waitingReview": "{n} aguardando revisão",
       "blocked": "{n} bloqueado | {n} bloqueados",
