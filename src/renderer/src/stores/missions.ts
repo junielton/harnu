@@ -167,8 +167,6 @@ export interface ReaderMission extends ReaderView {
 
 /** The session id the readers ask the view as: no session's, so it answers for the mission, never for a member. */
 const READER_ID = 'harnu-readers'
-/** How many of a repo's open missions the readers read by name in one poll. */
-const READERS_MAX = 20
 
 /** What the sidebar chip shows for one session: the pill's text and tone, from one source. */
 export interface ChipModel {
@@ -671,7 +669,9 @@ export const useMissionsStore = defineStore('missions', () => {
     if (!first) return null
     if (first.state !== 'none') return first.state === 'refused' ? null : []
     const out: ReaderMission[] = []
-    for (const row of first.missions.slice(0, READERS_MAX)) {
+    // Every listed row is read, however many there are (BUG-283 OI-3): a cap here left the missions past it with
+    // no chip, no cue and no Activity row, even when one of them owed the operator something.
+    for (const row of first.missions) {
       const named = await askV4(READER_ID, folder, row.id)
       if (!named) return null
       if (named.state !== 'mission') continue
