@@ -23,6 +23,10 @@ import { writeMission } from '../src/main/missions/write'
 import { attachDispatchedWorker, resolveStepId } from '../src/main/missions/sessions'
 import { deriveProgress } from '../src/main/missions/progress'
 import { missionGet, missionList } from '../src/main/missions/verbs-read'
+import { markCriterion, clearBlocker as clearBlockerDoor } from '../src/main/missions/doors'
+import { dispatchStep, type BoardIo } from '../src/main/missions/dispatch'
+import { addCriterion, attachFoundPrs } from '../src/main/missions/verbs-plan'
+import { setBlocker } from '../src/main/missions/verbs-state'
 import {
   CAMPAIGN_ID,
   CHAPTERS,
@@ -144,6 +148,143 @@ describe('CC-1 · an old step id with a chapter mission id means the same step',
       expect(typeof r.step).toBe('string')
       expect(record.steps.some((s) => s.id === r.id)).toBe(true)
     }
+  })
+})
+
+// ---- CC-1, every path ------------------------------------------------------------------
+
+/**
+ * An old step id that is ALSO a new id of another step, given with a chapter mission id, on every path
+ * that takes a step id: a door, a dispatch, a plan verb, a state verb. In the converted record `stp-2` is
+ * the second step of the FIRST chapter; chapter 5's own `stp-2` is "Sign off the plan". Each path must act
+ * on the chapter's step and change no other one.
+ */
+describe('CC-1 · every path resolves an old step id through the chapter mission id', () => {
+  const OLD_ID = 'stp-2'
+  const chapter5 = missionIdOf(5)
+
+  /** The chapter-5 step the old id means, and the step the record itself calls by that id. */
+  async function targets(): Promise<{ target: string; decoy: string }> {
+    const record = await viewOf()
+    const decoy = record.steps.find((s) => s.id === OLD_ID)
+    const target = record.steps.find((s) => s.title === 'Sign off the plan')
+    if (!decoy || !target || decoy.id === target.id)
+      throw new Error('the fixture lost its collision')
+    expect(decoy.milestone).not.toBe(target.milestone)
+    return { target: target.id, decoy: decoy.id }
+  }
+
+  /** Ids of the steps whose stored copy differs between two records. */
+  const changedSteps = (a: MissionV4, b: MissionV4): string[] =>
+    b.steps
+      .filter((s) => JSON.stringify(s) !== JSON.stringify(a.steps.find((x) => x.id === s.id)))
+      .map((s) => s.id)
+
+  it('a door (mark a criterion) acts on the chapter step, not the one that owns the id', async () => {
+    const { target } = await targets()
+    const before = await viewOf()
+    const criterion = before.steps
+      .find((s) => s.id === target)
+      ?.acs.find((a) => a.by === 'operator')
+    expect(criterion, 'the target has an operator criterion').toBeDefined()
+    const done = await markCriterion(root, chapter5, {
+      stepId: OLD_ID,
+      criterionId: (criterion as { id: string }).id
+    })
+    expect(done.ok, JSON.stringify(done)).toBe(true)
+    if (done.ok) expect(done.stepId).toBe(target)
+    expect(changedSteps(before, await viewOf())).toEqual([target])
+  })
+
+  it('a door (clear a blocker) looks on the chapter step, not the one that owns the id', async () => {
+    const { target, decoy } = await targets()
+    const set = await setBlocker(
+      root,
+      { kind: 'operator' },
+      {
+        missionId: chapter5,
+        stepId: target,
+        reason: 'Needs the `EXPORT_KEY` value from the owner before the sign-off',
+        ask: 'Send the key',
+        unblocks: 'the sign-off',
+        owner: 'operator'
+      }
+    )
+    expect(set.ok, JSON.stringify(set)).toBe(true)
+    const blockerId = (await viewOf()).steps.find((s) => s.id === target)?.blockers[0]?.id as string
+    // The record's own `stp-2` carries no such blocker: only the mapped step can clear it.
+    const cleared = await clearBlockerDoor(root, chapter5, { blockerId, stepId: OLD_ID })
+    expect(cleared.ok, JSON.stringify(cleared)).toBe(true)
+    if (cleared.ok) expect(cleared.stepId).toBe(target)
+    expect((await viewOf()).steps.find((s) => s.id === decoy)?.blockers ?? []).toEqual([])
+  })
+
+  it('a dispatch attaches to the chapter step, not the one that owns the id', async () => {
+    // A dispatch needs a v4 record: the first write converts the campaign.
+    await firstWrite()
+    const { target } = await targets()
+    const before = await viewOf()
+    const worker = '5d7f9b1c-3e5a-4c7e-8a2b-4d6f8a0c2e4b'
+    const done = await dispatchStep(
+      root,
+      { missionId: chapter5, stepId: OLD_ID, sessionId: worker, role: 'verifier' },
+      {} as BoardIo
+    )
+    expect('stepId' in done && done.stepId, JSON.stringify(done)).toBe(target)
+    const after = await viewOf()
+    expect(changedSteps(before, after)).toEqual([target])
+    expect(
+      after.steps
+        .find((s) => s.id === target)
+        ?.links.some((l) => l.kind === 'session' && l.ref === worker)
+    ).toBe(true)
+  })
+
+  it('a plan verb (add a criterion) adds to the chapter step, not the one that owns the id', async () => {
+    const { target } = await targets()
+    const before = await viewOf()
+    const done = await addCriterion(
+      root,
+      { kind: 'operator' },
+      {
+        missionId: chapter5,
+        stepId: OLD_ID,
+        text: 'The pages list is attached',
+        by: 'operator'
+      }
+    )
+    expect(done.ok, JSON.stringify(done)).toBe(true)
+    if (done.ok) expect(done.stepId).toBe(target)
+    expect(changedSteps(before, await viewOf())).toEqual([target])
+  })
+
+  it('a plan verb (attach a found pull request) attaches to the chapter step', async () => {
+    const { target } = await targets()
+    const before = await viewOf()
+    const done = await attachFoundPrs(root, { kind: 'operator' }, chapter5, [
+      { number: 412, state: 'open', stepId: OLD_ID }
+    ])
+    expect(done.ok, JSON.stringify(done)).toBe(true)
+    if (done.ok) expect(done.added.map((a) => a.stepId)).toEqual([target])
+    expect(changedSteps(before, await viewOf())).toEqual([target])
+  })
+
+  it('a state verb (set a blocker) blocks the chapter step, not the one that owns the id', async () => {
+    const { target } = await targets()
+    const before = await viewOf()
+    const done = await setBlocker(
+      root,
+      { kind: 'operator' },
+      {
+        missionId: chapter5,
+        stepId: OLD_ID,
+        reason: 'Needs the `pages.csv` list from the owner before the sign-off',
+        owner: 'agent'
+      }
+    )
+    expect(done.ok, JSON.stringify(done)).toBe(true)
+    if (done.ok) expect(done.stepId).toBe(target)
+    expect(changedSteps(before, await viewOf())).toEqual([target])
   })
 })
 
