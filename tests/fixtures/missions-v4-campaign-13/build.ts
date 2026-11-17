@@ -361,8 +361,8 @@ export const CHAPTERS_DELIVERED_OWING: ChapterSpec[] = CHAPTERS.map((ch) => {
 })
 
 /**
- * Three chapters: A and B are in progress and C consumes BOTH of their tokens, so it waits on two chapters
- * at once (its milestone's `waitsFor` is `mls-1, mls-2`).
+ * Four chapters: 1, 2 and 3 are in progress and chapter 4 consumes the tokens of chapters 1 AND 2 (not the one
+ * just before it), so it waits on two chapters at once: its milestone's `waitsFor` is `mls-1, mls-2`.
  */
 export const CHAPTERS_TWO_PRODUCERS: ChapterSpec[] = [
   {
@@ -387,6 +387,16 @@ export const CHAPTERS_TWO_PRODUCERS: ChapterSpec[] = [
   },
   {
     n: 3,
+    title: 'Fix the parser',
+    required: true,
+    produces: 'parser',
+    mission: {
+      status: 'active',
+      steps: [{ title: 'Handle quoted rows', verification: 'verifier', proof: 'claimed' }]
+    }
+  },
+  {
+    n: 4,
     title: 'Migrate pages A',
     required: true,
     produces: 'pages-a',
