@@ -75,6 +75,7 @@ interface CampaignDetail {
   milestones: Array<{ id: string; state: string }>
   progress: { done: number; total: number }
   state: string
+  steps: Array<{ criteria: Array<{ text: string }> }>
 }
 
 async function campaign(specs: typeof CHAPTERS): Promise<CampaignDetail> {
@@ -94,6 +95,15 @@ async function campaign(specs: typeof CHAPTERS): Promise<CampaignDetail> {
 }
 
 const HANDED_IN = /handed in as delivered/i
+
+describe('NC-1 · the words the conversion writes and the list skips are the same', () => {
+  it("an active chapter's fixed end carries the criterion the waiting list skips", async () => {
+    const d = await campaign(CHAPTERS)
+    const { CHAPTER_HANDED_IN } = await import('../src/main/missions/waiting')
+    const texts = d.steps.flatMap((s) => s.criteria.map((c) => c.text))
+    expect(texts).toContain(CHAPTER_HANDED_IN)
+  }, 60_000)
+})
 
 describe('NC-1 · the operator is never asked to confirm a delivery that has not happened', () => {
   it('chapters whose mission is still active (locked or not) raise no "handed in as delivered" item', async () => {

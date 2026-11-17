@@ -122,6 +122,17 @@ function stepBuilders(step: Pick<StepV4, 'links'>, input: StepInput): Set<string
   return ids
 }
 
+/**
+ * A criterion the record carries over from a v3 chapter that was DELIVERED but not closed (BUG-284 N2): the
+ * operator still owes it (an unticked check, an unproven human step), but the chapter was delivered, and v3
+ * counted a delivered chapter done whatever was left open. It stays open, so the operator's doors can still
+ * settle it and the waiting list still raises it; the step just does not wait for it. A criterion nobody
+ * flagged is never carried. The flag is an extra key the conversion writes (the record keeps unknown keys).
+ */
+export function isCarried(criterion: AcceptanceCriterion): boolean {
+  return (criterion as { carried?: unknown }).carried === true
+}
+
 export interface Settlement {
   settled: boolean
   /** How it settled: the four ways, or `null` while open. */
@@ -191,7 +202,7 @@ export interface StepStateResult {
   blockers: BlockerV4[]
   /** Every criterion in plan order, settled or not. */
   criteria: CriterionState[]
-  /** The criteria still open. */
+  /** The criteria still open, those carried over from a delivered chapter included (see {@link isCarried}). */
   open: AcceptanceCriterion[]
 }
 
@@ -211,16 +222,21 @@ export interface StepStateResult {
 export function deriveStepState(step: StepV4, input: StepInput = {}): StepStateResult {
   const criteria: CriterionState[] = []
   const open: AcceptanceCriterion[] = []
+  // What the step waits for: its open criteria, but for the ones carried over from a delivered chapter.
+  const awaited: AcceptanceCriterion[] = []
   for (const c of step.acs ?? []) {
     const s = criterionSettlement(c, step, input)
     criteria.push({ id: c.id, by: c.by, settled: s.settled, via: s.via })
-    if (!s.settled) open.push(c)
+    if (!s.settled) {
+      open.push(c)
+      if (!isCarried(c)) awaited.push(c)
+    }
   }
 
   // A pull request closed without merging counts as none: the work does not exist.
   const pr = input.pr === undefined || input.pr === 'closed' ? 'none' : input.pr
   const card = input.card ?? null
-  const allSettled = criteria.length > 0 && open.length === 0
+  const allSettled = criteria.length > 0 && awaited.length === 0
 
   let state: StepState
   if (allSettled || card === 'done') {
@@ -229,8 +245,8 @@ export function deriveStepState(step: StepV4, input: StepInput = {}): StepStateR
     card === 'review' ||
     pr !== 'none' ||
     (pr === 'none' &&
-      open.length > 0 &&
-      open.every((c) => c.by === 'operator' || c.by === 'person'))
+      awaited.length > 0 &&
+      awaited.every((c) => c.by === 'operator' || c.by === 'person'))
   ) {
     state = 'waiting-review'
   } else if (

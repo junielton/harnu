@@ -351,8 +351,11 @@ function criteriaOf(step: V3MissionStep, ctx: StepContext): Array<Omit<Criterion
         c.by = 'operator'
         delete c.fact
       }
-      // A delivered chapter the operator has not closed still owes what they have not ticked (OI-2).
-      if (!c.settled && !(ctx.keepOwed && owed.has(c))) c.settled = stamp
+      // A delivered chapter the operator has not closed still owes what they have not ticked (OI-2). It stays
+      // open so the operator can tick it and the waiting list raises it, but it is carried: v3 counted the
+      // delivered chapter done, so the step does not wait for it (BUG-284 N2).
+      if (!c.settled && ctx.keepOwed && owed.has(c)) (c as { carried?: boolean }).carried = true
+      else if (!c.settled) c.settled = stamp
     }
   }
   return out
@@ -435,6 +438,9 @@ function convertSteps(ctx: StepContext): StepV4[] {
 }
 
 /** The criterion a chapter's end carries until its mission is delivered (see {@link fixedEndStep}). */
+// The same words as `CHAPTER_HANDED_IN` in `waiting.ts`, which skips this criterion when it raises items: the
+// compatibility module reaches nothing but `model` and `v3-read` (pinned in `tests/mission-v4-compat.test.ts`),
+// so the text is written twice and `tests/mission-nc-fix.test.ts` proves the two agree.
 const END_HANDED_IN = 'The chapter mission was handed in as delivered'
 
 /**
