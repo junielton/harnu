@@ -68,6 +68,11 @@ export interface RunCheck {
   attempts: number
   failures: Failure[]
   correction: { text: string } | null
+  /**
+   * Every correction the agent gave on this check, oldest first. `correction` is the live card (Try again clears
+   * it); this is the record, so a past run still shows what the agent said. Absent in a run written before it.
+   */
+  correctionLog?: { text: string }[]
   /** The agent's current report; cleared by Back and Try again (the log keeps it). */
   report: AgentReport | null
   reportLog: AgentReport[]
@@ -148,6 +153,7 @@ function toRunCheck(c: MachineCheck, firstRun: boolean): RunCheck {
     attempts: 0,
     failures: [],
     correction: null,
+    correctionLog: [],
     report: null,
     reportLog: [],
     deliveredAt: null
@@ -347,8 +353,9 @@ export interface LastTime {
  */
 export function lastTimeHints(prev: Run): Record<string, LastTime> {
   const out: Record<string, LastTime> = {}
+  // a pre-closed row hints its own status (verified reads passed, a caveat reads not confirmed): it was never served
+  // in run 1, but a re-run serves it, so it carries a hint like every other check (spec "Pre-closed rows")
   for (const c of prev.checks) {
-    if (!c.countable) continue
     switch (c.state) {
       case 'verified':
         out[c.id] = { result: 'passed' }
@@ -600,7 +607,9 @@ export function report(run: Run, input: ReportInput): MachineResult {
     if (c0.correction)
       return refuse('CORRECTION_PENDING', 'A correction is already waiting for the operator.')
     const r = clone(run)
-    byId(r, input.checkId)!.correction = { text: input.text }
+    const target = byId(r, input.checkId)!
+    target.correction = { text: input.text }
+    target.correctionLog = [...(target.correctionLog ?? []), { text: input.text }]
     return accept(r)
   }
 

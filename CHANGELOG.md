@@ -27,6 +27,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **Guided walks: four gaps found by the new smoke test are closed.** A link whose file or folder was deleted after the walk was written is no longer drawn. The agent's correction now stays in a past run's notes after you press Try again. A screenshot in a past run's notes opens in the walk's own lightbox instead of the Markdown viewer. On a re-run, the rows the walk author had pre-closed now show their "last time" hint too. Separately, a message sent to a session whose `claude` process died on its own is no longer counted as delivered: it waits and is sent again when the session comes back.
 - **The walk's close-out now reads properly for one or many.** Before, it said "1 skipped are listed above"; now it says "1 skipped check is listed above" or "2 skipped checks and 1 unverified check are listed above", in English and Portuguese.
 
 ## 2026-11-17

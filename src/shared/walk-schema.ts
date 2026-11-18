@@ -57,6 +57,9 @@ export interface WalkLink {
   checked?: { status: LinkCheckStatus; at: string }
 }
 
+/** What identifies a link in the pane's "gone" list (one link target can appear in several checks). */
+export const walkLinkKey = (l: Pick<WalkLink, 'kind' | 'target'>): string => `${l.kind}:${l.target}`
+
 export interface DoItem {
   text: string
   see: string
