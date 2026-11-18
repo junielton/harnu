@@ -1,7 +1,7 @@
 /**
  * Missions v4 · S-31 · AC-76 — `spec`, `one-by-one`, `step-by-step`, `grill-me`, `your-move` and
  * `draft-to-prompt` speak v4: an operator criterion instead of a check, an operator blocker instead of a
- * decision node, the Mission pane instead of the popover.
+ * decision node, the Mission dropdown instead of the popover.
  *
  * These are text pins on model-facing files. A SKILL.md ships as read and nothing compiles it, so a pin
  * shows what the text says; it cannot show that a model follows it (the behaviour evals of S-33 grade
@@ -247,7 +247,7 @@ function problemsOf(t: Texts): string[] {
 
   const approval = section(spec, /^## The approval question\s*$/)
   const a = flat(approval)
-  if (!/Mission pane/.test(a)) p.push('the approval does not point at the Mission pane')
+  if (!/Mission dropdown/.test(a)) p.push('the approval does not point at the Mission dropdown')
   if (!/tick[^.]*operator approves the spec[^.]*"Approve spec" step/i.test(a))
     p.push('the approval does not name the criterion the operator ticks')
   if (!/never ticks the criterion/.test(a)) p.push('the skill may tick the approval criterion')
@@ -282,8 +282,8 @@ function problemsOf(t: Texts): string[] {
       !/`mission_clear_blocker`[^.]*OPERATOR_ONLY|OPERATOR_ONLY[^.]*`mission_clear_blocker`/.test(f)
     )
       p.push(`${name} does not leave the operator's blocker to the operator`)
-    if (!/Done, continue/.test(f) || !/Mission pane/.test(f))
-      p.push(`${name} does not point at "Done, continue" in the Mission pane`)
+    if (!/Done, continue/.test(f) || !/Mission dropdown/.test(f))
+      p.push(`${name} does not point at "Done, continue" in the Mission dropdown`)
     if (!/`mission_get`[^.]*`links`[^.]*`doc`/.test(f))
       p.push(`${name} finds the spec through the mission scope, not its doc link`)
     if (!/gates no step/.test(f))
@@ -348,7 +348,7 @@ function problemsOf(t: Texts): string[] {
     p.push('step-by-step does not hold "never tick" as a hard gate')
   if (!/never describe a criterion as done because the operator said "done" in chat/.test(s))
     p.push('step-by-step may call a criterion done on a chat "done"')
-  if (!/Mission pane/.test(s)) p.push('step-by-step does not point at the Mission pane')
+  if (!/Mission dropdown/.test(s)) p.push('step-by-step does not point at the Mission dropdown')
   if (!/`criteria\[\]\.settled`/.test(s))
     p.push('step-by-step does not read open criteria from mission_get')
   if (!/does not dedupe/.test(s)) p.push('step-by-step does not say a criterion is not deduped')
@@ -357,15 +357,15 @@ function problemsOf(t: Texts): string[] {
 
   // 6. your-move and draft-to-prompt: the words only.
   const ym = flat(t['your-move/SKILL.md'] ?? '')
-  if (!/ticked in the Mission pane/.test(ym) || !/operator criterion/.test(ym))
+  if (!/ticked in the Mission dropdown/.test(ym) || !/operator criterion/.test(ym))
     p.push('your-move does not close a mission card on an operator criterion ticked in the pane')
   const dp = flat(
     `${t['draft-to-prompt/SKILL.md'] ?? ''} ${t['draft-to-prompt/references/harness-routing.md'] ?? ''}`
   )
   if (!/Done when/.test(dp)) p.push('draft-to-prompt does not speak of a Done when')
   for (const file of ['SKILL.md', 'references/harness-routing.md'])
-    if (!/Mission pane/.test(flat(t[`draft-to-prompt/${file}`] ?? '')))
-      p.push(`draft-to-prompt/${file} does not point at the Mission pane`)
+    if (!/Mission dropdown/.test(flat(t[`draft-to-prompt/${file}`] ?? '')))
+      p.push(`draft-to-prompt/${file} does not point at the Mission dropdown`)
   if (/born \*\*active\*\*|born active/.test(dp))
     p.push('draft-to-prompt still says a mission is born active')
 
@@ -456,9 +456,9 @@ const FAULTS: Fault[] = [
   },
   {
     file: 'spec/SKILL.md',
-    find: 'in the Mission pane',
+    find: 'in the Mission dropdown',
     replace: 'in the Mission popover',
-    why: 'the pane, not the popover'
+    why: 'the dropdown, not the popover'
   },
   {
     file: 'spec/SKILL.md',
@@ -547,9 +547,9 @@ const FAULTS: Fault[] = [
   },
   {
     file: 'step-by-step/SKILL.md',
-    find: 'Mission pane',
+    find: 'Mission dropdown',
     replace: j('Mission pop', 'over'),
-    why: 'the pane'
+    why: 'the dropdown'
   },
   {
     file: 'step-by-step/SKILL.md',
@@ -565,7 +565,7 @@ const FAULTS: Fault[] = [
   },
   {
     file: 'your-move/SKILL.md',
-    find: 'ticked in the Mission pane',
+    find: 'ticked in the Mission dropdown',
     replace: j('ticked in the pop', 'over'),
     why: 'a mission card closes on a ticked criterion'
   },
@@ -577,9 +577,9 @@ const FAULTS: Fault[] = [
   },
   {
     file: 'draft-to-prompt/references/harness-routing.md',
-    find: 'Mission pane',
+    find: 'Mission dropdown',
     replace: "Harnu's Topbar",
-    why: 'the pane'
+    why: 'the dropdown'
   }
 ]
 

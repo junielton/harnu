@@ -1,6 +1,6 @@
 /**
- * Missions v4 · S-17 — what the Mission pane and the Topbar pill read out of the view channel
- * (design.md §6 "Mission pane"). Pure: no store, no `window.api`.
+ * Missions v4 · S-17 — what the Mission dropdown and the Topbar pill read out of the view channel
+ * (design.md §6 "Mission dropdown"). Pure: no store, no `window.api`.
  *
  * The channel answers `{ state: 'mission' | 'none' | 'refused' }` (`mission:v4View`). This module
  * decides what a reply MEANS for one session — a mission to draw, no mission or a refusal — and words the numbers the server already counted. It never recounts:
@@ -54,7 +54,7 @@ export function isStaleNamedRead(reply: MissionV4ViewReply | null, sessionId: st
 }
 
 /** The numbers the pill and the pane read, all from the server. */
-export interface MissionNumbers {
+interface MissionNumbers {
   done: number
   total: number
   unit: 'milestones' | 'steps'
@@ -89,7 +89,7 @@ export function missionPillText(t: Translate, detail: MissionV4Reply['detail']):
 }
 
 /** The pill's tone: success when ready to close, warning while something waits on the operator, else accent. */
-export type V4PillTone = 'accent' | 'warning' | 'success'
+type V4PillTone = 'accent' | 'warning' | 'success'
 
 export function missionPillTone(detail: MissionV4Reply['detail']): V4PillTone {
   const n = missionNumbers(detail)
@@ -98,7 +98,7 @@ export function missionPillTone(detail: MissionV4Reply['detail']): V4PillTone {
 }
 
 /**
- * The pill's classes per tone (design.md §6 "Mission pane" → Topbar pill — v4): the mockup's tinted
+ * The pill's classes per tone (design.md §6 "Mission dropdown" → The Topbar pill): the mockup's tinted
  * look — the tone's `-line` border, its `-soft` background and its text — and the `ring-2` of a pressed
  * pill (the pane is open).
  */
@@ -112,26 +112,6 @@ export const V4_PILL_RING_CLASS: Record<V4PillTone, string> = {
   accent: 'ring-2 ring-accent-line',
   warning: 'ring-2 ring-warning-line',
   success: 'ring-2 ring-green-line'
-}
-
-/** The count line under the title: "4 of 21 steps done" / "1 of 10 milestones done", from the server's numbers. */
-export function missionProgressLine(t: Translate, detail: MissionV4Reply['detail']): string {
-  const n = missionNumbers(detail)
-  // The unit agrees with the TOTAL ("0 of 1 step done", "4 of 21 steps done"): the plural form follows it.
-  return t(
-    n.unit === 'milestones' ? 'missionPane.progress.milestones' : 'missionPane.progress.steps',
-    { done: n.done, total: n.total },
-    n.total
-  )
-}
-
-/** The state's identifier as the pane shows it: `open` shows nothing, the others are translated by identifier. */
-export function missionStateKey(detail: MissionV4Reply['detail']): string | null {
-  if (detail.state === 'open') return null
-  if (detail.state === 'ready-to-close' || detail.state === 'closed') {
-    return `missionPane.state.${detail.state}`
-  }
-  return null
 }
 
 // ---- Missions v4 · S-18 — the glance: the bar, the next step and the tree ---------------------------
@@ -192,7 +172,7 @@ function prNumberOf(links: StepView['links']): string | null {
 // what a link opens. A blocker is the server's `reason`, `ask` and `unblocks`, shown as written.
 
 /** What settles a criterion: a fact Harnu reads, a second session, the operator, or another person. */
-export type Settler = CriterionView['by']
+type Settler = CriterionView['by']
 
 /** One OPEN criterion of an open step. */
 export interface CriterionRow {
@@ -208,7 +188,7 @@ export interface CriterionRow {
 }
 
 /** A blocker that still shows on a step. */
-export interface BlockerRow {
+interface BlockerRow {
   id: string
   reason: string
   ask: string | null
@@ -241,13 +221,13 @@ export interface SessionLinkLike {
 }
 
 /** What a step draws beyond the server's own fields. `now` is the clock of the caller (a pure module never reads it). */
-export interface StepContext {
+interface StepContext {
   sessionLinks?: readonly SessionLinkLike[]
   now?: number
 }
 
 /** The newest session links one step lists: a session that wrote a lot of links does not bury the step. */
-export const SESSION_LINK_CAP = 8
+const SESSION_LINK_CAP = 8
 
 /** `https://…` or `http://…` as a normalised address, or `null`: nothing else is ever opened. */
 export function httpAddress(ref: string): string | null {
@@ -414,7 +394,7 @@ export function stepLinkRows(
 /** The codes a door can answer that the pane words one by one; any other code reads as `other`. */
 const DOOR_CODES = ['NOT_FOUND', 'WRITE_CONFLICT', 'MISSION_CLOSED', 'SETTLES_ITSELF'] as const
 
-/** The i18n key (under `missionPane.step.error`) that says what to do after a door was refused with `code`. */
+/** The i18n key (under `missionDropdown.step.error`) that says what to do after a door was refused with `code`. */
 export function doorErrorKey(code: string): (typeof DOOR_CODES)[number] | 'other' {
   return (DOOR_CODES as readonly string[]).includes(code)
     ? (code as (typeof DOOR_CODES)[number])
@@ -489,7 +469,7 @@ export interface PaneStepRow {
 }
 
 /** The steps a milestone (or a mission with no milestones) draws, and the ones folded behind "N more". */
-export interface StepGroups {
+interface StepGroups {
   shown: PaneStepRow[]
   folded: PaneStepRow[]
 }
@@ -498,7 +478,7 @@ export interface StepGroups {
  * The order inside a milestone: the steps the operator owes first, then the running ones, each in plan
  * order; every other step is folded behind "N more", in plan order. A step is in exactly one place.
  */
-export function orderSteps(rows: PaneStepRow[]): StepGroups {
+function orderSteps(rows: PaneStepRow[]): StepGroups {
   const owed = rows.filter((r) => r.needsYou)
   const running = rows.filter((r) => !r.needsYou && r.state === 'running')
   const folded = rows.filter((r) => !r.needsYou && r.state !== 'running')
@@ -540,7 +520,7 @@ export interface PaneTree {
 }
 
 /** A mission with no milestones and at most this many steps shows all of them (Missions v4 S-22). */
-export const LOOSE_ALL_SHOWN = 8
+const LOOSE_ALL_SHOWN = 8
 
 export function buildPaneTree(detail: Detail, ctx: StepContext = {}): PaneTree {
   const owed = owedStepIds(detail)
@@ -688,7 +668,7 @@ export function milestoneGlyph(state: string): GlyphKind {
 }
 
 /** The next-step box's look: the operator owes something, owes the close, or nothing waits. */
-export type NextLook = 'you' | 'ok' | 'calm'
+type NextLook = 'you' | 'ok' | 'calm'
 
 /**
  * `staged` is a Done when a session proposed (an older mission's re-scope reads the same way): it waits on the
@@ -698,23 +678,6 @@ export function nextLook(detail: Detail, staged = false): NextLook {
   const next = detail.waiting.next
   if (next === null) return staged ? 'you' : 'calm'
   return next.kind === 'close' ? 'ok' : 'you'
-}
-
-/**
- * How a row of the opened "N more waiting on you" list is laid out. Regular: the text and the button side by
- * side (`1fr auto`). Narrow: one column and the button on its own row under the text, because a button column
- * left the text about 10 px at 110 px and it stacked one letter per line.
- */
-export interface RestRowGrid {
-  columns: string
-  /** The button sits beside the text, pinned to column 2 over both text rows. */
-  buttonBeside: boolean
-}
-
-export function restRowGrid(mode: PaneLayout['mode']): RestRowGrid {
-  return mode === 'narrow'
-    ? { columns: 'minmax(0, 1fr)', buttonBeside: false }
-    : { columns: '1fr auto', buttonBeside: true }
 }
 
 // ---- Mission dropdown (S-2): the head, the next-step card and the switch --------------------------------
@@ -783,7 +746,7 @@ export function ledMissionRows(
 export type NextEntry = { kind: 'item'; item: WaitingItem } | { kind: 'staged'; text: string }
 
 /** The one card and what waits behind it. `primary` is `null` when nothing is owed. */
-export interface NextCard {
+interface NextCard {
   primary: NextEntry | null
   more: NextEntry[]
 }
@@ -840,224 +803,14 @@ export function nextEntryLook(entry: NextEntry | null): NextCardLook {
   return entry.item.kind === 'close' ? 'ok' : 'you'
 }
 
-// ---- Sessions row and the hand-off (Missions v4, S-20) -----------------------------------------------
-
-type HistoryRow = MissionV4Reply['sessions'][number]
-
-/** One session of the mission, ready to draw: the server's history row with the step it stopped at named. */
-export interface SessionRowView {
-  id: string
-  /** What the record says it is, or was: `leads` stays on a row the hand-off released (it led, it no longer does). */
-  role: HistoryRow['role']
-  /** Still attached: the hand-off or the end has not closed it. */
-  open: boolean
-  /** It is the one that leads the mission NOW: open and `leads`. At most one row has this. */
-  leads: boolean
-  /** It is the session the pane is following. */
-  current: boolean
-  from: string
-  to: string | null
-  /** The TITLE of the step it stopped at (never the id), or `null` when the record names none or it is gone. */
-  stoppedStep: string | null
-  /** What it was waiting for when it stopped, as the record says it, or `null`. */
-  waitingFor: string | null
-}
-
-/**
- * The mission's sessions as rows, in the order the operator reads them: the one that leads first, then
- * the ones still attached (oldest first), then the closed ones, the latest to stop first. A closed
- * session says where it stopped: the step by its title, and what it waited for. The pane decides
- * nothing about who leads; this reads the server's history.
- */
-export function buildSessionRows(
-  history: readonly HistoryRow[],
-  ctx: { steps: ReadonlyArray<{ id: string; title: string }>; selectedId: string | null }
-): SessionRowView[] {
-  const title = (id: string | undefined): string | null =>
-    id === undefined ? null : (ctx.steps.find((s) => s.id === id)?.title ?? null)
-  const rows = history.map((h, index) => {
-    const row: SessionRowView = {
-      id: h.id,
-      role: h.role,
-      open: h.open,
-      leads: h.open && h.role === 'leads',
-      current: h.id === ctx.selectedId,
-      from: h.from,
-      to: h.to,
-      stoppedStep: title(h.stoppedAt?.step),
-      waitingFor:
-        typeof h.stoppedAt?.waitingFor === 'string' && h.stoppedAt.waitingFor.trim() !== ''
-          ? h.stoppedAt.waitingFor.trim()
-          : null
-    }
-    return { row, index }
-  })
-  const rank = (r: SessionRowView): number => (r.leads ? 0 : r.open ? 1 : 2)
-  const stoppedAt = (r: SessionRowView): number => {
-    const t = r.to === null ? NaN : Date.parse(r.to)
-    return Number.isNaN(t) ? 0 : t
-  }
-  return rows
-    .sort((a, b) => {
-      const byRank = rank(a.row) - rank(b.row)
-      if (byRank !== 0) return byRank
-      if (rank(a.row) < 2) return a.index - b.index
-      return stoppedAt(b.row) - stoppedAt(a.row) || b.index - a.index
-    })
-    .map((x) => x.row)
-}
-
-/** How many closed sessions the row lists before the rest fold behind "N more sessions". */
-export const SESSIONS_CLOSED_SHOWN = 5
-
-/** The rows to draw, and how many are folded away. Every session still attached always shows. */
-export function foldSessionRows(
-  rows: readonly SessionRowView[],
-  expanded: boolean
-): { shown: SessionRowView[]; hidden: number } {
-  if (expanded) return { shown: [...rows], hidden: 0 }
-  let closed = 0
-  const shown = rows.filter((r) => r.open || ++closed <= SESSIONS_CLOSED_SHOWN)
-  return { shown, hidden: rows.length - shown.length }
-}
-
-/** Who leads, as the header of the row says it: this session, another one, or nobody. */
-export function sessionsLeader(
-  rows: readonly SessionRowView[]
-): { kind: 'this' } | { kind: 'other'; id: string } | { kind: 'none' } {
-  const leader = rows.find((r) => r.leads)
-  if (!leader) return { kind: 'none' }
-  return leader.current ? { kind: 'this' } : { kind: 'other', id: leader.id }
-}
-
-/** When a session worked, in the parts the row words: a start, a day span, or one day with its hours. */
-export type SessionWhen =
-  | { kind: 'none' }
-  | { kind: 'since'; day: string }
-  | { kind: 'span'; from: string; to: string }
-  | { kind: 'sameDay'; day: string; from: string; to: string }
-
-/** `from` and `to` of a session row in the reader's locale: a month and day, and the time when both are one day. */
-export function sessionWhen(from: string, to: string | null, locale: string): SessionWhen {
-  const start = Date.parse(from)
-  if (Number.isNaN(start)) return { kind: 'none' }
-  const dayOf = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' })
-  const timeOf = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' })
-  if (to === null) return { kind: 'since', day: dayOf.format(start) }
-  const end = Date.parse(to)
-  if (Number.isNaN(end)) return { kind: 'since', day: dayOf.format(start) }
-  const a = dayOf.format(start)
-  const b = dayOf.format(end)
-  return a === b
-    ? { kind: 'sameDay', day: a, from: timeOf.format(start), to: timeOf.format(end) }
-    : { kind: 'span', from: a, to: b }
-}
-
-/** The offer to continue in a new session, from the view: the context percentage and who it is about. */
-export interface HandoffOfferView {
-  /** The leader's context, rounded for the reader. */
-  percent: number
-  /** The reading as the view gave it. "Not now" stores and compares THIS, never the rounded one. */
-  reading: number
-  /** The leading session, or `null` when none leads. */
-  leaderId: string | null
-  /** The pane is following the leading session. */
-  leaderIsCurrent: boolean
-}
-
-/**
- * The offer, or `null`. The view decides: it offers at 80 percent of the leader's context or more, stays
- * quiet after a "Not now" until the context grows five points, and offers nothing with no reading. This
- * only reads that answer; it never starts anything.
- */
-export function handoffOfferView(
-  mission: MissionV4Reply,
-  selectedId: string | null
-): HandoffOfferView | null {
-  const offer = mission.handoff
-  if (!offer || offer.offer !== true || typeof offer.percent !== 'number') return null
-  const leader = mission.sessions.find((s) => s.open && s.role === 'leads')
-  return {
-    percent: Math.round(offer.percent),
-    reading: offer.percent,
-    leaderId: leader?.id ?? null,
-    leaderIsCurrent: leader !== undefined && leader.id === selectedId
-  }
-}
-
-/** The text a new session starts from, split into the labelled sections the mission summary has. */
-export interface ParsedSummary {
-  /** The line above the first section, without its `#`. Not shown to the operator. */
-  title: string
-  sections: Array<{ heading: string; body: string }>
-}
-
-/**
- * The server's mission summary (`detail.summary`) as sections, so the confirmation can show it as a list
- * of "Goal", "Where it is"… instead of one block. A text with no `## ` headings has no sections: the
- * caller shows it whole.
- */
-export function parseSummary(text: string): ParsedSummary {
-  const lines = text.split(/\r?\n/)
-  const sections: ParsedSummary['sections'] = []
-  const head: string[] = []
-  let current: { heading: string; lines: string[] } | null = null
-  for (const line of lines) {
-    const m = /^##\s+(.+?)\s*$/.exec(line)
-    if (m) {
-      if (current)
-        sections.push({ heading: current.heading, body: current.lines.join('\n').trim() })
-      current = { heading: m[1], lines: [] }
-    } else if (current) {
-      current.lines.push(line)
-    } else {
-      head.push(line)
-    }
-  }
-  if (current) sections.push({ heading: current.heading, body: current.lines.join('\n').trim() })
-  return {
-    title: head
-      .join('\n')
-      .trim()
-      .replace(/^#+\s*/, ''),
-    sections
-  }
-}
-
-/** The codes the hand-off door answers that the dialog words one by one; any other code reads as `other`. */
-export const HANDOFF_CODES = [
-  'MISSION_CLOSED',
-  'HANDOFF_START_FAILED',
-  'HANDOFF_IN_PROGRESS',
-  'HANDOFF_UNAVAILABLE',
-  'LEADER_CHANGED',
-  // The sample has no record to hand off (Missions v4 S-22): nothing starts.
-  'SAMPLE'
-] as const
-
-/**
- * The i18n key (under `missionPane.handoff.error`) that says what to do after the door answered `code`.
- * `started` is whether a session WAS started (the reply names it): a start that failed after that is not
- * "did not start, nothing changed", it is a session that runs and did not take over.
- */
-export function handoffErrorKey(
-  code: string,
-  started = false
-): (typeof HANDOFF_CODES)[number] | 'STARTED_NOT_ATTACHED' | 'other' {
-  if (code === 'HANDOFF_START_FAILED' && started) return 'STARTED_NOT_ATTACHED'
-  return (HANDOFF_CODES as readonly string[]).includes(code)
-    ? (code as (typeof HANDOFF_CODES)[number])
-    : 'other'
-}
-
 /**
  * What a session started by a hand-off is named after by default: its first prompt, which opens with the
  * hand-off's instruction line (`HANDOFF_INSTRUCTION`, `src/main/missions/handoff.ts`; a test pins the two).
  */
-export const HANDOFF_NAME_PREFIX = 'You are taking over this mission'
+const HANDOFF_NAME_PREFIX = 'You are taking over this mission'
 
 /**
- * The name a session shows in the Sessions row and the offer: the one name every surface shows
+ * The name a session shows in the Ask box, the Next card and the attach picker: the one name every surface shows
  * (`sessionTitle`), else "Session" and the first eight characters of its id, so a session that is not
  * loaded any more is never a blank. A session a hand-off started has its first prompt for a name, which is
  * the instruction line; given the mission's title it is named after the mission instead, plainly (stp-21:
@@ -1073,17 +826,6 @@ export function sessionNameOf(
   const own = found ? sessionTitle(found, all, t) : ''
   if (own.startsWith(HANDOFF_NAME_PREFIX) && missionTitle) return missionTitle
   return own || t('missionPane.sessions.unnamed', { id: id.slice(0, 8) })
-}
-
-/**
- * The mission summary the view gave (what a new session starts from), or `undefined` with no mission. It is
- * the mission's text, never a session's name; it is read by destructuring so no surface looks like it
- * builds a session label by hand (`tests/session-label-guard.test.ts`).
- */
-export function missionSummaryText(mission: MissionV4Reply | null): string | undefined {
-  if (!mission) return undefined
-  const { summary } = mission.detail
-  return summary
 }
 
 // ---- Attach, the attach request and Ask (Missions v4, S-21) ------------------------------------------
@@ -1111,7 +853,7 @@ export function pickerRows(missions: NoneReply['missions']): PickerRow[] {
 }
 
 /** A session's request to join, as the waiting list holds it: the id the door takes and who asked. */
-export interface AttachRequestRow {
+interface AttachRequestRow {
   id: string
   sessionId: string
 }
@@ -1126,14 +868,9 @@ export function attachRequestsOf(detail: Detail): AttachRequestRow[] {
 }
 
 /** The codes the attach and decide-attach doors answer that the pane words one by one; any other reads as `other`. */
-export const ATTACH_CODES = [
-  'NOT_FOUND',
-  'MISSION_NOT_FOUND',
-  'MISSION_CLOSED',
-  'WRITE_CONFLICT'
-] as const
+const ATTACH_CODES = ['NOT_FOUND', 'MISSION_NOT_FOUND', 'MISSION_CLOSED', 'WRITE_CONFLICT'] as const
 
-/** The i18n key (under `missionPane.attach.error`) that says what to do after a door answered `code`. */
+/** The i18n key (under `missionDropdown.empty.error`) that says what to do after a door answered `code`. */
 export function attachErrorKey(code: string): (typeof ATTACH_CODES)[number] | 'other' {
   return (ATTACH_CODES as readonly string[]).includes(code)
     ? (code as (typeof ATTACH_CODES)[number])
@@ -1153,7 +890,7 @@ export function askMessage(milestoneTitle: string, question: string): string {
 }
 
 /** How a write into another session ended: it went in, or the session has no running terminal. */
-export type IntoSession = 'sent' | 'not-running'
+type IntoSession = 'sent' | 'not-running'
 
 /**
  * Put text into a session's prompt the way "Reference in session" does: through the writer bus, to a live
@@ -1184,7 +921,7 @@ export function askLeaderOf(mission: MissionV4Reply): string | null {
 // matter is English and is never the copy (the renderer translates identifiers); the count is the server's.
 
 /** The open matters the close door counts, by identifier. */
-export const CLOSE_MATTER_KINDS = [
+const CLOSE_MATTER_KINDS = [
   'unfinished-steps',
   'open-blockers',
   'staged-done-when',
@@ -1214,7 +951,7 @@ export function closeMatters(
 }
 
 /** The codes the close door answers that the dialog words one by one; any other code reads as `other`. */
-export const CLOSE_CODES = ['NOT_FOUND', 'WRITE_CONFLICT', 'MISSION_CLOSED'] as const
+const CLOSE_CODES = ['NOT_FOUND', 'WRITE_CONFLICT', 'MISSION_CLOSED'] as const
 
 /** The i18n key (under `missionPane.close.error`) that says what to do after the door answered `code`. */
 export function closeErrorKey(code: string): (typeof CLOSE_CODES)[number] | 'other' {
@@ -1226,113 +963,6 @@ export function closeErrorKey(code: string): (typeof CLOSE_CODES)[number] | 'oth
 /** Whether the server says every required step is done: the mission is ready to close as delivered. */
 export function isReadyToClose(detail: Detail): boolean {
   return detail.status === 'open' && detail.state === 'ready-to-close'
-}
-
-// ---- Missions v4 · stp-21 (T751) — the pane at a glance in a small space ---------------------------------------
-//
-// Pure rules the pane follows; the pixels are the component's, the decisions are here so a test can state them.
-
-/** Below this width (px) the pane switches to its narrow layout. */
-export const PANE_NARROW_BELOW = 240
-
-export interface PaneLayout {
-  /** `narrow` below {@link PANE_NARROW_BELOW}; the pane has no minimum width. */
-  mode: 'narrow' | 'regular'
-  /** The pane's side padding in px: tighter when narrow, so the text keeps its room. */
-  padX: number
-}
-
-/**
- * The layout rule for a pane `width` px wide (A narrow pane stays usable): there is NO minimum width. Below
- * 240 px the side padding drops from 16 to 10 px, every text wraps or truncates with its full text in a title,
- * every control wraps onto its own row, and the body never scrolls sideways. A width that is not known yet
- * (before the first measure) reads as regular.
- */
-export function paneLayout(width: number): PaneLayout {
-  if (!Number.isFinite(width)) return { mode: 'regular', padX: 16 }
-  return width < PANE_NARROW_BELOW ? { mode: 'narrow', padX: 10 } : { mode: 'regular', padX: 16 }
-}
-
-/** Where the bar puts its count and its marker: in different rows of the bar, so they can never overlap. */
-export interface BarGeometry {
-  count: { row: 1 }
-  /** The fill-edge marker: a 2 px strip under the count, as wide as the fill. `null` at 0 and once full. */
-  marker: { row: 2; widthPct: number } | null
-}
-
-export function barGeometry(fillPct: number): BarGeometry {
-  const fill = Math.min(100, Math.max(0, Number.isFinite(fillPct) ? fillPct : 0))
-  return { count: { row: 1 }, marker: fill > 0 && fill < 100 ? { row: 2, widthPct: fill } : null }
-}
-
-/** The parts of the pane in the order they are drawn. A part may be absent (no mission, nothing waiting). */
-export const PANE_ORDER = ['head', 'next', 'waiting', 'tree', 'sessions'] as const
-export type PaneSectionName = (typeof PANE_ORDER)[number]
-
-/** The first screenful: the title with the bar, the next step, what waits on the operator. */
-export const GLANCE_SECTIONS: readonly PaneSectionName[] = ['head', 'next', 'waiting']
-
-/** The disclosures the operator opens, and whether each starts open. All start closed. */
-export type PaneDisclosure = 'tree' | 'sessions' | 'more'
-export const PANE_SECTION_DEFAULTS: Readonly<Record<PaneDisclosure, boolean>> = {
-  tree: false,
-  sessions: false,
-  more: false
-}
-
-/** Where the choices are kept: one per-viewer convenience, never the mission's. */
-export const PANE_SECTIONS_KEY = 'om2tab.missionPane.sections'
-
-type StorageRead = Pick<Storage, 'getItem'> | null
-type StorageWrite = Pick<Storage, 'setItem'> | null
-
-/** The kept choices; anything that is not a boolean for a known disclosure is ignored (the default applies). */
-export function loadPaneSections(storage: StorageRead): Record<PaneDisclosure, boolean> {
-  const out = { ...PANE_SECTION_DEFAULTS }
-  try {
-    const raw = storage?.getItem(PANE_SECTIONS_KEY)
-    if (!raw) return out
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== 'object' || parsed === null) return out
-    for (const key of Object.keys(out) as PaneDisclosure[]) {
-      const v = (parsed as Record<string, unknown>)[key]
-      if (typeof v === 'boolean') out[key] = v
-    }
-  } catch {
-    // unreadable storage or a value that is not JSON: the defaults apply
-  }
-  return out
-}
-
-export function savePaneSections(
-  storage: StorageWrite,
-  state: Readonly<Record<PaneDisclosure, boolean>>
-): void {
-  try {
-    storage?.setItem(PANE_SECTIONS_KEY, JSON.stringify(state))
-  } catch {
-    // a private window or blocked storage: the choice lasts until the pane closes
-  }
-}
-
-/** What the collapsed "Steps and timeline" line says about where the mission is. */
-export type TreeLine =
-  { kind: 'current'; title: string } | { kind: 'allDone' } | { kind: 'steps'; n: number }
-
-export function treeLine(tree: PaneTree): TreeLine {
-  const current = tree.milestones.find((m) => m.current)
-  if (current) return { kind: 'current', title: current.title }
-  if (tree.milestones.length > 0) {
-    const open = tree.milestones.find((m) => m.state !== 'done')
-    return open ? { kind: 'current', title: open.title } : { kind: 'allDone' }
-  }
-  const loose = tree.loose ? [...tree.loose.shown, ...tree.loose.folded] : []
-  const next = loose.find((s) => s.state !== 'done')
-  return next
-    ? { kind: 'current', title: next.title }
-    : loose.length > 0
-      ? { kind: 'allDone' }
-      : { kind: 'steps', n: 0 }
 }
 
 /**
@@ -1347,7 +977,7 @@ export function linkLabelParts(label: string): string[] {
 // ---- Words the pane writes itself (no English from the server reaches a Portuguese pane) -------------------------
 
 /** What the Next box and its rows say for one waiting item: the ask and the why. */
-export interface WaitingWords {
+interface WaitingWords {
   ask: string
   why: string
 }
@@ -1441,23 +1071,6 @@ export function waitingText(t: Translate, detail: Detail, item: WaitingItem): Wa
     default:
       return raw
   }
-}
-
-/** The headings of the mission summary the server writes (`summary.ts`), by identifier. */
-const SUMMARY_HEADINGS: Readonly<Record<string, string>> = {
-  Goal: 'goal',
-  'Where it is': 'whereItIs',
-  Decided: 'decided',
-  'Stopped at': 'stoppedAt',
-  'Next step': 'nextStep',
-  'Open criteria': 'openCriteria',
-  Links: 'links'
-}
-
-/** A summary heading in the reader's language; a heading this build does not know is shown as written. */
-export function summaryHeadingLabel(t: Translate, heading: string): string {
-  const key = SUMMARY_HEADINGS[heading]
-  return key === undefined ? heading : t(`missionPane.handoff.brief.section.${key}`)
 }
 
 /**

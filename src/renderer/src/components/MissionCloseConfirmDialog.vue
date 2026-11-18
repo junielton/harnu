@@ -19,7 +19,7 @@
  * key before the popover's own Esc handler sees it.
  *
  * **Two modes, one dialog.** `v3` (the default) is the popover's: it lists the v3 `EndWarning`s and offers the
- * memory drafts. `v4` is the Mission pane's (Missions v4 S-22, design.md §6 "Mission pane" → Close): it lists
+ * memory drafts. `v4` is the Mission dropdown's (Missions v4 S-22, design.md §6 "Mission dropdown" → Closing a mission): it lists
  * the close door's open matters by identifier in words of its own (the server's English `text` is never the
  * copy), says which Done when closing as delivered confirms, and shows what the door said when it failed. In
  * both modes an open matter is a warning and never disables the confirm.
@@ -47,7 +47,7 @@ const props = withDefaults(
     drafts?: MemoryDraft[]
     /** Campaign ch.6 — the consolidator found nothing worth recording. */
     nothingNotable?: boolean
-    /** `v4` is the Mission pane's dialog (S-22); `v3` is the popover's. */
+    /** `v4` is the Mission dropdown's dialog (S-22); `v3` is the popover's. */
     mode?: 'v3' | 'v4'
     /** v4: the close door's open matters, by identifier. Shown, never enforced. */
     matters?: CloseMatter[]

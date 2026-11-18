@@ -23,10 +23,13 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **Closing a mission now says it leaves the Topbar**, with the choice titled "How to close it" and the button reading "Close mission" (a discard still reads "Discard"). The optional reason stays.
 - The notice for a mission whose leader session is not open here now points you to the Mission pill, not the Mission pane.
 - **A session that opens a walk is now told whether the pane really opened.** `walk_open` answers `opened: true` once the app shows the pane (before, it was always false because the pane did not exist), so a session can say the walk is in front of you only when it is.
+- **The Mission pane is gone.** A mission now lives only in the dropdown under the Mission pill in the top bar, so nothing opens in the side stack any more, and there is no "Sessions" section or "Continue in a new session…" button to look for. A layout saved by an older version that had the Mission pane open opens without it, with nothing left blank. Sessions still work on a mission as before; they just are not listed for you.
+- Messages that used to send you to the Mission pane now name the Mission dropdown: the refusals an agent gets when it tries something that is yours to do, the guides and skills that tell you where to tick or approve something, and the notice for a mission whose session is not open.
 - **A walk waiting for a parked session now says "Waking the session…" instead of flashing an error.** The error state used to appear after 6 seconds, but a parked session can take about 40 seconds to wake. The pane now stays on the check with one quiet line and shows "The session is gone" only after about 45 seconds.
 
 ### Fixed
 
+- **The Mission pill keeps its label in a narrow window.** The top bar now reserves room for the pill, so the session name shrinks first (to a short stub) and the buttons on the right move into the `…` menu, before the pill is squeezed. In the very narrowest layout (800 pixels wide with both side panels open) there is still not enough room for the whole label, so close the Fleet panel to see it; nothing spills over the panel next to it any more.
 - **The walk's close-out now reads properly for one or many.** Before, it said "1 skipped are listed above"; now it says "1 skipped check is listed above" or "2 skipped checks and 1 unverified check are listed above", in English and Portuguese.
 
 ## 2026-11-17

@@ -122,7 +122,7 @@ text over a cap.
 
 - **The Done when is the delivery's end (D-5):** what ships the objective, never the spec approval.
   `orchestrate-delivery` adopts this mission at dispatch. When the spec changes the end, stage it
-  with `mission_set_done_when` and a reason: the operator approves it in the Mission pane.
+  with `mission_set_done_when` and a reason: the operator approves it in the Mission dropdown.
 - **One step, "Approve spec"**, with an operator criterion only the operator ticks. Keep its
   `stepId`: the dispositions, the approval and the blocker go on it.
 - **The links** are `doc` links to the spec and the PRD and ADR the tier carries, written or not.
@@ -314,15 +314,15 @@ Once the no-code check prints nothing, in this order:
 On a yes: `orchestrator_disarm` if you armed the guard, flip the header from
 `status: draft` to `status: approved`, re-run `check` and the no-code check, and log the approval
 on the "Approve spec" step with `mission_log`. Then point the operator at the criterion: in the
-Mission pane, tick _The operator approves the spec_ on the "Approve spec" step. The skill never
+Mission dropdown, tick _The operator approves the spec_ on the "Approve spec" step. The skill never
 ticks the criterion, and no verb of yours can. The next step is `harnu:orchestrate-delivery`.
 
 On a no or a change: apply it inside the bundle, re-run the stage of _Goldfish review_ it touches,
 and ask the question again.
 
 With no operator to answer (the turn ends with the question unanswered): call `mission_set_blocker`
-on the "Approve spec" step as the operator's, so the Mission pane lists it as owed by them, and
-stop. They clear it in the pane: `mission_clear_blocker` refuses an operator's blocker
+on the "Approve spec" step as the operator's, so the Mission dropdown lists it as owed by them, and
+stop. They clear it in the Mission dropdown: `mission_clear_blocker` refuses an operator's blocker
 (`OPERATOR_ONLY`), so you never call it.
 
 ```json

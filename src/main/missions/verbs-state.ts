@@ -106,7 +106,7 @@ async function run<T extends object>(
 const sessionOnly = (verb: string): StateRefusal =>
   refuse(
     'SESSION_ONLY',
-    `${verb} is a session's verb; the operator does this from the Mission pane, and a system worker only reads.`
+    `${verb} is a session's verb; the operator does this from the Mission dropdown, and a system worker only reads.`
   )
 
 // ---- Small helpers -----------------------------------------------------------------
@@ -289,7 +289,7 @@ export interface ClearBlockerArgs {
 
 /**
  * Clear a blocker by id. A session clears an agent-owned one; an operator-owned blocker is the
- * operator's to clear (their door in the pane), and a session that tries is refused `OPERATOR_ONLY`.
+ * operator's to clear (their door in the Mission dropdown), and a session that tries is refused `OPERATOR_ONLY`.
  */
 export async function clearBlocker(
   folder: string,
@@ -308,7 +308,7 @@ export async function clearBlocker(
     if (found.blocker.owner === 'operator' && actor.kind !== 'operator') {
       throw new Refusal(
         'OPERATOR_ONLY',
-        `${args.blockerId} is the operator's to clear: they do it in the Mission pane, or a fact it waits for ends it.`
+        `${args.blockerId} is the operator's to clear: they do it in the Mission dropdown, or a fact it waits for ends it.`
       )
     }
     const without = (list: readonly BlockerV4[]): BlockerV4[] =>
@@ -416,8 +416,9 @@ export interface SettleCriterionArgs {
 
 const NOT_BY_HAND: Record<Exclude<AcceptanceCriterion['by'], 'session'>, string> = {
   fact: 'a fact settles itself: Harnu reads it, and nobody ticks what Harnu can see.',
-  operator: 'the operator marks it in the Mission pane; a session never does.',
-  person: 'the operator marks it for the other person in the Mission pane; a session never does.'
+  operator: 'the operator marks it in the Mission dropdown; a session never does.',
+  person:
+    'the operator marks it for the other person in the Mission dropdown; a session never does.'
 }
 
 /**
@@ -523,7 +524,7 @@ export async function requestClose(
         const more = open.length > 5 ? ` and ${open.length - 5} more` : ''
         throw new Refusal(
           'STEPS_OPEN',
-          `${open.length === 1 ? '1 step is' : `${open.length} steps are`} not done: ${shown}${more}. Finish ${open.length === 1 ? 'it' : 'them'} first; the operator can still close the mission from the pane.`
+          `${open.length === 1 ? '1 step is' : `${open.length} steps are`} not done: ${shown}${more}. Finish ${open.length === 1 ? 'it' : 'them'} first; the operator can still close the mission from the Mission dropdown.`
         )
       }
       if (record.closeRequested) {

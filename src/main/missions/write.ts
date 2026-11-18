@@ -121,8 +121,7 @@ function typed(refusal: { code: string; error: string }): WriteRefusal {
 
 // ---- What a session may never do -------------------------------------------------
 
-const LEAD_MSG =
-  'only the operator changes who leads a mission: a session never sets or moves it. The hand-off door in the Mission pane does.'
+const LEAD_MSG = 'only the operator changes who leads a mission: a session never sets or moves it.'
 
 /**
  * A session's change to `sessions`: every existing entry stays exactly as it was (so `leads` is never

@@ -34,7 +34,6 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import type {
   MissionDoor,
   MissionDoorResult,
-  MissionHandOffReply,
   MissionV4Door,
   MissionV4DoorReply,
   MissionV4ViewReply,
@@ -82,7 +81,7 @@ import { useUiStore } from './ui'
 
 const POLL_MS = 20_000
 
-/** One of the operator's v4 doors as the pane calls it: the folder and the mission are the store's to add. */
+/** One of the operator's v4 doors as the dropdown calls it: the folder and the mission are the store's to add. */
 export type V4DoorCall = MissionV4Door extends infer D
   ? D extends MissionV4Door
     ? Omit<D, 'folder' | 'missionId'>
@@ -254,6 +253,30 @@ function postMissionActivity(missionIds: readonly string[], views: readonly Read
 }
 
 /**
+ * `localStorage` values the Mission pane kept and the dropdown does not read: the pane's disclosure state and the
+ * hand-off offer's "Not now" memory. Removed once, when the store starts, so an upgrade leaves nothing behind.
+ */
+export const RETIRED_MISSION_STORAGE_KEYS = [
+  'om2tab.missionPane.sections',
+  'om2tab.missionHandoffDismissed'
+] as const
+
+/** Remove the values of {@link RETIRED_MISSION_STORAGE_KEYS}. Best-effort: storage can be missing or throw. */
+export function removeRetiredMissionStorage(
+  storage: Pick<Storage, 'removeItem'> | undefined = typeof localStorage === 'undefined'
+    ? undefined
+    : localStorage
+): void {
+  for (const key of RETIRED_MISSION_STORAGE_KEYS) {
+    try {
+      storage?.removeItem(key)
+    } catch {
+      /* private window or blocked storage: nothing to remove */
+    }
+  }
+}
+
+/**
  * The quiet sync after every poll (spec §3.3): rewrite the entry's title and rows
  * from what is owed now WITHOUT touching its `ts`, and remove it when nothing is.
  * `updateGroup` finds nothing for an entry the operator dismissed, so a sync can
@@ -290,7 +313,7 @@ export const useMissionsStore = defineStore('missions', () => {
 
   // ---- Missions v4 (S-17): the view of the SELECTED session's mission ------------------------------
   /**
-   * What `mission:v4View` last answered for the selected session. The pill and the pane both read it.
+   * What `mission:v4View` last answered for the selected session. The pill and the dropdown both read it.
    * There is no push event: it is asked when the selected session changes and on the same 20 s clock as
    * the list above. Asking has a side effect (it adds the folder to the observer's list), so this store
    * is the one loop that asks.
@@ -298,7 +321,7 @@ export const useMissionsStore = defineStore('missions', () => {
   const v4 = shallowRef<V4Entry | null>(null)
   /** The `missionId` each session's last answer carried: sent back so the next call reads one record. */
   const v4Ids = new Map<string, string>()
-  /** The mission each session was told to show: the pane's chooser, or "Open mission" on a card or an Activity row. */
+  /** The mission each session was told to show: the dropdown's switch, or "Open mission" on a card or an Activity row. */
   const chosen = new Map<string, string>()
   /**
    * The requests to join that name the selected session while it has no mission (S-21). The session that
@@ -309,6 +332,8 @@ export const useMissionsStore = defineStore('missions', () => {
   let v4Seq = 0
   let v4Flight: { sessionId: string; promise: Promise<void> } | null = null
   let started = false
+  // The pane's stored values are of no use to the dropdown: drop them once, when the store starts.
+  removeRetiredMissionStorage()
 
   /** One call of the view; `null` when the build has no such channel or it threw. */
   async function askV4(
@@ -318,13 +343,11 @@ export const useMissionsStore = defineStore('missions', () => {
   ): Promise<MissionV4ViewReply | null> {
     const ask = window.api.missionV4View
     if (typeof ask !== 'function') return null
-    const dismissed = missionId ? dismissedPercentFor(sessionId, missionId) : null
     try {
       return await ask({
         folder,
         sessionId,
-        ...(missionId ? { missionId } : {}),
-        ...(dismissed !== null ? { dismissedPercent: dismissed } : {})
+        ...(missionId ? { missionId } : {})
       })
     } catch {
       return null
@@ -341,7 +364,7 @@ export const useMissionsStore = defineStore('missions', () => {
     const sessionId = selected.sessionId
     const folder = selected.projectPath
     const seq = ++v4Seq
-    // The one rule (S-35 delta 1): the mission chosen in the pane or named by "Open mission", else the one that
+    // The one rule (S-35 delta 1): the mission chosen in the dropdown or named by "Open mission", else the one that
     // waits on the operator, else the newest written. The chip reads the same rule ({@link pickedFor}).
     const named = pickedFor(sessionId)?.lookupId ?? v4Ids.get(sessionId)
     let reply = await askV4(sessionId, folder, named)
@@ -356,7 +379,6 @@ export const useMissionsStore = defineStore('missions', () => {
     if (seq !== v4Seq) return
     if (reply && reply.state === 'mission') {
       v4Ids.set(sessionId, reply.missionId)
-      forgetStaleDismissal(reply)
     } else v4Ids.delete(sessionId)
     const asks = reply && reply.state === 'none' ? await readAsks(sessionId, folder, reply) : []
     if (seq !== v4Seq) return
@@ -428,135 +450,9 @@ export const useMissionsStore = defineStore('missions', () => {
     return entry && sessionId && entry.sessionId === sessionId ? entry.reply : null
   }
 
-  // ---- Missions v4 (S-20): the hand-off ----------------------------------------------------------------
-  /**
-   * "Not now" on the hand-off offer: the context percentage it was dismissed at, per mission and per
-   * leader. The view takes it back (`dismissedPercent`) and offers again only once the context has grown
-   * five points, so a leader that is replaced starts with none. Kept across a restart: the operator said
-   * "not now" to a session, and a restart is not a reason to ask again at the same number.
-   */
-  const handoffDismissed = persistedRef<Record<string, { leader: string; percent: number }>>(
-    'om2tab.missionHandoffDismissed',
-    {},
-    {
-      validate: (v) =>
-        typeof v === 'object' &&
-        v !== null &&
-        Object.values(v).every(
-          (e) => typeof e?.leader === 'string' && typeof e?.percent === 'number'
-        )
-    }
-  )
-  /** Whether a hand-off is waiting for the door (it awaits up to 90 s): a second click starts nothing. */
-  const handOffPending = ref(false)
-
-  /** The open leader a reply names, or `null` (nobody leads, or the reply holds no mission). */
-  function leaderIn(reply: MissionV4ViewReply | null): string | null {
-    if (!reply || reply.state !== 'mission') return null
-    return reply.sessions.find((r) => r.open && r.role === 'leads')?.id ?? null
-  }
-
-  /** The percent to send with the next view call for this mission: the leader the last answer named, or `null`. */
-  function dismissedPercentFor(sessionId: string, missionId: string): number | null {
-    const entry = handoffDismissed.value[missionId]
-    if (!entry) return null
-    const last = v4ReplyForSession(sessionId)
-    return leaderIn(last) === entry.leader ? entry.percent : null
-  }
-
-  /**
-   * The percentage the operator said "Not now" at for this mission's current leader, or `null`. The pane
-   * stays quiet at a reading no higher than this even before the view has answered again; when to offer
-   * again (five points more) is the view's rule, not repeated here.
-   */
-  function handoffDismissedAt(missionId: string, leaderId: string | null): number | null {
-    const entry = handoffDismissed.value[missionId]
-    return entry && leaderId !== null && entry.leader === leaderId ? entry.percent : null
-  }
-
-  /** A dismissal belongs to one leader: once the leader changes, it is not asked again. */
-  function forgetStaleDismissal(reply: MissionV4ViewReply): void {
-    if (reply.state !== 'mission') return
-    const entry = handoffDismissed.value[reply.missionId]
-    if (!entry || leaderIn(reply) === entry.leader) return
-    const { [reply.missionId]: _gone, ...rest } = handoffDismissed.value
-    handoffDismissed.value = rest
-  }
-
-  /**
-   * "Not now" on the offer. It stores the percentage the offer was made at and reads the view again, so the
-   * offer goes quiet until the context grows five points. It starts nothing and writes nothing to the
-   * mission.
-   */
-  async function dismissHandoff(): Promise<void> {
-    const selected = sessions.selectedSession
-    const mission = selected ? v4MissionForSession(selected.sessionId) : null
-    const leader = mission?.sessions.find((r) => r.open && r.role === 'leads')?.id
-    if (!mission || !leader || typeof mission.handoff?.percent !== 'number') return
-    handoffDismissed.value = {
-      ...handoffDismissed.value,
-      [mission.missionId]: { leader, percent: mission.handoff.percent }
-    }
-    await loadV4()
-  }
-
-  /**
-   * The hand-off (S-16b): the one thing that changes who leads. The operator confirmed it in the dialog;
-   * Harnu starts a normal session with the mission summary and the door writes once. The mission id is the
-   * one the view answered for. The door waits up to 90 s for the session to appear, so a second call while
-   * one waits is refused here (`HANDOFF_IN_PROGRESS`) before it reaches the channel. The reply is always a
-   * value, never a throw, and the view is read again after it, whichever way it went.
-   */
-  async function runHandOff(): Promise<MissionHandOffReply> {
-    const selected = sessions.selectedSession
-    const mission = selected ? v4MissionForSession(selected.sessionId) : null
-    const door = window.api.missionHandOff
-    if (sampleState.value !== null) {
-      return {
-        ok: false,
-        code: 'SAMPLE',
-        error: 'SAMPLE: this is a sample, so no session was started.'
-      }
-    }
-    if (!selected || !mission || typeof door !== 'function') {
-      return {
-        ok: false,
-        code: 'UNAVAILABLE',
-        error: 'UNAVAILABLE: the pane has no mission to hand off.'
-      }
-    }
-    if (handOffPending.value) {
-      return {
-        ok: false,
-        code: 'HANDOFF_IN_PROGRESS',
-        error: 'HANDOFF_IN_PROGRESS: a hand-off is already starting a session.'
-      }
-    }
-    handOffPending.value = true
-    let res: MissionHandOffReply
-    try {
-      res = await door({ folder: selected.projectPath, missionId: mission.missionId })
-    } catch (err) {
-      res = {
-        ok: false,
-        code: 'UNAVAILABLE',
-        error: `UNAVAILABLE: ${err instanceof Error ? err.message : String(err)}`
-      }
-    } finally {
-      handOffPending.value = false
-    }
-    // The new leader starts with no dismissal of the old one's.
-    if (res.ok) {
-      const { [mission.missionId]: _gone, ...rest } = handoffDismissed.value
-      handoffDismissed.value = rest
-    }
-    await loadV4()
-    return res
-  }
-
   /**
    * Missions v4 (S-19) — one of the operator's doors on the v4 mission the selected session is in, then
-   * the view is read again (there is no push event, so the pane is only as fresh as its last read).
+   * the view is read again (there is no push event, so the dropdown is only as fresh as its last read).
    * The mission id is the one the view ANSWERED for, never `detail.id`; the folder is the selected
    * session's, the one the view is asked from. A door never refuses the operator: a refusal here is a
    * record that changed under them (`NOT_FOUND`), one that closed, or a channel that is not there. The
@@ -589,7 +485,7 @@ export const useMissionsStore = defineStore('missions', () => {
   const noMissionToActOn = (): MissionV4DoorReply => ({
     ok: false,
     code: 'UNAVAILABLE',
-    error: 'UNAVAILABLE: the pane has no mission to act on.'
+    error: 'UNAVAILABLE: the dropdown has no mission to act on.'
   })
 
   async function callV4Door(
@@ -609,7 +505,7 @@ export const useMissionsStore = defineStore('missions', () => {
         error: `UNAVAILABLE: ${err instanceof Error ? err.message : String(err)}`
       }
     }
-    // Read again whatever came back: a refusal usually means the record moved, and the pane must show how.
+    // Read again whatever came back: a refusal usually means the record moved, and the dropdown must show how.
     // `loadV4` (not `refreshV4`) so a read already in flight, which may predate the door, is dropped.
     await loadV4()
     return res
@@ -617,10 +513,10 @@ export const useMissionsStore = defineStore('missions', () => {
 
   // ---- Missions v4 (S-22): the sample and the close -----------------------------------------------------------
   /**
-   * The sample mission the pane shows, or `null`. A sample is built in the renderer from nothing (see
+   * The sample mission the dropdown shows, or `null`. A sample is built in the renderer from nothing (see
    * `lib/mission-sample.ts`): it has no record, so no door may reach the main process while one shows. Every
    * door answers "nothing changed" without a call and without reading the view; the hand-off refuses in words.
-   * Nothing but the pane reads it, so the pill, the sidebar and the other readers never see a sample.
+   * Nothing but the dropdown reads it, so the pill, the sidebar and the other readers never see a sample.
    */
   const sampleState = ref<SampleState | null>(null)
   const sampleView = computed<Sample | null>(() =>
@@ -656,7 +552,7 @@ export const useMissionsStore = defineStore('missions', () => {
   /**
    * Every open mission of the sidebar's repos as the v4 view serves it (through the record store, v3 and v4
    * records alike), or `null` while the build has no such channel or nothing was read yet. The sidebar chip,
-   * the cue and the Activity entry read this; the pill and the pane keep reading the selected session's reply.
+   * the cue and the Activity entry read this; the pill and the dropdown keep reading the selected session's reply.
    * It rides the same 20 s poll as the list and adds no timer.
    */
   const readers = shallowRef<ReaderMission[] | null>(null)
@@ -706,9 +602,9 @@ export const useMissionsStore = defineStore('missions', () => {
   }
 
   /**
-   * The mission `sessionId` shows, from what the readers know: the one chosen (the pane's chooser, or "Open
+   * The mission `sessionId` shows, from what the readers know: the one chosen (the dropdown's switch, or "Open
    * mission" on a card or an Activity row), else the one that waits on the operator, else the newest written
-   * (the readers are listed newest first). One rule for the chip, the pill and the pane: a draft with nothing
+   * (the readers are listed newest first). One rule for the chip, the pill and the dropdown: a draft with nothing
    * waiting never hides a mission that waits on the operator. `null` when the session leads none.
    */
   function pickedFor(sessionId: string): ReaderMission | null {
@@ -717,7 +613,7 @@ export const useMissionsStore = defineStore('missions', () => {
     const want = chosen.get(sessionId)
     const named = want ? led.find((r) => (r.lookupId ?? r.mission.id) === want) : undefined
     if (named) return named
-    // A choice the readers do not know (a mission the session only works in) is the pane's to resolve.
+    // A choice the readers do not know (a mission the session only works in) is the dropdown's to resolve.
     if (want) return { ...led[0], lookupId: want } as ReaderMission
     return led.find((r) => r.you.length > 0) ?? led[0]
   }
@@ -749,7 +645,7 @@ export const useMissionsStore = defineStore('missions', () => {
   /**
    * The open missions `sessionId` leads, as the readers know them, newest written first. A session that leads
    * several (the normal case for an old leader: one mission per v3 file it ever started) shows {@link pickedFor}
-   * and lists the others here, so the pane can offer the choice instead of an error.
+   * and lists the others here, so the dropdown can offer the choice instead of an error.
    */
   function ledMissionsFor(
     sessionId: string | null | undefined
@@ -760,7 +656,7 @@ export const useMissionsStore = defineStore('missions', () => {
       .map((r) => ({ id: r.lookupId ?? r.mission.id, title: r.title }))
   }
 
-  /** The pane follows `missionId` for `sessionId` from now on: the next read names it. Never writes. */
+  /** The dropdown follows `missionId` for `sessionId` from now on: the next read names it. Never writes. */
   async function chooseMission(sessionId: string, missionId: string): Promise<void> {
     chosen.set(sessionId, missionId)
     v4Ids.set(sessionId, missionId)
@@ -1022,10 +918,6 @@ export const useMissionsStore = defineStore('missions', () => {
     sampleState,
     sampleView,
     showSample,
-    handOffPending,
-    handoffDismissedAt,
-    dismissHandoff,
-    runHandOff,
     runDoor
   }
 })

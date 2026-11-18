@@ -170,7 +170,7 @@ function ownerMissing(item: NotificationItem): boolean {
 
 /**
  * Item row click (BUG-173; S-37): open the row's owner session, then its `target` through the one
- * `openNavigableView` door — so this stays free of per-view branches — which opens the Mission pane for
+ * `openNavigableView` door — so this stays free of per-view branches — which opens the Mission dropdown for
  * the owner. An owner that is not loaded here cannot show the pane, so the click says so in a notice that
  * names the mission instead of doing nothing; the Missions review that used to take that click is gone. The
  * entry is NOT dismissed: it is a list, and its other rows are still owed (the quiet sync keeps it truthful).

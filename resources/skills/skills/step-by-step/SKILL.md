@@ -1,6 +1,6 @@
 ---
 name: step-by-step
-description: "Walk the operator through a list of manual actions only they can perform — dashboard clicks, commands on a machine the agent cannot reach, secrets to create, DNS to point, a release to cut — one step per message, and record each action as an operator criterion on the relevant Mission step so the list survives the session. Criteria are added with `mission_add_ac` (`by: 'operator'`); the skill reports which remain open and never settles one itself (the operator ticks them in the Mission pane). Use when the operator says '/step-by-step', 'walk me through this', 'guide me step by step', or reacts to a 'pending with you' list by asking how to do it. Do NOT use to resolve decisions (one-by-one), to stress-test a plan (grill-me), for a fixed runbook of a known procedure, or when the agent can run the actions itself — then just do them."
+description: "Walk the operator through a list of manual actions only they can perform — dashboard clicks, commands on a machine the agent cannot reach, secrets to create, DNS to point, a release to cut — one step per message, and record each action as an operator criterion on the relevant Mission step so the list survives the session. Criteria are added with `mission_add_ac` (`by: 'operator'`); the skill reports which remain open and never settles one itself (the operator ticks them in the Mission dropdown). Use when the operator says '/step-by-step', 'walk me through this', 'guide me step by step', or reacts to a 'pending with you' list by asking how to do it. Do NOT use to resolve decisions (one-by-one), to stress-test a plan (grill-me), for a fixed runbook of a known procedure, or when the agent can run the actions itself — then just do them."
 effort: medium
 ---
 
@@ -19,7 +19,7 @@ things. Sister skills: `harnu:one-by-one` drains _decisions_; this drains _actio
 Never perform a step yourself. Never run anything that changes the world (deploys,
 pushes, DNS, secrets, restarts). The only commands you run are read-only checks:
 `dig`, `curl`, `gh ... list/view`, `git log`, reading files.
-Never tick a criterion. The operator ticks it in the Mission pane; no verb of yours can,
+Never tick a criterion. The operator ticks it in the Mission dropdown; no verb of yours can,
 and you never describe a criterion as done because the operator said "done" in chat.
 </HARD-GATE>
 
@@ -92,7 +92,7 @@ differs, tell me what you see)", never asserted.
 
 - **✅ Done** → run your check. Pass: one line "Done: …", close the task, serve N+1.
   Then tell the operator the criterion is theirs to tick: "tick **<criterion>** on
-  <step> in the Mission pane when you are satisfied" — once per step, in one clause.
+  <step> in the Mission dropdown when you are satisfied" — once per step, in one clause.
 - **❌ Failed** → failure loop: ask for the error if it is not in the message (one
   question), diagnose from the error text, give **one** correction, re-serve the same
   step. No attempt limit, no list of possible causes.
@@ -130,7 +130,7 @@ each action that is **not** already ✔:
   wording is not there. Never reword one to "fix" it; if the action truly changed, say
   so and add the new one.
 - **You can neither edit nor remove a criterion**: an action no longer needed is the
-  operator's to deal with in the pane. Once its step starts, it shows under what they owe.
+  operator's to deal with in the Mission dropdown. Once its step starts, it shows under what they owe.
 
 ### What you may and may not say about a criterion
 
@@ -150,7 +150,7 @@ unverified items:
 ✅ 4. DNS route — dig resolves to the tunnel CNAME · criterion open
 ⚠️ 5. Rejected without token — operator ✅, my curl got 200 (followed anyway)
 ⏭️ 6. Host key — skipped
-Criteria still open (Mission pane → the step → tick): 1, 4, 5, 6.
+Criteria still open (Mission dropdown → the step → tick): 1, 4, 5, 6.
 ```
 
 Offer board cards for skipped and unverified items; only offer.

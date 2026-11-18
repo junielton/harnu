@@ -126,12 +126,6 @@ export const paneRegistry: Record<AnyHelperPane['type'], PaneRegistryEntry> = {
   browser: {
     persistable: true
   },
-  // Missions v4 S-17 — the Mission pane. Non-PTY, follows the selected session, persists like the memory pane.
-  // `dedupKey` is a constant: ONE per worktree, so the pill's toggle and a restored pane can never double.
-  mission: {
-    persistable: true,
-    dedupKey: () => 'mission'
-  },
   // Guided walks S-3 — the walk pane. Non-PTY and reproducible from `payload.walkId` / `payload.runId`, so it
   // persists like the memory pane and a restart restores it from the record under `.harnu/walks/`. One pane per
   // WALK (`dedupKey`): opening a walk twice reveals the pane that has it. No `maxInstances` on purpose: the

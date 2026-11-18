@@ -1,7 +1,7 @@
 /**
- * Missions v4 · S-22 — the sample mission (design.md §6 "Mission pane" → The sample mission).
+ * Missions v4 · S-22 — the sample mission (design.md §6 "Mission dropdown" → A sample mission).
  *
- * A view object for the Mission pane that is built from nothing: no file, no IPC, no `window.api`, no
+ * A view object for the Mission dropdown that is built from nothing: no file, no IPC, no `window.api`, no
  * store. It exists so every state of the pane can be seen without a live mission, including the ones a real
  * mission is rarely in (a hand-off offered, a blocked step, a request to join). It is shaped exactly like what
  * `mission:v4View` answers, so the pane draws it with the code it draws a real mission with; nothing about the
