@@ -31,6 +31,7 @@ import {
 import {
   keyContext,
   paneView,
+  shotLightbox,
   type LinkChip,
   type Outcome,
   type OutcomeId,
@@ -324,8 +325,16 @@ watch(
     if (was && !open) void nextTick(() => rootEl.value?.focus())
   }
 )
+// a screenshot of a past run opened from its notes: the pane's own lightbox shows it (not the Markdown viewer)
+const shotOpen = ref<{ path: string; name: string } | null>(null)
+watch(
+  () => state.value?.ui.lightbox,
+  (open) => {
+    if (!open) shotOpen.value = null
+  }
+)
 const lightboxImage = computed(() => {
-  const im = view.value.check?.see.images[0]
+  const im = shotOpen.value ? shotLightbox(shotOpen.value) : view.value.check?.see.images[0]
   return im ? { ...im, url: imageUrl(im.src) } : null
 })
 
@@ -370,7 +379,12 @@ async function onSelectRun(runId: string): Promise<void> {
 
 /** A screenshot of a note opens in the viewer, which draws an image inline. */
 function onOpenShot(path: string): void {
-  helpers.addMarkdownHelper(folder.value, path, folder.value)
+  const s = state.value
+  if (!s) return
+  shotOpen.value = { path, name: path.split('/').pop() ?? path }
+  s.ui.lightbox = true
+  // focus goes into the lightbox, so Esc (and Tab) stay inside the pane's own key map
+  void nextTick(() => rootEl.value?.querySelector<HTMLElement>('.lightbox .lb-x')?.focus())
 }
 
 /** Re-run: run n + 1 of this walk, or the live run when one is live. This pane follows it. */

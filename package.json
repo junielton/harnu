@@ -38,6 +38,7 @@
     "test:perf": "vitest run --config vitest.perf.config.mts",
     "verify:voice-licence": "node scripts/ci/voice-licence-gate.mjs",
     "verify:guided-walk": "nice -n 19 node scripts/verify/guided-test-walk.mjs",
+    "verify:guided-walk:exit-guard": "nice -n 19 node scripts/verify/guided-test-walk/exit-guard.mjs",
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test --project=smoke",
     "e2e:ci": "playwright test --project=ci",

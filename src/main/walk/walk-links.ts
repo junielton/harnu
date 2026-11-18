@@ -17,7 +17,13 @@ import { isAbsolute, join, relative, resolve } from 'node:path'
 import { imageMimeType } from '../markdown-core'
 import { matchTmpImagePath } from '../claude-tmp-images-core'
 import { redactTranscript } from '../mcp/transcript-redact'
-import type { ImageFact, WalkProbe } from '../../shared/walk-schema'
+import {
+  walkLinkKey,
+  type ImageFact,
+  type WalkLink,
+  type WalkProbe,
+  type WalkScript
+} from '../../shared/walk-schema'
 import type { MissionFacts } from '../../shared/walk-source'
 
 export interface WalkProbeOptions {
@@ -123,5 +129,41 @@ export function createWalkProbe(opts: WalkProbeOptions): WalkProbe {
 
     looksLikeSecret: (text: string): boolean =>
       redactTranscript(text, { home: '' }).redactionCount > 0
+  }
+}
+
+/**
+ * The links of a walk whose target no longer exists, as {@link walkLinkKey}s (spec AC-25: a link whose target is gone
+ * is not drawn). The script validates a link once, when it is accepted; this is the render-time read, so a file
+ * deleted or a folder removed since is dropped from the pane on the next load. Only what can be answered from disk
+ * without waiting is judged: a `file` link must still be an existing file inside the folder, a `folder` link an
+ * existing directory. A `pr` or a `url` is never judged gone here (the network is not asked).
+ */
+export function findGoneLinks(folder: string, script: WalkScript): string[] {
+  const probe = createWalkProbe({
+    folder,
+    knownFolders: [],
+    cardSlugs: () => [],
+    mission: () => null
+  })
+  const gone = new Set<string>()
+  const judge = (l: WalkLink | undefined): void => {
+    if (!l) return
+    if (l.kind === 'file' && !probe.fileInFolder(l.target)) gone.add(walkLinkKey(l))
+    if (l.kind === 'folder' && !isDirectory(l.target)) gone.add(walkLinkKey(l))
+  }
+  for (const c of script.checks) {
+    for (const l of c.where.links ?? []) judge(l)
+    for (const l of c.teach?.where ?? []) judge(l)
+    judge(c.teach?.idea?.link)
+  }
+  return [...gone]
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return isAbsolute(path) && statSync(path).isDirectory()
+  } catch {
+    return false
   }
 }

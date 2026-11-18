@@ -179,14 +179,29 @@ function snapshotOperator(home) {
   return { files, walks, pids: operatorPids() }
 }
 
-/** The pids of every electron/harnu process that is not ours, to prove none of them is stopped. */
+/**
+ * The pids of every electron/harnu process that is neither ours nor another verification run's, to prove none of
+ * them is stopped. A verification instance (this script's, or a sibling session's running its own smoke test at the
+ * same time) is started on a throwaway `--user-data-dir=/tmp/hv-…` and ends on its own: counting it as "the
+ * operator's" made W-12 fail whenever a sibling run exited during ours. Such an instance, and every process below
+ * it, is left out.
+ */
 function operatorPids() {
-  const out = spawnSync('ps', ['-eo', 'pid=,comm='], { encoding: 'utf8' }).stdout ?? ''
-  return out
-    .split('\n')
-    .map((l) => l.trim().match(/^(\d+)\s+(.*)$/))
-    .filter((m) => m && /^(electron|harnu|chrome-sandbox)/i.test(m[2]))
-    .map((m) => Number(m[1]))
+  const out = spawnSync('ps', ['-eo', 'pid=,ppid=,comm=,args='], { encoding: 'utf8' }).stdout ?? ''
+  const procs = new Map()
+  for (const l of out.split('\n')) {
+    const m = l.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s*(.*)$/)
+    if (m) procs.set(Number(m[1]), { ppid: Number(m[2]), comm: m[3], args: m[4] })
+  }
+  const throwaway = (pid, seen = new Set()) => {
+    const p = procs.get(pid)
+    if (!p || seen.has(pid)) return false
+    seen.add(pid)
+    return /--user-data-dir=\/tmp\/hv-/.test(p.args) || throwaway(p.ppid, seen)
+  }
+  return [...procs]
+    .filter(([pid, p]) => /^(electron|harnu|chrome-sandbox)/i.test(p.comm) && !throwaway(pid))
+    .map(([pid]) => pid)
 }
 
 /** The pids a stop reported (`pid 123` strings): is any of them still running? */
@@ -418,6 +433,9 @@ async function main() {
     pending: count('PEND'),
     results
   }
+  // startInstance wipes its run dir, which is where the default evidence folder lives: a case that saves
+  // no file leaves it missing, so it is made again here before the results are written
+  mkdirSync(evidence, { recursive: true })
   writeFileSync(path.join(evidence, 'results.json'), JSON.stringify(summary, null, 2) + '\n')
   if (inst && !opts.keep) {
     // keep only the evidence: the instance's files are throwaway
