@@ -10,6 +10,16 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-18
+
+### Added
+
+- **A guided walk now opens as a pane beside your session.** When a session writes you a walk (say "walk me through what we just built" or "test PR #48 with me"), it opens in the background in the folder's split stack and takes you through the checks one at a time. It opens on a roadmap of every check with a **Start with 1** button; then you see one check at a time under **Check 3 of 9** and a thin strip with a cell per check. Each check says what to do (with every command ready to copy), where (links that open the PR, the file, the page or the folder), what you should see (with a picture you can enlarge), and what the session will check from its side. You answer with **Done** (`Enter`), **Failed** (`F`: one line, plus a screenshot you can paste, saved with the walk), **Back**, **Skip** or **Explain more**; **I didn't get this step** asks the session to say it more simply. After a failure the session gives one correction and you try the same check again, as often as you need. If the session's own check disagrees with your Done you see what it ran, expected and found, and can try again or follow anyway (unverified). At the end the close-out lists how every check was verified, what is still yours (a mission's criteria are shown with a link to the Mission, never ticked for you) and a summary you can copy. A walk survives closing the pane, a restart and a parked session; if no session can take your answers, the pane says your progress is saved and **Resume the session** sends them again. Documented in `docs/user/guided-test-walk.md`. The list of past walks, re-running one from it and exporting it are not built yet.
+
+### Changed
+
+- **A session that opens a walk is now told whether the pane really opened.** `walk_open` answers `opened: true` once the app shows the pane (before, it was always false because the pane did not exist), so a session can say the walk is in front of you only when it is.
+
 ## 2026-11-17
 
 ### Added
