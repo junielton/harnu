@@ -72,6 +72,10 @@ export interface StepInput {
   facts?: Partial<Record<ReadFact, boolean>>
   /** A session other than the leader is working on the step right now. */
   workerWorking?: boolean
+  /** The branch the step's merged pull request landed on (`main`). Set for a merged pull request only. */
+  base?: string
+  /** When the step's pull request merged (ISO), when known. Orders the steps that landed on one base. */
+  mergedAt?: string
   /**
    * Session ids that built the step and are not named by a `session` link on it (the leader, for a
    * step it did itself). A stamp from one of these is a self-check.

@@ -210,12 +210,61 @@ function blockerItem(b: BlockerV4, step: Pick<StepV4, 'id'> | null): WaitingItem
   }
 }
 
+/** The base branch a step with no recorded base reads against: one shared bucket. */
+const DEFAULT_BASE = ''
+
+/**
+ * `main-failing` (BUG-294): at most ONE item per base branch, and only while that branch is red. A step's
+ * `main-green` is already "its merge commit, or a later commit on the base, is green", so a red step here
+ * is one the branch's current tip did not clear. Per base, the merged steps are walked in merge order (plan
+ * order when a time is missing); a step that reads green is the last green commit and drops everyone before
+ * it, so the item names the FIRST merged step since the last green one as the likely cause, never every
+ * step. A step whose `main` nobody read is never a failure. The item keeps the id of the step it names.
+ */
+function mainFailingItems(steps: readonly { step: StepV4; input: StepInput }[]): WaitingItemV4[] {
+  const byBase = new Map<string, { step: StepV4; input: StepInput; order: number }[]>()
+  steps.forEach(({ step, input }, order) => {
+    if (factReading('pr-merged', input) !== 'holds') return
+    if (factReading('main-green', input) === 'unknown') return
+    const base = input.base ?? DEFAULT_BASE
+    byBase.set(base, [...(byBase.get(base) ?? []), { step, input, order }])
+  })
+  const items: { item: WaitingItemV4; order: number }[] = []
+  for (const merged of byBase.values()) {
+    merged.sort(
+      (a, b) =>
+        (a.input.mergedAt ?? '\uffff').localeCompare(b.input.mergedAt ?? '\uffff') ||
+        a.order - b.order
+    )
+    let cause: (typeof merged)[number] | undefined
+    for (const m of merged) {
+      if (factReading('main-green', m.input) === 'holds') cause = undefined
+      else cause ??= m
+    }
+    if (!cause) continue
+    items.push({
+      order: cause.order,
+      item: {
+        kind: 'main-failing',
+        id: `main-failing:${cause.step.id}`,
+        stepId: cause.step.id,
+        pr: prNumber(cause.step),
+        ask: `Fix the main branch: it broke after "${cause.step.title}"`,
+        why: 'Everything that merges next starts from a broken base'
+      }
+    })
+  }
+  return items.sort((a, b) => a.order - b.order).map((i) => i.item)
+}
+
 /**
  * What a v4 mission waits on the operator for, with the next step first. Pure: the record and the plain
  * input facts in, a list out. It reads no file, starts no `git` or `gh`, and never reads the clock.
  *
- * - `main-failing`: a merged step whose `main-green` fact was read and is `false`. A fact that was
- *   never read does not make `main` failing.
+ * - `main-failing`: the base branch is red now: a merged step whose `main-green` fact was read and is
+ *   `false` (its merge commit is red and no later commit on the base cleared it). One item per base
+ *   branch, naming the first step merged since the last green one. A fact that was never read does not
+ *   make `main` failing.
  * - `unblock`: an operator-owned blocker that still shows (a `clearsWhen` fact that holds hides it); a
  *   decision is one of these. The blocker's own `ask` and `unblocks` are the wording. A mission-level
  *   blocker's `clearsWhen` is ignored: the write path refuses it, because a fact belongs to a step.
@@ -250,7 +299,6 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
     result: results[step.id] ?? deriveStepState(step, inputs[step.id] ?? {})
   }))
 
-  const mainFailing: WaitingItemV4[] = []
   const unblock: WaitingItemV4[] = []
   const settle: WaitingItemV4[] = []
   const people: WaitingPerson[] = []
@@ -266,20 +314,6 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
   const old = mission.legacyV3 !== undefined
   for (const { step, input, result } of steps) {
     const started = result.state !== 'done' && (old || result.state !== 'todo')
-    // A merged step whose `main` was READ and does not hold. A `main` nobody read is never a failure.
-    if (
-      factReading('pr-merged', input) === 'holds' &&
-      factReading('main-green', input) === 'does-not-hold'
-    ) {
-      mainFailing.push({
-        kind: 'main-failing',
-        id: `main-failing:${step.id}`,
-        stepId: step.id,
-        pr: prNumber(step),
-        ask: `Fix the main branch: it broke after "${step.title}"`,
-        why: 'Everything that merges next starts from a broken base'
-      })
-    }
     for (const b of result.blockers) {
       if (b.owner === 'operator') unblock.push(blockerItem(b, step))
     }
@@ -322,6 +356,8 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
       reviewing.push({ stepId: step.id, title: step.title, pr: prNumber(step) })
     }
   }
+
+  const mainFailing = mainFailingItems(steps)
 
   const review: WaitingItemV4[] = []
   if (reviewing.length > 0) {

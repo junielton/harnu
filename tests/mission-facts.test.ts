@@ -237,6 +237,7 @@ describe('facts come from what Harnu holds', () => {
     // The merged pull request's own CI was green too: both facts were read.
     expect(inputs['stp-2']).toEqual({
       pr: 'merged',
+      base: 'main',
       facts: { 'ci-green': true, 'main-green': true, 'link-exists': true }
     })
     // Nothing to read: every key is absent, none is false.
