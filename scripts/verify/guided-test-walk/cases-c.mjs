@@ -338,7 +338,7 @@ export const casesC = [
       await ctx.waitState('roadmap')
       const p = await ctx.pane()
       a.ok(
-        /Same 11 checks · run 2/.test(p.text) || /run 2/.test(p.text),
+        p.text.includes('Same 11 checks · run 2'),
         'the roadmap says it is run 2 of the same checks'
       )
       const hints = await ctx.cdp.eval(

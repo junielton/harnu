@@ -418,6 +418,9 @@ async function main() {
     pending: count('PEND'),
     results
   }
+  // startInstance wipes its run dir, which is where the default evidence folder lives: a case that saves
+  // no file leaves it missing, so it is made again here before the results are written
+  mkdirSync(evidence, { recursive: true })
   writeFileSync(path.join(evidence, 'results.json'), JSON.stringify(summary, null, 2) + '\n')
   if (inst && !opts.keep) {
     // keep only the evidence: the instance's files are throwaway

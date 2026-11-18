@@ -163,7 +163,7 @@ export const casesB = [
     title: 'every link opens its real target',
     faults: {
       'click-wrong-link':
-        'click the folder link where the url link is named (no browser pane opens at the page)'
+        'click a link that is not on this check where the url link is named (no browser pane opens at the page)'
     },
     async run(ctx, a) {
       const w = await ctx.open(ctx.sample())
@@ -174,10 +174,12 @@ export const casesB = [
       const linkBtn = (label) =>
         `[...document.querySelectorAll('[data-dsqa="walk"] [data-walk-link] button.open')].find((b) => b.textContent.includes(${JSON.stringify(label)}))`
       const clickLink = async (label) => {
-        await ctx.cdp.eval(
-          `(() => { document.querySelectorAll('[data-hv-target]').forEach((e) => e.removeAttribute('data-hv-target')); ${linkBtn(label)}.setAttribute('data-hv-target', ''); return true })()`
+        // a link that is not on this check has no button: nothing is clicked, so the assertions below fail
+        // cleanly instead of this helper throwing
+        const marked = await ctx.cdp.eval(
+          `(() => { document.querySelectorAll('[data-hv-target]').forEach((e) => e.removeAttribute('data-hv-target')); const b = ${linkBtn(label)}; if (!b) return false; b.setAttribute('data-hv-target', ''); return true })()`
         )
-        await ctx.clickIn('[data-hv-target]')
+        if (marked) await ctx.clickIn('[data-hv-target]')
       }
       // the url link: a browser pane at the local page, which really loads
       const hits0 = ctx.previewHits()
