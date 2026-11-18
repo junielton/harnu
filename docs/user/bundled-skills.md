@@ -3,8 +3,8 @@
 Harnu ships a small set of **skills** — reusable instruction files a Claude session can
 invoke by name — and lets you switch each one on or off from **Settings → Skills**.
 
-They are all **off on a fresh install**. Nothing is added to your sessions until you
-say so.
+They are all **off on a fresh install**, except one: [`walk`](#walk-is-on-by-default)
+ships **on**. Nothing else is added to your sessions until you say so.
 
 ## What ships
 
@@ -24,10 +24,32 @@ say so.
 | `step-by-step`         | Be walked through a list of manual actions only you can do — dashboard clicks, DNS, secrets, a release — one step per message. Each action also becomes a criterion on the relevant Mission step, which only you can tick.                                                                                                                                                                                                                                               |
 | `spec`                 | Run it at the start of any piece of work: it names what you came in with and how big the work is, in one message. Most entries — a one-line bug, a PR comment, a red CI, a question — end right there with their first step and nothing written. Bigger work gets a spec and a mission with one step, "Approve spec", that you tick yourself after answering its one question; `/harnu:spec check` lints a spec (and, with `--cards`, the cards against it) in any repo. |
 | `your-move`            | Have a session tell you, in a card you can act on, the moment a turn leaves something only you can unblock: a decision, a go or no-go, something only you hold, a manual step, a check. It also tells the session how to write that card so you never have to open the session to learn what it asks.                                                                                                                                                                    |
+| `walk`                 | Open a guided walk in the walk pane: you check or learn something one check at a time, and the session writes the whole list once and runs only read-only checks. Start it with a plain sentence such as "walk me through what we just built" or "test PR #48 with me"; it also offers a walk, once, when a session finishes a feature. **On by default.**                                                                                                               |
 
 Each row in the panel shows the skill's name and its own one-line purpose, taken
 straight from the skill file — so the panel can never describe a skill differently
 from what the session actually reads.
+
+### `walk` is on by default
+
+`walk` is the one skill that is **on** before you touch anything, and the reason is plain: if it were off,
+saying "walk me through what we just built" would quietly give you a walk written into the chat instead of the
+[walk pane](guided-test-walk.md), and nothing would tell you why. The four walk tools (`walk_open`,
+`walk_extend`, `walk_report`, `walk_get`) always work either way; the skill is what makes a session write a
+good list, read what already exists first, and follow the same rules as `step-by-step`.
+
+- **Starting one.** Say it in any session, in your own language: "walk me through what we just built", "test
+  PR #48 with me". The session picks the source from what you said, its own work, a pull request, a branch, a
+  card or a mission, and asks you one question only when it cannot tell which.
+- **`/harnu:walk`** is the command form, like every bundled skill. A bare `/walk` is only guaranteed once you
+  turn on **Also outside Harnu** for `walk` (see Advanced below), which installs it as one of your own skills;
+  the plain sentence and `/harnu:walk` work everywhere.
+- **The offer.** When a session finishes a feature it may ask you once, in one line, whether you want a walk:
+  **Walk me through it**, **Test it end to end** or **Not now**. It never starts one on its own, never asks for
+  a trivial change, and does not ask again for a feature once you say **Not now**.
+- **Turning it off.** It is a switch like the others: Settings → Skills → `walk`, globally or per project. Once
+  it is off, new sessions no longer get the skill and never offer a walk; the tools still work and a **Test it**
+  request from the Mission still carries everything the session needs. Your choice sticks across updates.
 
 ### `delivery-watchdog` is the second heartbeat over dispatched work
 

@@ -1,6 +1,6 @@
 /**
- * W-15 to W-22: the library, a past run, Re-run, Export, the sources that touch no mission, Delete, and the two
- * cases whose slices have not landed. Setup that is not the thing proven (finishing a run so there is something to
+ * W-15 to W-22: the library, a past run, Re-run, Export, the sources that touch no mission, Delete, a plain sentence
+ * in a never-briefed session (W-22), and the one case whose slice has not landed (W-21). Setup that is not the thing proven (finishing a run so there is something to
  * list) goes through the preload's own operator channel, the same one the pane's buttons call.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -603,11 +603,127 @@ export const casesC = [
   {
     id: 'W-22',
     title: 'a plain sentence opens a walk through the skill',
-    pendingUntil: { file: 'resources/skills/skills/walk/SKILL.md', slice: 'S-6' },
-    async run() {
-      throw new Error(
-        'slice S-6 has landed: write the case (the walk skill is staged, the four verbs are alwaysLoad, a scripted stub calls walk_open)'
+    faults: {
+      'expect-other-skill': 'expect the staged skill to be named "walks" (the skill is "walk")',
+      'expect-deferred-verb': 'expect walk_get to be deferred, with no alwaysLoad'
+    },
+    /**
+     * A fresh install and a NEW session of a folder with no mission and no walk, never briefed about walks. Proven
+     * here: the `walk` skill is staged by default (no switch was ever touched), the four verbs are listed with
+     * `alwaysLoad`, and a plain sentence typed into that session's terminal reaches the stub `claude`, which (scripted:
+     * it is the one thing a model does) calls `walk_get` then `walk_open` through the control server it was spawned
+     * with; the walk opens in that session's folder. What is NOT proven here, and is checked by hand: that a real
+     * model picks the skill from the sentence, and the client's own deferral of tools.
+     */
+    async run(ctx, a) {
+      const inst = ctx.inst
+      const SENTENCE = 'walk me through what we just built'
+      const CORE = ['walk_open', 'walk_extend', 'walk_report', 'walk_get']
+
+      // the starting point: a fresh install, a folder with no mission and no walk
+      a.ok(
+        !existsSync(path.join(inst.userData, 'bundled-skills.json')),
+        'a fresh install: Settings → Skills was never touched'
       )
+      a.ok(
+        !existsSync(path.join(ctx.repoEmpty, '.harnu', 'missions-v4')),
+        'the folder has no mission'
+      )
+      a.ok(!existsSync(path.join(ctx.repoEmpty, '.harnu', 'walks')), 'the folder has no walk')
+
+      // the four verbs are listed with alwaysLoad, and an ordinary verb is not (so the flag means something)
+      const tools = await ctx.mcp.list()
+      const loads = (n) => tools.find((t) => t.name === n)?._meta?.['anthropic/alwaysLoad'] === true
+      for (const n of CORE)
+        a.eq(
+          loads(n),
+          ctx.fault('expect-deferred-verb') && n === 'walk_get' ? false : true,
+          `${n} is listed with alwaysLoad`
+        )
+      a.ok(!loads('create_worktree'), 'an ordinary verb (create_worktree) stays deferred')
+
+      // a NEW session of that folder: its `claude` starts with the plugin dir Harnu staged for it
+      const mark = ctx.stubMark()
+      const id = await ctx.cdp.eval(
+        `${ctx.S('sessions')}.createNewSession(${JSON.stringify(ctx.repoEmpty)})`
+      )
+      a.ok(/^synthetic-/.test(id ?? ''), 'a new session was made in the folder')
+      const started = await ctx.waitStub(mark, /START pid=\d+ [^\n]*--plugin-dir /, 40_000)
+      const dir = /--plugin-dir (\S+)/.exec(started)?.[1] ?? ''
+      a.ok(
+        dir.startsWith(path.join(inst.userData, 'skills')),
+        'the plugin dir is under the userData'
+      )
+      const staged = existsSync(path.join(dir, 'skills'))
+        ? readdirSync(path.join(dir, 'skills'))
+        : []
+      a.eq(
+        staged.sort(),
+        [ctx.fault('expect-other-skill') ? 'walks' : 'walk'],
+        'the skills staged into a new session of a fresh install'
+      )
+      const skillFile = path.join(dir, 'skills', 'walk', 'SKILL.md')
+      a.ok(existsSync(skillFile), 'walk/SKILL.md is staged')
+      a.ok(
+        existsSync(path.join(dir, 'skills', 'walk', 'references', 'panel-contract.md')),
+        "the skill's self-contained contract is staged with it"
+      )
+      a.ok(
+        existsSync(skillFile) &&
+          /walk me through what we just built/.test(readFileSync(skillFile, 'utf8')),
+        'the staged description names the plain-sentence trigger'
+      )
+
+      // the operator types the plain sentence into that session's terminal (a trusted keyboard, not a verb)
+      await ctx.cdp.waitFor(
+        `!!document.querySelector('.xterm-helper-textarea')`,
+        30_000,
+        "the new session's terminal"
+      )
+      await ctx.cdp.eval(`document.querySelector('.xterm-helper-textarea').focus()`)
+      await ctx.cdp.type(SENTENCE)
+      await ctx.key('Enter')
+      const got = await ctx.waitStub(mark, /STUB-WALK \{[^\n]*\}/, 60_000)
+      a.ok(got.includes(SENTENCE), 'the stub claude received the plain sentence')
+
+      // what the scripted session did with the control server it was spawned with
+      const line = got.split('\n').find((l) => l.startsWith('STUB-WALK '))
+      const r = JSON.parse(line.slice('STUB-WALK '.length))
+      a.ok(r.ok === true, `the scripted session opened a walk (${JSON.stringify(r).slice(0, 200)})`)
+      for (const n of CORE)
+        a.ok(r.alwaysLoad?.[n] === true, `${n} was visible to that session on turn one`)
+      a.eq(r.before?.walks, 0, 'walk_get found no walk for the source before it wrote one')
+      a.eq(r.opened?.checks, 2, 'walk_open took the whole script')
+      a.eq(r.opened?.opened, true, "walk_open put the pane in that session's folder")
+
+      // the walk is saved in that folder, opened there, and touched no mission
+      const walkId = r.opened?.walkId
+      a.ok(/^wlk-/.test(walkId ?? ''), 'walk_open returned a walk id')
+      const walkFile = path.join(ctx.repoEmpty, '.harnu', 'walks', walkId ?? 'none', 'walk.json')
+      a.ok(existsSync(walkFile), "the walk is saved under the session's folder")
+      a.ok(
+        !existsSync(path.join(ctx.repo, '.harnu', 'walks', walkId ?? 'none')),
+        'and not in another repo'
+      )
+      a.ok(!existsSync(path.join(ctx.repoEmpty, '.harnu', 'missions-v4')), 'no mission was written')
+      await ctx.cdp.waitFor(
+        `!!document.querySelector('[data-dsqa="walk"]')`,
+        20_000,
+        'the walk pane'
+      )
+      const panes = await ctx.panesOf(ctx.repoEmpty)
+      a.ok(
+        panes.some((p) => p.type === 'walk'),
+        "a walk pane is in that folder's helper stack"
+      )
+      await ctx.waitState('roadmap')
+      const p = await ctx.pane()
+      a.ok(
+        p.text.includes('Check the notes search box'),
+        'the pane shows the walk the session wrote'
+      )
+      a.ok(p.text.includes('2 checks'), 'the roadmap says how many checks there are')
+      await ctx.shot('plain-sentence-walk')
     }
   },
 

@@ -7,7 +7,7 @@
  * - (a) no skill file names a verb the fate table removes, and none says a retired phrase;
  * - (b) the tick's first line and the child report's header are exactly as the code parses them;
  * - (c) the hand-off is the operator's decision, and no skill tells anyone to paste a resume prompt;
- * - (d) CATALOG.md is v23 and each changed skill's row equals its SKILL.md description;
+ * - (d) CATALOG.md is v24 and each changed skill's row equals its SKILL.md description;
  * - (e) every `mission_…` name the skills write is registered in the MCP catalog.
  *
  * These are text pins on model-facing files. A SKILL.md ships as read and nothing compiles it, so a pin
@@ -61,7 +61,7 @@ function skillTexts(): Record<string, string> {
   return out
 }
 
-/** The skills whose text changed since catalog v22: their catalog row is the SKILL.md description. */
+/** The skills whose text changed since catalog v22 (and `walk`, new in v24): their catalog row is the SKILL.md description. */
 const CHANGED = [
   'mission',
   'status',
@@ -74,7 +74,8 @@ const CHANGED = [
   'grill-me',
   'step-by-step',
   'your-move',
-  'draft-to-prompt'
+  'draft-to-prompt',
+  'walk'
 ] as const
 
 interface World {
@@ -234,7 +235,7 @@ function catalogRows(catalog: string): Record<string, string> {
 function catalogProblems(texts: Record<string, string>, catalog: string): string[] {
   const out: string[] = []
   const version = /^<!-- harnu-skills (v\d+) \(\d{4}-\d{2}-\d{2}\) -->/.exec(catalog)?.[1]
-  if (version !== 'v23') out.push(`CATALOG.md is ${version ?? 'unversioned'}, not v23`)
+  if (version !== 'v24') out.push(`CATALOG.md is ${version ?? 'unversioned'}, not v24`)
   const rows = catalogRows(catalog)
   for (const name of CHANGED) {
     const fm = parseSkillFrontmatter(texts[path.join(name, 'SKILL.md')] ?? '', name)
@@ -371,9 +372,9 @@ const FAULTS: { name: string; check: Check; make: (w: World) => World }[] = [
       edit(w, MISSION, (s) => s.replace('no resume prompt is ever pasted', 'a note is pasted'))
   },
   {
-    name: 'the catalog is still v22',
+    name: 'the catalog is still v23',
     check: 'catalog',
-    make: (w) => ({ ...w, catalog: w.catalog.replace(/harnu-skills v23/, 'harnu-skills v22') })
+    make: (w) => ({ ...w, catalog: w.catalog.replace(/harnu-skills v24/, 'harnu-skills v23') })
   },
   {
     name: 'a changed skill row differs from its description',
@@ -421,7 +422,7 @@ describe('skills speak v4', () => {
     expect(problems.handoff).toEqual([])
   })
 
-  it('(d) the catalog is v23 and each changed skill row equals its description', () => {
+  it('(d) the catalog is v24 and each changed skill row equals its description', () => {
     expect(problems.catalog).toEqual([])
   })
 
