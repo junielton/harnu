@@ -19,7 +19,7 @@ say so.
 | `read-aloud`           | Speak a short, ear-friendly summary of a result out loud — through Harnu's own voice inside the app, or a text-to-speech command on your PATH outside it.                                                                                                                                                                                                                                                                                                                |
 | `report-back`          | The final-report format every multi-step run ends with: one line per step with its concrete outcome, what you owe (always printed, even when it is nothing), the links worth opening, and a summary of at most three lines.                                                                                                                                                                                                                                              |
 | `draft-to-prompt`      | Turn a rough idea or a messy draft into a finished prompt for a Claude model — including a boot prompt for a new session or worktree — with the model, effort and any long-running harness it needs spelled out as run instructions.                                                                                                                                                                                                                                     |
-| `one-by-one`           | Work through a pile of open decisions one question at a time, and write each answer where it lasts — the resolved row in your spec and a line in project memory. When a mission needs the decision, it is a blocker you clear in the Mission pane.                                                                                                                                                                                                                       |
+| `one-by-one`           | Work through a pile of open decisions one question at a time, and write each answer where it lasts — the resolved row in your spec and a line in project memory. When a mission needs the decision, it is a blocker you clear in the Mission dropdown.                                                                                                                                                                                                                   |
 | `grill-me`             | Have a spec or plan stress-tested by one question at a time, with a recommended answer each. Every question that survives is written into the spec — an open decision, an amendment, or a non-goal — and the session ends by listing what it wrote and what it could not place.                                                                                                                                                                                          |
 | `step-by-step`         | Be walked through a list of manual actions only you can do — dashboard clicks, DNS, secrets, a release — one step per message. Each action also becomes a criterion on the relevant Mission step, which only you can tick.                                                                                                                                                                                                                                               |
 | `spec`                 | Run it at the start of any piece of work: it names what you came in with and how big the work is, in one message. Most entries — a one-line bug, a PR comment, a red CI, a question — end right there with their first step and nothing written. Bigger work gets a spec and a mission with one step, "Approve spec", that you tick yourself after answering its one question; `/harnu:spec check` lints a spec (and, with `--cards`, the cards against it) in any repo. |
@@ -94,7 +94,7 @@ override the tier; it takes your word without arguing.
 
 **How you approve.** When the spec is clean and reviewed, the session opens it in a pane
 beside the session and asks one question: `Approve this spec?`. On a yes it marks the spec
-approved; you then open the **Mission pane** and tick the criterion on the "Approve spec"
+approved; you then open the **Mission dropdown** and tick the criterion on the "Approve spec"
 step, because the skill never ticks it for you. If you are away when it asks, it raises a
 blocker in your name, so Harnu chimes and reminds you. Once a slice of the spec has a
 card, the spec is frozen: later changes are added as rows of its **Amendments** table.
@@ -118,7 +118,7 @@ time — but none of them lets the answer die in the transcript.
   row `resolved` (with your choice and the date) and appends one line to the project
   memory's decisions. It never decides for you: a decision you skip stays open. When the
   Mission waits on a decision, it is a blocker in your name; once you have answered,
-  say **Done, continue** on it in the Mission pane, because only you clear it.
+  say **Done, continue** on it in the Mission dropdown, because only you clear it.
 - **`grill-me`** is the stress test you run between a draft and an approval. It asks
   one question at a time and looks up anything the code or memory already answers. What
   you raise is written into the spec as it goes: a new open decision, a row in
@@ -129,7 +129,7 @@ time — but none of them lets the answer die in the transcript.
   step it adds one **criterion** per action to the Mission step it belongs to (running it
   again with the same list adds nothing). It runs only read-only checks to confirm a
   step worked, and it never ticks a criterion for you — you tick them in the Mission
-  pane, and the closing report says which are still open.
+  dropdown, and the closing report says which are still open.
 
 All three work without a spec or a mission; they just have nowhere to write, and say so.
 
@@ -138,7 +138,7 @@ All three work without a spec or a mission; they just have nowhere to write, and
 `mission`, `status`, `orchestrate-delivery`, `delivery-watchdog` and
 `delivery-verifier` keep a coordinated delivery as a **Mission** — a structured
 record Harnu stores in your repo's `.harnu/missions/` and shows in the
-[Mission pane](missions.md) — rather than a free-form notes file. What that
+[Mission dropdown](missions.md) — rather than a free-form notes file. What that
 changes for you:
 
 - **The session that starts the work leads it.** At the first sign of multi-step
@@ -154,20 +154,19 @@ changes for you:
   browser tools in the session, anything visual lands on your "check by hand" list.
 - **The ones that are yours, you tick.** A sign-off or a manual check ("the designer
   approves the section", a dashboard step) is an **operator criterion**. You tick it
-  in the Mission pane; no skill can.
+  in the Mission dropdown; no skill can.
 - **When a session is waiting on you, Harnu tells you.** It raises a blocker in your
   name, which is what makes Harnu chime and remind you (after 30 minutes, then 1, 2 and
-  4 hours). You answer it in the Mission pane (**Done, continue**), and the answer is
+  4 hours). You answer it in the Mission dropdown (**Done, continue**), and the answer is
   written in the mission's Log as a decision.
 - **Changing the finish line is yours.** A session that thinks the delivery now ends
-  differently proposes a new **Done when**; it waits for you in the pane.
+  differently proposes a new **Done when**; it waits for you in the Mission dropdown.
 - **Closing, and handing over, are yours.** When every step is done the session asks
-  you to close, and you close the mission. Only you start a hand-off, from the pane's
-  **Continue in a new session…**; the leader never switches itself, whatever its
+  you to close, and you close the mission. Only you start a hand-off (the app has no button for it for now); the leader never switches itself, whatever its
   context says. The fresh session starts from the mission summary: there is no prompt
   for you to paste.
 - **Reports use one set of numbers.** The `status` card, the `mission` tick and the
-  watchdog say the same thing as the pane, worked out by Harnu, and the card prints
+  watchdog say the same thing as the dropdown, worked out by Harnu, and the card prints
   each of its lines once.
 - **A long delivery doesn't outgrow its session.** The orchestrator runs every
   check-in, verification and report in a fresh helper agent that hands back a short

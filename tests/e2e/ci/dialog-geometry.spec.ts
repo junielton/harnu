@@ -180,7 +180,6 @@ test.describe('dialog geometry invariants (T460 batch 0)', () => {
       'HarnuModExternal',
       'ImageLightbox',
       'McpConfirmOverlay',
-      'MissionHandoffDialog',
       'ReviewPane.submitConfirm'
     ])
     expect(excluded.map((r) => r.id)).toEqual(['CommandPalette'])

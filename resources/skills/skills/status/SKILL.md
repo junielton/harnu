@@ -68,7 +68,7 @@ Everything else signals trouble (`✗`, `⚑`, `?`), so success would be only an
 
 `▰` filled, `▱` empty, nothing else. One cell per unit with the count (`▰▰▰▱ 3/4`) when the denominator is small and real; ten cells with a percentage (`▰▰▰▰▰▰▰▱▱▱ 70%`) when there are too many to draw. **No denominator read this run, no bar**: just the front name.
 
-**A mission's headline is Harnu's, never recounted.** `mission_list` rows carry `headline`, and `mission_get` carries `progress.headline`: "4 of 21 steps done", or "1 of 10 milestones done" when the mission has milestones, the same words the Mission pane shows. The header prints the bar drawn from `progress.done` and `progress.total`, then that headline as it is. Never recount steps by their state, never print a second count beside it, and never build the headline from anything else.
+**A mission's headline is Harnu's, never recounted.** `mission_list` rows carry `headline`, and `mission_get` carries `progress.headline`: "4 of 21 steps done", or "1 of 10 milestones done" when the mission has milestones, the same words the Mission dropdown shows. The header prints the bar drawn from `progress.done` and `progress.total`, then that headline as it is. Never recount steps by their state, never print a second count beside it, and never build the headline from anything else.
 
 ## The links
 

@@ -5,7 +5,7 @@ description: Lead a body of work as a Harnu Mission — create it at the first s
 
 # Mission — lead a body of work
 
-A Mission is a structured Harnu record, reached ONLY through the `mission_*` verbs. Never read or edit a file under `.harnu/missions*/` by hand: the verbs are the only writers and the Mission pane reads the same record.
+A Mission is a structured Harnu record, reached ONLY through the `mission_*` verbs. Never read or edit a file under `.harnu/missions*/` by hand: the verbs are the only writers and the Mission dropdown reads the same record.
 
 `mission set <objective>` creates one, a bare call runs one tick, `mission done` asks the operator to close it.
 
@@ -13,9 +13,9 @@ Before you write a title, a criterion, an ask or a blocker, read `references/wri
 
 ## When to create one
 
-At the first sign of multi-step work, create the mission before the first step, without asking and without waiting for a click. Multi-step means more than one pull request, three or more steps, or an objective you would otherwise keep in a todo list. You lead it, and it shows in the Mission pane at once. A one-line question creates none, and neither does one small edit.
+At the first sign of multi-step work, create the mission before the first step, without asking and without waiting for a click. Multi-step means more than one pull request, three or more steps, or an objective you would otherwise keep in a todo list. You lead it, and it shows in the Mission dropdown at once. A one-line question creates none, and neither does one small edit.
 
-Look first: `mission_list({ folder })` returns one row per open mission, `{ id, title, headline, leads }`. When one already holds this work and you are not attached, ask to join with `mission_attach` (a request the operator allows in the pane; it never asks to lead). Never open a second mission for work one already holds. If you lead none and have dispatched two sessions or cut a worktree, you are orchestrating with no mission: create it now.
+Look first: `mission_list({ folder })` returns one row per open mission, `{ id, title, headline, leads }`. When one already holds this work and you are not attached, ask to join with `mission_attach` (a request the operator allows in the Mission dropdown; it never asks to lead). Never open a second mission for work one already holds. If you lead none and have dispatched two sessions or cut a worktree, you are orchestrating with no mission: create it now.
 
 ## The model, in a few lines
 
@@ -118,7 +118,7 @@ Children report to their leader through Claude Code's `SendMessage`. A name is n
 
 ## Hand-off
 
-Only the operator starts a hand-off, from the Mission pane. The leader never switches itself, whatever its context says. A session near its context limit (Harnu offers "Continue in a new session…" from about 80 percent) asks the operator for a hand-off: one line in its reply and one `mission_log` note, nothing else. If they agree, Harnu starts a fresh session whose first prompt is the mission summary: it reads `mission_get` and carries on, and the old session is released, not killed. A fresh session starts from the summary; no resume prompt is ever pasted, by you or by the operator. Another session that only wants to help uses `mission_attach` and joins as a worker, never as the leader.
+Only the operator starts a hand-off. The leader never switches itself, whatever its context says. A session near its context limit asks the operator for a hand-off: one line in its reply and one `mission_log` note, nothing else. The app has no hand-off button for now, so nothing starts one on its own; if the operator decides on one, Harnu starts a fresh session whose first prompt is the mission summary: it reads `mission_get` and carries on, and the old session is released, not killed. A fresh session starts from the summary; no resume prompt is ever pasted, by you or by the operator. Another session that only wants to help uses `mission_attach` and joins as a worker, never as the leader.
 
 ## `mission done`
 

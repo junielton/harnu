@@ -400,7 +400,7 @@ _another_ folder.
 | `github`                                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com). Lucide's brand glyph, deprecated upstream as a brand icon: if a future lucide major drops it, the import breaks at build time       |
 | `message-square`                         | Unresolved review threads on a PR Stack card (T275 — readiness chip at `full`, identity-row badge at `compact`); Review pane companion link                                                                                            |
 | `text-select`                            | Select the whole file (Review pane file header, T257); `lucide-vue-next` ships it as `TextSelect`. The delivery chip (T257 U2b) carries no glyph of its own.                                                                           |
-| `git-branch`                             | Branch badge (git folder) / repo-group header                                                                                                                                                                                          |
+| `git-branch`                             | Branch badge (git folder) / repo-group header · a worktree link in an open step, by its branch name (Mission dropdown)                                                                                                                 |
 | `chevron-right`                          | Collapse folder / repo-group (rotates 90° when open)                                                                                                                                                                                   |
 | `recycle`                                | Workspace GC: the Cleanup summary line, the single footer pill (replaces `trash-2` + `container` there) and the first-cycle banner. The spec's ♻ glyph, as a Lucide icon (§5 forbids text glyphs); the takeover header keeps `trash-2` |
 | `circle-check` / `circle-help` / `lock`  | Cleanup bucket icons: Ready to clean / Needs review / In use — repeated in the legend, group headers, badges and list rows so a bucket never relies on colour alone                                                                    |
@@ -424,7 +424,7 @@ _another_ folder.
 | `edit-3`                                 | Rename                                                                                                                                                                                                                                 |
 | `pencil-line`                            | Rename folder alias (FolderMenu → "Rename…" / `RenameFolderDialog`)                                                                                                                                                                    |
 | `tag`                                    | Auto-alias from branch (FolderMenu → "Use branch as name" toggle)                                                                                                                                                                      |
-| `copy`                                   | Duplicate / per-code-block copy button (Markdown viewer, hover-revealed) / "Copy file" toolbar action (Markdown pane)                                                                                                                  |
+| `copy`                                   | Duplicate / per-code-block copy button (Markdown viewer, hover-revealed) / "Copy file" toolbar action (Markdown pane) · copy a path in an open step's Links (Mission dropdown)                                                         |
 | `external-link`                          | Open in new tab                                                                                                                                                                                                                        |
 | `file-text`                              | Markdown pane header / file row in the Explorer pane / "Copy transcript path" (§6)                                                                                                                                                     |
 | `notebook-text`                          | Memory pane header / "Project memory" item (FolderMenu)                                                                                                                                                                                |
@@ -465,12 +465,11 @@ _another_ folder.
 | `globe`                                  | Link row, kind `web` (Links popover — any other page)                                                                                                                                                                                  |
 | `volume-2`                               | Preview a voice (Settings → Voice → VOICES row — speaks the phrase in the voice already in use)                                                                                                                                        |
 | `volume-x`                               | Nothing was spoken (Settings → Voice — the `dropped` / `stopped` outcome of a Test or a per-voice preview)                                                                                                                             |
-| `target`                                 | Mission pane — the v4 Topbar pill's leading glyph, the pane header's glyph and the "no mission" empty state (Missions v4 S-17, §6 "Mission pane"); the pill swaps to `check` when the mission is ready to close                        |
-| `arrow-left-right`                       | Mission pane — "Continue in a new session…" (the hand-off), on the Sessions row, the offer and the confirmation's Start button (Missions v4 S-20, §6 "Mission pane" → Sessions and the hand-off)                                       |
-| `link`                                   | Mission pane — "Attach" on a mission of the attach picker (Missions v4 S-21, §6 "Mission pane" → Attach, the request and Ask)                                                                                                          |
-| `plus`                                   | Mission pane — "Start a new mission" (Missions v4 S-21, same section)                                                                                                                                                                  |
-| `message-square`                         | Mission pane — "Ask" on a milestone (Missions v4 S-21, same section)                                                                                                                                                                   |
-| `flag`                                   | Mission pane — "Close mission…" (Missions v4 S-22)                                                                                                                                                                                     |
+| `target`                                 | Mission dropdown — the v4 Topbar pill's leading glyph and the "no mission" empty state (§6 "Mission dropdown"); the pill swaps to `check` when the mission is ready to close                                                           |
+| `link`                                   | Mission dropdown — "Attach" on a mission of the attach picker (§6 "Mission dropdown" → Attach, a request to join, Ask)                                                                                                                 |
+| `plus`                                   | Mission dropdown — "Start a new mission" (same section)                                                                                                                                                                                |
+| `message-square`                         | Mission dropdown — "Ask" on a milestone (same section)                                                                                                                                                                                 |
+| `flag`                                   | Mission dropdown — "Close mission…" in the footer and on the next card, and a blocked step's glyph (§6 "Mission dropdown")                                                                                                             |
 | `palette`                                | Canvas properties panel → the collapsed 28px button that opens it on a narrow pane (T536 U3)                                                                                                                                           |
 | `square-round-corner`                    | Canvas properties panel → Corners: round (`square` is sharp) (T536 U3)                                                                                                                                                                 |
 | `align-left`                             | Canvas properties panel → Align left (T536 U3)                                                                                                                                                                                         |
@@ -494,7 +493,7 @@ _another_ folder.
 | `arrow-down`                             | Canvas properties panel → Layers: Send backward (T536 U4)                                                                                                                                                                              |
 | `arrow-up`                               | Canvas properties panel → Layers: Bring forward (T536 U4)                                                                                                                                                                              |
 | `arrow-up-to-line`                       | Canvas properties panel → Layers: Bring to front (T536 U4)                                                                                                                                                                             |
-| `list-checks`                            | Guided walk pane — the pane header glyph and the empty state (§6 "Guided test walk"). Lucide `ListChecks`                                                                                                                              |
+| `list-checks`                            | Guided walk pane — the pane header glyph and the empty state (§6 "Guided test walk"). Lucide `ListChecks` · "Test it" and "Test the whole mission" in the Mission dropdown (§6 "Mission dropdown" → Test it)                           |
 | `library`                                | Guided walk — the close-out's "Saved in Walks" card, the walk pane's header door, the Walks pane header and the Topbar and folder-menu "Walks" items (S-4). Lucide `Library`                                                           |
 | `list`                                   | Guided walk — the roadmap icon beside "Check n of N" (opens the read-only roadmap, shortcut `L`). Lucide `List`                                                                                                                        |
 | `lightbulb`                              | Guided walk — the source line of a feature walk (§6 "Guided test walk" → Source line). Lucide `Lightbulb`                                                                                                                              |
@@ -6961,8 +6960,8 @@ Anatomy, inside the normal row (kind-bar, title, relative timestamp, hover ×):
   Tokens and spacing are the Activity row's; no new color, radius or row height.
 - **Item click** — with the owner session loaded: `activateSession(sessionId)`
   (the BUG-31 reveal), then the item's `target` through
-  `openNavigableView('mission', { missionId })`, which opens the Mission pane for the selected
-  session. With the owner **not loaded** the row carries a muted owner hint (`text-text-4`,
+  `openNavigableView('mission', { missionId })`, which opens the Mission dropdown under the Topbar pill for the
+  selected session (`openMissionDropdown`). With the owner **not loaded** the row carries a muted owner hint (`text-text-4`,
   tooltip `mission.cue.ownerMissing`) and the click raises a **warning toast** that names the
   mission (`mission.cue.ownerMissingTitle` / `ownerMissingBody`) — never a dead click, and no
   second surface opens. **An item click never dismisses the entry**: it is a list, and the
@@ -7016,11 +7015,11 @@ no virtualization dependency needed here.
 
 ### Mission progress (sidebar chip, Activity cue and end dialog)
 
-**The Mission pane is the only surface of a mission** (§6 "Mission pane", next). The mission
+**The Mission dropdown is the only surface of a mission** (§6 "Mission dropdown", next). The mission
 and campaign popovers, the step rail, the Missions review and bulk-close dialogs, the steward
 pause dialog and the Scheduler's steward block are gone (Missions v4, S-37): every mission opens
-in the pane, from the Topbar pill, an Activity row or a Your move card. What stays here is what
-reads the server's `progress` outside the pane, and none of it recounts: the **sidebar chip**, the
+in the dropdown, from the Topbar pill, an Activity row or a Your move card. What stays here is what
+reads the server's `progress` outside the dropdown, and none of it recounts: the **sidebar chip**, the
 **Activity cue** and the **end dialog**. A session that is in no open mission renders **nothing**
 on the chip. A mission is matched to a session the way `mission_get` does it.
 
@@ -7061,7 +7060,7 @@ N is **position**, never proof. Proof is a detail on the step, never the headlin
 #### Tones (the sidebar chip)
 
 **Three tones for seven in-mission states.** The chip answers "is something here worth a glance?";
-the pane is where the difference between the warning states shows.
+the dropdown is where the difference between the warning states shows.
 
 | Tone     | Chip text class | States                                             |
 | -------- | --------------- | -------------------------------------------------- |
@@ -7082,7 +7081,7 @@ reads success, not warning) → `total-changed` (any step carries `addedReason`)
 **End dialog (`MissionCloseConfirmDialog.vue`, spec §3.5).** One dialog ends
 any non-closed mission, with a choice. Ending is the one irreversible door
 (`closed` has no way out — the mission leaves the Topbar and the sidebar), so
-the pane's **Close mission…** buttons only **open** it; `door: 'end'` fires from its confirm
+the dropdown's **Close mission…** buttons only **open** it; `door: 'end'` fires from its confirm
 and from nowhere else.
 
 - **Anatomy:** the `Dialog` variant verbatim, as "Remove worktree" uses it —
@@ -7142,7 +7141,7 @@ var(--color-accent)`, **unticked by default**) + a block with the **kind**
   dialog exists to stop a stray click or `Enter`. Everything is disabled while
   the door is in flight.
 - **Exits:** Cancel, `X`, `Esc` and a backdrop click close the dialog and **do
-  not end the mission**. The pane stays open behind it. Confirm runs the
+  not end the mission**. The dropdown stays open behind it. Confirm runs the
   door; on success the store removes the mission at once from the door's
   `view: null` — the dialog, the pill and the sidebar chip go with
   it in the same tick. On a refusal or an IPC failure the dialog closes and a
@@ -7178,7 +7177,7 @@ green, pinned, without it). Otherwise it is hover-revealed like the subagent
 chip (`chipRevealClass`). An `empty` headline renders no chip.
 
 `title`/`aria-label` spell it out ("Mission: Step 8 of 9 — needs you").
-Non-interactive: the pane is reached from the Topbar pill.
+Non-interactive: the dropdown is reached from the Topbar pill.
 
 **Don't**
 
@@ -7357,8 +7356,8 @@ longer persisted). Everything about a mission is one **dropdown** that opens fro
 `…Ask.vue`, `…Empty.vue`). Mockup `docs/design/mission-dropdown/` (screens `mission-dropdown` and `entry`).
 Principle: **every element earns its place**. For each one ask what the operator does with it; if
 nothing, remove it or fold it behind one line. **What the operator owes is never hidden.** The dropdown
-computes no state; it draws the server's view exactly as the pane did (`mission:v4View`, the same store
-and 20 s poll, the same doors).
+computes no state; it draws the server's view (`mission:v4View`, the store's 20 s poll and the doors; see "Reads, states and
+doors" below).
 
 #### Anchoring, size, scroll
 
@@ -7400,14 +7399,14 @@ auto`, thin scrollbar on `border-border-2`) is the one scroller; the **footer** 
    `tabular-nums`, `text-text-3`) on one row. No state tag and no "Ready to close" badge: the next step
    and the green pill say it.
 2. **One card, the next thing the operator owes** (`margin: 0 14px 12px`, `rounded`, `border`, `padding:
-10px 12px`): the next step (looks `you` / `ok` / `calm`, as before); **or** a staged Done when (accent
+10px 12px`): the next step (looks `you` / `ok` / `calm`; see "The next card" below); **or** a staged Done when (accent
    look, Approve / Decline); **or** a request to join (accent look, Allow / Deny). It is **one** card: a
    staged Done when is never also an ask with a "Review it" button. The button is the **compact** size
    (`h-5`, `px-2`, `11px`): at the **right** of the text when the body is **380px or wider**, **under**
    the text, left-aligned, when narrower. "{n} more waiting on you" is a link under the why and expands
    the rest in place (a row per item, its compact button right when wide, below when narrow).
-3. **Tree** (`border-t`, `padding: 8px 14px 10px`). Milestone ▸ step ▸ criteria as before, with these
-   changes: **only the current milestone is open**; no timeline line; an open milestone's summary line
+3. **Tree** (`border-t`, `padding: 8px 14px 10px`). Milestone ▸ step ▸ criteria ("The tree and the glyphs" below), with these
+   rules: **only the current milestone is open**; no timeline line; an open milestone's summary line
    carries **Ask** at its right end (`gap: 4px 14px`, it wraps to its own line, never touching the count);
    inside an open milestone the owed steps come first, then **at most three** running steps, the rest behind
    "{n} more steps"; a step row has no Blocked chip (the flag glyph is it) and keeps the Yours chip and
@@ -7434,14 +7433,14 @@ auto`, thin scrollbar on `border-border-2`) is the one scroller; the **footer** 
 Done / Blocked; criterion — Not settled yet / Settled. The pt-BR words are the app's translation of these,
 added to `pt-BR.json` in the same change as the English ones.
 
-**Topbar pill** (`MissionPill.vue`, S-7). Same anatomy, label and tones as the pane's pill ("{done}/{total} · {n} for you",
+**Topbar pill** (`MissionPill.vue`, S-7). Anatomy, label and tones as in "The Topbar pill: label and tones" below ("{done}/{total} · {n} for you",
 warning / accent / success), plus a trailing **caret** (`chevron-down`, 10px). It is a button with
 `aria-haspopup="dialog"` and `aria-expanded` (not `aria-pressed`), drawn with the tone's `ring-2` while the
 dropdown is open; the `view.missionProgress` chord toggles the same dropdown and is enabled whenever the pill
 is drawn. A session in **no mission** draws a **muted, icon-only** pill (`border-border-2`, `text-text-3`,
 `target` glyph, `title` and `aria-label` "No mission", `padding: 1px 5px`, the ring `ring-border-2`) that opens the empty
 state. The caret is `opacity-70` and turns 180° while the dropdown is open (`transition-transform`; none under
-reduced motion). Every door that used to open the pane opens the dropdown through one store action,
+reduced motion). Every door that used to open the Mission pane opens the dropdown through one store action,
 `openMissionDropdown(missionId?)` (the Activity row, the Your move card); the pill and the chord flip the same flag.
 
 **Test it (the entry for guided walks).** A compact **bordered** button (the same as "Mark done": `h-5`, `px-2`,
@@ -7481,63 +7480,57 @@ links, so an open step shows fully. "Close mission…" on a sample changes nothi
 **A dialog opened from the dropdown** (the close dialog) makes it `inert` and dims it (`saturate(0.7)`, the mockup's
 `.dd.dim`); focus goes to Cancel, Esc closes the dialog and gives focus back to the button that opened it, and a door that
 ends the mission closes the dropdown too.
-The close dialog is the pane's dialog with the mockup's words (`close-confirm`): it says the mission "leaves the Topbar",
+The close dialog is the end dialog ("Closing a mission and the small task" below) with the mockup's words (`close-confirm`): it says the mission "leaves the Topbar",
 its choice group has the visible eyebrow "How to close it", its confirm reads "Close mission" (a Discard keeps its own word,
 "Discard", so the button never hides the choice) and the optional Reason box stays (the reason goes to the mission's Log).
 
 **Small windows.** The body is a container, so every width rule is on the dropdown's own width, not the
 window's: below **380px** the next-step button and each "more waiting" button go under their text, and the
 criteria's who-settles cell goes under the criterion. Titles and step names wrap (`overflow-wrap:
-anywhere`); the pill keeps its count while the breadcrumb truncates first; nothing scrolls sideways; no
+anywhere`); the Topbar reserves the pill's width and the session title gives way first, down to a 24px stub (its flex-shrink is 1000 against the pill's 1), then the pill itself, whose label truncates only when the header cannot hold the pill and the controls it never pushes out (about 313px of header; the action buttons are already in the `…` menu by then); nothing scrolls sideways; no
 control is hidden to make room.
 
-**Not carried over:** the pane chrome, the helper-stack type and its persistence, the "Steps and timeline"
-and Sessions disclosures and their `localStorage` keys (`om2tab.missionPane.sections`), the timeline line,
-the Sessions row, the hand-off door, offer and dialog (view only; the backend stays), the state tag, the
-Blocked chip, "Review it", the empty "no links" sentence.
+#### Reads, states and doors
 
-**Don'ts.** ❌ Draw something the operator does nothing with. ❌ Hide an owed item behind a fold with no
-count. ❌ Put a state tag or a "Ready to close" badge above the next step. ❌ Draw a second card for what the
-next step already says. ❌ Open more than the current milestone by itself. ❌ Show sessions to the user.
-❌ Print an absolute path or a link that opens nothing. ❌ Use the large button inside the dropdown.
+**Reads.** `window.api.missionV4View({ folder, sessionId, missionId? })` (channel `mission:v4View`); the reply is
+`{ state: 'mission' | 'none' | 'refused' }`. There is **no push event**: the missions store (`stores/missions.ts`)
+asks for the **selected session** when it changes and on its own 20 s poll, and the pill and the dropdown both read
+that one answer. The `missionId` the view **answered** is sent back on later calls (it reads one record);
+`detail.id` never is. A named read that no longer lists the session as an open row, or that reads a closed
+mission, is dropped and the session is asked again by itself, so the dropdown never shows a mission the session is
+not in. Asking the view is a side effect (it adds the folder to the observer's list): only the store's own loop
+asks. The dropdown renders what the server said and never recounts a step.
 
-### Mission pane (helper stack — Missions v4, S-17 shell)
+**Every record opens here.** A **v3** file is read as v4 without writing it, and its first door use creates its v4
+copy. An agent creates a v4 record with `mission_create`. A session in no open mission draws the muted pill and the
+empty state; a mission that was a v3 file draws the same pill.
 
-**Missions v4, S-17 (spec `docs/specs/2026-11-14-missions-v4/spec.md`, "The surfaces"; draft
-mockup `docs/design/missions-v4/`, screen `mission-pane`).** The Mission pane is the one
-surface of a **v4** mission: a pane in the helper stack that the Topbar pill opens and
-closes. It follows the **selected session** and shows only that session's mission. This
-section is the shell (the pill, the pane chrome and the states around a mission); the
-glance (progress bar, next step, tree, timeline) and the open step, sessions and hand-off
-land in later slices and add their own sections here.
+| State (`data-state`) | When                                    | The body draws                                                                       |
+| -------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ |
+| `loading`            | the first answer has not come yet       | "Reading the mission…" (`12px`, `text-text-3`)                                       |
+| `mission`            | `state: 'mission'`, open, session in it | the head, the next card and the tree                                                 |
+| `none`               | `state: 'none'`, or a closed mission    | the empty state and its attach picker                                                |
+| `refused`            | `state: 'refused'`                      | the empty layout, "This mission cannot be read right now.", the reason and **Retry** |
 
-**Every record opens here** (the cut-over, S-35; the popovers were deleted in S-37). A **v3** file is
-read as v4 without writing it, and its first door use creates its v4 copy. An agent creates a v4
-record with `mission_create` in the v4 shape.
+The count text is the server's numbers written by the renderer: "{done} of {total} steps done" or "{done} of
+{total} milestones done" (the reply's `progress.unit`). The state's identifier is translated through i18n; the
+English words in a reply (`stateLabel`, `progress.headline`, `waiting.moreLine`) are never copy, never a key. The
+doors are `window.api.missionV4Door` (channel `mission:v4Door`): `mark` (a criterion), `clearBlocker`,
+`approveDoneWhen`, `declineDoneWhen`, `attach`, `decideAttach`, `close`. They go through `stores/missions.ts`
+(`runV4Door`), which adds the folder (the selected session's) and the mission id **the view answered for**, and
+reads the view again after every reply, refused or not.
 
-**Data.** `window.api.missionV4View({ folder, sessionId, missionId? })` (channel
-`mission:v4View`); the reply is `{ state: 'mission' | 'none' | 'refused' }`. There is **no
-push event**: the missions store (`stores/missions.ts`) asks for the **selected session**
-when it changes and on its own 20 s poll (the same clock as the v3 list), and the pill and
-the pane both read that one answer. The `missionId` the view **answered** is sent back on
-later calls (it reads one record); `detail.id` never is. A named read that no longer lists
-the session as an open row (a hand-off closed it), or that reads a closed mission, is
-dropped and the session is asked again by itself, so the pane never shows a mission the
-session is not in. Asking the view is a side effect (it adds the folder to the observer's
-list): only the store's own loop asks. The pane renders what the server said; it never
-recounts a step.
+#### The Topbar pill: label and tones
 
-#### Topbar pill — v4 (`MissionPill.vue`)
-
-The pill is a `<button>` placed after the orchestrator pill in the title row, selected session only,
-with the anatomy of the provider and orchestrator pills beside it (height `18px`, padding `1px 7px`,
-`rounded`, `10.5px / 500`, `tabular-nums`, a 10px leading icon), with the **mockup's**
-tinted look: `border` in the tone's `-line` token, the tone's `-soft` background and its
-text colour. Label, all from the server's `progress` and `waiting`: **"{done}/{total} ·
-{n} for you"**, e.g. "4/21 · 3 for you". The count is milestones when the mission has
-milestones ("1/10 · 5 for you") and steps otherwise; "· {n} for you" is the length of the
-waiting list and is left out when it is empty ("4/21"); a mission that is ready to close
-says "21/21 · ready to close". No campaign or chapter wording, no tick rail, no radiant.
+The pill is a `<button>` after the orchestrator pill in the title row, for the selected session only, with the
+anatomy of the provider and orchestrator pills beside it (height `18px`, padding `1px 7px`, `rounded`,
+`10.5px / 500`, `tabular-nums`, a 10px leading icon) and a tinted look: `border` in the tone's `-line` token, the
+tone's `-soft` background and its text colour. The label comes from the server's `progress` and `waiting`:
+**"{done}/{total} · {n} for you"**, e.g. "4/21 · 3 for you". The count is milestones when the mission has
+milestones ("1/10 · 5 for you") and steps otherwise; "· {n} for you" is the length of the waiting list and is left
+out when it is empty ("4/21"); a mission that is ready to close says "21/21 · ready to close". There is no
+campaign or chapter wording, no tick rail and no radiant. The `title` is the mission's title and its label
+("{title} — {label}") with the `view.missionProgress` chord appended; the glyph carries its own `title`.
 
 | Tone    | Classes                                            | When                             |
 | ------- | -------------------------------------------------- | -------------------------------- |
@@ -7545,100 +7538,30 @@ says "21/21 · ready to close". No campaign or chapter wording, no tick rail, no
 | accent  | `border-accent-line bg-accent-soft text-accent`    | nothing waits                    |
 | success | `border-green-line bg-green-soft text-green`       | ready to close (icon is `check`) |
 
-It is a **toggle button** (`aria-pressed`): pressed while the pane is open in the
-selected session's stack, drawn with a `ring-2` in the tone's `-line` token. The title is
-the mission's title and its count, with the `view.missionProgress` chord appended. The
-chord toggles the same pane. A session that is in no open mission renders **no pill**; a mission
-that was a v3 file renders the same pill.
+#### The next card: looks, wording, kinds
 
-#### Pane chrome
+One card from `detail.waiting`; its **ask** (`13px`, `text-text`, `line-height 1.4`) and **why** (`11.5px`,
+`text-text-3`) are **worded by the app** in the reader's language, from the item's kind and the record
+(`waitingText`, which reads the `missionPane.next.text.*` strings): the server's `ask` and `why` are English and
+stay the text a session reads, so a Portuguese dropdown never shows them for a kind it knows. What an agent wrote (a
+blocker's own ask and "unblocks", a criterion's text, a step's title) is shown as written; an item whose record is
+gone, or a kind this build does not know, shows the server's words. The eyebrow is `10px / 700`, uppercase,
+`0.07em`.
 
-A non-PTY pane like the Memory pane: the standard 24px header (`h-6`, `bg-surface`,
-`border-b border-border`; it doubles as the resize handle), `target` glyph (12px,
-`text-text-3`), the title **Mission**, then **expand**, **maximize** and **close** (18×18
-targets, the chords of every other pane). There is no reload button: the pane polls. The
-header is 24px and not the mockup's 32px, because every pane header in a stack is 24px
-and "maximize" collapses the other panes to a 24px strip (`HelperStack.vue`). The pane
-type is `mission`, **persisted** with the other helper panes, **one per worktree**, and
-opens at the bottom of the stack like any pane. The body is `bg-bg`, scrolls, and follows
-the "Pane focus" ring (F6).
+| Look | When                                                                                    | Border / background                   | Eyebrow            |
+| ---- | --------------------------------------------------------------------------------------- | ------------------------------------- | ------------------ |
+| you  | the next item is a step the operator owes, or nothing is next and a Done when is staged | `border-warning-line bg-warning-soft` | **Your next step** |
+| ok   | the next item is `close` (ready to close)                                               | `border-green-line bg-green-soft`     | **Your next step** |
+| calm | nothing is next and no Done when is staged                                              | `border-border-2 bg-surface-2`        | **Next step**      |
 
-#### States
-
-All on the pane's `data-state`. Copy follows §8 and the Missions v4 writing contract.
-
-| `data-state` | When                                                 | Draws                                                                                                                                                         |
-| ------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loading`    | the first answer has not come yet                    | "Reading the mission…" (`12px`, `text-text-3`)                                                                                                                |
-| `mission`    | `state: 'mission'`, source `v4`, open, session in it | the head section (`padding: 14px 16px`): the title (`13.5px / 600`), the progress bar, the state tag, then "The glance" below                                 |
-| `none`       | `state: 'none'`, or a closed mission                 | the empty state: `target` (14px, `text-text-4`) and **"This session has no mission."** (`12.5px / 500`, `text-text`), then the attach picker (S-21, below)    |
-| `refused`    | `state: 'refused'`                                   | the same empty layout: **"This mission cannot be read right now."**, the server's reason below it (`11.5px`, `text-text-3`, mono) and **Retry** (S-21, below) |
-
-The **count line** is `11.5px`, `tabular-nums`, `text-text-3`: "{done} of {total} steps done" or
-"{done} of {total} milestones done" (the server's `progress.unit`), written by the
-renderer from the server's numbers. The **state tag** is the state's identifier translated
-through i18n (`open` shows nothing, `ready-to-close` reads "Ready to close"): the English
-words in the reply (`stateLabel`) are never copy, never a key. S-18 moves the count line
-**into the progress bar** (see "The glance" below); it is the same text.
-
-The **narrow pane**: the body is a single column and wraps; the title wraps to as many
-lines as it needs (never `truncate`: it is the one thing the operator opens the pane to
-read), the count line and the tag wrap under it, and the empty states keep their padding
-(`40px 24px`) and centre their text. Nothing in the shell has a fixed width.
-
-#### The glance (Missions v4, S-18)
-
-**S-18 (`MissionPane.vue`, `MissionPaneNext.vue`, `MissionPaneTree.vue`; draft mockup
-`docs/design/missions-v4/`, screen `mission-pane`, states `default`, `big`, `big-waiting`,
-`waiting`, `all-steps`).** What the operator reads at a glance: what the mission is, how far it
-is, the one thing to do next, and the tree of what is done and what is coming. Top to bottom, all
-from the server's `detail`; the pane **computes no state** (a step's state, a milestone's state and
-the progress are the server's numbers — the tree only sorts, counts steps by the state the server
-gave them, and folds). **Tokens only; no new colour, radius, easing or row height.** The few pixel
-sizes below are the mockup's, recorded here so the code has nothing off-system.
-
-**Progress bar** (replaces the count line; the title stays above it, no Done when paragraph — the
-mission's `doneWhen` is not drawn). `role="progressbar"` with `aria-valuemin 0`, `aria-valuemax`
-the server's `total`, `aria-valuenow` its `done`. Track: `margin-top: 10px`, `height: 24px`,
-`rounded-sm border border-border bg-surface-2`, `overflow: hidden`. Fill: `bg-green-soft`, an
-absolute box from the left, `width` = `done / total` (0 when `total` is 0). The fill's edge is marked
-by a **`2px` `bg-green` strip in a row of its own under the label** (`grid-template-rows: 1fr 2px`;
-the strip is as wide as the fill, and there is none at 0 or at 100%), so the marker is never drawn
-through the count at any fill. The label sits **inside** the track, in the first row, `padding: 0 9px`,
-`11.5px`, `tabular-nums`, `text-text-2`, one line that truncates with the full text in its `title` —
-the count line, "{done} of {total} steps done" or "{done} of {total} milestones done" (the same text
-the shell wrote). At 100% the label is `text-green`. The mockup bolds the number; the pane does not
-(one translated sentence).
-
-**Your next step (`MissionPaneNext.vue`).** One box under the bar (`margin-top: 10px`, `rounded`,
-`border`, `padding: 10px 12px`, `gap: 8px`, a column) from `detail.waiting`. Looks:
-
-| Look | When                                                                                              | Border / background                   | Eyebrow            |
-| ---- | ------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------ |
-| you  | `waiting.next` is a step the operator owes, or `waiting.next` is `null` and a Done when is staged | `border-warning-line bg-warning-soft` | **Your next step** |
-| ok   | the next item is `close` (ready to close)                                                         | `border-green-line bg-green-soft`     | **Your next step** |
-| calm | `waiting.next` is `null` and no Done when is staged                                               | `border-border-2 bg-surface-2`        | **Next step**      |
-
-The eyebrow is `10px / 700`, uppercase, `0.07em`, `text-text-4` (`text-warning` in the `you` look,
-`text-green` in `ok`). Then **the ask** (`13px`, `text-text`, `line-height 1.4`) and **the why**
-(`11.5px`, `text-text-3`, pulled up `4px`): both are **worded by the pane**, in the reader's language,
-from the item's kind and the record (`waitingText`): the server's `ask` and `why` are English and stay
-the text a session reads, so a Portuguese pane never shows them for a kind it knows. What an agent
-wrote (a blocker's own ask and "unblocks", a criterion's text, a step's title) is shown as written. An
-item whose record is gone, or a kind this build does not know, shows the server's words. The `calm` look has one sentence in place of the ask: "{n} steps are
-running. Nothing for you right now." (or "Nothing is running. Nothing for you right now."), counted
-from the server's `progress.counts.running`.
-
-**A staged Done when** (an older mission's re-scope reads the same) is the next step when `waiting.next` is `null`, or is the older mission's own `rescope` item (S-40: that item IS the staged Done when, so it is never drawn a second time as a row of its own): the ask is "Approve or decline the new Done when", the why "A session proposed it. It becomes the mission's end only if you approve.", and the one button is **Review it**, which scrolls the staged box below into view and focuses **Approve**. The box never reads "Nothing for you right now" above it. When other items wait and the `rescope` item is not first, it is one row of "{n} more waiting on you" (kind label "Done when", the same ask, one **Review it** button); the staged box stays below as before. The staged Done when is always one line and one button in the box, never two.
-
-The action row is `flex`, `gap: 10px`: **one button** (`ui/Button`, variant `primary`), and the
-**"{n} more waiting on you"** link at the right (`11.5px`, `text-text-3`, hover `text-text`; `n` is
-the length of `waiting.more`, written by the renderer, never `waiting.moreLine`). The link expands
-**in place** (it never navigates): under the action row, a `border-t border-border` list, one row
-per other item, `Show less` replacing the link's text. A row is a two-column grid at the regular width (`1fr auto`,
-`gap: 2px 10px`, `padding: 8px 0`, `border-t border-border` between rows): the kind in an eyebrow
-(`9.5px / 700`, uppercase, `0.06em`, `margin-right: 6px`) then the ask (`12px`); under it the why
-(`10.5px`, `text-text-4`); the row's button on the right, spanning both lines. In a **narrow pane** (below 240 px) the row is one column (`minmax(0, 1fr)`) and the button sits on its own row under the text, left-aligned (`margin-top: 4px`), so the text keeps the whole width instead of a sliver (`restRowGrid`).
+`calm` has one sentence in place of the ask: "{n} steps are running. Nothing for you right now." (or "Nothing is
+running. Nothing for you right now."), counted from `progress.counts.running`. A **staged Done when** (an older
+mission's re-scope reads the same, and is never drawn a second time as a row of its own) is the next step when
+nothing else ranks first: the ask "Approve or decline the new Done when", the why "A session proposed it. It
+becomes the mission's end only if you approve." and the buttons **Approve** and **Decline**. When other items
+wait it is one row of "{n} more waiting on you". A **request to join** is the same: one card, **Allow** and
+**Deny**. In the "more waiting" rows the kind is an eyebrow (`9.5px / 700`, uppercase, `0.06em`) and the words
+are translated **by the kind's identifier**, never taken from the reply:
 
 | Kind (`waiting` identifier) | Eyebrow word | Eyebrow colour |
 | --------------------------- | ------------ | -------------- |
@@ -7649,585 +7572,201 @@ per other item, `Show less` replacing the link's text. A row is a two-column gri
 | `close`                     | Close        | `text-green`   |
 | `attach`                    | Join         | `text-accent`  |
 
-The eyebrow words are translated **by the kind's identifier**, never taken from the reply.
-
-**The button.** This slice has no door, so the button is **Open step** and it only opens: it
-unfolds the step in the tree (and its milestone) and scrolls it into view, for an item that names
-one step (`main-failing`, `unblock`, `settle`, and a `review` of one step). An item with no single
-step to open (`close`, `attach`, a `review` of several) draws **no button** until the slice that
-owns its door lands (**Close mission…**, **Allow** / **Deny**, **Mark done**, **Approve**); the
-row still shows its ask and why. The row's small button is the dense per-row pill (`rounded-sm
-border border-border-2 px-2 py-0.5 text-[11px]`, hover `bg-surface-2`).
-
-**The tree (`MissionPaneTree.vue`).** Below the next-step box, in its own section
-(`padding: 14px 16px`, `border-t border-border`), a column with `gap: 1px`. Milestone ▸ step ▸
-criteria, every level behind a **chevron** (`ChevronRight` closed, `ChevronDown` open, `10px`,
-`text-text-4`), every row a `<button>` with `aria-expanded`.
-
-- **Milestone row** (`grid`, columns `12px 12px 1fr auto`, `gap: 8px`, `padding: 7px 6px`,
-  `margin: 0 -6px`, `rounded-sm`, `12.5px`, `text-text-3`, hover `bg-surface-2`): chevron, glyph,
-  title, then the right cell (`10.5px`, `text-text-4`, `tabular-nums`): **"{done}/{total}"**. The
-  current milestone's title is `text-text` / 500. A `done` milestone's count has no emphasis.
-  A milestone that **waits for** another that is not the one just before it in plan order adds a
-  **second line** under its title (`11px`, `text-text-4`): **Waits for “{title}”**, naming the
-  milestone it waits on. The line shows only while that milestone is not done, and never for the
-  milestone right before (plan order already says it).
-- **Open milestone.** **Only the current milestone opens by itself** ("current" is the server's
-  `progress.current`: the first milestone in plan order that is neither done nor optional). Any
-  other opens when the operator clicks its chevron row; an operator's choice stays while the pane
-  lives. Under an open milestone: its **summary line** (`11px`, `text-text-4`, `padding: 0 0 4px`):
-  the counts of **running**, **waiting for review** and **blocked** steps ("4 running · 9 waiting
-  for review · 1 blocked"; the blocked part is `text-red`; a zero part is left out; **to do is
-  never counted**; with nothing running it opens with "Nothing running"; with all three at zero it
-  reads "Nothing running", or "Every step is done" for a done milestone). Then its steps.
-- **Order inside a milestone.** Steps the operator owes first (a step named by a `waiting` item),
-  then steps that are running, **in plan order inside each group**; **every other step is folded**
-  behind a text link **"{n} more steps"** (`11px`, `text-text-4`, hover `text-text`, padding-left
-  to the title column); it expands in place, in plan order, and reads **"Show less"**.
-- **Step row** (`grid`, columns `10px 12px 1fr auto`, `gap: 7px`, `padding: 5px 6px`, `12px`,
-  `text-text-2`): chevron, glyph, title (wraps to at most **two lines**, then cuts), then the right cell (`10.5px`, `text-text-4`):
-  the pull request number **`#256`** in `font-mono`, `text-accent` (the step's `pr` link; nothing
-  when it has none; **a link** when Harnu has the pull request's address — see "An open step"), a **Blocked** chip when the step carries the blocked mark (`rounded-sm border
-border-red-line bg-red-soft text-red`, `10.5px`) and a **Yours** chip when the operator owes it
-  (`border-warning-line bg-warning-soft text-warning`).
-- **An open step** is `MissionPaneStep.vue` (S-19, below): the blocker, the acceptance criteria and
-  the links, in a column under the step row.
-- **Optional milestones** sit **under one collapsed line** at the end of the tree: "{n} optional
-  milestones" (`11px`, `text-text-4`); clicking it unfolds them as ordinary milestone rows.
-- **A mission with no milestones** draws its steps directly under the next-step box as one list
-  (the same step rows, the same order, the same fold) with no milestone row.
-
-**Glyphs** (`12px` slot, a circle, centred): `done` — `bg-green` with a `Check` (8px, stroke 3,
-`text-bg`); `running` — an `8px` `bg-accent` dot; `waiting-review` — an `8px` ring
-(`border-[1.5px] border-accent`); `todo` — an `8px` ring (`border-[1.5px] border-text-4`);
-**blocked** — a `Flag` (12px, `text-red`) in place of the state's glyph. The **current** milestone's
-glyph carries a `3px` `ring-accent-soft` halo. The milestone's glyph is its state: `done`,
-`in-progress` (as `running`), `waiting-review`, `not-started` (as `todo`).
-
-**The timeline line.** A vertical line (`1.5px` wide, `bg-border-2`) joins the milestone glyphs:
-each milestone row draws the half above and the half below its glyph, and an **open milestone
-carries the line down through its steps** (the line runs in the open milestone's own left rail,
-aligned with the glyph's centre). The line **above and below a `done` milestone is `bg-green` at
-`opacity-60`**: green behind what is finished, grey ahead. It stops at the first and the last row
-of the tree (nothing above the first, nothing below the last). The line is drawn by a rail cell
-in each row, not by a pixel offset from the row's edge, so it follows the glyph at any width.
-
-**Narrow pane.** The tree wraps: titles wrap in a milestone row, a step title wraps to two lines
-and then cuts, the "Waits for" line wraps. The tree is a **container** (`@container`): below
-**340px** of tree width a step's chips and pull request number move **under its title** (they
-wrap inside their own cell) instead of beside it, so they never squeeze the title down to one
-letter. The summary line's `·` separators **trail** their part (`3 running ·`) and a part never
-breaks inside itself, so no `·` opens a wrapped line. The summary line wraps under itself.
-
-**Not in this slice** (drawn in the mockup, built later, so absent from the pane today): **Close
-mission…** and the sample mission. (**Ask**, the attach picker and request are S-21; the **Sessions** row and
-the hand-off are S-20; both are below.) (An open step's who-settles, blocker and links are S-19, below.) An agent creates a v4
-mission with `mission_create` in the v4 shape (S-24), so the glance has something to show once a v4
-record exists on disk.
-
-**Don'ts.** ❌ Write a v3 record from the pane. ❌ Print `stateLabel`, `progress.headline`, `waiting.moreLine` or any English word
-from the reply (the `ask` and the `why` are the one wording the server owns, shown as written).
-❌ Poll from a loop the store does not own. ❌ Draw a Done when paragraph. ❌ Open more than the
-current milestone by itself. ❌ Count to do steps in a milestone's summary. ❌ Draw a button whose
-door is not built yet.
-
-#### At a glance in a small space (Missions v4, stp-21)
-
-**The pane lives at about 296 to 420 px, so it reads in one screenful there** (`MissionPane.vue`,
-`lib/mission-pane-view.ts`: `PANE_ORDER`, `paneLayout`, `barGeometry`, `loadPaneSections`). **Nothing is
-removed:** what left the first screenful is one click away, and the pane keeps each choice.
-
-**The first screenful** (`GLANCE_SECTIONS`), in this order, each marked `data-pane-section`:
-
-1. **`head`:** the mission's title (it wraps, never truncates) and the progress bar.
-2. **`next`:** the next-step box. Under it, **"{n} more waiting on you"** opens the rest of the waiting list in
-   place.
-3. **`waiting`:** what else waits on the operator and is not a line of the list: a session's request to join and
-   a staged Done when. Drawn only while there is one.
-
-**One click away** (closed to begin with; every one keeps its state across a refresh, in `localStorage`
-`om2tab.missionPane.sections`, per viewer): **Steps and timeline** (`tree`: the milestones, the steps, their
-criteria, links and blockers, and the Ask box on a milestone), **Sessions** (`sessions`) and **"{n} more waiting on
-you"** (`more`). The collapsed **Steps and timeline** line is a `button` (`12px`, `text-text-3`, a chevron, the
-eyebrow in `10.5px / 500` uppercase `0.07em`) with the place the mission is at on its right (`11px`,
-`text-text-4`, one line that truncates, full text in `title`): the current milestone's title, "Every step is done",
-or the step count. **Open step** in the next-step box opens the steps by itself (and keeps them open), then
-opens that step. The sample opens a part of the pane for you without changing what the operator kept. **Close
-mission…** stays at the bottom of the body.
-
-**Width.** The pane has **no minimum width**; it follows the width it really has (a `ResizeObserver` on its
-root, `data-width-mode` on the root says which): **narrow below 240 px**, regular from 240 px. Narrow changes only
-how things fit: the side padding drops from 16 to 10 px, the next-step box and a staged Done when use `8px`
-padding, a button's text may wrap, and the body never scrolls sideways (`overflow-x: hidden`). In both modes
-every text wraps (`break-words`, `min-w-0`) or truncates with its full text in a `title`, every row of controls
-wraps (`flex-wrap`), and no control is hidden to make room: the same controls exist at 110 px as at 420 px.
-
-**The selector of the missions a session leads** (`This session leads {n} missions`): the label sits above the
-control (`flex-col`, `gap: 4px`) and the control is the full width, with the mission's title in its `title`, so its
-text is never squeezed out of view at 290 px.
-
-#### An open step (Missions v4, S-19)
-
-**S-19 (`MissionPaneStep.vue`, with `MissionPane.vue`, `MissionPaneTree.vue` and the store; draft
-mockup `docs/design/missions-v4/`, screen `mission-pane`, states `step-open`, `step-blocked`).** What
-the operator reads when they open a step in the tree, and the only writes the pane makes on a step.
-The component **computes no state**: which criteria are settled, what blocks the step and where a link
-goes are worked out in `lib/mission-pane-view.ts` from the server's view (`buildPaneTree`), and the
-component draws them. **Tokens only; no new colour, radius, easing or row height.** An open step is a
-column under its row (`margin: 2px 0 8px 29px`, `gap: 8px`) with up to three blocks, in this order.
-
-**Blocker** — only when the step has a blocker that still shows. One box per blocker (`rounded-sm
-border border-red-line bg-red-soft`, `padding: 8px 10px`, `gap: 6px`, `12px`, `text-text`):
-
-- the **head** (`10px / 700`, uppercase, `0.06em`, `text-red`, a `Flag` 13px before it): **"Blocked ·
-  waiting for you · 40m"** when the blocker is the operator's, **"Blocked · waiting for the session"**
-  when it is the session's; the time is how long since the blocker was raised (`<1m`, `40m`,
-  `1h 50m`, `3d`) and is left out when the record has no time;
-- the **reason** (the server's words, as written), then the **ask** — the exact thing needed
-  (`font-weight: 500`; left out when it says what the reason already says) — then what it **unblocks**
-  (`11px`, `text-text-3`);
-- **"Done, continue"** (door `clearBlocker`): the dense primary pill (`rounded-sm`, `padding: 2px
-7px`, `11px / 500`, `bg-accent text-accent-ink`, hover `brightness-110`). **Only on a blocker that
-  is the operator's**: a blocker that is the session's move has no button (the pane does not offer a
-  door that is not yours). The mockup's "Open session" is not drawn: choosing which session to open
-  belongs to the Sessions row (S-20).
-
-**Acceptance criteria** — the heading **"Acceptance criteria"** (`10px / 700`, uppercase, `0.07em`,
-`text-text-4`), then:
-
-- **the verified ones fold into one line**: a 12px `bg-green` circle with a `Check` (8px, stroke 3,
-  `text-bg`) and **"19 criteria verified"** (`11.5px`, `text-text-2`; "1 criterion verified"). It is
-  the server's count of settled criteria, by whatever settled them; **the line is left out when none
-  is**. The mockup lists each verified criterion on its own row in `step-open`; the spec wins: a
-  step with 19 settled criteria does not draw 19 rows.
-- **only the open ones are listed**: a `grid` (`12px 1fr auto`, `column-gap: 8px`, `11.5px`,
-  `text-text`): a hollow 12px box (`border-[1.5px] border-text-3`, `rounded-sm`), the text, and at
-  the right **who settles it** (`10.5px`, `text-text-4`), then the operator's button when there is
-  one. Below 340px of tree width (the tree is a container) the right cell moves **under the text**.
-
-| Settled by (`by`) | Words                       | Button                                                             |
-| ----------------- | --------------------------- | ------------------------------------------------------------------ |
-| `fact`            | Checked automatically       | none — Harnu reads it, it is never ticked by hand                  |
-| `session`         | Checked by a second session | none                                                               |
-| `operator`        | You                         | **Mark done**                                                      |
-| `person`          | Waiting for {person}        | **Mark approved** (title: "Mark {person} as having approved this") |
-
-The words are translated **by the identifier**, never the English word in the reply. **One wording for
-another person's sign-off: "approved"** — the criterion is the person's approval, the operator marks
-it when they give it ("Mark approved"), and until then the step reads "Waiting for Dana". The mockup's
-word "sign-off" is not used in the pane. A criterion with a builder's **own check** (`selfCheck`) stays
-open and says under its text, `10.5px`, `text-text-4`: **"The session says it is done. Not checked
-yet."** (labelled, and never proof). The mockup shows "later" next to an operator criterion on a step
-that has not started; the spec wins: the button is always there (a door never refuses the operator).
-A step with no criteria says "No criteria yet."
-
-**Links from the session** — the heading **"Links from the session"** (the same eyebrow as the
-criteria heading), then a wrapping row (`gap: 6px`) of pills: `rounded-sm border border-border-2`,
-`padding: 1px 6px`, `11px`, a 10px `Link` icon. An address Harnu can open is a `<button
-role="link">` in `text-accent` (hover `border-accent-line`) that opens it in the browser
-(`shellOpenExternal`); anything else — a repo path in a record — is plain text in `text-text-3` with
-no role (nothing to open). **Only http and https addresses open.** The order is: the pull request
-(`font-mono`, `#256`), the finished page (**"Page · localhost:5173/score-report"** — an address on
-this machine), then the rest, in the order they were written. Where they come from:
-
-- the step's own links: the pull request Harnu found on its branch and what the agent added with
-  `mission_link`;
-- **for a step the session is working** (running, or waiting for review), the links Harnu already
-  collects from that session's transcript (the footer's Links shelf reads the same ones), **only the
-  ones the session wrote** (not the ones the operator pasted), newest eight at most. The session works
-  one step after another, so a link is a step's **from the step's start until the next working step
-  starts** (a step with no start time takes every link); a pull request that is **another step's**
-  never lists here. A link in both places is listed once. A step that is **done** lists only what its
-  record holds.
-
-**The pull request number on a step row** is a link too, when Harnu has the address: the step's `pr`
-link when it is an address, else the pull request of that number in the session's links. It is a
-`<span role="link" tabindex="0">` (the row is a button, and a button does not nest in a button): a
-click or Enter opens the pull request and **never folds or unfolds the step**; it gets hover
-underline. With no address it stays plain text (a guess at the repository would open the wrong page).
-
-**A step whose session wrote no links yet** (not drawn in the mockup): the heading and one line,
-**"The session has not written any links for this step yet."** (`11px`, `text-text-4`).
-
-**A door that fails** (not drawn in the mockup): under the step's last block, one box (`rounded-sm
-border border-red-line bg-red-soft`, `padding: 6px 10px`, `11.5px`, `text-text`, `role="alert"`)
-that says **what to do, never the code**. A door never refuses the operator; what comes back is a
-record that changed under them, one that closed, a criterion a fact settles, or a channel that is not
-there. `NOT_FOUND`: "That changed while you were looking. The pane shows the latest. Check it and try
-again if you still need to." · `WRITE_CONFLICT`: "The mission changed at the same moment. The pane
-shows the latest. Try again." · `MISSION_CLOSED`: "This mission is closed, so nothing in it can
-change." · `SETTLES_ITSELF`: "Harnu checks this one by itself. You do not mark it." · anything else:
-"Harnu could not save that. Try again in a moment. If it keeps happening, close the pane and open it
-again." The buttons are disabled while a door is in flight (`disabled:opacity-40`), and the pane
-**reads the view again after every reply**, refused or not.
-
-**A Done when a session staged** (not drawn in the mockup; a mission-level door, so it sits in the
-head, under "Your next step", not in a step): a box like the next-step box in the accent look
-(`rounded border border-accent-line bg-accent-soft`, `padding: 10px 12px`, `gap: 8px`). The eyebrow
-**"New Done when proposed"** (`10px / 700`, uppercase, `text-accent`), the proposed text (`13px`,
-`text-text`), one line saying what each button does (`11.5px`, `text-text-3`), then **Approve**
-(`ui/Button` primary) and **Decline** (`ui/Button` soft). It is drawn only while the view carries a
-staged Done when; the mission's own Done when is still not drawn. An **older (v3) mission** that has a
-re-scope staged shows the same box (S-37): the new target and its proof, with the owner's reason in
-brackets; **Approve** applies it to the old file as the popover did and **Decline** drops it, and
-neither creates a v4 copy (`stagedRescopeOf`, `runPaneDoor` in `src/main/mission-ipc.ts`).
-
-**Narrow pane.** The open step is as narrow as its tree: the criteria's right cell moves under the
-text (above), the pills wrap and break long addresses at their separators, the blocker's text wraps, and
-nothing has a fixed width. **A link never breaks inside a word:** its label is cut after a separator
-(`/ . - _ ? & = # : @`) or a space (`<wbr>` between the parts), so a long path wraps at its slashes
-and dots; a single segment that is wider than the pane is clipped whole and its full text is in the
-`title`.
-
-**Data.** The doors are `window.api.missionV4Door` (channel `mission:v4Door`): `mark` (a criterion),
-`clearBlocker`, `approveDoneWhen`, `declineDoneWhen`. They go through `stores/missions.ts`
-(`runV4Door`), which adds the folder (the selected session's) and the mission id **the view answered
-for** (never `detail.id`), and reads the view again after the reply. The links come from
-`window.api.sessionLinksList` for the selected session (`useSessionLinks`, the footer shelf's own
-composable). An agent creates a v4 mission with `mission_create` in the v4 shape (S-24), so an open
-step has something to show once a v4 record exists on disk.
-
-**Don'ts.** ❌ Draw every verified criterion. ❌ Print the code a door came back with. ❌ Offer "Done,
-continue" on a blocker that is the session's. ❌ Draw a button on a criterion a fact or a second
-session settles. ❌ Open an address that is not http or https. ❌ Guess a pull request's repository
-to make its number a link. ❌ List a link the operator pasted as "from the session". ❌ Call the
-approval of another person a "sign-off" in the pane.
-
-#### Sessions and the hand-off (Missions v4, S-20)
-
-**S-20 (`MissionPaneSessions.vue`, `MissionHandoffDialog.vue`, with `MissionPane.vue` and the store; draft
-mockup `docs/design/missions-v4/`, screen `mission-pane`, states `sessions`, `handoff-suggest`,
-`handoff-confirm`).** The mission is durable and a session is disposable: the mission keeps the list of
-the sessions that worked on it, and the operator alone decides to continue it in a new one. **Tokens
-only; no new colour, radius, easing or row height.** The one new glyph is `arrow-left-right` (§5). The
-components compute nothing: the rows, the order, the fold and who leads are built in `lib/mission-pane-view.ts`
-from the server's `sessions` history, and the confirmation shows the server's `detail.summary`.
-
-**The Sessions row** is the last section of the pane body (`border-t border-border`, `padding: 12px
-16px`). Folded it is one line: a chevron (10px, `text-text-4`), the eyebrow **Sessions** (`10.5px / 500`,
-uppercase, `0.07em`, `text-text-4`) and, right-aligned, **how many and who leads** (`11px`,
-`text-text-4`, truncates): **"4 · led by this session"**, **"4 · led by orch-1"** (the session's name, the
-one every surface shows) or **"4 · nobody leads it"**. A click unfolds it (`aria-expanded`). Opened, one
-row per session (`gap: 8px`, `12px`, `text-text-2`), a grid of a 7px dot and the text (`8px 1fr`, `gap: 0
-9px`):
-
-- **dot**: `bg-green` while the session is still attached; a hollow ring (`border-[1.5px]
-border-text-4`) once it stopped;
-- **line 1**: the session's **name** (`font-weight: 500`, `text-text`; **"Session 22222222"**, the first
-  eight characters of its id, when it is not loaded; a session a hand-off started is named after its first
-  prompt, the hand-off's instruction line, so the row says the **mission's title** plainly ("Score a spec
-  with a test set") instead, while the sidebar still shows the first prompt; the hand-off's reply carries
-  the same name as `leaderName`) · its **role**, in the tense of whether it still is:
-  **"Leads the mission"** / **"Led the mission"** / **"Works on the mission"** / **"Worked on the mission"**,
-  and **" · this session"** on the one the pane follows;
-- **sub line** (`10.5px`, `text-text-4`): when it worked, from and to: **"Since Nov 13"** (attached),
-  **"Nov 11 to Nov 12"**, or **"Nov 13, 09:00 to 12:00"** when both are one day;
-- **where it stopped**, only for a session that is no longer attached (`10.5px`, `text-text-4`): **"Stopped
-  at “Run the tool on the whole test set”"** (the step's **title** in quotes, never its id) and **"Waiting
-  for: the corpus folder path"** when the record says what it waited for; **"Stopped. The record does not
-  say where."** when it names neither.
-
-**Order**: the session that leads first, then the ones still attached (oldest first), then the stopped ones,
-the latest to stop first. Every attached session always shows; the stopped ones show five at a time and
-the rest fold behind **"3 more sessions"** (`11.5px`, `text-text-3`; **"Show less"** folds them again). The
-mockup draws a group line "4 sessions · each running one step"; the spec wins: **every session is listed**,
-each with its own role, from, to and stop.
-
-Under the rows, **"Continue in a new session…"**: the dense pill (`rounded-sm border border-border-2
-bg-surface-2`, `height: 20px`, `padding: 0 7px`, `11px / 500`, a 10px `arrow-left-right`), `self-start`. It
-only opens the confirmation; it is off (`disabled:opacity-40`) while a hand-off waits for the door. **A
-mission with one session** (not drawn in the mockup) is one row and the same button: "1 · led by this
-session".
-
-**The offer** — the view decides: when the leader's context is **80 percent or more** (a live reading,
-never a stale one) the pane pins a notice under the scroll body (`margin: 0 12px 10px`, `rounded border
-border-warning-line bg-warning-soft`, `padding: 10px 12px`, `gap: 8px`, `12px`, `text-text`): **"This
-session’s context is 82% full. You can continue the mission in a fresh session. It starts from the
-mission summary, so nothing is lost."** The mockup says "82% of its memory is used"; the spec wins: the
-offer speaks of the **session’s context**, never "memory". When the pane follows a session that is not the
-leader, the first sentence names the leader: **"The context of orch-1, the session that leads, is 90%
-full."** Two buttons, which wrap onto a second line in a narrow pane (a label never wraps inside its pill):
-**"Continue in a new session…"** (primary pill, `bg-accent text-accent-ink`) opens the
-same confirmation, and **"Not now"** (ghost pill) keeps the offer quiet and **does nothing else**: it
-stores the percentage it was said at, per mission and per leader (kept across a restart), and sends it
-with the next read of the view (`dismissedPercent`). The view offers again only once the context has grown
-**five points**; the pane itself stays quiet at a reading no higher than the one dismissed. With **no
-context reading** there is no offer, and a hand-off clears the dismissal (the new leader starts fresh).
-Nothing in the pane starts a session or changes who leads on its own.
-
-**The confirmation** (`MissionHandoffDialog.vue`) is a **Confirm** on the shared `Dialog` (§6 "Dialog":
-size `md`, scrim, focus trap, Esc, the 84vh cap; the body is the one scroller; **initial focus: Cancel**).
-The mockup draws it 520px wide; the shell has no 520, so it takes `md` (560px; `min(560px, 90vw)`).
-Title **"Continue this mission in a new session"**; body, top to bottom:
-
-1. a numbered list (`12.5px`, `text-text-2`, `gap: 4px`): "Harnu saves where the session that leads
-   stopped." · "A new session opens with the summary below and leads the mission." · "The old session is
-   released. It stays in the mission’s session history." (the mockup says "this session"; the leader may not
-   be the session the pane follows);
-2. **the status box**, between the list and the summary, only while the door waits or after it refused
-   (below): it is above the summary on purpose, because a long summary scrolls and would push it out of
-   sight;
-3. **the summary the new session starts with** — a box (`rounded border border-border bg-bg`, `padding: 10px
-12px`, `12px`): the eyebrow **"Mission summary — what the new session starts with"** (`10px / 700`,
-   uppercase, `0.07em`, `text-text-4`) over a grid of the label (`82px`, `text-text-4`) and the section's text
-   (`whitespace-pre-line`, wraps) for each section the server wrote (Goal, Where it is, Decided, Stopped
-   at, Next step, and the open criteria and links when they fit). It is the text of `detail.summary`, so the
-   operator can judge whether it is enough to start a session cold; a summary with no sections shows whole,
-   an empty one says **"Harnu has no summary of this mission to give the new session."**.
-
-Footer: **Cancel** (ghost) and **Start new session** (primary, a 14px `arrow-left-right`): the dialog's
-28px footer box. Nothing starts until **Start new session**.
-
-**Pending** (not drawn in the mockup): the door waits up to **90 seconds** for the new session to appear.
-The dialog stays open and says so: a box above the summary (`rounded border border-accent-line
-bg-accent-soft`, `padding: 8px 10px`, `role="status"`) with a spinning `loader-2` (14px, `text-accent`), **"Starting
-the new session…"** (`12px / 500`) and **"This can take up to 90 seconds. Keep this window open."**
-(`11.5px`, `text-text-3`). Both buttons are off, the ✕ is gone and Esc and the scrim do nothing while it
-waits (the shell's `dismissible=false`), so a second press starts nothing and the operator cannot close
-the only place that will say how it ended.
-
-**A hand-off that did not happen** (not drawn in the mockup): the dialog stays open, the buttons are back,
-and above the summary one box (`rounded border border-red-line bg-red-soft`, `padding: 8px 10px`, `12px`,
-`role="alert"`) says **what to do next, never the code**:
-
-| Code                                                                                      | Words                                                                                                                                                                                                |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MISSION_CLOSED`                                                                          | "This mission is closed, so there is nothing to continue."                                                                                                                                           |
-| `HANDOFF_START_FAILED`                                                                    | "The new session did not start. Nothing changed: the same session still leads. Try again in a moment."                                                                                               |
-| `HANDOFF_START_FAILED`, when the reply names a session that **was started**               | "The new session was started, but it did not take over in time. The same session still leads. Open the new session to see what happened, or close it. Then try again."                               |
-| `HANDOFF_IN_PROGRESS`                                                                     | "A hand-off of this mission is already starting a session. Wait for it to finish, then look at the Sessions row."                                                                                    |
-| `HANDOFF_UNAVAILABLE`                                                                     | "Harnu cannot start a session right now. Nothing changed. Try again in a moment."                                                                                                                    |
-| `LEADER_CHANGED`                                                                          | "Who leads the mission changed while the new session was starting, so Harnu did not attach it. The new session is open but is not part of the mission. Look at the Sessions row, then decide again." |
-| anything else (`OPERATOR_ONLY`, `BAD_ARGS`, a write refusal, a channel that is not there) | "Harnu could not finish the hand-off. Look at the Sessions row to see who leads, then try again."                                                                                                    |
-
-When the reply names a session the door **started** but did not attach (it did not take over in time, or the
-leader changed under it), the footer also has **Open the new session** (left-aligned, ghost): it selects that
-session when it is loaded in the sidebar, so the operator can see what happened or close it. The door's reply
-carries its id (`started`); a start that never began has none, and keeps "did not start. Nothing changed".
-
-**A hand-off that took effect** (not drawn in the mockup): the pane reads the view again, and **this session
-is released**, so the pane now shows "This session has no mission." The dialog stays, because it is the one
-place that says what happened: **"The new session leads the mission"** (`12.5px / 500`, `text-text`) and
-**"Harnu started it with the mission summary and released the old session. It stays in the mission’s
-session history."**; footer **Open the new session** (ghost; only when the new session is already loaded
-in the sidebar; it selects it) and **Close** (primary).
-
-**Narrow** (not drawn in the mockup): the pane's Sessions row wraps its text and truncates only the count
-line; the dialog is `min(560px, 90vw)`, so at a phone-narrow window the card is 90vw, the label column keeps
-`82px`, the text wraps (`break-words`, `min-w-0`), header and footer stay pinned and the summary scrolls.
-
-**Data.** The offer is the view's `handoff { offer, percent }` (the request carries `dismissedPercent`);
-the rows are the view's `sessions`; the summary is `detail.summary`. The door is `window.api.missionHandOff`
-(channel `mission:handOff`), reached **only** from the confirmation's Start button through
-`stores/missions.ts` (`runHandOff`), which adds the folder (the selected session's) and the mission id
-**the view answered for**, refuses a second call while one waits, and reads the view again after every
-reply. The session the door starts is a normal one (the operator's permission mode and Harnu's MCP
-server), not an agent-controlled one. An agent creates a v4 mission with
-`mission_create` in the v4 shape (S-24), so the row and the hand-off have something to show once a v4
-record exists on disk.
-
-**Don'ts.** ❌ Start a session or change who leads from anywhere but the confirmation. ❌ Offer a
-hand-off with no live context reading. ❌ Say "memory" for the session's context. ❌ Print the code the
-door came back with. ❌ Let the dialog close while the door waits. ❌ List a step by its id. ❌ Group
-sessions into "N sessions" and hide their stops.
-
-#### Attach, the attach request and Ask (Missions v4, S-21)
-
-**S-21 (`MissionPaneAttach.vue`, `MissionPaneAsk.vue`, with `MissionPane.vue`, `MissionPaneTree.vue` and the
-store; draft mockup `docs/design/missions-v4/`, screen `mission-pane`, states `no-mission`,
-`attach-request`, `ask`).** A session only sees and touches the mission it is attached to, and attaching
-needs the operator's confirmation. **Tokens only; no new colour, radius, easing or row height.** New
-glyphs (§5): `link`, `plus`, `message-square`. The components compute nothing: the picker rows, who leads,
-the requests and the text a session is sent are built in `lib/mission-pane-view.ts`; the pane draws what the
-view said.
-
-**The picker** (state `none`, under the empty layout; `MissionPaneAttach.vue`): the eyebrow **"Open missions in
-this folder"** (`10px / 700`, uppercase, `0.07em`, `text-text-4`), then one card per open mission
-(`rounded border border-border`, `padding: 9px 10px`, `12.5px`, `text-text`; a grid of the text and one
-button, `gap: 2px 10px`): the mission's **title**, a sub line (`10.5px`, `text-text-4`) with the server's
-count (**"4 of 21 steps done"**) and who leads (**"led by Harnu Spec"**, the session's name, or **"nobody leads
-it"**), and **Attach** (the dense pill: `rounded-sm border border-border-2 bg-surface-2`, `height: 20px`,
-`padding: 0 7px`, `11px / 500`, a 10px `link`). Under the cards **"Start a new mission"** (the same pill,
-ghost, a 10px `plus`), `self-start`. The mockup's count line is the server's (it is the one English phrase the
-row owns; the reader's language does not change it).
-
-**Attach asks first** (not drawn in the mockup): **Attach** turns that card into the confirmation, in place
-(no dialog: nothing else on the pane moves): the sentence **"Attach this session to “{title}”? It will be
-part of the mission, but it will not lead it."** (`12px`, `text-text`) and two pills, **Cancel** (ghost) and
-**Attach** (primary, `bg-accent text-accent-ink`). Nothing is written until the second **Attach**. It goes
-through the `attach` door and the view is read again after the reply: the pane then shows the mission. A
-door that fails (not drawn in the mockup) says, in one box **under the list** (`rounded-sm border
-border-red-line bg-red-soft`, `padding: 6px 8px`, `11.5px`, `role="alert"`), what to do, never the code. The box
-is not inside the card on purpose: a mission that is gone leaves the list with its card, and the sentence
-must stay:
-`NOT_FOUND` and `MISSION_NOT_FOUND` (the mission file is gone) **"This mission is no longer there. Pick another one."**, `MISSION_CLOSED` **"This mission was
-closed, so a session cannot join it."**, `WRITE_CONFLICT` **"The mission changed at the same moment. Try
-again."**, anything else **"Harnu could not attach this session. Try again in a moment."**
-
-**Start a new mission** writes **no record**. It puts one instruction into this session's prompt through the
-writer **Ask** and "Reference in session" use (a bracketed paste, **no Enter**: the operator reviews the line
-and sends it), and says so under the button (`11.5px`, `text-text-3`, `role="status"`): **"Added to this
-session’s prompt. Press Enter there to send it."** The line goes away when the operator starts attaching instead. A session that is not running says **"This session is not
-running. Resume it, then try again."** (`role="alert"`, same box as a failed attach). The mission itself is
-made by the session, with the operator's agreement on what done means.
-
-**A folder with no open mission** (not drawn in the mockup): no cards; one line **"There is no open mission in
-this folder to attach to."** (`12px`, `text-text-3`) and **Start a new mission**.
-
-**A refused reply** (not drawn in the mockup): the no-mission layout, **"This mission cannot be read right
-now."**, the reason below it as today, and **Retry** (the dense ghost pill, centred) that reads the view
-again. No picker: the pane does not know which missions exist.
-
-**The picker on a narrow pane** (not drawn in the mockup): the card is a **container** (`@container`); below
-**300px** the button moves under the sub line (`grid-column: 1`, `justify-self: start`) so a long title never
-squeezes it. The confirmation's two pills wrap onto a second line.
-
-**An attach request** (state `attach-request`; `MissionPaneAttach.vue`, the same component): the eyebrow
-**"Asks to join"** (`10px / 700`, uppercase, `0.07em`, `text-accent`) in a box (`rounded border
-border-accent-line bg-accent-soft`, `padding: 12px`, `gap: 8px`, `12.5px / 1.45`, `text-text`), then the
-sentence **"{session} asks to join “{mission}”. If you allow it, it works on the mission. It does not
-lead it."** and **Allow** (primary pill) and **Deny** (ghost pill). The mockup says "asks to lead … take
-over from": the spec wins — nobody asks to lead (a session that creates a mission leads it), and the
-hand-off is the operator's alone. On the pane of the session that **asked** (it has no mission) the box is **the whole
-state** under "This session has no mission." (the mockup's `attach-request` draws no picker: it comes back
-once the request is answered) and says "This session asks…"; on the pane of a session **already in** the mission the same
-box sits under "Your next step" and names the session that asked. **Allow** and **Deny** go through the
-`decideAttach` door, and the view is read again after the reply. **Already answered** (not drawn in the
-mockup): when the door says nothing changed (another window answered first) the box says **"Someone already
-answered this request, so nothing changed."**; a request that is gone says **"This request is no longer
-there."** (`11.5px`, `text-text-3` / the failure box above). **The chime** is not here: Harnu's attention cue
-reads the v3 list, so a v4 request rings once S-23 moves the cue to the v4 view (AC-63).
-
-**Ask** (state `ask`): on an open milestone, in its summary line, the dense pill **Ask** (a 10px
-`message-square`, `title` **"Ask the session about this milestone"**), right-aligned. It is drawn only when
-a session **leads** the mission. It opens, under the summary line, the ask box (`MissionPaneAsk.vue`:
-`margin: 4px 0 8px`, `rounded border border-accent-line bg-bg`, `padding: 8px 10px`, `gap: 8px`): a textarea
-(`12.5px`, `text-text`, two rows, the placeholder **"What is still missing to finish this milestone?"**),
-and a footer (`10.5px`, `text-text-4`): **"Goes to the prompt of {leader}. The answer shows in that
-session."** with **Cancel** (ghost) and **Send** (primary; off while the box is empty). **Send** puts
-**About the milestone “{title}”: {question}** into the **leading** session's prompt, through the writer bus
-the way "Reference in session" does it: one bracketed paste and **no Enter**, because a session may be
-waiting at a permission prompt and an Enter there would answer it. The box then says (`role="status"`)
-**"Added to the prompt of {leader}. Press Enter there to send it. The answer shows in that session."** The
-mockup says "Sent to … The answer shows in that session": the spec wins on the mechanism. A leader that is
-not running says **"{leader} is not running. Resume it, then send the question again."** (`role="alert"`),
-and the question **stays in the box**. Ask writes no record and the first version answers in the session,
-never in the pane.
-
-**Data.** The picker is the view's `missions` (`state: 'none'`): `{ id, title, headline, leads }`. The
-requests are the `attach` items of a mission's `detail.waiting` (`requestId`, `sessionId`). The session that
-asked has no mission, so the store reads each of the folder's open missions **by name** after a `none` answer
-(the store owns that loop: the same 20 s poll, at most six missions) and keeps the requests that name the
-selected session. The doors are `window.api.missionV4Door` (`attach { sessionId }`, `decideAttach {
-requestId, decision }`) through `stores/missions.ts`, which adds the folder and the mission id **the view
-answered for** (the picked mission's id for **Attach** and for a request read by name) and reads the view
-again after every reply. An agent creates a v4 mission with `mission_create` in the v4 shape (S-24), so the
-picker, the request and Ask have something to show once a v4 record exists on disk.
-
-**Don'ts.** ❌ Attach on one click. ❌ Write a record from **Start a new mission**. ❌ Send Enter into another
-session. ❌ Offer **Ask** when nobody leads. ❌ Let a session ask to lead. ❌ Print the code a door came back
-with. ❌ Answer the question in the pane.
-
-#### Close, the small task and the sample (Missions v4, S-22)
-
-**S-22 (`MissionCloseConfirmDialog.vue` in `v4` mode, `MissionPane.vue`, `MissionPaneNext.vue`,
-`lib/mission-sample.ts`, `lib/mission-pane-view.ts` and the store; draft mockup `docs/design/missions-v4/`,
-screen `mission-pane`, states `done`, `simple`, `simple-signoff`, `closed`).** Closing is the operator's act,
-with a confirmation. A mission closes **as delivered** or is **discarded**; open matters **warn and never
-block**; a closed mission **leaves the pane** and the session shows the no-mission state (the attach picker).
-**Tokens only; no new colour, radius, easing or row height.** The mockup draws only a "Close mission…" button;
-the dialog, the quiet entry and the sample's strip are drawn here in the mockup's language.
-
-**Where Close lives.** Two entries, one dialog.
-
-- **Ready to close** (the view says `state: 'ready-to-close'`: every required step is done): the **Your next
-  step** box (§6 "The glance") draws its `close` item with **"Close mission…"** (primary `Button`, a 14px
-  `flag`), next to the server's ask and why shown as written. When another item ranks first, the `close` item
-  sits in the "N more waiting on you" rows and has the same button there (the dense pill: `rounded-sm border
-border-border-2`, `padding: 2px 8px`, `11px`). The box only **opens the dialog**; the door call is the pane's.
-- **Always**: at the foot of the mission, after the Sessions row, a quiet **"Close mission…"** (`text-text-3`,
-  `height: 20px`, `padding: 0 7px`, `11px / 500`, a 11px `flag`; `text-green` when the mission is ready), right
-  aligned. A mission can be discarded at any time, so this never waits for the end.
-
-**The dialog** is the one end dialog (`MissionCloseConfirmDialog.vue`, §6 "Mission progress" →
-End dialog: same anatomy, same hand-rolled shell until it moves to `ui/Dialog.vue`) in `mode="v4"`. What
-changes is the copy and the list, not the shell:
-
-- Title **"Close this mission?"**; body **"{title} leaves the Mission pane and cannot be reopened. The mission
-  file stays on disk as the record."** (the title in `text-text`, bold).
-- The two choices of the popover's dialog, **Close as delivered** and **Discard**, with their hints. It opens on
-  **Close as delivered** only when the mission is ready to close, else on **Discard**, so a stray Enter on an
-  unfinished mission confirms nothing it did not mean. Initial focus stays **Cancel**.
-- **Closing as delivered says what it confirms**: under the choices, `11.5px`, `text-text-2`, **"Closing as
-  delivered confirms this Done when: “{text}”"**. It disappears on Discard: a discard confirms nothing.
-- The reason box (optional, goes to the mission's Log), then the **warnings box** (`border-warning-line
-bg-warning-soft text-warning`, "Before you end it"): one row per open matter the close door counts, in words
-  of its own, never the server's English: **"{n} steps are not done"**, **"{n} blockers are still open"**,
-  **"A new Done when is waiting for your approval"**, **"{n} sessions are waiting to join"** (any other kind
-  reads "{n} other matters are still open"). The counts are the view's `closeWarnings` (counted with the facts;
-  the close door's own reply counts without them), read again when the dialog opens. **A warning never disables
-  or hides the confirm.**
-- A door that fails (`NOT_FOUND`, `WRITE_CONFLICT`, `MISSION_CLOSED`, anything else) keeps the dialog open and
-  says what to do in a `role="alert"` line under the reason (`11.5px`, `text-text`); the confirm can be pressed
-  again. The code is never printed. A dialog whose mission left the pane closes with it.
-- Esc, the X, Cancel and a backdrop click close it and call no door. Opening it plays the confirm chime and raises
-  OS attention (the popover's rule: an irreversible decision is never silent).
-
-**What the door does** (`src/main/missions/doors.ts`, not changed here): **delivered** sets `doneWhenVerified`
-(the operator confirms the Done when, spec decision D-21); **discarded** does not. Both close the record and
-keep the file. After the reply the store reads the view again, so the pane shows the attach picker at once.
-
-**The small task** is a mission with **no milestones**: its steps sit directly on the timeline (the tree's
-`loose` list, §6 "The glance"), the criteria pulled from the task show under the open step ("Acceptance
-criteria", each settled by a second session), and another person's sign-off is a criterion **the operator ticks**:
-**"Waiting for {person}"** with **Mark approved**, the operator's own with **Mark done**; a sign-off already
-marked folds into "{n} criteria verified" like any settled criterion. Progress counts steps ("1 of 2 steps done").
-**Every step shows, in plan order**, when there are **eight or fewer** (`LOOSE_ALL_SHOWN` in
-`lib/mission-pane-view.ts`): a small task is its timeline, so a done step or one still to do is never hidden behind
-"N more steps". Past eight the order and fold of §6 "The glance" apply (owed first, then running, the rest behind
-"N more"). No new element: it is the tree and the step the pane already draws.
-
-**The sample** (`lib/mission-sample.ts`) is a view object shaped like the view channel's answer, built in the
-renderer from nothing: **no file, no IPC, no store**. It exists so the whole pane can be seen without a real
-mission in each state (an agent can create a v4 mission since S-24, but most states are rare). It covers **every state of the mockup** (`simple`, `simple-signoff`,
-`done`, `clear` and `closed` included), with made-up names. A state that is only a click on another one opens
-that part for you (`step-open`, `step-blocked`, `ask`, `handoff-confirm`); the three the pane cannot open for you
-(`waiting`, `all-steps`, `sessions`) show the default data and say which click reaches them.
-
-- **Entry.** The no-mission state ends with a quiet **"See a sample mission"** (`12px / 500`, `text-accent`) and
-  one line, **"Shows every state of this pane with made-up data. Nothing is saved."**, under a `border-t`.
-- **The strip** (pinned under the header while a sample shows): `border-b border-accent-line bg-accent-soft`,
-  `padding: 8px 12px`, `11.5px`. First line: the eyebrow **"Sample mission"** (`10px / 700`, uppercase, `0.07em`,
-  `text-accent`) and **"Leave the sample"** (the dense pill). Second line, across the whole strip so it never
-  wraps in a sliver: **"Made-up data. Nothing you press here is saved."** Third line: **"State"** and a native
-  `select` of every state (`rounded-sm border border-border-2 bg-bg`, `height: 22px`, `11.5px`). A state that needs a
-  click adds one line saying which, and it quotes the pane's own label for the thing to press (the same i18n key
-  the pane draws), so the sample never words the pane's copy a second time.
-- **Inert.** While a sample shows, every door the store runs for it answers "nothing changed" **without a call and
-  without reading the view**; the hand-off refuses in words ("This is a sample mission, so no session was
-  started."). The pill, the sidebar and every other reader never see it.
-
-**Differences from the draft mockup** (the spec wins; each is a finding):
-
-1. The mockup's `closed` state is the **pane hidden by the pill** (the pill toggle is S-17's). The sample's
-   `closed` is the **mission closed**: the pane then shows no mission, which is what AC-60 asks for.
-2. The mockup draws a settled sign-off as its own row ("marked by you · Nov 14"); the pane folds a settled
-   criterion into "{n} criteria verified" (S-19), here as everywhere.
-3. The mockup's first step of the small task has a **Confirm** button; no door confirms a plan yet, so the next
-   step box offers **Open step** only.
-4. The mockup heads the small task's lists "Acceptance criteria · from the task" and "Links from the task"; the
-   pane says "Acceptance criteria" and "Links from the session" (S-19's wording) because the view does not say
-   where a criterion came from.
-5. A person's sign-off reads **"Waiting for {person}"**, and the hand-off offer says "context", never "memory".
-6. The mockup's small task, waiting on a person, heads its next-step box "Next step · waiting for other people"
-   with a sentence about the designer. The pane's next-step box does not read the view's `people` list (S-18
-   drew it from `waiting.next` only), so it says "N steps are running. Nothing for you right now." and the
-   sign-offs are in the open step. Not changed here: S-22's extension of that box is the close action only.
-
-**Don'ts.** ❌ Disable or hide the confirm because something is open. ❌ Print the server's English `text` of an
-open matter or a door's code. ❌ Close on one click: the buttons only open the dialog. ❌ Let a sample call a
-door, read the view or reach another surface. ❌ Show Close as delivered as the default of a mission that is not
-done.
+The button is the compact size. For an item that names one step (`main-failing`, `unblock`, `settle`, a `review`
+of one step) it is **Open step**: it unfolds the step in the tree (and its milestone) and scrolls it into view. A
+`close` item is **Close mission…**, an `attach` item **Allow** / **Deny**, a staged Done when **Approve** /
+**Decline**; a `review` of several steps and anything with no single step to open draws no button.
+
+#### The tree and the glyphs
+
+Milestone ▸ step ▸ criteria, every level behind a **chevron** (`ChevronRight` closed, `ChevronDown` open, `10px`,
+`text-text-4`), every row a `role="treeitem"` with `aria-expanded`.
+
+- **Milestone row** (columns `12px 12px 1fr auto`, `gap: 8px`, `padding: 7px 6px`, `rounded-sm`, `12.5px`,
+  `text-text-3`, hover `bg-surface-2`): chevron, glyph, title, then **"{done}/{total}"** (`10.5px`, `text-text-4`,
+  `tabular-nums`). The current milestone's title is `text-text` / 500 ("current" is the server's
+  `progress.current`: the first milestone in plan order that is neither done nor optional). A milestone that
+  **waits for** another that is not the one just before it adds a second line under its title (`11px`,
+  `text-text-4`): **Waits for “{title}”**, naming it, or each of them when it waits on two or more; the line shows
+  only while that milestone is not done.
+- **Open milestone.** Only the current one opens by itself; any other opens when the operator clicks its row, and
+  that choice stays while the dropdown lives. Its **summary line** (`11px`, `text-text-4`) counts the steps that
+  are **running**, **waiting for review** and **blocked** ("4 running · 9 waiting for review · 1 blocked"; the
+  blocked part is `text-red`; a zero part is left out; **to do is never counted**; with nothing running it opens
+  with "Nothing running", and a done milestone reads "Every step is done"). The `·` separators trail their part, so
+  none opens a wrapped line.
+- **Order inside a milestone.** Steps the operator owes first, then at most three running ones, in plan order
+  inside each group; every other step is folded behind a text link **"{n} more steps"** (`11px`, `text-text-4`)
+  that expands in place, in plan order, and reads "Show less".
+- **Step row** (columns `10px 12px 1fr auto`, `gap: 7px`, `padding: 5px 6px`, `12px`, `text-text-2`): chevron,
+  glyph, the title (wraps to at most two lines, then cuts) and the right cell (`10.5px`, `text-text-4`): the pull
+  request number **`#256`** in `font-mono`, `text-accent`, and a **Yours** chip when the operator owes the step
+  (`border-warning-line bg-warning-soft text-warning`). The number is a link when Harnu has the address: the step's
+  `pr` link when it is an address, else the pull request of that number in the session's links. It is a
+  `<span role="link" tabindex="0">` (a button does not nest in a button): a click or Enter opens the pull request
+  and **never folds or unfolds the step**. With no address it stays plain text (a guess at the repository would
+  open the wrong page).
+- **Optional milestones** sit under one collapsed line at the end of the tree, "{n} optional milestones" (`11px`,
+  `text-text-4`); it unfolds them as ordinary milestone rows.
+- **A mission with no milestones** draws its steps directly under the next card as one list: the same rows, the
+  same order, the same fold, and no milestone row. A small task is its own list, so **every step shows, in plan
+  order**, when there are eight or fewer (`LOOSE_ALL_SHOWN`): a done step or one still to do is never hidden behind
+  "N more steps"; past eight the order and the fold above apply.
+
+**Glyphs** (a `12px` slot, a circle, centred): `done` — `bg-green` with a `Check` (8px, stroke 3, `text-bg`);
+`running` — an `8px` `bg-accent` dot; `waiting-review` — an `8px` ring (`border-[1.5px] border-accent`); `todo` —
+an `8px` ring (`border-[1.5px] border-text-4`); **blocked** — a `Flag` (12px, `text-red`) in place of the state's
+glyph. The current milestone's glyph carries a `3px` `ring-accent-soft` halo. A milestone's glyph is its state:
+`done`, `in-progress` (as `running`), `waiting-review`, `not-started` (as `todo`).
+
+#### An open step: blocker, criteria, links, a failed door
+
+An open step is a column under its row (`margin: 2px 0 8px 29px`, `gap: 8px`) with up to three blocks.
+
+- **Blocker**, one box per blocker that still shows (`rounded-sm border border-red-line bg-red-soft`,
+  `padding: 8px 10px`, `12px`, `text-text`): a head (`10px / 700`, uppercase, `0.06em`, `text-red`, a `Flag` before
+  it) that reads **"Blocked · waiting for you · 40m"** when the blocker is the operator's and **"Blocked · waiting
+  for the session"** when it is the session's (the time since it was raised: `<1m`, `40m`, `1h 50m`, `3d`; left out
+  when the record has none); the reason (the server's words, as written); the ask, the exact thing needed (left out
+  when it only repeats the reason); and what it unblocks (`11px`, `text-text-3`). **Done, continue** (door
+  `clearBlocker`) is a button **only on a blocker that is the operator's**; the session's own has none.
+- **Criteria.** The verified ones fold into one line, a 12px `bg-green` circle with a `Check` and **"19 criteria
+  verified"** (`11.5px`, `text-text-2`; "1 criterion verified"), left out when none is: a step with 19 settled
+  criteria does not draw 19 rows. Only the open ones are listed (a `12px 1fr auto` grid, `11.5px`): a hollow 12px
+  box, the text, and at the right **who settles it** (`10.5px`, `text-text-4`) and the operator's button.
+
+  | Settled by (`by`) | Words                       | Button                                                             |
+  | ----------------- | --------------------------- | ------------------------------------------------------------------ |
+  | `fact`            | Checked automatically       | none: Harnu reads it, it is never ticked by hand                   |
+  | `session`         | Checked by a second session | none                                                               |
+  | `operator`        | You                         | **Mark done**                                                      |
+  | `person`          | Waiting for {person}        | **Mark approved** (title: "Mark {person} as having approved this") |
+
+  The words are translated **by the identifier**. Another person's approval is worded **"approved"** ("Waiting for
+  Dana", "Mark approved"), never "sign-off". A criterion with a builder's **own check** (`selfCheck`) stays open
+  and says under its text, `10.5px`, `text-text-4`: "The session says it is done. Not checked yet." A step with no
+  criteria says "No criteria yet."
+
+- **Links** are drawn as the numbered block 4 above says. Only `http` and `https` addresses open
+  (`shellOpenExternal`); a repo path in a record is plain text. The order is: the pull request (`font-mono`), the
+  finished page ("Page · localhost:5173/score-report"), then the rest in the order they were written. They come
+  from the step's own links (the pull request Harnu found on its branch and what the agent added with
+  `mission_link`) and, for a step the session is working, from the links Harnu collects from that session's
+  transcript (the footer's Links shelf reads the same ones; only the ones the session wrote, newest eight at
+  most, from the step's start until the next working step starts; another step's pull request never lists here).
+  A link never breaks inside a word: its label is cut after a separator (`/ . - _ ? & = # : @`) or a space.
+- **A door that fails** shows one box under the step's last block (`rounded-sm border border-red-line
+bg-red-soft`, `padding: 6px 10px`, `11.5px`, `role="alert"`) that says what to do, **never the code**. A door
+  never refuses the operator; what comes back is a record that changed under them, one that closed, a criterion a
+  fact settles, or a channel that is not there (`missionDropdown.step.error.*`). The buttons are disabled while a
+  door is in flight, and the view is read again after every reply.
+
+#### Attach, a request to join, Ask
+
+A session only sees and touches the mission it is attached to, and attaching needs the operator's confirmation. The
+components compute nothing: the picker rows, who leads, the requests and the text a session is sent are built in
+`lib/mission-pane-view.ts` (the view library the dropdown reads); the dropdown draws what the view said.
+
+- **The picker** (state `none`, under the empty layout): the eyebrow **"Open missions in this folder"** (`10px /
+700`, uppercase, `0.07em`, `text-text-4`), then one card per open mission (`rounded border border-border`,
+  `padding: 9px 10px`, `12.5px`): its **title**, a sub line (`10.5px`, `text-text-4`) with the server's count
+  ("4 of 21 steps done") and who leads ("led by Harnu Spec", the session's name, or "nobody leads it"), and the
+  compact **Attach** (`rounded-sm border border-border-2 bg-surface-2`, `h-5`, `11px / 500`, a 10px `link`). Below
+  **300px** of card width the button moves under the sub line. A folder with no open mission draws no cards and
+  one line, **"There is no open mission in this folder to attach to."**, and **Start a new mission**.
+- **Attach asks first.** **Attach** turns the card into its confirmation, in place (no dialog): **"Attach this
+  session to “{title}”? It will be part of the mission, but it will not lead it."** with **Cancel** (ghost) and
+  **Attach** (primary). Nothing is written until the second Attach; it goes through the `attach` door and the view
+  is read again. A door that fails says what to do in one box **under the list** (`border-red-line bg-red-soft`,
+  `11.5px`, `role="alert"`; under the list because a mission that is gone leaves the list with its card): "This
+  mission is no longer there. Pick another one." (`NOT_FOUND`, `MISSION_NOT_FOUND`), "This mission was closed, so
+  a session cannot join it." (`MISSION_CLOSED`), "The mission changed at the same moment. Try again."
+  (`WRITE_CONFLICT`), else "Harnu could not attach this session. Try again in a moment."
+- **Start a new mission** writes **no record**. It puts one instruction into this session's prompt through the
+  writer that Ask and "Reference in session" use (a bracketed paste, **no Enter**: the operator reviews the line
+  and sends it) and says so under the button (`11.5px`, `text-text-3`, `role="status"`): "Added to this session’s
+  prompt. Press Enter there to send it." A session that is not running says "This session is not running. Resume
+  it, then try again." (`role="alert"`).
+- **A request to join** (the `attach` item of `detail.waiting`): the eyebrow **"Asks to join"** (`10px / 700`,
+  `text-accent`) in the accent card, the sentence **"{session} asks to join “{mission}”. If you allow it, it works
+  on the mission. It does not lead it."**, **Allow** (primary) and **Deny** (ghost). Nobody asks to lead: a session
+  that creates a mission leads it, and who leads changes only by a hand-off, which is the operator's alone. In the
+  dropdown of the session that **asked** (it has no mission) the card is the whole state, under "This session has no
+  mission." (it says "This session asks…"); in the dropdown of a session **already in** the mission it is the next
+  card and names the session that asked. Both go through the `decideAttach` door and the view is read again. When
+  another window answered first the card says "Someone already answered this request, so nothing changed."; a
+  request that is gone says "This request is no longer there." The session that asked has no mission, so the store
+  reads each of the folder's open missions **by name** after a `none` answer (the same 20 s poll, at most six) and
+  keeps the requests that name the selected session.
+- **Ask**, on an open milestone, is the compact pill in its summary line (a 10px `message-square`, `title` "Ask the
+  session about this milestone"), drawn only when a session **leads** the mission. It opens, under the summary
+  line, the ask box (`rounded border border-accent-line bg-bg`, `padding: 8px 10px`): a textarea (`12.5px`, two
+  rows, "What is still missing to finish this milestone?") and a footer (`10.5px`, `text-text-4`) "Goes to the
+  prompt of {leader}. The answer shows in that session." with **Cancel** and **Send** (off while the box is empty).
+  **Send** puts **About the milestone “{title}”: {question}** into the **leading** session's prompt, one bracketed
+  paste and **no Enter**, because a session may be waiting at a permission prompt and an Enter there would answer
+  it. The box then says (`role="status"`) "Added to the prompt of {leader}. Press Enter there to send it. The
+  answer shows in that session." A leader that is not running says "{leader} is not running. Resume it, then send
+  the question again." (`role="alert"`) and the question **stays in the box**. Ask writes no record, and the
+  answer shows in the session, never in the dropdown.
+
+#### Closing a mission and the small task
+
+Closing is the operator's act, with a confirmation. A mission closes **as delivered** or is **discarded**; open
+matters **warn and never block**; a closed mission **leaves the Topbar** and the session shows the no-mission
+state.
+
+- **Where Close lives.** Two entries, one dialog. When the mission is ready to close (`state: 'ready-to-close'`:
+  every required step is done) the **next card** is the close item with **"Close mission…"** and the footer does not
+  repeat it; when another item ranks first, the close item sits in the "more waiting" rows with the same compact
+  button. Otherwise the footer holds the quiet **"Close mission…"** (`text-text-3`; `text-green` when the mission is
+  ready): a mission can be discarded at any time, so this never waits for the end. Both only **open the dialog**;
+  the door call is the dropdown's.
+- **The dialog** is the one end dialog (`MissionCloseConfirmDialog.vue`, "Mission progress" → End dialog: the same
+  anatomy) in `mode="v4"`. Title **"Close this mission?"**; body **"{title} leaves the Topbar and cannot be reopened.
+  The mission file stays on disk as the record."** The two choices **Close as delivered** and **Discard**, under the
+  eyebrow "How to close it", with their hints: it opens on **Close as delivered** only when the mission is ready to
+  close, else on **Discard**, so a stray Enter on an unfinished mission confirms nothing it did not mean; initial
+  focus stays **Cancel**. **Closing as delivered says what it confirms**, under the choices (`11.5px`,
+  `text-text-2`): "Closing as delivered confirms this Done when: “{text}”"; it disappears on Discard. The optional
+  reason box (it goes to the mission's Log), then the **warnings box** (`border-warning-line bg-warning-soft
+text-warning`, "Before you end it"), one row per open matter the close door counts, in words of its own, never
+  the server's English: "{n} steps are not done", "{n} blockers are still open", "A new Done when is waiting for
+  your approval", "{n} sessions are waiting to join" (any other kind reads "{n} other matters are still open"); the
+  counts are the view's `closeWarnings`, read again when the dialog opens. **A warning never disables or hides the
+  confirm.** The confirm reads "Close mission" for a delivered end and "Discard" for a discard.
+- A door that fails (`NOT_FOUND`, `WRITE_CONFLICT`, `MISSION_CLOSED`, anything else) keeps the dialog open and says
+  what to do in a `role="alert"` line under the reason (`11.5px`, `text-text`); the confirm can be pressed again and
+  the code is never printed. Esc, the X, Cancel and a backdrop click close it and call no door. Opening it plays the
+  confirm chime and raises OS attention (an irreversible decision is never silent). A dialog whose mission left
+  closes with it, and the dropdown with it.
+- **What the door does** (`src/main/missions/doors.ts`): **delivered** sets `doneWhenVerified` (the operator
+  confirms the Done when); **discarded** does not. Both close the record and keep the file.
+- **The small task** is a mission with **no milestones**: its steps sit directly under the next card, the criteria
+  pulled from the task show under the open step, and another person's approval is a criterion **the operator
+  ticks**: "Waiting for {person}" with **Mark approved**, the operator's own with **Mark done**; one already marked
+  folds into "{n} criteria verified" like any settled criterion. Progress counts steps ("1 of 2 steps done").
+
+#### The sample mission
+
+`lib/mission-sample.ts` is a view object shaped like the view channel's answer, built in the renderer from nothing:
+**no file, no IPC, no store**. It exists so every state of the dropdown can be seen without a real mission in each
+(`simple`, `simple-signoff`, `done`, `clear` and `closed` included), with made-up names; a state that is only a
+click on another one opens that part for you, and the states the dropdown cannot open for you show the default data
+and say which click reaches them. While a sample shows, every door the store runs for it answers "nothing changed"
+**without a call and without reading the view**, and the pill, the sidebar and every other reader never see it. The
+entry is the "See a sample mission" link under the picker, and the strip at the top of the body (the empty-state
+paragraph above) is where it is left again.
+
+**Not carried over:** the pane chrome, the helper-stack type and its persistence, the "Steps and timeline"
+and Sessions disclosures and their `localStorage` keys (`om2tab.missionPane.sections`), the timeline line,
+the Sessions row, the hand-off door, offer and dialog (view only; the backend stays), the state tag, the
+Blocked chip, "Review it", the empty "no links" sentence.
+
+**Don'ts.** ❌ Draw something the operator does nothing with. ❌ Hide an owed item behind a fold with no
+count. ❌ Put a state tag or a "Ready to close" badge above the next step. ❌ Draw a second card for what the
+next step already says. ❌ Open more than the current milestone by itself. ❌ Show sessions to the user.
+❌ Print an absolute path or a link that opens nothing. ❌ Use the large button inside the dropdown.
 
 ### Dialog
 

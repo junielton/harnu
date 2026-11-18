@@ -251,7 +251,7 @@ export interface MissionV4ViewRequest {
 }
 
 /**
- * What the view channel answers. `mission`: everything the pane reads about one mission (`detail` is
+ * What the view channel answers. `mission`: everything the dropdown reads about one mission (`detail` is
  * S-12's `missionGet`; the rest is what its detail does not carry). `none`: the session is attached to
  * no open mission, here are the folder's missions to pick from. `refused`: a typed reason.
  */
@@ -327,9 +327,9 @@ const refusedView = (code: string, message: string): MissionV4ViewReply => ({
  * the channel answers `missionId`, and a call that names it reads one record.)
  *
  * A session attached to several (after the cut-over an old leader leads one mission per v3 file it ever
- * started, the normal case for old records) is never refused: the pane draws the one written most recently
+ * started, the normal case for old records) is never refused: the dropdown draws the one written most recently
  * (the newest file, a v3 file included; the id breaks a tie), among the ones it leads, else among the
- * ones it is in. The reply names it (`missionId`) and the pane offers the others.
+ * ones it is in. The reply names it (`missionId`) and the dropdown offers the others.
  */
 async function missionOfSession(
   root: string,
@@ -382,7 +382,7 @@ async function newestFirst(root: string, rows: readonly ListedMission[]): Promis
 const liveContexts = (): readonly ContextReading[] => getTelemetryPayload().perSession
 
 /**
- * The re-scope an older (v3) mission has staged, as the box the pane shows for a staged Done when (S-37
+ * The re-scope an older (v3) mission has staged, as the box the dropdown shows for a staged Done when (S-37
  * delta 1): the new target and its proof, and the reason the owner gave when it asked (the Log's
  * "re-scope requested" entry). `null` for a v4 record and for a v3 file with nothing staged. It reads the
  * view and writes nothing. THIS is the function that carries the door's box: whoever removes the v3 readers
@@ -437,7 +437,7 @@ export async function runPaneDoor(raw: unknown): Promise<Record<string, unknown>
 }
 
 /**
- * Missions v4 S-16a (V-1, V-3) — the view of one mission for the Mission pane. It READS and never
+ * Missions v4 S-16a (V-1, V-3) — the view of one mission for the Mission dropdown. It READS and never
  * writes, even for a mission that exists only as a v3 file: no v4 record, no sidecar, no ledger row,
  * no steward wake, no sticky sighting (the observer remembers; a view does not). The caller is the
  * app's interface, not a session, so the guard lets it read everything. It adds no wording of its own:
@@ -746,7 +746,7 @@ export function registerMissionIpc(): void {
   const goneDoor = async (): Promise<MissionDoorResult> => ({
     ok: false,
     error:
-      'The v3 mission doors were removed: the operator acts on a mission in the Mission pane (mission:v4Door).'
+      'The v3 mission doors were removed: the operator acts on a mission in the Mission dropdown (mission:v4Door).'
   })
   ipcMain.handle('mission:operatorDoor', goneDoor)
   ipcMain.handle('mission:choose', goneDoor)
@@ -757,16 +757,16 @@ export function registerMissionIpc(): void {
   ipcMain.handle('mission:v4Door', async (_e, door: unknown) => runPaneDoor(door))
   // Mission dropdown S-4 — a read-only existence check for the paths of a step's links. No write, no content.
   ipcMain.handle('mission:pathKinds', (_e, paths: unknown) => readPathKinds(paths))
-  // Missions v4 S-16a — the view of one mission for the Mission pane. It reads and never writes. No
+  // Missions v4 S-16a — the view of one mission for the Mission dropdown. It reads and never writes. No
   // renderer calls it until S-17. It also notes the folder, so the observer's v4 leg looks there.
   ipcMain.handle('mission:v4View', async (_e, args: unknown): Promise<MissionV4ViewReply> => {
     const folder = (args as { folder?: unknown } | null)?.folder
     if (typeof folder === 'string') noteAskedFolders([folder])
     return buildMissionV4View(args)
   })
-  // Missions v4 S-16b — the hand-off: the one thing that changes who leads. The pane's confirm dialog
-  // calls it; it starts a normal session with the mission summary as its first prompt, waits for its
-  // real id and writes once as the operator. No renderer calls it until S-20.
+  // Missions v4 S-16b — the hand-off: the one thing that changes who leads. It starts a normal session with the
+  // mission summary as its first prompt, waits for its real id and writes once as the operator. No renderer
+  // calls it since the Mission dropdown replaced the old pane (the door stays, dormant: no text points at it).
   ipcMain.handle('mission:handOff', async (_e, args: unknown) =>
     runHandOff(
       args,

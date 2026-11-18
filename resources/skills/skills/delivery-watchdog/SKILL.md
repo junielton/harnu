@@ -56,7 +56,7 @@ a session Harnu spawned for a step could never have opened that PR itself. This 
 
 **C. The operator is the blocker.** A `waiting` item of kind `main-failing` (main is red after a merge), at once. An
 operator-owned blocker whose `raisedAt` is over two hours old, together with A or B on the same mission: a fresh item
-is the operator's to notice in the pane.
+is the operator's to notice in the Mission dropdown.
 
 ### 3. Decide whether to speak
 

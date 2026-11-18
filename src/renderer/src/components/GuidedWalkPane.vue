@@ -39,6 +39,7 @@ import {
 } from '../lib/walk-view'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useKeybindingsStore } from '../stores/keybindings'
+import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import { useWalkStore } from '../stores/walk'
@@ -237,7 +238,13 @@ async function onSourceLink(): Promise<void> {
   const src = state.value?.data?.script.source
   if (!src) return
   if (src.kind === 'pr') await openPr(src.number, src.url ?? null)
-  else if (src.kind === 'mission') helpers.addMissionHelper(folder.value)
+  else if (src.kind === 'mission') openMission()
+}
+
+/** The mission the walk is about shows in the dropdown under the Topbar pill (the Mission pane is gone). */
+function openMission(): void {
+  const src = state.value?.data?.script.source
+  useMissionsStore().openMissionDropdown(src?.kind === 'mission' ? src.missionId : undefined)
 }
 
 async function onOpenLink(l: LinkChip): Promise<void> {
@@ -816,7 +823,7 @@ const hasFoot = computed(
       <WalkCloseOut
         v-else-if="view.mode === 'closeout' && view.closeout"
         :closeout="view.closeout"
-        @open-mission="helpers.addMissionHelper(folder)"
+        @open-mission="openMission"
         @open-walks="onOpenLibrary"
         @export="onExport"
       />

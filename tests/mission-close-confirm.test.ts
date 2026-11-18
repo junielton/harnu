@@ -1,16 +1,19 @@
 // @vitest-environment jsdom
 /**
- * Closing a mission from the Mission pane (Missions v4 S-22, AC-60) — ONE end dialog. The pane offers Close
- * as delivered and Discard, with an optional reason; every open matter is a warning in words and never
- * disables the confirm; a closed mission leaves the pane. (The v3 popover that used to open the same dialog
- * is gone, S-37, and its tests with it.)
+ * Closing a mission from the Mission dropdown (Missions v4 S-22, AC-60; the dropdown replaced the pane in the
+ * Mission dropdown work) — ONE end dialog. It offers Close as delivered and Discard, with an optional reason;
+ * every open matter is a warning in words and never disables the confirm; a closed mission leaves the Topbar and
+ * takes the dropdown with it. (The v3 popover that used to open the same dialog is gone, S-37, and its tests
+ * with it.)
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { i18n } from '@renderer/i18n'
-import MissionPane from '../src/renderer/src/components/MissionPane.vue'
+import MissionDropdown from '../src/renderer/src/components/MissionDropdown.vue'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
+import { useMissionsStore } from '../src/renderer/src/stores/missions'
+import { useUiStore } from '../src/renderer/src/stores/ui'
 import enMessages from '../src/renderer/src/i18n/en.json'
 import ptMessages from '../src/renderer/src/i18n/pt-BR.json'
 import type { MissionV4ViewReply } from '../src/main/mission-ipc'
@@ -37,9 +40,8 @@ afterEach(() => {
 })
 
 // ---------------------------------------------------------------------------------------------------
-// Missions v4 · S-22 · AC-60 — closing a mission from the Mission pane. The pane offers Close as
-// delivered and Discard, lists the open matters as warnings and never refuses; a closed mission leaves
-// the pane and the session shows the no-mission state (S-21's attach picker).
+// Missions v4 · S-22 · AC-60 — closing a mission from the Mission dropdown. It offers Close as delivered and
+// Discard, lists the open matters as warnings and never refuses; a mission that is closed leaves the Topbar.
 // ---------------------------------------------------------------------------------------------------
 
 const FOLDER = '/repo'
@@ -191,7 +193,7 @@ let viewAnswers: MissionV4ViewReply[]
 let paneDoor: ReturnType<typeof vi.fn>
 let paneView: ReturnType<typeof vi.fn>
 
-/** Mount the pane; the view answers `viewAnswers` in order, then keeps answering the last one. */
+/** Mount the dropdown open; the view answers `viewAnswers` in order, then keeps answering the last one. */
 async function mountPane(
   first: MissionV4ViewReply,
   doorReply: unknown = { ok: true, changed: true }
@@ -217,22 +219,20 @@ async function mountPane(
     { path: FOLDER, sessions: [{ sessionId: SESSION, projectPath: FOLDER, summary: 'Harnu Spec' }] }
   ] as never
   sessions.select(SESSION)
-  wrapper = mount(MissionPane, {
-    props: {
-      pane: { id: 'h-mission', type: 'mission', cwd: FOLDER, ratio: 1 },
-      worktreePath: FOLDER
-    },
-    global: { plugins: [i18n] },
-    attachTo: document.body
-  })
+  useMissionsStore().ensureStarted()
+  await paneSettle()
+  wrapper = mount(MissionDropdown, { global: { plugins: [i18n] }, attachTo: document.body })
+  const ui = useUiStore()
+  ui.setPopoverAnchor('missionProgress', true)
+  ui.openPopover('missionProgress')
   await paneSettle()
 }
 
-describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
+describe('closing a mission from the dropdown (Missions v4 S-22, AC-60)', () => {
   it('a mission that is not ready can still be closed: a quiet Close mission… opens the dialog, not the door', async () => {
     await mountPane(paneReply())
     expect(dialog()).toBeNull()
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="footer-close"]')
     expect(dialog()).not.toBeNull()
     expect(paneDoor).not.toHaveBeenCalled()
     // Both ends are offered; a mission that is not done opens on Discard, so a stray Enter confirms nothing it did not mean.
@@ -242,7 +242,7 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
 
   it('the body names the Topbar', async () => {
     await mountPane(paneReply())
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="footer-close"]')
     // The dropdown is the only surface that opens this dialog (S-7): the mission leaves the Topbar.
     const body = text('[data-test="mission-close-confirm"] p')
     expect(body).toContain('leaves the Topbar and cannot be reopened.')
@@ -260,7 +260,7 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
 
   it('the dialog says "How to close it" and the confirm says "Close mission" (the mockup\'s close-confirm)', async () => {
     await mountPane(paneReply({ ready: true }))
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="next-button"]')
     // The legend is drawn (not screen-reader only), in the mission's words.
     const legend = q('[data-test="mission-close-confirm"] legend')!
     expect(legend.textContent?.trim()).toBe('How to close it')
@@ -283,7 +283,7 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
 
   it('close never refuses: every open matter is a warning in words, and the confirm stays enabled', async () => {
     await mountPane(paneReply({ warnings: ALL_WARNINGS }))
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="footer-close"]')
     const rows = [...document.body.querySelectorAll('[data-test="mission-end-warning"]')]
     expect(rows.map((r) => (r as HTMLElement).dataset.kind)).toEqual([
       'unfinished-steps',
@@ -314,13 +314,13 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
 
   it('no open matters, no warnings block', async () => {
     await mountPane(paneReply({ ready: true }))
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="next-button"]')
     expect(q('[data-test="mission-end-warnings"]')).toBeNull()
   })
 
   it('closing as delivered says the Done when it confirms; discarding says it confirms nothing', async () => {
     await mountPane(paneReply({ ready: true }))
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="next-button"]')
     expect(text('[data-test="mission-close-confirm"]')).toContain(
       'The spec skill is scored and both fixes are proven by the score'
     )
@@ -329,10 +329,10 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
     expect(q('[data-test="mission-close-done-when"]')).toBeNull()
   })
 
-  it('Discard sends the reason, and the mission leaves the pane for the no-mission state', async () => {
+  it('Discard sends the reason, and the mission leaves the Topbar: the dropdown closes with the dialog', async () => {
     await mountPane(paneReply({ warnings: ALL_WARNINGS }))
     expect(q('[data-test="mission-title"]')).not.toBeNull()
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="footer-close"]')
     await pressOn('[data-test="mission-end-choice-discarded"] input')
     const reason = q('[data-test="mission-end-reason"]') as HTMLTextAreaElement
     reason.value = 'Duplicate of another mission'
@@ -345,15 +345,14 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
       closedAs: 'discarded',
       reason: 'Duplicate of another mission'
     })
-    // The view was read again after the reply, and the pane shows the attach picker's state.
+    // A door that ends the mission closes the dropdown too: there is no mission left to look at.
     expect(dialog()).toBeNull()
-    expect(q('[data-test="mission-title"]')).toBeNull()
-    expect(q('[data-test="mission-none"]')).not.toBeNull()
+    expect(q('[data-test="mission-dropdown"]')).toBeNull()
   })
 
-  it('a mission the view reports closed leaves the pane at once, and the dialog with it', async () => {
+  it('a mission the view reports closed leaves the dropdown at once, and the dialog with it', async () => {
     await mountPane(paneReply())
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="footer-close"]')
     const closed = paneReply()
     if (closed.state !== 'mission') throw new Error('fixture')
     ;(closed.detail as { status: string }).status = 'closed'
@@ -361,12 +360,12 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
     viewAnswers = [closed, NONE]
     await pressOn('[data-test="mission-close-confirm-go"]')
     expect(dialog()).toBeNull()
-    expect(q('[data-test="mission-none"]')).not.toBeNull()
+    expect(q('[data-test="mission-dropdown"]')).toBeNull()
   })
 
   it('a door that fails keeps the dialog open and says what to do, never its code', async () => {
     await mountPane(paneReply(), { ok: false, code: 'WRITE_CONFLICT', error: 'WRITE_CONFLICT: x' })
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="footer-close"]')
     await pressOn('[data-test="mission-close-confirm-go"]')
     expect(dialog()).not.toBeNull()
     const err = text('[data-test="mission-close-error"]')
@@ -378,10 +377,10 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
 
   it('Cancel, Esc and a backdrop click leave the mission open and call no door', async () => {
     await mountPane(paneReply())
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="footer-close"]')
     await pressOn('[data-test="mission-close-cancel"]')
     expect(dialog()).toBeNull()
-    await pressOn('[data-test="mission-close-open"]')
+    await pressOn('[data-test="footer-close"]')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await paneSettle()
     expect(dialog()).toBeNull()
@@ -389,14 +388,16 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
     expect(q('[data-test="mission-title"]')).not.toBeNull()
   })
 
-  it('a ready mission: the Next box offers Close mission… (the owner of the close), and it opens the same dialog', async () => {
+  it('a ready mission: the Next card offers Close mission… (the owner of the close), and it opens the same dialog', async () => {
     await mountPane(paneReply({ ready: true }))
-    const btn = q('[data-test="next-close"]')
+    const btn = q('[data-test="next-button"]')
     expect(btn?.textContent).toContain('Close mission')
-    // The pane words a close item itself (stp-21): the server's English is never shown for a kind it knows.
-    expect(text('[data-test="next-step"]')).toContain('Close the mission: every step is done')
-    expect(text('[data-test="next-step"]')).not.toContain('ZZZ server ask')
-    await pressOn('[data-test="next-close"]')
+    // The dropdown words a close item itself (stp-21): the server's English is never shown for a kind it knows.
+    expect(text('[data-test="next-card"]')).toContain('Close the mission: every step is done')
+    expect(text('[data-test="next-card"]')).not.toContain('ZZZ server ask')
+    // The footer does not repeat it.
+    expect(q('[data-test="footer-close"]')).toBeNull()
+    await pressOn('[data-test="next-button"]')
     expect(dialog()).not.toBeNull()
     // A ready mission opens on Close as delivered.
     expect(
@@ -412,31 +413,16 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
     await mountPane(paneReply({ ready: true, waiting }))
     await pressOn('[data-test="next-more"]')
     const row = document.body.querySelector('[data-test="next-rest-row"][data-kind="close"]')
-    expect(row?.querySelector('[data-test="next-close"]')).not.toBeNull()
-    ;(row?.querySelector('[data-test="next-close"]') as HTMLElement).click()
+    expect(row?.querySelector('[data-test="next-button-rest"]')).not.toBeNull()
+    ;(row?.querySelector('[data-test="next-button-rest"]') as HTMLElement).click()
     await paneSettle()
     expect(dialog()).not.toBeNull()
   })
 
-  it('the foot Close button is green when the mission is ready', async () => {
-    // design.md: text-green when ready. A static text-text-3 beside it always wins, so check the pair.
-    await mountPane(paneReply({ ready: true }))
-    const ready = q('[data-test="mission-close-open"]')!
-    expect(ready.classList.contains('text-green')).toBe(true)
-    expect(ready.classList.contains('text-text-3')).toBe(false)
-  })
-
-  it('the foot Close button is muted when the mission is not ready', async () => {
+  it('a mission that is not ready draws no Close button in the Next card, only the footer one', async () => {
     await mountPane(paneReply())
-    const open = q('[data-test="mission-close-open"]')!
-    expect(open.classList.contains('text-text-3')).toBe(true)
-    expect(open.classList.contains('text-green')).toBe(false)
-  })
-
-  it('a mission that is not ready draws no Close button in the Next box', async () => {
-    await mountPane(paneReply())
-    expect(q('[data-test="next-close"]')).toBeNull()
-    expect(q('[data-test="mission-close-open"]')).not.toBeNull()
+    expect(q('[data-test="next-button"]')).toBeNull()
+    expect(q('[data-test="footer-close"]')).not.toBeNull()
   })
 
   it('every string the close flow shows exists in en and pt-BR', () => {

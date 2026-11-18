@@ -19,10 +19,10 @@
  * What it asserts (every assertion lands in `landing-results.json`; any failure exits 1):
  *   NG-8   sha256 of every original, and of every copy, is identical before and after the reads and after
  *          every v4 write path; reads create no `.harnu/missions-v4/`.
- *   pane   each open record opens in the Mission pane (title, count), the Topbar pill's count equals the
- *          pane's, in en and pt-BR; the converted campaign shows its milestones in order and the next step.
+ *   pane   each open record opens in the Mission dropdown (title, count), the Topbar pill's count equals the
+ *          dropdown's, in en and pt-BR; the converted campaign shows its milestones in order and the next step.
  *   owed   what the operator owed BEFORE (the release's own `youItems`, or the v3 file's own facts) is still
- *          owed AFTER (the pane's waiting list), by kind, through the documented mapping. Nothing vanishes.
+ *          owed AFTER (the dropdown's waiting list), by kind, through the documented mapping. Nothing vanishes.
  *   doors  Approve and Decline on a staged v3 re-scope write a v4 copy and leave the v3 file untouched
  *          (byte- and mtime-identical), on a frozen record, a throwaway copy of it and a release record.
  *   guard  `~/.claude/settings.json` of the operator is untouched (mtime and size), the instance runs under a
@@ -78,8 +78,8 @@ export const FAULTS = {
   'rewrite-copy': 'append a byte to a copied v3 file before the after-read hash check (NG-8)',
   'rewrite-original': 'append a byte to a v3 file after a v4 write (NG-8, write paths)',
   'drop-owed': 'hide one owed item from the AFTER list (nothing may vanish)',
-  'reorder-milestones': 'reverse the milestones the pane read (milestones in order)',
-  'pill-mismatch': 'change the pill count the check reads (pill equals pane)',
+  'reorder-milestones': 'reverse the milestones the dropdown read (milestones in order)',
+  'pill-mismatch': 'change the pill count the check reads (pill equals dropdown)',
   'rewrite-original-in-door':
     'append a byte to the v3 file as Approve or Decline runs (the in-place write the doors no longer do)',
   'stray-v4-dir': 'create .harnu/missions-v4/ before the reads (a read writes nothing)'
@@ -902,7 +902,7 @@ async function runMain(ctx) {
     'every copy equals its original after the reads'
   )
 
-  // ---- 2. the pane ---------------------------------------------------------------------------------------
+  // ---- 2. the dropdown ---------------------------------------------------------------------------------------
   const S = store
   const selectLeader = async (id) => {
     await waitFor(
@@ -922,17 +922,17 @@ async function runMain(ctx) {
         pill: q('mission-pill-label')?.innerText?.trim() ?? null,
         milestones: all('milestone-row'),
         steps: all('step-row'),
-        next: q('next-step')?.innerText?.trim() ?? null,
+        next: q('next-card')?.innerText?.trim() ?? null,
         nextMore: q('next-more')?.innerText?.trim() ?? null,
         restRows: all('next-rest-row'),
-        approve: !!q('done-when-approve'),
-        decline: !!q('done-when-decline')
+        approve: !!q('next-staged-approve'),
+        decline: !!q('next-staged-decline')
       }
     })()`)
   const showMission = async (lead, missionId, expectTitle = null) => {
     await selectLeader(lead)
     await cdp.eval(
-      `(async () => { const m = ${S('missions')}; m.ensureStarted(); await m.chooseMission('${lead}', '${missionId}'); m.openMissionPane(); return true })()`
+      `(async () => { const m = ${S('missions')}; m.ensureStarted(); await m.chooseMission('${lead}', '${missionId}'); m.openMissionDropdown(); return true })()`
     )
     const t0 = Date.now()
     for (;;) {
@@ -945,17 +945,15 @@ async function runMain(ctx) {
       await sleep(300)
     }
   }
-  const openTree = () =>
-    cdp.eval(
-      `(() => { const t = document.querySelector('[data-test="tree-toggle"]'); if (t && t.getAttribute('aria-expanded') !== 'true') t.click() })()`
-    )
+  // The dropdown draws every milestone row without a disclosure (only the current one is open): nothing to click.
+  const openTree = async () => {}
   const setLocale = async (loc) => {
     await cdp.eval(
       `(() => { document.querySelector('#app').__vue_app__.config.globalProperties.$i18n.locale = '${loc}' })()`
     )
     await sleep(500)
   }
-  /** Close toasts so they never cover the pane in a screenshot. */
+  /** Close toasts so they never cover the dropdown in a screenshot. */
   const clearToasts = () =>
     cdp
       .eval(
@@ -977,7 +975,7 @@ async function runMain(ctx) {
         ].map((i) => i.kind)
       : []
 
-  // Which records open in the pane. A chapter mission of a campaign resolves to the campaign's one mission.
+  // Which records open in the dropdown. A chapter mission of a campaign resolves to the campaign's one mission.
   const campaignTitle = cmpReply.detail?.title
   const pane = {}
   const paneTargets = [
@@ -1006,7 +1004,7 @@ async function runMain(ctx) {
         `pane.info.${id}`,
         'AC-94',
         true,
-        `closed record: ${switched ? `pane shows "${r.title}"` : `the pane did not switch to it (it still shows "${r.title}"); known: BUG-279, a closed record has no pane view`}`
+        `closed record: ${switched ? `dropdown shows "${r.title}"` : `the dropdown did not switch to it (it still shows "${r.title}"); known: BUG-279, a closed record has no dropdown view`}`
       )
       continue
     }
@@ -1032,7 +1030,7 @@ async function runMain(ctx) {
     'ng8.pane-opens-write-nothing',
     'AC-94',
     stillV3.same,
-    `opening ${paneTargets.length} records in the pane changed ${stillV3.changed.length} files, added ${stillV3.appeared.length}`
+    `opening ${paneTargets.length} records in the dropdown changed ${stillV3.changed.length} files, added ${stillV3.appeared.length}`
   )
 
   // ---- 3. the campaign as one mission: milestones in order and the next step -------------------------------
@@ -1131,7 +1129,7 @@ async function runMain(ctx) {
     folder: repo,
     title: 'Current version mission',
     sessionId: LEAD_V4,
-    doneWhen: 'The landing check reads this record in the pane',
+    doneWhen: 'The landing check reads this record in the dropdown',
     milestones: [{ title: 'Write it' }, { title: 'Read it' }],
     steps: [
       {
@@ -1142,7 +1140,7 @@ async function runMain(ctx) {
           { text: 'The operator has looked at it', by: 'operator' }
         ]
       },
-      { title: 'Read the record', milestone: 'Read it', criteria: ['The pane shows it'] }
+      { title: 'Read the record', milestone: 'Read it', criteria: ['The dropdown shows it'] }
     ]
   })
   const v4Id = created.payload?.missionId ?? created.payload?.id
@@ -1185,21 +1183,21 @@ async function runMain(ctx) {
     'owed.v4',
     'AC-94',
     !blk.isError && missionKinds(v4After).includes('unblock'),
-    `an operator blocker written by this build is owed in the pane: [${missionKinds(v4After).join(', ')}]${blk.isError ? ' ' + JSON.stringify(blk.payload).slice(0, 240) : ''}`
+    `an operator blocker written by this build is owed in the dropdown: [${missionKinds(v4After).join(', ')}]${blk.isError ? ' ' + JSON.stringify(blk.payload).slice(0, 240) : ''}`
   )
   v4Sha = sha256(v4File) // the blocker was this build's own write; what follows only reads
   check(
     'ng8.v4-read-unchanged',
     'AC-94',
     sha256(v4File) === v4Sha,
-    'the v4 record is byte-identical after the pane read it'
+    'the v4 record is byte-identical after the dropdown read it'
   )
   void v4Sha
 
   // ---- 7. the doors on a staged v3 re-scope --------------------------------------------------------------
   // NG-8 / AC-22 hold for the doors too (S-42 delta 1): Approve or Decline of a re-scope staged before the
   // upgrade converts the mission by copy (the v4 record under the same id) and the door runs on that copy. The
-  // v3 file is left byte- and mtime-identical, one v4 record appears, the pane reads it as v4, the staging is
+  // v3 file is left byte- and mtime-identical, one v4 record appears, the dropdown reads it as v4, the staging is
   // gone, and the Log of the copy ends with the operator's line ("operator approved|declined the re-scope").
   const v3Changed = () => copies.filter((c) => sha256(c.dest) !== c.sha).map((c) => c.name)
   const v3Unchanged = () => v3Changed().length === 0
@@ -1225,9 +1223,9 @@ async function runMain(ctx) {
     const hadCopy = v4CopyOf(id) !== undefined
     if (fault('rewrite-original-in-door'))
       writeFileSync(copy.dest, readFileSync(copy.dest, 'utf8') + ' ')
-    await cdp.eval(`document.querySelector('[data-test="done-when-${door}"]')?.click()`)
+    await cdp.eval(`document.querySelector('[data-test="next-staged-${door}"]')?.click()`)
     await waitFor(
-      `!document.querySelector('[data-test="done-when-${door}"]')`,
+      `!document.querySelector('[data-test="next-staged-${door}"]')`,
       20_000,
       `the staged re-scope to clear after ${door}`
     ).catch(() => {})

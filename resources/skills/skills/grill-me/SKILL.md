@@ -90,7 +90,7 @@ Rules for the writes:
 owner: 'operator', sessionId }`, the `reason` the question and its options (load
   `../mission/references/writing-contract.md`). The operator's blocker is theirs: you never call
   `mission_clear_blocker` on it (refused `OPERATOR_ONLY`); tell them to say **Done, continue** in the
-  Mission pane. A `D-n` that gates no step, or a repo with no mission, gets neither.
+  Mission dropdown. A `D-n` that gates no step, or a repo with no mission, gets neither.
 - If the target is not a file (no spec), nothing is written; every item goes on the
   closing list instead, with the exact row it would have been.
 
@@ -111,7 +111,7 @@ Written to the spec:
 Could not place:
 - "Support for the old export format" — a constraint with no home in this spec; belongs in a PRD or a card.
 
-Owed by you: "Done, continue" on D-6's blocker in the Mission pane (if one exists). Nothing is enacted.
+Owed by you: "Done, continue" on D-6's blocker in the Mission dropdown (if one exists). Nothing is enacted.
 ```
 
 "Written" lists only what the file now contains — re-read the spec before sending, so

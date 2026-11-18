@@ -28,7 +28,7 @@
  * mission" for a mission that is ready to close) and the seam they call, `lib/walk-entry.ts`: a control is drawn
  * only when `walkEntryAvailable(source)` says yes, a click calls `startWalk(source)` and then this component
  * closes the dropdown; opening the walk's pane is the provider's job. The shipped provider says no.
- * The pill still opens the Mission pane; nothing here is reachable by a user until S-7 switches the pill over.
+ * The Topbar pill opens it (S-7), and the Mission pane it replaced is gone (S-8).
  */
 import { computed, customRef, nextTick, onBeforeUnmount, ref, useSlots, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'

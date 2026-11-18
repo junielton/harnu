@@ -582,9 +582,6 @@
     }
   },
   "missionPane": {
-    "label": "Missão",
-    "title": "Missão",
-    "loading": "Lendo a missão…",
     "pill": {
       "count": "{done}/{total}",
       "forYou": "{n} para você",
@@ -601,28 +598,7 @@
       "ready-to-close": "Pronta para fechar",
       "closed": "Fechada"
     },
-    "bar": {
-      "label": "Progresso da missão"
-    },
     "next": {
-      "label": "O que vem a seguir",
-      "you": "Seu próximo passo",
-      "calm": "Próximo passo",
-      "running": "{n} passo em andamento. Nada para você agora. | {n} passos em andamento. Nada para você agora.",
-      "idle": "Nada em andamento. Nada para você agora.",
-      "more": "Mais {n} esperando por você",
-      "less": "Mostrar menos",
-      "openStep": "Abrir passo",
-      "kind": {
-        "main-failing": "Corrigir",
-        "unblock": "Destravar",
-        "rescope": "Pronto quando",
-        "settle": "Conferir",
-        "review": "Revisar",
-        "close": "Fechar",
-        "attach": "Entrar"
-      },
-      "close": "Fechar missão…",
       "text": {
         "mainFailing": {
           "ask": "Corrija a branch main: ela quebrou depois de “{title}”",
@@ -646,8 +622,7 @@
         },
         "doneWhen": {
           "ask": "Aprove ou recuse o novo Pronto quando",
-          "why": "Uma sessão o propôs. Ele só vira o fim da missão se você aprovar.",
-          "open": "Ver proposta"
+          "why": "Uma sessão o propôs. Ele só vira o fim da missão se você aprovar."
         },
         "attach": {
           "ask": "Deixe outra sessão entrar nesta missão",
@@ -659,203 +634,10 @@
         }
       }
     },
-    "tree": {
-      "label": "Passos da missão",
-      "waitsFor": "Espera por “{title}”",
-      "waitsForMany": "Espera por {titles}",
-      "running": "{n} em andamento",
-      "waitingReview": "{n} aguardando revisão",
-      "blocked": "{n} bloqueado | {n} bloqueados",
-      "nothingRunning": "Nada em andamento",
-      "allDone": "Todos os passos estão concluídos",
-      "more": "Mais {n} passo | Mais {n} passos",
-      "less": "Mostrar menos",
-      "optional": "{n} marco opcional | {n} marcos opcionais",
-      "chipYours": "Seu",
-      "chipBlocked": "Bloqueado",
-      "noCriteria": "Ainda sem critérios.",
-      "criterionDone": "Confirmado",
-      "criterionOpen": "Ainda não confirmado",
-      "state": {
-        "todo": "A fazer",
-        "running": "Em andamento",
-        "waiting-review": "Aguardando revisão",
-        "done": "Concluído",
-        "not-started": "Não iniciado",
-        "in-progress": "Em andamento"
-      },
-      "toggle": "Passos e linha do tempo",
-      "lineSteps": "{n} passo | {n} passos"
-    },
-    "step": {
-      "criteria": "Critérios de aceite",
-      "verified": "{n} critério verificado | {n} critérios verificados",
-      "by": {
-        "fact": "Conferido automaticamente",
-        "session": "Conferido por uma segunda sessão",
-        "operator": "Você",
-        "person": "Esperando {person}",
-        "personUnnamed": "Esperando outra pessoa"
-      },
-      "selfCheck": "A sessão diz que terminou. Ainda não foi conferido.",
-      "mark": "Marcar como feito",
-      "markPerson": "Marcar como aprovado",
-      "markPersonTitle": "Marcar que {person} aprovou isto",
-      "blocked": {
-        "you": "Bloqueado · esperando você",
-        "session": "Bloqueado · esperando a sessão",
-        "withAge": "{head} · {age}"
-      },
-      "clear": "Pronto, continuar",
-      "linksTitle": "Links da sessão",
-      "linksNone": "A sessão ainda não escreveu nenhum link para este passo.",
-      "page": "Página · {address}",
-      "openLink": "Abrir {label}",
-      "error": {
-        "NOT_FOUND": "Isso mudou enquanto você olhava. O painel mostra o mais recente. Confira e tente de novo se ainda precisar.",
-        "WRITE_CONFLICT": "A missão mudou no mesmo instante. O painel mostra o mais recente. Tente de novo.",
-        "MISSION_CLOSED": "Esta missão está fechada, então nada nela pode mudar.",
-        "SETTLES_ITSELF": "O Harnu confere este critério sozinho. Você não o marca.",
-        "other": "O Harnu não conseguiu salvar. Tente de novo em instantes. Se continuar, feche o painel e abra de novo."
-      }
-    },
-    "doneWhen": {
-      "eyebrow": "Novo Pronto quando proposto",
-      "body": "Uma sessão propõe isto como o novo Pronto quando. Aprove para torná-lo o fim da missão. Recuse para manter o atual.",
-      "approve": "Aprovar",
-      "decline": "Recusar"
-    },
     "sessions": {
-      "label": "Sessões",
-      "meta": {
-        "this": "{count} · liderada por esta sessão",
-        "other": "{count} · liderada por {name}",
-        "none": "{count} · ninguém a lidera"
-      },
-      "role": {
-        "leads": "Lidera a missão",
-        "leadsPast": "Liderou a missão",
-        "works": "Trabalha na missão",
-        "worked": "Trabalhou na missão"
-      },
-      "thisSession": "esta sessão",
-      "unnamed": "Sessão {id}",
-      "since": "Desde {day}",
-      "span": "{from} a {to}",
-      "sameDay": "{day}, {from} a {to}",
-      "stoppedAt": "Parou em “{step}”",
-      "stoppedUnknown": "Parou. O registro não diz onde.",
-      "waitingFor": "Esperando: {what}",
-      "more": "Mais {n} sessão | Mais {n} sessões",
-      "less": "Mostrar menos",
-      "continue": "Continuar em uma nova sessão…"
-    },
-    "handoff": {
-      "offer": {
-        "thisSession": "O contexto desta sessão está {percent}% cheio. Você pode continuar a missão em uma sessão nova. Ela começa pelo resumo da missão, então nada se perde.",
-        "otherSession": "O contexto de {name}, a sessão que lidera, está {percent}% cheio. Você pode continuar a missão em uma sessão nova. Ela começa pelo resumo da missão, então nada se perde.",
-        "leaderUnnamed": "a sessão que lidera",
-        "open": "Continuar em uma nova sessão…",
-        "later": "Agora não"
-      },
-      "title": "Continuar esta missão em uma nova sessão",
-      "steps": {
-        "one": "O Harnu guarda onde a sessão que lidera parou.",
-        "two": "Uma nova sessão abre com o resumo abaixo e lidera a missão.",
-        "three": "A sessão antiga é liberada. Ela continua no histórico de sessões da missão."
-      },
-      "brief": {
-        "heading": "Resumo da missão — com o que a nova sessão começa",
-        "empty": "O Harnu não tem um resumo desta missão para dar à nova sessão.",
-        "section": {
-          "goal": "Objetivo",
-          "whereItIs": "Onde está",
-          "decided": "Decidido",
-          "stoppedAt": "Parou em",
-          "nextStep": "Próximo passo",
-          "openCriteria": "Critérios em aberto",
-          "links": "Links"
-        }
-      },
-      "cancel": "Cancelar",
-      "confirm": "Iniciar nova sessão",
-      "pending": "Iniciando a nova sessão…",
-      "pendingHint": "Isso pode levar até 90 segundos. Mantenha esta janela aberta.",
-      "done": {
-        "title": "A nova sessão lidera a missão",
-        "body": "O Harnu a iniciou com o resumo da missão e liberou a sessão antiga. Ela continua no histórico de sessões da missão.",
-        "open": "Abrir a nova sessão",
-        "close": "Fechar"
-      },
-      "error": {
-        "MISSION_CLOSED": "Esta missão está fechada, então não há o que continuar.",
-        "HANDOFF_START_FAILED": "A nova sessão não iniciou. Nada mudou: a mesma sessão continua liderando. Tente de novo em instantes.",
-        "STARTED_NOT_ATTACHED": "A nova sessão foi iniciada, mas não assumiu a tempo. A mesma sessão continua liderando. Abra a nova sessão para ver o que aconteceu, ou feche-a. Depois tente de novo.",
-        "HANDOFF_IN_PROGRESS": "Uma transferência desta missão já está iniciando uma sessão. Espere terminar e olhe a linha Sessões.",
-        "HANDOFF_UNAVAILABLE": "O Harnu não consegue iniciar uma sessão agora. Nada mudou. Tente de novo em instantes.",
-        "LEADER_CHANGED": "Quem lidera a missão mudou enquanto a nova sessão iniciava, então o Harnu não a vinculou. A nova sessão está aberta, mas não faz parte da missão. Olhe a linha Sessões e decida de novo.",
-        "other": "O Harnu não conseguiu concluir a transferência. Olhe a linha Sessões para ver quem lidera e tente de novo.",
-        "SAMPLE": "Esta é uma missão de exemplo, então nenhuma sessão foi iniciada."
-      }
-    },
-    "none": {
-      "title": "Esta sessão não tem missão."
-    },
-    "refused": {
-      "title": "Não foi possível ler esta missão agora.",
-      "retry": "Tentar de novo"
-    },
-    "attach": {
-      "pickerTitle": "Missões abertas nesta pasta",
-      "ledBy": "liderada por {name}",
-      "unled": "ninguém a lidera",
-      "attach": "Anexar",
-      "confirm": {
-        "text": "Anexar esta sessão a “{title}”? Ela fará parte da missão, mas não vai liderá-la.",
-        "cancel": "Cancelar",
-        "yes": "Anexar"
-      },
-      "start": "Começar uma nova missão",
-      "startDone": "Adicionado ao prompt desta sessão. Aperte Enter lá para enviar.",
-      "startError": "Esta sessão não está rodando. Retome-a e tente de novo.",
-      "empty": "Não há missão aberta nesta pasta para anexar.",
-      "error": {
-        "NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
-        "MISSION_NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
-        "MISSION_CLOSED": "Esta missão foi encerrada, então uma sessão não pode entrar nela.",
-        "WRITE_CONFLICT": "A missão mudou no mesmo instante. Tente de novo.",
-        "other": "O Harnu não conseguiu anexar esta sessão. Tente de novo em instantes."
-      },
-      "request": {
-        "eyebrow": "Pede para entrar",
-        "thisSession": "Esta sessão pede para entrar em “{mission}”. Se você permitir, ela trabalha na missão. Ela não a lidera.",
-        "otherSession": "{session} pede para entrar em “{mission}”. Se você permitir, ela trabalha na missão. Ela não a lidera.",
-        "allow": "Permitir",
-        "deny": "Negar",
-        "already": "Alguém já respondeu a este pedido, então nada mudou.",
-        "error": {
-          "NOT_FOUND": "Este pedido não existe mais.",
-          "MISSION_NOT_FOUND": "Esta missão não existe mais.",
-          "MISSION_CLOSED": "Esta missão foi encerrada, então não há nada para entrar.",
-          "WRITE_CONFLICT": "A missão mudou no mesmo instante. Tente de novo.",
-          "other": "O Harnu não conseguiu salvar sua resposta. Tente de novo em instantes."
-        }
-      }
-    },
-    "ask": {
-      "open": "Perguntar",
-      "openTitle": "Perguntar à sessão sobre este marco",
-      "placeholder": "O que ainda falta para terminar este marco?",
-      "label": "Pergunta sobre “{title}”",
-      "hint": "Vai para o prompt de {name}. A resposta aparece nessa sessão.",
-      "cancel": "Cancelar",
-      "send": "Enviar",
-      "done": "Adicionado ao prompt de {name}. Aperte Enter lá para enviar. A resposta aparece nessa sessão.",
-      "notRunning": "{name} não está rodando. Retome-a e envie a pergunta de novo.",
-      "close": "Fechar"
+      "unnamed": "Sessão {id}"
     },
     "close": {
-      "open": "Fechar missão…",
       "title": "Fechar esta missão?",
       "body": "{title} sai da Topbar e não pode ser reaberta. O arquivo da missão continua no disco como registro.",
       "how": "Como fechar",
@@ -874,45 +656,6 @@
         "MISSION_CLOSED": "Esta missão já está fechada, então não há mais o que fechar.",
         "other": "O Harnu não conseguiu fechar a missão. Nada mudou. Tente de novo em instantes."
       }
-    },
-    "sample": {
-      "open": "Ver uma missão de exemplo",
-      "openHint": "Mostra todos os estados deste painel com dados inventados. Nada é salvo.",
-      "label": "Missão de exemplo",
-      "note": "Dados inventados. Nada que você apertar aqui é salvo.",
-      "chooser": "Estado",
-      "leave": "Sair do exemplo",
-      "state": {
-        "default": "Padrão",
-        "waiting": "Esperando você",
-        "step-open": "Um passo aberto",
-        "step-blocked": "Um passo bloqueado",
-        "all-steps": "Todos os passos",
-        "ask": "Perguntando sobre um marco",
-        "sessions": "Sessões",
-        "handoff-suggest": "Passagem oferecida",
-        "handoff-confirm": "Confirmação da passagem",
-        "clear": "Nada esperando",
-        "done": "Concluída, pronta para fechar",
-        "other-session": "Outra sessão",
-        "simple": "Tarefa pequena",
-        "simple-signoff": "Tarefa pequena, aprovações",
-        "big": "Missão grande",
-        "big-waiting": "Missão grande, esperando você",
-        "no-mission": "Sem missão",
-        "attach-request": "Pede para entrar",
-        "closed": "Missão fechada"
-      },
-      "hint": {
-        "waiting": "Aperte “{label}” na caixa do próximo passo.",
-        "all-steps": "Abra “{tree}” e aperte “{label}” sob um marco.",
-        "sessions": "Aperte a linha “{label}”, depois dos passos.",
-        "big-waiting": "Aperte “{label}” na caixa do próximo passo."
-      }
-    },
-    "leads": {
-      "label": "Esta sessão lidera {n} missões",
-      "choose": "Escolha a missão a mostrar"
     }
   },
   "memoryPane": {

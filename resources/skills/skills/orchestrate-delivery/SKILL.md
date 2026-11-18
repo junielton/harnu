@@ -103,7 +103,7 @@ join it, never open a second. Then `mission_create`, with the whole plan in one 
 - **Criteria are frozen at dispatch.** A criterion is never edited after dispatch: a change is a new criterion with
   the reason in `mission_log`. A criterion the spec lacks is a spec gap: amend the spec, never the card alone.
 - **The Done when is the operator's words.** Propose it in the same call. When they change it, call
-  `mission_set_done_when` in the same turn with their words as the `reason`; the operator confirms the new text in the Mission pane.
+  `mission_set_done_when` in the same turn with their words as the `reason`; the operator confirms the new text in the Mission dropdown.
 - Put the plan in one chat message (units, topology, Done when) and dispatch. Authorization to orchestrate is
   authorization to dispatch: there is no second approval to collect.
 
@@ -284,7 +284,7 @@ blocker on exactly the steps of the slices whose `gated-by:` names it:
 - The slices no open D-n gates are dispatched now. A gated slice's card is created all the same and waits in the
   backlog.
 - The choice is the operator's, and so is clearing an operator-owned blocker (they say "Done, continue" in the Mission
-  pane). When they have, record the choice with `mission_log { kind: 'decision', stepId }`, run the planner again if
+  dropdown). When they have, record the choice with `mission_log { kind: 'decision', stepId }`, run the planner again if
   it changed an AC, and send the held slices out with `submit_manifest`.
 
 ### Dispatching
@@ -458,9 +458,9 @@ re-arming is the defect.
 
 ## Hand-off
 
-Only the operator starts a hand-off, from the Mission pane. The leader never switches itself, whatever its context
+Only the operator starts a hand-off. The leader never switches itself, whatever its context
 says. A session near its context limit asks the operator for one: one line in its reply and one `mission_log` note,
-nothing else. If they agree, Harnu starts a fresh session whose first prompt is the mission summary, and the old one
+nothing else. The app has no hand-off button for now, so nothing starts one on its own; if the operator decides on one, Harnu starts a fresh session whose first prompt is the mission summary, and the old one
 is released, not killed. A fresh session starts from the summary: it reads `mission_get` and carries on, and no
 resume prompt is ever pasted, by you or by the operator. Another session that only wants to help uses
 `mission_attach` and joins as a worker, never as the leader.
@@ -486,8 +486,8 @@ items. What it does:
   proves nothing;
 - settle each `by: session` criterion with `mission_settle_ac { stepId, criterionId, evidence }`, from a session that
   did not build the step: a builder's own check is labelled a self-check and never proof;
-- **a visual or pane sign-off is its own operator criterion.** Settle the machine criteria with their evidence and
-  leave the sign-off to the operator, who ticks it in the Mission pane, instead of leaving the whole step open.
+- **a visual sign-off is its own operator criterion.** Settle the machine criteria with their evidence and
+  leave the sign-off to the operator, who ticks it in the Mission dropdown, instead of leaving the whole step open.
 - `unmet` goes back to the SAME worker as a delta file, re-verify only that criterion, twice unmet is the operator's
   decision, not a third attempt. `blocked` is a blocker next to the criterion it holds. Move the finished card to
   `review` with the PR URL, never to `done`.
