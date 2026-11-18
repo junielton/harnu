@@ -424,6 +424,10 @@ export async function connectMcp(userData, timeoutMs = 120_000, child = null) {
       }
       return { isError: res.isError === true, payload }
     },
+    /** The server's own tool list, as `claude` reads it (each tool with its `_meta`). */
+    async list() {
+      return (await client.listTools()).tools
+    },
     close: () => client.close().catch(() => {})
   }
 }
@@ -474,15 +478,29 @@ const git = (cwd, ...a) =>
     }
   )
 
-/** Where the files of the stub `claude` and `gh` are written. */
-function writeStubs(bin, stubLog) {
+/**
+ * Where the files of the stub `claude` and `gh` are written.
+ * `walkCall` scripts the one thing the stub ever does besides listening (W-22): when a line holds the plain
+ * sentence "walk me through what we just built", it runs `node <helper> <its --mcp-config file> <cwd> <script>`,
+ * which is what a model that picked the walk skill would do through the control server it was spawned with.
+ */
+function writeStubs(bin, stubLog, walkCall) {
   mkdirSync(bin, { recursive: true })
-  // Records its own arguments and pid, then every line it receives; never answers, never calls anything.
+  // Records its own arguments and pid, then every line it receives; never answers, never calls anything,
+  // except for that one scripted sentence.
   writeFileSync(
     path.join(bin, 'claude'),
     `#!/bin/sh
 printf 'START pid=%s %s\\n' "$$" "$*" >> '${stubLog}'
-while IFS= read -r line; do printf '%s\\n' "$line" >> '${stubLog}'; done
+cfg=''; prev=''
+for a in "$@"; do [ "$prev" = "--mcp-config" ] && cfg="$a"; prev="$a"; done
+while IFS= read -r line; do
+  printf '%s\\n' "$line" >> '${stubLog}'
+  case "$line" in
+    *"walk me through what we just built"*)
+      '${walkCall.node}' '${walkCall.helper}' "$cfg" "$(pwd)" '${walkCall.script}' >> '${stubLog}' 2>&1 ;;
+  esac
+done
 exec sleep 3600
 `
   )
@@ -550,7 +568,11 @@ export async function startInstance({ repoRoot, id, fixtures, env: extraEnv = {}
   assertInstanceIsolated(env, realHome, runDir)
   mkdirSync(env.HOME, { recursive: true })
   const bin = path.join(runDir, 'bin')
-  writeStubs(bin, stubLog)
+  writeStubs(bin, stubLog, {
+    node: process.execPath,
+    helper: path.join(fixtures, 'stub-claude-walk.mjs'),
+    script: path.join(fixtures, 'plain-sentence-walk.json')
+  })
   env.PATH = `${bin}:${env.PATH}`
   writeTranscript(env.HOME, repo, SESSIONS.owner, 'walk smoke: the session that owns the walks')
   writeTranscript(env.HOME, repoB, SESSIONS.other, 'walk smoke: a session of the second worktree')
@@ -579,7 +601,10 @@ export async function startInstance({ repoRoot, id, fixtures, env: extraEnv = {}
     inst.proc = launch(
       path.join(repoRoot, 'node_modules', '.bin', 'electron'),
       [
-        path.join(repoRoot, 'out', 'main', 'index.js'),
+        // the package directory (its `main` is out/main/index.js), as `npm run dev` starts it: `electron
+        // out/main/index.js` would make app.getAppPath() the out/main folder, where no bundled resource
+        // (resources/skills, the companion, the orchestrator guard) can be found
+        repoRoot,
         `--user-data-dir=${userData}`,
         `--remote-debugging-port=${cdpPort}`,
         '--no-sandbox',
