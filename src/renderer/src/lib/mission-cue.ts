@@ -69,6 +69,13 @@ export const BLOCKING_NUDGE_MS: readonly number[] = [
 /** How long a mission absent from the polls keeps its memory entry (measured from `lastSeenAt`). */
 export const ABSENT_TTL_MS = 24 * 60 * 60 * 1000
 
+/**
+ * How long an owed key that left a poll is still remembered (measured from the first poll that missed
+ * it). 5 minutes is 15 polls at the 20 s cadence: far longer than the one-or-two-poll flaps a source
+ * produces, far shorter than a real resolve-then-recur (a review done, a new pull request opened later).
+ */
+export const FLAP_GRACE_MS = 5 * 60_000
+
 /** `${kind}` or `${kind}:${detail}` — one per owed kind (per blocker reason / re-scope target). */
 export type OwedKey = string
 
