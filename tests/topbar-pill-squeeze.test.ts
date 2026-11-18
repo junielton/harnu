@@ -13,13 +13,20 @@ import { createPinia, setActivePinia } from 'pinia'
 import { i18n } from '../src/renderer/src/i18n'
 import MissionPill from '../src/renderer/src/components/MissionPill.vue'
 import Topbar from '../src/renderer/src/components/Topbar.vue'
-import { TOPBAR_MIN_TITLE_PX } from '../src/renderer/src/lib/topbar-overflow'
+import {
+  TOPBAR_MIN_TITLE_PX,
+  TOPBAR_TITLE_YIELD_PX,
+  clusterBudget,
+  regionMin,
+  titleFloor
+} from '../src/renderer/src/lib/topbar-overflow'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import type { MissionV4ViewReply } from '../src/main/mission-ipc'
 
 const FOLDER = '/repo'
 const SESSION = 'sess-1'
 let pillPx = 188
+let headerPx = 800
 
 function reply(done: number): MissionV4ViewReply {
   return {
@@ -98,13 +105,14 @@ beforeEach(() => {
   localStorage.clear()
   view = reply(4)
   pillPx = 188
+  headerPx = 800
   observers.length = 0
   vi.stubGlobal('ResizeObserver', FakeResizeObserver)
   // The header is 800px wide (the app's minimum) and the pill, once drawn, is PILL_PX wide.
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     configurable: true,
     get(this: HTMLElement) {
-      return this.tagName === 'HEADER' ? 800 : 0
+      return this.tagName === 'HEADER' ? headerPx : 0
     }
   })
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
@@ -150,7 +158,7 @@ async function settle(): Promise<void> {
 }
 
 describe('the Mission pill never shrinks below its label', () => {
-  it('the pill and its button are shrink-0, and the label is never truncated', async () => {
+  it('the pill and its button may shrink, but only after the title has (it carries a huge shrink factor)', async () => {
     wrapper = mount(MissionPill, {
       props: { sessionId: SESSION },
       global: { plugins: [i18n] },
@@ -159,14 +167,14 @@ describe('the Mission pill never shrinks below its label', () => {
     await settle()
     const root = wrapper.get('[data-v4="true"]')
     const button = wrapper.get('button')
+    // the title (`shrink-[1000]`, down to its stub) gives way long before the pill (shrink 1) does
     for (const el of [root, button]) {
-      expect(el.classes(), el.element.tagName).toContain('shrink-0')
-      expect(el.classes(), el.element.tagName).not.toContain('shrink')
-      expect(el.classes(), el.element.tagName).not.toContain('min-w-0')
+      expect(el.classes(), el.element.tagName).toContain('shrink')
+      expect(el.classes(), el.element.tagName).not.toContain('shrink-0')
     }
-    const label = wrapper.get('[data-test="mission-pill-label"]')
-    expect(label.classes()).not.toContain('truncate')
-    expect(label.classes()).toContain('whitespace-nowrap')
+    // the last resort when the header cannot hold the pill: the label truncates, its text stays in the title
+    expect(wrapper.get('[data-test="mission-pill-label"]').classes()).toContain('truncate')
+    expect(button.attributes('title')).toContain('Measure the spec')
     // the Topbar reserves what it cannot shrink, as it does for the provider and orchestrator badges
     expect(root.attributes('data-topbar-extra')).toBeDefined()
   })
@@ -175,6 +183,7 @@ describe('the Mission pill never shrinks below its label', () => {
     wrapper = mount(Topbar, { attachTo: document.body, global: { plugins: [i18n] } })
     await settle()
     const region = wrapper.get('[data-test="topbar-title"]').element.parentElement as HTMLElement
+    expect(wrapper.get('[data-test="topbar-title"]').classes()).toContain('shrink-[1000]')
     // title floor + the pill's width + the `gap-2` before it
     expect(region.style.minWidth).toBe(`${TOPBAR_MIN_TITLE_PX + 188 + 8}px`)
   })
@@ -192,5 +201,68 @@ describe('the Mission pill never shrinks below its label', () => {
     await settle()
     expect(wrapper.get('[data-test="mission-pill-label"]').text()).toBe('5/21 · 1 for you')
     expect(region.style.minWidth).toBe(`${TOPBAR_MIN_TITLE_PX + 140 + 8}px`)
+  })
+
+  it('in a header too narrow for the title floor and the pill, the title yields to its stub and the region never pushes the cluster out', async () => {
+    // the app's 800px minimum with the sidebar and the Fleet rail open leaves the Topbar about 220px
+    headerPx = 220
+    wrapper = mount(Topbar, { attachTo: document.body, global: { plugins: [i18n] } })
+    await settle()
+    const title = wrapper.get('[data-test="topbar-title"]').element as HTMLElement
+    const region = title.parentElement as HTMLElement
+    expect(title.style.minWidth).toBe(`${TOPBAR_TITLE_YIELD_PX}px`)
+    // capped at what the header can give the region: 220 − padding − toggle − bell − gaps − crumb − `…`
+    const style = getComputedStyle(region.closest('header') as HTMLElement)
+    const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
+    expect(region.style.minWidth).toBe(`${220 - padding - 22 - 26 - 36 - 32 - 28}px`)
+    // every action is in the `…` menu, and nothing else gave way before the title did
+    expect(wrapper.find('[data-test="topbar-more"]').exists()).toBe(true)
+  })
+})
+
+describe('titleFloor', () => {
+  const input = (headerWidth: number, extrasWidth: number) => ({
+    headerWidth,
+    paddingX: 0,
+    hasCrumb: true,
+    extrasWidth
+  })
+
+  it('keeps the title its full floor while there is room, so a wide bar is unchanged', () => {
+    expect(titleFloor(input(1400, 196))).toBe(TOPBAR_MIN_TITLE_PX)
+    expect(titleFloor(input(800, 0))).toBe(TOPBAR_MIN_TITLE_PX)
+  })
+
+  it('lets the title yield, never below its stub, when the badges and the pill need the room', () => {
+    expect(titleFloor(input(220, 196))).toBe(TOPBAR_TITLE_YIELD_PX)
+    const mid = titleFloor(input(380, 196))
+    expect(mid).toBeGreaterThan(TOPBAR_TITLE_YIELD_PX)
+    expect(mid).toBeLessThan(TOPBAR_MIN_TITLE_PX)
+  })
+
+  it('the action budget is what is left after the floor it uses, never negative room for the `…`', () => {
+    for (const w of [220, 300, 380, 500, 800]) {
+      expect(clusterBudget(input(w, 196))).toBeGreaterThanOrEqual(w >= 380 ? 0 : -200)
+    }
+    expect(clusterBudget(input(1400, 0))).toBe(1400 - 22 - 26 - 36 - 32 - 0 - TOPBAR_MIN_TITLE_PX)
+  })
+})
+
+describe('regionMin', () => {
+  const input = (headerWidth: number, extrasWidth: number) => ({
+    headerWidth,
+    paddingX: 0,
+    hasCrumb: true,
+    extrasWidth
+  })
+
+  it('is the title floor plus the badges while the header has room', () => {
+    expect(regionMin(input(1400, 196))).toBe(TOPBAR_MIN_TITLE_PX + 196)
+  })
+
+  it('never asks more than the header can give once the fixed controls are paid for', () => {
+    const w = 220
+    expect(regionMin(input(w, 196))).toBe(w - 22 - 26 - 36 - 32 - 28)
+    expect(regionMin(input(100, 196))).toBe(TOPBAR_TITLE_YIELD_PX)
   })
 })

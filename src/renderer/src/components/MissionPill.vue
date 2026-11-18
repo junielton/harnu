@@ -74,18 +74,21 @@ onBeforeUnmount(() => ui.setPopoverAnchor('missionProgress', false))
 </script>
 
 <template>
-  <!-- `shrink-0` and `data-topbar-extra`: the pill keeps its count and its label (the mockup draws it
-       `flex-shrink: 0`), and the Topbar reserves its width, so the breadcrumb and the title give way first and
-       the action cluster moves into the `…` menu before the pill is ever squeezed. -->
+  <!-- `data-topbar-extra`: the Topbar reserves the pill's width, so the breadcrumb and the title give way first
+       and the action cluster moves into the `…` menu before the pill is touched. The title carries a huge flex-shrink
+       (`shrink-[1000]`, Topbar.vue), so it gives way, down to its stub, before the pill does (the mockup draws the
+       pill `flex-shrink: 0`),
+       and only when the header cannot hold the pill and the controls it never pushes out does the label truncate
+       (its full text is in the `title`). -->
   <div
-    class="relative flex shrink-0"
+    class="relative flex min-w-0 shrink"
     style="-webkit-app-region: no-drag"
     data-v4="true"
     data-topbar-extra
   >
     <button
       type="button"
-      class="flex shrink-0 cursor-pointer items-center rounded-sm border tabular-nums transition hover:brightness-110"
+      class="flex min-w-0 shrink cursor-pointer items-center rounded-sm border tabular-nums transition hover:brightness-110"
       :class="[toneClass, ringClass]"
       :style="{
         gap: '5px',
@@ -102,7 +105,7 @@ onBeforeUnmount(() => ui.setPopoverAnchor('missionProgress', false))
       @click="ui.togglePopover('missionProgress')"
     >
       <component :is="v4Ready ? Check : Target" :size="10" :stroke-width="1.8" class="shrink-0" />
-      <span v-if="v4" class="whitespace-nowrap" data-test="mission-pill-label">{{ v4Label }}</span>
+      <span v-if="v4" class="truncate" data-test="mission-pill-label">{{ v4Label }}</span>
       <ChevronDown
         :size="10"
         :stroke-width="1.8"

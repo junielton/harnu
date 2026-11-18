@@ -7453,7 +7453,7 @@ its choice group has the visible eyebrow "How to close it", its confirm reads "C
 **Small windows.** The body is a container, so every width rule is on the dropdown's own width, not the
 window's: below **380px** the next-step button and each "more waiting" button go under their text, and the
 criteria's who-settles cell goes under the criterion. Titles and step names wrap (`overflow-wrap:
-anywhere`); the pill keeps its count while the breadcrumb truncates first; nothing scrolls sideways; no
+anywhere`); the Topbar reserves the pill's width and the session title gives way first, down to a 24px stub (its flex-shrink is 1000 against the pill's 1), then the pill itself, whose label truncates only when the header cannot hold the pill and the controls it never pushes out (about 313px of header; the action buttons are already in the `…` menu by then); nothing scrolls sideways; no
 control is hidden to make room.
 
 #### Reads, states and doors

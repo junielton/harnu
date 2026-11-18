@@ -27,7 +27,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
-- **The Mission pill keeps its label in a narrow window.** At the smallest window width the top bar squeezed the pill until only its icon was left; now the pill never shrinks, and the session name and the buttons on the right make room first (the buttons move into the `…` menu).
+- **The Mission pill keeps its label in a narrow window.** The top bar now reserves room for the pill, so the session name shrinks first (to a short stub) and the buttons on the right move into the `…` menu, before the pill is squeezed. In the very narrowest layout (800 pixels wide with both side panels open) there is still not enough room for the whole label, so close the Fleet panel to see it; nothing spills over the panel next to it any more.
 
 ## 2026-11-17
 
