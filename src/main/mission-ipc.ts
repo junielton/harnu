@@ -752,9 +752,9 @@ export function registerMissionIpc(): void {
   ipcMain.handle('mission:operatorDoor', goneDoor)
   ipcMain.handle('mission:choose', goneDoor)
   // Missions v4 S-15 — the operator's doors on a v4 record (mark, clear a blocker, approve a Done when,
-  // close, allow or deny a join, attach from the picker). Additive: nothing above changes. It has no
-  // preload entry until S-16, so the renderer cannot reach it yet. The reply carries the outcome and the
-  // close warnings, never the record or a file path.
+  // close, allow or deny a join, attach from the picker). Additive: nothing above changes. The preload
+  // exposes it as `missionV4Door`, which is how the renderer reaches it. The reply carries the outcome and
+  // the close warnings, never the record or a file path.
   ipcMain.handle('mission:v4Door', async (_e, door: unknown) => runPaneDoor(door))
   // Mission dropdown S-4 — a read-only existence check for the paths of a step's links. No write, no content.
   ipcMain.handle('mission:pathKinds', (_e, paths: unknown) => readPathKinds(paths))
