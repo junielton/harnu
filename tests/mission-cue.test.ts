@@ -146,7 +146,11 @@ describe('decideCue — appear or grow only', () => {
     const first = decideCue([owedView('a', 'checks:1')], empty(), T0)
     const ticked = decideCue([view({ id: 'a' })], first.memory, T0 + POLL)
     expect(ticked.cue).toBe(false)
-    expect(ticked.memory.owed.get('a')?.keys.size).toBe(0)
+    // The cleared key is only remembered as absent for the flap grace window, then dropped.
+    expect(ticked.memory.owed.get('a')?.keys.get('checks')?.absentSince).toBe(T0 + POLL)
+    const later = decideCue([view({ id: 'a' })], ticked.memory, T0 + POLL + FLAP_GRACE_MS + 1)
+    expect(later.cue).toBe(false)
+    expect(later.memory.owed.get('a')?.keys.size).toBe(0)
   })
 
   it('cues when a new kind appears next to one already heard', () => {
@@ -224,13 +228,14 @@ describe('decideCue — appear or grow only', () => {
     expect(seedCueMemory([owedView('a', 'close'), owedView('a', 'close')], T0).owed.size).toBe(1)
   })
 
-  it('a key that disappears is dropped, so coming back is a new cue', () => {
+  it('a key that disappears for good is dropped after the flap grace, so coming back is a new cue', () => {
     const first = decideCue([owedView('a', 'blocker:merge')], empty(), T0)
     const cleared = decideCue([view({ id: 'a' })], first.memory, T0 + POLL)
-    expect(cleared.memory.owed.get('a')?.keys.size).toBe(0)
-    expect(decideCue([owedView('a', 'blocker:merge')], cleared.memory, T0 + 2 * POLL).cue).toBe(
-      true
-    )
+    const gone = decideCue([view({ id: 'a' })], cleared.memory, T0 + POLL + FLAP_GRACE_MS + 1)
+    expect(gone.memory.owed.get('a')?.keys.size).toBe(0)
+    expect(
+      decideCue([owedView('a', 'blocker:merge')], gone.memory, T0 + 2 * POLL + FLAP_GRACE_MS).cue
+    ).toBe(true)
   })
 })
 
