@@ -363,6 +363,11 @@
     "copyCode": "Copy code",
     "copied": "Copied"
   },
+  "missionDropdown": {
+    "shell": {
+      "label": "Mission"
+    }
+  },
   "missionPane": {
     "label": "Mission",
     "title": "Mission",

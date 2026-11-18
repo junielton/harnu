@@ -368,6 +368,12 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
     return first?.ownerSessionId ?? null
   }
 
+  /** The session a run's turns are addressed to, read before a step (the turn builders are synchronous). */
+  async function ownerOfRun(walkId: string, runId: string): Promise<string | null> {
+    const rec = await store.readRun(walkId, runId)
+    return rec ? ownerOf(walkId, rec) : null
+  }
+
   async function flush(
     walkId: string,
     runId: string
@@ -451,11 +457,12 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
     prev: Run,
     next: Run,
     ctx: { walk: WalkRecord; rec: RunRecord },
+    owner: string | null,
     closeOut: string | undefined
   ): OwedTurn[] {
     if (prev.state === 'ended' || next.state !== 'ended') return []
     const text = formatTurn({
-      ...baseTurn('closed', next, ctx, ctx.rec.ownerSessionId),
+      ...baseTurn('closed', next, ctx, owner),
       closeOut: closeOut ?? closeOutText(next, ctx.walk.script)
     })
     return [{ kind: 'closed', checkId: null, text }]
@@ -642,6 +649,7 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
       if (EMOJI_RE.test(text) || text.length > max)
         return { ...refuse('REPORT_REJECTED', 'The text broke rules.'), rejected: v.list }
       const at = now()
+      const owner = await ownerOfRun(a.walkId, runId)
       const res = await store.updateRun(
         a.walkId,
         runId,
@@ -653,7 +661,7 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
               : { kind: 'check', checkId: a.checkId, result: a.result, evidence: text, now: at }
           ),
         {
-          turns: (next, ctx) => closedTurn(ctx.rec.run, next, ctx, undefined),
+          turns: (next, ctx) => closedTurn(ctx.rec.run, next, ctx, owner, undefined),
           closeOut: (next, ctx) =>
             ctx.rec.run.state !== 'ended' && next.state === 'ended'
               ? closeOutText(next, ctx.walk.script)
@@ -676,12 +684,12 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
       const at = now()
       const step = (run: Run): MachineResult => applyOp(run, a, at)
       let sent: WalkTurnKind[] = []
+      const owner = await ownerOfRun(a.walkId, a.runId)
       const res = await store.updateRun(a.walkId, a.runId, step, {
         turns: (next, ctx) => {
           const prev = ctx.rec.run
           const answered = prev.cursor ? prev.checks.find((c) => c.id === prev.cursor) : undefined
           const kind = turnKindFor(a.op, answered ?? null)
-          const owner = ctx.rec.ownerSessionId
           const turns: OwedTurn[] = []
           if (kind && answered) {
             const check =
@@ -703,7 +711,7 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
               input.attempts = next.checks.find((c) => c.id === answered.id)?.attempts ?? 0
             turns.push({ kind, checkId: answered.id, text: formatTurn(input) })
           }
-          turns.push(...closedTurn(prev, next, ctx, a.closeOut))
+          turns.push(...closedTurn(prev, next, ctx, owner, a.closeOut))
           sent = turns.map((t) => t.kind as WalkTurnKind)
           return turns
         },

@@ -7315,6 +7315,118 @@ view-model; the component draws what it says and decides nothing.
   arrive with the library, S-4; the card says only where the walk is saved), the "last time" hints of a re-run,
   and the `working` frame for "Getting check N ready" (the whole script is delivered up front).
 
+### Mission dropdown (Missions v4 — replaces the Mission pane)
+
+**The Mission pane is gone** (no helper-stack pane, no "open in pane", the `mission` pane type is no
+longer persisted). Everything about a mission is one **dropdown** that opens from the Topbar pill
+(`MissionDropdown.vue`, with `MissionDropdownHead.vue`, `…Next.vue`, `…Tree.vue`, `…Step.vue`,
+`…Ask.vue`, `…Empty.vue`). Mockup `docs/design/mission-dropdown/` (screens `mission-dropdown` and `entry`).
+Principle: **every element earns its place**. For each one ask what the operator does with it; if
+nothing, remove it or fold it behind one line. **What the operator owes is never hidden.** The dropdown
+computes no state; it draws the server's view exactly as the pane did (`mission:v4View`, the same store
+and 20 s poll, the same doors).
+
+#### Anchoring, size, scroll
+
+- **Anchor.** The pill is the anchor (`aria-haspopup="dialog"`, `aria-expanded`). The dropdown sits **6px
+  under the Topbar's bottom edge** (`top: 48px` under the 42px Topbar), its left edge on the pill's left edge, and is clamped to
+  **8px** from each viewport edge (it flips to the right edge when the pill is near it). It is a
+  `position: fixed` layer on `--z-dialog`, teleported to `body` (outside the Topbar's drag region, `no-drag`), `bg-surface`, `border border-border-2`, `rounded-lg`,
+  `shadow-pop`, entering with `.anim-fade-in-scale` (origin top-left; none under reduced motion).
+- **Width.** `min(420px, 100vw - 16px)`. Below **360px** of window it is the full width minus the 8px
+  margins; there is no minimum.
+- **Height and scroll.** `max-height: min(640px, 100vh - 56px)`. A column: the **body** (`overflow-y:
+auto`, thin scrollbar on `border-border-2`) is the one scroller; the **footer** (Close mission…) is
+  pinned under it and nothing else is; every `overflow-y-auto` element carries `.scrollable`. Under **420px** of window height the footer stops being pinned and
+  scrolls with the body. The body is a size container (`@container`).
+- **Close.** Esc, a click outside, the pill again, or a door that ends the mission. Outside clicks
+  that land on a dialog do not close it.
+
+#### Keyboard and focus
+
+- **Open:** click, Enter or Space on the pill, or the `view.missionProgress` chord (it toggles the same
+  dropdown). **Initial focus:** the next step's button (or Approve / Allow when that card is a staged
+  Done when or a request to join); when nothing is owed, the dropdown itself (`tabindex="-1"`).
+- **Focus trap:** Tab and Shift+Tab cycle inside the dropdown (a `role="dialog"`, not modal: the page
+  behind stays visible and is not dimmed). Esc closes it and **returns focus to the pill**.
+- **Dialogs** (close) are teleported after the dropdown, so at the same `--z-dialog` layer they sit above it; the dropdown becomes `inert` and dimmed; Esc closes the
+  dialog first and returns focus to the button that opened it. Initial focus in a dialog: Cancel.
+- **The tree** is `role="tree"`: Up / Down move between visible rows, Right / Left open / close a milestone
+  or step (and move into / out of it), Home / End jump to the first / last, Enter or Space toggles. The PR
+  link inside a step row is its own tab stop and never toggles the step.
+- Every state dot is focusable through its row and shows its label on focus as well as hover.
+
+#### What it draws (top to bottom)
+
+1. **Head** (`padding: 14px 14px 12px`). Only when the session leads several missions: a one-line
+   **switch** above the title ("Mission 1 of 3 · Change", `10px / 700` eyebrow, `chevron-down`) that opens a
+   `radiogroup` of the missions (title, "{done} of {total} milestones · {n} for you", a `check` on the
+   current). The **title** (`13.5px / 600`, wraps, never truncates). The **progress**: a `6px` bar
+   (`rounded-sm border border-border bg-surface-2`, fill `bg-green`) and the count text (`11.5px`,
+   `tabular-nums`, `text-text-3`) on one row. No state tag and no "Ready to close" badge: the next step
+   and the green pill say it.
+2. **One card, the next thing the operator owes** (`margin: 0 14px 12px`, `rounded`, `border`, `padding:
+10px 12px`): the next step (looks `you` / `ok` / `calm`, as before); **or** a staged Done when (accent
+   look, Approve / Decline); **or** a request to join (accent look, Allow / Deny). It is **one** card: a
+   staged Done when is never also an ask with a "Review it" button. The button is the **compact** size
+   (`h-5`, `px-2`, `11px`): at the **right** of the text when the body is **380px or wider**, **under**
+   the text, left-aligned, when narrower. "{n} more waiting on you" is a link under the why and expands
+   the rest in place (a row per item, its compact button right when wide, below when narrow).
+3. **Tree** (`border-t`, `padding: 8px 14px 10px`). Milestone ▸ step ▸ criteria as before, with these
+   changes: **only the current milestone is open**; no timeline line; an open milestone's summary line
+   carries **Ask** at its right end (`gap: 4px 14px`, it wraps to its own line, never touching the count);
+   inside an open milestone the owed steps come first, then **at most three** running steps, the rest behind
+   "{n} more steps"; a step row has no Blocked chip (the flag glyph is it) and keeps the Yours chip and
+   the PR link.
+4. **An open step.** Blocker (with Done, continue when it is the operator's), **Criteria** (verified
+   ones folded into one line; open ones with who settles them and their button), **Links**: the PR; a
+   **worktree** as its branch name (click selects that folder in the sidebar) with a copy button for the
+   path; the evidence as one **Evidence** link that opens its README; an address on this machine. A link
+   that opens nothing is not drawn; no absolute path is ever drawn; an empty Links block is not drawn.
+5. **Footer** (pinned, `border-t`, `padding: 7px 14px`): **Close mission…** (ghost, compact, `flag`).
+   Not drawn when the next step already is "Close mission…", nor in the empty and chooser views.
+
+**Dots and glyphs.** Every state glyph has a label on hover and focus (a teleported tooltip: `11px`,
+`bg-surface-2`, `border-border-2`, `shadow-pop`, above the glyph or below it when there is no room) and an
+`aria-label`: milestone — Not started / In progress / Done; step — To do / Running / Waiting for review /
+Done / Blocked; criterion — Not settled yet / Settled. The pt-BR words are the app's translation of these,
+added to `pt-BR.json` in the same change as the English ones.
+
+**Topbar pill** (`MissionPill.vue`, S-7). Same anatomy, label and tones as the pane's pill ("{done}/{total} · {n} for you",
+warning / accent / success), plus a trailing **caret** (`chevron-down`, 10px). It is a button with
+`aria-haspopup="dialog"` and `aria-expanded` (not `aria-pressed`), drawn with the tone's `ring-2` while the
+dropdown is open; the `view.missionProgress` chord toggles the same dropdown and is enabled whenever the pill
+is drawn. A session in **no mission** draws a **muted, icon-only** pill (`border-border-2`, `text-text-3`,
+`target` glyph, `title` and `aria-label` "No mission") that opens the empty state.
+
+**Test it (the entry for guided walks).** A compact button (`h-5`, `px-2`, `11px`, the `list-checks`
+glyph at 10px, label "Test it"; `aria-label` "Test it · {what it walks}") on three places: the Criteria
+row of an open step (right end of the heading line), the open milestone's summary line (next to Ask) and,
+when the mission is ready to close, "Test the whole mission" in the footer. It starts a walk in the helper
+stack, never inside the dropdown, and is drawn only when a walk can start from that source (`walkEntryAvailable(source)`);
+until then it is not drawn at all. In the footer, "Test the whole mission" shares the footer with "Close mission…" or stands alone when the next card already is that. Mockup screen `entry`.
+
+**Empty state** (session with no mission): the pill is a muted **icon-only** pill (`border-border-2`,
+`text-text-3`, title "No mission"). The dropdown shows `target` (14px, `text-text-4`), "This session has
+no mission.", the picker of the open missions in this folder (Attach, with its in-place confirmation),
+"Start a new mission" and, under the picker, "See a sample mission" (the sample keeps its "made up" label, its state chooser and a way to leave it), as in the pane.
+
+**Small windows.** The body is a container, so every width rule is on the dropdown's own width, not the
+window's: below **380px** the next-step button and each "more waiting" button go under their text, and the
+criteria's who-settles cell goes under the criterion. Titles and step names wrap (`overflow-wrap:
+anywhere`); the pill keeps its count while the breadcrumb truncates first; nothing scrolls sideways; no
+control is hidden to make room.
+
+**Not carried over:** the pane chrome, the helper-stack type and its persistence, the "Steps and timeline"
+and Sessions disclosures and their `localStorage` keys (`om2tab.missionPane.sections`), the timeline line,
+the Sessions row, the hand-off door, offer and dialog (view only; the backend stays), the state tag, the
+Blocked chip, "Review it", the empty "no links" sentence.
+
+**Don'ts.** ❌ Draw something the operator does nothing with. ❌ Hide an owed item behind a fold with no
+count. ❌ Put a state tag or a "Ready to close" badge above the next step. ❌ Draw a second card for what the
+next step already says. ❌ Open more than the current milestone by itself. ❌ Show sessions to the user.
+❌ Print an absolute path or a link that opens nothing. ❌ Use the large button inside the dropdown.
+
 ### Mission pane (helper stack — Missions v4, S-17 shell)
 
 **Missions v4, S-17 (spec `docs/specs/2026-11-14-missions-v4/spec.md`, "The surfaces"; draft

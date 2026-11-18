@@ -251,148 +251,149 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 
 ## Design entity → file map
 
-| Design entity (in `design.md`)                     | Vue file                                                                                                   |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Layout shell                                       | `src/renderer/src/App.vue`                                                                                 |
-| Sidebar (§6 — session rows)                        | `src/renderer/src/components/Sidebar.vue`                                                                  |
-| Sidebar folder row                                 | `src/renderer/src/components/SidebarFolder.vue`                                                            |
-| Sidebar section shell (§6 — T702)                  | `SidebarSection.vue` + `lib/sidebar-section.ts`                                                            |
-| Sidebar jump palette (§6 — T288)                   | `src/renderer/src/components/SidebarJumpPalette.vue`                                                       |
-| Repo group header (multi-worktree repos)           | `src/renderer/src/components/RepoGroupHeader.vue`                                                          |
-| Shelved section of a repo group (§6 — U2.3b)       | `SidebarShelvedSection.vue` + `lib/shelved-sidebar.ts`                                                     |
-| Topbar / breadcrumb / status pill                  | `src/renderer/src/components/Topbar.vue`                                                                   |
-| Topbar overflow menu (`…` More actions, BUG-252)   | `src/renderer/src/components/TopbarOverflowMenu.vue` + `lib/topbar-overflow.ts`                            |
-| Activity bell (Topbar notification popover, T152)  | `src/renderer/src/components/ActivityBell.vue`                                                             |
-| Empty state ("Ready to start")                     | `src/renderer/src/components/EmptyState.vue`                                                               |
-| Folder View (main pane, T212)                      | `src/renderer/src/components/FolderView.vue` + `folder-view-format.ts`                                     |
-| Folder View — sessions section                     | `src/renderer/src/components/FolderViewSessions.vue`                                                       |
-| Folder View — roadmap section                      | `src/renderer/src/components/FolderViewRoadmap.vue`                                                        |
-| Folder View — worktrees section                    | `src/renderer/src/components/FolderViewWorktrees.vue`                                                      |
-| Transcript / xterm host                            | `src/renderer/src/components/TerminalPane.vue`                                                             |
-| Onboarding hero                                    | `src/renderer/src/components/Onboarding.vue`                                                               |
-| Add folder dialog (§6 — Dialog)                    | `src/renderer/src/components/AddFolderDialog.vue`                                                          |
-| New folder dialog (§6 — New folder)                | `src/renderer/src/components/NewFolderDialog.vue`                                                          |
-| Open subfolder picker (§6 — Open subfolder)        | `src/renderer/src/components/OpenSubfolderDialog.vue`                                                      |
-| Rename folder dialog (§6 — Rename folder)          | `src/renderer/src/components/RenameFolderDialog.vue`                                                       |
-| Context menu (§6 — Context menu)                   | `src/renderer/src/components/SessionMenu.vue`                                                              |
-| Hover preview (session)                            | `src/renderer/src/components/SessionPreview.vue`                                                           |
-| Hover preview (folder) (§6 — Folder preview)       | `src/renderer/src/components/FolderPreview.vue`                                                            |
-| Brand mark (§1)                                    | `src/renderer/src/components/BrandMark.vue`                                                                |
-| Helper stack (split right side)                    | `src/renderer/src/components/HelperStack.vue`                                                              |
-| Helper pane (one cell)                             | `src/renderer/src/components/HelperPane.vue`                                                               |
-| Agent connection chip (pane header, T474 U1)       | `src/renderer/src/components/AgentConnectionChip.vue` + `lib/agent-chip.ts`                                |
-| Image lightbox (Pasted-images gallery, §6)         | `src/renderer/src/components/ImageLightbox.vue`                                                            |
-| Links pill + popover (footer, §6 — T617)           | `src/renderer/src/components/FooterLinksPopover.vue`                                                       |
-| Markdown pane (file-backed viewer, §6 — T74)       | `src/renderer/src/components/MarkdownPane.vue`                                                             |
-| Markdown renderer (string→prose, reusable)         | `src/renderer/src/components/MarkdownRenderer.vue` + `lib/markdown.ts` seam                                |
-| Memory pane (project memory viewer, §6 — T79)      | `src/renderer/src/components/MemoryPane.vue` + `stores/memory.ts`                                          |
-| Fleet rail — approvals + fleet state (§6, T151)    | `src/renderer/src/components/InboxRail.vue`                                                                |
-| Approval Inbox row (§6)                            | `src/renderer/src/components/ApprovalRow.vue`                                                              |
-| Settings dialog (§6)                               | `src/renderer/src/components/SettingsDialog.vue`                                                           |
-| Claude config tab — settings.json editor (§6)      | `src/renderer/src/components/ClaudeConfigPane.vue` + `claude-config-catalog.ts`                            |
-| Plan usage panel (§6 — Footer popover)             | `src/renderer/src/components/UsagePanel.vue`                                                               |
-| Plan usage meter row (§6 — Footer popover)         | `src/renderer/src/components/UsageMeter.vue`                                                               |
-| Usage history pane (§6 — Settings tab)             | `src/renderer/src/components/UsageHistoryPane.vue` + `usage-history-format.ts`                             |
-| Usage history KPI tiles (§6 — T47 P3)              | `src/renderer/src/components/UsageStatTiles.vue`                                                           |
-| Usage "now" strip (§6 — T47 P4)                    | `src/renderer/src/components/UsageNowStrip.vue`                                                            |
-| Usage trajectory chart (bars/area) (§6)            | `src/renderer/src/components/UsageChart.vue`                                                               |
-| Plan-fit calculator card (§6)                      | `src/renderer/src/components/PlanFitCard.vue`                                                              |
-| Plan-fit peak distribution (§6 — T47 P4)           | `src/renderer/src/components/UsageDistribution.vue`                                                        |
-| Usage weekday×hour heatmap (§6 — T47 P4)           | `src/renderer/src/components/UsageHeatmap.vue`                                                             |
-| Footer / status bar (§6 — Footer)                  | `src/renderer/src/components/StatusFooter.vue`                                                             |
-| Claude Boot launch-options form (§6)               | `src/renderer/src/components/ClaudeBootForm.vue`                                                           |
-| Claude Boot per-folder dialog (§6)                 | `src/renderer/src/components/ClaudeBootDialog.vue`                                                         |
-| New session launch dialog (§6)                     | `src/renderer/src/components/NewSessionDialog.vue`                                                         |
-| Endpoints registry pane (§6)                       | `src/renderer/src/components/EndpointsPane.vue`                                                            |
-| Remote notifications pane (§6 — push)              | `src/renderer/src/components/PushChannelsPane.vue` + `stores/push.ts`                                      |
-| Voice pane (Settings tab, §6 — T239)               | `src/renderer/src/components/VoicePane.vue` + `stores/voice.ts`                                            |
-| Claude service status panel (§6)                   | `src/renderer/src/components/ClaudeStatusPanel.vue`                                                        |
-| Control server (MCP) pane (§6)                     | `src/renderer/src/components/McpServerPane.vue`                                                            |
-| Agent-action confirm overlay (§6)                  | `src/renderer/src/components/McpConfirmOverlay.vue`                                                        |
-| Bundled skills pane (Settings tab, T217)           | `src/renderer/src/components/BundledSkillsPane.vue`                                                        |
-| Mods audit pane (Settings tab, T389)               | `src/renderer/src/components/ModsAuditPane.vue`                                                            |
-| Harnu mod outside Harnu switch (Mods tab, T389)    | `src/renderer/src/components/HarnuModExternal.vue` + `lib/external-view.ts`                                |
-| Usage Dashboard (takeover, §6 — T47 P6)            | `src/renderer/src/components/UsageDashboard.vue`                                                           |
-| Usage Dashboard KPI strip (§6)                     | `src/renderer/src/components/UsageDashboardKpiStrip.vue`                                                   |
-| Usage Dashboard stacked chart (§6)                 | `src/renderer/src/components/UsageDashboardStackChart.vue`                                                 |
-| Usage Dashboard activity calendar (§6)             | `src/renderer/src/components/UsageDashboardCalendar.vue`                                                   |
-| Usage Dashboard ranked list (§6)                   | `src/renderer/src/components/UsageDashboardRankList.vue`                                                   |
-| Usage Dashboard session anatomy (§6)               | `src/renderer/src/components/UsageDashboardAnatomy.vue`                                                    |
-| Usage Dashboard explorer table (§6)                | `src/renderer/src/components/UsageDashboardExplorerTable.vue`                                              |
-| System Monitor (takeover, T127 S2 / T591)          | `src/renderer/src/components/SystemMonitor.vue`                                                            |
-| System Monitor Harnu sidebar (T591)                | `src/renderer/src/components/SystemMonitorSidebar.vue`                                                     |
-| System Monitor KPI strip (T591)                    | `src/renderer/src/components/SystemMonitorKpis.vue`                                                        |
-| System Monitor session card (T591)                 | `src/renderer/src/components/SystemMonitorCard.vue`                                                        |
-| System Monitor table row + children (T591)         | `src/renderer/src/components/SystemMonitorRow.vue`                                                         |
-| System Monitor state / actions (T591)              | `SystemMonitorState.vue` + `SystemMonitorActions.vue`                                                      |
-| System Monitor spark / avatar (T591)               | `SystemMonitorSpark.vue` + `SystemMonitorAvatar.vue`                                                       |
-| System Monitor history + folder hue (T591)         | `lib/monitor-history.ts` + `stores/monitor.ts`; `lib/folder-hue.ts`                                        |
-| Heap gauge (footer, T127 S3)                       | `src/renderer/src/components/HeapGauge.vue`                                                                |
-| Hibernation policy pane (Settings tab, T127 S4)    | `src/renderer/src/components/HibernationPolicyPane.vue`                                                    |
-| Your move pane (Settings tab, §6 — U1)             | `src/renderer/src/components/YourMovePane.vue` + `src/main/your-move/`                                     |
-| Your move card (Return here queue, §6 — U4)        | `src/renderer/src/components/YourMoveCard.vue` + `lib/your-move-view.ts`                                   |
-| Your move queue store (§6 — U4)                    | `src/renderer/src/stores/your-move.ts` + `src/main/your-move/ipc.ts`                                       |
-| Cleanup takeover (unified Workspace GC, T443)      | `src/renderer/src/components/CleanupView.vue`                                                              |
-| Cleanup treemap (repo → bucket → block, T443)      | `src/renderer/src/components/CleanupTreemap.vue` + `lib/gc-treemap.ts`                                     |
-| Cleanup list fallback (T443)                       | `src/renderer/src/components/CleanupListView.vue`                                                          |
-| Cleanup block side panel (T443)                    | `src/renderer/src/components/CleanupBlockPanel.vue`                                                        |
-| Cleanup "Needs review" list (T443)                 | `src/renderer/src/components/CleanupReviewList.vue`                                                        |
-| Cleanup opinion chip (T444)                        | `src/renderer/src/components/CleanupOpinionChip.vue` + `lib/gc-opinion.ts`                                 |
-| Cleanup hero button / progress chip (T443)         | `src/renderer/src/components/CleanupHeroButton.vue`                                                        |
-| Cleanup selection bar (T443)                       | `src/renderer/src/components/CleanupSelectionBar.vue`                                                      |
-| Cleanup bulk-clean confirm dialog (T443)           | `src/renderer/src/components/CleanupBulkConfirmDialog.vue`                                                 |
-| Cleanup guided dialog — "No dead ends" (unit B)    | `src/renderer/src/components/CleanupGuidedDialog.vue` + `lib/gc-guidance.ts`                               |
-| Cleanup first-cycle banner (T443)                  | `src/renderer/src/components/CleanupFirstCycleBanner.vue`                                                  |
-| Cleanup interrupted-cleans notices (unit B)        | `src/renderer/src/components/CleanupRecoveryNotices.vue`                                                   |
-| Cleanup Docker card (T443)                         | `src/renderer/src/components/CleanupDockerCard.vue`                                                        |
-| Cleanup Docker confirm — leftovers (unit D)        | `src/renderer/src/components/CleanupDockerConfirmDialog.vue`                                               |
-| Cleanup transcripts confirm (unit D)               | `src/renderer/src/components/CleanupTranscriptsConfirmDialog.vue`                                          |
-| Cleanup leftovers view helpers (unit D)            | `src/renderer/src/lib/gc-orphans.ts`                                                                       |
-| Cleanup split bar (T443)                           | `src/renderer/src/components/CleanupSplitBar.vue`                                                          |
-| Cleanup Archives card (unit C)                     | `src/renderer/src/components/CleanupArchivesCard.vue`                                                      |
-| Cleanup in-the-trash strip (unit C)                | `src/renderer/src/components/CleanupTrashCard.vue`                                                         |
-| Cleanup archives / git gc / empty-trash confirm    | `src/renderer/src/components/CleanupExhaustDialog.vue`                                                     |
-| Cleanup legend row (T443)                          | `src/renderer/src/components/CleanupLegend.vue`                                                            |
-| Cleanup "Other leftovers" (branches/folders, T443) | `src/renderer/src/components/CleanupOtherItems.vue`                                                        |
-| Workspace GC store + view model (T443)             | `src/renderer/src/stores/gc.ts` + `lib/gc-model.ts` + `lib/gc-jobs.ts`                                     |
-| Checkpoint timeline (Reaper PR3)                   | `src/renderer/src/components/CleanupTimeline.vue`                                                          |
-| Sweep confirm dialog (Reaper PR3)                  | `src/renderer/src/components/SweepConfirmDialog.vue`                                                       |
-| Dehydrate confirm dialog (T250)                    | `src/renderer/src/components/DehydrateConfirmDialog.vue` + `cleanup-row.ts`                                |
-| Cleanup settings pane (Settings tab, Reaper)       | `src/renderer/src/components/CleanupSettingsPane.vue`                                                      |
-| Containers settings pane (Settings tab, T332)      | `src/renderer/src/components/ContainersSettingsPane.vue`                                                   |
-| PR Stack Canvas (takeover, T198)                   | `src/renderer/src/components/PrStackCanvas.vue`                                                            |
-| PR card (canvas node)                              | `src/renderer/src/components/PrStackCard.vue` + `pr-stack-format.ts`                                       |
-| PR Stack edge layer                                | `src/renderer/src/components/PrStackEdges.vue`                                                             |
-| PR Stack filter bar (T387)                         | `src/renderer/src/components/PrStackFilterBar.vue` + `pr-stack-filter.ts`                                  |
-| PR Stack settings pane (Settings tab, T198)        | `src/renderer/src/components/PrStackSettingsPane.vue`                                                      |
-| Diagram pane (canvas viewer, non-PTY, T218)        | `src/renderer/src/components/DiagramPane.vue` + `components/canvas/*`                                      |
-| Canvas toolbar (§6 — T536)                         | `src/renderer/src/components/CanvasToolbar.vue` + `canvas/canvas-tools.ts`                                 |
-| Canvas properties panel (§6 — T536 U3)             | `CanvasPropertiesPanel.vue` + `canvas/canvas-{style,layers}.ts`                                            |
-| GitHub budget footer pill + popover (§6 — T611)    | `src/renderer/src/components/GithubBudgetPill.vue` + `GithubBudgetPopover.vue`                             |
-| GitHub API settings pane (§6 — T611)               | `src/renderer/src/components/GithubBudgetPane.vue` + `lib/github-budget-view.ts`                           |
-| GitHub budget store + notices (§6 — T611)          | `stores/github-budget.ts` + `lib/github-budget-notice.ts`                                                  |
-| Scheduler (takeover, T291)                         | `src/renderer/src/components/SchedulerView.vue`                                                            |
-| Scheduler worker row                               | `src/renderer/src/components/SchedulerWorkerRow.vue`                                                       |
-| Scheduler prompt field (skill mentions, T305)      | `src/renderer/src/components/SchedulerPromptField.vue` + `scheduler-mentions.ts`                           |
-| Scheduler worker detail                            | `src/renderer/src/components/SchedulerWorkerDetail.vue`                                                    |
-| Roadmap WIP chip + limit stepper (§6 — BUG-197)    | `src/renderer/src/components/RoadmapWipChip.vue`                                                           |
-| Mission pill (Topbar, §6 — T370, S-17)             | `src/renderer/src/components/MissionPill.vue` + `lib/mission-pane-view.ts`                                 |
-| Mission pane (helper stack, §6 — S-17)             | `components/MissionPane.vue` + `lib/mission-pane-view.ts`                                                  |
-| Mission pane — next step box (§6 — S-18)           | `components/MissionPaneNext.vue` + `lib/mission-pane-view.ts`                                              |
-| Mission pane — tree and timeline (§6 — S-18)       | `components/MissionPaneTree.vue` + `lib/mission-pane-view.ts`                                              |
-| Mission pane — an open step (§6 — S-19)            | `components/MissionPaneStep.vue` + `lib/mission-pane-view.ts`                                              |
-| Mission pane — sessions row (§6 — S-20)            | `components/MissionPaneSessions.vue` + `lib/mission-pane-view.ts`                                          |
-| Mission hand-off confirmation (§6 — S-20)          | `components/MissionHandoffDialog.vue` + `stores/missions.ts`                                               |
-| Mission pane — attach and request (§6 — S-21)      | `components/MissionPaneAttach.vue` + `lib/mission-pane-view.ts`                                            |
-| Mission pane — Ask on a milestone (§6 — S-21)      | `components/MissionPaneAsk.vue` + `lib/mission-pane-view.ts`                                               |
-| Mission pane — close dialog (§6 — S-22)            | `components/MissionCloseConfirmDialog.vue` + `stores/missions.ts`                                          |
-| Mission pane — sample mission (§6 — S-22)          | `lib/mission-sample.ts` + `stores/missions.ts`                                                             |
-| Guided walk pane (helper stack, §6 — S-3)          | `components/GuidedWalkPane.vue` + `Walk*.vue` + `lib/walk-view.ts` + `lib/walk-keys.ts` + `stores/walk.ts` |
-| Walks library (helper stack, §6 — S-4)             | `components/WalksPane.vue` + `lib/walk-library.ts` (S-4)                                                   |
-| Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts`                           |
-| Containers — Paused detail (§6 — U3.4)             | `src/renderer/src/components/ContainersPausedDetail.vue`                                                   |
-| Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                                                        |
-| Dialog (the modal shell, §6 — T460)                | `src/renderer/src/components/ui/Dialog.vue` + `composables/useDialogStack.ts`                              |
+| Design entity (in `design.md`)                     | Vue file                                                                         |
+| -------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Layout shell                                       | `src/renderer/src/App.vue`                                                       |
+| Sidebar (§6 — session rows)                        | `src/renderer/src/components/Sidebar.vue`                                        |
+| Sidebar folder row                                 | `src/renderer/src/components/SidebarFolder.vue`                                  |
+| Sidebar section shell (§6 — T702)                  | `SidebarSection.vue` + `lib/sidebar-section.ts`                                  |
+| Sidebar jump palette (§6 — T288)                   | `src/renderer/src/components/SidebarJumpPalette.vue`                             |
+| Repo group header (multi-worktree repos)           | `src/renderer/src/components/RepoGroupHeader.vue`                                |
+| Shelved section of a repo group (§6 — U2.3b)       | `SidebarShelvedSection.vue` + `lib/shelved-sidebar.ts`                           |
+| Topbar / breadcrumb / status pill                  | `src/renderer/src/components/Topbar.vue`                                         |
+| Topbar overflow menu (`…` More actions, BUG-252)   | `src/renderer/src/components/TopbarOverflowMenu.vue` + `lib/topbar-overflow.ts`  |
+| Activity bell (Topbar notification popover, T152)  | `src/renderer/src/components/ActivityBell.vue`                                   |
+| Empty state ("Ready to start")                     | `src/renderer/src/components/EmptyState.vue`                                     |
+| Folder View (main pane, T212)                      | `src/renderer/src/components/FolderView.vue` + `folder-view-format.ts`           |
+| Folder View — sessions section                     | `src/renderer/src/components/FolderViewSessions.vue`                             |
+| Folder View — roadmap section                      | `src/renderer/src/components/FolderViewRoadmap.vue`                              |
+| Folder View — worktrees section                    | `src/renderer/src/components/FolderViewWorktrees.vue`                            |
+| Transcript / xterm host                            | `src/renderer/src/components/TerminalPane.vue`                                   |
+| Onboarding hero                                    | `src/renderer/src/components/Onboarding.vue`                                     |
+| Add folder dialog (§6 — Dialog)                    | `src/renderer/src/components/AddFolderDialog.vue`                                |
+| New folder dialog (§6 — New folder)                | `src/renderer/src/components/NewFolderDialog.vue`                                |
+| Open subfolder picker (§6 — Open subfolder)        | `src/renderer/src/components/OpenSubfolderDialog.vue`                            |
+| Rename folder dialog (§6 — Rename folder)          | `src/renderer/src/components/RenameFolderDialog.vue`                             |
+| Context menu (§6 — Context menu)                   | `src/renderer/src/components/SessionMenu.vue`                                    |
+| Hover preview (session)                            | `src/renderer/src/components/SessionPreview.vue`                                 |
+| Hover preview (folder) (§6 — Folder preview)       | `src/renderer/src/components/FolderPreview.vue`                                  |
+| Brand mark (§1)                                    | `src/renderer/src/components/BrandMark.vue`                                      |
+| Helper stack (split right side)                    | `src/renderer/src/components/HelperStack.vue`                                    |
+| Helper pane (one cell)                             | `src/renderer/src/components/HelperPane.vue`                                     |
+| Agent connection chip (pane header, T474 U1)       | `src/renderer/src/components/AgentConnectionChip.vue` + `lib/agent-chip.ts`      |
+| Image lightbox (Pasted-images gallery, §6)         | `src/renderer/src/components/ImageLightbox.vue`                                  |
+| Links pill + popover (footer, §6 — T617)           | `src/renderer/src/components/FooterLinksPopover.vue`                             |
+| Markdown pane (file-backed viewer, §6 — T74)       | `src/renderer/src/components/MarkdownPane.vue`                                   |
+| Markdown renderer (string→prose, reusable)         | `src/renderer/src/components/MarkdownRenderer.vue` + `lib/markdown.ts` seam      |
+| Memory pane (project memory viewer, §6 — T79)      | `src/renderer/src/components/MemoryPane.vue` + `stores/memory.ts`                |
+| Fleet rail — approvals + fleet state (§6, T151)    | `src/renderer/src/components/InboxRail.vue`                                      |
+| Approval Inbox row (§6)                            | `src/renderer/src/components/ApprovalRow.vue`                                    |
+| Settings dialog (§6)                               | `src/renderer/src/components/SettingsDialog.vue`                                 |
+| Claude config tab — settings.json editor (§6)      | `src/renderer/src/components/ClaudeConfigPane.vue` + `claude-config-catalog.ts`  |
+| Plan usage panel (§6 — Footer popover)             | `src/renderer/src/components/UsagePanel.vue`                                     |
+| Plan usage meter row (§6 — Footer popover)         | `src/renderer/src/components/UsageMeter.vue`                                     |
+| Usage history pane (§6 — Settings tab)             | `src/renderer/src/components/UsageHistoryPane.vue` + `usage-history-format.ts`   |
+| Usage history KPI tiles (§6 — T47 P3)              | `src/renderer/src/components/UsageStatTiles.vue`                                 |
+| Usage "now" strip (§6 — T47 P4)                    | `src/renderer/src/components/UsageNowStrip.vue`                                  |
+| Usage trajectory chart (bars/area) (§6)            | `src/renderer/src/components/UsageChart.vue`                                     |
+| Plan-fit calculator card (§6)                      | `src/renderer/src/components/PlanFitCard.vue`                                    |
+| Plan-fit peak distribution (§6 — T47 P4)           | `src/renderer/src/components/UsageDistribution.vue`                              |
+| Usage weekday×hour heatmap (§6 — T47 P4)           | `src/renderer/src/components/UsageHeatmap.vue`                                   |
+| Footer / status bar (§6 — Footer)                  | `src/renderer/src/components/StatusFooter.vue`                                   |
+| Claude Boot launch-options form (§6)               | `src/renderer/src/components/ClaudeBootForm.vue`                                 |
+| Claude Boot per-folder dialog (§6)                 | `src/renderer/src/components/ClaudeBootDialog.vue`                               |
+| New session launch dialog (§6)                     | `src/renderer/src/components/NewSessionDialog.vue`                               |
+| Endpoints registry pane (§6)                       | `src/renderer/src/components/EndpointsPane.vue`                                  |
+| Remote notifications pane (§6 — push)              | `src/renderer/src/components/PushChannelsPane.vue` + `stores/push.ts`            |
+| Voice pane (Settings tab, §6 — T239)               | `src/renderer/src/components/VoicePane.vue` + `stores/voice.ts`                  |
+| Claude service status panel (§6)                   | `src/renderer/src/components/ClaudeStatusPanel.vue`                              |
+| Control server (MCP) pane (§6)                     | `src/renderer/src/components/McpServerPane.vue`                                  |
+| Agent-action confirm overlay (§6)                  | `src/renderer/src/components/McpConfirmOverlay.vue`                              |
+| Bundled skills pane (Settings tab, T217)           | `src/renderer/src/components/BundledSkillsPane.vue`                              |
+| Mods audit pane (Settings tab, T389)               | `src/renderer/src/components/ModsAuditPane.vue`                                  |
+| Harnu mod outside Harnu switch (Mods tab, T389)    | `src/renderer/src/components/HarnuModExternal.vue` + `lib/external-view.ts`      |
+| Usage Dashboard (takeover, §6 — T47 P6)            | `src/renderer/src/components/UsageDashboard.vue`                                 |
+| Usage Dashboard KPI strip (§6)                     | `src/renderer/src/components/UsageDashboardKpiStrip.vue`                         |
+| Usage Dashboard stacked chart (§6)                 | `src/renderer/src/components/UsageDashboardStackChart.vue`                       |
+| Usage Dashboard activity calendar (§6)             | `src/renderer/src/components/UsageDashboardCalendar.vue`                         |
+| Usage Dashboard ranked list (§6)                   | `src/renderer/src/components/UsageDashboardRankList.vue`                         |
+| Usage Dashboard session anatomy (§6)               | `src/renderer/src/components/UsageDashboardAnatomy.vue`                          |
+| Usage Dashboard explorer table (§6)                | `src/renderer/src/components/UsageDashboardExplorerTable.vue`                    |
+| System Monitor (takeover, T127 S2 / T591)          | `src/renderer/src/components/SystemMonitor.vue`                                  |
+| System Monitor Harnu sidebar (T591)                | `src/renderer/src/components/SystemMonitorSidebar.vue`                           |
+| System Monitor KPI strip (T591)                    | `src/renderer/src/components/SystemMonitorKpis.vue`                              |
+| System Monitor session card (T591)                 | `src/renderer/src/components/SystemMonitorCard.vue`                              |
+| System Monitor table row + children (T591)         | `src/renderer/src/components/SystemMonitorRow.vue`                               |
+| System Monitor state / actions (T591)              | `SystemMonitorState.vue` + `SystemMonitorActions.vue`                            |
+| System Monitor spark / avatar (T591)               | `SystemMonitorSpark.vue` + `SystemMonitorAvatar.vue`                             |
+| System Monitor history + folder hue (T591)         | `lib/monitor-history.ts` + `stores/monitor.ts`; `lib/folder-hue.ts`              |
+| Heap gauge (footer, T127 S3)                       | `src/renderer/src/components/HeapGauge.vue`                                      |
+| Hibernation policy pane (Settings tab, T127 S4)    | `src/renderer/src/components/HibernationPolicyPane.vue`                          |
+| Your move pane (Settings tab, §6 — U1)             | `src/renderer/src/components/YourMovePane.vue` + `src/main/your-move/`           |
+| Your move card (Return here queue, §6 — U4)        | `src/renderer/src/components/YourMoveCard.vue` + `lib/your-move-view.ts`         |
+| Your move queue store (§6 — U4)                    | `src/renderer/src/stores/your-move.ts` + `src/main/your-move/ipc.ts`             |
+| Cleanup takeover (unified Workspace GC, T443)      | `src/renderer/src/components/CleanupView.vue`                                    |
+| Cleanup treemap (repo → bucket → block, T443)      | `src/renderer/src/components/CleanupTreemap.vue` + `lib/gc-treemap.ts`           |
+| Cleanup list fallback (T443)                       | `src/renderer/src/components/CleanupListView.vue`                                |
+| Cleanup block side panel (T443)                    | `src/renderer/src/components/CleanupBlockPanel.vue`                              |
+| Cleanup "Needs review" list (T443)                 | `src/renderer/src/components/CleanupReviewList.vue`                              |
+| Cleanup opinion chip (T444)                        | `src/renderer/src/components/CleanupOpinionChip.vue` + `lib/gc-opinion.ts`       |
+| Cleanup hero button / progress chip (T443)         | `src/renderer/src/components/CleanupHeroButton.vue`                              |
+| Cleanup selection bar (T443)                       | `src/renderer/src/components/CleanupSelectionBar.vue`                            |
+| Cleanup bulk-clean confirm dialog (T443)           | `src/renderer/src/components/CleanupBulkConfirmDialog.vue`                       |
+| Cleanup guided dialog — "No dead ends" (unit B)    | `src/renderer/src/components/CleanupGuidedDialog.vue` + `lib/gc-guidance.ts`     |
+| Cleanup first-cycle banner (T443)                  | `src/renderer/src/components/CleanupFirstCycleBanner.vue`                        |
+| Cleanup interrupted-cleans notices (unit B)        | `src/renderer/src/components/CleanupRecoveryNotices.vue`                         |
+| Cleanup Docker card (T443)                         | `src/renderer/src/components/CleanupDockerCard.vue`                              |
+| Cleanup Docker confirm — leftovers (unit D)        | `src/renderer/src/components/CleanupDockerConfirmDialog.vue`                     |
+| Cleanup transcripts confirm (unit D)               | `src/renderer/src/components/CleanupTranscriptsConfirmDialog.vue`                |
+| Cleanup leftovers view helpers (unit D)            | `src/renderer/src/lib/gc-orphans.ts`                                             |
+| Cleanup split bar (T443)                           | `src/renderer/src/components/CleanupSplitBar.vue`                                |
+| Cleanup Archives card (unit C)                     | `src/renderer/src/components/CleanupArchivesCard.vue`                            |
+| Cleanup in-the-trash strip (unit C)                | `src/renderer/src/components/CleanupTrashCard.vue`                               |
+| Cleanup archives / git gc / empty-trash confirm    | `src/renderer/src/components/CleanupExhaustDialog.vue`                           |
+| Cleanup legend row (T443)                          | `src/renderer/src/components/CleanupLegend.vue`                                  |
+| Cleanup "Other leftovers" (branches/folders, T443) | `src/renderer/src/components/CleanupOtherItems.vue`                              |
+| Workspace GC store + view model (T443)             | `src/renderer/src/stores/gc.ts` + `lib/gc-model.ts` + `lib/gc-jobs.ts`           |
+| Checkpoint timeline (Reaper PR3)                   | `src/renderer/src/components/CleanupTimeline.vue`                                |
+| Sweep confirm dialog (Reaper PR3)                  | `src/renderer/src/components/SweepConfirmDialog.vue`                             |
+| Dehydrate confirm dialog (T250)                    | `src/renderer/src/components/DehydrateConfirmDialog.vue` + `cleanup-row.ts`      |
+| Cleanup settings pane (Settings tab, Reaper)       | `src/renderer/src/components/CleanupSettingsPane.vue`                            |
+| Containers settings pane (Settings tab, T332)      | `src/renderer/src/components/ContainersSettingsPane.vue`                         |
+| PR Stack Canvas (takeover, T198)                   | `src/renderer/src/components/PrStackCanvas.vue`                                  |
+| PR card (canvas node)                              | `src/renderer/src/components/PrStackCard.vue` + `pr-stack-format.ts`             |
+| PR Stack edge layer                                | `src/renderer/src/components/PrStackEdges.vue`                                   |
+| PR Stack filter bar (T387)                         | `src/renderer/src/components/PrStackFilterBar.vue` + `pr-stack-filter.ts`        |
+| PR Stack settings pane (Settings tab, T198)        | `src/renderer/src/components/PrStackSettingsPane.vue`                            |
+| Diagram pane (canvas viewer, non-PTY, T218)        | `src/renderer/src/components/DiagramPane.vue` + `components/canvas/*`            |
+| Canvas toolbar (§6 — T536)                         | `src/renderer/src/components/CanvasToolbar.vue` + `canvas/canvas-tools.ts`       |
+| Canvas properties panel (§6 — T536 U3)             | `CanvasPropertiesPanel.vue` + `canvas/canvas-{style,layers}.ts`                  |
+| GitHub budget footer pill + popover (§6 — T611)    | `src/renderer/src/components/GithubBudgetPill.vue` + `GithubBudgetPopover.vue`   |
+| GitHub API settings pane (§6 — T611)               | `src/renderer/src/components/GithubBudgetPane.vue` + `lib/github-budget-view.ts` |
+| GitHub budget store + notices (§6 — T611)          | `stores/github-budget.ts` + `lib/github-budget-notice.ts`                        |
+| Scheduler (takeover, T291)                         | `src/renderer/src/components/SchedulerView.vue`                                  |
+| Scheduler worker row                               | `src/renderer/src/components/SchedulerWorkerRow.vue`                             |
+| Scheduler prompt field (skill mentions, T305)      | `src/renderer/src/components/SchedulerPromptField.vue` + `scheduler-mentions.ts` |
+| Scheduler worker detail                            | `src/renderer/src/components/SchedulerWorkerDetail.vue`                          |
+| Roadmap WIP chip + limit stepper (§6 — BUG-197)    | `src/renderer/src/components/RoadmapWipChip.vue`                                 |
+| Mission pill (Topbar, §6 — T370, S-17)             | `src/renderer/src/components/MissionPill.vue` + `lib/mission-pane-view.ts`       |
+| Mission pane (helper stack, §6 — S-17)             | `components/MissionPane.vue` + `lib/mission-pane-view.ts`                        |
+| Mission pane — next step box (§6 — S-18)           | `components/MissionPaneNext.vue` + `lib/mission-pane-view.ts`                    |
+| Mission pane — tree and timeline (§6 — S-18)       | `components/MissionPaneTree.vue` + `lib/mission-pane-view.ts`                    |
+| Mission pane — an open step (§6 — S-19)            | `components/MissionPaneStep.vue` + `lib/mission-pane-view.ts`                    |
+| Mission pane — sessions row (§6 — S-20)            | `components/MissionPaneSessions.vue` + `lib/mission-pane-view.ts`                |
+| Mission hand-off confirmation (§6 — S-20)          | `components/MissionHandoffDialog.vue` + `stores/missions.ts`                     |
+| Mission pane — attach and request (§6 — S-21)      | `components/MissionPaneAttach.vue` + `lib/mission-pane-view.ts`                  |
+| Mission pane — Ask on a milestone (§6 — S-21)      | `components/MissionPaneAsk.vue` + `lib/mission-pane-view.ts`                     |
+| Mission pane — close dialog (§6 — S-22)            | `components/MissionCloseConfirmDialog.vue` + `stores/missions.ts`                |
+| Mission pane — sample mission (§6 — S-22)          | `lib/mission-sample.ts` + `stores/missions.ts`                                   |
+| Mission dropdown — shell (§6 — dropdown S-1)       | `components/MissionDropdown.vue` + `lib/mission-dropdown-position.ts`            |
+| Guided walk pane (helper stack, §6 — S-3)          | `GuidedWalkPane.vue` + `Walk*.vue` + `lib/walk-view.ts` + `lib/walk-keys.ts`     |
+| Walks library (helper stack, §6 — S-4)             | `WalksPane.vue` + `lib/walk-library.ts` (S-4)                                    |
+| Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
+| Containers — Paused detail (§6 — U3.4)             | `src/renderer/src/components/ContainersPausedDetail.vue`                         |
+| Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                              |
+| Dialog (the modal shell, §6 — T460)                | `src/renderer/src/components/ui/Dialog.vue` + `composables/useDialogStack.ts`    |
 
 ## Process for UI work
 
