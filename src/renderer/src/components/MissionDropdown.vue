@@ -19,11 +19,16 @@
  * missions, the one-line switch) and the one card that holds what the operator owes next. S-3 draws the tree
  * under them: milestone, step, criteria, with the state glyphs' labels and Ask. It reads the same view the pane
  * does (the sample while one shows, else the session's own reply), and the Topbar pill, which is always mounted,
- * is what keeps the store polling. The open step, the footer and the dialogs are what the next slices put in.
+ * is what keeps the store polling. S-4 drew the open step. S-5 draws what is not a mission (the loading line, a
+ * refused read and the empty state with its picker and its "See a sample mission" link: `MissionDropdownEmpty`),
+ * the strip over a shown sample, the footer ("Close mission…", pinned) and the close dialog the dropdown opens: a
+ * dialog makes the dropdown `inert` and dimmed, takes initial focus on Cancel and gives focus back to its opener
+ * on Esc, and a door that ends the mission closes the dropdown too.
  * The pill still opens the Mission pane; nothing here is reachable by a user until S-7 switches the pill over.
  */
-import { computed, customRef, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, customRef, nextTick, onBeforeUnmount, ref, useSlots, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Flag } from 'lucide-vue-next'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import {
   DROPDOWN_SHORT_WINDOW,
@@ -31,10 +36,24 @@ import {
   type DropdownAnchor
 } from '../lib/mission-dropdown-position'
 import { useSessionLinks } from '../composables/useSessionLinks'
-import { askLeaderOf, ledMissionRows, v4MissionOf } from '../lib/mission-pane-view'
+import {
+  askLeaderOf,
+  classifyReply,
+  closeErrorKey,
+  closeMatters,
+  isReadyToClose,
+  ledMissionRows,
+  nextCardOf,
+  pickerRows,
+  v4MissionOf,
+  type PaneKind
+} from '../lib/mission-pane-view'
+import { SAMPLE_STATES, type SampleState } from '../lib/mission-sample'
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import MissionCloseConfirmDialog from './MissionCloseConfirmDialog.vue'
+import MissionDropdownEmpty, { type EmptyRequestRow } from './MissionDropdownEmpty.vue'
 import MissionDropdownHead from './MissionDropdownHead.vue'
 import MissionDropdownNext from './MissionDropdownNext.vue'
 import MissionDropdownTree from './MissionDropdownTree.vue'
@@ -50,8 +69,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** "Open step" on the card: the tree (S-4) brings the step into view. */
   openStep: [stepId: string]
-  /** The card's "Close mission…": the close dialog (S-5) opens. */
-  closeMission: []
 }>()
 
 const { t } = useI18n()
@@ -69,6 +86,27 @@ const reply = computed(() =>
   sample.value ? sample.value.reply : missions.v4ReplyForSession(sessionId.value)
 )
 const mission = computed(() => (sessionId.value ? v4MissionOf(reply.value, sessionId.value) : null))
+const kind = computed<PaneKind>(() =>
+  sessionId.value ? classifyReply(reply.value, sessionId.value) : 'none'
+)
+const refusal = computed(() => (reply.value?.state === 'refused' ? reply.value.error : ''))
+// ---- no mission: the picker, and a request to join this session -------------------------------------------
+const picker = computed(() =>
+  kind.value === 'none' && sessionId.value
+    ? pickerRows(reply.value?.state === 'none' ? reply.value.missions : [])
+    : undefined
+)
+const requestRows = computed<EmptyRequestRow[]>(() => {
+  const id = sessionId.value
+  if (!id || kind.value !== 'none') return []
+  const asks = sample.value ? sample.value.asks : missions.attachAsksForSession(id)
+  return asks.map((a) => ({
+    requestId: a.requestId,
+    missionId: a.missionId,
+    missionTitle: a.title,
+    askerId: null
+  }))
+})
 // A session that leads several missions may switch here: the choice is the store's, and nothing is written.
 const led = computed(() => (sample.value ? [] : ledMissionRows(missions.readers, sessionId.value)))
 /** The switch's list is open: it is all the body shows, as in the mockup's `chooser` state. */
@@ -80,6 +118,86 @@ watch(mission, (m) => {
 async function chooseLed(id: string): Promise<void> {
   if (sessionId.value && id) await missions.chooseMission(sessionId.value, id)
 }
+
+// ---- the sample -------------------------------------------------------------------------------------------
+// A sample stands in for the real answer: a strip says it is made up, offers its states and the way out. The
+// states the dropdown no longer has (sessions, the hand-off) are not offered.
+const SAMPLE_GONE: readonly SampleState[] = ['sessions', 'handoff-suggest', 'handoff-confirm']
+const sampleStates = SAMPLE_STATES.filter((s) => !SAMPLE_GONE.includes(s))
+function chooseSample(ev: Event): void {
+  missions.showSample((ev.target as HTMLSelectElement).value as SampleState)
+}
+// The hints quote the labels the dropdown really has, so the sample never words one thing twice.
+const sampleHintLabel = computed(() =>
+  sample.value?.state === 'all-steps'
+    ? t('missionDropdown.tree.more', { n: 'N' }, 2)
+    : t('missionDropdown.next.more', { n: 'N' }, 2)
+)
+
+// ---- the footer and the close dialog (S-5) ---------------------------------------------------------------
+// The footer holds "Close mission…" unless the next card already is that, and in the empty and chooser views.
+const nextIsClose = computed(() => {
+  const primary = mission.value ? nextCardOf(mission.value).primary : null
+  return primary?.kind === 'item' && primary.item.kind === 'close'
+})
+const showFooterClose = computed(
+  () => mission.value !== null && !chooserOpen.value && !nextIsClose.value
+)
+
+const slots = useSlots()
+const hasFooter = computed(() => showFooterClose.value || slots.footer !== undefined)
+/** The ghost, compact button (design.md §6 "Mission dropdown"): `h-5`, `px-2`, `11px`. */
+const FOOTER_BTN =
+  'inline-flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent px-2 text-[11px] font-medium leading-none text-text-3 transition hover:bg-surface-2 hover:text-text'
+
+const closeOpen = ref(false)
+const closeBusy = ref(false)
+const closeError = ref<string | null>(null)
+const matters = computed(() => closeMatters(mission.value?.closeWarnings ?? []))
+const readyToClose = computed(() => (mission.value ? isReadyToClose(mission.value.detail) : false))
+/** The element that opened the dialog: focus goes back to it when the dialog closes. */
+let closeOpener: HTMLElement | null = null
+
+function openClose(): void {
+  closeOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  closeError.value = null
+  closeOpen.value = true
+  // The dialog lists what the view counted: read it again, the poll may be up to 20 s old.
+  if (!sample.value) void missions.refreshV4()
+}
+async function cancelClose(): Promise<void> {
+  if (closeBusy.value) return
+  closeOpen.value = false
+  await nextTick()
+  if (closeOpener?.isConnected) closeOpener.focus()
+  closeOpener = null
+}
+async function confirmClose(closedAs: 'delivered' | 'discarded', reason?: string): Promise<void> {
+  if (closeBusy.value) return
+  closeBusy.value = true
+  closeError.value = null
+  try {
+    const res = await missions.closeMission({ closedAs, reason })
+    if (res.ok) {
+      // A door that ends the mission closes the dropdown too: there is no mission left to look at.
+      closeOpen.value = false
+      closeOpener = null
+      close()
+    } else closeError.value = `missionPane.close.error.${closeErrorKey(res.code)}`
+  } finally {
+    closeBusy.value = false
+  }
+}
+// A mission that is no longer this dropdown's (it closed, the view lost it) takes its dialog with it.
+watch(mission, (m) => {
+  if (!m) closeOpen.value = false
+})
+watch(
+  () => ui.popovers.missionProgress,
+  (isOpen) => {
+    if (!isOpen) closeOpen.value = false
+  }
+)
 
 /** The Topbar pill (`MissionPill.vue` draws `data-dsqa="topbar-pill--<tone>"`). */
 const PILL_SELECTOR = '[data-dsqa^="topbar-pill--"]'
@@ -162,7 +280,13 @@ const initialFocus: Ref<HTMLElement | null> = customRef(() => ({
   get: () => root.value?.querySelector<HTMLElement>('[data-autofocus]') ?? root.value,
   set: () => undefined
 }))
-useFocusTrap({ active: open, containerRef: root, initialFocusRef: initialFocus })
+// While a dialog sits on top the trap steps aside: the dialog owns Tab and focus (it gives focus back on its own).
+useFocusTrap({
+  active: open,
+  containerRef: root,
+  initialFocusRef: initialFocus,
+  suspended: closeOpen
+})
 
 /** Set by Esc: when the layer has gone, focus goes back to the pill. */
 let returnFocusToPill = false
@@ -234,15 +358,65 @@ function onClickOutside(e: MouseEvent): void {
       role="dialog"
       tabindex="-1"
       :aria-label="t('missionDropdown.shell.label')"
+      :inert="closeOpen ? true : undefined"
       data-test="mission-dropdown"
       data-dsqa="mission-dropdown"
       class="anim-fade-in-scale fixed z-(--z-dialog) flex max-h-[min(640px,calc(100vh-56px))] w-[min(420px,calc(100vw-16px))] origin-top-left flex-col rounded-lg border border-border-2 bg-surface text-text shadow-pop outline-none [-webkit-app-region:no-drag]"
+      :class="closeOpen ? 'saturate-[0.7]' : ''"
       :style="{ top: `${placement.top}px`, left: `${placement.left}px` }"
     >
       <div
         class="scrollable @container min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
         data-test="mission-dropdown-body"
       >
+        <!-- The sample strip: what shows below is made up, its states, and the way out. -->
+        <section
+          v-if="sample"
+          class="flex flex-col border-b border-accent-line bg-accent-soft text-text"
+          style="padding: 8px 14px; gap: 6px; font-size: 11.5px; line-height: 1.45"
+          :aria-label="t('missionDropdown.sample.label')"
+          data-test="mission-sample"
+        >
+          <span class="flex items-center rounded-sm" style="gap: 8px">
+            <b
+              class="min-w-0 flex-1 truncate uppercase text-accent"
+              style="font-size: 10px; letter-spacing: 0.07em"
+              >{{ t('missionDropdown.sample.label') }}</b
+            >
+            <button
+              type="button"
+              class="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-sm border border-border-2 bg-surface-2 px-2 text-[11px] font-medium leading-none text-text transition hover:border-text-4"
+              data-test="mission-sample-leave"
+              @click="missions.showSample(null)"
+            >
+              {{ t('missionDropdown.sample.leave') }}
+            </button>
+          </span>
+          <span class="text-text-2 [overflow-wrap:anywhere]" data-test="mission-sample-note">{{
+            t('missionDropdown.sample.note')
+          }}</span>
+          <label class="flex items-center" style="gap: 8px">
+            <span class="shrink-0 text-text-3">{{ t('missionDropdown.sample.chooser') }}</span>
+            <select
+              class="h-[22px] min-w-0 flex-1 rounded-sm border border-border-2 bg-bg px-1 text-[11.5px] text-text outline-none focus:border-accent-line"
+              :value="sample.state"
+              data-test="mission-sample-state"
+              @change="chooseSample"
+            >
+              <option v-for="st in sampleStates" :key="st" :value="st">
+                {{ t(`missionDropdown.sample.state.${st}`) }}
+              </option>
+            </select>
+          </label>
+          <span
+            v-if="sample.hint"
+            class="text-text-3 [overflow-wrap:anywhere]"
+            data-test="mission-sample-hint"
+            >{{
+              t(`missionDropdown.sample.hint.${sample.state}`, { label: sampleHintLabel })
+            }}</span
+          >
+        </section>
         <template v-if="mission">
           <MissionDropdownHead
             :detail="mission.detail"
@@ -255,7 +429,7 @@ function onClickOutside(e: MouseEvent): void {
             v-show="!chooserOpen"
             :mission="mission"
             @open-step="openStep"
-            @close="emit('closeMission')"
+            @close="openClose"
           />
           <!-- Keyed by the mission the reply was answered for: another mission starts with its own folds. -->
           <MissionDropdownTree
@@ -267,14 +441,63 @@ function onClickOutside(e: MouseEvent): void {
             :session-links="sessionLinks"
           />
         </template>
+        <MissionDropdownEmpty
+          v-else
+          :kind="kind === 'mission' ? 'none' : kind"
+          :session-id="sessionId"
+          :picker="picker"
+          :requests="requestRows"
+          :refusal="refusal"
+          :sample-link="!sample && kind === 'none' && sessionId !== null"
+        />
         <div v-show="!chooserOpen"><slot /></div>
-        <div v-if="footerInBody" data-test="mission-dropdown-footer">
+        <div
+          v-if="footerInBody && hasFooter"
+          class="border-t border-border"
+          style="padding: 7px 14px"
+          data-test="mission-dropdown-footer"
+          data-dsqa-part="footer"
+        >
+          <span v-if="showFooterClose" class="inline-flex rounded-sm">
+            <button type="button" :class="FOOTER_BTN" data-test="footer-close" @click="openClose">
+              <Flag :size="10" :stroke-width="1.8" data-glyph="flag" aria-hidden="true" />{{
+                t('missionDropdown.footer.close')
+              }}
+            </button>
+          </span>
           <slot name="footer" />
         </div>
       </div>
-      <div v-if="!footerInBody" class="shrink-0" data-test="mission-dropdown-footer">
+      <div
+        v-if="!footerInBody"
+        class="shrink-0"
+        :class="hasFooter ? 'border-t border-border' : ''"
+        :style="hasFooter ? 'padding: 7px 14px' : undefined"
+        data-test="mission-dropdown-footer"
+        data-dsqa-part="footer"
+      >
+        <span v-if="showFooterClose" class="inline-flex rounded-sm">
+          <button type="button" :class="FOOTER_BTN" data-test="footer-close" @click="openClose">
+            <Flag :size="10" :stroke-width="1.8" data-glyph="flag" aria-hidden="true" />{{
+              t('missionDropdown.footer.close')
+            }}
+          </button>
+        </span>
         <slot name="footer" />
       </div>
     </div>
   </Teleport>
+  <!-- Teleported after the dropdown, so at the same `--z-dialog` layer it sits above it. -->
+  <MissionCloseConfirmDialog
+    v-if="closeOpen && mission"
+    mode="v4"
+    :title="mission.detail.title"
+    :busy="closeBusy"
+    :matters="matters"
+    :done-when="mission.detail.doneWhen"
+    :initial="readyToClose ? 'delivered' : 'discarded'"
+    :error-key="closeError"
+    @cancel="cancelClose"
+    @confirm="confirmClose"
+  />
 </template>

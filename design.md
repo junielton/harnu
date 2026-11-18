@@ -7280,10 +7280,25 @@ when the mission is ready to close, "Test the whole mission" in the footer. It s
 stack, never inside the dropdown, and is drawn only when a walk can start from that source (`walkEntryAvailable(source)`);
 until then it is not drawn at all. In the footer, "Test the whole mission" shares the footer with "Close mission…" or stands alone when the next card already is that. Mockup screen `entry`.
 
-**Empty state** (session with no mission): the pill is a muted **icon-only** pill (`border-border-2`,
-`text-text-3`, title "No mission"). The dropdown shows `target` (14px, `text-text-4`), "This session has
-no mission.", the picker of the open missions in this folder (Attach, with its in-place confirmation),
-"Start a new mission" and, under the picker, "See a sample mission" (the sample keeps its "made up" label, its state chooser and a way to leave it), as in the pane.
+**Empty state** (session with no mission; `MissionDropdownEmpty.vue`): the pill is a muted **icon-only** pill
+(`border-border-2`, `text-text-3`, title "No mission"). The dropdown shows `target` (14px, `text-text-4`), "This session has
+no mission." (`12.5px / 500`, `text-text`), the picker of the open missions in this folder (a row per mission, `rounded
+border border-border`, `padding: 9px 10px`: its title, "{headline} · led by {name}" in `10.5px / text-text-4` and the compact
+Attach button at its right; Attach opens its confirmation **in place**, under a `border-t`, with Cancel and Attach),
+"Start a new mission" (ghost, compact, `plus`; it writes no record, it puts one instruction in the session's prompt) and,
+under the picker, **"See a sample mission"** (a text link, `text-accent`, `12px / 500`). A request to join this session is
+the whole state until it is answered (Allow, Deny). **Loading** is one line, "Reading the mission…" (`12px`, `text-text-3`).
+A **refused read** keeps the empty layout, centred: `target`, "This mission cannot be read right now.", the server's reason
+(`11.5px`, mono, `text-text-3`) and a compact **Retry**. **The sample**, once opened, shows a strip at the top of the body
+(`border-b border-accent-line bg-accent-soft`, `padding: 8px 14px`): the "Sample mission" label (`10px / 700`, uppercase,
+`text-accent`) with the compact "Leave the sample" button at its right, the note "Made-up data. Nothing you press here is
+saved.", a `State` select of the states the dropdown can show (not Sessions or the hand-off) and, for the three states a
+click away from another, a hint that quotes the dropdown's own label. The sample's open-step states carry criteria and
+links, so an open step shows fully. "Close mission…" on a sample changes nothing.
+
+**A dialog opened from the dropdown** (the close dialog) makes it `inert` and dims it (`saturate(0.7)`, the mockup's
+`.dd.dim`); focus goes to Cancel, Esc closes the dialog and gives focus back to the button that opened it, and a door that
+ends the mission closes the dropdown too.
 
 **Small windows.** The body is a container, so every width rule is on the dropdown's own width, not the
 window's: below **380px** the next-step button and each "more waiting" button go under their text, and the
