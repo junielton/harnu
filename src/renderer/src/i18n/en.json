@@ -582,9 +582,6 @@
     }
   },
   "missionPane": {
-    "label": "Mission",
-    "title": "Mission",
-    "loading": "Reading the mission…",
     "pill": {
       "count": "{done}/{total}",
       "forYou": "{n} for you",
@@ -601,28 +598,7 @@
       "ready-to-close": "Ready to close",
       "closed": "Closed"
     },
-    "bar": {
-      "label": "Mission progress"
-    },
     "next": {
-      "label": "What is next",
-      "you": "Your next step",
-      "calm": "Next step",
-      "running": "{n} step is running. Nothing for you right now. | {n} steps are running. Nothing for you right now.",
-      "idle": "Nothing is running. Nothing for you right now.",
-      "more": "{n} more waiting on you",
-      "less": "Show less",
-      "openStep": "Open step",
-      "kind": {
-        "main-failing": "Fix",
-        "unblock": "Unblock",
-        "rescope": "Done when",
-        "settle": "Check",
-        "review": "Review",
-        "close": "Close",
-        "attach": "Join"
-      },
-      "close": "Close mission…",
       "text": {
         "mainFailing": {
           "ask": "Fix the main branch: it broke after “{title}”",
@@ -646,8 +622,7 @@
         },
         "doneWhen": {
           "ask": "Approve or decline the new Done when",
-          "why": "A session proposed it. It becomes the mission’s end only if you approve.",
-          "open": "Review it"
+          "why": "A session proposed it. It becomes the mission’s end only if you approve."
         },
         "attach": {
           "ask": "Let another session join this mission",
@@ -659,203 +634,10 @@
         }
       }
     },
-    "tree": {
-      "label": "Steps of the mission",
-      "waitsFor": "Waits for “{title}”",
-      "waitsForMany": "Waits for {titles}",
-      "running": "{n} running",
-      "waitingReview": "{n} waiting for review",
-      "blocked": "{n} blocked",
-      "nothingRunning": "Nothing running",
-      "allDone": "Every step is done",
-      "more": "{n} more step | {n} more steps",
-      "less": "Show less",
-      "optional": "{n} optional milestone | {n} optional milestones",
-      "chipYours": "Yours",
-      "chipBlocked": "Blocked",
-      "noCriteria": "No criteria yet.",
-      "criterionDone": "Settled",
-      "criterionOpen": "Not settled yet",
-      "state": {
-        "todo": "To do",
-        "running": "Running",
-        "waiting-review": "Waiting for review",
-        "done": "Done",
-        "not-started": "Not started",
-        "in-progress": "In progress"
-      },
-      "toggle": "Steps and timeline",
-      "lineSteps": "{n} step | {n} steps"
-    },
-    "step": {
-      "criteria": "Acceptance criteria",
-      "verified": "{n} criterion verified | {n} criteria verified",
-      "by": {
-        "fact": "Checked automatically",
-        "session": "Checked by a second session",
-        "operator": "You",
-        "person": "Waiting for {person}",
-        "personUnnamed": "Waiting for another person"
-      },
-      "selfCheck": "The session says it is done. Not checked yet.",
-      "mark": "Mark done",
-      "markPerson": "Mark approved",
-      "markPersonTitle": "Mark {person} as having approved this",
-      "blocked": {
-        "you": "Blocked · waiting for you",
-        "session": "Blocked · waiting for the session",
-        "withAge": "{head} · {age}"
-      },
-      "clear": "Done, continue",
-      "linksTitle": "Links from the session",
-      "linksNone": "The session has not written any links for this step yet.",
-      "page": "Page · {address}",
-      "openLink": "Open {label}",
-      "error": {
-        "NOT_FOUND": "That changed while you were looking. The pane shows the latest. Check it and try again if you still need to.",
-        "WRITE_CONFLICT": "The mission changed at the same moment. The pane shows the latest. Try again.",
-        "MISSION_CLOSED": "This mission is closed, so nothing in it can change.",
-        "SETTLES_ITSELF": "Harnu checks this one by itself. You do not mark it.",
-        "other": "Harnu could not save that. Try again in a moment. If it keeps happening, close the pane and open it again."
-      }
-    },
-    "doneWhen": {
-      "eyebrow": "New Done when proposed",
-      "body": "A session proposes this as the new Done when. Approve to make it the mission's end. Decline to keep the current one.",
-      "approve": "Approve",
-      "decline": "Decline"
-    },
     "sessions": {
-      "label": "Sessions",
-      "meta": {
-        "this": "{count} · led by this session",
-        "other": "{count} · led by {name}",
-        "none": "{count} · nobody leads it"
-      },
-      "role": {
-        "leads": "Leads the mission",
-        "leadsPast": "Led the mission",
-        "works": "Works on the mission",
-        "worked": "Worked on the mission"
-      },
-      "thisSession": "this session",
-      "unnamed": "Session {id}",
-      "since": "Since {day}",
-      "span": "{from} to {to}",
-      "sameDay": "{day}, {from} to {to}",
-      "stoppedAt": "Stopped at “{step}”",
-      "stoppedUnknown": "Stopped. The record does not say where.",
-      "waitingFor": "Waiting for: {what}",
-      "more": "{n} more session | {n} more sessions",
-      "less": "Show less",
-      "continue": "Continue in a new session…"
-    },
-    "handoff": {
-      "offer": {
-        "thisSession": "This session’s context is {percent}% full. You can continue the mission in a fresh session. It starts from the mission summary, so nothing is lost.",
-        "otherSession": "The context of {name}, the session that leads, is {percent}% full. You can continue the mission in a fresh session. It starts from the mission summary, so nothing is lost.",
-        "leaderUnnamed": "the session that leads",
-        "open": "Continue in a new session…",
-        "later": "Not now"
-      },
-      "title": "Continue this mission in a new session",
-      "steps": {
-        "one": "Harnu saves where the session that leads stopped.",
-        "two": "A new session opens with the summary below and leads the mission.",
-        "three": "The old session is released. It stays in the mission’s session history."
-      },
-      "brief": {
-        "heading": "Mission summary — what the new session starts with",
-        "empty": "Harnu has no summary of this mission to give the new session.",
-        "section": {
-          "goal": "Goal",
-          "whereItIs": "Where it is",
-          "decided": "Decided",
-          "stoppedAt": "Stopped at",
-          "nextStep": "Next step",
-          "openCriteria": "Open criteria",
-          "links": "Links"
-        }
-      },
-      "cancel": "Cancel",
-      "confirm": "Start new session",
-      "pending": "Starting the new session…",
-      "pendingHint": "This can take up to 90 seconds. Keep this window open.",
-      "done": {
-        "title": "The new session leads the mission",
-        "body": "Harnu started it with the mission summary and released the old session. It stays in the mission’s session history.",
-        "open": "Open the new session",
-        "close": "Close"
-      },
-      "error": {
-        "MISSION_CLOSED": "This mission is closed, so there is nothing to continue.",
-        "HANDOFF_START_FAILED": "The new session did not start. Nothing changed: the same session still leads. Try again in a moment.",
-        "STARTED_NOT_ATTACHED": "The new session was started, but it did not take over in time. The same session still leads. Open the new session to see what happened, or close it. Then try again.",
-        "HANDOFF_IN_PROGRESS": "A hand-off of this mission is already starting a session. Wait for it to finish, then look at the Sessions row.",
-        "HANDOFF_UNAVAILABLE": "Harnu cannot start a session right now. Nothing changed. Try again in a moment.",
-        "LEADER_CHANGED": "Who leads the mission changed while the new session was starting, so Harnu did not attach it. The new session is open but is not part of the mission. Look at the Sessions row, then decide again.",
-        "other": "Harnu could not finish the hand-off. Look at the Sessions row to see who leads, then try again.",
-        "SAMPLE": "This is a sample mission, so no session was started."
-      }
-    },
-    "none": {
-      "title": "This session has no mission."
-    },
-    "refused": {
-      "title": "This mission cannot be read right now.",
-      "retry": "Retry"
-    },
-    "attach": {
-      "pickerTitle": "Open missions in this folder",
-      "ledBy": "led by {name}",
-      "unled": "nobody leads it",
-      "attach": "Attach",
-      "confirm": {
-        "text": "Attach this session to “{title}”? It will be part of the mission, but it will not lead it.",
-        "cancel": "Cancel",
-        "yes": "Attach"
-      },
-      "start": "Start a new mission",
-      "startDone": "Added to this session’s prompt. Press Enter there to send it.",
-      "startError": "This session is not running. Resume it, then try again.",
-      "empty": "There is no open mission in this folder to attach to.",
-      "error": {
-        "NOT_FOUND": "This mission is no longer there. Pick another one.",
-        "MISSION_NOT_FOUND": "This mission is no longer there. Pick another one.",
-        "MISSION_CLOSED": "This mission was closed, so a session cannot join it.",
-        "WRITE_CONFLICT": "The mission changed at the same moment. Try again.",
-        "other": "Harnu could not attach this session. Try again in a moment."
-      },
-      "request": {
-        "eyebrow": "Asks to join",
-        "thisSession": "This session asks to join “{mission}”. If you allow it, it works on the mission. It does not lead it.",
-        "otherSession": "{session} asks to join “{mission}”. If you allow it, it works on the mission. It does not lead it.",
-        "allow": "Allow",
-        "deny": "Deny",
-        "already": "Someone already answered this request, so nothing changed.",
-        "error": {
-          "NOT_FOUND": "This request is no longer there.",
-          "MISSION_NOT_FOUND": "This mission is no longer there.",
-          "MISSION_CLOSED": "This mission was closed, so there is nothing to join.",
-          "WRITE_CONFLICT": "The mission changed at the same moment. Try again.",
-          "other": "Harnu could not save your answer. Try again in a moment."
-        }
-      }
-    },
-    "ask": {
-      "open": "Ask",
-      "openTitle": "Ask the session about this milestone",
-      "placeholder": "What is still missing to finish this milestone?",
-      "label": "Question about “{title}”",
-      "hint": "Goes to the prompt of {name}. The answer shows in that session.",
-      "cancel": "Cancel",
-      "send": "Send",
-      "done": "Added to the prompt of {name}. Press Enter there to send it. The answer shows in that session.",
-      "notRunning": "{name} is not running. Resume it, then send the question again.",
-      "close": "Close"
+      "unnamed": "Session {id}"
     },
     "close": {
-      "open": "Close mission…",
       "title": "Close this mission?",
       "body": "{title} leaves the Topbar and cannot be reopened. The mission file stays on disk as the record.",
       "how": "How to close it",
@@ -874,45 +656,6 @@
         "MISSION_CLOSED": "This mission is already closed, so there is nothing left to close.",
         "other": "Harnu could not close the mission. Nothing changed. Try again in a moment."
       }
-    },
-    "sample": {
-      "open": "See a sample mission",
-      "openHint": "Shows every state of this pane with made-up data. Nothing is saved.",
-      "label": "Sample mission",
-      "note": "Made-up data. Nothing you press here is saved.",
-      "chooser": "State",
-      "leave": "Leave the sample",
-      "state": {
-        "default": "Default",
-        "waiting": "Waiting on you",
-        "step-open": "A step open",
-        "step-blocked": "A step blocked",
-        "all-steps": "Every step shown",
-        "ask": "Asking about a milestone",
-        "sessions": "Sessions",
-        "handoff-suggest": "Hand-off offered",
-        "handoff-confirm": "Hand-off confirmation",
-        "clear": "Nothing waiting",
-        "done": "Done, ready to close",
-        "other-session": "Another session",
-        "simple": "Small task",
-        "simple-signoff": "Small task, sign-offs",
-        "big": "Large mission",
-        "big-waiting": "Large mission, waiting on you",
-        "no-mission": "No mission",
-        "attach-request": "Asks to join",
-        "closed": "Mission closed"
-      },
-      "hint": {
-        "waiting": "Press “{label}” in the next-step box.",
-        "all-steps": "Open “{tree}”, then press “{label}” under a milestone.",
-        "sessions": "Press the “{label}” line below the steps.",
-        "big-waiting": "Press “{label}” in the next-step box."
-      }
-    },
-    "leads": {
-      "label": "This session leads {n} missions",
-      "choose": "Choose the mission to show"
     }
   },
   "memoryPane": {

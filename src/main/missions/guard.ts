@@ -102,7 +102,7 @@ export function guardMission(record: MissionV4, actor: Actor, need: Need): Acces
 
   const entry = openEntry(record, actor.sessionId)
   if (need === 'operator') {
-    return refuse('OPERATOR_ONLY', 'only the operator does this, from the Mission pane.')
+    return refuse('OPERATOR_ONLY', 'only the operator does this, from the Mission dropdown.')
   }
   if (need === 'ask-to-attach') {
     return record.status === 'closed'
@@ -172,7 +172,7 @@ export interface MissionRow {
   leads: string | null
 }
 
-/** The progress line the rows, the pill and the pane share: counts what the mission counts. */
+/** The progress line the rows, the pill and the dropdown share: counts what the mission counts. */
 export function headlineOf(progress: Pick<MissionProgress, 'unit' | 'total' | 'done'>): string {
   const unit = progress.total === 1 ? progress.unit.slice(0, -1) : progress.unit
   return `${progress.done} of ${progress.total} ${unit} done`

@@ -6,7 +6,7 @@
  * slice has a card, the Complex bundle at tracked paths, and the template's four conventions (D-1).
  * T601 S-5 (card T670) — the mission born at triage (its `mission_create` payload parsed against
  * the real verb schema) and the approval order: mission, `open_file`, one question, the header
- * flip and the operator ticking the approval criterion in the Mission pane on a yes, an operator-owned
+ * flip and the operator ticking the approval criterion in the Mission dropdown on a yes, an operator-owned
  * `mission_set_blocker` with nobody there (Missions v4 S-31 moved these pins to the v4 verb shapes).
  * T601 S-8 (card T672) — the three contracts: the awareness doc's `harnu:spec` paragraph and its
  * marker, the user guide's `spec` section, and one CHANGELOG entry that names the skill.
@@ -852,9 +852,9 @@ const S5_MUTATIONS: Record<string, Mutation[]> = {
     },
     {
       target: 'skill',
-      find: 'Mission pane, tick',
+      find: 'Mission dropdown, tick',
       replace: 'chat, say',
-      why: 'the operator is pointed at the approval criterion in the Mission pane'
+      why: 'the operator is pointed at the approval criterion in the Mission dropdown'
     },
     {
       target: 'skill',
@@ -1017,9 +1017,11 @@ function approvalOrderProblems({ skill }: Docs): string[] {
   const f = flat(sec)
   if (!/`status: approved`/.test(f)) problems.push('a yes does not flip the header to approved')
   if (
-    !/in the Mission pane, tick _The operator approves the spec_ on the "Approve spec" step/.test(f)
+    !/in the Mission dropdown, tick _The operator approves the spec_ on the "Approve spec" step/.test(
+      f
+    )
   )
-    problems.push('the operator is not pointed at the approval criterion in the Mission pane')
+    problems.push('the operator is not pointed at the approval criterion in the Mission dropdown')
   if (!/never ticks the criterion/.test(f)) problems.push('the skill may tick the criterion')
   for (const verb of ['mission_update_step', 'mission_verify_step', 'mission_add_check'])
     if (f.includes(`\`${verb}\``)) problems.push(`the approval names ${verb}`)
@@ -1032,8 +1034,8 @@ function approvalOrderProblems({ skill }: Docs): string[] {
     if (!('stepId' in blocker)) problems.push('the blocker is not on the "Approve spec" step')
   }
   if (!/`mission_set_blocker`/.test(f)) problems.push('no mission_set_blocker with nobody there')
-  if (!/the Mission pane lists it as owed by them/.test(f))
-    problems.push('the blocker is not listed in the Mission pane as owed by the operator')
+  if (!/the Mission dropdown lists it as owed by them/.test(f))
+    problems.push('the blocker is not listed in the Mission dropdown as owed by the operator')
   if (!/and stop\./.test(f)) problems.push('with nobody there the skill does not stop')
   if (!/`mission_clear_blocker` refuses an operator's blocker \(`OPERATOR_ONLY`\)/.test(f))
     problems.push("the skill does not leave the operator's blocker to the operator")
@@ -1091,7 +1093,7 @@ function awarenessProblems({ features }: Docs): string[] {
   // The v4 pane has no "Mark verified" button: the operator ticks the step's criterion (Mark done).
   if (
     /Mark verified/.test(p) ||
-    !/Mission pane/.test(p) ||
+    !/Mission dropdown/.test(p) ||
     !/tick the criterion/.test(p) ||
     !/never tick/.test(p)
   )
@@ -1131,7 +1133,7 @@ function userGuideProblems({ userDoc, changelog, skill }: Docs): string[] {
       problems.push('the section does not say what it writes')
     if (
       !/`Approve this spec\?`|"Approve this spec\?"/.test(sec) ||
-      !/Mission pane/.test(sec) ||
+      !/Mission dropdown/.test(sec) ||
       !/tick the criterion/.test(sec) ||
       /Mark verified/.test(sec)
     )
@@ -1198,7 +1200,7 @@ const S8_MUTATIONS: Record<string, Mutation[]> = {
       target: 'features',
       find: 'tick the criterion',
       replace: 'tick the step',
-      why: 'the approval is the criterion the operator ticks in the Mission pane'
+      why: 'the approval is the criterion the operator ticks in the Mission dropdown'
     },
     {
       target: 'features',

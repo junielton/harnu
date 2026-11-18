@@ -377,16 +377,8 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Scheduler worker detail                            | `src/renderer/src/components/SchedulerWorkerDetail.vue`                          |
 | Roadmap WIP chip + limit stepper (§6 — BUG-197)    | `src/renderer/src/components/RoadmapWipChip.vue`                                 |
 | Mission pill (Topbar, §6 — T370, S-17)             | `src/renderer/src/components/MissionPill.vue` + `lib/mission-pane-view.ts`       |
-| Mission pane (helper stack, §6 — S-17)             | `components/MissionPane.vue` + `lib/mission-pane-view.ts`                        |
-| Mission pane — next step box (§6 — S-18)           | `components/MissionPaneNext.vue` + `lib/mission-pane-view.ts`                    |
-| Mission pane — tree and timeline (§6 — S-18)       | `components/MissionPaneTree.vue` + `lib/mission-pane-view.ts`                    |
-| Mission pane — an open step (§6 — S-19)            | `components/MissionPaneStep.vue` + `lib/mission-pane-view.ts`                    |
-| Mission pane — sessions row (§6 — S-20)            | `components/MissionPaneSessions.vue` + `lib/mission-pane-view.ts`                |
-| Mission hand-off confirmation (§6 — S-20)          | `components/MissionHandoffDialog.vue` + `stores/missions.ts`                     |
-| Mission pane — attach and request (§6 — S-21)      | `components/MissionPaneAttach.vue` + `lib/mission-pane-view.ts`                  |
-| Mission pane — Ask on a milestone (§6 — S-21)      | `components/MissionPaneAsk.vue` + `lib/mission-pane-view.ts`                     |
-| Mission pane — close dialog (§6 — S-22)            | `components/MissionCloseConfirmDialog.vue` + `stores/missions.ts`                |
-| Mission pane — sample mission (§6 — S-22)          | `lib/mission-sample.ts` + `stores/missions.ts`                                   |
+| Mission dropdown — close dialog (§6 — S-22)        | `components/MissionCloseConfirmDialog.vue` + `stores/missions.ts`                |
+| Mission dropdown — sample mission (§6 — S-22)      | `lib/mission-sample.ts` + `stores/missions.ts`                                   |
 | Mission dropdown — shell (§6 — dropdown S-1)       | `components/MissionDropdown.vue` + `lib/mission-dropdown-position.ts`            |
 | Guided walk pane (helper stack, §6 — S-3)          | `GuidedWalkPane.vue` + `Walk*.vue` + `lib/walk-view.ts` + `lib/walk-keys.ts`     |
 | Walks library (helper stack, §6 — S-4)             | `WalksPane.vue` + `WalkPast.vue` + `lib/walk-library.ts`                         |

@@ -8,7 +8,6 @@
  *   CardDetailModal             CardDetailModal.vue               Roadmap board → click a card
  *   RoadmapBoard.dispatch       RoadmapBoard.vue                  Roadmap board → an AGENT-authored card's "Dispatch"
  *   MissionCloseConfirmDialog   MissionCloseConfirmDialog.vue     owner session selected → Topbar mission pill → Mission dropdown → Close mission…
- *   MissionHandoffDialog        MissionHandoffDialog.vue          not seedable since Mission dropdown S-7: nothing opens the pane whose Sessions row held it (gone in S-8)
  *
  * A route is `{ id, file, reach, note?, open({ page, app, seed }), close?({ page }) }`. `open`
  * drives the UI like a user (role / aria-label / data-testid / data-dsqa / data-test selectors,
@@ -87,7 +86,7 @@ async function tidy(page) {
   await page.mouse.move(640, 450)
 }
 
-/** Clear stray dialogs and a stray bell popover (the Mission pane keeps its open state between routes). */
+/** Clear stray dialogs and a stray bell popover (the Mission dropdown keeps its open state between routes). */
 async function reset(page) {
   await closeAllDialogs(page)
   const bell = page.locator('[data-dsqa="topbar-bell"]')
@@ -268,7 +267,7 @@ export const ROUTES_BOARD_MISSIONS = [
     reach: 'seed',
     note:
       'Needs the mission OWNER session in the sidebar: the route writes a transcript for it (the seed does not) and selects it. ' +
-      "The seeded mission is a v3 file: since the cut-over its pill opens the Mission dropdown like any record, and the dropdown footer's " +
+      "The seeded mission is a v3 file: since the cut-over its pill opens the Mission dropdown like any record, and the dropdown's " +
       '"Close mission…" opens the dialog. The dropdown keeps its open state between runs in one app, so it is opened only when it is closed. ' +
       'Selecting a session starts a `claude --resume` PTY; the pill and the dropdown do not depend on that process.',
     open: async (ctx) => {
@@ -276,27 +275,18 @@ export const ROUTES_BOARD_MISSIONS = [
       await reset(page)
       await selectOwnerSession(ctx)
       await tidy(page)
-      const dropdown = page.locator('[data-dsqa="mission-dropdown"]')
+      const dropdown = page.locator('[data-test="mission-dropdown"]')
       if (!(await dropdown.isVisible().catch(() => false))) await pill(page).click()
-      await dropdown.locator('[data-test="footer-close"]').first().click()
+      // A mission that is ready to close owns the close on its Next card; any other has it in the footer.
+      const footerClose = page.locator('[data-test="footer-close"]')
+      const closeButton =
+        (await footerClose.count()) > 0 ? footerClose : page.locator('[data-test="next-button"]')
+      await closeButton.first().click()
       await page
         .locator('[data-test="mission-close-confirm"]')
         .waitFor({ state: 'visible', timeout: 8000 })
       await dialogReady(page)
     },
     close: async ({ page }) => closeAllDialogs(page)
-  },
-  {
-    id: 'MissionHandoffDialog',
-    file: 'MissionHandoffDialog.vue',
-    reach: 'not-seedable',
-    note:
-      "Mission dropdown S-7: the dialog lived behind the Mission pane's Sessions row, and nothing opens the pane any more " +
-      '(the Topbar pill opens the dropdown, which has no Sessions line). Unreachable until the pane and the dialog go in S-8.',
-    async open() {
-      throw new Error(
-        'MissionHandoffDialog is not seedable: no door opens it since the Topbar pill opens the Mission dropdown'
-      )
-    }
   }
 ]

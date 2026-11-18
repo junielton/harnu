@@ -168,7 +168,7 @@ function verifierProblems(skill: string): string[] {
     out.push('a verifier may settle a criterion that is not by: session')
   if (
     !/A `fact` settles itself/.test(all) ||
-    !/ticked by the operator in the Mission pane/.test(all)
+    !/ticked by the operator in the Mission dropdown/.test(all)
   )
     out.push('who settles the other criteria is not said')
   if (!/a second session or another person, never the one who built the step/.test(all))

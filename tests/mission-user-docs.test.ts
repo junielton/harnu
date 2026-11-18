@@ -118,6 +118,27 @@ describe('the user guide covers missions (AC-85)', () => {
       expect(read(file), file).not.toContain('Mark verified')
   })
 
+  it('no user page points at a Mission pane (Mission dropdown S-8, AC-25)', () => {
+    for (const file of ['README.md', 'agent-control.md', 'bundled-skills.md', 'missions.md']) {
+      const flat = read(file).replace(/\s+/g, ' ')
+      expect(flat, `${file}: "Mission pane"`).not.toMatch(/Mission pane/i)
+      // The doors the old pane carried are not described as there
+      expect(flat, `${file}: a hand-off button`).not.toMatch(
+        /from the pane's|Continue in a new session/
+      )
+    }
+    // The dev note on the landing check says the dropdown too.
+    const landing = readFileSync(
+      join(__dirname, '..', 'docs', 'dev', 'missions-v4-landing.md'),
+      'utf8'
+    )
+    expect(landing).not.toMatch(/Mission pane|the pane's/i)
+    // The index names the dropdown, and no "Sessions" line of a mission.
+    const index = read('README.md').replace(/\s+/g, ' ')
+    expect(index).toMatch(/\[Missions\]\(missions\.md\) — the Mission dropdown/)
+    expect(index).not.toMatch(/the sessions on it/)
+  })
+
   it('the missions page says the pill, the chip and the dropdown show one mission (S-35 delta 1)', () => {
     const flat = MISSIONS.replace(/\s+/g, ' ')
     expect(flat).toMatch(/pill, the (sidebar )?chip and the dropdown always show the same mission/)

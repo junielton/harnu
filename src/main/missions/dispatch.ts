@@ -393,7 +393,7 @@ export async function bindCardSession(
     if (!booted) {
       return refusal(
         'SESSION_NOT_BOOTED',
-        `the session for ${slug} did not boot in time, so it was not attached to ${card.step}. Attach it from the Mission pane.`
+        `the session for ${slug} did not boot in time, so it was not attached to ${card.step}. Attach it from the Mission dropdown.`
       )
     }
     realId = booted.sessionId
@@ -456,7 +456,7 @@ export async function noteCardSpawn(
  * manifest drain both bind through). When the card is the work of a step, the session is attached to the
  * step as a worker once it has booted. Detached on purpose: a boot may queue for minutes and the caller
  * never waits on it; a failure is said in the log, and the operator can attach the session from the
- * Mission pane. Never throws.
+ * Mission dropdown. Never throws.
  */
 export function bindStepSession(folder: string, slug: string, sessionId: string): void {
   const warn = (why: string): void =>

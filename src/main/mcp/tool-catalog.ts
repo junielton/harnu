@@ -274,7 +274,7 @@ export const MCP_OPS = [
   'mission_update_step',
   'mission_log',
   // Blockers (a flag, never a status) and close requests: the same gate class. No verb here — or
-  // anywhere — closes a mission; close is the operator's door in the Mission pane.
+  // anywhere — closes a mission; close is the operator's door in the Mission dropdown.
   'mission_set_blocker',
   'mission_clear_blocker',
   'mission_request_close',
@@ -2666,7 +2666,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_request_close',
     description:
-      "Ask the operator to close a Mission — the leader's verb, DIRECT write, no confirm. It is refused STEPS_OPEN while a required step is not done, sets `closeRequested` and never closes: close is the operator's door in the Mission pane. Adding a step afterwards clears the request. ACK `{ ok, op, closeRequested: { at }, deduped }`. Pass your `sessionId`.",
+      "Ask the operator to close a Mission — the leader's verb, DIRECT write, no confirm. It is refused STEPS_OPEN while a required step is not done, sets `closeRequested` and never closes: close is the operator's door in the Mission dropdown. Adding a step afterwards clears the request. ACK `{ ok, op, closeRequested: { at }, deduped }`. Pass your `sessionId`.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
@@ -2707,7 +2707,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_add_ac',
     description:
-      "Add a criterion to a v4 Mission step — DIRECT write, no confirm; the LEADER's verb, add-only (a criterion is never rewritten or removed by a session). A criterion is one sentence that is true when the step is done, and `by` says who settles it: `fact` (Harnu reads it: name the `fact` — pr-opened, ci-green, pr-merged, main-green or link-exists), `session` (a second session settles it with mission_settle_ac; the default), `operator` (the operator ticks it in the Mission pane: this is what a v3 check became) or `person` (the operator marks it for the person you name in `person`). On a v3 mission it converts the mission first (a v4 copy; the v3 file is not touched). ACK `{ ok, op, stepId, criterionId, totalCriteria }`. Replaces mission_add_check, which stays until v4 is the only format.",
+      "Add a criterion to a v4 Mission step — DIRECT write, no confirm; the LEADER's verb, add-only (a criterion is never rewritten or removed by a session). A criterion is one sentence that is true when the step is done, and `by` says who settles it: `fact` (Harnu reads it: name the `fact` — pr-opened, ci-green, pr-merged, main-green or link-exists), `session` (a second session settles it with mission_settle_ac; the default), `operator` (the operator ticks it in the Mission dropdown: this is what a v3 check became) or `person` (the operator marks it for the person you name in `person`). On a v3 mission it converts the mission first (a v4 copy; the v3 file is not touched). ACK `{ ok, op, stepId, criterionId, totalCriteria }`. Replaces mission_add_check, which stays until v4 is the only format.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
@@ -2747,7 +2747,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_set_done_when',
     description:
-      "Propose a new Done when for a v4 Mission — DIRECT write, no confirm, but it NEVER changes the Done when itself: it stages the new text for the operator, who approves it in the Mission pane (the pane shows the text; the `reason` is in the Log). The LEADER's verb. One proposal waits at a time: the same text again is a no-op, a different one replaces it; a text equal to the current Done when is refused. ACK `{ ok, op, staged: { text, reason, at, by }, deduped }`. On a v3 mission it converts the mission first (a v4 copy; the v3 file is not touched). Replaces mission_set_end, which stays until v4 is the only format.",
+      "Propose a new Done when for a v4 Mission — DIRECT write, no confirm, but it NEVER changes the Done when itself: it stages the new text for the operator, who approves it in the Mission dropdown (the dropdown shows the text; the `reason` is in the Log). The LEADER's verb. One proposal waits at a time: the same text again is a no-op, a different one replaces it; a text equal to the current Done when is refused. ACK `{ ok, op, staged: { text, reason, at, by }, deduped }`. On a v3 mission it converts the mission first (a v4 copy; the v3 file is not touched). Replaces mission_set_end, which stays until v4 is the only format.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
@@ -2762,7 +2762,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_settle_ac',
     description:
-      "Settle one criterion of a v4 Mission step with the evidence you saw — DIRECT write, no confirm. Only a criterion with `by: session` is settled this way. A session that did NOT build the step settles it (`outcome: settled`, stamped with your session id and the evidence); the session that built it (a `session` link on the step) only self-checks: `outcome: self-check`, labelled, never proof, and the criterion stays open. A fact settles itself, and the operator settles theirs and a person's, in the Mission pane. ALREADY_SETTLED: the first settlement stands. Pass your `sessionId`: it decides settled vs self-check, and it is self-declared, not authenticated. ACK `{ ok, op, outcome, stepId, criterionId }`. On a v3 mission it converts the mission first (a v4 copy; the v3 file is not touched). Replaces mission_verify_step, which stays until v4 is the only format.",
+      "Settle one criterion of a v4 Mission step with the evidence you saw — DIRECT write, no confirm. Only a criterion with `by: session` is settled this way. A session that did NOT build the step settles it (`outcome: settled`, stamped with your session id and the evidence); the session that built it (a `session` link on the step) only self-checks: `outcome: self-check`, labelled, never proof, and the criterion stays open. A fact settles itself, and the operator settles theirs and a person's, in the Mission dropdown. ALREADY_SETTLED: the first settlement stands. Pass your `sessionId`: it decides settled vs self-check, and it is self-declared, not authenticated. ACK `{ ok, op, outcome, stepId, criterionId }`. On a v3 mission it converts the mission first (a v4 copy; the v3 file is not touched). Replaces mission_verify_step, which stays until v4 is the only format.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>).'),
@@ -2778,7 +2778,7 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'mission_attach',
     description:
-      "Ask to join a v4 Mission — the one write a session that is not attached may make, DIRECT, no confirm. It is a REQUEST: the operator allows or denies it in the Mission pane (the pane's attach item), and until they allow it you are not attached (NOT_ATTACHED on every other verb). It asks to JOIN and never to lead: only the operator changes who leads, from the hand-off door. Asking again while the request waits returns the same `requestId` (`deduped: true`); a session already attached is refused ALREADY_ATTACHED; a closed mission, MISSION_CLOSED. The session that creates a mission is attached at once and needs no request. Pass your `sessionId` (self-declared, not authenticated). ACK `{ ok, op, requestId, deduped }`. Replaces mission_transfer_owner, which stays until v4 is the only format.",
+      "Ask to join a v4 Mission — the one write a session that is not attached may make, DIRECT, no confirm. It is a REQUEST: the operator allows or denies it in the Mission dropdown (the dropdown's attach item), and until they allow it you are not attached (NOT_ATTACHED on every other verb). It asks to JOIN and never to lead: only the operator changes who leads, from the hand-off door. Asking again while the request waits returns the same `requestId` (`deduped: true`); a session already attached is refused ALREADY_ATTACHED; a closed mission, MISSION_CLOSED. The session that creates a mission is attached at once and needs no request. Pass your `sessionId` (self-declared, not authenticated). ACK `{ ok, op, requestId, deduped }`. Replaces mission_transfer_owner, which stays until v4 is the only format.",
     inputSchema: z.object({
       folder: MISSION_FOLDER_SCHEMA,
       missionId: z.string().min(1).describe('The mission id (mnt-<8 hex>), from mission_list.'),

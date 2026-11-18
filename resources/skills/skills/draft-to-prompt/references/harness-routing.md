@@ -80,7 +80,7 @@ survive interruptions. The three pieces and why each exists:
   on what's unblocked, records what changed. The Mission is the thread that
   survives compaction and restarts. The session that creates it leads it, and
   the end the operator agreed in chat is its Done when, with no approval step
-  after it. Only the operator ends it, from the Mission pane, and once ended
+  after it. Only the operator ends it, from the Mission dropdown, and once ended
   every `mission_*` write refuses `MISSION_CLOSED` — stop the loop there.
 - **loop skill** — self-paced re-invocation drives the ticks. Without it the
   mission stalls the moment the turn ends.

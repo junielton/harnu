@@ -15,7 +15,7 @@
  * move card) all flip it. The pill is the flag's anchor whenever it is drawn, a no-mission pill too, and it
  * mounts the dropdown, which is teleported to `body`.
  */
-import { computed, onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUpdated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown, Target } from 'lucide-vue-next'
 import {
@@ -30,6 +30,14 @@ import { useKeybindingsStore } from '../stores/keybindings'
 import MissionDropdown from './MissionDropdown.vue'
 
 const props = defineProps<{ sessionId: string }>()
+/**
+ * The pill's width changed or the pill came or went. The Topbar reserves what it cannot shrink (this pill, the
+ * provider and the orchestrator badges) and plans its action cluster around it, so it measures again.
+ */
+const emit = defineEmits<{ layout: [] }>()
+onMounted(() => emit('layout'))
+onUpdated(() => emit('layout'))
+onBeforeUnmount(() => emit('layout'))
 
 const { t } = useI18n()
 const missions = useMissionsStore()
@@ -66,7 +74,18 @@ onBeforeUnmount(() => ui.setPopoverAnchor('missionProgress', false))
 </script>
 
 <template>
-  <div class="relative flex min-w-0 shrink" style="-webkit-app-region: no-drag" data-v4="true">
+  <!-- `data-topbar-extra`: the Topbar reserves the pill's width, so the breadcrumb and the title give way first
+       and the action cluster moves into the `…` menu before the pill is touched. The title carries a huge flex-shrink
+       (`shrink-[1000]`, Topbar.vue), so it gives way, down to its stub, before the pill does (the mockup draws the
+       pill `flex-shrink: 0`),
+       and only when the header cannot hold the pill and the controls it never pushes out does the label truncate
+       (its full text is in the `title`). -->
+  <div
+    class="relative flex min-w-0 shrink"
+    style="-webkit-app-region: no-drag"
+    data-v4="true"
+    data-topbar-extra
+  >
     <button
       type="button"
       class="flex min-w-0 shrink cursor-pointer items-center rounded-sm border tabular-nums transition hover:brightness-110"

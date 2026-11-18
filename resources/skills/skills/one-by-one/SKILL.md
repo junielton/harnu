@@ -130,12 +130,12 @@ operator said, verbatim and short, as the chosen option.
 Pass your own `sessionId` on every mission call. `mission_get({ folder, sessionId })` lists the
 mission's steps and blockers. A D-n that holds a step back is an operator blocker
 (`mission_set_blocker`, `owner: 'operator'`): its `reason` is the question and its options, so
-the Mission pane lists it as owed by the operator. Load `../mission/references/writing-contract.md`
+the Mission dropdown lists it as owed by the operator. Load `../mission/references/writing-contract.md`
 before you write one.
 
 - **Answered:** one `mission_log` with `kind: 'decision'`, the `stepId` it gates and your
   `sessionId`: "D-3 · <chosen option> · <why>". If an operator blocker for it is open, tell the
-  operator once: say **Done, continue** on it in the Mission pane. Clearing it is theirs: you never
+  operator once: say **Done, continue** on it in the Mission dropdown. Clearing it is theirs: you never
   call `mission_clear_blocker` on it (refused `OPERATOR_ONLY`).
 - **Deferred, and it gates a step with no blocker yet:** raise it once:
   `mission_set_blocker { stepId, reason, ask, unblocks, owner: 'operator', sessionId }`. The
@@ -164,17 +164,17 @@ and where it landed, then what is deferred and what the operator still owes:
 ✅ D-3 Retry location — keep in client · spec row ✓ · memory ✓ · logged on its step
 ✅ D-1 Rate-limit config — 429 already handled (verified, no question asked)
 ⏭️ D-5 Naming of the env var — deferred, row still open
-Owed by you: "Done, continue" on D-3's blocker in the Mission pane. Deferred: D-5. Want cards for the deferred ones?
+Owed by you: "Done, continue" on D-3's blocker in the Mission dropdown. Deferred: D-5. Want cards for the deferred ones?
 ```
 
 Offer a board card (`create_card`) for each deferred item; only offer.
 
 ## Red flags
 
-| Thought                                         | Reality                                                                        |
-| ----------------------------------------------- | ------------------------------------------------------------------------------ |
-| "They'd obviously pick the default"             | Then recommend it and ask. Resolved means they said so.                        |
-| "I'll write all the rows at the end"            | Row, memory line, then the next question — a crash mid-walk must lose nothing. |
-| "I'll clear their blocker to save them a click" | It is refused `OPERATOR_ONLY`, and it is their door. Point at the pane.        |
-| "I'll fix the spec section the answer changes"  | That is an Amendments row plus a note, not a silent edit.                      |
-| "They said ok"                                  | To what? If it was not a yes/no, ask again or defer.                           |
+| Thought                                         | Reality                                                                             |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| "They'd obviously pick the default"             | Then recommend it and ask. Resolved means they said so.                             |
+| "I'll write all the rows at the end"            | Row, memory line, then the next question — a crash mid-walk must lose nothing.      |
+| "I'll clear their blocker to save them a click" | It is refused `OPERATOR_ONLY`, and it is their door. Point at the Mission dropdown. |
+| "I'll fix the spec section the answer changes"  | That is an Amendments row plus a note, not a silent edit.                           |
+| "They said ok"                                  | To what? If it was not a yes/no, ask again or defer.                                |

@@ -260,9 +260,9 @@ describe('observeOpenMissions', () => {
 })
 
 describe('the v3 operator doors', () => {
-  const REFUSAL = /Mission pane/
+  const REFUSAL = /Mission dropdown/
 
-  it('answer a refusal that names the Mission pane, and touch nothing on disk', async () => {
+  it('answer a refusal that names the Mission dropdown, and touch nothing on disk', async () => {
     const file = writeV3Mission(root, mission('mnt-0000000b', {}, root), '# T\n\n## Log\n')
     const before = await fs.readFile(file)
     h.handlers.clear()
