@@ -366,6 +366,53 @@
   "missionDropdown": {
     "shell": {
       "label": "Mission"
+    },
+    "head": {
+      "barLabel": "Mission progress",
+      "count": {
+        "milestones": "{done} of {total} milestone done | {done} of {total} milestones done",
+        "steps": "{done} of {total} step done | {done} of {total} steps done"
+      },
+      "switchLabel": "Mission {n} of {m} · Change",
+      "switchCount": "Mission {n} of {m}",
+      "change": "Change",
+      "leads": "This session leads {n} missions",
+      "choose": "Choose the mission to show",
+      "sub": {
+        "milestones": "{done} of {total} milestone | {done} of {total} milestones",
+        "steps": "{done} of {total} step | {done} of {total} steps",
+        "forYou": "{count} · {n} for you"
+      }
+    },
+    "next": {
+      "label": "What is next",
+      "you": "Your next step",
+      "calm": "Next step",
+      "running": "{n} step is running. Nothing for you right now. | {n} steps are running. Nothing for you right now.",
+      "idle": "Nothing is running. Nothing for you right now.",
+      "more": "{n} more waiting on you",
+      "less": "Show less",
+      "openStep": "Open step",
+      "close": "Close mission…",
+      "kind": {
+        "main-failing": "Fix",
+        "unblock": "Unblock",
+        "rescope": "Done when",
+        "settle": "Check",
+        "review": "Review",
+        "close": "Close",
+        "attach": "Join"
+      },
+      "doneWhenEyebrow": "New Done when proposed",
+      "doneWhenHint": "Approve makes it the end of the mission. Decline keeps the current one.",
+      "approve": "Approve",
+      "decline": "Decline",
+      "requestEyebrow": "Asks to join",
+      "requestText": "{session} asks to join “{mission}”. If you allow it, it works on the mission. It does not lead it.",
+      "allow": "Allow",
+      "deny": "Deny",
+      "already": "Someone already answered this, so nothing changed.",
+      "error": "Harnu could not save your answer. Try again in a moment."
     }
   },
   "missionPane": {
