@@ -240,6 +240,47 @@ describe('closing a mission from the pane (Missions v4 S-22, AC-60)', () => {
     expect(q('[data-test="mission-end-choice-discarded"]')).not.toBeNull()
   })
 
+  it('the body names the Topbar', async () => {
+    await mountPane(paneReply())
+    await pressOn('[data-test="mission-close-open"]')
+    // The dropdown is the only surface that opens this dialog (S-7): the mission leaves the Topbar.
+    const body = text('[data-test="mission-close-confirm"] p')
+    expect(body).toContain('leaves the Topbar and cannot be reopened.')
+    expect(body).not.toMatch(/Mission pane/)
+    const close = (m: unknown): string =>
+      (m as { missionPane: { close: { body: string } } }).missionPane.close.body
+    expect(close(enMessages)).toBe(
+      '{title} leaves the Topbar and cannot be reopened. The mission file stays on disk as the record.'
+    )
+    // pt-BR says the same thing in Portuguese: it names the Topbar and no longer names a pane.
+    expect(close(ptMessages)).toContain('{title}')
+    expect(close(ptMessages)).toContain('Topbar')
+    expect(close(ptMessages)).not.toMatch(/painel/i)
+  })
+
+  it('the dialog says "How to close it" and the confirm says "Close mission" (the mockup\'s close-confirm)', async () => {
+    await mountPane(paneReply({ ready: true }))
+    await pressOn('[data-test="mission-close-open"]')
+    // The legend is drawn (not screen-reader only), in the mission's words.
+    const legend = q('[data-test="mission-close-confirm"] legend')!
+    expect(legend.textContent?.trim()).toBe('How to close it')
+    expect(legend.classList.contains('sr-only')).toBe(false)
+    // A delivered end reads "Close mission"; Discard keeps its own word, so the button never hides the choice.
+    expect(text('[data-test="mission-close-confirm-go"]')).toBe('Close mission')
+    ;(q('[data-test="mission-end-choice-discarded"] input') as HTMLInputElement).click()
+    await paneSettle()
+    expect(text('[data-test="mission-close-confirm-go"]')).toBe('Discard')
+    // The Reason box stays: the spec keeps the pane's dialog and the reason goes to the mission's Log.
+    expect(q('[data-test="mission-end-reason"]')).not.toBeNull()
+    const pick = (m: unknown, k: string): string =>
+      (m as { missionPane: { close: Record<string, string> } }).missionPane.close[k]
+    expect(pick(enMessages, 'how')).toBe('How to close it')
+    expect(pick(enMessages, 'confirm')).toBe('Close mission')
+    expect(pick(ptMessages, 'how')).not.toBe(pick(enMessages, 'how'))
+    expect(pick(ptMessages, 'confirm')).not.toBe(pick(enMessages, 'confirm'))
+    expect(pick(ptMessages, 'confirm').length).toBeGreaterThan(0)
+  })
+
   it('close never refuses: every open matter is a warning in words, and the confirm stays enabled', async () => {
     await mountPane(paneReply({ warnings: ALL_WARNINGS }))
     await pressOn('[data-test="mission-close-open"]')

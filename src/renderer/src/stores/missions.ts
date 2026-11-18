@@ -76,7 +76,6 @@ import {
   type NotificationItem,
   type NotificationRecord
 } from './notifications'
-import { useHelpersStore } from './helpers'
 import { persistedRef } from './persisted'
 import { useSessionsStore } from './sessions'
 import { useUiStore } from './ui'
@@ -866,22 +865,42 @@ export const useMissionsStore = defineStore('missions', () => {
     await refresh()
   }
 
+  /** The pending open of {@link openMissionDropdown}: one at a time, dropped after a second. */
+  let stopPendingOpen: (() => void) | null = null
+
   /**
-   * Open the Mission pane in the selected session's stack (a no-op when it is open or no worktree is
-   * selected), on the mission `missionId` names when one is given (S-35 delta 1: "Open mission" opens the mission
-   * it names, not the session's default one). Every record lives there since the cut-over: the pane follows the
-   * selected session, so a caller selects the mission's leader first.
+   * Open the Mission dropdown under the Topbar pill (Mission dropdown S-7: the ONE door every opener goes
+   * through — the Activity row and the Your move card; the pill and the `view.missionProgress` chord flip the
+   * same flag themselves). With `missionId` the dropdown shows the mission it names, not the session's default
+   * one, and a mission the session does not lead shows as a named read; nothing is written. The dropdown follows
+   * the selected session, so a caller selects the mission's leader first. The pill is the dropdown's anchor: a
+   * door that selected the session in the same tick finds the pill not yet drawn, so the open waits for it
+   * (for at most a second) and opens nothing when there is no pill to hang on.
    */
-  function openMissionPane(missionId?: string): void {
-    const helpers = useHelpersStore()
-    const worktree = helpers.currentWorktreePath
-    if (worktree && !helpers.panesForCurrentWorktree.some((p) => p.type === 'mission')) {
-      helpers.toggleMissionHelper(worktree)
-    }
+  function openMissionDropdown(missionId?: string): void {
+    const ui = useUiStore()
     const selected = sessions.selectedSession
     if (missionId && selected && !selected.sessionId.startsWith('synthetic-')) {
       void chooseMission(selected.sessionId, missionId)
     }
+    stopPendingOpen?.()
+    stopPendingOpen = null
+    if (ui.openPopover('missionProgress')) return
+    const timer = setTimeout(() => stop(), 1000)
+    const stopWatch = watch(
+      () => ui.popoverAnchors.missionProgress,
+      (drawn) => {
+        if (!drawn) return
+        ui.openPopover('missionProgress')
+        stop()
+      }
+    )
+    const stop = (): void => {
+      clearTimeout(timer)
+      stopWatch()
+      if (stopPendingOpen === stop) stopPendingOpen = null
+    }
+    stopPendingOpen = stop
   }
 
   /** Start polling once; later calls are no-ops. */
@@ -992,7 +1011,7 @@ export const useMissionsStore = defineStore('missions', () => {
     chipFor,
     ledMissionsFor,
     chooseMission,
-    openMissionPane,
+    openMissionDropdown,
     refreshV4,
     v4ReplyForSession,
     v4MissionForSession,

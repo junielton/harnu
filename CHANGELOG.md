@@ -10,6 +10,17 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-18
+
+### Added
+
+- **A mission now opens in a dropdown under the Mission pill in the top bar, not in a pane.** Click the pill (or press the same keyboard shortcut) and the dropdown shows the mission's title, how far it is, the one thing that waits on you, and the steps. It does not take a pane from your session any more. Esc, a click outside or the pill again closes it. The pill gains a small arrow that turns over while it is open. A session in no mission now shows a quiet "No mission" pill that opens the list of the folder's missions to attach to, so that list always has a door. A row in Activity and **Open mission** on a Your move card open the dropdown on the mission they name.
+
+### Changed
+
+- **Closing a mission now says it leaves the Topbar**, with the choice titled "How to close it" and the button reading "Close mission" (a discard still reads "Discard"). The optional reason stays.
+- The notice for a mission whose leader session is not open here now points you to the Mission pill, not the Mission pane.
+
 ## 2026-11-17
 
 ### Added

@@ -364,6 +364,9 @@
     "copied": "Copied"
   },
   "missionDropdown": {
+    "pill": {
+      "none": "No mission"
+    },
     "shell": {
       "label": "Mission"
     },
@@ -853,7 +856,9 @@
     "close": {
       "open": "Close mission…",
       "title": "Close this mission?",
-      "body": "{title} leaves the Mission pane and cannot be reopened. The mission file stays on disk as the record.",
+      "body": "{title} leaves the Topbar and cannot be reopened. The mission file stays on disk as the record.",
+      "how": "How to close it",
+      "confirm": "Close mission",
       "doneWhen": "Closing as delivered confirms this Done when: “{text}”",
       "matters": {
         "unfinished-steps": "{count} step is not done | {count} steps are not done",
@@ -863,8 +868,8 @@
         "other": "{count} other matter is still open | {count} other matters are still open"
       },
       "error": {
-        "NOT_FOUND": "That changed while you were looking. The pane shows the latest. Check it and try again if you still need to.",
-        "WRITE_CONFLICT": "The mission changed at the same moment. The pane shows the latest. Try again.",
+        "NOT_FOUND": "That changed while you were looking. The dropdown shows the latest. Check it and try again if you still need to.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. The dropdown shows the latest. Try again.",
         "MISSION_CLOSED": "This mission is already closed, so there is nothing left to close.",
         "other": "Harnu could not close the mission. Nothing changed. Try again in a moment."
       }
@@ -5333,7 +5338,7 @@
       "many": "{n} missions need you",
       "ownerMissing": "The owner session isn’t open here — click to see why this mission can’t open.",
       "ownerMissingTitle": "Can’t open “{title}” from here",
-      "ownerMissingBody": "Its owner session isn’t open in this window. Open that session, then use its Mission pane.",
+      "ownerMissingBody": "Its owner session isn’t open in this window. Open that session, then use its Mission pill.",
       "itemAria": "Open mission {title}"
     },
     "unreadable": {

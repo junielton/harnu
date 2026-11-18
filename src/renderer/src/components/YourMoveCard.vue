@@ -21,7 +21,6 @@ import {
   type CardButton
 } from '../lib/your-move-view'
 import { sessionTitle } from '../lib/session-label'
-import { useHelpersStore } from '../stores/helpers'
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useYourMoveStore } from '../stores/your-move'
@@ -122,14 +121,10 @@ async function run(action: CardAction): Promise<void> {
     }
     case 'open-mission': {
       sessions.activateSession(props.card.sessionId)
-      // Every record lives in the pane beside its leader session (S-35): open the session, then the pane,
-      // on the mission the card names (a leader of several would otherwise land on its default one).
-      const helpers = useHelpersStore()
-      const worktree = helpers.currentWorktreePath
-      if (worktree && !helpers.panesForCurrentWorktree.some((p) => p.type === 'mission')) {
-        helpers.toggleMissionHelper(worktree)
-      }
-      void useMissionsStore().chooseMission(props.card.sessionId, action.missionId)
+      // Every record lives in the dropdown under its leader's Topbar pill (Mission dropdown S-7): open the
+      // session, then the dropdown, on the mission the card names (a leader of several would otherwise land on
+      // its default one).
+      useMissionsStore().openMissionDropdown(action.missionId)
       return
     }
   }

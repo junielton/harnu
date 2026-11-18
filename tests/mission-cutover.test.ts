@@ -386,7 +386,7 @@ async function mountPill(): Promise<VueWrapper> {
 
 const panes = (): string[] => useHelpersStore().panesForCurrentWorktree.map((p) => p.type)
 
-describe('the pill opens the pane for a v3 record', () => {
+describe('the pill opens the dropdown for a v3 record', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     i18n.global.locale.value = 'en'
@@ -402,7 +402,7 @@ describe('the pill opens the pane for a v3 record', () => {
     document.body.innerHTML = ''
   })
 
-  it('classifies a v3 record as a mission the pane draws', () => {
+  it('classifies a v3 record as a mission the dropdown draws', () => {
     for (const source of ['v3-mission', 'v3-campaign'] as const) {
       const r = reply({ source })
       expect(classifyReply(r, SESSION), source).toBe('mission')
@@ -410,36 +410,35 @@ describe('the pill opens the pane for a v3 record', () => {
     }
   })
 
-  it('reads the v4 numbers, toggles the pane on click, and never opens a popover', async () => {
+  it('reads the v4 numbers and toggles the dropdown on click, never a pane', async () => {
     const w = await mountPill()
     expect(w.get('[data-test="mission-pill-label"]').text()).toBe('2/5 · 1 for you')
     const ui = useUiStore()
     const button = w.get('button')
     await button.trigger('click')
-    expect(panes()).toEqual(['mission'])
-    expect(button.attributes('aria-pressed')).toBe('true')
-    expect(ui.popovers.missionProgress).toBe(false)
+    expect(button.attributes('aria-expanded')).toBe('true')
+    expect(ui.popovers.missionProgress).toBe(true)
     await button.trigger('click')
-    expect(panes()).toEqual([])
     expect(ui.popovers.missionProgress).toBe(false)
+    expect(panes()).toEqual([])
   })
 
-  it('the keyboard action toggles the pane for a v3 record too', async () => {
+  it('the keyboard action toggles the dropdown for a v3 record too', async () => {
     await mountPill()
     const ui = useUiStore()
     ui.togglePopover('missionProgress')
     await flushPromises()
-    expect(panes()).toEqual(['mission'])
-    expect(ui.popovers.missionProgress).toBe(false)
+    expect(ui.popovers.missionProgress).toBe(true)
+    expect(panes()).toEqual([])
   })
 
-  it('an Activity row names the mission and opens its pane, not a popover', async () => {
+  it('an Activity row names the mission and opens its dropdown, not a pane', async () => {
     await mountPill()
     const ui = useUiStore()
     ui.openNavigableView('mission', { missionId: 'mnt-0a1b2c3d' })
     await flushPromises()
-    expect(panes()).toEqual(['mission'])
-    expect(ui.popovers.missionProgress).toBe(false)
+    expect(ui.popovers.missionProgress).toBe(true)
+    expect(panes()).toEqual([])
   })
 
   it('no live path reaches a popover any more', () => {
@@ -643,10 +642,13 @@ describe('delta 1 · one mission everywhere (Open mission, chip, pill and pane)'
     await store.refresh()
     await store.refreshV4()
     expect(shown(store)).toBe(NEWEST)
+    // The Topbar pill is drawn for the selected session: it is the dropdown's anchor.
+    useUiStore().setPopoverAnchor('missionProgress', true)
     useUiStore().openNavigableView('mission', { missionId: OLDER })
     await flushPromises()
     expect(shown(store)).toBe(OLDER)
-    expect(useHelpersStore().panesForCurrentWorktree.map((p) => p.type)).toEqual(['mission'])
+    expect(useUiStore().popovers.missionProgress).toBe(true)
+    expect(useHelpersStore().panesForCurrentWorktree.map((p) => p.type)).toEqual([])
   })
 
   it('the chip, the pill and the pane default agree, and favour the mission that waits on the operator', async () => {
