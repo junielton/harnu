@@ -5495,5 +5495,10 @@
         "body": "Harnu paused its GitHub checks until {time} (in {minutes} min)."
       }
     }
+  },
+  "testWalk": {
+    "turn": {
+      "sent": "Walk answer sent to ‹{session}›"
+    }
   }
 }

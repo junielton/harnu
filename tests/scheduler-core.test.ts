@@ -72,6 +72,11 @@ const ALLOWED_VERBS = [
 ]
 
 const DENIED_VERBS = [
+  // Guided walks (S-2): a Scheduler tick may not open, grow or answer a walk, or read one back.
+  'walk_open',
+  'walk_extend',
+  'walk_report',
+  'walk_get',
   // T570: it can turn capture on, so it is never an observe tick's.
   'browser_network',
   'browser_open',

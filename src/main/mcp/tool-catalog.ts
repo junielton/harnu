@@ -101,6 +101,12 @@ export const MCP_OPS = [
   // Scheduler worker may call them without a way into a dev server or an external site.
   'browser_set_data',
   'browser_patch',
+  // Guided walks (S-2): the four core verbs that open and grow a walk, answer the operator's outcomes and
+  // read it back. They take no command to run and press nothing; the operator's outcomes are the pane's.
+  'walk_open',
+  'walk_extend',
+  'walk_report',
+  'walk_get',
   'adopt_folder',
   // BUG-56: the ghost-cleanup verb — see ADR-0016 for why this does NOT violate
   // invariant #3 above. It never deletes a worktree/branch/file; it only
@@ -1433,6 +1439,134 @@ export const MCP_TOOLS: McpToolDef[] = [
     op: 'browser_patch',
     silentAllowInAgentFolder: true,
     replayable: false
+  },
+  {
+    name: 'walk_open',
+    description:
+      "Open a guided walk: a fixed pane beside the session that walks the operator through a feature, a PR, a branch, a card or a mission, ONE check at a time (the `step-by-step` contract as a panel). You write the script; the pane renders it and you never write markup. Pass the whole `script` as one JSON object: `{ title, purpose: 'check' | 'learn', source, leftOut?, checks: [...] }`, where `source` is `{ kind: 'feature', text }`, `{ kind: 'pr', number, title, author, url? }`, `{ kind: 'branch', branch, base }`, `{ kind: 'card', slug }` or `{ kind: 'mission', missionId, scope: 'step' | 'milestone' | 'mission', id? }`, and each check has `id`, `title`, `why`, `where: { text, path?, approximate?, links? }`, `do: [{ text, see, block? }]` (at most 8), `passes`, `fails` (optional in a `learn` walk), and either `check: { how }` (what you will check read-only) or `nothingFromHere` (why you cannot), plus optional `images`, `precheck`, `more`, `teach`, `edge`, `table`, `blocks`, `undo`, `criterion`, `status`/`evidence`/`openPr` for a row already verified. A script that breaks a rule is refused WHOLE and every violation comes back in `rejected` with its JSON path and rule. Accepted, the walk is saved on this machine (per repo, `.harnu/walks/`) with its first run (`ready`, not yet live): the ACK is `{ walkId, runId, checks, toWalk, rejected: [], opened }`; `opened` says whether the pane was put in the folder's helper stack (false until the pane exists). It always creates a NEW walk; it is refused `WALK_RUN_LIVE` (with `walkId` and `runId`) while a run of a walk with the same source is live: continue that one. Use `walk_get` with a `source` first to see whether this PR or feature already has a walk. Plain text only: no emoji, no secrets, no `<placeholder>` in a command.",
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .describe('Absolute path of the known repo/folder the walk is opened from (gate anchor).'),
+      sessionId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Your own session id: the run is owned by you, and its turns come back to you.'),
+      script: z
+        .record(z.string(), z.unknown())
+        .describe('The whole walk script, one JSON object (title, purpose, source, checks, ...).')
+    }),
+    mutates: true,
+    op: 'walk_open',
+    alwaysLoad: true,
+    alwaysAllowable: true,
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'walk_extend',
+    description:
+      "Grow a walk; it never edits or removes anything. Two forms. (1) Answer the operator's Explain more or 'I did not get this step' for ONE check: `{ walkId, checkId, more?, extra?, simpler? }`, where `more` is the 'why this matters' paragraph (at most 400 characters), `extra` up to 6 sub-checks (each `{ text, see, block? }`, a check takes at most 18 in all) and `simpler` is `{ text (at most 240 characters), do: [{ text, see }] (at most 5) }`. They are stored on the WALK, so a re-run shows them, and they never move the cursor. (2) Add checks found mid-walk at the end: `{ walkId, append: [check, ...] }` (each a complete check, like the script's). Refused on a deleted walk (`WALK_NOT_FOUND`); `expectRev` (the `rev` walk_get gave) refuses `REV_CONFLICT` when the walk changed under you. A rule broken comes back in `rejected` with its JSON path.",
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .describe('Absolute path of the known repo/folder the walk belongs to (gate anchor).'),
+      walkId: z.string().min(1).describe('The `walkId` walk_open returned.'),
+      checkId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('The check being deepened (not with `append`).'),
+      more: z.string().optional().describe('The prepared "why this matters" paragraph.'),
+      extra: z
+        .array(z.record(z.string(), z.unknown()))
+        .optional()
+        .describe('Sub-checks of the same check: `[{ text, see, block? }]`, at most 6.'),
+      simpler: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('The step said more simply: `{ text, do: [{ text, see }] }`.'),
+      append: z
+        .array(z.record(z.string(), z.unknown()))
+        .optional()
+        .describe('New complete checks to add at the end of the walk.'),
+      expectRev: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe('Refuse REV_CONFLICT unless the walk is exactly at this rev.')
+    }),
+    mutates: true,
+    op: 'walk_extend',
+    alwaysLoad: true,
+    alwaysAllowable: true,
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'walk_report',
+    description:
+      "Answer a turn of the walk. `{ walkId, runId?, checkId, kind: 'check', result: 'pass' | 'fail', evidence }` after a `[harnu-walk]` turn of kind `done` (you ran the read-only check of that check): a pass verifies it, a fail makes it disagree and the pane shows your evidence. Or `{ walkId, runId?, checkId, kind: 'correction', text }` after a `failed` or `treat-as-failed` turn: ONE correction per failure, shown above the same check; a second one before the operator answers is refused `CORRECTION_PENDING`. `runId` defaults to the live run. Refused when the check is not awaiting a report (`NOT_AWAITING`), has no failure to correct (`NO_FAILURE`), or the run ended (`RUN_ENDED`). You never press the operator's buttons and no verb ticks a mission criterion for them.",
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .describe('Absolute path of the known repo/folder the walk belongs to (gate anchor).'),
+      walkId: z.string().min(1).describe('The `walkId` of the turn.'),
+      runId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('The `runId` of the turn (defaults to the live run).'),
+      checkId: z.string().min(1).describe('The check the turn named.'),
+      kind: z
+        .enum(['check', 'correction'])
+        .optional()
+        .describe(
+          '`check` (default): your read-only check; `correction`: your answer to a failure.'
+        ),
+      result: z.enum(['pass', 'fail']).optional().describe('For kind `check`: what you found.'),
+      evidence: z
+        .string()
+        .optional()
+        .describe(
+          'For kind `check`: what you ran, what you expected, what you found (at most 600 characters).'
+        ),
+      text: z
+        .string()
+        .optional()
+        .describe(
+          'For kind `correction`: what the operator should do differently (at most 600 characters).'
+        )
+    }),
+    mutates: true,
+    op: 'walk_report',
+    alwaysLoad: true,
+    alwaysAllowable: true,
+    silentAllowInAgentFolder: true
+  },
+  {
+    name: 'walk_get',
+    description:
+      "Read a walk, or find the walks of a source. `{ walkId }` returns its title, source, `rev`, the current run's cursor and progress, each check's glyph (`✓ ✗ ! -`), the last failure, what awaits YOU (`awaitingAgent`: a report, a correction, an Explain more), the outbox (turns the session has not taken yet) and the list of runs with their summaries: enough for a session that remembers nothing of the walk to carry on, so make this read after a compaction. `{ source }` (the same object a script carries) lists the walks of that source with their last runs, so you can say 'this PR already has a walk' before writing another.",
+    inputSchema: z.object({
+      folder: z
+        .string()
+        .min(1)
+        .describe('Absolute path of the known repo/folder the walk belongs to (gate anchor).'),
+      walkId: z.string().min(1).optional().describe('One walk, by the id walk_open returned.'),
+      source: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('A walk source (`{ kind: "pr", number, ... }`): list that source\'s walks.')
+    }),
+    mutates: false,
+    op: 'walk_get',
+    alwaysLoad: true,
+    discloses: 'paths',
+    disclosesTranscript: true
   },
   {
     name: 'adopt_folder',
