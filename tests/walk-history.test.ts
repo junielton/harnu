@@ -46,13 +46,21 @@ import {
 const en = JSON.parse(
   readFileSync(join(__dirname, '../src/renderer/src/i18n/en.json'), 'utf8')
 ) as Record<string, unknown>
-const t: T = (key, params) => {
-  const v = key
-    .split('.')
-    .reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], en)
-  if (typeof v !== 'string') throw new Error(`missing i18n key ${key}`)
-  return v.replace(/\{(\w+)\}/g, (_, k: string) => String(params?.[k] ?? ''))
-}
+const words =
+  (dict: Record<string, unknown>): T =>
+  (key, params) => {
+    const v = key
+      .split('.')
+      .reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], dict)
+    if (typeof v !== 'string') throw new Error(`missing i18n key ${key}`)
+    return v.replace(/\{(\w+)\}/g, (_, k: string) => String(params?.[k] ?? ''))
+  }
+const t: T = words(en)
+// the second locale: a plural pinned only in English could drift in pt-BR with every test still green (P15)
+const ptBR = JSON.parse(
+  readFileSync(join(__dirname, '../src/renderer/src/i18n/pt-BR.json'), 'utf8')
+) as Record<string, unknown>
+const tPt: T = words(ptBR)
 
 // ---- fixtures: a neutral CSV-export walk, run through the real service ---------------------------
 
@@ -229,6 +237,31 @@ describe('walk history', () => {
     expect(paneView(data, ui(), t).mode).toBe('closeout')
   })
 
+  it("shows an agent-written failure line as the symptom and as evidence, never as the operator's note (P19)", async () => {
+    const w = await openWalk()
+    const a = { walkId: w.walkId, runId: w.runId }
+    const op = (o: Parameters<typeof w.svc.operate>[0]['op']) => w.svc.operate({ ...a, op: o })
+    await op('start')
+    await op('done') // c1
+    await op('done') // c2 awaits the agent...
+    // ...which disagrees; the operator accepts its evidence as the symptom, so the failure line is the AGENT's
+    await w.svc.report({ ...a, checkId: 'c2', result: 'fail', evidence: 'found 0 rows' })
+    await op('treat-as-failed')
+    await op('end')
+    await w.svc.idle()
+
+    const data = await dataOf(w.svc, w.walkId, w.runId)
+    const failures = data.run.checks.find((c) => c.id === 'c2')!.failures
+    expect(failures.map((f) => [f.from, f.line])).toEqual([['agent', 'found 0 rows']])
+
+    const row = paneView(data, ui({ past: true }), t).past!.rows.find((r) => r.id === 'c2')!
+    // the rail row quotes the last failure line, whoever wrote it: it is the symptom the operator accepted
+    expect(row.glyph).toBe('✗')
+    expect(row.how).toBe('failed · “found 0 rows”')
+    // the note lists what the OPERATOR wrote (nothing) and keeps the agent's line as the evidence, once
+    expect(row.notes).toEqual({ lines: [], shots: [], correction: null, evidence: 'found 0 rows' })
+  })
+
   it('a re-run draws a quiet last time on the roadmap and on each check', async () => {
     const { svc, walkId } = await walkedOnce()
     const again = await svc.store.newRun(walkId)
@@ -361,9 +394,9 @@ describe('carried fix from S-3 (close-out plural)', () => {
     if (!r.ok) throw new Error(r.error.code)
     return r.run
   }
-  const owed = (sc: WalkScript, steps: (r: Run) => Run): string => {
+  const owed = (sc: WalkScript, steps: (r: Run) => Run, tr: T = t): string => {
     const run = steps(ok(startRun(newRun(toMachineChecks(sc), { n: 1 }), 1)))
-    const v = paneView({ ...(dataStub(sc, run) as WalkData) }, ui(), t)
+    const v = paneView({ ...(dataStub(sc, run) as WalkData) }, ui(), tr)
     return v.closeout?.owed?.parts ?? ''
   }
   const dataStub = (sc: WalkScript, run: Run): object => ({
@@ -388,23 +421,41 @@ describe('carried fix from S-3 (close-out plural)', () => {
     mission: null
   })
 
+  // one skipped check; and two skipped plus one unverified (a check ended before the agent answered)
+  const oneSkipped = (r: Run): Run => ok(closeOutWithSkipped(ok(done(ok(skip(r, 2)), 3)), 4))
+  const mixed = (r: Run): Run => {
+    let x = ok(skip(r, 2))
+    x = ok(skip(x, 3))
+    x = ok(done(x, 4)) // c3 verified
+    x = ok(done(x, 5)) // c4 awaits the agent
+    return ok(endRun(x, 6))
+  }
+
   it('reads "1 skipped check is listed above" and "2 skipped checks and 1 unverified check are listed above"', () => {
-    // one skipped check
-    expect(owed(script(2), (r) => ok(closeOutWithSkipped(ok(done(ok(skip(r, 2)), 3)), 4)))).toBe(
-      '1 skipped check is listed above.'
+    expect(owed(script(2), oneSkipped)).toBe('1 skipped check is listed above.')
+    expect(owed(script(4, [4]), mixed)).toBe(
+      '2 skipped checks and 1 unverified check are listed above.'
     )
-    // two skipped and one unverified (ended before the agent answered)
-    const three = script(4, [4])
-    expect(
-      owed(three, (r) => {
-        let x = ok(skip(r, 2))
-        x = ok(skip(x, 3))
-        x = ok(done(x, 4)) // c3 verified
-        x = ok(done(x, 5)) // c4 awaits the agent
-        return ok(endRun(x, 6))
-      })
-    ).toBe('2 skipped checks and 1 unverified check are listed above.')
     void report
+  })
+
+  it('reads the same two sentences in pt-BR, singular and plural (P15)', () => {
+    // the expected text comes from the pt-BR catalog, never typed here: the English-only gate forbids a
+    // translated literal in a test, and the catalog is the one place the wording lives
+    const k = (key: string, params: Record<string, string | number> = {}): string =>
+      tPt(`testWalk.closeout.${key}`, params)
+    const one = k('part.skipped.one', { n: 1 })
+    const two = k('part.skipped.other', { n: 2 })
+    const unverified = k('part.unverified.one', { n: 1 })
+    expect(owed(script(2), oneSkipped, tPt)).toBe(k('owedMore.one', { parts: one }))
+    expect(owed(script(4, [4]), mixed, tPt)).toBe(
+      k('owedMore.other', { parts: `${two}${k('partAnd')}${unverified}` })
+    )
+    // and the catalog really has two forms: a plural that says the singular, or a count noun that does not
+    // agree, would still be "correct" against itself, so pin that the forms differ
+    expect(k('owedMore.other', { parts: 'x' })).not.toBe(k('owedMore.one', { parts: 'x' }))
+    expect(k('part.skipped.other', { n: 2 })).not.toBe(k('part.skipped.one', { n: 2 }))
+    expect(k('part.unverified.other', { n: 2 })).not.toBe(k('part.unverified.one', { n: 2 }))
   })
 })
 
