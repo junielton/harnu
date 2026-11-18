@@ -16,15 +16,18 @@
  * or close a milestone or step and move into or out of it, Home and End jump to the first and last, Enter or
  * Space toggles. The PR number is a link and its own tab stop, and never toggles the step.
  *
- * It READS the server's view and computes no state. The open step's blocker, criteria with who settles them,
- * and links are S-4's; here an open step lists its criteria plainly. "Ask" sits at the right end of the open
+ * It READS the server's view and computes no state. "Ask" sits at the right end of the open
  * milestone's summary line and opens its box (`MissionDropdownAsk.vue`) under it.
+ *
+ * An open step draws `MissionDropdownStep.vue` (S-4): its blocker, its criteria with who settles them, and its
+ * links, under the step's row.
  */
 import { computed, nextTick, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronRight, MessageSquare } from 'lucide-vue-next'
 import MissionDot from './MissionDot.vue'
 import MissionDropdownAsk from './MissionDropdownAsk.vue'
+import MissionDropdownStep from './MissionDropdownStep.vue'
 import {
   buildPaneTree,
   milestoneOfStep,
@@ -36,6 +39,7 @@ import {
   type SummaryPart
 } from '../lib/mission-pane-view'
 import { capRunning, treeKeyAction, type TreeRow } from '../lib/mission-dropdown-tree'
+import type { RawLink } from '../lib/mission-dropdown-links'
 
 const props = defineProps<{
   detail: MissionV4Reply['detail']
@@ -50,7 +54,8 @@ const { t } = useI18n()
 
 const tree = computed(() =>
   capRunning(
-    buildPaneTree(props.detail, { sessionLinks: props.sessionLinks, now: props.now }),
+    // The dropdown does not pass a clock: a blocker's age is read against now, each time the view changes.
+    buildPaneTree(props.detail, { sessionLinks: props.sessionLinks, now: props.now ?? Date.now() }),
     props.detail.steps.map((s) => s.id)
   )
 )
@@ -64,6 +69,10 @@ const optionalOpen = ref(false)
 const askFor = ref<string | null>(null)
 
 const LOOSE = '__loose'
+
+/** The links the record holds for a step: the open step reads its paths from them. */
+const rawLinksOf = (stepId: string): readonly RawLink[] =>
+  props.detail.steps.find((x) => x.id === stepId)?.links ?? []
 
 const isOpen = (m: PaneMilestoneRow): boolean => milestoneOpen[m.id] ?? m.openByDefault
 const toggleMilestone = (m: PaneMilestoneRow): void => {
@@ -429,29 +438,7 @@ defineExpose({ openStep, openAsk })
                 </span>
               </div>
             </div>
-            <!-- S-4 draws the open step's blocker, criteria with who settles them, and links here. -->
-            <ul
-              v-if="stepOpen[s.id]"
-              role="group"
-              class="flex flex-col rounded-sm"
-              style="margin: 2px 0 8px 29px; gap: 4px; font-size: 11.5px"
-              data-test="step-body"
-              :data-step="s.id"
-            >
-              <li
-                v-for="c in s.criteria"
-                :key="c.id"
-                class="grid items-start text-text-2"
-                style="grid-template-columns: 12px minmax(0, 1fr); gap: 8px"
-                data-test="criterion"
-              >
-                <MissionDot kind="criterion" :state="c.settled ? 'settled' : 'open'" />
-                <span class="[overflow-wrap:anywhere]">{{ c.text }}</span>
-              </li>
-              <li v-if="s.criteria.length === 0" class="text-text-4">
-                {{ $t('missionDropdown.tree.noCriteria') }}
-              </li>
-            </ul>
+            <MissionDropdownStep v-if="stepOpen[s.id]" :step="s" :raw-links="rawLinksOf(s.id)" />
           </template>
 
           <button

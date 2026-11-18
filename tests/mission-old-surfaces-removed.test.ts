@@ -295,6 +295,7 @@ describe('no second mission surface', () => {
       'MissionDropdownAsk.vue',
       'MissionDropdownHead.vue',
       'MissionDropdownNext.vue',
+      'MissionDropdownStep.vue',
       'MissionDropdownTree.vue',
       'MissionHandoffDialog.vue',
       'MissionPane.vue',

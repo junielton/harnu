@@ -283,6 +283,7 @@ describe('registerMissionIpc — the v4 door channel (S-15)', () => {
       'mission:handOff',
       'mission:list',
       'mission:operatorDoor',
+      'mission:pathKinds',
       'mission:v4Door',
       'mission:v4View'
     ])
@@ -487,5 +488,34 @@ describe('the hand-off and the summary route on the app (S-16b)', () => {
       ''
     )
     expect(await ipc.answerMissionSummaryHook(body(LEADER, 'startup'))).toBe('')
+  })
+})
+
+describe('mission:pathKinds — the dropdown’s read-only existence check (S-4)', () => {
+  it('says file, dir or missing for each absolute path, and reads nothing else', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-pathkinds-'))
+    try {
+      const file = path.join(dir, 'report.md')
+      await fs.writeFile(file, 'x')
+      const gone = path.join(dir, 'gone')
+      h.handlers.clear()
+      ipc.registerMissionIpc()
+      const handler = h.handlers.get('mission:pathKinds')
+      expect(handler).toBeTypeOf('function')
+      expect(await handler!(null, [dir, file, gone, 'relative/path', 42])).toEqual({
+        [dir]: 'dir',
+        [file]: 'file',
+        [gone]: 'missing',
+        'relative/path': 'missing'
+      })
+      // Anything but a list answers nothing, and a long list is cut.
+      expect(await handler!(null, 'nope')).toEqual({})
+      const many = Array.from({ length: ipc.PATH_KINDS_MAX + 10 }, (_, i) =>
+        path.join(dir, `n${i}`)
+      )
+      expect(Object.keys((await handler!(null, many)) as object)).toHaveLength(ipc.PATH_KINDS_MAX)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
   })
 })
