@@ -16,6 +16,10 @@
  *  - `walk:replay`        offer every turn waiting in an outbox again (on mount, on reconnect)
  *  - `walk:rerun-saved`   accept the roadmap's "Re-run the saved walk?" (AC-49)
  *  - `walk:discard-ready` the pane of a run that never started was closed: discard that run
+ *  - `walk:list`         the library: every walk of the repo, newest run first (S-4)
+ *  - `walk:rerun`        Re-run: run `n + 1` of a walk, or the live run when one is live (S-4)
+ *  - `walk:delete`       Delete a walk and its runs, after the pane's confirmation (S-4, D-18)
+ *  - `walk:export`       Export markdown into the walk's own folder; the path comes back (S-4, D-13)
  * and one main-to-renderer push, `walk:open` (with the renderer's `walk:opened` answer), plus `walk:changed`
  * when a verb (`walk_report`, `walk_extend`) wrote a walk the pane may be showing.
  *
@@ -30,9 +34,16 @@ import { atomicWriteFile } from '../mcp/atomic-write'
 import { readMissionRecord } from '../missions/record-store'
 import { runGh } from '../gh-runner'
 import { rawRm } from '../raw-fs'
-import { WALK_WAIT_MS, type Run } from '../../shared/walk-machine'
+import {
+  WALK_WAIT_MS,
+  counts,
+  lastTimeHints,
+  ordinalOf,
+  type LastTime,
+  type Run
+} from '../../shared/walk-machine'
 import type { WalkScript } from '../../shared/walk-schema'
-import { sourceIdentity } from '../../shared/walk-source'
+import { sourceIdentity, type WalkSource } from '../../shared/walk-source'
 import { redactTranscript } from '../mcp/transcript-redact'
 import { walkServiceFor, type WalkService } from './walk-service'
 import {
@@ -41,9 +52,11 @@ import {
   walksDir,
   type AddedCheck,
   type Deepening,
+  type LastRun,
   type SimplerCard,
   type WalkStore
 } from './walk-store'
+import { exportWalk } from './walk-export'
 import type { OperatorOp } from './walk-turn'
 
 // ---- What the pane reads --------------------------------------------------------------------------
@@ -79,11 +92,27 @@ export interface WalkLoad {
   tick: WalkTick
   /** A turn is due and no session could take it: it has waited in the outbox past {@link HELD_AFTER_MS}. */
   held: boolean
+  /** A turn has waited past {@link WAKING_AFTER_MS} and is not held yet: a parked session may be waking. */
+  waking: boolean
+  /** Every run of the walk that started (oldest first), for the history's run selector. */
+  runs: RunSummary[]
+  /** What each check said the last time it was walked, read from the run this one follows (a re-run). */
+  lastTime: Record<string, LastTime>
   waitMs: number
   now: number
   saved: { walkId: string; lastRun: { verified: number; total: number } } | null
   criteria: WalkCriterion[]
   mission: { title: string; stepTitle?: string; milestoneTitle?: string } | null
+}
+
+export interface RunSummary {
+  runId: string
+  n: number
+  state: Run['state']
+  startedAt?: number
+  endedAt?: number
+  verified: number
+  total: number
 }
 
 export type WalkIpcError = { ok: false; error: { code: string; message: string } }
@@ -92,8 +121,23 @@ const refuse = (code: string, message: string): WalkIpcError => ({
   error: { code, message }
 })
 
-/** A turn that has waited this long in the outbox means no session took it: the pane shows the error state. */
-export const HELD_AFTER_MS = 6_000
+/**
+ * A turn that has waited this long in the outbox may be waiting on a parked session, which takes up to ~40 s to
+ * wake: the pane shows a quiet "Waking the session…" and stays on the check.
+ */
+export const WAKING_AFTER_MS = 6_000
+/** A turn that has waited this long means no session took it: the pane shows the error state. */
+export const HELD_AFTER_MS = 45_000
+
+/** The wait before the error state; the dev variable shortens it so a capture does not wait (never packaged). */
+export function heldAfterMs(
+  env: NodeJS.ProcessEnv = process.env,
+  packaged = app.isPackaged
+): number {
+  if (packaged) return HELD_AFTER_MS
+  const n = Number(env['HARNU_WALK_HELD_AFTER_MS'])
+  return Number.isFinite(n) && n > 0 ? n : HELD_AFTER_MS
+}
 const MAX_SHOT_BYTES = 8 * 1024 * 1024
 
 /** The wait before Continue without the check; the dev variable shortens it (never in a packaged build). */
@@ -201,7 +245,7 @@ async function missionFacts(
 export async function loadWalk(
   svc: WalkService,
   a: { walkId: string; runId: string },
-  env: { now?: () => number; waitMs?: number } = {}
+  env: { now?: () => number; waitMs?: number; heldAfterMs?: number } = {}
 ): Promise<WalkLoad | WalkIpcError> {
   const now = (env.now ?? Date.now)()
   const { store } = svc
@@ -222,7 +266,12 @@ export async function loadWalk(
     .sort((x, y) => (y.lastRun?.at ?? 0) - (x.lastRun?.at ?? 0))[0]
 
   const pending = rec.outbox.filter((o) => !o.delivered)
+  const oldest = pending.reduce((age, o) => Math.max(age, now - o.createdAt), 0)
+  const heldAt = env.heldAfterMs ?? heldAfterMs()
   const facts = await missionFacts(svc.folder, walk.script)
+  const runs = await store.listRuns(a.walkId)
+  // a re-run reads what each check said last time from the latest run that ended before it
+  const before = runs.filter((r) => r.run.state === 'ended' && r.run.n < rec.run.n).at(-1)
   return {
     ok: true,
     folder: svc.folder,
@@ -238,7 +287,23 @@ export async function loadWalk(
     closeOut: rec.closeOut,
     ownerSessionId: rec.ownerSessionId,
     tick: await readTick(store, a.walkId, a.runId),
-    held: pending.some((o) => now - o.createdAt > HELD_AFTER_MS),
+    held: pending.length > 0 && oldest > heldAt,
+    waking: pending.length > 0 && oldest > WAKING_AFTER_MS && oldest <= heldAt,
+    runs: runs
+      .filter((r) => r.run.state !== 'ready')
+      .map((r) => {
+        const c = counts(r.run)
+        return {
+          runId: r.runId,
+          n: r.run.n,
+          state: r.run.state,
+          ...(r.run.startedAt !== undefined ? { startedAt: r.run.startedAt } : {}),
+          ...(r.run.endedAt !== undefined ? { endedAt: r.run.endedAt } : {}),
+          verified: c.verified,
+          total: c.total
+        }
+      }),
+    lastTime: before ? lastTimeHints(before.run) : {},
     waitMs: env.waitMs ?? checkWaitMs(),
     now,
     saved: saved?.lastRun
@@ -288,6 +353,112 @@ export async function rerunSavedWalk(
   }
   await rawRm(store.walkDir(a.newWalkId), { recursive: true, force: true })
   return { ok: true, walkId: a.savedWalkId, ...target }
+}
+
+// ---- The library (S-4) ---------------------------------------------------------------------------
+
+export interface LibraryEntry {
+  walkId: string
+  title: string
+  source: WalkSource
+  purpose: 'check' | 'learn'
+  createdAt: number
+  status: 'live' | 'walked' | 'not-walked'
+  lastRun: LastRun | null
+  /** The live run: which check the operator is on (`check` of `total`). */
+  live: { runId: string; n: number; startedAt: number | null; check: number; total: number } | null
+  /** How many runs the walk keeps. */
+  runs: number
+}
+
+/**
+ * Every walk of the repo, newest run first. The listing reads each walk's own file and, for a walk with a live
+ * run, that one run file (the store keeps `live` and `lastRun` in the walk so this stays cheap).
+ */
+export async function libraryList(store: WalkStore): Promise<LibraryEntry[]> {
+  const entries = await store.listWalks()
+  const out: LibraryEntry[] = []
+  for (const e of entries) {
+    let live: LibraryEntry['live'] = null
+    if (e.live) {
+      const rec = await store.readRun(e.walkId, e.live.runId)
+      if (rec) {
+        const c = counts(rec.run)
+        const check =
+          (rec.run.cursor ? ordinalOf(rec.run, rec.run.cursor) : null) ??
+          Math.min(c.verified + c.caveat + 1, c.total)
+        live = {
+          runId: e.live.runId,
+          n: e.live.n,
+          startedAt: rec.run.startedAt ?? null,
+          check,
+          total: c.total
+        }
+      }
+    }
+    out.push({
+      walkId: e.walkId,
+      title: e.title,
+      source: e.source,
+      purpose: e.purpose,
+      createdAt: e.createdAt,
+      status: e.status,
+      lastRun: e.lastRun,
+      live,
+      runs: (await store.listRuns(e.walkId)).filter((r) => r.run.state !== 'ready').length
+    })
+  }
+  return out
+}
+
+/**
+ * Delete a walk and everything under it (its runs, its images, the operator's screenshots, its exports). Only the
+ * walk's own folder is touched. The pane has already asked; a live run goes with the walk (D-18).
+ */
+export async function deleteWalk(
+  store: WalkStore,
+  walkId: string
+): Promise<{ ok: true; wasLive: boolean; runs: number } | WalkIpcError> {
+  if (!WALK_ID_RE.test(walkId)) return refuse('BAD_ARGS', 'That is not a walk id.')
+  const walk = await store.readWalk(walkId)
+  if (!walk) return refuse('WALK_NOT_FOUND', 'No such walk.')
+  const runs = (await store.listRuns(walkId)).filter((r) => r.run.state !== 'ready')
+  const wasLive = runs.some((r) => r.run.state === 'live')
+  await rawRm(store.walkDir(walkId), { recursive: true, force: true })
+  return { ok: true, wasLive, runs: runs.length }
+}
+
+/**
+ * Re-run: run `n + 1` of the walk, every check to do. Earlier runs are never touched. Refused while a run of the
+ * walk is live (that run opens instead, `kind: 'live'`); a run nobody started yet is reused (`kind: 'reused'`), so
+ * pressing Re-run twice never piles up empty runs.
+ */
+export async function rerunWalk(
+  store: WalkStore,
+  walkId: string
+): Promise<
+  | { ok: true; walkId: string; runId: string; n: number; kind: 'rerun' | 'reused' | 'live' }
+  | WalkIpcError
+> {
+  if (!WALK_ID_RE.test(walkId)) return refuse('BAD_ARGS', 'That is not a walk id.')
+  const walk = await store.readWalk(walkId)
+  if (!walk) return refuse('WALK_NOT_FOUND', 'No such walk.')
+  const runs = await store.listRuns(walkId)
+  const live = runs.find((r) => r.run.state === 'live')
+  if (live) return { ok: true, walkId, runId: live.runId, n: live.run.n, kind: 'live' }
+  const unopened = runs.find((r) => r.run.state === 'ready')
+  if (unopened)
+    return { ok: true, walkId, runId: unopened.runId, n: unopened.run.n, kind: 'reused' }
+  const made = await store.newRun(walkId)
+  if (!made.ok) {
+    // another run went live between the read and the write: that is the one to open
+    if (made.error.code === 'WALK_RUN_LIVE' && made.error.runId) {
+      const rec = await store.readRun(walkId, made.error.runId)
+      if (rec) return { ok: true, walkId, runId: rec.runId, n: rec.run.n, kind: 'live' }
+    }
+    return refuse(made.error.code, made.error.message)
+  }
+  return { ok: true, walkId, runId: made.runId, n: made.n, kind: 'rerun' }
 }
 
 // ---- Screenshots ------------------------------------------------------------------------------------
@@ -542,6 +713,38 @@ export function registerWalkIpc(getWindow: () => BrowserWindow | null): WalkIpc 
     if (!x) return refuse('BAD_ARGS', 'folder, walkId and runId are required.')
     const res = await walkServiceFor(x.folder).store.discardReadyRun(x.walkId, x.runId)
     return res.ok ? { ok: true } : { ok: false, error: res.error }
+  })
+
+  ipcMain.handle('walk:list', async (_e, a: unknown) => {
+    if (!isRecord(a)) return refuse('BAD_ARGS', 'folder is required.')
+    const folder = str(a.folder)
+    if (!folder) return refuse('BAD_ARGS', 'folder is required.')
+    return { ok: true, walks: await libraryList(walkServiceFor(folder).store) }
+  })
+
+  ipcMain.handle('walk:rerun', async (_e, a: unknown) => {
+    if (!isRecord(a)) return refuse('BAD_ARGS', 'folder and walkId are required.')
+    const folder = str(a.folder)
+    const walkId = str(a.walkId)
+    if (!folder || !walkId) return refuse('BAD_ARGS', 'folder and walkId are required.')
+    return rerunWalk(walkServiceFor(folder).store, walkId)
+  })
+
+  ipcMain.handle('walk:delete', async (_e, a: unknown) => {
+    if (!isRecord(a)) return refuse('BAD_ARGS', 'folder and walkId are required.')
+    const folder = str(a.folder)
+    const walkId = str(a.walkId)
+    if (!folder || !walkId) return refuse('BAD_ARGS', 'folder and walkId are required.')
+    return deleteWalk(walkServiceFor(folder).store, walkId)
+  })
+
+  ipcMain.handle('walk:export', async (_e, a: unknown) => {
+    if (!isRecord(a)) return refuse('BAD_ARGS', 'folder and walkId are required.')
+    const folder = str(a.folder)
+    const walkId = str(a.walkId)
+    if (!folder || !walkId) return refuse('BAD_ARGS', 'folder and walkId are required.')
+    const runId = str(a.runId)
+    return exportWalk(walkServiceFor(folder).store, { walkId, ...(runId ? { runId } : {}) })
   })
 
   return {

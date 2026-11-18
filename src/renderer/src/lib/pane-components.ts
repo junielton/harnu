@@ -8,6 +8,7 @@ import DiagramPane from '../components/DiagramPane.vue'
 import BrowserPane from '../components/BrowserPane.vue'
 import MissionPane from '../components/MissionPane.vue'
 import GuidedWalkPane from '../components/GuidedWalkPane.vue'
+import WalksPane from '../components/WalksPane.vue'
 
 /**
  * T121 — the Vue component that renders each pane type. Kept apart from the
@@ -31,5 +32,6 @@ export const paneComponents: Record<AnyHelperPane['type'], Component> = {
   canvas: DiagramPane,
   browser: BrowserPane,
   mission: MissionPane,
-  walk: GuidedWalkPane
+  walk: GuidedWalkPane,
+  walks: WalksPane
 }

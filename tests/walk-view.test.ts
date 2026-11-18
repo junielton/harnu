@@ -334,7 +334,9 @@ describe('walk view', () => {
     ])
     // Still yours: drawn because something is owed; no mission means no criteria and no link
     expect(co.owed).not.toBeNull()
-    expect(co.owed?.parts).toBe('1 skipped, 1 failed, 1 unverified are listed above.')
+    expect(co.owed?.parts).toBe(
+      '1 skipped check, 1 failed check and 1 unverified check are listed above.'
+    )
     expect(co.owed?.criteria).toEqual([])
     expect(co.owed?.link).toBeNull()
     // no footer button, and no control that settles anything

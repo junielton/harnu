@@ -17,7 +17,8 @@ import type {
 } from '../main/claude-watcher'
 import type { UserProject, UserProjectWorktree } from '../main/user-projects'
 import type { WorktreeHelperState } from '../main/helpers-store'
-import type { WalkIpcError, WalkLoad, WalkTick } from '../main/walk/walk-ipc'
+import type { LibraryEntry, WalkIpcError, WalkLoad, WalkTick } from '../main/walk/walk-ipc'
+import type { ExportResult } from '../main/walk/walk-export'
 import type { UsageSnapshot } from '../main/usage-parse'
 import type { TelemetryPayload } from '../main/statusline'
 import type { TaskState, FailureReason } from '../main/hook-state'
@@ -425,7 +426,14 @@ export type { WorktreeHelperState, HelperPane, HelperPaneType } from '../main/he
 
 // Guided walks (S-3): what the walk pane reads from main to draw a run, re-exported type-only so the renderer's
 // view-model and store can name it without crossing the main-process boundary.
-export type { WalkLoad, WalkIpcError, WalkTick, WalkCriterion } from '../main/walk/walk-ipc'
+export type {
+  WalkLoad,
+  WalkIpcError,
+  WalkTick,
+  WalkCriterion,
+  LibraryEntry,
+  RunSummary
+} from '../main/walk/walk-ipc'
 
 // Branch list for the New-worktree dialog base-ref select (T48). Re-exported so
 // the dialog can type its `<select>` options without crossing the main boundary.
@@ -1486,6 +1494,26 @@ const api = {
     walkId: string
     runId: string
   }): Promise<{ ok: true } | WalkIpcError> => ipcRenderer.invoke('walk:discard-ready', a),
+  /** Guided walks S-4: the library of the repo's walks, newest run first. */
+  walkList: (a: { folder: string }): Promise<{ ok: true; walks: LibraryEntry[] } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:list', a),
+  /** Re-run a walk: a fresh run n + 1, or the live run when one is live (`kind: 'live'`). */
+  walkRerun: (a: {
+    folder: string
+    walkId: string
+  }): Promise<
+    | { ok: true; walkId: string; runId: string; n: number; kind: 'rerun' | 'reused' | 'live' }
+    | WalkIpcError
+  > => ipcRenderer.invoke('walk:rerun', a),
+  /** Delete a walk and its runs (the pane asked first). */
+  walkDelete: (a: {
+    folder: string
+    walkId: string
+  }): Promise<{ ok: true; wasLive: boolean; runs: number } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:delete', a),
+  /** Export a walk (a run of it) as Markdown into the walk's own folder; the path comes back. */
+  walkExport: (a: { folder: string; walkId: string; runId?: string }): Promise<ExportResult> =>
+    ipcRenderer.invoke('walk:export', a),
   /** A session opened a walk (`walk_open`): the renderer shows the pane, then answers with `walkOpened`. */
   onWalkOpen: (
     cb: (p: { reqId: string; folder: string; walkId: string; runId: string }) => void
