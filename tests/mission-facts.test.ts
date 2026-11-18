@@ -70,6 +70,7 @@ import type { CardFile } from '../src/main/missions/cards'
 import {
   gatherStepFacts,
   gatherStepInputs,
+  resetStepFactsMemory,
   type FactsDeps,
   type PrJoin
 } from '../src/main/missions/facts'
@@ -175,6 +176,8 @@ function deps(over: Partial<FactsDeps> = {}): FactsDeps & {
 }
 
 beforeEach(() => {
+  // Every case here shares one repo, mission and step: what an earlier case read is not "seen before".
+  resetStepFactsMemory()
   spies.spawn.mockClear()
   spies.sync.mockClear()
   spies.parse.mockClear()
