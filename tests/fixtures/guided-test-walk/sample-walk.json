@@ -74,7 +74,7 @@
       },
       "do": [
         {
-          "text": "Click the box, type `milk` and look for note `note-4821`",
+          "text": "Click the box, type `milk` and look for note `note_4821`",
           "see": "Only the row Milk run is left"
         },
         {
