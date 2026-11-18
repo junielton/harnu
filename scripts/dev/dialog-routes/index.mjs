@@ -26,10 +26,6 @@ import { ROUTES_CLEANUP } from './cleanup.mjs'
 import { ROUTES_BOARD_MISSIONS } from './board-missions.mjs'
 import { ROUTES_UNREACHABLE } from './unreachable.mjs'
 
-// The dev-harness routes (Mission dropdown, S-1): kept OUT of `ROUTES` — they need a dev server and a page,
-// not a seeded Electron window — and exported on their own for `mission-dropdown.mjs capture`.
-export { ROUTES_MISSION_DROPDOWN } from './mission-dropdown.mjs'
-
 export const ROUTES = [
   ...ROUTES_FOLDER_GLOBAL,
   ...ROUTES_CLEANUP,

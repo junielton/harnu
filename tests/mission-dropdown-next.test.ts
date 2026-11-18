@@ -16,7 +16,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { i18n } from '../src/renderer/src/i18n'
 import MissionDropdown from '../src/renderer/src/components/MissionDropdown.vue'
 import MissionDropdownNext from '../src/renderer/src/components/MissionDropdownNext.vue'
-import { NEXT_WIDE_MIN, nextCardOf } from '../src/renderer/src/lib/mission-pane-view'
+import { NEXT_WIDE_MIN, OWED_RANK, nextCardOf } from '../src/renderer/src/lib/mission-pane-view'
+import { WAITING_RANK } from '../src/main/missions/waiting'
 import { sampleOf, type SampleState } from '../src/renderer/src/lib/mission-sample'
 import { useMissionsStore } from '../src/renderer/src/stores/missions'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
@@ -364,5 +365,11 @@ describe('AC-3a — initial focus is on the card’s button', () => {
   it('with nothing owed, focus is on the dropdown itself', async () => {
     await mountDropdown(replyOf('clear'))
     expect(document.activeElement).toBe(q('[data-test="mission-dropdown"]'))
+  })
+})
+
+describe('the renderer rank of what is owed', () => {
+  it('is the server rank, kind for kind (it places a staged Done when among the waiting items)', () => {
+    expect([...OWED_RANK]).toEqual([...WAITING_RANK])
   })
 })
