@@ -56,6 +56,103 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
 describe('walk script schema', () => {
+  it('refuses an http(s) URL in prose and says where it belongs (BUG-293)', () => {
+    const urlIn = (field: string, c: Record<string, unknown>): string[] =>
+      rules(script({ checks: [c] }), probe).filter((r) => r.includes('URL_IN_PROSE'))
+    // a step's text, `passes`, `fails` and `undo` are prose: a URL there is refused, at its own path
+    expect(
+      urlIn(
+        'do',
+        check({ do: [{ text: 'Open http://localhost:8000/notes now.', see: 'A list.' }] })
+      )
+    ).toEqual(['$.checks[0].do[0].text URL_IN_PROSE'])
+    expect(urlIn('passes', check({ passes: 'It redirects to https://example.com/ok.' }))).toEqual([
+      '$.checks[0].passes URL_IN_PROSE'
+    ])
+    expect(urlIn('fails', check({ fails: 'A 404 on https://example.com/missing.' }))).toEqual([
+      '$.checks[0].fails URL_IN_PROSE'
+    ])
+    expect(urlIn('undo', check({ undo: 'Reset it at http://localhost:8000/reset.' }))).toEqual([
+      '$.checks[0].undo URL_IN_PROSE'
+    ])
+    // a URL inside a backtick chip is still a URL in prose
+    expect(
+      urlIn('do', check({ do: [{ text: 'Open `http://localhost:8000`.', see: 'A page.' }] }))
+    ).toEqual(['$.checks[0].do[0].text URL_IN_PROSE'])
+    // the script is refused whole, and the message names the two homes
+    const r = validateWalkScript(
+      script({ checks: [check({ passes: 'See https://example.com/x.' })] }),
+      probe
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      const v = r.violations.find((x) => x.rule === 'URL_IN_PROSE')!
+      expect(v.message).toMatch(/where\.links/)
+      expect(v.message).toMatch(/block/)
+    }
+    // the same URL as a `where.links` entry is the right home: accepted
+    expect(
+      rules(
+        script({
+          checks: [
+            check({
+              where: {
+                text: 'example-web, Notes page',
+                links: [
+                  {
+                    label: 'Notes page',
+                    kind: 'url',
+                    target: 'http://localhost:8000/notes',
+                    checked: { status: 'unchecked', at: '2026-11-18T10:00:00Z' }
+                  }
+                ]
+              }
+            })
+          ]
+        }),
+        probe
+      )
+    ).toEqual([])
+    // a command in a block is the right home for a command; the block text is not prose
+    expect(
+      rules(
+        script({
+          checks: [
+            check({
+              do: [
+                {
+                  text: 'Run this in a terminal.',
+                  see: 'JSON comes back.',
+                  block: { text: 'curl http://localhost:8000/health' }
+                }
+              ]
+            })
+          ]
+        }),
+        probe
+      )
+    ).toEqual([])
+  })
+
+  it('accepts an undo with a copy chip and the old plain string', () => {
+    expect(
+      rules(
+        script({ checks: [check({ undo: 'Run `./bin/reset --seed` to restore the data.' })] }),
+        probe
+      )
+    ).toEqual([])
+    expect(rules(script({ checks: [check({ undo: 'Clear the search box.' })] }), probe)).toEqual([])
+    // a chip in `undo` that looks like a secret is refused like any other chip
+    expect(
+      rules(
+        script({
+          checks: [check({ undo: 'Run `export TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789`.' })]
+        }),
+        probe
+      )
+    ).toContain('$.checks[0].undo SECRET')
+  })
+
   it('accepts a complete script', () => {
     const r = validateWalkScript(script(), probe)
     expect(r.ok).toBe(true)

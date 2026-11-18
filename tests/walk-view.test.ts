@@ -633,6 +633,20 @@ describe('walk view', () => {
     let ur = live(undo)
     ur = ok(done(ur, 100))
     expect(paneView(dataFor(undo, ok(back(ur))), ui(), t).check?.undo).toBe('Clear the search box.')
+    // an undo with a command carries it as a copy chip, so Back leads with something to copy
+    const undoCmd = baseScript({
+      checks: [
+        check('c1', { undo: 'Run `./bin/reset --seed` to restore it.' }),
+        check('c2')
+      ] as never
+    })
+    let cr = live(undoCmd)
+    cr = ok(done(cr, 100))
+    expect(paneView(dataFor(undoCmd, ok(back(cr))), ui(), t).check?.undoParts).toEqual([
+      { kind: 'text', text: 'Run ' },
+      { kind: 'chip', text: './bin/reset --seed' },
+      { kind: 'text', text: ' to restore it.' }
+    ])
   })
 
   // ---- AC-49 -------------------------------------------------------------------------------------

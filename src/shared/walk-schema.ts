@@ -139,6 +139,10 @@ const str = (x: unknown): x is string => typeof x === 'string' && x.trim().lengt
 const EMOJI_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}|️|⃣/u
 /** A `<placeholder>` left in a command: an angle-bracketed word the operator would have to fill in. */
 const PLACEHOLDER_RE = /<[A-Za-z][A-Za-z0-9_ .-]{0,40}>/
+/** An `http(s)://` address inside prose: the operator cannot click it, so it belongs in `where.links`. */
+export const URL_IN_PROSE_RE = /https?:\/\//i
+export const URL_IN_PROSE_MESSAGE =
+  'A URL is not prose: put it in where.links (a checked link), or in a do block when it is part of a command.'
 /** Keys whose values are addresses or ids, never prose: they are not scanned for emoji. */
 const NON_PROSE_KEYS = new Set(['target', 'src', 'at', 'id', 'url', 'lang', 'kind', 'status'])
 
@@ -229,6 +233,12 @@ function scanEmoji(node: unknown, path: string, c: Collector): void {
   }
 }
 
+/** Prose a URL must not appear in (BUG-293): the rule is refused whole, like every other. */
+function noUrlInProse(c: Collector, path: string, val: unknown): void {
+  if (typeof val === 'string' && URL_IN_PROSE_RE.test(val))
+    c.add(path, 'URL_IN_PROSE', URL_IN_PROSE_MESSAGE)
+}
+
 function capped(c: Collector, path: string, val: unknown, max: number, required: boolean): void {
   if (val === undefined || val === null || (typeof val === 'string' && val.trim() === '')) {
     if (required) c.add(path, 'MISSING', 'This field is required.')
@@ -288,11 +298,12 @@ function validateCheck(
     raw.do.forEach((d: unknown, j: number) => validateDo(d, `${p}.do[${j}]`, probe, c))
   }
 
-  // chips: a backtick span that looks like a secret
-  for (const f of ['passes', 'fails'] as const) {
+  // chips: a backtick span that looks like a secret. `undo` carries its command as a chip too.
+  for (const f of ['passes', 'fails', 'undo'] as const) {
     const t = raw[f]
     if (typeof t === 'string' && chips(t).some((s) => probe.looksLikeSecret(s)))
       c.add(`${p}.${f}`, 'SECRET', 'A copy chip looks like a secret.')
+    noUrlInProse(c, `${p}.${f}`, t)
   }
 
   // images
@@ -423,6 +434,7 @@ function validateDo(
     if (typeof t === 'string' && chips(t).some((s) => probe.looksLikeSecret(s)))
       c.add(`${path}.${f}`, 'SECRET', 'A copy chip looks like a secret.')
   }
+  noUrlInProse(c, `${path}.text`, d.text)
   if (d.block !== undefined && allowBlock) {
     if (!isObj(d.block) || !str(d.block.text))
       c.add(`${path}.block.text`, 'MISSING', 'A block has its command text.')

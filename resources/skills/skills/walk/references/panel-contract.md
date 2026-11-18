@@ -94,8 +94,15 @@ when the source already has a walk, say so in one line instead of writing a dupl
   so on its line and give the click path too. With no link, write the click path.
 - **Unverifiable instructions.** A dashboard path you cannot confirm is marked `approximate`, never
   asserted as fact; a command you can dry-run, or read the help of, you do.
+- **Commands, values and URLs have a home.** A whole command line, file path or value the operator types or
+  pastes goes in `do[].block` (one block per step, so the pane draws a copy button), never inside `text`. A
+  short value (an id, a path, a flag) goes in a backtick chip inside the text. A URL goes in `where.links`
+  (a checked link). Neither is ever written inside `text` as bare prose: `walk_open` and `walk_extend`
+  refuse a `do[].text`, `passes`, `fails` or `undo` that holds an `http(s)://` address (`URL_IN_PROSE`),
+  and the script is refused whole.
 - **Undo.** A check that changes something records how to undo it in `undo`, so the operator can reverse it:
-  Back reopens the previous check and leads with its undo. A check that changes nothing needs none.
+  Back reopens the previous check and leads with its undo. A command in `undo` is a backtick chip (a copy
+  chip), never a bare span of prose; a check that changes nothing needs none.
 - **Glyphs are `✓ ✗ ! - ⚑ ?` and nothing else.** No emoji anywhere in a script, a turn or a reply. They mean:
   `✓` closed and verified, or confirmed by the operator where nothing can be checked from here (the prose says
   which); `✗` failed and still open; `!` closed with a caveat (the operator confirmed, your check disagreed,
@@ -103,6 +110,39 @@ when the source already has a walk, say so in one line instead of writing a dupl
   skipped (the prose says which); `⚑` what the operator owes right now; `?` an open question. Put exactly one
   space after a glyph. A glyph marks an outcome; navigation (Back, Try again) is plain words.
 - **Plain text only.** No `<placeholder>` in a command (real values filled in), no secret, no markup.
+
+A check that follows those rules (a step with a `block`, a link in `where.links`, an `undo` whose command is
+a chip; a real script also carries `title`, `why` and the rest):
+
+```json
+{
+  "id": "c3",
+  "where": {
+    "text": "example-web, Notes page",
+    "links": [
+      {
+        "label": "Notes page",
+        "kind": "url",
+        "target": "http://localhost:8000/notes",
+        "checked": { "status": "ok", "at": "2026-11-18T10:00:00Z" }
+      }
+    ]
+  },
+  "do": [
+    {
+      "text": "Seed the sample notes: paste this line in a terminal, then press Enter.",
+      "see": "The command ends with `Seeded 12 notes`.",
+      "block": { "text": "npm run db:seed -- --notes 12", "lang": "bash" }
+    },
+    {
+      "text": "Open the Notes page and type `standup` in the search box.",
+      "see": "Only two notes stay in the list."
+    }
+  ],
+  "passes": "The list shows exactly 2 rows.",
+  "undo": "Restore the sample data with `npm run db:reset`."
+}
+```
 
 ## Acting on the pane's turns
 
