@@ -853,27 +853,65 @@ Hook Bridge's switch/eyebrow. No new tokens — uses the already-
 defined `--warning`/`--red`. Default: everything ON (opt-out), persisted in `localStorage`
 (`om2tab.notify`).
 
-**Safety confirms — sound + attention.** An **MCP control-server
+#### Notification sounds — four families (T154)
+
+One blip for every event was untraceable by ear (a mission-chime storm played the same
+sound for a blocker, a finished turn and a daily-budget note). A sound now says **what kind**
+of thing happened. `playNotificationSound(family)` (`lib/notification-sound.ts`) takes one of
+four families; every call site names its family:
+
+| Family   | Operator hears     | Events                                                                                                                                                                       | Sound                               |
+| -------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| **ask**  | "Asks you"         | session needs-input; a parked approval in the Inbox; a mission cue for a blocking kind (`unblock`, `attach`, `ready-to-close`, `settle`, `rescope`, `decide`, `human-steps`) | Rising fourth (synth)               |
+| **done** | "Finished"         | session completed (working → idle, or ended cleanly)                                                                                                                         | Level up (synth)                    |
+| **fail** | "Broke"            | session failed; mission cue `main-failing`                                                                                                                                   | Muted thud pair (synth)             |
+| **info** | "Just so you know" | mission cue `review` / `checks` / `review-import`; 5 h usage reset; daily budget 80% / 100%; a new Claude Code version; the voice-failure fallback (the event's own family)  | the bundled `notify.wav`, unchanged |
+
+One combined mission cue (several keys in the same poll) plays the **most urgent** family:
+fail > ask > info.
+
+**Recipes** (Web Audio, synthesized at runtime, no new asset files). Timbre **Bell** for every
+synth family: sine partials `[ratio, gain]` = `[1, 1]`, `[2, 0.18]`, `[3.01, 0.06]`; attack 8 ms
+(exponential from 0.0001); each partial decays exponentially over `dur / sqrt(ratio)`. Master
+gain `0.35 × volume` (volume 0.5 — the level the operator approved in the sound lab). A soft
+echo: delay 90 ms, feedback 0.18, wet 0.22, plus the dry signal. Notes are
+`[Hz, start s, duration s, gain]`:
+
+- **ask — Rising fourth:** `[659.25, 0, 0.11, 1]`, `[880, 0.11, 0.16, 1]` (E5 then A5, ≈ 0.27 s).
+- **done — Level up:** `[783.99, 0, 0.08, 0.75]`, `[1046.5, 0.07, 0.2, 1]` (G5 → C6, ≈ 0.27 s).
+- **fail — Muted thud pair:** `[220, 0, 0.08, 1]`, `[220, 0.1, 0.14, 0.8]` (A3 twice) through a
+  lowpass at 1400 Hz, Q 0.5.
+- **info:** plays `notify.wav` as before.
+
+**Switches.** The Settings **Sound** switch is the master for every family at every call site —
+the Approval Inbox, the mission cue and the changelog included; with it off nothing plays. Under
+it, a **per-family mute** (Asks you / Finished / Broke / Just so you know, default all on) in
+`notifyPrefs` (`soundAsk` / `soundDone` / `soundFail` / `soundInfo`). A muted family stays silent
+everywhere it would have played. Never throws: a missing `AudioContext`, a blocked autoplay or no
+output device is swallowed.
+
+**Safety confirms — attention.** An **MCP control-server
 confirm** (a mutation requested by an external agent — see "agent-action variant")
 is a **safety cue**, not a convenience notification. When a
 confirm **shows up parked** in the Approval Inbox (window unfocused → it didn't become the
-focused modal), it **always** fires: the **chime** (`playNotificationSound()`, the same bundled
-sound), **OS attention** (taskbar flash / dock bounce via
+focused modal), it fires the **ask** sound (subject to the Sound switch and the Asks-you mute
+above), **OS attention** (taskbar flash / dock bounce via
 `requestAttention()`), and a clickable **native notification** (`notify({ activate:
-'inbox' })` — clicking opens the Inbox). "Always" is literal: this rule is **independent**
-of the per-state "OS notifications"/"Sound" switches — muting a session's
+'inbox' })` — clicking opens the Inbox). Attention and the native notification are
+**independent** of the per-state "OS notifications"/"Sound" switches — muting a session's
 lifecycle notifications does **not** mute a safety confirm (granting or
 denying a privilege to an external agent is the decision the operator can never lose
-to inattention). No new token — reuses the bundled sound and the already-existing
+to inattention); only the sound obeys the Sound switch. No new token — reuses the
 attention primitives.
 
 **Mission owes the operator — sound + attention + Activity (T373 S3, Mission v3
 §3.12).** A mission that **starts owing the operator** something only they can
-give fires the same pair as a safety confirm: the **chime**
-(`playNotificationSound()`) and **OS attention**
+give fires the same pair as a safety confirm: a **sound** (the family of what is owed — see the
+families above; `ask` for a blocking kind, `fail` for a red `main`, `info` for a standing review
+kind) and **OS attention**
 (`window.api.requestAttention()`), plus **one Activity entry** (`kind:
-warning`, bell only — no toast). Like a safety confirm it is independent of
-the per-state "OS notifications"/"Sound" switches. The owed things are the
+warning`, bell only — no toast). Like a safety confirm its attention is independent of
+the per-state "OS notifications" switch; the sound obeys the Sound switch. The owed things are the
 server's ordered `you` list: a **staged re-scope**, a **requested close**, an
 **operator-owned blocker** (a merge, a key, a credential, a decision), a
 **pending decision** (an undecided decision step), **due
@@ -898,8 +936,8 @@ store's existing 20 s poll — no per-mission timer):
   until the key changes (one fixed constant, `BLOCKING_NUDGE_MS`, no Setting).
   Each key keeps its own clock.
 - **One sound per poll.** Every key that cues in the same poll, across all
-  missions, produces ONE chime, ONE `requestAttention()` and ONE Activity
-  post.
+  missions, produces ONE sound (the most urgent family among them: fail > ask > info), ONE
+  `requestAttention()` and ONE Activity post.
 - **Start/restart:** the cue memory is **persisted** (`localStorage`
   `om2tab.missionCues`), so a restart continues where the last run stopped: the
   first poll cues only what is **new or grown** since the app last ran — the
@@ -7148,9 +7186,8 @@ var(--color-accent)`, **unticked by default**) + a block with the **kind**
   danger toast carries the reason — except `MISSION_CLOSED` on an end (a double
   Close, or the mission was ended elsewhere): the mission is closed as asked, so
   it is dropped silently, with no toast.
-- **Sound + attention.** Opening the dialog plays the bundled chime
-  (`playNotificationSound()`) and calls `window.api.requestAttention()` — the
-  "Safety confirms — sound + attention" pair, independent of the Sound switch.
+- **Attention, no sound.** Opening the dialog calls `window.api.requestAttention()` and plays
+  **nothing**: the operator just opened it, so a chime tells them nothing (T154).
   Once per opening.
 
 #### Sidebar indicator (`SidebarFolder.vue`)
@@ -7757,8 +7794,8 @@ text-warning`, "Before you end it"), one row per open matter the close door coun
   confirm.** The confirm reads "Close mission" for a delivered end and "Discard" for a discard.
 - A door that fails (`NOT_FOUND`, `WRITE_CONFLICT`, `MISSION_CLOSED`, anything else) keeps the dialog open and says
   what to do in a `role="alert"` line under the reason (`11.5px`, `text-text`); the confirm can be pressed again and
-  the code is never printed. Esc, the X, Cancel and a backdrop click close it and call no door. Opening it plays the
-  confirm chime and raises OS attention (an irreversible decision is never silent). A dialog whose mission left
+  the code is never printed. Esc, the X, Cancel and a backdrop click close it and call no door. Opening it raises OS
+  attention and plays no sound (the operator opened it themselves; T154). A dialog whose mission left
   closes with it, and the dropdown with it.
 - **What the door does** (`src/main/missions/doors.ts`): **delivered** sets `doneWhenVerified` (the operator
   confirms the Done when); **discarded** does not. Both close the record and keep the file.
