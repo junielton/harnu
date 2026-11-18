@@ -3027,9 +3027,9 @@ const api = {
     stepId: string
     index: number
   }): Promise<MissionDoorResult> => ipcRenderer.invoke('mission:choose', args),
-  // ---- Missions v4 (S-16a; UI-only, read by the Mission pane from S-17 on — nothing calls these yet) --
+  // ---- Missions v4 (S-16a; UI-only, read by the Mission dropdown from S-17 on — nothing calls these yet) --
   /**
-   * The view of one mission for the Mission pane: the detail, the close warnings, the staged Done when
+   * The view of one mission for the Mission dropdown: the detail, the close warnings, the staged Done when
    * and the session history, for the mission a session is attached to or one named by id. It reads and
    * never writes. Send the answered `missionId` back on later calls: a call that names it reads one record.
    */
@@ -3037,7 +3037,7 @@ const api = {
     ipcRenderer.invoke('mission:v4View', args),
   /**
    * The operator's doors on a v4 record (mark, clear a blocker, approve a Done when, close, allow or deny
-   * a join, attach from the picker). The only writes the Mission pane makes; no MCP verb reaches them.
+   * a join, attach from the picker). The only writes the Mission dropdown makes; no MCP verb reaches them.
    */
   missionV4Door: (door: MissionV4Door): Promise<MissionV4DoorReply> =>
     ipcRenderer.invoke('mission:v4Door', door),

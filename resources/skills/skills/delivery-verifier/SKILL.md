@@ -31,7 +31,7 @@ captures. If the only evidence you find is somebody saying "done", the criterion
 ## What you settle
 
 `by` says who settles a criterion. Only a criterion with `by: session` is yours to settle. A `fact` settles itself
-(Harnu reads it), an `operator` criterion is ticked by the operator in the Mission pane, and a `person` criterion by the
+(Harnu reads it), an `operator` criterion is ticked by the operator in the Mission dropdown, and a `person` criterion by the
 operator when that person approves. Never settle one of those and never try.
 
 A sign-off is an operator or person criterion, never your verdict: a designer's eye, a device, the tone of a copy.
@@ -184,7 +184,7 @@ commands, the gate command, the screens a visual criterion names) yourself:
    Never commit any of it: `.harnu/` is local evidence, not source.
 5. Give **every evidence folder a `README.md`**: the head commit, which criterion each file backs, and what you could
    not run. A folder without one is a pile of files.
-6. Link the folder before you settle, so the operator can open it from the pane:
+6. Link the folder before you settle, so the operator can open it from the step in the Mission dropdown:
    `mission_link({ folder, missionId, stepId, link: { kind: 'worktree', ref: '.harnu/evidence/<missionId>/<stepId>' } })`.
 
 A check you could not re-run (no browser, a device out of reach) is no reason to skip the folder: store what you did

@@ -78,7 +78,7 @@ your_move({
   will not help, say what you need in your reply. `YOUR_MOVE_RATE_LIMIT`: 30 calls this hour (refreshes count), say it too.
 - `your_move` cannot close a card, and no other verb closes one the operator can still see. A card leaves when the
   operator deals with it (an answer typed in the session, a button on the card) or when its source resolves (a mission
-  card closes when its operator criterion is ticked in the Mission pane or its operator blocker is cleared).
+  card closes when its operator criterion is ticked in the Mission dropdown or its operator blocker is cleared).
   `archive_session` and `remove_folder` refuse a session or folder that still has an open card in the operator's queue. Do
   not tell the operator a card is closed.
 

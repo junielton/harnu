@@ -3,7 +3,7 @@
   "order": 2,
   "title": "a session that is not attached asks to join: a pending request, never attached, never the leader",
   "label": "v4 AC-81 (attach)",
-  "description": "Missions v4 S-33, AC-81. A v4 mission led by A is seeded. Session B, attached to nothing, calls `mission_attach` twice and then tries `mission_get`. The request is stored once (the second call is a dedupe), it is pending (`decision: null`: only the operator allows it, in the Mission pane), B is not in the session history (it never attaches itself and never leads) and the leader is unchanged.",
+  "description": "Missions v4 S-33, AC-81. A v4 mission led by A is seeded. Session B, attached to nothing, calls `mission_attach` twice and then tries `mission_get`. The request is stored once (the second call is a dedupe), it is pending (`decision: null`: only the operator allows it, in the Mission dropdown), B is not in the session history (it never attaches itself and never leads) and the leader is unchanged.",
   "agents": ["A", "B"],
   "phases": [
     {

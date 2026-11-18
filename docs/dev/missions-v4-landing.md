@@ -48,15 +48,15 @@ Exit `0`: every check passed. `1`: a check failed. `2`: the harness itself broke
 
 ## What it asserts
 
-| Group     | Check                                                                                                                                                                                                                                                                                         |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open.*`  | Every v3 record answers `state: mission` on the view channel with the title its file gives. A chapter mission resolves to its campaign's one mission.                                                                                                                                         |
-| `ng8.*`   | sha256 of every original and every copy is identical before and after the reads, the pane opens, each v4 write and the conversion. Reads create no `.harnu/missions-v4/`. The v3 directories hold only the files copied in. The v4 record written by the build is not changed by later reads. |
-| `pane.*`  | Each open record opens in the Mission pane with its title, the Topbar pill's count equals the pane's count, and the same holds in pt-BR (the words change, the numbers do not).                                                                                                               |
-| `owed.*`  | What the operator owed **before** is still owed **after**. Before is the release's own `youItems` (release records) or the v3 file's own facts (frozen records); after is the pane's waiting list. The v3 kinds map to v4 kinds (`OWED_MAP`); a kind that vanishes fails.                     |
-| `doors.*` | Approve and Decline of a staged v3 re-scope work from the pane's buttons: the v3 file stays byte- and mtime-identical, a v4 copy takes the change, the staging clears and the operator's Log line is written.                                                                                 |
-| campaign  | The campaign reads as one mission with its milestones in order and a next step box. The first v4 write converts it by copy into one new mission (`mnt-…`), writes a sidecar per old id, is idempotent on a second write, and leaves the campaign and chapter files byte-identical.            |
-| guards    | The fixtures in the repo are byte-identical at the end; the operator's `~/.claude/settings.json` mtime and size are unchanged; the instance ran under a throwaway `HOME` and `--user-data-dir=/tmp/harnu-verify-landing-*`; only the PIDs the run started are stopped.                        |
+| Group     | Check                                                                                                                                                                                                                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open.*`  | Every v3 record answers `state: mission` on the view channel with the title its file gives. A chapter mission resolves to its campaign's one mission.                                                                                                                                             |
+| `ng8.*`   | sha256 of every original and every copy is identical before and after the reads, the dropdown opens, each v4 write and the conversion. Reads create no `.harnu/missions-v4/`. The v3 directories hold only the files copied in. The v4 record written by the build is not changed by later reads. |
+| `pane.*`  | Each open record opens in the Mission dropdown with its title, the Topbar pill's count equals the dropdown's count, and the same holds in pt-BR (the words change, the numbers do not).                                                                                                           |
+| `owed.*`  | What the operator owed **before** is still owed **after**. Before is the release's own `youItems` (release records) or the v3 file's own facts (frozen records); after is the dropdown's waiting list. The v3 kinds map to v4 kinds (`OWED_MAP`); a kind that vanishes fails.                     |
+| `doors.*` | Approve and Decline of a staged v3 re-scope work from the dropdown's buttons: the v3 file stays byte- and mtime-identical, a v4 copy takes the change, the staging clears and the operator's Log line is written.                                                                                 |
+| campaign  | The campaign reads as one mission with its milestones in order and a next step box. The first v4 write converts it by copy into one new mission (`mnt-…`), writes a sidecar per old id, is idempotent on a second write, and leaves the campaign and chapter files byte-identical.                |
+| guards    | The fixtures in the repo are byte-identical at the end; the operator's `~/.claude/settings.json` mtime and size are unchanged; the instance ran under a throwaway `HOME` and `--user-data-dir=/tmp/harnu-verify-landing-*`; only the PIDs the run started are stopped.                            |
 
 ## Planted faults
 
@@ -68,7 +68,7 @@ the run red.
 | `rewrite-copy`       | One byte appended to a copied v3 file before the reads. | `ng8.reads-write-nothing`, `ng8.copies-equal-originals`                  |
 | `rewrite-original`   | One byte appended to a v3 file after every write path.  | `ng8.final-v3-identical`                                                 |
 | `drop-owed`          | One owed item hidden from the "after" list.             | `owed.*` for a record that owed something                                |
-| `reorder-milestones` | The milestones the pane read, reversed.                 | `campaign.milestones-in-order`, `campaign.converted-milestones-in-order` |
+| `reorder-milestones` | The milestones the dropdown read, reversed.             | `campaign.milestones-in-order`, `campaign.converted-milestones-in-order` |
 | `pill-mismatch`      | A wrong pill count.                                     | `pane.pill-equals-count.cmp-ca0001aa`                                    |
 | `stray-v4-dir`       | `.harnu/missions-v4/` created before the reads.         | `ng8.reads-write-nothing`                                                |
 
@@ -80,7 +80,7 @@ the run red.
 - **The operator's sign-off on the screenshots is a check, not a result.** The screenshots in the evidence folder
   (`campaign-converted-en.png`, `campaign-converted-pt-BR.png`, the v3 and staged re-scope ones) are for a human and
   a verifier to look at. The script asserts the DOM (milestone order, a next step box), not the pixels.
-- **A closed v4 record has no pane view** (known: BUG-279). The check records what the pane shows for a closed record
+- **A closed v4 record has no dropdown view** (known: BUG-279). The check records what the dropdown shows for a closed record
   as information and does not fail on it.
 
 ## The re-scope doors convert by copy
@@ -89,6 +89,6 @@ NG-8 says no v4 code writes a v3 file, and that holds for the doors too (S-42 de
 re-scope staged before the upgrade converts the mission by copy (the v4 record under the same id), and the v4 Done when
 door runs on that copy, with the operator's Log line ("operator approved the re-scope" or "operator declined the
 re-scope"). The check asserts, for each door: the v3 file is byte- and mtime-identical, exactly one v4 record appears and
-the pane now reads it as v4, the staging is gone, the Log line is there, the new end is the copy's Done when (Approve) or
+the dropdown now reads it as v4, the staging is gone, the Log line is there, the new end is the copy's Done when (Approve) or
 is not (Decline), and every other v3 file is byte-identical. Decline runs on a throwaway copy of the frozen staged record
 (another id, same file), and on the release-written one when the release phase ran.

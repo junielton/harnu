@@ -301,14 +301,6 @@ describe('no second mission surface', () => {
       'MissionDropdownNext.vue',
       'MissionDropdownStep.vue',
       'MissionDropdownTree.vue',
-      'MissionHandoffDialog.vue',
-      'MissionPane.vue',
-      'MissionPaneAsk.vue',
-      'MissionPaneAttach.vue',
-      'MissionPaneNext.vue',
-      'MissionPaneSessions.vue',
-      'MissionPaneStep.vue',
-      'MissionPaneTree.vue',
       'MissionPill.vue'
     ])
   })
@@ -317,7 +309,7 @@ describe('no second mission surface', () => {
     // A list across the repo is a `v-for` over the missions store's views or its attach rows.
     const hits = gitGrep('v-for="[^"]* in [^"]*(\\.views|attachAsks|missionList)', [
       'src/renderer/src/components'
-    ]).filter((l) => !l.startsWith('src/renderer/src/components/MissionPaneAttach.vue:'))
+    ]).filter((l) => !l.startsWith('src/renderer/src/components/MissionDropdownEmpty.vue:'))
     expect(hits).toEqual([])
   })
 

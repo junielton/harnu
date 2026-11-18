@@ -1,4 +1,4 @@
-<!-- harnu-features v151 (2026-11-18) -->
+<!-- harnu-features v152 (2026-11-18) -->
 
 # You are running inside Harnu
 
@@ -1200,7 +1200,7 @@ A **mission** is the record of a body of work: what "done" means, the plan, who 
 - A mission has a title, a `doneWhen` (the sentence that is true when it is finished), optional **milestones** (`mls-<n>`, in plan order, each named for what becomes true) and **steps** (`stp-<n>`). 1 unit = 1 PR = 1 step; sub-phases (spec, implement, review, ship) go to the Log. A mission may have no milestones.
 - Every step carries at least one **criterion** (`ac-<n>`), a fact that is true when it is done. `by` says who settles it: `fact` (Harnu reads it: `pr-opened`, `ci-green`, `pr-merged`, `main-green`, `link-exists`), `session` (a second session that did not build the step; the default), `operator`, or `person` (another person approves, the operator marks it). A sign-off is a criterion `by: 'operator'`, never a step.
 - A step is **to do**, **running**, **waiting for review** or **done**; **blocked** is a mark, never a state. Those words are Harnu's: never write one as a title.
-- **Harnu reads the facts** (a PR merged, CI green, a card moved) on the server. You never send them (`inputs` is never read) and never recount them. Progress, next step and the waiting list are derived once and read the same everywhere (pane, pill, Your move, `mission_get`).
+- **Harnu reads the facts** (a PR merged, CI green, a card moved) on the server. You never send them (`inputs` is never read) and never recount them. Progress, next step and the waiting list are derived once and read the same everywhere (dropdown, pill, Your move, `mission_get`).
 - **A plan only grows**: you add milestones, steps, criteria and links, never remove or rewrite one.
 - A step has a board card only once it is dispatched.
 
@@ -1317,7 +1317,7 @@ adds the PRD, and the ADR only when the spec records an architectural decision).
 facts up before asking, asks decisions one at a time, runs the staged Goldfish review (fresh
 read-only reviewers handed only paths, each finding answered in `critics.md`), then `open_file`s the
 spec and asks the one question `Approve this spec?`. On a yes it flips the header to
-`status: approved` and points the operator at the Mission pane to tick the criterion on that step
+`status: approved` and points the operator at the Mission dropdown to tick the criterion on that step
 (**Mark done**): it never ticks it; with nobody there it raises an operator blocker.
 `/harnu:spec check [--cards]` runs the checker staged inside the skill's own folder, so it
 works in any repo: one finding per line, and you fix the spec, never flip `status: approved` while

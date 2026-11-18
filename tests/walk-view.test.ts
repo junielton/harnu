@@ -310,7 +310,9 @@ describe('walk view', () => {
     let run = live(script)
     run = ok(done(run, 200)) // c1 verified (eyes)
     run = ok(done(run, 210)) // c2 awaiting
-    run = ok(report(run, { checkId: 'c2', result: 'fail', evidence: 'MissionPane.vue', now: 220 }))
+    run = ok(
+      report(run, { checkId: 'c2', result: 'fail', evidence: 'MissionDropdown.vue', now: 220 })
+    )
     run = ok(followAnyway(run, 230)) // c2 caveat
     run = ok(skip(run, 240)) // c3 skipped
     run = ok(fail(run, { line: 'the header row is missing', now: 250 })) // c4 failed
@@ -325,7 +327,7 @@ describe('walk view', () => {
     // one row per check, each with how it was verified
     expect(co.rows.map((r) => r.glyph)).toEqual(['✓', '!', '-', '✗'])
     expect(co.rows[0].how).toBe('you confirmed · nothing to check from here')
-    expect(co.rows[1].how).toBe('followed anyway · my check found MissionPane.vue')
+    expect(co.rows[1].how).toBe('followed anyway · my check found MissionDropdown.vue')
     expect(co.rows[2].how).toBe('skipped')
     expect(co.rows[3].how).toBe('failed · “the header row is missing”')
     // the unticked extra checks (of a check whose card was opened)

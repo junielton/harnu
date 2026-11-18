@@ -2,7 +2,8 @@
 /**
  * BUG-283 · OI-4 (G2) — a chapter that waits on two or more chapters shows its "Waits for" row, naming them,
  * on a campaign read from v3 files through the real view channel (the conversion joins the producers' ids
- * with `, `; the pane used to look the whole string up as one id and drew nothing).
+ * with `, `; the pane used to look the whole string up as one id and drew nothing). The tree is built by the kept
+ * view library (`lib/mission-pane-view.ts`) that the Mission dropdown reads.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { promises as fs } from 'node:fs'

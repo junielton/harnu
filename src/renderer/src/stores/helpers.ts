@@ -323,12 +323,34 @@ function toPersistShape(state: InMemoryWorktreeState): WorktreeHelperState {
   }
 }
 
+/**
+ * Pane types an older build wrote to `helpers.json` that no build draws any more. Hydration drops them: a saved
+ * file that holds one loads without it (no error, no blank cell, no warning), and the next write leaves it out.
+ * Only the renderer filters; the main-side read of `helpers.json` stays untyped. `mission` is the Mission pane,
+ * replaced by the dropdown the Topbar pill opens.
+ */
+export const RETIRED_PANE_TYPES: readonly string[] = ['mission']
+
 /** Hydrate persisted shape into in-memory shape. */
 function fromPersistShape(state: WorktreeHelperState): InMemoryWorktreeState {
+  const kept = state.panes.filter((p) => !RETIRED_PANE_TYPES.includes(p.type))
+  if (kept.length === state.panes.length) {
+    return {
+      splitVisible: state.splitVisible,
+      splitRatio: state.splitRatio,
+      panes: state.panes as AnyHelperPane[]
+    }
+  }
+  // The survivors keep their order and their shares of the stack, renormalised to sum to 1.
+  const total = kept.reduce((n, p) => n + p.ratio, 0)
+  const panes = kept.map((p) => ({
+    ...p,
+    ratio: total > 0 ? p.ratio / total : 1 / kept.length
+  }))
   return {
-    splitVisible: state.splitVisible,
+    splitVisible: state.splitVisible && panes.length > 0,
     splitRatio: state.splitRatio,
-    panes: state.panes as AnyHelperPane[]
+    panes: panes as AnyHelperPane[]
   }
 }
 
@@ -1157,32 +1179,6 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
-   * Missions v4 S-17: open the Mission pane in a worktree's stack. Non-PTY and reproducible from nothing,
-   * so it persists like the memory pane. One per worktree (registry `dedupKey`): opening it twice returns
-   * the pane already there.
-   */
-  function addMissionHelper(worktreePath: string): string {
-    const id = `h-${crypto.randomUUID()}`
-    return addHelper(worktreePath, { id, type: 'mission', cwd: worktreePath, ratio: 0 })
-  }
-
-  /** The id of a worktree's Mission pane, or `undefined` when it has none. */
-  function missionHelperId(worktreePath: string): string | undefined {
-    return byWorktree.value.get(worktreePath)?.panes.find((p) => p.type === 'mission')?.id
-  }
-
-  /** The Topbar pill's toggle: close the worktree's Mission pane if it is open, else open it. Returns whether it is open now. */
-  function toggleMissionHelper(worktreePath: string): boolean {
-    const id = missionHelperId(worktreePath)
-    if (id) {
-      removeHelper(worktreePath, id)
-      return false
-    }
-    addMissionHelper(worktreePath)
-    return true
-  }
-
-  /**
    * Guided walks S-3: open the walk pane for a run, in a worktree's stack. Non-PTY and reproducible from its
    * `payload` (`walkId`, `runId`: never content), so it persists like the memory pane and a restart restores it
    * from the walk's record. One per walk (registry `dedupKey`): opening a walk that is already open returns the
@@ -1852,12 +1848,9 @@ export const useHelpersStore = defineStore('helpers', () => {
     patchBrowserPayload,
     addMemoryHelper,
     addExplorerHelper,
-    addMissionHelper,
     addWalkHelper,
     walkHelperId,
     setWalkRun,
-    missionHelperId,
-    toggleMissionHelper,
     addReviewCompanionHelper,
     promoteReviewCompanion,
     canPromoteReviewCompanion,

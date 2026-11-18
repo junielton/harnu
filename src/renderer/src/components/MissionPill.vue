@@ -15,7 +15,7 @@
  * move card) all flip it. The pill is the flag's anchor whenever it is drawn, a no-mission pill too, and it
  * mounts the dropdown, which is teleported to `body`.
  */
-import { computed, onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUpdated } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown, Target } from 'lucide-vue-next'
 import {
@@ -30,6 +30,14 @@ import { useKeybindingsStore } from '../stores/keybindings'
 import MissionDropdown from './MissionDropdown.vue'
 
 const props = defineProps<{ sessionId: string }>()
+/**
+ * The pill's width changed or the pill came or went. The Topbar reserves what it cannot shrink (this pill, the
+ * provider and the orchestrator badges) and plans its action cluster around it, so it measures again.
+ */
+const emit = defineEmits<{ layout: [] }>()
+onMounted(() => emit('layout'))
+onUpdated(() => emit('layout'))
+onBeforeUnmount(() => emit('layout'))
 
 const { t } = useI18n()
 const missions = useMissionsStore()
@@ -66,10 +74,18 @@ onBeforeUnmount(() => ui.setPopoverAnchor('missionProgress', false))
 </script>
 
 <template>
-  <div class="relative flex min-w-0 shrink" style="-webkit-app-region: no-drag" data-v4="true">
+  <!-- `shrink-0` and `data-topbar-extra`: the pill keeps its count and its label (the mockup draws it
+       `flex-shrink: 0`), and the Topbar reserves its width, so the breadcrumb and the title give way first and
+       the action cluster moves into the `…` menu before the pill is ever squeezed. -->
+  <div
+    class="relative flex shrink-0"
+    style="-webkit-app-region: no-drag"
+    data-v4="true"
+    data-topbar-extra
+  >
     <button
       type="button"
-      class="flex min-w-0 shrink cursor-pointer items-center rounded-sm border tabular-nums transition hover:brightness-110"
+      class="flex shrink-0 cursor-pointer items-center rounded-sm border tabular-nums transition hover:brightness-110"
       :class="[toneClass, ringClass]"
       :style="{
         gap: '5px',
@@ -86,7 +102,7 @@ onBeforeUnmount(() => ui.setPopoverAnchor('missionProgress', false))
       @click="ui.togglePopover('missionProgress')"
     >
       <component :is="v4Ready ? Check : Target" :size="10" :stroke-width="1.8" class="shrink-0" />
-      <span v-if="v4" class="truncate" data-test="mission-pill-label">{{ v4Label }}</span>
+      <span v-if="v4" class="whitespace-nowrap" data-test="mission-pill-label">{{ v4Label }}</span>
       <ChevronDown
         :size="10"
         :stroke-width="1.8"

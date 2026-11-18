@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
@@ -514,6 +514,11 @@ watch(
   { flush: 'post' }
 )
 
+/** The Mission pill came, went or changed width (it cannot shrink, so the plan reserves it): measure again. */
+function replanAfterPill(): void {
+  void nextTick(planOverflow)
+}
+
 function runHidden(id: TopbarActionId): void {
   allActions.value.find((a) => a.id === id)?.run()
 }
@@ -675,11 +680,12 @@ function onKeydown(e: KeyboardEvent): void {
           <Crown :size="10" :stroke-width="1.8" class="shrink-0" />
           {{ $t('topbar.orchestratorBadge') }}
         </span>
-        <!-- Mission pill (T370; Missions v4) — clickable, toggles the Mission pane; renders
+        <!-- Mission pill (T370; Missions v4) — clickable, toggles the Mission dropdown; renders
              nothing when this session is in no open mission. -->
         <MissionPill
           v-if="!isTerminal && sessions.selectedSession"
           :session-id="sessions.selectedSession.sessionId"
+          @layout="replanAfterPill"
         />
       </div>
     </template>
