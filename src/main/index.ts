@@ -57,7 +57,8 @@ import {
   setBundledSkillsArgsProvider,
   setCompanionSpawnProvider,
   dropOperatorScreenModels,
-  livePtyDescriptors
+  livePtyDescriptors,
+  waitForSessionReady
 } from './pty'
 import { registerBrowserIpc, closeBrowserIpc } from './browser/browser-ipc'
 import {
@@ -208,6 +209,10 @@ import { registerExternal } from './external'
 // server composes; `worktree-ipc` owns git worktree add + auto-adopt; `mcp/server`
 // is the loopback HTTP MCP surface itself. Registration order matters — see below.
 import { registerCommandBridge, closeCommandBridge } from './command-bridge-ipc'
+import { configureWalkRuntime, createBridgeRuntime, walkServiceFor } from './walk/walk-service'
+import { walksDir } from './walk/walk-store'
+import { openWalkFromApp } from './mcp/tool-handlers'
+import { markdownKnownRoots } from './markdown-read'
 import { registerTerminalIpc } from './terminal-ipc'
 import { registerManifestDrain } from './manifest-drain-shell'
 import { pokeManifestDrain } from './manifest-drain'
@@ -266,6 +271,20 @@ function getRendererUrl(): string {
     return process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5174'
   }
   return pathToFileURL(join(__dirname, '../renderer/index.html')).toString()
+}
+
+/**
+ * Offer every `[harnu-walk]` turn still waiting in a walk outbox again (spec S-2): the repos Harnu knows,
+ * each once (worktrees of one repo share a walks directory).
+ */
+async function replayWalkTurns(): Promise<void> {
+  const seen = new Set<string>()
+  for (const folder of await markdownKnownRoots()) {
+    const dir = walksDir(folder)
+    if (seen.has(dir)) continue
+    seen.add(dir)
+    await walkServiceFor(folder).replay()
+  }
 }
 
 /**
@@ -861,6 +880,27 @@ app.whenReady().then(async () => {
   })
   // T564 U2: page events ride the command bridge to a session as a user turn.
   bindBrowserBridge(cmdBridge.bridge)
+  // Guided walks (S-2): a `[harnu-walk]` turn rides the user-turn route (the `walk` source) and wakes a parked
+  // session; one no session could take waits in the run's outbox on disk and is offered again here, a little
+  // after the renderer announces itself, so a restart does not lose it.
+  configureWalkRuntime(createBridgeRuntime(cmdBridge.bridge, waitForSessionReady))
+  ipcMain.on('renderer:ready', () => {
+    setTimeout(() => {
+      void replayWalkTurns().catch((err) => console.warn('[walk] replay failed', err))
+    }, 3000)
+  })
+  // Dev only (the pane type does not exist until S-3): a door so later slices can open a walk without an
+  // agent. Not registered in a packaged build, and answers only to the app's own renderer.
+  if (!app.isPackaged || IS_DEV) {
+    ipcMain.handle(
+      'walk:dev-open',
+      async (e, args: { folder: string; script: unknown; sessionId?: string }) => {
+        if (!isRendererUrl(e.senderFrame?.url ?? ''))
+          return { ok: false, error: 'NOT_THE_RENDERER' }
+        return openWalkFromApp(args.folder, args.script, await markdownKnownRoots(), args.sessionId)
+      }
+    )
+  }
   void registerMcpServer(() => mainWindow, {
     bridge: cmdBridge.bridge,
     confirm: mcpConfirm.confirm

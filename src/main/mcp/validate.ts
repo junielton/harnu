@@ -1995,6 +1995,12 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   browser_download: parseBrowserDownload,
   browser_set_data: parseBrowserSetData,
   browser_patch: parseBrowserPatch,
+  // Guided walks (S-2): validated against their own catalog schema, like the mission verbs; the verbs'
+  // semantic refusals (a script that breaks a rule, a stale rev) are the service's, so they name the rule.
+  walk_open: parseMissionVerb('walk_open'),
+  walk_extend: parseMissionVerb('walk_extend'),
+  walk_report: parseMissionVerb('walk_report'),
+  walk_get: parseMissionVerb('walk_get'),
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,

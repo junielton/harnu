@@ -38,6 +38,7 @@ If a session tells you it was refused, it hit #2 or #3 — those are the only th
 - Write an entry to project memory (a decision, a session summary, or a refreshed "where we left off" note)
 - Open a file — a report, a draft, a snippet, an image — in a read-only viewer pane inside Harnu, so it can hand you something to look at without you leaving the app. Sessions are told to use this for anything you'd want to **copy or keep** (a drafted message, a PR description, a config, a longer code snippet) instead of printing it into the terminal, where it scrolls away and is awkward to select. The pane has a copy button on every code block and a "Copy file" action for the whole file, so the handoff is one click. Conversation — explanations, answers, status — still stays in the terminal where it belongs
 - Post a short notice into your Activity history that any session's window can see — see "Session says" below
+- Write a guided walk for you — a list of things to check by hand, saved in Harnu — see "Guided walks" below
 - Say one short line out loud through your speakers, if you've turned voice on — see "Sessions talking out loud" below
 - Draw on a canvas — an infinite whiteboard that opens in a pane beside the session and that you can edit back. See "Drawing on a canvas" below
 - Send a message to another Harnu session — see "Sessions talking to each other" below
@@ -201,6 +202,20 @@ Deleting a box also deletes the arrows attached to it, whoever drew them — an 
 **Screenshots.** A session can put an image on the board — the same paths it can use for card screenshots (a pasted image from the footer gallery — in either of Claude Code's cache locations — or a file inside the folder), up to 6 at a time and 2 MB each. The bytes are copied into an `assets/` folder next to the canvas rather than being stuffed into the canvas file itself, so a board with screenshots on it stays small and fast to open.
 
 Drawing is treated like opening a file or posting a notice: it happens directly, no asking, because it writes a scratch file inside the folder the session is already working in and can't reach outside it. With "Ask before agent actions" on, it confirms like everything else.
+
+## Guided walks
+
+Some things only your eyes can prove: that a feature does what it should, that a colleague's pull request really works, that a mission's step is done. A **guided walk** is how a session asks you to check them one at a time. You start one by saying it in any session — "walk me through what we just built", "test PR #48 with me" (in your own language, or with `/harnu:walk`) — and the session, which knows the work, writes the list of checks: for each one, what to do, where, and what you should see.
+
+A walk is its own thing, not a part of a mission. It has a title, a **source** (a feature you describe, a pull request, a branch, a board card, or a mission step, milestone or the whole mission), a list of checks, and a history of the times you walked it. It is saved on this machine, per repo, in the repo's `.harnu/walks/` folder (private, never committed, and shared by every worktree of the repo). Only a walk with a mission source ever relates to a mission, and even then Harnu never ticks a criterion for you: that stays your **Mark done** in the Mission.
+
+**What a session can do with one.** It can open a walk (and the script is checked whole: if any check breaks a rule, the session is told every rule that was broken and where, and nothing is saved); add to it (an answer to your **Explain more**, a simpler way to say a step, or a check it found along the way); answer one of your outcomes (what its own read-only check found, or one correction after you pressed Failed); and read the walk back, which is what a session does after a compaction to pick up where you are. It cannot press your buttons, run a command for you, re-run, export or delete a walk, or settle anything: your answers are yours.
+
+**What reaches the session.** When you answer a check in a way the session has to act on, it gets one short message that starts with `[harnu-walk]`, names the walk, the run and the check, and ends with how many checks are done. Pressing **Done** on a check the session can verify by itself, **Failed** (with your own line, and your screenshot if you pasted one), **Explain more**, **I didn't get this step**, **Treat as failed**, the escalation door after a second failure, and the close-out each send one; **Back**, **Skip** and a Done with nothing to check send none, and the next message tells the session where you are. These messages are delivered the way any message to a session is: a parked session is woken first. If no session can take one, it is kept with the walk on disk, so closing the app does not lose it, and it is sent again when a session can.
+
+**Where this stands.** The sessions side is in place: a session can write, grow and read a walk, and your answers reach it. The pane you walk it in, and the library of past walks, are not built yet, so for now a session that opens a walk is told it was saved but not shown, and the checks wait. When the pane arrives it opens beside the session, in the background, like a report or a canvas.
+
+Like opening a file, these four verbs run without asking (unless you turned on "Ask before agent actions"): a walk is written inside the repo's own `.harnu/` folder. A folder you blocked refuses them, and a Scheduler worker cannot use them.
 
 ## Watching Docker containers
 

@@ -78,6 +78,35 @@ const CATALOG_ARGS: Record<string, Record<string, unknown>> = {
   // T569 U2: the live-panel verbs carry only a paneId too.
   browser_set_data: { paneId: 'bp-1', data: { count: 3 } },
   browser_patch: { paneId: 'bp-1', selector: '#n', mode: 'inner', html: '3' },
+  // Guided walks (S-2): each carries its `folder` (the gate anchor) and the rest rides through untouched.
+  walk_open: {
+    folder: ALLOWED,
+    sessionId: 'sess-1',
+    script: {
+      title: 'Search box',
+      purpose: 'check',
+      source: { kind: 'feature', text: 'A search box.' },
+      checks: []
+    }
+  },
+  walk_extend: {
+    folder: ALLOWED,
+    walkId: 'wlk-5d2e91ab',
+    checkId: 'c1',
+    more: 'It is the whole feature.',
+    extra: [{ text: 'Narrow the window.', see: 'Nothing is clipped.' }],
+    expectRev: 2
+  },
+  walk_report: {
+    folder: ALLOWED,
+    walkId: 'wlk-5d2e91ab',
+    runId: 'run-81c0ffee',
+    checkId: 'c1',
+    kind: 'check',
+    result: 'pass',
+    evidence: 'Two rows came back.'
+  },
+  walk_get: { folder: ALLOWED, source: { kind: 'pr', number: 101, title: 'Search', author: 'a' } },
   adopt_folder: { folder: ALLOWED },
   remove_folder: { folder: ALLOWED },
   plan_mission: {

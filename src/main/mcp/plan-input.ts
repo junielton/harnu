@@ -527,6 +527,11 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   browser_download: translateBrowserPane,
   browser_set_data: translateBrowserPane,
   browser_patch: translateBrowserPane,
+  // Guided walks (S-2): the gate folder IS the catalog `folder`; every other field rides through untouched.
+  walk_open: translateMission,
+  walk_extend: translateMission,
+  walk_report: translateMission,
+  walk_get: translateMission,
   adopt_folder: translateAdoptFolder,
   // BUG-56: same shape as adopt_folder — `folder` only.
   remove_folder: translateAdoptFolder,
