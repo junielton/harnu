@@ -365,6 +365,9 @@
     "copied": "Copiado"
   },
   "missionDropdown": {
+    "pill": {
+      "none": "Sem missão"
+    },
     "shell": {
       "label": "Missão"
     },
@@ -854,7 +857,9 @@
     "close": {
       "open": "Fechar missão…",
       "title": "Fechar esta missão?",
-      "body": "{title} sai do painel Missão e não pode ser reaberta. O arquivo da missão continua no disco como registro.",
+      "body": "{title} sai da Topbar e não pode ser reaberta. O arquivo da missão continua no disco como registro.",
+      "how": "Como fechar",
+      "confirm": "Fechar missão",
       "doneWhen": "Fechar como entregue confirma este Pronto quando: “{text}”",
       "matters": {
         "unfinished-steps": "{count} passo não está pronto | {count} passos não estão prontos",
@@ -864,8 +869,8 @@
         "other": "{count} outro assunto ainda aberto | {count} outros assuntos ainda abertos"
       },
       "error": {
-        "NOT_FOUND": "Isso mudou enquanto você olhava. O painel mostra o mais recente. Confira e tente de novo se ainda precisar.",
-        "WRITE_CONFLICT": "A missão mudou no mesmo instante. O painel mostra o mais recente. Tente de novo.",
+        "NOT_FOUND": "Isso mudou enquanto você olhava. O menu mostra o mais recente. Confira e tente de novo se ainda precisar.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. O menu mostra o mais recente. Tente de novo.",
         "MISSION_CLOSED": "Esta missão já está fechada, então não há mais o que fechar.",
         "other": "O Harnu não conseguiu fechar a missão. Nada mudou. Tente de novo em instantes."
       }
@@ -5335,7 +5340,7 @@
       "many": "{n} missões precisam de você",
       "ownerMissing": "A sessão dona não está aberta aqui — clique para ver por que esta missão não abre.",
       "ownerMissingTitle": "Não dá para abrir “{title}” daqui",
-      "ownerMissingBody": "A sessão dona não está aberta nesta janela. Abra essa sessão e use o painel Mission dela.",
+      "ownerMissingBody": "A sessão dona não está aberta nesta janela. Abra essa sessão e use a pílula Mission dela.",
       "itemAria": "Abrir a missão {title}"
     },
     "unreadable": {

@@ -1,10 +1,11 @@
 /**
  * Missions v4, S-36 (AC-85): the user guide describes missions on one page.
  *
- * `docs/user/missions.md` is the page: its four headings are the ones a person looks for (the pane,
- * the acceptance criteria, the hand-off, the records written by earlier versions). The agent-control
+ * `docs/user/missions.md` is the page: its headings are the ones a person looks for (the dropdown,
+ * the acceptance criteria, the records written by earlier versions). The agent-control
  * page points at it and no longer carries a campaign, a steward or a merge-batch section, and the
- * roadmap page says a card can be a step.
+ * roadmap page says a card can be a step. Since Mission dropdown S-7 (AC-25) the page describes the dropdown the
+ * Topbar pill opens and no pane.
  *
  * Planted faults (each makes the named assertion red): rename a heading; link nothing from the
  * agent-control page; put a `## Tracking a whole delivery as a campaign` heading back; drop the
@@ -29,12 +30,20 @@ const AGENT_CONTROL = read('agent-control.md')
 const ROADMAP = read('roadmap-board.md')
 
 describe('the user guide covers missions (AC-85)', () => {
-  it('the missions page covers the pane, the criteria and the hand-off', () => {
+  it('the guide describes the dropdown', () => {
     const h = headings(MISSIONS)
     for (const wanted of [
-      'The pane',
+      'The dropdown',
+      'The pill',
+      'Opening the dropdown',
+      'What the dropdown shows',
+      'Your next step',
+      'The tree',
+      'An open step',
+      'A session with no mission',
+      'Closing a mission',
+      'A sample mission',
       'Acceptance criteria',
-      'Hand-off',
       'Records from earlier versions'
     ])
       expect(h, `a "${wanted}" heading on missions.md`).toContain(wanted)
@@ -42,10 +51,23 @@ describe('the user guide covers missions (AC-85)', () => {
     const level2 = MISSIONS.split('\n')
       .filter((l) => /^## /.test(l))
       .map((l) => l.slice(3).trim())
-    expect(level2.indexOf('The pane')).toBeGreaterThan(-1)
-    expect(level2.indexOf('The pane')).toBeLessThan(level2.indexOf('Acceptance criteria'))
-    expect(level2.indexOf('Acceptance criteria')).toBeLessThan(level2.indexOf('Hand-off'))
-    expect(level2.indexOf('Hand-off')).toBeLessThan(level2.indexOf('Records from earlier versions'))
+    expect(level2.indexOf('The dropdown')).toBeGreaterThan(-1)
+    expect(level2.indexOf('The dropdown')).toBeLessThan(level2.indexOf('Acceptance criteria'))
+    expect(level2.indexOf('Acceptance criteria')).toBeLessThan(
+      level2.indexOf('Records from earlier versions')
+    )
+
+    // No pane: not a heading, not a sentence, and the hand-off the pane carried is gone with it.
+    expect(h).not.toContain('The pane')
+    expect(h).not.toContain('Hand-off')
+    const flat = MISSIONS.replace(/\s+/g, ' ')
+    expect(flat).not.toMatch(/Mission pane|The pane|the pane|helper stack, next to your session/)
+    expect(flat).not.toMatch(/Continue in a new session|The Sessions line/)
+    // What the pill and the dropdown do, in the words of the screen.
+    expect(flat).toMatch(/No mission/)
+    expect(flat).toMatch(/Esc puts the focus back on the pill/)
+    expect(flat).toMatch(/leaves the Topbar and cannot be reopened/)
+    expect(flat).toMatch(/How to close it/)
 
     // The agent-control page links to it, and has no campaign, steward or merge-batch section.
     expect(AGENT_CONTROL).toMatch(/\]\(missions\.md(#[a-z0-9-]+)?\)/)
@@ -62,7 +84,7 @@ describe('the user guide covers missions (AC-85)', () => {
 
   it('the missions page says what is true after the cut-over', () => {
     const flat = MISSIONS.replace(/\s+/g, ' ')
-    // Every record opens in the pane; the popover is gone from what a person is told.
+    // Every record opens in the dropdown; the popover is gone from what a person is told.
     expect(flat).not.toMatch(/keep(s)? (their|its|own) pill and (their|its) popover/i)
     expect(flat).not.toMatch(/opens the popover/i)
     expect(flat).not.toMatch(/still a v3 mission/i)
@@ -74,8 +96,8 @@ describe('the user guide covers missions (AC-85)', () => {
     // A session that leads several missions, and an unreadable file.
     expect(flat).toMatch(/This session leads \d+ missions|leads (several|more than one)/i)
     expect(flat).toMatch(/can't be read|cannot be read/i)
-    // The hand-off belongs to the operator.
-    expect(flat).toMatch(/Continue in a new session/)
+    // The dropdown draws no hand-off: the page says so rather than pointing at a button that is not there.
+    expect(flat).toMatch(/no button to hand it to a new session/)
   })
 
   it('no user page uses a retired phrase or points at a button that does not exist', () => {
@@ -91,22 +113,22 @@ describe('the user guide covers missions (AC-85)', () => {
       ])
         expect(text, `${file}: "${phrase}"`).not.toContain(phrase)
     }
-    // The v4 pane has no "Mark verified" button.
+    // The v4 dropdown has no "Mark verified" button.
     for (const file of ['missions.md', 'agent-control.md'])
       expect(read(file), file).not.toContain('Mark verified')
   })
 
-  it('the missions page says the pill, the chip and the pane show one mission (S-35 delta 1)', () => {
+  it('the missions page says the pill, the chip and the dropdown show one mission (S-35 delta 1)', () => {
     const flat = MISSIONS.replace(/\s+/g, ' ')
-    expect(flat).toMatch(/pill, the (sidebar )?chip and the pane always show the same mission/)
+    expect(flat).toMatch(/pill, the (sidebar )?chip and the dropdown always show the same mission/)
     expect(flat).toMatch(/waiting on you[^.]*(else|and when none is)[^.]*changed last/i)
-    expect(flat).toMatch(/mission you chose in the pane wins/i)
+    expect(flat).toMatch(/mission you chose in the dropdown wins/i)
     expect(flat).toMatch(/leads the mission it names/i)
     expect(flat).toMatch(/Close the mission/)
     // When the leader's session is not loaded, the click shows a notice that names the mission (S-37).
     expect(flat).toMatch(/Can’t open “\{title\}” from here/)
     expect(flat).toMatch(
-      /Its owner session isn’t open in this window\. Open that session, then use its Mission pane/
+      /Its owner session isn’t open in this window\. Open that session, then use its Mission pill/
     )
     expect(flat).not.toMatch(/older Missions review/i)
   })
@@ -117,11 +139,9 @@ describe('the user guide covers missions (AC-85)', () => {
     expect(flat).toMatch(/Close the mission: every step is done/)
     expect(flat).toMatch(/Close the mission: the session says it is ready/)
     expect(flat).not.toMatch(/Everything is done\. Look it over/)
-    // "Your next step" has a Close button, so the no-button sentence leaves closing out.
-    expect(flat).toMatch(
-      /Items that need another action \(letting a session join\) show their text but no button/
-    )
-    expect(flat).not.toMatch(/closing the mission, letting a session join/)
+    // The next-step card is one card: a Done when to approve and a request to join each have their own buttons.
+    expect(flat).toMatch(/\*\*Approve\*\* and \*\*Decline\*\*/)
+    expect(flat).toMatch(/\*\*Allow\*\* and \*\*Deny\*\*/)
     // A session that only works on several missions gets the newest written, not the one waiting on you.
     expect(flat).toMatch(/only works on several missions[^.]*changed last, whatever waits on you/)
     // A delivery plan gets a new id; a single mission keeps its own.

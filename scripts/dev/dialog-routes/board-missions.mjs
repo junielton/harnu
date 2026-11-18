@@ -7,8 +7,8 @@
  *   CardCreateModal             CardCreateModal.vue               folder menu → Roadmap board → "New card"
  *   CardDetailModal             CardDetailModal.vue               Roadmap board → click a card
  *   RoadmapBoard.dispatch       RoadmapBoard.vue                  Roadmap board → an AGENT-authored card's "Dispatch"
- *   MissionCloseConfirmDialog   MissionCloseConfirmDialog.vue     owner session selected → Topbar mission pill → Mission pane → Close mission…
- *   MissionHandoffDialog        MissionHandoffDialog.vue          a v4 mission's leading session selected → Topbar pill → Sessions → "Continue in a new session…"
+ *   MissionCloseConfirmDialog   MissionCloseConfirmDialog.vue     owner session selected → Topbar mission pill → Mission dropdown → Close mission…
+ *   MissionHandoffDialog        MissionHandoffDialog.vue          not seedable since Mission dropdown S-7: nothing opens the pane whose Sessions row held it (gone in S-8)
  *
  * A route is `{ id, file, reach, note?, open({ page, app, seed }), close?({ page }) }`. `open`
  * drives the UI like a user (role / aria-label / data-testid / data-dsqa / data-test selectors,
@@ -36,9 +36,6 @@ import { join } from 'node:path'
 
 /** The session that owns the seeded missions (tests/e2e/ci/fixtures/dialog-seed.ts). */
 const MISSION_OWNER_SESSION = '00000000-0000-4000-8000-000000000001'
-
-/** The session that leads the v4 mission the hand-off route writes (a v4 record is not in the seed). */
-const V4_LEADER_SESSION = '00000000-0000-4000-8000-000000000020'
 
 const FADE_MS = 400
 
@@ -188,99 +185,6 @@ function ensureOwnerTranscript(seed) {
   return true
 }
 
-/**
- * A v4 mission whose open leader is {@link V4_LEADER_SESSION}, and that session's transcript, written once
- * per world exactly like the seed writes files. A v4 record lives in the repo's `.harnu/missions-v4/`; the
- * seed's missions are v3, so the hand-off route cannot borrow one.
- */
-function ensureV4Mission(seed) {
-  const slug = seed.repo.replace(/[^a-zA-Z0-9]/g, '-')
-  const projectDir = join(seed.userData, '.claude', 'projects', slug)
-  const transcript = join(projectDir, `${V4_LEADER_SESSION}.jsonl`)
-  if (!existsSync(transcript)) {
-    mkdirSync(projectDir, { recursive: true })
-    writeFileSync(
-      transcript,
-      JSON.stringify({
-        type: 'user',
-        message: { role: 'user', content: 'seed v4 leader' },
-        cwd: seed.repo,
-        sessionId: V4_LEADER_SESSION,
-        timestamp: '2026-01-15T12:00:00.000Z',
-        uuid: '00000000-0000-4000-8000-0000000000f2',
-        version: '2.1.0'
-      }) + '\n'
-    )
-  }
-  const dir = join(seed.repo, '.harnu', 'missions-v4')
-  const file = join(dir, 'mnt-00000020-seed-v4-hand-off.md')
-  if (existsSync(file)) return false
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(
-    file,
-    [
-      '---',
-      'schemaVersion: 4',
-      'id: mnt-00000020',
-      'title: Score a spec with a test set',
-      'doneWhen: A score report exists for the whole test set',
-      'status: open',
-      'milestones:',
-      '  - id: mls-1',
-      '    title: A tool that scores a spec',
-      '    optional: false',
-      '    waitsFor: null',
-      'steps:',
-      '  - id: stp-1',
-      '    milestone: mls-1',
-      '    title: Write the plan for the scoring tool',
-      '    acs:',
-      '      - id: ac-1',
-      '        text: The plan names the test files',
-      '        by: operator',
-      '    links: []',
-      '    blockers: []',
-      'sessions:',
-      '  - id: 00000000-0000-4000-8000-000000000021',
-      '    role: worked',
-      "    from: '2026-01-14T09:00:00.000Z'",
-      "    to: '2026-01-15T09:00:00.000Z'",
-      '    stoppedAt:',
-      '      step: stp-1',
-      `  - id: ${V4_LEADER_SESSION}`,
-      '    role: leads',
-      "    from: '2026-01-15T09:00:00.000Z'",
-      '    to: null',
-      'links: []',
-      'blockers: []',
-      '---',
-      '# Log',
-      ''
-    ].join('\n')
-  )
-  return true
-}
-
-/** Selects the v4 mission's leading session so the v4 Topbar pill renders; the pill opens the Mission pane. */
-async function selectV4Leader({ page, seed }) {
-  ensureV4Mission(seed)
-  const session = page.locator(`button[data-session-id="${V4_LEADER_SESSION}"]`)
-  const row = await repoRow(page, seed)
-  await session.waitFor({ state: 'attached', timeout: 15000 })
-  const reachable = () =>
-    session.evaluate((el) => {
-      const r = el.getBoundingClientRect()
-      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
-      return r.height > 0 && !!top && el.contains(top)
-    })
-  if (!(await reachable())) {
-    await row.click()
-    await page.waitForTimeout(800)
-  }
-  await session.click()
-  await pill(page).waitFor({ state: 'visible', timeout: 15000 })
-}
-
 /** The Topbar mission pill of the selected session, or `null` when none is showing. */
 const pill = (page) => page.locator('[data-dsqa^="topbar-pill--"]').first()
 
@@ -364,17 +268,17 @@ export const ROUTES_BOARD_MISSIONS = [
     reach: 'seed',
     note:
       'Needs the mission OWNER session in the sidebar: the route writes a transcript for it (the seed does not) and selects it. ' +
-      "The seeded mission is a v3 file: since the cut-over its pill opens the Mission pane like any record, and the pane's " +
-      '"Close mission…" opens the dialog. The pane keeps its open state between runs in one app, so it is opened only when it is closed. ' +
-      'Selecting a session starts a `claude --resume` PTY; the pill and the pane do not depend on that process.',
+      "The seeded mission is a v3 file: since the cut-over its pill opens the Mission dropdown like any record, and the dropdown footer's " +
+      '"Close mission…" opens the dialog. The dropdown keeps its open state between runs in one app, so it is opened only when it is closed. ' +
+      'Selecting a session starts a `claude --resume` PTY; the pill and the dropdown do not depend on that process.',
     open: async (ctx) => {
       const { page } = ctx
       await reset(page)
       await selectOwnerSession(ctx)
       await tidy(page)
-      const pane = page.locator('[data-dsqa="mission-pane"]')
-      if (!(await pane.isVisible().catch(() => false))) await pill(page).click()
-      await page.locator('[data-test="mission-close-open"]').click()
+      const dropdown = page.locator('[data-dsqa="mission-dropdown"]')
+      if (!(await dropdown.isVisible().catch(() => false))) await pill(page).click()
+      await dropdown.locator('[data-test="footer-close"]').first().click()
       await page
         .locator('[data-test="mission-close-confirm"]')
         .waitFor({ state: 'visible', timeout: 8000 })
@@ -385,28 +289,14 @@ export const ROUTES_BOARD_MISSIONS = [
   {
     id: 'MissionHandoffDialog',
     file: 'MissionHandoffDialog.vue',
-    reach: 'seed',
+    reach: 'not-seedable',
     note:
-      'Needs a v4 mission, which the seed does not hold: the route writes one (and its leading session) into the seeded repo. ' +
-      'The pill toggles the Mission pane, whose Sessions row opens the confirmation. Nothing is confirmed: the dialog is only opened and closed.',
-    open: async (ctx) => {
-      const { page } = ctx
-      await reset(page)
-      await selectV4Leader(ctx)
-      await tidy(page)
-      const pane = page.locator('[data-dsqa="mission-pane"]')
-      if (!(await pane.isVisible().catch(() => false))) await pill(page).click()
-      // Idempotent: the Sessions row keeps its open state between runs in one app (the 900px run leaves it
-      // open for the 560px one), so it is opened only when it is not open.
-      const toggle = page.locator('[data-test="sessions-toggle"]')
-      await toggle.waitFor({ state: 'visible', timeout: 15000 })
-      if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
-      await page.locator('[data-test="handoff-open"]').click()
-      await page
-        .locator('[data-test="handoff-dialog"]')
-        .waitFor({ state: 'visible', timeout: 8000 })
-      await dialogReady(page)
-    },
-    close: async ({ page }) => closeAllDialogs(page)
+      "Mission dropdown S-7: the dialog lived behind the Mission pane's Sessions row, and nothing opens the pane any more " +
+      '(the Topbar pill opens the dropdown, which has no Sessions line). Unreachable until the pane and the dialog go in S-8.',
+    async open() {
+      throw new Error(
+        'MissionHandoffDialog is not seedable: no door opens it since the Topbar pill opens the Mission dropdown'
+      )
+    }
   }
 ]

@@ -1,37 +1,39 @@
 <script setup lang="ts">
 /**
- * Topbar mission pill (T370; Missions v4 S-17, S-35 — design.md §6 "Mission pane" → Topbar pill — v4).
+ * Topbar mission pill (T370; Missions v4 S-17, S-35; Mission dropdown S-7 — design.md §6 "Mission dropdown" →
+ * "Topbar pill").
  *
  * Every record has one pill and one place to open: a session's mission shows "4/21 · 3 for you" (the
- * server's numbers; no campaign or chapter wording) and the pill toggles the Mission pane in the helper
- * stack. Since the cut-over (S-35) that holds for a v3 file too: the view channel reads it as v4 without
- * writing, and its first door use creates the v4 copy. Renders nothing when the selected session is in no
- * open mission (`no-mission` is a state, not a gap).
+ * server's numbers; no campaign or chapter wording) and the pill opens the Mission dropdown that hangs under
+ * it. Since the cut-over (S-35) that holds for a v3 file too: the view channel reads it as v4 without
+ * writing, and its first door use creates the v4 copy. A session in no mission draws a muted, icon-only pill
+ * ("No mission") that opens the dropdown's empty state, so the attach picker keeps a door.
  *
- * The popovers that used to open from here are gone (S-37). The keyboard action (`view.missionProgress`) toggles
- * the pane through this pill; an Activity row that names a mission opens it through the store
- * (`openMissionPane`, reached by `openNavigableView('mission')`).
+ * The pill is a button with `aria-haspopup="dialog"` and `aria-expanded`, a trailing caret, and the tone's ring
+ * while the dropdown is open. The dropdown's open state is the `ui.popovers.missionProgress` flag: the button, the
+ * keyboard action (`view.missionProgress`) and the store's `openMissionDropdown` (the Activity row, the Your
+ * move card) all flip it. The pill is the flag's anchor whenever it is drawn, a no-mission pill too, and it
+ * mounts the dropdown, which is teleported to `body`.
  */
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Target } from 'lucide-vue-next'
+import { Check, ChevronDown, Target } from 'lucide-vue-next'
 import {
   missionPillText,
   missionPillTone,
   V4_PILL_RING_CLASS,
   V4_PILL_TONE_CLASS
 } from '../lib/mission-pane-view'
-import { useHelpersStore } from '../stores/helpers'
 import { useMissionsStore } from '../stores/missions'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
+import MissionDropdown from './MissionDropdown.vue'
 
 const props = defineProps<{ sessionId: string }>()
 
 const { t } = useI18n()
 const missions = useMissionsStore()
 const ui = useUiStore()
-const helpers = useHelpersStore()
 const keybindings = useKeybindingsStore()
 missions.ensureStarted()
 
@@ -42,56 +44,57 @@ const v4Tone = computed(() => (v4.value ? missionPillTone(v4.value.detail) : 'ac
 const v4Title = computed(() =>
   v4.value
     ? t('missionPane.pill.title', { title: v4.value.detail.title, label: v4Label.value })
-    : ''
+    : t('missionDropdown.pill.none')
 )
 const v4Ready = computed(() => v4.value?.detail.state === 'ready-to-close')
-/** Whether the Mission pane is open in the selected session's stack: the pill reads pressed. */
-const paneOpen = computed(() => helpers.panesForCurrentWorktree.some((p) => p.type === 'mission'))
-function togglePane(): void {
-  const worktree = helpers.currentWorktreePath
-  if (worktree) helpers.toggleMissionHelper(worktree)
-}
+/** The quiet pill: the muted, icon-only one a session in no mission draws. */
+const quiet = computed(() => !v4.value)
+const open = computed(() => ui.popovers.missionProgress)
 
-// The popover flag lives in the ui store (T486 U4a): `view.missionProgress` flips it and the App's Esc binding
-// reads the anchor. The pill is the anchor while the session is in a mission; the flag never draws anything
-// now, so a flip is answered by toggling the pane and putting the flag back.
-watch(
-  () => !!v4.value,
-  (present) => ui.setPopoverAnchor('missionProgress', present),
-  { immediate: true }
+/** The tone's classes: the muted pill is `border-border-2` / `text-text-3` with no fill and no ring. */
+const toneClass = computed(() =>
+  quiet.value ? 'border-border-2 text-text-3' : V4_PILL_TONE_CLASS[v4Tone.value]
 )
+const ringClass = computed(() =>
+  open.value ? (quiet.value ? 'ring-2 ring-border-2' : V4_PILL_RING_CLASS[v4Tone.value]) : ''
+)
+
+// The popover flag lives in the ui store (T486 U4a): `view.missionProgress` flips it, the App's Esc binding reads
+// the anchor and the dropdown reads the flag. The pill is the anchor whenever it is drawn.
+ui.setPopoverAnchor('missionProgress', true)
 onBeforeUnmount(() => ui.setPopoverAnchor('missionProgress', false))
-watch(
-  () => ui.popovers.missionProgress,
-  (isOpen) => {
-    if (!isOpen) return
-    ui.closePopover('missionProgress')
-    togglePane()
-  },
-  { flush: 'sync' }
-)
 </script>
 
 <template>
-  <div
-    v-if="v4"
-    class="relative flex min-w-0 shrink"
-    style="-webkit-app-region: no-drag"
-    data-v4="true"
-  >
+  <div class="relative flex min-w-0 shrink" style="-webkit-app-region: no-drag" data-v4="true">
     <button
       type="button"
       class="flex min-w-0 shrink cursor-pointer items-center rounded-sm border tabular-nums transition hover:brightness-110"
-      :class="[V4_PILL_TONE_CLASS[v4Tone], paneOpen ? V4_PILL_RING_CLASS[v4Tone] : '']"
-      style="gap: 5px; padding: 1px 7px; font-size: 10.5px; font-weight: 500; height: 18px"
+      :class="[toneClass, ringClass]"
+      :style="{
+        gap: '5px',
+        padding: quiet ? '1px 5px' : '1px 7px',
+        fontSize: '10.5px',
+        fontWeight: 500,
+        height: '18px'
+      }"
       :title="keybindings.withChord(v4Title, 'view.missionProgress')"
       :aria-label="v4Title"
-      :aria-pressed="paneOpen"
-      :data-dsqa="`topbar-pill--${v4Tone}`"
-      @click="togglePane"
+      aria-haspopup="dialog"
+      :aria-expanded="open"
+      :data-dsqa="`topbar-pill--${quiet ? 'none' : v4Tone}`"
+      @click="ui.togglePopover('missionProgress')"
     >
       <component :is="v4Ready ? Check : Target" :size="10" :stroke-width="1.8" class="shrink-0" />
-      <span class="truncate" data-test="mission-pill-label">{{ v4Label }}</span>
+      <span v-if="v4" class="truncate" data-test="mission-pill-label">{{ v4Label }}</span>
+      <ChevronDown
+        :size="10"
+        :stroke-width="1.8"
+        class="shrink-0 opacity-70 transition-transform"
+        :class="open ? 'rotate-180' : ''"
+        data-test="mission-pill-caret"
+      />
     </button>
+    <MissionDropdown />
   </div>
 </template>

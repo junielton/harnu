@@ -7439,7 +7439,10 @@ warning / accent / success), plus a trailing **caret** (`chevron-down`, 10px). I
 `aria-haspopup="dialog"` and `aria-expanded` (not `aria-pressed`), drawn with the tone's `ring-2` while the
 dropdown is open; the `view.missionProgress` chord toggles the same dropdown and is enabled whenever the pill
 is drawn. A session in **no mission** draws a **muted, icon-only** pill (`border-border-2`, `text-text-3`,
-`target` glyph, `title` and `aria-label` "No mission") that opens the empty state.
+`target` glyph, `title` and `aria-label` "No mission", `padding: 1px 5px`, the ring `ring-border-2`) that opens the empty
+state. The caret is `opacity-70` and turns 180° while the dropdown is open (`transition-transform`; none under
+reduced motion). Every door that used to open the pane opens the dropdown through one store action,
+`openMissionDropdown(missionId?)` (the Activity row, the Your move card); the pill and the chord flip the same flag.
 
 **Test it (the entry for guided walks).** A compact **bordered** button (the same as "Mark done": `h-5`, `px-2`,
 `11px / 500`, `border-border-2 bg-surface-2 text-text`, the `list-checks` glyph at 10px, label "Test it") on three
@@ -7478,6 +7481,9 @@ links, so an open step shows fully. "Close mission…" on a sample changes nothi
 **A dialog opened from the dropdown** (the close dialog) makes it `inert` and dims it (`saturate(0.7)`, the mockup's
 `.dd.dim`); focus goes to Cancel, Esc closes the dialog and gives focus back to the button that opened it, and a door that
 ends the mission closes the dropdown too.
+The close dialog is the pane's dialog with the mockup's words (`close-confirm`): it says the mission "leaves the Topbar",
+its choice group has the visible eyebrow "How to close it", its confirm reads "Close mission" (a Discard keeps its own word,
+"Discard", so the button never hides the choice) and the optional Reason box stays (the reason goes to the mission's Log).
 
 **Small windows.** The body is a container, so every width rule is on the dropdown's own width, not the
 window's: below **380px** the next-step button and each "more waiting" button go under their text, and the

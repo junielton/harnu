@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * Missions v4 · S-17 · AC-42 (the pill chooses between pane and popover) and AC-43 (what the pill
- * reads). Mounted against the real stores with `window.api` faked.
+ * Missions v4 · S-17 · AC-43 (what the pill reads), and Mission dropdown · S-7 · AC-20 (the pill opens the
+ * dropdown: a caret, `aria-haspopup` and `aria-expanded`, the chord, and the quiet no-mission pill).
+ * Mounted against the real stores with `window.api` faked.
  *
  * Every number is the SERVER's: the fixtures below carry a `steps` list that disagrees with
  * `progress`, so a renderer that recounted would print something else.
@@ -12,7 +13,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import { i18n } from '../src/renderer/src/i18n'
 import MissionPill from '../src/renderer/src/components/MissionPill.vue'
 import { missionPillText } from '../src/renderer/src/lib/mission-pane-view'
-import { useHelpersStore } from '../src/renderer/src/stores/helpers'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import type { MissionV4ViewReply } from '../src/main/mission-ipc'
@@ -59,7 +59,26 @@ function reply(over: PillOver = {}): MissionV4ViewReply {
       },
       milestones: [],
       // Two steps and one waiting row more than the server says: a recount would not give 4/21.
-      steps: [{ id: 'stp-1' }, { id: 'stp-2' }],
+      steps: [
+        {
+          id: 'stp-1',
+          title: 'First',
+          state: 'todo',
+          milestone: null,
+          links: [],
+          criteria: [],
+          blockers: []
+        },
+        {
+          id: 'stp-2',
+          title: 'Second',
+          state: 'done',
+          milestone: null,
+          links: [],
+          criteria: [],
+          blockers: []
+        }
+      ],
       next: null,
       waiting: {
         items: Array.from({ length: over.waiting ?? 3 }, (_, i) => ({ id: `w${i}` })),
@@ -191,72 +210,105 @@ describe('AC-43 — the pill reads the derived numbers', () => {
     expect(missionPillText(t, detail)).toBe('4/21 · 3 for you')
   })
 
-  it('renders nothing for a session with no mission', async () => {
+  it('draws the quiet no-mission pill, not nothing, for a session with no mission', async () => {
     const w = await mountPill()
-    expect(w.find('button').exists()).toBe(false)
+    expect(w.find('button').exists()).toBe(true)
+    expect(w.find('[data-test="mission-pill-label"]').exists()).toBe(false)
   })
 })
 
-describe('AC-42 — the pill toggles the pane for a v4 record', () => {
-  it('opens and closes the Mission pane in the helper stack, and never the popover', async () => {
+describe('AC-20 — the pill opens the dropdown', () => {
+  const dropdown = (): Element | null =>
+    document.body.querySelector('[data-test="mission-dropdown"]')
+
+  it('caret, aria, chord and the no-mission pill', async () => {
     viewReply = reply()
     const w = await mountPill()
-    const helpers = useHelpersStore()
     const ui = useUiStore()
     const button = w.get('button')
-    expect(button.attributes('aria-pressed')).toBe('false')
 
+    // A trailing 10px caret; `aria-haspopup="dialog"` and `aria-expanded` replace `aria-pressed`.
+    const caret = button.get('[data-test="mission-pill-caret"]')
+    expect(caret.attributes('width')).toBe('10')
+    expect(button.attributes('aria-haspopup')).toBe('dialog')
+    expect(button.attributes('aria-expanded')).toBe('false')
+    expect(button.attributes('aria-pressed')).toBeUndefined()
+    expect(button.classes()).not.toContain('ring-2')
+    expect(dropdown()).toBeNull()
+
+    // Click opens the dropdown and shows the ring; a second click closes it. (Enter and Space on a
+    // native button are a click.)
+    expect(button.element.tagName).toBe('BUTTON')
+    expect(button.attributes('type')).toBe('button')
     await button.trigger('click')
-    expect(helpers.panesForCurrentWorktree.map((p) => p.type)).toEqual(['mission'])
-    expect(button.attributes('aria-pressed')).toBe('true')
-    expect(ui.popovers.missionProgress).toBe(false)
-
+    expect(ui.popovers.missionProgress).toBe(true)
+    expect(button.attributes('aria-expanded')).toBe('true')
+    expect(button.classes()).toContain('ring-2')
+    expect(dropdown()).not.toBeNull()
     await button.trigger('click')
-    expect(helpers.panesForCurrentWorktree).toEqual([])
-    expect(button.attributes('aria-pressed')).toBe('false')
     expect(ui.popovers.missionProgress).toBe(false)
-  })
+    expect(button.attributes('aria-expanded')).toBe('false')
+    expect(dropdown()).toBeNull()
 
-  it('the keyboard action does the same: it toggles the pane, not the popover', async () => {
-    viewReply = reply()
-    await mountPill()
-    const ui = useUiStore()
+    // The chord is enabled while the pill is drawn, and toggles the same dropdown.
+    expect(ui.popoverAnchors.missionProgress).toBe(true)
     ui.togglePopover('missionProgress')
     await flushPromises()
-    expect(useHelpersStore().panesForCurrentWorktree.map((p) => p.type)).toEqual(['mission'])
-    expect(ui.popovers.missionProgress).toBe(false)
-  })
-})
+    expect(dropdown()).not.toBeNull()
+    expect(button.attributes('aria-expanded')).toBe('true')
+    ui.togglePopover('missionProgress')
+    await flushPromises()
+    expect(dropdown()).toBeNull()
 
-describe('AC-42 — a v3 record opens the pane too (S-35), and v4 code never writes it until a door is used', () => {
-  it('a v3 record is read as v4 by the view, opens the pane, and nothing is written', async () => {
+    // No mission: a muted, icon-only pill named "No mission", with the chord's anchor registered too.
+    w.unmount()
+    wrapper = null
+    setActivePinia(createPinia())
+    viewReply = { state: 'none', missions: [] }
+    install()
+    const none = await mountPill()
+    const quiet = none.get('button')
+    expect(quiet.attributes('aria-label')).toBe('No mission')
+    expect(quiet.attributes('title')).toContain('No mission')
+    expect(quiet.classes()).toEqual(expect.arrayContaining(['border-border-2', 'text-text-3']))
+    expect(quiet.text()).toBe('')
+    expect(quiet.attributes('aria-haspopup')).toBe('dialog')
+    const noneUi = useUiStore()
+    expect(noneUi.popoverAnchors.missionProgress).toBe(true)
+    await quiet.trigger('click')
+    expect(quiet.attributes('aria-expanded')).toBe('true')
+    expect(dropdown()?.textContent).toContain('This session has no mission.')
+  })
+
+  it('never opens or toggles a pane in the helper stack', async () => {
+    viewReply = reply()
+    const w = await mountPill()
+    await w.get('button').trigger('click')
+    expect(api().helpersSet).not.toHaveBeenCalled()
+    expect(JSON.stringify(api().helpersSet.mock.calls)).not.toContain('mission')
+  })
+
+  it('a v3 record is read as v4 by the view and opens the dropdown; nothing is written', async () => {
     v3Views = [
       fixtureView('faq-like', { mission: { owner: { sessionId: SESSION, folder: FOLDER } } })
     ]
     // The view channel converts a v3 file in memory and says where it came from.
     viewReply = reply({ source: 'v3-mission' })
     const w = await mountPill()
-    const helpers = useHelpersStore()
-    const ui = useUiStore()
-
-    // The v4 pill: the count line, not the v3 headline.
     expect(w.get('[data-test="mission-pill-label"]').text()).toBe('4/21 · 3 for you')
     await w.get('button').trigger('click')
-    expect(helpers.panesForCurrentWorktree.map((p) => p.type)).toEqual(['mission'])
-    expect(ui.popovers.missionProgress).toBe(false)
-
-    // Opening the pane wrote nothing: neither the v4 door nor the v3 operator door was called.
+    expect(useUiStore().popovers.missionProgress).toBe(true)
     expect(api().missionV4Door).not.toHaveBeenCalled()
     expect(api().missionOperatorDoor).not.toHaveBeenCalled()
   })
 
-  it('a session whose view says there is no mission shows no pill', async () => {
+  it('a session whose view says there is no mission draws the quiet pill', async () => {
     v3Views = [
       fixtureView('faq-like', { mission: { owner: { sessionId: SESSION, folder: FOLDER } } })
     ]
     viewReply = { state: 'none', missions: [] }
     const w = await mountPill()
-    expect(w.find('button').exists()).toBe(false)
+    expect(w.get('button').attributes('aria-label')).toBe('No mission')
     expect(useUiStore().popovers.missionProgress).toBe(false)
   })
 })
