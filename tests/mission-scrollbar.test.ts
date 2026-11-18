@@ -12,6 +12,7 @@ const files = readdirSync(DIR).filter((f) => /^Mission.*\.vue$/.test(f))
 describe('Mission components use the app scrollbar', () => {
   it('finds the Mission components', () => {
     expect(files).toContain('MissionPane.vue')
+    expect(files).toContain('MissionDropdown.vue')
   })
 
   it.each(files)('%s: every overflow-auto/scroll element is .scrollable', (file) => {

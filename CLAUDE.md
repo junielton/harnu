@@ -387,6 +387,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission pane — Ask on a milestone (§6 — S-21)      | `components/MissionPaneAsk.vue` + `lib/mission-pane-view.ts`                     |
 | Mission pane — close dialog (§6 — S-22)            | `components/MissionCloseConfirmDialog.vue` + `stores/missions.ts`                |
 | Mission pane — sample mission (§6 — S-22)          | `lib/mission-sample.ts` + `stores/missions.ts`                                   |
+| Mission dropdown — shell (§6 — dropdown S-1)       | `components/MissionDropdown.vue` + `lib/mission-dropdown-position.ts`            |
 | Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
 | Containers — Paused detail (§6 — U3.4)             | `src/renderer/src/components/ContainersPausedDetail.vue`                         |
 | Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                              |
