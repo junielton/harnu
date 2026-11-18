@@ -1,0 +1,314 @@
+/**
+ * Mission dropdown · S-1 · AC-30 — the dev route that mounts `MissionDropdown` over the sample mission in
+ * every state of the approved mockup (`docs/design/mission-dropdown/`, screen `mission-dropdown`), so the
+ * captures of S-2 to S-6 can be taken BEFORE the Topbar pill is switched over (S-7).
+ *
+ * Why not a route of the real app, like `board-missions.mjs`? Until S-7 nothing in the app imports the
+ * dropdown: it is tree-shaken out of the built renderer, and no pill, store or menu opens it. So this route
+ * brings its own page. It serves a tiny harness through Vite (the renderer's own plugins, aliases and
+ * `main.css`, so every token and utility is the product's), mounts the real `MissionDropdown` with the real
+ * Pinia stores and the real i18n, and puts a stand-in for the Topbar band and its pill above it so the layer
+ * anchors the way it will in the app. `window.api` is a no-op proxy: the dropdown reads the sample mission
+ * through `stores/missions.ts` (`showSample`), which calls nothing.
+ *
+ *   id                              file                  how it is reached
+ *   MissionDropdown#<state>         MissionDropdown.vue   harness page → `window.__missionDropdown.show('<state>')`
+ *
+ * The route has the shape of `board-missions.mjs` — `{ id, file, reach, note?, open, close? }` — but it is NOT
+ * part of `ROUTES`: that list is the geometry net's (a seeded, built app), and this one needs a dev server and a
+ * page, not an Electron window. `reach` is `'dev-harness'`. `open({ page })` resolves once the dropdown (or,
+ * for `closed`, the bare pill) is on screen and its scale-in has finished.
+ *
+ * Capture the 14 states, dark, EN, at the mockup's two widths:
+ *
+ *   node scripts/dev/dialog-routes/mission-dropdown.mjs capture [--out <dir>] [--widths 1280,360] [--only mid,owed]
+ *
+ * Set `MISSION_DROPDOWN_CHROMIUM` to a Chromium binary when Playwright's own download is not installed.
+ *
+ * Default output is `.harnu/out/mission-dropdown/<slice>/` (gitignored), one PNG per state and width, named
+ * like the mockup's own captures: `mission-dropdown-<state>-<width>-dark-en.png`.
+ */
+import { mkdirSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const REPO = resolve(HERE, '..', '..', '..')
+
+/** The two widths of the mockup's captures; the height is the mockup's. */
+export const CAPTURE_WIDTHS = [1280, 360]
+export const CAPTURE_HEIGHT = 800
+/** The scale-in is 140ms (`--dur`): wait past it before measuring or capturing. */
+const FADE_MS = 400
+
+/**
+ * The 14 states of the mockup screen `mission-dropdown`, in its order. `sample` is the pane's sample state
+ * (`lib/mission-sample.ts`) the harness shows behind the dropdown; `open: false` draws the bare pill. A state
+ * the sample cannot reach says so in `note`: the slice that draws it adds the data it needs to the sample.
+ *
+ * @type {ReadonlyArray<{ id: string, sample: string, open: boolean, note?: string }>}
+ */
+export const MISSION_DROPDOWN_STATES = [
+  { id: 'mid', sample: 'default', open: true },
+  { id: 'closed', sample: 'default', open: false, note: 'the pill alone, the dropdown closed' },
+  {
+    id: 'multi',
+    sample: 'default',
+    open: true,
+    note: 'a session that leads several missions: the sample has one (S-2 adds the second)'
+  },
+  {
+    id: 'chooser',
+    sample: 'default',
+    open: true,
+    note: 'the switch opened on the radiogroup of missions (S-2 draws it)'
+  },
+  { id: 'owed', sample: 'waiting', open: true },
+  { id: 'step-open', sample: 'step-open', open: true },
+  { id: 'blocked', sample: 'step-blocked', open: true },
+  { id: 'ask', sample: 'ask', open: true },
+  {
+    id: 'done-when',
+    sample: 'default',
+    open: true,
+    note: 'a staged Done when: the pane sample has none (S-2 adds it)'
+  },
+  { id: 'attach-request', sample: 'attach-request', open: true },
+  { id: 'ready', sample: 'done', open: true },
+  {
+    id: 'close-confirm',
+    sample: 'done',
+    open: true,
+    note: 'the close dialog over the dropdown (S-5 draws it)'
+  },
+  { id: 'empty', sample: 'no-mission', open: true },
+  {
+    id: 'dots',
+    sample: 'default',
+    open: true,
+    note: 'a state dot with its tooltip open (S-3 draws it)'
+  }
+]
+
+/**
+ * The page the harness serves. The Topbar band is a stand-in (42px, the pill at the left of its centre) so the
+ * dropdown has the same anchor it will have in the app: it carries the `data-dsqa="topbar-pill--<tone>"` the
+ * dropdown reads. Only the stand-in uses inline styles; the dropdown itself is the product's component.
+ */
+function harnessModule() {
+  return `
+import '/src/styles/main.css'
+import { createApp, h } from 'vue'
+import { createPinia } from 'pinia'
+import { i18n } from '/src/i18n/index.ts'
+import MissionDropdown from '/src/components/MissionDropdown.vue'
+import { useUiStore } from '/src/stores/ui.ts'
+import { useMissionsStore } from '/src/stores/missions.ts'
+
+// \`window.api\` is the preload's bridge; the sample mission needs none of it.
+const noop = () => undefined
+window.api = new Proxy({}, {
+  get: (_, key) => (String(key).startsWith('on') ? () => noop : async () => undefined)
+})
+
+const pinia = createPinia()
+const app = createApp({
+  render: () =>
+    h('div', { style: 'min-height:100vh;background:var(--color-bg);color:var(--color-text)' }, [
+      h('div', {
+        style: 'height:42px;border-bottom:1px solid var(--color-border);background:var(--color-sidebar);display:flex;align-items:center;padding:0 12px 0 260px'
+      }, [
+        h('button', {
+          type: 'button',
+          'data-dsqa': 'topbar-pill--accent',
+          'data-test': 'harness-pill',
+          style: 'height:18px;padding:1px 7px;font-size:10.5px;border:1px solid var(--color-accent-line);border-radius:var(--radius-sm);background:var(--color-accent-soft);color:var(--color-accent);cursor:pointer',
+          onClick: () => useUiStore().togglePopover('missionProgress')
+        }, '4/21 · 3 for you')
+      ]),
+      h(MissionDropdown)
+    ])
+})
+app.use(pinia)
+app.use(i18n)
+app.mount('#app')
+
+const ui = useUiStore()
+const missions = useMissionsStore()
+ui.setPopoverAnchor('missionProgress', true)
+
+window.__missionDropdown = {
+  show(sample, open) {
+    missions.showSample(sample)
+    if (open) ui.openPopover('missionProgress')
+    else ui.closePopover('missionProgress')
+  }
+}
+window.__missionDropdownReady = true
+`
+}
+
+/**
+ * Starts the harness server. `root` is the renderer's own root (`src/renderer`), so Tailwind scans the product's
+ * sources and `/src/...` resolves like it does in the app.
+ *
+ * @param {{ repo?: string, port?: number }} [o]
+ * @returns {Promise<{ url: string, close: () => Promise<void> }>}
+ */
+export async function startMissionDropdownHarness({ repo = REPO, port = 0 } = {}) {
+  const { createServer } = await import('vite')
+  const vue = (await import('@vitejs/plugin-vue')).default
+  const tailwindcss = (await import('@tailwindcss/vite')).default
+  const VIRTUAL = 'virtual:mission-dropdown-harness'
+  const server = await createServer({
+    root: join(repo, 'src', 'renderer'),
+    configFile: false,
+    logLevel: 'error',
+    resolve: { alias: { '@renderer': join(repo, 'src', 'renderer', 'src') } },
+    server: { port, host: '127.0.0.1', strictPort: false, fs: { allow: [repo] } },
+    optimizeDeps: { noDiscovery: false },
+    plugins: [
+      vue(),
+      tailwindcss(),
+      {
+        name: 'mission-dropdown-harness',
+        resolveId: (id) => (id === VIRTUAL ? `\0${VIRTUAL}` : null),
+        load: (id) => (id === `\0${VIRTUAL}` ? harnessModule() : null),
+        configureServer(s) {
+          s.middlewares.use(async (req, res, next) => {
+            if (!req.url?.startsWith('/__mission-dropdown.html')) return next()
+            const html = await s.transformIndexHtml(
+              req.url,
+              `<!doctype html><html data-theme="dark"><head><meta charset="UTF-8" /><title>Mission dropdown</title></head><body><div id="app"></div><script type="module" src="/@id/__x00__${VIRTUAL}"></script></body></html>`
+            )
+            res.setHeader('Content-Type', 'text/html')
+            res.end(html)
+          })
+        }
+      }
+    ]
+  })
+  await server.listen()
+  const address = server.httpServer?.address()
+  const actual = typeof address === 'object' && address ? address.port : port
+  return {
+    url: `http://127.0.0.1:${actual}/__mission-dropdown.html`,
+    close: () => server.close()
+  }
+}
+
+/** Opens the harness page and waits until it is ready. */
+export async function openHarnessPage(page, url) {
+  await page.goto(url)
+  await page.waitForFunction(() => window.__missionDropdownReady === true, null, {
+    timeout: 60000
+  })
+}
+
+/** Shows one state: the dropdown over its sample mission, or the bare pill for `closed`. */
+export async function showMissionDropdownState(page, state) {
+  const def = MISSION_DROPDOWN_STATES.find((s) => s.id === state)
+  if (!def) throw new Error(`unknown mission dropdown state "${state}"`)
+  await page.evaluate(({ sample, open }) => window.__missionDropdown.show(sample, open), def)
+  if (def.open) {
+    await page
+      .locator('[data-dsqa="mission-dropdown"]')
+      .waitFor({ state: 'visible', timeout: 8000 })
+    await page.waitForTimeout(FADE_MS)
+  } else {
+    await page
+      .locator('[data-dsqa="mission-dropdown"]')
+      .waitFor({ state: 'detached', timeout: 8000 })
+    await page.waitForTimeout(150)
+  }
+}
+
+/**
+ * One route per state, the shape of `board-missions.mjs`. `open` takes `{ page, harness }`: `harness.url` is
+ * the page's address (see {@link startMissionDropdownHarness}); the page is opened once and reused.
+ *
+ * @type {Array<{ id: string, file: string, reach: 'dev-harness', note?: string, open: (ctx: { page: import('@playwright/test').Page, harness: { url: string } }) => Promise<void>, close?: (ctx: { page: import('@playwright/test').Page }) => Promise<void> }>}
+ */
+export const ROUTES_MISSION_DROPDOWN = MISSION_DROPDOWN_STATES.map((s) => ({
+  id: `MissionDropdown#${s.id}`,
+  file: 'MissionDropdown.vue',
+  reach: 'dev-harness',
+  note:
+    `Mounted by the dev harness over the sample "${s.sample}"` +
+    (s.note ? `: ${s.note}.` : '.') +
+    ' Not part of ROUTES: the geometry net drives the built app, and nothing in it opens the dropdown until S-7.',
+  open: async ({ page, harness }) => {
+    const ready = await page
+      .evaluate(() => window.__missionDropdownReady === true)
+      .catch(() => false)
+    if (!ready) await openHarnessPage(page, harness.url)
+    await showMissionDropdownState(page, s.id)
+  },
+  close: async ({ page }) => {
+    await page.evaluate(() => window.__missionDropdown.show('default', false))
+  }
+}))
+
+// ---- the capture driver --------------------------------------------------------------------------
+
+function parseArgs(argv) {
+  const out = { out: null, widths: CAPTURE_WIDTHS, only: null }
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === '--out') out.out = argv[++i]
+    else if (a === '--widths') out.widths = argv[++i].split(',').map(Number).filter(Boolean)
+    else if (a === '--only') out.only = argv[++i].split(',').filter(Boolean)
+    else throw new Error(`unknown argument ${a}`)
+  }
+  return out
+}
+
+async function capture(argv) {
+  const opts = parseArgs(argv)
+  const outDir = resolve(opts.out ?? join(REPO, '.harnu', 'out', 'mission-dropdown', 's1'))
+  mkdirSync(outDir, { recursive: true })
+  const { chromium } = await import('@playwright/test')
+  const harness = await startMissionDropdownHarness()
+  // `MISSION_DROPDOWN_CHROMIUM` points at a Chromium binary when Playwright's own download is not the one installed.
+  const browser = await chromium.launch({
+    executablePath: process.env.MISSION_DROPDOWN_CHROMIUM || undefined
+  })
+  try {
+    for (const width of opts.widths) {
+      const context = await browser.newContext({
+        viewport: { width, height: CAPTURE_HEIGHT },
+        colorScheme: 'dark',
+        reducedMotion: 'no-preference'
+      })
+      const page = await context.newPage()
+      await openHarnessPage(page, harness.url)
+      for (const route of ROUTES_MISSION_DROPDOWN) {
+        const state = route.id.split('#')[1]
+        if (opts.only && !opts.only.includes(state)) continue
+        await route.open({ page, harness })
+        const file = join(outDir, `mission-dropdown-${state}-${width}-dark-en.png`)
+        await page.screenshot({ path: file })
+        console.log(`  ✓ ${state} @${width} → ${file}`)
+        await route.close?.({ page })
+      }
+      await context.close()
+    }
+  } finally {
+    await browser.close()
+    await harness.close()
+  }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const [cmd, ...rest] = process.argv.slice(2)
+  if (cmd !== 'capture') {
+    console.error(
+      'usage: node scripts/dev/dialog-routes/mission-dropdown.mjs capture [--out dir] [--widths 1280,360] [--only a,b]'
+    )
+    process.exit(2)
+  }
+  capture(rest).catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
+}
