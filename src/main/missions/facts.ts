@@ -404,3 +404,6 @@ export async function gatherStepInputs(
 ): Promise<Record<string, StepInput>> {
   return (await gatherStepFacts(root, record, deps)).inputs
 }
+
+/** Test seam: forget what earlier polls read (see the step memory above). */
+export function resetStepFactsMemory(): void {}
