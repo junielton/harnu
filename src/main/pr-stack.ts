@@ -57,6 +57,8 @@ export type GateCi = 'passing' | 'failing' | 'pending' | 'unknown'
 export interface CiRun {
   status?: string
   conclusion?: string
+  /** The commit the run ran on (`gh run list --json headSha`). */
+  headSha?: string
 }
 
 const RUN_FAIL = new Set([
@@ -202,6 +204,8 @@ const verdictCache = new BoundedCache<{
   result: Promise<GateCi>
 }>()
 const defaultBranchCache = new BoundedCache<{ at: number; name: Promise<string> }>()
+/** The CI of a base branch's current tip (BUG-294), by repo and branch. */
+const tipVerdictCache = new BoundedCache<{ settledAt: number | null; result: Promise<GateCi> }>()
 
 /** Test seam: forget everything the git/gh join caches hold. */
 export function resetGitJoinCachesForTest(): void {
@@ -209,6 +213,7 @@ export function resetGitJoinCachesForTest(): void {
   aheadCache.clear()
   mergeOidCache.clear()
   verdictCache.clear()
+  tipVerdictCache.clear()
   defaultBranchCache.clear()
   prCache.clear()
 }
@@ -743,6 +748,87 @@ export async function findMainCi(
     }
   }
   return { ghAvailable: !failed, byNumber: failed ? {} : byNumber }
+}
+
+/**
+ * How long a base branch's tip verdict is trusted. The tip moves with every merge, so it is held far
+ * shorter than a merge commit's finished verdict: a fix that turned the branch green must show within
+ * about a minute. A `low` GitHub budget stretches it, like every other mission read (T611).
+ */
+const TIP_TTL_MS = 60_000
+
+/**
+ * CI of the commit at the tip of `branch`: the newest run's commit, with every run of that commit.
+ * `gh run list --branch` lists newest first, so one call answers it. No runs is `unknown`.
+ */
+function tipVerdictOf(repoPath: string, branch: string): Promise<GateCi> {
+  const key = `${repoPath}#${branch}`
+  const hit = tipVerdictCache.get(key)
+  if (
+    hit &&
+    (hit.settledAt === null || Date.now() - hit.settledAt < Math.max(TIP_TTL_MS, prCacheTtlMs()))
+  ) {
+    return hit.result
+  }
+  const fresh = {
+    settledAt: null as number | null,
+    result: runGh(
+      ['run', 'list', '--branch', branch, '--limit', '30', '--json', 'headSha,status,conclusion'],
+      { ...GH_OPTS, cwd: repoPath, consumer: 'missions', resource: 'rest' }
+    ).then(({ stdout }) => {
+      const runs = JSON.parse(stdout) as CiRun[]
+      const tip = runs[0]?.headSha
+      return ciOfRuns(tip === undefined ? runs.slice(0, 1) : runs.filter((r) => r.headSha === tip))
+    })
+  }
+  tipVerdictCache.set(key, fresh)
+  fresh.result.then(
+    () => {
+      fresh.settledAt = Date.now()
+    },
+    () => {
+      if (tipVerdictCache.get(key) === fresh) tipVerdictCache.delete(key)
+    }
+  )
+  return fresh.result
+}
+
+/**
+ * BUG-294 — the CI of the current tip of each base branch: "is main red NOW". One `gh run list` per
+ * branch (never one per mission step), held {@link TIP_TTL_MS}. Degrades like {@link findMainCi}: a failed
+ * or late read is `ghAvailable: false` with no answers, never a throw, so the caller keeps the merge
+ * commits' own verdicts. `waitMs` bounds how long THIS call waits; the lookup lands in the cache.
+ */
+export async function findBaseCi(
+  repoPath: string,
+  bases: readonly string[],
+  opts: { waitMs?: number } = {}
+): Promise<{ ghAvailable: boolean | null; byBase: Record<string, GateCi | null> }> {
+  if (bases.length === 0) return { ghAvailable: null, byBase: {} }
+  const repo = path.resolve(repoPath)
+  const byBase: Record<string, GateCi | null> = {}
+  let failed = false
+  const one = async (b: string): Promise<void> => {
+    try {
+      byBase[b] = await tipVerdictOf(repo, b)
+    } catch {
+      failed = true
+    }
+  }
+  const all = Promise.all([...new Set(bases)].map(one))
+  if (opts.waitMs === undefined) await all
+  else {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<'late'>((resolve) => {
+      timer = setTimeout(() => resolve('late'), opts.waitMs)
+    })
+    try {
+      if ((await Promise.race([all.then(() => 'done' as const), late])) === 'late') failed = true
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  return { ghAvailable: !failed, byBase: failed ? {} : byBase }
 }
 
 /** The last snapshot served per repo: what a skipped background refresh hands back (T611). */
