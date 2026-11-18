@@ -38,6 +38,7 @@ import {
   KanbanSquare,
   GitPullRequest,
   Github,
+  Library,
   Plus,
   Columns2,
   Rows2,
@@ -339,6 +340,7 @@ const TEST_ID: Record<TopbarActionId, string> = {
   roadmap: 'topbar-roadmap',
   'pr-stack': 'topbar-pr-stack',
   review: 'topbar-review',
+  walks: 'topbar-walks',
   'open-folder': 'topbar-open-folder',
   editor: 'topbar-editor',
   'github-pulls': 'topbar-github-pulls',
@@ -399,6 +401,15 @@ const allActions = computed<TopbarActionView[]>(() => {
       toggle: true,
       state: on(reviewActive.value),
       run: onReviewClick
+    }),
+    // Guided walks S-4: the Walks library (the repo's saved walks) in the helper stack. It has no chord yet; the
+    // label is its tooltip and, when the bar is narrow, its row in the `…` menu.
+    view('walks', t('topbar.walks'), {
+      icon: Library,
+      run: () => {
+        const wt = sessions.activeFolderPath
+        if (wt) helpers.addWalksHelper(wt)
+      }
     }),
     view('open-folder', t('topbar.openFolder'), {
       icon: FolderOpen,

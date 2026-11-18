@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import {
   mkdtempSync,
@@ -12,6 +12,20 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createWalkStore, walksDir } from '../src/main/walk/walk-store'
+
+// every file the store writes must go through the atomic writer (a temp file renamed into place): the spy
+// records each path it is asked for, so a store that wrote with a plain `writeFile` is caught
+const atomic = vi.hoisted(() => ({ calls: [] as { path: string; mode: number }[] }))
+vi.mock('../src/main/mcp/atomic-write', async (orig) => {
+  const real = await orig<typeof import('../src/main/mcp/atomic-write')>()
+  return {
+    ...real,
+    atomicWriteFile: async (path: string, body: string, mode: number): Promise<void> => {
+      atomic.calls.push({ path, mode })
+      return real.atomicWriteFile(path, body, mode)
+    }
+  }
+})
 import { startRun, done, newRun, type Run } from '../src/shared/walk-machine'
 import type { WalkScript } from '../src/shared/walk-schema'
 
@@ -247,5 +261,49 @@ describe('walk store', () => {
     expect(rec?.outbox.map((o) => o.text).sort()).toEqual(
       Array.from({ length: 10 }, (_, i) => `t${i}`).sort()
     )
+  })
+
+  it('writes every walk and run file through the atomic writer, owner-only', async () => {
+    const store = createWalkStore(join(root), { now: clock() })
+    atomic.calls.length = 0
+    const c = await store.createWalk(script())
+    await store.updateRun(c.walkId, c.runId, (run) => startRun(run))
+    await store.enqueue(c.walkId, c.runId, { kind: 'done', text: 't', checkId: 'c1' })
+    const [pending] = await store.pendingOutbox(c.walkId, c.runId)
+    await store.markDelivered(c.walkId, c.runId, pending.id)
+    await store.updateWalk(c.walkId, (walk) => ({ ok: true, walk: { ...walk } }))
+    const made = await store.newRun(c.walkId)
+    expect(made).toMatchObject({ ok: false }) // live: refused, nothing written for it
+
+    const dir = join(walksDir(root), c.walkId)
+    const written = new Set(atomic.calls.map((x) => x.path))
+    // the two files of the walk, each written atomically (never a plain write that could be read half done)
+    expect(written.has(join(dir, 'walk.json'))).toBe(true)
+    expect(written.has(join(dir, 'runs', `${c.runId}.json`))).toBe(true)
+    // nothing the store wrote bypassed the writer: every JSON file on disk is one it was asked to write
+    const onDisk = [
+      join(dir, 'walk.json'),
+      ...readdirSync(join(dir, 'runs')).map((f) => join(dir, 'runs', f))
+    ]
+    for (const f of onDisk) expect(written.has(f)).toBe(true)
+    expect(atomic.calls.every((x) => x.mode === 0o600)).toBe(true)
+  })
+
+  it('refuses to turn a second run live while another run of the walk is live', async () => {
+    const store = createWalkStore(join(root), { now: clock() })
+    const c = await store.createWalk(script())
+    // two runs exist and neither is live: both are `ready`
+    const second = await store.newRun(c.walkId)
+    if (!second.ok) throw new Error('unreachable')
+    await store.updateRun(c.walkId, c.runId, (run) => startRun(run))
+
+    const refused = await store.updateRun(c.walkId, second.runId, (run) => startRun(run))
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { code: 'WALK_RUN_LIVE', runId: c.runId }
+    })
+    // nothing was written for the refused run: it is still ready, and the live pointer is unchanged
+    expect((await store.readRun(c.walkId, second.runId))?.run.state).toBe('ready')
+    expect((await store.readWalk(c.walkId))?.live).toEqual({ runId: c.runId, n: 1 })
   })
 })

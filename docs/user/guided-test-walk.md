@@ -65,14 +65,43 @@ When no check is left, or you end the walk early with the pane's close button (i
 
 If something is still owed (skipped, failed or unverified checks, or "re-check 3 after #52 merges"), a **Still yours** card says so. For a walk whose source is a mission it also shows each criterion and whether it is still open, with a link to the Mission. **The walk never ticks a criterion for you**: pressing Done does not, and nothing in the pane does. You tick it yourself, in the Mission.
 
-A card says the walk is saved in Walks, on this machine, in the repo's `.harnu/walks/` folder (private and never committed). The Walks list, the run history, Re-run and Export are coming in a later update; for now the saved walk is read by the session and shows up again when you reopen its pane.
+A card says the walk is saved in Walks, on this machine, in the repo's `.harnu/walks/` folder (private and never committed). Its **Open Walks** button opens the library, and **Export markdown** writes the walk as a Markdown file (see below).
+
+## The Walks library
+
+Every walk is kept, with all its runs, until you delete it. The **Walks** pane lists the repo's walks, newest run first. Open it from the library icon in a walk pane's header, from **Walks** in the folder's menu (right-click a folder), or from the **Walks** button in the top bar (it moves into the `…` menu when the bar is narrow). It shares one pane per worktree, so opening it twice shows the same one.
+
+Each row has the walk's source icon, its title, where it comes from (`Mission`, `PR #48 · alex`, `Feature`, `Branch …`, `Card · …`), the date of its last run and how it ended: `4 of 6 passed` (with a `!` when anything did not pass), `in progress, check 4 of 9` for a run you have not finished, or `not walked yet`. There is no search and no filter.
+
+- **Re-run** starts the walk again (see below).
+- **Open** shows the last run read-only. On a run in progress it continues that run instead.
+- The **⋯** menu on a row has **Delete…**. It asks once, on the row, and says when a run is in progress and goes with the walk. A deleted walk is gone, with its runs, its images, your screenshots and its exports.
+
+With no walks, the pane shows how a walk starts and nothing else: ask a session, or use Test it in the Mission.
+
+## A past run
+
+Open on a finished run shows it **read-only**, as it was when it ended: `← Walks`, the title, `4 passed · 1 failed · 1 skipped`, a **Run** selector (`Run 3 · Nov 16`) with a `Read-only` chip, and one row per check with how it was verified. A failed or noted check also shows what you wrote, your screenshot (click it to see it larger), the session's one correction and what its check found. Checks added to the walk after that run are not shown in it.
+
+The selector lists the walk's other runs; picking a finished one shows it, picking the one in progress continues it. The bottom bar has **Re-run** and **Export markdown**.
+
+## Re-run
+
+**Re-run** starts run `n + 1` of the same walk: the same checks, every one to do again (rows that were already verified before the first run are walked this time too), and nothing you answered before is pre-answered. The roadmap and each check carry a quiet `last time: passed`, `failed`, `skipped` or `not confirmed`; a check that failed shows what you wrote then. Earlier runs are never touched.
+
+You cannot start a second run while one is in progress: Re-run opens the run that is. When you pressed Re-run but have not started the new run yet, pressing it again shows the same run, not a new empty one.
+
+## Export markdown
+
+**Export markdown** writes the walk as a Markdown file and opens it in the viewer: the title, where it comes from, every check in order (where, what to do with what you should see, what you should not see, what the session checks), links as links, and a **Last run** table with your notes. Files go in the walk's own folder, `.harnu/walks/<walk>/exports/<name>/`, together with the walk's images and your screenshots, so the folder can be copied as it is. An export never overwrites another: the next one gets a `-2`, then `-3`. Harnu commits nothing; to share a walk, copy that folder.
 
 ## If the session is gone
 
-If a message for the session has waited and no session took it (it ended, or it is not running), the pane shows **The session is gone** with a note that your progress is saved. **Resume the session** brings the walk's session back, and the waiting messages are sent again. The error text next to it copies with one click.
+If a message for the session has waited for about 45 seconds and no session took it (it ended, or it is not running), the pane shows **The session is gone** with a note that your progress is saved. **Resume the session** brings the walk's session back, and the waiting messages are sent again. The error text next to it copies with one click.
 
 ## Good to know
 
 - The pane is drawn with the same tokens as the rest of Harnu, in English and Portuguese, in light and dark.
 - A walk survives closing the pane, restarting the app and a session being parked.
+- When a message for a parked session has waited a few seconds, the pane says `Waking the session…` and stays on the check; only after about 45 seconds does it show **The session is gone**.
 - The session cannot press your buttons: it can add to the walk and answer your Done, but only you answer a check.

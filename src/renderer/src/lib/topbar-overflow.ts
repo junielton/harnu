@@ -10,6 +10,7 @@ export type TopbarActionId =
   | 'roadmap'
   | 'pr-stack'
   | 'review'
+  | 'walks'
   | 'open-folder'
   | 'editor'
   | 'github-pulls'
@@ -25,6 +26,7 @@ export const TOPBAR_BAR_ORDER: readonly TopbarActionId[] = [
   'roadmap',
   'pr-stack',
   'review',
+  'walks',
   'open-folder',
   'editor',
   'github-pulls',
@@ -44,6 +46,7 @@ export const TOPBAR_OVERFLOW_ORDER: readonly TopbarActionId[] = [
   'split-layout',
   'browser',
   'terminal',
+  'walks',
   'review',
   'pr-stack',
   'roadmap',

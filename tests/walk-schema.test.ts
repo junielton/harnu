@@ -180,6 +180,14 @@ describe('walk script schema', () => {
     )
     for (const i of [0, 3, 5, 8]) expect(got.some((g) => g.startsWith(at(i)))).toBe(false)
 
+    // a `where` that names no place is refused on its own text, not only when `where` is absent
+    expect(rules(script({ checks: [check({ where: {} })] }), probe)).toContain(
+      '$.checks[0].where.text MISSING'
+    )
+    expect(rules(script({ checks: [check({ where: { text: '  ' } })] }), probe)).toContain(
+      '$.checks[0].where.text MISSING'
+    )
+
     // a click path needs `approximate`
     expect(
       rules(script({ checks: [check({ where: { text: 'here', path: 'Menu > Notes' } })] }), probe)

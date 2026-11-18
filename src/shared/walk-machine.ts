@@ -330,6 +330,48 @@ export function canEscalate(run: Run, id: string): boolean {
   return (byId(run, id)?.attempts ?? 0) >= 2
 }
 
+// ---- Last time (re-run) ----------------------------------------------------------------------
+
+/** What a check said the last time it was walked (a re-run's quiet `last time:` hint). */
+export interface LastTime {
+  /** `unverified` is a caveat or a check the agent disagreed with: closed, but not confirmed. */
+  result: 'passed' | 'failed' | 'skipped' | 'unverified'
+  /** What the operator wrote the last time it failed. */
+  line?: string
+}
+
+/**
+ * The hints a re-run carries, read from the run it follows (never copied into the new run, so an earlier
+ * run stays as it was): one per check that run walked. A check it never reached, and a pre-closed row of
+ * the first run, have none.
+ */
+export function lastTimeHints(prev: Run): Record<string, LastTime> {
+  const out: Record<string, LastTime> = {}
+  for (const c of prev.checks) {
+    if (!c.countable) continue
+    switch (c.state) {
+      case 'verified':
+        out[c.id] = { result: 'passed' }
+        break
+      case 'caveat':
+      case 'disagrees':
+        out[c.id] = { result: 'unverified' }
+        break
+      case 'skipped':
+        out[c.id] = { result: 'skipped' }
+        break
+      case 'failed': {
+        const line = c.failures.findLast((f) => f.from === 'operator' && f.line)?.line
+        out[c.id] = { result: 'failed', ...(line ? { line } : {}) }
+        break
+      }
+      default:
+        break // todo and awaiting: the run ended before it got there
+    }
+  }
+  return out
+}
+
 // ---- The operator's answers ------------------------------------------------------------------
 
 /**

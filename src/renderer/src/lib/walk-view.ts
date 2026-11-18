@@ -21,12 +21,14 @@ import {
   totalChecks,
   view as machineView,
   type CheckState,
+  type LastTime,
   type Run,
   type RunCheck
 } from '../../../shared/walk-machine'
 import type { DoItem, WalkCheck, WalkLink, WalkScript } from '../../../shared/walk-schema'
 import type { WalkSource } from '../../../shared/walk-source'
 import type { KeyContext, PaneMode } from './walk-keys'
+import { shortDate } from './walk-library'
 
 export type T = (key: string, params?: Record<string, string | number>) => string
 
@@ -76,6 +78,12 @@ export interface WalkData {
   tick: TickData
   /** A turn is due and no session could take it (the run's outbox is holding). */
   held: boolean
+  /** A turn has waited a while and is not held yet: a parked session may be waking (S-3's carried outbox fix). */
+  waking?: boolean
+  /** Every run of the walk that started, oldest first (the history's run selector). */
+  runs?: { runId: string; n: number; state: Run['state']; startedAt?: number; endedAt?: number }[]
+  /** What each check said the last time it was walked (a re-run's quiet hint). */
+  lastTime?: Record<string, LastTime>
   /** The wait of D-7 before Continue without the check (30 s; a dev variable shortens it). */
   waitMs: number
   now: number
@@ -93,6 +101,8 @@ export interface WalkUi {
   formOpen: boolean
   roadmapOpen: boolean
   lightbox: boolean
+  /** The pane was opened on a past run (from the library): an ended run is then shown read-only (S-4). */
+  past: boolean
   /** Checks whose `explain` / `simpler` turn the session has not answered yet. */
   asking: { explain: string[]; simpler: string[] }
 }
@@ -102,11 +112,12 @@ export const freshUi = (): WalkUi => ({
   formOpen: false,
   roadmapOpen: false,
   lightbox: false,
+  past: false,
   asking: { explain: [], simpler: [] }
 })
 
-/** What S-4 adds to the close-out's Saved in Walks card. `false` until the library and Export exist. */
-export const WALK_CAPS = { library: false, export: false } as const
+/** What the close-out's Saved in Walks card offers: Open Walks (the library) and Export markdown (S-4). */
+export const WALK_CAPS = { library: true, export: true } as const
 
 // ---- Small shared pieces ------------------------------------------------------------------------
 
@@ -273,6 +284,8 @@ export type OutcomeId =
   | 'cancel-form'
   | 'pick-skipped'
   | 'close-out'
+  | 'rerun'
+  | 'export'
 
 export interface Outcome {
   id: OutcomeId
@@ -314,6 +327,45 @@ function fiveOutcomes(t: T, first: 'done' | 'try-again', explainOpen: boolean): 
     outcome(t, 'skip', { glyph: '-', shortcut: 'S' }),
     outcome(t, 'explain', { glyph: '+', shortcut: 'E', pressed: explainOpen })
   ]
+}
+
+// ---- Last time (a re-run) -------------------------------------------------------------------------
+
+export interface LastTimeView {
+  result: LastTime['result']
+  /** The quiet word on a roadmap row: `last time: passed`. */
+  text: string
+  /** `warn` for a check that failed last time: it is the one to look at. */
+  tone: 'warn' | 'quiet'
+}
+
+/** The roadmap row's hint for a check; `null` when the last run never walked it (or this is a first run). */
+function lastTimeRow(data: WalkData, id: string, t: T): LastTimeView | null {
+  const lt = data.lastTime?.[id]
+  if (!lt) return null
+  return {
+    result: lt.result,
+    text: t(`walksLibrary.lastTime.${lt.result}`),
+    tone: lt.result === 'failed' ? 'warn' : 'quiet'
+  }
+}
+
+/** The check card's hint: what it said last time, and what the operator wrote when it failed. */
+function lastTimeCard(
+  data: WalkData,
+  id: string,
+  t: T
+): { tone: 'warn' | 'quiet'; text: string } | null {
+  const lt = data.lastTime?.[id]
+  if (!lt) return null
+  if (lt.result === 'failed')
+    return {
+      tone: 'warn',
+      text: lt.line
+        ? t('walksLibrary.lastTimeHint.failedLine', { line: lt.line })
+        : t('walksLibrary.lastTimeHint.failed')
+    }
+  return { tone: 'quiet', text: t(`walksLibrary.lastTimeHint.${lt.result}`) }
 }
 
 // ---- Checks -------------------------------------------------------------------------------------
@@ -431,6 +483,8 @@ export interface CheckView {
   asking: { explain: boolean; simpler: boolean }
   quiet: 'awaiting' | null
   door: { kind: 'mission' | 'pr' | 'feature' } | null
+  /** A re-run: what this check said last time. */
+  lastTime: { tone: 'warn' | 'quiet'; text: string } | null
 }
 
 const prepared = (data: WalkData, c: WalkCheck): boolean =>
@@ -586,7 +640,8 @@ function checkView(data: WalkData, rc: RunCheck, ui: WalkUi, t: T): CheckView {
     },
     quiet: phase === 'awaiting' ? 'awaiting' : null,
     door:
-      phase === 'failed' && canEscalate(run, rc.id) ? { kind: doorKind(data.script.source) } : null
+      phase === 'failed' && canEscalate(run, rc.id) ? { kind: doorKind(data.script.source) } : null,
+    lastTime: lastTimeCard(data, rc.id, t)
   }
 }
 
@@ -604,6 +659,8 @@ export interface RoadmapRow {
     | { kind: 'earlier'; evidence: string; caveat: boolean; openPr: string | null }
   /** Added by `walk_extend` in this run. */
   added: boolean
+  /** A re-run: what this check said last time. */
+  lastTime: LastTimeView | null
 }
 
 export interface RoadmapView {
@@ -639,7 +696,8 @@ function roadmapView(data: WalkData, readOnly: boolean, t: T): RoadmapView {
       title: c.title,
       glyph: GLYPH_OF[rc.state],
       how,
-      added: added.has(rc.id)
+      added: added.has(rc.id),
+      lastTime: lastTimeRow(data, rc.id, t)
     }
   })
   const preClosed = run.checks.filter((c) => !c.countable).length
@@ -651,9 +709,11 @@ function roadmapView(data: WalkData, readOnly: boolean, t: T): RoadmapView {
     readOnly,
     title: data.script.title,
     sub:
-      preClosed > 0
-        ? t('testWalk.roadmap.subEarlier', { total, earlier: preClosed })
-        : t('testWalk.roadmap.sub', { total }),
+      run.n > 1
+        ? t('walksLibrary.rerunSub', { total, n: run.n })
+        : preClosed > 0
+          ? t('testWalk.roadmap.subEarlier', { total, earlier: preClosed })
+          : t('testWalk.roadmap.sub', { total }),
     rows,
     leftOut: out.length
       ? {
@@ -789,10 +849,18 @@ function closeoutView(data: WalkData, t: T): CloseoutView {
       : []
   })
 
+  const plural = (key: string, n: number): string =>
+    t(`testWalk.closeout.part.${key}.${n === 1 ? 'one' : 'other'}`, { n })
   const parts: string[] = []
-  if (c.skipped) parts.push(t('testWalk.closeout.part.skipped', { n: c.skipped }))
-  if (c.failed) parts.push(t('testWalk.closeout.part.failed', { n: c.failed }))
-  if (unverified) parts.push(t('testWalk.closeout.part.unverified', { n: unverified }))
+  if (c.skipped) parts.push(plural('skipped', c.skipped))
+  if (c.failed) parts.push(plural('failed', c.failed))
+  if (unverified) parts.push(plural('unverified', unverified))
+  const owedCount = c.skipped + c.failed + unverified
+  // "a", "a and b", "a, b and c": the words join in the operator's language
+  const joined =
+    parts.length > 1
+      ? parts.slice(0, -1).join(', ') + t('testWalk.closeout.partAnd') + parts[parts.length - 1]
+      : (parts[0] ?? '')
   const recheck = run.checks.flatMap((rc) => {
     const ck = byId(data.script, rc.id)
     if (!ck || ck.status !== 'caveat' || ck.openPr === undefined || rc.closedHow !== 'pre-closed')
@@ -819,7 +887,11 @@ function closeoutView(data: WalkData, t: T): CloseoutView {
     unticked,
     owed: owed
       ? {
-          parts: parts.length ? t('testWalk.closeout.owedMore', { parts: parts.join(', ') }) : '',
+          parts: parts.length
+            ? t(`testWalk.closeout.owedMore.${owedCount === 1 ? 'one' : 'other'}`, {
+                parts: joined
+              })
+            : '',
           recheck,
           criteria,
           link: openCriteria ? 'mission' : null,
@@ -834,6 +906,101 @@ function closeoutView(data: WalkData, t: T): CloseoutView {
       ]
     },
     summary: data.closeOut ?? ''
+  }
+}
+
+// ---- A past run, read-only (S-4, AC-21) ------------------------------------------------------------
+
+export interface PastRunOption {
+  runId: string
+  n: number
+  label: string
+  current: boolean
+  live: boolean
+}
+
+export interface PastNotes {
+  /** What the operator wrote, one line per time it failed. */
+  lines: string[]
+  /** The screenshots the operator pasted: the file in the run's folder and its name. */
+  shots: { path: string; name: string }[]
+  /** The agent's one correction after a Failed. */
+  correction: string | null
+  /** What the agent's check found. */
+  evidence: string | null
+}
+
+export interface PastRow extends CloseoutRow {
+  notes: PastNotes | null
+}
+
+export interface PastRunView {
+  /** `Walks`: the way back to the library. */
+  back: string
+  readOnly: string
+  title: string
+  /** `4 passed · 1 failed · 1 skipped`, plus what was not confirmed or never reached when there is any. */
+  sub: string
+  run: { label: string; options: PastRunOption[] }
+  rows: PastRow[]
+}
+
+const baseName = (path: string): string => path.split('/').pop() ?? path
+
+function pastNotes(rc: RunCheck): PastNotes | null {
+  const operator = rc.failures.filter((f) => f.from === 'operator')
+  const notes: PastNotes = {
+    lines: operator.flatMap((f) => (f.line ? [f.line] : [])),
+    shots: operator.flatMap((f) => (f.shot ? [{ path: f.shot, name: baseName(f.shot) }] : [])),
+    correction: rc.correction?.text ?? null,
+    evidence: rc.report?.evidence ?? null
+  }
+  return notes.lines.length || notes.shots.length || notes.correction || notes.evidence
+    ? notes
+    : null
+}
+
+/**
+ * An ended run as it was when it ended: the rail (one row per check THE RUN HAD, so a check added to the walk later
+ * is hidden), each check's recorded outcome, and under a failed or noted one what the operator wrote, their
+ * screenshots, the agent's correction and its evidence. Nothing here can be changed; the action bar holds Re-run and
+ * Export markdown.
+ */
+function pastRunView(data: WalkData, t: T, locale: string): PastRunView {
+  const run = data.run
+  const c = counts(run)
+  const when = (r: { startedAt?: number; endedAt?: number }): string =>
+    shortDate(r.endedAt ?? r.startedAt ?? data.now, data.now, locale)
+  const label = (r: NonNullable<WalkData['runs']>[number]): string =>
+    r.state === 'live'
+      ? t('walksLibrary.past.runLive', { n: r.n })
+      : t('walksLibrary.past.run', { n: r.n, date: when(r) })
+  const listed = data.runs ?? []
+  const options: PastRunOption[] = (
+    listed.some((r) => r.runId === data.runId)
+      ? listed
+      : [...listed, { runId: data.runId, n: run.n, state: run.state, endedAt: run.endedAt }]
+  ).map((r) => ({
+    runId: r.runId,
+    n: r.n,
+    label: label(r),
+    current: r.runId === data.runId,
+    live: r.state === 'live'
+  }))
+  const parts = [
+    t('walksLibrary.past.sub', { passed: c.verified, failed: c.failed, skipped: c.skipped })
+  ]
+  if (c.caveat + c.disagrees > 0)
+    parts.push(t('walksLibrary.past.subUnverified', { n: c.caveat + c.disagrees }))
+  if (c.todo + c.awaiting > 0)
+    parts.push(t('walksLibrary.past.subNotReached', { n: c.todo + c.awaiting }))
+  return {
+    back: t('walksLibrary.past.back'),
+    readOnly: t('walksLibrary.past.readOnly'),
+    title: data.script.title,
+    sub: parts.join(' · '),
+    run: { label: options.find((o) => o.current)?.label ?? '', options },
+    rows: run.checks.map((rc) => ({ ...closeoutRow(data, rc, t), notes: pastNotes(rc) }))
   }
 }
 
@@ -855,6 +1022,10 @@ export interface PaneView {
   primary: KeyContext['primary']
   /** The error state: the outbox is holding a turn no session could take. */
   error: { done: number; total: number } | null
+  /** A past run, read-only (`mode: 'past'`). */
+  past: PastRunView | null
+  /** A turn is waiting for a parked session: one quiet line, the pane stays where it is. */
+  waking: string | null
 }
 
 const EMPTY: PaneView = {
@@ -868,15 +1039,28 @@ const EMPTY: PaneView = {
   closeout: null,
   outcomes: [],
   primary: null,
-  error: null
+  error: null,
+  past: null,
+  waking: null
 }
 
-export function paneView(data: WalkData | null, ui: WalkUi, t: T): PaneView {
+export function paneView(
+  data: WalkData | null,
+  ui: WalkUi,
+  t: T,
+  opts: { locale?: string } = {}
+): PaneView {
   if (!data) return { ...EMPTY, mode: 'empty' }
   const run = data.run
+  const isPast = ui.past && run.state === 'ended'
   const base = {
     title: data.script.title,
-    source: sourceHeader(data.script.source, t, { runN: run.n, mission: data.mission })
+    // a past run names its run in the selector, so the source line carries no `Re-run · run N` chip there
+    source: sourceHeader(data.script.source, t, {
+      ...(isPast ? {} : { runN: run.n }),
+      mission: data.mission
+    }),
+    waking: data.waking && run.state === 'live' ? t('testWalk.waking') : null
   }
   const mv = machineView(run)
 
@@ -903,6 +1087,20 @@ export function paneView(data: WalkData | null, ui: WalkUi, t: T): PaneView {
         ? []
         : [outcome(t, 'start', { look: 'primary', chip: 'Enter', label: rm.startLabel ?? '' })],
       primary: readOnly ? null : 'start'
+    }
+  }
+
+  if (isPast) {
+    return {
+      ...EMPTY,
+      ...base,
+      mode: 'past',
+      past: pastRunView(data, t, opts.locale ?? 'en'),
+      outcomes: [
+        outcome(t, 'rerun', { look: 'primary', chip: 'Enter' }),
+        outcome(t, 'export', { look: 'neutral' })
+      ],
+      primary: 'rerun'
     }
   }
 

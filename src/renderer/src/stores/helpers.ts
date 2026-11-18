@@ -1192,17 +1192,33 @@ export const useHelpersStore = defineStore('helpers', () => {
     worktreePath: string,
     walkId: string,
     runId: string,
-    opts?: AddHelperOpts
+    opts?: AddHelperOpts & { past?: boolean }
   ): string {
     const id = `h-${crypto.randomUUID()}`
+    const past = opts?.past === true
     const paneId = addHelper(
       worktreePath,
-      { id, type: 'walk', cwd: worktreePath, ratio: 0, payload: { walkId, runId } },
+      {
+        id,
+        type: 'walk',
+        cwd: worktreePath,
+        ratio: 0,
+        payload: { walkId, runId, ...(past ? { past: true } : {}) }
+      },
       opts
     )
-    // a walk already open on an earlier run (a re-run) now shows the new one
-    if (paneId !== id) setWalkRun(worktreePath, paneId, runId)
+    // a walk already open on an earlier run (a re-run, or a past run opened from the library) shows this one
+    if (paneId !== id) setWalkRun(worktreePath, paneId, runId, undefined, { past })
     return paneId
+  }
+
+  /**
+   * Guided walks S-4: open the Walks library (the repo's saved walks) in a worktree's stack. One per worktree: a
+   * second call reveals the pane that is already there.
+   */
+  function addWalksHelper(worktreePath: string): string {
+    const id = `h-${crypto.randomUUID()}`
+    return addHelper(worktreePath, { id, type: 'walks', cwd: worktreePath, ratio: 0 })
   }
 
   /** The id of the pane that shows `walkId` in a worktree, or `undefined`. */
@@ -1212,22 +1228,30 @@ export const useHelpersStore = defineStore('helpers', () => {
       ?.panes.find((p) => p.type === 'walk' && (p as HelperPane).payload?.walkId === walkId)?.id
   }
 
-  /** Point a walk pane at another run of the same walk (a re-run), or at another walk (the re-run offer). */
-  function setWalkRun(worktreePath: string, paneId: string, runId: string, walkId?: string): void {
+  /**
+   * Point a walk pane at another run of the same walk (a re-run, or the run selector), or at another walk (the
+   * re-run offer). `past` says whether an ended run opens read-only (from the library or the selector).
+   */
+  function setWalkRun(
+    worktreePath: string,
+    paneId: string,
+    runId: string,
+    walkId?: string,
+    opts?: { past?: boolean }
+  ): void {
     mutateWorktree(worktreePath, (s) => ({
       ...s,
-      panes: s.panes.map((p) =>
-        p.id === paneId && p.type === 'walk'
-          ? {
-              ...p,
-              payload: {
-                ...toRaw((p as HelperPane).payload ?? {}),
-                runId,
-                ...(walkId ? { walkId } : {})
-              }
-            }
-          : p
-      ) as AnyHelperPane[]
+      panes: s.panes.map((p) => {
+        if (p.id !== paneId || p.type !== 'walk') return p
+        const payload: Record<string, unknown> = {
+          ...toRaw((p as HelperPane).payload ?? {}),
+          runId,
+          ...(walkId ? { walkId } : {})
+        }
+        if (opts?.past === true) payload.past = true
+        else if (opts?.past === false) delete payload.past
+        return { ...p, payload }
+      }) as AnyHelperPane[]
     }))
   }
 
@@ -1854,6 +1878,7 @@ export const useHelpersStore = defineStore('helpers', () => {
     addExplorerHelper,
     addMissionHelper,
     addWalkHelper,
+    addWalksHelper,
     walkHelperId,
     setWalkRun,
     missionHelperId,
