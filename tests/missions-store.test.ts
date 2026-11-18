@@ -405,6 +405,49 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     expect(playNotificationSound).toHaveBeenCalledTimes(2)
   })
 
+  it('plays the family of what is owed: info for a standing kind, ask for a blocking one (T154)', async () => {
+    const store = useMissionsStore()
+    current = [due('mnt-00000001', 'Ship T373', 1)]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(playNotificationSound).toHaveBeenLastCalledWith('info')
+    current = [due('mnt-00000001', 'Ship T373', 1), blocked('mnt-00000002', 'Other', 'merge PR #6')]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(2)
+    expect(playNotificationSound).toHaveBeenLastCalledWith('ask')
+  })
+
+  it('one combined cue plays the most urgent family once (T154)', async () => {
+    const store = useMissionsStore()
+    current = [due('mnt-00000001', 'Ship T373', 1), blocked('mnt-00000002', 'Other', 'merge PR #6')]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(playNotificationSound).toHaveBeenCalledWith('ask')
+  })
+
+  it('honors the Sound switch: silent, but attention and the Activity entry still land (T154)', async () => {
+    const store = useMissionsStore()
+    const activity = useNotificationsStore()
+    useSessionsStore().setNotifyPref('sound', false)
+    current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #6')]
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    expect(requestAttention).toHaveBeenCalledTimes(1)
+    expect(activity.list).toHaveLength(1)
+  })
+
+  it('honors a family mute: ask silent, info still plays (T154)', async () => {
+    const store = useMissionsStore()
+    useSessionsStore().setNotifyPref('soundAsk', false)
+    current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #6')]
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #6'), due('mnt-00000002', 'Other', 1)]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(playNotificationSound).toHaveBeenCalledWith('info')
+  })
+
   it('a dead legacy draft never cues', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_790_000_000_000)
