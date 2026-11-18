@@ -12,7 +12,7 @@
  * main pane; helper cells are the separate HelperPane with its own cache).
  */
 import { Terminal } from '@xterm/xterm'
-import { registerLivePtyResolver } from '../lib/live-pty-resolver'
+import { liveTerminalPtyId, registerLivePtyResolver } from '../lib/live-pty-resolver'
 import { operatorInput } from '../lib/operator-input'
 
 /**
@@ -140,12 +140,13 @@ const wakeIds = new Set<string>()
 
 /**
  * The PTY id of a session's live terminal, or null when it has none (never opened,
- * or already closed). Exported so a NON-PTY pane can address a session's terminal
+ * already closed, or its process exited on its own: the dead entry stays cached
+ * but takes no text). Exported so a NON-PTY pane can address a session's terminal
  * without reaching into the cache itself — the markdown pane delivering a lesson
  * result to the teacher session (T120) is the only caller today.
  */
 export function livePtyIdFor(sessionKey: string): string | null {
-  return liveTerminals.get(sessionKey)?.ptyId ?? null
+  return liveTerminalPtyId(liveTerminals.get(sessionKey))
 }
 // Stores that deliver text to a session ask for the PTY through this registration, not by importing this file.
 registerLivePtyResolver(livePtyIdFor)

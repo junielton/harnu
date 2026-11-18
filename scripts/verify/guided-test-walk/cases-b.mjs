@@ -472,12 +472,17 @@ export const casesB = [
       )
       await ctx.shot('closeout')
       await ctx.clickIn('[data-test="walk-open-mission"]')
+      // the Mission pane is gone (the mission shows in the dropdown under the Topbar pill): the link opens that
       let opened = false
       for (let i = 0; i < 20 && !opened; i++) {
-        opened = (await ctx.panesOf()).some((p) => p.type === 'mission')
+        opened = await ctx.cdp.eval(`!!document.querySelector('[data-test="mission-dropdown"]')`)
         if (!opened) await sleep(250)
       }
-      a.ok(opened, 'the link opens the Mission pane')
+      a.ok(opened, 'the link opens the Mission dropdown')
+      a.ok(
+        !(await ctx.panesOf()).some((p) => p.type === 'mission'),
+        'and no Mission pane is opened (there is none)'
+      )
       await sleep(800)
       a.eq(ctx.missionFiles(), before, 'and opening it writes nothing')
     }

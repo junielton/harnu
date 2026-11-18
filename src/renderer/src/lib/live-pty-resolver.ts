@@ -17,3 +17,15 @@ export function registerLivePtyResolver(fn: Resolver): void {
 export function livePtyIdOf(sessionKey: string): string | null {
   return resolver(sessionKey)
 }
+
+/**
+ * The PTY a session's cached terminal can be written to. An entry flagged `dead` (its process exited on its own;
+ * the terminal stays cached so its scrollback stays viewable) is no one to talk to: a paste into it is lost, so it
+ * answers `null` and the caller treats the session as not live (the way a parked one is), instead of reporting a
+ * turn delivered that nothing read.
+ */
+export function liveTerminalPtyId(
+  entry: { ptyId: string; dead: boolean } | null | undefined
+): string | null {
+  return entry && !entry.dead ? entry.ptyId : null
+}
