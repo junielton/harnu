@@ -25,6 +25,9 @@ export type HelperPaneType =
   // Missions v4 S-17: the Mission pane. Non-PTY and reproducible from nothing but the selected session, so it
   // persists like the Memory pane: it reopens on boot and follows whichever session is selected.
   | 'mission'
+  // Guided walks S-3: the walk pane. Non-PTY; its `payload` carries `{ walkId, runId }` and never content, so a
+  // restart restores it from the walk's record under `.harnu/walks/`.
+  | 'walk'
 
 export interface HelperPane {
   /** Stable id; format: `h-<random>`. Used as the PTY identifier too. */

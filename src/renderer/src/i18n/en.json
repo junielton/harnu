@@ -5497,6 +5497,213 @@
     }
   },
   "testWalk": {
+    "label": "Guided walk",
+    "title": "Walk",
+    "progress": "Check {n} of {total}",
+    "roadmapOpen": "See all checks",
+    "closeRoadmap": "Back to the check",
+    "source": {
+      "missionStep": "Mission · {mission} · step “{name}”",
+      "missionMilestone": "Mission · {mission} · milestone “{name}”",
+      "missionAll": "Mission · {mission} · the whole mission",
+      "branch": "{branch} → {base}",
+      "card": "Card · {slug}",
+      "feature": "{text}",
+      "rerunChip": "Re-run · run {n}",
+      "openPr": "Open the PR",
+      "openMission": "Open the Mission",
+      "copyPr": "Copy the PR link"
+    },
+    "action": {
+      "start": "Start with {n}",
+      "done": "Done",
+      "tryAgain": "Try again",
+      "failed": "Failed",
+      "back": "Back",
+      "skip": "Skip",
+      "explain": "Explain more",
+      "followAnyway": "Follow anyway (unverified)",
+      "treatAsFailed": "Treat as failed",
+      "continueWithout": "Continue without the check",
+      "send": "Send",
+      "cancelForm": "Back to the step",
+      "pickSkipped": "Check them now",
+      "closeOut": "Close out"
+    },
+    "roadmap": {
+      "sub": "{total} checks",
+      "subEarlier": "{total} checks · {earlier} already verified",
+      "eyes": "Your eyes only",
+      "icheck": "I check",
+      "earlier": "Verified earlier",
+      "added": "added",
+      "leftOut": "{n} left out · {owners}",
+      "owner": {
+        "ours": "ours",
+        "optional": "optional",
+        "decision": "decision"
+      },
+      "rerunOffer": "Re-run the saved walk ({verified} of {total} passed)?",
+      "rerunAction": "Re-run"
+    },
+    "section": {
+      "do": "Do",
+      "where": "Where",
+      "see": "You should see",
+      "check": "I’ll check"
+    },
+    "not": "Not",
+    "nothing": "Nothing from here: {why}",
+    "blocks": "Checks {from} to {to} depend on this one",
+    "blocksWhy": "Checks {from} to {to} {why}",
+    "blocksOne": "Check {from} depends on this one",
+    "blocksOneWhy": "Check {from} {why}",
+    "pathApprox": "path approximate",
+    "linkNote": {
+      "login": "behind a login, not opened",
+      "unchecked": "not checked"
+    },
+    "copy": {
+      "label": "Copy",
+      "copied": "Copied",
+      "value": "Copy {what}",
+      "command": "the command",
+      "path": "the path",
+      "url": "the address",
+      "text": "the text",
+      "error": "the error text",
+      "summary": "the summary"
+    },
+    "image": {
+      "expected": "Expected",
+      "capture": "Captured",
+      "enlarge": "Enlarge",
+      "close": "Close",
+      "escToClose": "Esc to close"
+    },
+    "table": {
+      "item": "Item",
+      "shows": "Shows",
+      "source": "Source"
+    },
+    "lost": "I didn’t get this step",
+    "undoLead": "First undo the last run: {undo}",
+    "working": {
+      "checking": "Running my check on check {n}",
+      "quiet": "This takes a moment. You do not need to do anything.",
+      "waited": "No answer yet. You can go on without my check; it is recorded as unverified."
+    },
+    "form": {
+      "title": "What did you see?",
+      "placeholder": "One line is enough",
+      "paste": "Paste a screenshot",
+      "pasteKey": "Ctrl+V",
+      "attached": "Pasted image {n}",
+      "remove": "Remove",
+      "secret": "This looks like a secret. Remove it before you send.",
+      "saveFailed": "The screenshot could not be saved."
+    },
+    "retry": {
+      "reported": "You reported",
+      "eyebrow": "My one correction",
+      "again": "Same step, again",
+      "waiting": "Waiting for my correction",
+      "door": {
+        "mission": "Still wrong? Send it to the step’s builder",
+        "pr": "Still wrong? Draft a comment for the PR",
+        "feature": "Still wrong? Make a bug card"
+      },
+      "doorSent": "Sent. The session will take it from here."
+    },
+    "evidence": {
+      "title": "You said Done. My check disagrees.",
+      "ran": "I ran",
+      "expected": "Expected",
+      "found": "Found",
+      "nonBlocking": "Nothing later depends on this check, so you can follow anyway. It is recorded as unverified.",
+      "blocking": "Later checks depend on this one, so it stays open until it passes."
+    },
+    "explain": {
+      "why": "Why this matters",
+      "extra": "Extra checks · {n}",
+      "hint": "Done closes the step with these. Unticked ones are listed at the end.",
+      "teach": "Behind this check",
+      "does": "What it does",
+      "where": "Where it lives",
+      "idea": "The idea behind it",
+      "whyTeach": "Why it behaves this way",
+      "ask": "Ask for more",
+      "asking": "Asking…",
+      "tick": "Tick “{text}”"
+    },
+    "simpler": {
+      "eyebrow": "Said more simply",
+      "asking": "Asking…"
+    },
+    "skipped": {
+      "title": "Skipped checks · {n}",
+      "sub": "Look at them now, or close the walk and leave them open.",
+      "close": "Close out with {n} skipped",
+      "retry": "Check now"
+    },
+    "closeout": {
+      "title": "Walk finished",
+      "sub": "{verified} verified · {unverified} unverified · {skipped} skipped",
+      "subFailed": "{verified} verified · {unverified} unverified · {skipped} skipped · {failed} failed",
+      "how": {
+        "agreed": "you confirmed · my check agreed",
+        "eyes": "you confirmed · nothing to check from here",
+        "continued": "you continued without my check",
+        "followed": "followed anyway · my check found {evidence}",
+        "ended": "ended before my check answered",
+        "earlier": "verified earlier · {evidence}",
+        "earlierCaveat": "right in the open PR · {evidence}",
+        "skipped": "skipped",
+        "failed": "failed",
+        "failedLine": "failed · “{line}”",
+        "disagreed": "my check disagreed",
+        "notReached": "not reached"
+      },
+      "owed": "Still yours",
+      "owedMore": "{parts} are listed above.",
+      "part": {
+        "skipped": "{n} skipped",
+        "failed": "{n} failed",
+        "unverified": "{n} unverified"
+      },
+      "recheck": "Re-check “{n}” after #{pr} merges",
+      "criterion": {
+        "open": "criterion open",
+        "settled": "criterion settled",
+        "unavailable": "mission not available"
+      },
+      "neverTick": "I never tick it for you.",
+      "openMission": "Open in the Mission",
+      "nothingOwed": "Nothing owed",
+      "unticked": "Extra checks you did not tick",
+      "saved": "Saved in Walks",
+      "savedBody": "Reopen this run or re-run the same checks later.",
+      "openWalks": "Open Walks",
+      "export": "Export markdown",
+      "copy": "Copy summary"
+    },
+    "end": {
+      "title": "End the walk and see the close-out?",
+      "confirm": "End the walk",
+      "cancel": "Keep walking"
+    },
+    "empty": {
+      "title": "No walk open",
+      "body": "Ask a session to start one: say “walk me through what we just built”, or “test PR #48 with me”. The Test it control in the Mission does the same for a mission."
+    },
+    "error": {
+      "title": "The session is gone",
+      "body": "I cannot serve the next check. Your progress is saved: {done} of {total} checked.",
+      "resume": "Resume the session",
+      "copyProgress": "Copy progress",
+      "errText": "Error: no session could take the turn",
+      "resumeFailed": "The session could not be resumed."
+    },
     "turn": {
       "sent": "Walk answer sent to ‹{session}›"
     }
