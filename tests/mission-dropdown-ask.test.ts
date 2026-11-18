@@ -207,3 +207,29 @@ describe('AC-16 — the Ask box', () => {
     expect(q('[data-test="ask-box"]')).toBeNull()
   })
 })
+
+describe('Ask box — one border, visible focus', () => {
+  const cls = (el: Element | null): string[] => (el?.getAttribute('class') ?? '').split(/\s+/)
+
+  it('draws a single border: the box has it, the textarea inside has none of its own', async () => {
+    liveLeader()
+    mountTree()
+    await click('[data-test="ask-open"]')
+    const input = q('[data-test="ask-input"]')
+    const box = input?.parentElement ?? null
+    expect(cls(box)).toContain('border')
+    expect(cls(input)).not.toContain('border')
+    expect(
+      cls(input).filter((c) => /^(border-(?!0$)|bg-(?!transparent$)|focus:border)/.test(c))
+    ).toEqual([])
+  })
+
+  it('shows focus on the box through the accent border when the field is focused', async () => {
+    liveLeader()
+    mountTree()
+    await click('[data-test="ask-open"]')
+    const box = q('[data-test="ask-input"]')?.parentElement ?? null
+    expect(cls(box)).toContain('focus-within:border-accent')
+    expect(cls(box)).toContain('border-border-2')
+  })
+})

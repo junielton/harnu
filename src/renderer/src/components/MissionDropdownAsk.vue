@@ -64,14 +64,15 @@ const BTN_SOFT = 'border-border-2 bg-surface-2 text-text hover:border-text-4'
       <label :for="inputId" class="text-text-3" style="font-size: 11px">{{
         $t('missionDropdown.ask.label', { title: milestoneTitle })
       }}</label>
-      <!-- The wrapper carries the radius the focus ring borrows (`:focus-visible { border-radius: inherit }`). -->
-      <div class="rounded-sm">
+      <!-- One box: the wrapper owns the border and the fill, the textarea sits flush inside it, and focus
+           shows as the box's border turning accent (`:focus-within`), so there is no box inside a box. -->
+      <div class="rounded-sm border border-border-2 bg-bg transition focus-within:border-accent">
         <textarea
           :id="inputId"
           ref="input"
           v-model="question"
           rows="2"
-          class="block w-full resize-none rounded-sm border border-border-2 bg-bg text-text outline-none placeholder:text-text-4 focus:border-accent"
+          class="block w-full resize-none border-0 bg-transparent text-text outline-none placeholder:text-text-4"
           style="font-size: 12px; padding: 6px 8px; min-height: 52px"
           :placeholder="$t('missionDropdown.ask.placeholder')"
           data-test="ask-input"
