@@ -377,6 +377,9 @@ function onClickOutside(e: MouseEvent): void {
 </script>
 
 <template>
+  <!-- BUG-295 audit: this layer is `position: fixed` and placed from the pill, which does not scroll; the list scrolls
+       inside it (`mission-dropdown-body`), so no scroll moves it away from its anchor, and a resize re-measures it.
+       The state glyph tooltips (`MissionDot`) are the only overlays here placed once, and they hide on scroll. -->
   <Teleport to="body">
     <div
       v-if="open"
