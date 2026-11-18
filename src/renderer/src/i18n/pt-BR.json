@@ -366,6 +366,53 @@
   "missionDropdown": {
     "shell": {
       "label": "Missão"
+    },
+    "head": {
+      "barLabel": "Progresso da missão",
+      "count": {
+        "milestones": "{done} de {total} marco concluído | {done} de {total} marcos concluídos",
+        "steps": "{done} de {total} passo concluído | {done} de {total} passos concluídos"
+      },
+      "switchLabel": "Missão {n} de {m} · Trocar",
+      "switchCount": "Missão {n} de {m}",
+      "change": "Trocar",
+      "leads": "Esta sessão lidera {n} missões",
+      "choose": "Escolha a missão a mostrar",
+      "sub": {
+        "milestones": "{done} de {total} marco | {done} de {total} marcos",
+        "steps": "{done} de {total} passo | {done} de {total} passos",
+        "forYou": "{count} · {n} para você"
+      }
+    },
+    "next": {
+      "label": "O que vem a seguir",
+      "you": "Seu próximo passo",
+      "calm": "Próximo passo",
+      "running": "{n} passo em andamento. Nada para você agora. | {n} passos em andamento. Nada para você agora.",
+      "idle": "Nada em andamento. Nada para você agora.",
+      "more": "Mais {n} esperando por você",
+      "less": "Mostrar menos",
+      "openStep": "Abrir passo",
+      "close": "Fechar missão…",
+      "kind": {
+        "main-failing": "Corrigir",
+        "unblock": "Destravar",
+        "rescope": "Pronto quando",
+        "settle": "Conferir",
+        "review": "Revisar",
+        "close": "Fechar",
+        "attach": "Entrar"
+      },
+      "doneWhenEyebrow": "Novo Pronto quando proposto",
+      "doneWhenHint": "Aprovar o torna o fim da missão. Recusar mantém o atual.",
+      "approve": "Aprovar",
+      "decline": "Recusar",
+      "requestEyebrow": "Pede para entrar",
+      "requestText": "{session} pede para entrar em “{mission}”. Se você permitir, ela trabalha na missão. Ela não a lidera.",
+      "allow": "Permitir",
+      "deny": "Negar",
+      "already": "Alguém já respondeu a isto, então nada mudou.",
+      "error": "O Harnu não conseguiu salvar sua resposta. Tente de novo em instantes."
     }
   },
   "missionPane": {

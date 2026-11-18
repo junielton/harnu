@@ -291,6 +291,8 @@ describe('no second mission surface', () => {
     expect(names).toEqual([
       'MissionCloseConfirmDialog.vue',
       'MissionDropdown.vue',
+      'MissionDropdownHead.vue',
+      'MissionDropdownNext.vue',
       'MissionHandoffDialog.vue',
       'MissionPane.vue',
       'MissionPaneAsk.vue',
