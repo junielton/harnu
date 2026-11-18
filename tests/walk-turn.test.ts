@@ -292,6 +292,30 @@ describe('walk turns', () => {
     expect(calls).toEqual(['session.userTurn', 'session.wake', 'session.userTurn'])
   })
 
+  it('a re-run names the session that wrote the walk, the one its turns are delivered to', async () => {
+    const folder = join(root, 'rerun')
+    mkdirSync(folder)
+    const rec = recorder()
+    rec.answer.status = 'delivered'
+    const svc = createWalkService(folder, { runtime: () => rec.runtime })
+    const { walkId, runId } = await open(svc, folder)
+    await svc.operate({ walkId, runId, op: 'start' })
+    await svc.operate({ walkId, runId, op: 'end' })
+    await svc.idle()
+    const again = await svc.store.newRun(walkId)
+    if (!again.ok) throw new Error(JSON.stringify(again))
+    // the re-run has no caller of its own
+    expect((await svc.store.readRun(walkId, again.runId))?.ownerSessionId).toBeNull()
+    await svc.operate({ walkId, runId: again.runId, op: 'start' })
+    await svc.operate({ walkId, runId: again.runId, op: 'end' })
+    await svc.idle()
+    const closed = rec.turns.filter((t) => t.text.includes(`run: ${again.runId}`))
+    expect(closed).toHaveLength(1)
+    // delivered to the first run's owner, and the text says so instead of "the folder's selected session"
+    expect(closed[0].sessionId).toBe('sess-owner')
+    expect(closed[0].text).toContain('session: sess-owner')
+  })
+
   it('the escalation turn names the source kind and the pane creates nothing', async () => {
     const expectations = {
       feature: 'make a bug card',
