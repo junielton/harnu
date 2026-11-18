@@ -1,6 +1,6 @@
 # Critics: guided test walk
 
-The review record of `spec.md`, in the shape `spec check` lints. Round 1 was one fresh, read-only reviewer that was handed only the paths (the spec, the brief, card T765, both copies of the skill and the code the spec cites), not the author's reasoning. Every finding below was answered in the spec in the same change; the evidence column says where. After the fixes the orchestrator asked that the visual section follow an approved mockup, so the layout and sizes F-31 to F-33 criticised are no longer in the spec; the constraints that answered them are kept.
+The review record of `spec.md`, in the shape `spec check` lints. Round 1 was one fresh, read-only reviewer that was handed only the paths (the spec, the brief, card T765, both copies of the skill and the code the spec cites), not the author's reasoning. Every finding below was answered in the spec in the same change; the evidence column says where. After the fixes the orchestrator asked that the visual section follow an approved mockup, so the layout and sizes F-31 to F-33 criticised are no longer in the spec; the constraints that answered them are kept. The evidence below cites the numbering of the draft that was reviewed (slices S-1 to S-5, ACs AC-1 to AC-29, non-goals NG-1 to NG-9 of that draft). The later scope change (a walk is a first-class feature with runs, a library, re-run and export) re-cut the slices into S-1 to S-7 and renumbered the ACs; the Amendments table of the spec records it, and a second review round covers the reshaped spec.
 
 ## Reviewers
 
