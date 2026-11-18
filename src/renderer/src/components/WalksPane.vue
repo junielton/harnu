@@ -255,7 +255,7 @@ function onKeydown(ev: KeyboardEvent): void {
       </button>
     </header>
 
-    <div class="wk-body" tabindex="-1" data-test="walks-body">
+    <div class="wk-body select-text" tabindex="-1" data-test="walks-body">
       <!-- no walks: the empty state and nothing else -->
       <div
         v-if="loaded && view.mode === 'empty' && view.empty"
