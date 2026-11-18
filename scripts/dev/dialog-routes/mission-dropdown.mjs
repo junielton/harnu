@@ -50,7 +50,10 @@ const FADE_MS = 400
  * a request to join, several led missions): the reply then comes through the store's real path (`missionV4View`)
  * instead of `showSample`, so the dropdown draws it exactly the way it draws a live mission.
  *
- * @type {ReadonlyArray<{ id: string, sample: string, open: boolean, mod?: 'staged'|'request'|'multi'|'chooser'|'more', note?: string }>}
+ * `hover` is a selector the harness points the mouse at once the dropdown is up, for the one state that is a
+ * tooltip (`dots`: a state glyph's label, S-3).
+ *
+ * @type {ReadonlyArray<{ id: string, sample: string, open: boolean, mod?: 'staged'|'request'|'multi'|'chooser'|'more', hover?: string, note?: string }>}
  */
 export const MISSION_DROPDOWN_STATES = [
   { id: 'mid', sample: 'default', open: true },
@@ -105,7 +108,8 @@ export const MISSION_DROPDOWN_STATES = [
     id: 'dots',
     sample: 'default',
     open: true,
-    note: 'a state dot with its tooltip open (S-3 draws it)'
+    hover: '[data-glyph="blocked"]',
+    note: "the blocked step's glyph with its label shown (S-3)"
   }
 ]
 
@@ -209,7 +213,7 @@ function ledReaders(base) {
 }
 
 window.__missionDropdown = {
-  async show(sample, open, mod) {
+  async show(sample, open, mod, hover) {
     if (mod) {
       sessions.folders = [{ path: '/sample', sessions: [{ sessionId: SESSION, projectPath: '/sample', summary: 'Leader' }] }]
       sessions.select(SESSION)
@@ -228,6 +232,11 @@ window.__missionDropdown = {
       await new Promise((r) => setTimeout(r, 60))
       const sel = mod === 'chooser' ? '[data-test="mission-switch"]' : '[data-test="next-more"]'
       document.querySelector(sel)?.click()
+    }
+    // A tooltip state: point at the glyph the way a mouse does (its label is shown on mouseenter).
+    if (open && hover) {
+      await new Promise((r) => setTimeout(r, 60))
+      document.querySelector(hover)?.dispatchEvent(new MouseEvent('mouseenter'))
     }
   }
 }
@@ -297,7 +306,7 @@ export async function showMissionDropdownState(page, state) {
   const def = MISSION_DROPDOWN_STATES.find((s) => s.id === state)
   if (!def) throw new Error(`unknown mission dropdown state "${state}"`)
   await page.evaluate(
-    ({ sample, open, mod }) => window.__missionDropdown.show(sample, open, mod),
+    ({ sample, open, mod, hover }) => window.__missionDropdown.show(sample, open, mod, hover),
     def
   )
   if (def.open) {

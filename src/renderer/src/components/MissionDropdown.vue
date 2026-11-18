@@ -16,11 +16,11 @@
  * ends the mission calls the `close` this component exposes.
  *
  * S-2 draws the top of the body: the head (the title, one progress row and, when the session leads several
- * missions, the one-line switch) and the one card that holds what the operator owes next. It reads the same
- * view the pane does (the sample while one shows, else the session's own reply), and the Topbar pill, which
- * is always mounted, is what keeps the store polling. The tree, the footer and the dialogs are what the
- * next slices put in the slots. The pill still opens the Mission pane; nothing here is reachable by a user
- * until S-7 switches the pill over.
+ * missions, the one-line switch) and the one card that holds what the operator owes next. S-3 draws the tree
+ * under them: milestone, step, criteria, with the state glyphs' labels and Ask. It reads the same view the pane
+ * does (the sample while one shows, else the session's own reply), and the Topbar pill, which is always mounted,
+ * is what keeps the store polling. The open step, the footer and the dialogs are what the next slices put in.
+ * The pill still opens the Mission pane; nothing here is reachable by a user until S-7 switches the pill over.
  */
 import { computed, customRef, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -30,12 +30,14 @@ import {
   placeMissionDropdown,
   type DropdownAnchor
 } from '../lib/mission-dropdown-position'
-import { ledMissionRows, v4MissionOf } from '../lib/mission-pane-view'
+import { useSessionLinks } from '../composables/useSessionLinks'
+import { askLeaderOf, ledMissionRows, v4MissionOf } from '../lib/mission-pane-view'
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import MissionDropdownHead from './MissionDropdownHead.vue'
 import MissionDropdownNext from './MissionDropdownNext.vue'
+import MissionDropdownTree from './MissionDropdownTree.vue'
 
 const props = defineProps<{
   /**
@@ -84,6 +86,37 @@ const PILL_SELECTOR = '[data-dsqa^="topbar-pill--"]'
 
 const open = computed(() => ui.popovers.missionProgress)
 const root = ref<HTMLElement | null>(null)
+
+// ---- the tree ----------------------------------------------------------------------------------------
+// A step's PR number gets its address from the links the session wrote (the footer's Links shelf reads the
+// same transcript); a sample, or a session that has no transcript yet, has none. Ask goes to the session that
+// LEADS the mission, which may not be the one this dropdown follows.
+const linkSession = computed(() => {
+  const id = sessionId.value
+  return id && !id.startsWith('synthetic-') && !sample.value ? id : null
+})
+const { entries: sessionLinks } = useSessionLinks(linkSession)
+const askLeader = computed(() => (mission.value ? askLeaderOf(mission.value) : null))
+const treeRef = ref<InstanceType<typeof MissionDropdownTree> | null>(null)
+
+/** "Open step" on the card: the tree unfolds it and brings it into view; the caller hears of it too. */
+function openStep(stepId: string): void {
+  void treeRef.value?.openStep(stepId)
+  emit('openStep', stepId)
+}
+
+// A sample state that is a click on another one opens that part of the tree for you (an open step, the Ask box).
+watch(
+  () => [open.value, sample.value?.state ?? null] as const,
+  async ([isOpen, state]) => {
+    const ui = sample.value?.ui
+    if (!isOpen || !state || !ui) return
+    await nextTick()
+    if (ui.openStep) void treeRef.value?.openStep(ui.openStep)
+    if (ui.ask) treeRef.value?.openAsk(ui.ask)
+  },
+  { flush: 'post', immediate: true }
+)
 
 /** The window's size, kept current while the layer is up. */
 const viewport = ref({ width: window.innerWidth, height: window.innerHeight })
@@ -221,8 +254,17 @@ function onClickOutside(e: MouseEvent): void {
           <MissionDropdownNext
             v-show="!chooserOpen"
             :mission="mission"
-            @open-step="emit('openStep', $event)"
+            @open-step="openStep"
             @close="emit('closeMission')"
+          />
+          <!-- Keyed by the mission the reply was answered for: another mission starts with its own folds. -->
+          <MissionDropdownTree
+            v-show="!chooserOpen"
+            ref="treeRef"
+            :key="`${mission.missionId}:${sample?.state ?? ''}`"
+            :detail="mission.detail"
+            :ask-leader="askLeader"
+            :session-links="sessionLinks"
           />
         </template>
         <div v-show="!chooserOpen"><slot /></div>

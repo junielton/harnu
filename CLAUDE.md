@@ -390,6 +390,9 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission dropdown — shell (§6 — dropdown S-1)       | `components/MissionDropdown.vue` + `lib/mission-dropdown-position.ts`            |
 | Mission dropdown — head, switch (§6 — S-2)         | `components/MissionDropdownHead.vue` + `lib/mission-pane-view.ts`                |
 | Mission dropdown — next card (§6 — S-2)            | `components/MissionDropdownNext.vue` + `lib/mission-pane-view.ts`                |
+| Mission dropdown — tree and keys (§6 — S-3)        | `components/MissionDropdownTree.vue` + `lib/mission-dropdown-tree.ts`            |
+| Mission dropdown — Ask on a milestone (§6 — S-3)   | `components/MissionDropdownAsk.vue` + `lib/mission-pane-view.ts`                 |
+| Mission state glyph + hover label (§6 — S-3)       | `components/MissionDot.vue` + `lib/mission-dropdown-tree.ts`                     |
 | Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
 | Containers — Paused detail (§6 — U3.4)             | `src/renderer/src/components/ContainersPausedDetail.vue`                         |
 | Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                              |
