@@ -501,6 +501,80 @@
         "SETTLES_ITSELF": "Harnu checks this one by itself. You do not mark it.",
         "other": "Harnu could not save that. Try again in a moment. If it keeps happening, close the dropdown and open it again."
       }
+    },
+    "empty": {
+      "title": "This session has no mission.",
+      "loading": "Reading the mission…",
+      "refusedTitle": "This mission cannot be read right now.",
+      "retry": "Retry",
+      "pickerTitle": "Open missions in this folder",
+      "ledBy": "led by {name}",
+      "unled": "nobody leads it",
+      "attach": "Attach",
+      "confirm": {
+        "text": "Attach this session to “{title}”? It will be part of the mission, but it will not lead it.",
+        "cancel": "Cancel",
+        "yes": "Attach"
+      },
+      "start": "Start a new mission",
+      "startDone": "Added to this session’s prompt. Press Enter there to send it.",
+      "startError": "This session is not running. Resume it, then try again.",
+      "none": "There is no open mission in this folder to attach to.",
+      "sampleOpen": "See a sample mission",
+      "requestThisSession": "This session",
+      "error": {
+        "NOT_FOUND": "This mission is no longer there. Pick another one.",
+        "MISSION_NOT_FOUND": "This mission is no longer there. Pick another one.",
+        "MISSION_CLOSED": "This mission was closed, so a session cannot join it.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. Try again.",
+        "other": "Harnu could not attach this session. Try again in a moment."
+      }
+    },
+    "sample": {
+      "label": "Sample mission",
+      "note": "Made-up data. Nothing you press here is saved.",
+      "chooser": "State",
+      "leave": "Leave the sample",
+      "state": {
+        "default": "Default",
+        "waiting": "Waiting on you",
+        "step-open": "A step open",
+        "step-blocked": "A step blocked",
+        "all-steps": "Every step shown",
+        "ask": "Asking about a milestone",
+        "clear": "Nothing waiting",
+        "done": "Done, ready to close",
+        "other-session": "Another session",
+        "simple": "Small task",
+        "simple-signoff": "Small task, sign-offs",
+        "big": "Large mission",
+        "big-waiting": "Large mission, waiting on you",
+        "no-mission": "No mission",
+        "attach-request": "Asks to join",
+        "closed": "Mission closed"
+      },
+      "hint": {
+        "waiting": "Press “{label}” in the next-step card.",
+        "all-steps": "Press “{label}” under the open milestone.",
+        "big-waiting": "Press “{label}” in the next-step card."
+      }
+    },
+    "footer": {
+      "close": "Close mission…"
+    },
+    "testIt": {
+      "label": "Test it",
+      "aria": "Test it · {what}",
+      "step": {
+        "tip": "Walk through this step by hand"
+      },
+      "milestone": {
+        "tip": "Walk through this milestone by hand"
+      },
+      "mission": {
+        "label": "Test the whole mission",
+        "tip": "Walk through the whole mission by hand"
+      }
     }
   },
   "missionPane": {
