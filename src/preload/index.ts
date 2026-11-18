@@ -17,6 +17,7 @@ import type {
 } from '../main/claude-watcher'
 import type { UserProject, UserProjectWorktree } from '../main/user-projects'
 import type { WorktreeHelperState } from '../main/helpers-store'
+import type { WalkIpcError, WalkLoad, WalkTick } from '../main/walk/walk-ipc'
 import type { UsageSnapshot } from '../main/usage-parse'
 import type { TelemetryPayload } from '../main/statusline'
 import type { TaskState, FailureReason } from '../main/hook-state'
@@ -422,6 +423,10 @@ export type { RoutingTable, RoutingEntry, ResolvedRouting } from '../main/routin
 // can `import type { HelperPane, WorktreeHelperState } from '../../../preload'`
 // without crossing the main-process module boundary directly.
 export type { WorktreeHelperState, HelperPane, HelperPaneType } from '../main/helpers-store'
+
+// Guided walks (S-3): what the walk pane reads from main to draw a run, re-exported type-only so the renderer's
+// view-model and store can name it without crossing the main-process boundary.
+export type { WalkLoad, WalkIpcError, WalkTick, WalkCriterion } from '../main/walk/walk-ipc'
 
 // Branch list for the New-worktree dialog base-ref select (T48). Re-exported so
 // the dialog can type its `<select>` options without crossing the main boundary.
@@ -1421,6 +1426,76 @@ const api = {
    */
   walkDevOpen: (args: { folder: string; script: unknown; sessionId?: string }): Promise<unknown> =>
     ipcRenderer.invoke('walk:dev-open', args),
+  /** Dev only (S-3): the agent's `walk_report` / `walk_extend` from the app itself, for captures and smoke cases. */
+  walkDevCall: (args: {
+    folder: string
+    verb: 'report' | 'extend'
+    args: Record<string, unknown>
+  }): Promise<unknown> => ipcRenderer.invoke('walk:dev-call', args),
+  /**
+   * Guided walks (S-3): the walk pane's channels. The pane reads a run (`walkLoad`), applies the operator's
+   * outcomes (`walkOperate`), keeps its own ticks, saves a pasted screenshot inside the run's folder and opens
+   * links. None is a verb: nothing here runs a command or settles a criterion.
+   */
+  walkLoad: (a: {
+    folder: string
+    walkId: string
+    runId: string
+  }): Promise<WalkLoad | WalkIpcError> => ipcRenderer.invoke('walk:load', a),
+  walkWatch: (a: { folder: string; walkId: string; on: boolean }): Promise<boolean> =>
+    ipcRenderer.invoke('walk:watch', a),
+  walkOperate: (a: {
+    folder: string
+    walkId: string
+    runId: string
+    op: string
+    line?: string
+    shot?: string
+    checkId?: string
+    /** Dev only: the wait of D-7 the pane shows (main ignores it in a packaged build). */
+    waitMs?: number
+  }): Promise<{ ok: true; sent: string[]; load: WalkLoad | WalkIpcError } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:operate', a),
+  walkTick: (a: {
+    folder: string
+    walkId: string
+    runId: string
+    checkId: string
+    ticked?: string[]
+  }): Promise<{ ok: true; tick: WalkTick } | WalkIpcError> => ipcRenderer.invoke('walk:tick', a),
+  walkSaveShot: (a: {
+    folder: string
+    walkId: string
+    runId: string
+    data: Uint8Array
+  }): Promise<{ ok: true; path: string; name: string } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:save-shot', a),
+  walkScanLine: (text: string): Promise<boolean> => ipcRenderer.invoke('walk:scan-line', { text }),
+  walkResolvePr: (a: { folder: string; number: number }): Promise<{ ok: boolean; url?: string }> =>
+    ipcRenderer.invoke('walk:resolve-pr', a),
+  walkReplay: (a: { folder: string }): Promise<{ delivered: number; pending: number }> =>
+    ipcRenderer.invoke('walk:replay', a),
+  walkRerunSaved: (a: {
+    folder: string
+    newWalkId: string
+    newRunId: string
+    savedWalkId: string
+  }): Promise<{ ok: true; walkId: string; runId: string; n: number } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:rerun-saved', a),
+  walkDiscardReady: (a: {
+    folder: string
+    walkId: string
+    runId: string
+  }): Promise<{ ok: true } | WalkIpcError> => ipcRenderer.invoke('walk:discard-ready', a),
+  /** A session opened a walk (`walk_open`): the renderer shows the pane, then answers with `walkOpened`. */
+  onWalkOpen: (
+    cb: (p: { reqId: string; folder: string; walkId: string; runId: string }) => void
+  ): (() => void) => subscribe('walk:open', cb),
+  walkOpened: (p: { reqId: string; paneId: string | null }): void =>
+    ipcRenderer.send('walk:opened', p),
+  /** A verb (`walk_report`, `walk_extend`) wrote a walk the pane may be showing. */
+  onWalkChanged: (cb: (p: { folder: string; walkId: string }) => void): (() => void) =>
+    subscribe('walk:changed', cb),
   openInEditor: (path: string): Promise<OpenInEditorResult> =>
     ipcRenderer.invoke('external:openInEditor', path),
   // The folder's `origin` as its github.com `/pulls` URL, or `null` when there

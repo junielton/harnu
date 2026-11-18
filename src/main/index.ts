@@ -211,7 +211,9 @@ import { registerExternal } from './external'
 import { registerCommandBridge, closeCommandBridge } from './command-bridge-ipc'
 import { configureWalkRuntime, createBridgeRuntime, walkServiceFor } from './walk/walk-service'
 import { walksDir } from './walk/walk-store'
-import { openWalkFromApp } from './mcp/tool-handlers'
+import { registerWalkIpc } from './walk/walk-ipc'
+import { makeWalkEnv, openWalkFromApp } from './mcp/tool-handlers'
+import { walkExtend, walkReport } from './mcp/walk-handlers'
 import { markdownKnownRoots } from './markdown-read'
 import { registerTerminalIpc } from './terminal-ipc'
 import { registerManifestDrain } from './manifest-drain-shell'
@@ -883,14 +885,18 @@ app.whenReady().then(async () => {
   // Guided walks (S-2): a `[harnu-walk]` turn rides the user-turn route (the `walk` source) and wakes a parked
   // session; one no session could take waits in the run's outbox on disk and is offered again here, a little
   // after the renderer announces itself, so a restart does not lose it.
-  configureWalkRuntime(createBridgeRuntime(cmdBridge.bridge, waitForSessionReady))
+  // S-3: the pane exists now, so `walk_open` asks the renderer for it directly (and learns whether it answered).
+  const walkIpc = registerWalkIpc(() => mainWindow)
+  configureWalkRuntime({
+    ...createBridgeRuntime(cmdBridge.bridge, waitForSessionReady),
+    openPane: (a) => walkIpc.openPane(a)
+  })
   ipcMain.on('renderer:ready', () => {
     setTimeout(() => {
       void replayWalkTurns().catch((err) => console.warn('[walk] replay failed', err))
     }, 3000)
   })
-  // Dev only (the pane type does not exist until S-3): a door so later slices can open a walk without an
-  // agent. Not registered in a packaged build, and answers only to the app's own renderer.
+  // Dev only: a door so a capture or a smoke case can open a walk without an agent. Not registered in a packaged build, and answers only to the app's own renderer.
   if (!app.isPackaged || IS_DEV) {
     ipcMain.handle(
       'walk:dev-open',
@@ -898,6 +904,20 @@ app.whenReady().then(async () => {
         if (!isRendererUrl(e.senderFrame?.url ?? ''))
           return { ok: false, error: 'NOT_THE_RENDERER' }
         return openWalkFromApp(args.folder, args.script, await markdownKnownRoots(), args.sessionId)
+      }
+    )
+    // The agent's two writes (`walk_report`, `walk_extend`) from the app itself, so a capture or a smoke case can play
+    // the session's part without an MCP client. Same dev-only, renderer-only door as above.
+    ipcMain.handle(
+      'walk:dev-call',
+      async (
+        e,
+        args: { folder: string; verb: 'report' | 'extend'; args: Record<string, unknown> }
+      ) => {
+        if (!isRendererUrl(e.senderFrame?.url ?? ''))
+          return { ok: false, error: 'NOT_THE_RENDERER' }
+        const env = makeWalkEnv(args.folder, await markdownKnownRoots())
+        return args.verb === 'report' ? walkReport(args.args, env) : walkExtend(args.args, env)
       }
     )
   }

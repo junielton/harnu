@@ -971,8 +971,9 @@ links? }`, `do: [{ text, see, block? }]` (at most 8), `passes`, `fails` (optiona
   `<placeholder>` in a command; a link is data of kind `pr`, `file`, `url` or `folder`. Pass your own
   `sessionId`: you own the run and its turns come back to you. ACK: `walkId`, `runId`, `checks` (in the script),
   `toWalk` (N), `rejected` (empty when accepted; otherwise each violation with its JSON path and rule, and
-  `ok:false` `SCRIPT_REJECTED`) and `opened` (whether the pane was put in the folder's helper stack: **false until
-  the pane ships**, when the walk is only saved; say you saved it, never that the operator is looking at it). It
+  `ok:false` `SCRIPT_REJECTED`) and `opened` (whether the pane was put in the folder's helper stack: **true** once the operator's app shows it, in the
+  background and without taking the focus; **false** when the app did not answer, for instance no window is open,
+  and the walk is then only saved: say you saved it, never that the operator is looking at it). It
   always creates a NEW walk with its first run (`ready`: not walked yet); it is refused `WALK_RUN_LIVE` (with
   `walkId` and `runId`) only while a run that STARTED, of a walk with the same source, is live.
 - `walk_get({ folder, walkId })` or `({ folder, source })`: for a walk, its `rev`, the current run's cursor and

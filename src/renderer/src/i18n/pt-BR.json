@@ -5716,6 +5716,213 @@
     }
   },
   "testWalk": {
+    "label": "Caminhada guiada",
+    "title": "Caminhada",
+    "progress": "Verificação {n} de {total}",
+    "roadmapOpen": "Ver todas as verificações",
+    "closeRoadmap": "Voltar à verificação",
+    "source": {
+      "missionStep": "Missão · {mission} · etapa “{name}”",
+      "missionMilestone": "Missão · {mission} · marco “{name}”",
+      "missionAll": "Missão · {mission} · a missão inteira",
+      "branch": "{branch} → {base}",
+      "card": "Card · {slug}",
+      "feature": "{text}",
+      "rerunChip": "Repetição · execução {n}",
+      "openPr": "Abrir a PR",
+      "openMission": "Abrir a Missão",
+      "copyPr": "Copiar o link da PR"
+    },
+    "action": {
+      "start": "Começar pela {n}",
+      "done": "Pronto",
+      "tryAgain": "Tentar de novo",
+      "failed": "Falhou",
+      "back": "Voltar",
+      "skip": "Pular",
+      "explain": "Explicar mais",
+      "followAnyway": "Seguir mesmo assim (não verificado)",
+      "treatAsFailed": "Tratar como falha",
+      "continueWithout": "Continuar sem a verificação",
+      "send": "Enviar",
+      "cancelForm": "Voltar ao passo",
+      "pickSkipped": "Verificar agora",
+      "closeOut": "Encerrar"
+    },
+    "roadmap": {
+      "sub": "{total} verificações",
+      "subEarlier": "{total} verificações · {earlier} já verificadas",
+      "eyes": "Só os seus olhos",
+      "icheck": "Eu verifico",
+      "earlier": "Verificada antes",
+      "added": "adicionada",
+      "leftOut": "{n} de fora · {owners}",
+      "owner": {
+        "ours": "nossa",
+        "optional": "opcional",
+        "decision": "decisão"
+      },
+      "rerunOffer": "Repetir a caminhada salva ({verified} de {total} passaram)?",
+      "rerunAction": "Repetir"
+    },
+    "section": {
+      "do": "Faça",
+      "where": "Onde",
+      "see": "O que você deve ver",
+      "check": "Eu verifico"
+    },
+    "not": "Não",
+    "nothing": "Nada daqui: {why}",
+    "blocks": "As verificações {from} a {to} dependem desta",
+    "blocksWhy": "As verificações {from} a {to} {why}",
+    "blocksOne": "A verificação {from} depende desta",
+    "blocksOneWhy": "A verificação {from} {why}",
+    "pathApprox": "caminho aproximado",
+    "linkNote": {
+      "login": "atrás de um login, não aberto",
+      "unchecked": "não verificado"
+    },
+    "copy": {
+      "label": "Copiar",
+      "copied": "Copiado",
+      "value": "Copiar {what}",
+      "command": "o comando",
+      "path": "o caminho",
+      "url": "o endereço",
+      "text": "o texto",
+      "error": "o texto do erro",
+      "summary": "o resumo"
+    },
+    "image": {
+      "expected": "Esperado",
+      "capture": "Capturado",
+      "enlarge": "Ampliar",
+      "close": "Fechar",
+      "escToClose": "Esc para fechar"
+    },
+    "table": {
+      "item": "Item",
+      "shows": "Mostra",
+      "source": "Fonte"
+    },
+    "lost": "Não entendi este passo",
+    "undoLead": "Antes, desfaça a última execução: {undo}",
+    "working": {
+      "checking": "Rodando minha verificação na verificação {n}",
+      "quiet": "Isso leva um instante. Você não precisa fazer nada.",
+      "waited": "Ainda sem resposta. Você pode seguir sem a minha verificação; ela fica registrada como não verificada."
+    },
+    "form": {
+      "title": "O que você viu?",
+      "placeholder": "Uma linha basta",
+      "paste": "Cole uma captura de tela",
+      "pasteKey": "Ctrl+V",
+      "attached": "Imagem colada {n}",
+      "remove": "Remover",
+      "secret": "Isto parece um segredo. Remova antes de enviar.",
+      "saveFailed": "Não foi possível salvar a captura de tela."
+    },
+    "retry": {
+      "reported": "Você relatou",
+      "eyebrow": "Minha única correção",
+      "again": "O mesmo passo, de novo",
+      "waiting": "Aguardando a minha correção",
+      "door": {
+        "mission": "Ainda errado? Envie para quem construiu a etapa",
+        "pr": "Ainda errado? Rascunhar um comentário para a PR",
+        "feature": "Ainda errado? Criar um card de bug"
+      },
+      "doorSent": "Enviado. A sessão segue a partir daqui."
+    },
+    "evidence": {
+      "title": "Você disse Pronto. Minha verificação discorda.",
+      "ran": "Executei",
+      "expected": "Esperado",
+      "found": "Encontrado",
+      "nonBlocking": "Nada depois depende desta verificação, então você pode seguir mesmo assim. Fica registrada como não verificada.",
+      "blocking": "Verificações seguintes dependem desta, então ela fica aberta até passar."
+    },
+    "explain": {
+      "why": "Por que isso importa",
+      "extra": "Verificações extras · {n}",
+      "hint": "Pronto fecha o passo com estas. As não marcadas aparecem no fim.",
+      "teach": "Por trás desta verificação",
+      "does": "O que faz",
+      "where": "Onde mora",
+      "idea": "A ideia por trás",
+      "whyTeach": "Por que se comporta assim",
+      "ask": "Pedir mais",
+      "asking": "Perguntando…",
+      "tick": "Marcar “{text}”"
+    },
+    "simpler": {
+      "eyebrow": "Dito de forma mais simples",
+      "asking": "Perguntando…"
+    },
+    "skipped": {
+      "title": "Verificações puladas · {n}",
+      "sub": "Veja agora, ou encerre a caminhada e deixe-as em aberto.",
+      "close": "Encerrar com {n} puladas",
+      "retry": "Verificar agora"
+    },
+    "closeout": {
+      "title": "Caminhada concluída",
+      "sub": "{verified} verificadas · {unverified} não verificadas · {skipped} puladas",
+      "subFailed": "{verified} verificadas · {unverified} não verificadas · {skipped} puladas · {failed} com falha",
+      "how": {
+        "agreed": "você confirmou · minha verificação concordou",
+        "eyes": "você confirmou · nada a verificar daqui",
+        "continued": "você continuou sem a minha verificação",
+        "followed": "seguiu mesmo assim · minha verificação encontrou {evidence}",
+        "ended": "encerrada antes de a minha verificação responder",
+        "earlier": "verificada antes · {evidence}",
+        "earlierCaveat": "certa na PR aberta · {evidence}",
+        "skipped": "pulada",
+        "failed": "falhou",
+        "failedLine": "falhou · “{line}”",
+        "disagreed": "minha verificação discordou",
+        "notReached": "não alcançada"
+      },
+      "owed": "Ainda é sua",
+      "owedMore": "{parts} estão listadas acima.",
+      "part": {
+        "skipped": "{n} puladas",
+        "failed": "{n} com falha",
+        "unverified": "{n} não verificadas"
+      },
+      "recheck": "Verificar “{n}” de novo depois que a #{pr} for mergeada",
+      "criterion": {
+        "open": "critério aberto",
+        "settled": "critério resolvido",
+        "unavailable": "missão indisponível"
+      },
+      "neverTick": "Eu nunca marco por você.",
+      "openMission": "Abrir na Missão",
+      "nothingOwed": "Nada pendente",
+      "unticked": "Verificações extras que você não marcou",
+      "saved": "Salva em Caminhadas",
+      "savedBody": "Reabra esta execução ou repita as mesmas verificações depois.",
+      "openWalks": "Abrir Caminhadas",
+      "export": "Exportar markdown",
+      "copy": "Copiar resumo"
+    },
+    "end": {
+      "title": "Encerrar a caminhada e ver o resumo?",
+      "confirm": "Encerrar a caminhada",
+      "cancel": "Continuar"
+    },
+    "empty": {
+      "title": "Nenhuma caminhada aberta",
+      "body": "Peça a uma sessão para iniciar uma: diga “me guie pelo que acabamos de construir” ou “teste a PR #48 comigo”. O controle Test it na Missão faz o mesmo para uma missão."
+    },
+    "error": {
+      "title": "A sessão acabou",
+      "body": "Não consigo servir a próxima verificação. Seu progresso está salvo: {done} de {total} verificadas.",
+      "resume": "Retomar a sessão",
+      "copyProgress": "Copiar progresso",
+      "errText": "Erro: nenhuma sessão pôde receber o turno",
+      "resumeFailed": "Não foi possível retomar a sessão."
+    },
     "turn": {
       "sent": "Resposta da caminhada enviada para ‹{session}›"
     }
