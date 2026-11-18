@@ -162,4 +162,42 @@ describe('walk keys', () => {
     down('pane')
     expect(prevented).toBe(2)
   })
+
+  // BUG-292 AC-6 / AC-3: the content is selectable now, so a held selection must not turn a letter into an outcome
+  describe('with a text selection held in the pane', () => {
+    const sel = (over: Partial<KeyContext> = {}): KeyContext => ctx({ hasSelection: true, ...over })
+
+    it('keeps the bare-letter shortcuts off (AC-6)', () => {
+      for (const k of ['f', 'F', 'b', 's', 'e', 'l', 'ArrowLeft'])
+        expect(mapWalkKey(key(k), sel()), k).toBeNull()
+    })
+
+    it('still fires them when nothing is selected (AC-3)', () => {
+      expect(mapWalkKey(key('f'), ctx({ hasSelection: false }))).toEqual({ action: 'failed' })
+      expect(mapWalkKey(key('s'), ctx())).toEqual({ action: 'skip' })
+    })
+
+    it('hands Ctrl/Cmd+C back to the browser so the copy happens (AC-3)', () => {
+      expect(mapWalkKey(key('c', { ctrlKey: true }), sel())).toBeNull()
+      expect(mapWalkKey(key('c', { metaKey: true }), sel())).toBeNull()
+    })
+
+    it('lets Esc clear the selection first, before it closes anything (AC-6)', () => {
+      expect(mapWalkKey(key('Escape'), sel())).toEqual({ action: 'clear-selection' })
+      expect(mapWalkKey(key('Escape'), sel({ roadmapOpen: true }))).toEqual({
+        action: 'clear-selection'
+      })
+      expect(mapWalkKey(key('Escape'), sel({ lightbox: true }))).toEqual({
+        action: 'clear-selection'
+      })
+      // and without a selection Esc closes as before
+      expect(mapWalkKey(key('Escape'), ctx({ roadmapOpen: true }))).toEqual({
+        action: 'close-roadmap'
+      })
+    })
+
+    it('leaves Enter alone: a selection does not cancel Done', () => {
+      expect(mapWalkKey(key('Enter'), sel())).toEqual({ action: 'done' })
+    })
+  })
 })

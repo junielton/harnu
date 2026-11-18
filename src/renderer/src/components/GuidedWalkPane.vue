@@ -28,6 +28,7 @@ import {
   mapWalkKey,
   type WalkKeyAction
 } from '../lib/walk-keys'
+import { createClickGuard, paneHasSelection } from '../lib/walk-selection'
 import {
   keyContext,
   paneView,
@@ -485,10 +486,26 @@ async function run(id: OutcomeId): Promise<void> {
   }
 }
 
+// A drag over the selectable content that is released on a control must not press it (BUG-292 AC-2, AC-7).
+const clickGuard = createClickGuard()
+function onPointerDownCapture(ev: PointerEvent): void {
+  clickGuard.press(ev.target)
+  keepPaneFocusOnPointer(ev)
+}
+function onClickCapture(ev: MouseEvent): void {
+  if (!clickGuard.shouldSwallow(ev)) return
+  ev.preventDefault()
+  ev.stopPropagation()
+}
+
 async function onKeydown(ev: KeyboardEvent): Promise<void> {
   const s = state.value
   if (!s || endAsk.value) return
-  const hit = mapWalkKey(ev, keyContext(view.value, s.ui))
+  // the content is selectable (BUG-292): a letter typed over a selection is not an outcome, Esc clears it first
+  const hit = mapWalkKey(ev, {
+    ...keyContext(view.value, s.ui),
+    hasSelection: paneHasSelection(rootEl.value)
+  })
   if (!hit) return
   ev.preventDefault()
   ev.stopPropagation()
@@ -499,6 +516,9 @@ async function act(action: WalkKeyAction): Promise<void> {
   const s = state.value
   if (!s) return
   switch (action) {
+    case 'clear-selection':
+      window.getSelection()?.removeAllRanges()
+      break
     case 'close-lightbox':
       s.ui.lightbox = false
       break
@@ -597,7 +617,8 @@ const hasFoot = computed(
     data-dsqa="walk"
     :aria-label="$t('testWalk.label')"
     @keydown="onKeydown"
-    @pointerdown.capture="keepPaneFocusOnPointer"
+    @pointerdown.capture="onPointerDownCapture"
+    @click.capture="onClickCapture"
   >
     <!-- the 24px header of §6 "Pane header": non-PTY, so no xterm padding -->
     <header
@@ -732,7 +753,8 @@ const hasFoot = computed(
       </div>
     </div>
 
-    <div class="wk-body" tabindex="-1" data-test="walk-body">
+    <!-- `select-text` opts the content back into selection (body sets `user-select: none`): see §6 Selecting text -->
+    <div class="wk-body select-text" tabindex="-1" data-test="walk-body">
       <WalkStatus v-if="view.mode === 'empty' || state?.missing" kind="empty" />
       <WalkStatus
         v-else-if="view.mode === 'error'"
@@ -1241,6 +1263,14 @@ const hasFoot = computed(
   gap: 14px;
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-2) transparent;
+}
+/* the content is selectable (`select-text` on .wk-body), the controls inside it are not: a press on a button, a
+   chip or a run-selector option never starts a selection, and a key hint is not text to copy */
+.wk .wk-body button,
+.wk .wk-body [data-walk-chip],
+.wk .wk-body [role='option'],
+.wk .wk-body kbd {
+  user-select: none;
 }
 .wk .wk-title {
   margin: 0;
