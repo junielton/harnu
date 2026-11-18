@@ -16,6 +16,7 @@ import type { DeclaredEnd, Mission } from '../src/main/missions/derive'
 import {
   ABSENT_TTL_MS,
   BLOCKING_NUDGE_MS,
+  FLAP_GRACE_MS,
   decideCue,
   deserializeCueMemory,
   firstOwed,
@@ -145,7 +146,11 @@ describe('decideCue — appear or grow only', () => {
     const first = decideCue([owedView('a', 'checks:1')], empty(), T0)
     const ticked = decideCue([view({ id: 'a' })], first.memory, T0 + POLL)
     expect(ticked.cue).toBe(false)
-    expect(ticked.memory.owed.get('a')?.keys.size).toBe(0)
+    // The cleared key is only remembered as absent for the flap grace window, then dropped.
+    expect(ticked.memory.owed.get('a')?.keys.get('checks')?.absentSince).toBe(T0 + POLL)
+    const later = decideCue([view({ id: 'a' })], ticked.memory, T0 + POLL + FLAP_GRACE_MS + 1)
+    expect(later.cue).toBe(false)
+    expect(later.memory.owed.get('a')?.keys.size).toBe(0)
   })
 
   it('cues when a new kind appears next to one already heard', () => {
@@ -223,13 +228,14 @@ describe('decideCue — appear or grow only', () => {
     expect(seedCueMemory([owedView('a', 'close'), owedView('a', 'close')], T0).owed.size).toBe(1)
   })
 
-  it('a key that disappears is dropped, so coming back is a new cue', () => {
+  it('a key that disappears for good is dropped after the flap grace, so coming back is a new cue', () => {
     const first = decideCue([owedView('a', 'blocker:merge')], empty(), T0)
     const cleared = decideCue([view({ id: 'a' })], first.memory, T0 + POLL)
-    expect(cleared.memory.owed.get('a')?.keys.size).toBe(0)
-    expect(decideCue([owedView('a', 'blocker:merge')], cleared.memory, T0 + 2 * POLL).cue).toBe(
-      true
-    )
+    const gone = decideCue([view({ id: 'a' })], cleared.memory, T0 + POLL + FLAP_GRACE_MS + 1)
+    expect(gone.memory.owed.get('a')?.keys.size).toBe(0)
+    expect(
+      decideCue([owedView('a', 'blocker:merge')], gone.memory, T0 + 2 * POLL + FLAP_GRACE_MS).cue
+    ).toBe(true)
   })
 })
 
@@ -422,6 +428,81 @@ describe('decideCue — a mission absent from a poll (spec §3.2 Stability)', ()
     const seen = decideCue([view({ id: 'a' })], first.memory, T0 + 20 * HOUR)
     expect(seen.memory.owed.get('a')).toMatchObject({ lastSeenAt: T0 + 20 * HOUR })
     expect(decideCue([], seen.memory, T0 + 40 * HOUR).memory.owed.has('a')).toBe(true)
+  })
+})
+
+describe('decideCue — an owed key that flaps out for a poll or two (flap grace)', () => {
+  const FLAP_ID = 'mnt-0000000f'
+  const polls = (you: V4Item[]) => decideCue.bind(null, [{ mission: { id: FLAP_ID }, you }])
+
+  it('a key gone for one poll does not chime when it comes back (AC-1)', () => {
+    const p1 = polls([reviewOf(1)])(empty(), T0)
+    expect(p1.cue).toBe(true)
+    const p2 = polls([])(p1.memory, T0 + POLL)
+    expect(p2.cue).toBe(false)
+    const p3 = polls([reviewOf(1)])(p2.memory, T0 + 2 * POLL)
+    expect(p3.cue).toBe(false)
+  })
+
+  it('a key gone for several polls, still inside the grace window, stays silent on return', () => {
+    let d = polls([reviewOf(1)])(empty(), T0)
+    for (let i = 1; i <= 5; i++) d = polls([])(d.memory, T0 + i * POLL)
+    const back = polls([reviewOf(1)])(d.memory, T0 + 6 * POLL)
+    expect(back.cue).toBe(false)
+    // It keeps its first-owed time and schedule: returning is not a new key.
+    expect(back.memory.owed.get(FLAP_ID)?.keys.get('review')).toMatchObject({
+      count: 1,
+      firstOwedAt: T0,
+      lastCuedAt: T0
+    })
+  })
+
+  it('a key back with a higher count than before still chimes (AC-2)', () => {
+    const p1 = polls([reviewOf(1)])(empty(), T0)
+    const p2 = polls([])(p1.memory, T0 + POLL)
+    const p3 = polls([reviewOf(2)])(p2.memory, T0 + 2 * POLL)
+    expect(p3).toMatchObject({ cue: true, missionIds: [FLAP_ID] })
+    expect(p3.memory.owed.get(FLAP_ID)?.keys.get('review')).toMatchObject({ count: 2, nudges: 0 })
+  })
+
+  it('a key back with a lower count stays silent, and growth is then measured from that count', () => {
+    const p1 = polls([reviewOf(2)])(empty(), T0)
+    const p2 = polls([])(p1.memory, T0 + POLL)
+    const p3 = polls([reviewOf(1)])(p2.memory, T0 + 2 * POLL)
+    expect(p3.cue).toBe(false)
+    expect(polls([reviewOf(2)])(p3.memory, T0 + 3 * POLL).cue).toBe(true)
+  })
+
+  it('a key gone longer than the grace window is forgotten and chimes as new on return', () => {
+    const p1 = polls([reviewOf(1)])(empty(), T0)
+    const p2 = polls([])(p1.memory, T0 + POLL)
+    const late = T0 + POLL + FLAP_GRACE_MS + 1
+    const p3 = polls([])(p2.memory, late)
+    expect(p3.memory.owed.get(FLAP_ID)?.keys.has('review')).toBe(false)
+    expect(polls([reviewOf(1)])(p3.memory, late + POLL).cue).toBe(true)
+  })
+
+  it('an absent key is remembered unchanged while it is away and never cues', () => {
+    const p1 = polls([readyToClose()])(empty(), T0)
+    const p2 = polls([])(p1.memory, T0 + POLL)
+    expect(p2.cue).toBe(false)
+    expect(p2.memory.owed.get(FLAP_ID)?.keys.get('ready-to-close')).toMatchObject({
+      count: 1,
+      lastCuedAt: T0
+    })
+  })
+
+  it('an older stored blob (no absence mark) still validates and deserializes', () => {
+    const p1 = polls([reviewOf(1)])(empty(), T0)
+    const blob = JSON.parse(JSON.stringify(serializeCueMemory(p1.memory)))
+    expect(isPersistedCueMemory(blob)).toBe(true)
+    const back = deserializeCueMemory(blob)
+    expect(polls([reviewOf(1)])(back, T0 + POLL).cue).toBe(false)
+    // An absence mark survives a restart.
+    const gone = polls([])(p1.memory, T0 + POLL)
+    const reloaded = JSON.parse(JSON.stringify(serializeCueMemory(gone.memory)))
+    expect(isPersistedCueMemory(reloaded)).toBe(true)
+    expect(polls([reviewOf(1)])(deserializeCueMemory(reloaded), T0 + 2 * POLL).cue).toBe(false)
   })
 })
 
