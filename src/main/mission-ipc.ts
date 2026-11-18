@@ -11,6 +11,7 @@
  */
 
 import { promises as fs } from 'node:fs'
+import { isAbsolute } from 'node:path'
 import { ipcMain } from 'electron'
 import { addTaskEventObserver } from './hook-bridge'
 import { readUserProjects } from './user-projects'
@@ -679,6 +680,41 @@ export function setMissionListObserver(
   missionListObserver = fn
 }
 
+/** What the disk says about a path: a regular file, a folder, or nothing there. */
+export type MissionPathKind = 'file' | 'dir' | 'missing'
+
+/** The most paths one `mission:pathKinds` call answers: a step's links, never a directory walk. */
+export const PATH_KINDS_MAX = 32
+
+/**
+ * Missions v4 mission dropdown S-4 — whether the paths a step's links name still exist, and whether each is a
+ * file or a folder. The dropdown draws a worktree whose path is gone as "removed — branch kept", and opens an
+ * evidence link's README (or the file itself). It reads the file system's metadata and nothing else: no
+ * content, no listing, no write. Only absolute paths are asked about (anything else answers `missing`) and at
+ * most {@link PATH_KINDS_MAX} of them; the answer is keyed by the path asked.
+ */
+export async function readPathKinds(paths: unknown): Promise<Record<string, MissionPathKind>> {
+  const asked = Array.isArray(paths)
+    ? paths.filter((p): p is string => typeof p === 'string').slice(0, PATH_KINDS_MAX)
+    : []
+  const out: Record<string, MissionPathKind> = {}
+  await Promise.all(
+    asked.map(async (p) => {
+      if (!isAbsolute(p)) {
+        out[p] = 'missing'
+        return
+      }
+      try {
+        const st = await fs.stat(p)
+        out[p] = st.isDirectory() ? 'dir' : st.isFile() ? 'file' : 'missing'
+      } catch {
+        out[p] = 'missing'
+      }
+    })
+  )
+  return out
+}
+
 /** Registers the renderer-facing channels. Called once from `src/main/index.ts`. */
 export function registerMissionIpc(): void {
   ipcMain.handle('mission:list', async (_e, folders: unknown): Promise<MissionListResult> => {
@@ -711,6 +747,8 @@ export function registerMissionIpc(): void {
   // preload entry until S-16, so the renderer cannot reach it yet. The reply carries the outcome and the
   // close warnings, never the record or a file path.
   ipcMain.handle('mission:v4Door', async (_e, door: unknown) => runPaneDoor(door))
+  // Mission dropdown S-4 — a read-only existence check for the paths of a step's links. No write, no content.
+  ipcMain.handle('mission:pathKinds', (_e, paths: unknown) => readPathKinds(paths))
   // Missions v4 S-16a — the view of one mission for the Mission pane. It reads and never writes. No
   // renderer calls it until S-17. It also notes the folder, so the observer's v4 leg looks there.
   ipcMain.handle('mission:v4View', async (_e, args: unknown): Promise<MissionV4ViewReply> => {

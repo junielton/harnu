@@ -73,6 +73,7 @@ import type {
   MissionDoorResult,
   MissionHandOffReply,
   MissionListResult,
+  MissionPathKind,
   MissionV4Door,
   MissionV4DoorReply,
   MissionV4ViewReply,
@@ -2965,6 +2966,12 @@ const api = {
    */
   missionV4Door: (door: MissionV4Door): Promise<MissionV4DoorReply> =>
     ipcRenderer.invoke('mission:v4Door', door),
+  /**
+   * Whether the paths a step's links name still exist, and whether each is a file or a folder (the mission
+   * dropdown's Links block). Read-only: it reads metadata only. Keyed by the path asked.
+   */
+  missionPathKinds: (paths: string[]): Promise<Record<string, MissionPathKind>> =>
+    ipcRenderer.invoke('mission:pathKinds', paths),
   /**
    * The hand-off (S-16b): the only thing that changes who leads a mission, and the operator's. Harnu
    * starts a normal session with the mission summary as its first prompt, waits for its real id, then

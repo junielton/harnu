@@ -460,6 +460,47 @@
       "done": "Added to the prompt of {name}. Press Enter there to send it. The answer shows in that session.",
       "notRunning": "{name} is not running. Resume it, then send the question again.",
       "close": "Close"
+    },
+    "step": {
+      "criteria": "Criteria",
+      "verified": "{n} criterion verified | {n} criteria verified",
+      "by": {
+        "fact": "Checked automatically",
+        "session": "Checked by a second session",
+        "operator": "You",
+        "person": "Waiting for {person}",
+        "personUnnamed": "Waiting for another person"
+      },
+      "selfCheck": "The session says it is done. Not checked yet.",
+      "mark": "Mark done",
+      "markPerson": "Mark approved",
+      "markPersonTitle": "Mark {person} as having approved this",
+      "blocked": {
+        "you": "Blocked · waiting for you",
+        "session": "Blocked · waiting for the session",
+        "withAge": "{head} · {age}"
+      },
+      "clear": "Done, continue",
+      "links": "Links",
+      "evidence": "Evidence",
+      "evidenceTitle": "Open the evidence in the viewer",
+      "worktreeTitle": "Show this worktree in the sidebar",
+      "titleWithPath": "{title} · {path}",
+      "copy": "Copy the path",
+      "copied": "Path copied",
+      "removed": "removed — branch kept",
+      "addOffer": "This folder is not in the sidebar. Add it?",
+      "add": "Add",
+      "addCancel": "Not now",
+      "page": "Page · {address}",
+      "openLink": "Open {label}",
+      "error": {
+        "NOT_FOUND": "That changed while you were looking. The latest is shown. Check it and try again if you still need to.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. The latest is shown. Try again.",
+        "MISSION_CLOSED": "This mission is closed, so nothing in it can change.",
+        "SETTLES_ITSELF": "Harnu checks this one by itself. You do not mark it.",
+        "other": "Harnu could not save that. Try again in a moment. If it keeps happening, close the dropdown and open it again."
+      }
     }
   },
   "missionPane": {

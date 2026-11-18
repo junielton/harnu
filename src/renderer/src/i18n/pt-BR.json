@@ -460,6 +460,47 @@
       "done": "Adicionado ao prompt de {name}. Aperte Enter lá para enviar. A resposta aparece nessa sessão.",
       "notRunning": "{name} não está rodando. Retome-a e envie a pergunta de novo.",
       "close": "Fechar"
+    },
+    "step": {
+      "criteria": "Critérios",
+      "verified": "{n} critério verificado | {n} critérios verificados",
+      "by": {
+        "fact": "Conferido automaticamente",
+        "session": "Conferido por uma segunda sessão",
+        "operator": "Você",
+        "person": "Esperando {person}",
+        "personUnnamed": "Esperando outra pessoa"
+      },
+      "selfCheck": "A sessão diz que terminou. Ainda não foi conferido.",
+      "mark": "Marcar como feito",
+      "markPerson": "Marcar como aprovado",
+      "markPersonTitle": "Marcar que {person} aprovou isto",
+      "blocked": {
+        "you": "Bloqueado · esperando você",
+        "session": "Bloqueado · esperando a sessão",
+        "withAge": "{head} · {age}"
+      },
+      "clear": "Pronto, continuar",
+      "links": "Links",
+      "evidence": "Evidência",
+      "evidenceTitle": "Abrir a evidência no visualizador",
+      "worktreeTitle": "Mostrar este worktree na barra lateral",
+      "titleWithPath": "{title} · {path}",
+      "copy": "Copiar o caminho",
+      "copied": "Caminho copiado",
+      "removed": "removido — branch mantida",
+      "addOffer": "Esta pasta não está na barra lateral. Adicionar?",
+      "add": "Adicionar",
+      "addCancel": "Agora não",
+      "page": "Página · {address}",
+      "openLink": "Abrir {label}",
+      "error": {
+        "NOT_FOUND": "Isso mudou enquanto você olhava. O mais recente está na tela. Confira e tente de novo se ainda precisar.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. O mais recente está na tela. Tente de novo.",
+        "MISSION_CLOSED": "Esta missão está fechada, então nada nela pode mudar.",
+        "SETTLES_ITSELF": "O Harnu confere este critério sozinho. Você não o marca.",
+        "other": "O Harnu não conseguiu salvar. Tente de novo em instantes. Se continuar, feche o menu e abra de novo."
+      }
     }
   },
   "missionPane": {

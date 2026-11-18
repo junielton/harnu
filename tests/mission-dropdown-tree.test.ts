@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { i18n } from '../src/renderer/src/i18n'
 import MissionDropdownTree from '../src/renderer/src/components/MissionDropdownTree.vue'
 import {
@@ -202,6 +203,8 @@ function mountTree(
 }
 
 beforeEach(() => {
+  // An open step (S-4) reads the sidebar's folders and talks to the doors through the stores.
+  setActivePinia(createPinia())
   ;(window as unknown as { api: unknown }).api = { shellOpenExternal: openExternal }
   openExternal.mockClear()
 })
@@ -448,10 +451,11 @@ describe('AC-4 — the tree is a keyboard tree', () => {
     expect(idOf(focused())).toBe('s-review')
     await press(focused(), 'ArrowRight')
     expect(rowOf('s-review').getAttribute('aria-expanded')).toBe('true')
+    // S-4: the settled criterion folds into one line; only the open one is listed.
     expect(qa('[data-test="criterion"]').map((el) => el.textContent?.trim())).toEqual([
-      'Every reviewer question has an answer',
       'The page opens on a phone'
     ])
+    expect(q('[data-test="criteria-verified"]')?.textContent?.trim()).toBe('1 criterion verified')
     await press(focused(), 'Enter')
     expect(rowOf('s-review').getAttribute('aria-expanded')).toBe('false')
     expect(qa('[data-test="criterion"]')).toHaveLength(0)

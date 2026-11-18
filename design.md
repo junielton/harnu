@@ -7249,6 +7249,14 @@ auto`, thin scrollbar on `border-border-2`) is the one scroller; the **footer** 
    **worktree** as its branch name (click selects that folder in the sidebar) with a copy button for the
    path; the evidence as one **Evidence** link that opens its README; an address on this machine. A link
    that opens nothing is not drawn; no absolute path is ever drawn; an empty Links block is not drawn.
+   (`MissionDropdownStep.vue`, `lib/mission-dropdown-links.ts`.) A path link is one chip, `border-border-2`,
+   `11px`: the label (a `span`, `select-text`, because a button's text cannot be selected) and, after a
+   `border-l` divider, the copy button (`copy`, 10px, `text-text-4`; it shows `check` and says "Path copied"
+   for ~2s after a copy). A worktree whose path is gone is `text-text-3`, with "removed — branch kept"
+   after the branch name, opens nothing and keeps its copy. A click on a worktree that is not pinned opens
+   one line under the links, "This folder is not in the sidebar. Add it?" (`border-border-2`,
+   `bg-surface-2`, `11.5px`, compact Add and Not now). The Evidence link is drawn only when its README (or
+   the file) exists; a tooltip may hold the repo-relative path, never an absolute one.
 5. **Footer** (pinned, `border-t`, `padding: 7px 14px`): **Close mission…** (ghost, compact, `flag`).
    Not drawn when the next step already is "Close mission…", nor in the empty and chooser views.
 

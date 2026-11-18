@@ -53,7 +53,10 @@ const FADE_MS = 400
  * `hover` is a selector the harness points the mouse at once the dropdown is up, for the one state that is a
  * tooltip (`dots`: a state glyph's label, S-3).
  *
- * @type {ReadonlyArray<{ id: string, sample: string, open: boolean, mod?: 'staged'|'request'|'multi'|'chooser'|'more', hover?: string, note?: string }>}
+ * `row` is a step row the harness clicks open once the dropdown is up (S-4: an open step, which a sample's own
+ * `ui.openStep` cannot do for a reply the harness edited).
+ *
+ * @type {ReadonlyArray<{ id: string, sample: string, open: boolean, mod?: 'staged'|'request'|'multi'|'chooser'|'more'|'step-open'|'step-blocked', row?: string, hover?: string, note?: string }>}
  */
 export const MISSION_DROPDOWN_STATES = [
   { id: 'mid', sample: 'default', open: true },
@@ -79,8 +82,22 @@ export const MISSION_DROPDOWN_STATES = [
     mod: 'more',
     note: 'the next card with "more waiting on you" opened in place (S-2)'
   },
-  { id: 'step-open', sample: 'step-open', open: true },
-  { id: 'blocked', sample: 'step-blocked', open: true },
+  {
+    id: 'step-open',
+    sample: 'default',
+    open: true,
+    mod: 'step-open',
+    row: 'stp-11',
+    note: 'an open step with three verified criteria, two open ones and every kind of link (S-4)'
+  },
+  {
+    id: 'blocked',
+    sample: 'default',
+    open: true,
+    mod: 'step-blocked',
+    row: 'stp-10',
+    note: 'the blocked step open: its blocker, one criterion and two links (S-4)'
+  },
   { id: 'ask', sample: 'ask', open: true },
   {
     id: 'done-when',
@@ -138,6 +155,9 @@ window.api = new Proxy({}, {
   get: (_, key) =>
     key === 'missionV4View'
       ? async () => current
+      : key === 'missionPathKinds'
+        // The paths of the sample's links exist: a folder, and a README inside the evidence folder.
+        ? async (paths) => Object.fromEntries(paths.map((p) => [p, p.endsWith('/README.md') ? 'file' : 'dir']))
       : String(key).startsWith('on')
         ? () => noop
         : async () => undefined
@@ -188,6 +208,32 @@ function edited(sample, mod) {
     w.next = attach
     w.more = w.items.slice(1)
   }
+  if (mod === 'step-open' || mod === 'step-blocked') {
+    const open = mod === 'step-open'
+    const target = r.detail.steps.find((x) => x.id === (open ? 'stp-11' : 'stp-10'))
+    const c = (id, text, by, settled) => ({ id, text, by, settled, via: settled ? by : null })
+    target.criteria = open
+      ? [
+          c('c1', 'Every proof names its test', 'session', true),
+          c('c2', 'The proofs are listed in the report', 'fact', true),
+          c('c3', 'The report opens on a phone', 'session', true),
+          c('c4', 'Check the scores of the first twelve specs by hand', 'operator', false),
+          c('c5', 'The whole test set runs end to end', 'session', false)
+        ]
+      : [c('c1', 'The score of one spec is the same twice', 'session', false)]
+    target.open = target.criteria.filter((x) => !x.settled).map((x) => x.id)
+    target.links = open
+      ? [
+          { kind: 'pr', ref: 'https://git.example/acme/web/pull/21' },
+          { kind: 'worktree', ref: '/sample/.claude/worktrees/card-score-proofs' },
+          { kind: 'doc', ref: '/sample/.harnu/out/score-proofs' },
+          { kind: 'url', ref: 'http://localhost:5173/score-report' }
+        ]
+      : [
+          { kind: 'worktree', ref: '/sample/.claude/worktrees/card-score-slices' },
+          { kind: 'doc', ref: '/sample/.harnu/out/score-slices' }
+        ]
+  }
   return r
 }
 
@@ -213,9 +259,14 @@ function ledReaders(base) {
 }
 
 window.__missionDropdown = {
-  async show(sample, open, mod, hover) {
+  async show(sample, open, mod, hover, row) {
     if (mod) {
-      sessions.folders = [{ path: '/sample', sessions: [{ sessionId: SESSION, projectPath: '/sample', summary: 'Leader' }] }]
+      sessions.folders = [
+        { path: '/sample', pinned: true, sessions: [{ sessionId: SESSION, projectPath: '/sample', summary: 'Leader' }] },
+        // The worktrees the sample's links name: pinned folders, each on its branch.
+        { path: '/sample/.claude/worktrees/card-score-proofs', pinned: true, gitBranch: 'card/score-proofs', sessions: [] },
+        { path: '/sample/.claude/worktrees/card-score-slices', pinned: true, gitBranch: 'card/score-slices', sessions: [] }
+      ]
       sessions.select(SESSION)
       missions.showSample(null)
       current = edited(sample, mod)
@@ -232,6 +283,12 @@ window.__missionDropdown = {
       await new Promise((r) => setTimeout(r, 60))
       const sel = mod === 'chooser' ? '[data-test="mission-switch"]' : '[data-test="next-more"]'
       document.querySelector(sel)?.click()
+    }
+    // An open step: click its row the way the operator does.
+    if (open && row) {
+      await new Promise((r) => setTimeout(r, 60))
+      document.querySelector('[data-row="' + row + '"]')?.click()
+      await new Promise((r) => setTimeout(r, 60))
     }
     // A tooltip state: point at the glyph the way a mouse does (its label is shown on mouseenter).
     if (open && hover) {
@@ -306,7 +363,8 @@ export async function showMissionDropdownState(page, state) {
   const def = MISSION_DROPDOWN_STATES.find((s) => s.id === state)
   if (!def) throw new Error(`unknown mission dropdown state "${state}"`)
   await page.evaluate(
-    ({ sample, open, mod, hover }) => window.__missionDropdown.show(sample, open, mod, hover),
+    ({ sample, open, mod, hover, row }) =>
+      window.__missionDropdown.show(sample, open, mod, hover, row),
     def
   )
   if (def.open) {
