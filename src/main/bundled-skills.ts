@@ -47,6 +47,7 @@ import * as path from 'node:path'
 import catalogDoc from '../../resources/skills/CATALOG.md?raw'
 import {
   EMPTY_PREFS,
+  SKILL_DEFAULTS,
   insertPluginDirArg,
   detectSkillCollisions,
   enabledSkillNames,
@@ -1028,22 +1029,26 @@ export interface BundledSkillsView {
   collisions: string[]
 }
 
+/** The Settings → Skills view: the catalog, the RESOLVED global on/off and what collides with a personal skill. */
+export async function readBundledSkillsView(): Promise<BundledSkillsView> {
+  const [catalog, prefs, collisions] = await Promise.all([
+    readBundledCatalog(),
+    readBundledSkillsPrefs(),
+    scanSkillCollisions()
+  ])
+  return {
+    version: BUNDLED_SKILLS_VERSION,
+    catalog,
+    // the resolved global value: what the operator chose, over the skill's default (`walk` ships on, D-21)
+    enabled: { ...SKILL_DEFAULTS, ...compact(prefs.enabled) },
+    userLevelInstall: compact(prefs.userLevelInstall),
+    collisions
+  }
+}
+
 /** Register the pane's IPC. Read-mostly; every write re-reads and returns the view. */
 export function registerBundledSkillsHandlers(): void {
-  ipcMain.handle('bundledSkills:get', async (): Promise<BundledSkillsView> => {
-    const [catalog, prefs, collisions] = await Promise.all([
-      readBundledCatalog(),
-      readBundledSkillsPrefs(),
-      scanSkillCollisions()
-    ])
-    return {
-      version: BUNDLED_SKILLS_VERSION,
-      catalog,
-      enabled: compact(prefs.enabled),
-      userLevelInstall: compact(prefs.userLevelInstall),
-      collisions
-    }
-  })
+  ipcMain.handle('bundledSkills:get', (): Promise<BundledSkillsView> => readBundledSkillsView())
 
   ipcMain.handle('bundledSkills:setGlobal', async (_e, name: string, enabled: boolean) => {
     await patchPrefs((p) => ({ ...p, enabled: { ...p.enabled, [name]: enabled === true } }))
