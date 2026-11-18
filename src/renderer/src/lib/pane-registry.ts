@@ -133,5 +133,12 @@ export const paneRegistry: Record<AnyHelperPane['type'], PaneRegistryEntry> = {
   walk: {
     persistable: true,
     dedupKey: (p) => (p as HelperPane).payload?.walkId as string | undefined
+  },
+  // Guided walks S-4 — the Walks library. Non-PTY, reads the repo's walks itself and holds nothing, so it persists
+  // like the Mission pane. ONE per worktree (a constant `dedupKey`): the header icon, the folder menu and the Topbar
+  // all reveal the same pane.
+  walks: {
+    persistable: true,
+    dedupKey: () => 'walks'
   }
 }

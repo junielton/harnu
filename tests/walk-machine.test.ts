@@ -1,4 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach } from 'vitest'
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createWalkStore, walksDir } from '../src/main/walk/walk-store'
+import type { WalkScript } from '../src/shared/walk-schema'
 import {
   WALK_WAIT_MS,
   newRun,
@@ -21,6 +26,7 @@ import {
   appendChecks,
   counts,
   canEscalate,
+  lastTimeHints,
   type MachineCheck,
   type Run
 } from '../src/shared/walk-machine'
@@ -289,5 +295,110 @@ describe('walk machine: the agent check and the late report', () => {
     // Done is still possible after failures, and clears the failed state
     run = ok(tryAgain(run))
     expect(ok(done(run, 0)).checks[0].state).toBe('verified')
+  })
+})
+
+describe('walk machine: re-run (AC-22)', () => {
+  let root: string
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'walk-rerun-')))
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  const check = (id: string, over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id,
+    title: `Check ${id}`,
+    why: 'why',
+    where: { text: 'the page' },
+    do: [{ text: 'Do it.', see: 'It works.' }],
+    passes: 'It works.',
+    fails: 'It does not.',
+    nothingFromHere: 'Only eyes can tell.',
+    ...over
+  })
+  const script = {
+    title: 'Add CSV export',
+    purpose: 'check',
+    source: { kind: 'feature', text: 'An export button.' },
+    checks: [
+      check('c0', { status: 'verified', evidence: 'vitest 4 passed' }),
+      check('c1'),
+      check('c2'),
+      check('c3'),
+      check('c4')
+    ]
+  } as unknown as WalkScript
+
+  it('a re-run is a fresh run with last-time hints and leaves earlier runs alone', async () => {
+    const store = createWalkStore(root)
+    const { walkId, runId } = await store.createWalk(script)
+    const step = (fn: (r: Run) => ReturnType<typeof done>) =>
+      store.updateRun(walkId, runId, (r) => fn(r))
+    await step((r) => startRun(r, 100))
+    await step((r) => done(r, 110)) // c1 passes (nothing to check from here)
+    await step((r) => skip(r, 120)) // c2 is skipped
+    await step((r) => fail(r, { line: 'Header row missing when the table is empty.', now: 130 })) // c3 fails
+    await step((r) => endRun(r, 140)) // the walk ends with c3 failed and c4 never reached
+
+    const before = readFileSync(join(walksDir(root), walkId, 'runs', `${runId}.json`), 'utf8')
+    const first = (await store.readRun(walkId, runId))!.run
+    expect(first.state).toBe('ended')
+
+    // the hint is what the last run said, per check: the line the operator wrote, and nothing for a
+    // check the run never walked (the pre-closed row, the check that was not reached)
+    expect(lastTimeHints(first)).toEqual({
+      c1: { result: 'passed' },
+      c2: { result: 'skipped' },
+      c3: { result: 'failed', line: 'Header row missing when the table is empty.' }
+    })
+
+    // the re-run is run n + 1 of the same walk, every check to do, the pre-closed row included
+    const again = await store.newRun(walkId)
+    if (!again.ok) throw new Error(`refused ${again.error.code}`)
+    expect(again.n).toBe(2)
+    const second = (await store.readRun(walkId, again.runId))!.run
+    expect(second.state).toBe('ready')
+    expect(second.checks.map((c) => c.id)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4'])
+    expect(totalChecks(second)).toBe(5)
+    for (const c of second.checks) {
+      expect(c).toMatchObject({
+        state: 'todo',
+        closedHow: null,
+        attempts: 0,
+        failures: [],
+        correction: null,
+        report: null,
+        reportLog: []
+      })
+    }
+    // nothing from the old run is carried inside the new one: the hint is read from the old run, not copied
+    expect(JSON.stringify(second)).not.toContain('Header row missing')
+
+    // earlier runs are byte-identical
+    expect(readFileSync(join(walksDir(root), walkId, 'runs', `${runId}.json`), 'utf8')).toBe(before)
+    expect(readdirSync(join(walksDir(root), walkId, 'runs')).sort()).toEqual(
+      [`${runId}.json`, `${again.runId}.json`].sort()
+    )
+
+    // a re-run is refused while a run of the walk is live, and says which one to open instead
+    await store.updateRun(walkId, again.runId, (r) => startRun(r, 200))
+    expect(await store.newRun(walkId)).toMatchObject({
+      ok: false,
+      error: { code: 'WALK_RUN_LIVE', runId: again.runId }
+    })
+  })
+
+  it('last-time hints say passed, failed, skipped or unverified, and only for checks that were walked', () => {
+    const checks = [plain('a'), plain('s'), agent('b'), plain('d')]
+    let run = live(checks)
+    run = ok(done(run, 1)) // a passes
+    run = ok(skip(run, 2)) // s is skipped
+    run = ok(done(run, 3)) // b awaits the agent...
+    run = ok(endRun(run, 4)) // ...and the walk ends first: a caveat; d is never reached
+    expect(lastTimeHints(run)).toEqual({
+      a: { result: 'passed' },
+      s: { result: 'skipped' },
+      b: { result: 'unverified' }
+    })
   })
 })

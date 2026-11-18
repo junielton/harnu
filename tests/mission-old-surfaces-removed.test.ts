@@ -272,10 +272,7 @@ describe('nothing of the old surfaces is left', () => {
     walk(dir)
     const map = read('CLAUDE.md')
     const mapped = [...new Set([...map.matchAll(/`?([A-Z][A-Za-z0-9]+\.vue)`?/g)].map((m) => m[1]))]
-    // a row the spec asks for ahead of its component (the Walks library, guided-walks S-4): drop it from here when
-    // `WalksPane.vue` lands
-    const planned = new Set(['WalksPane.vue'])
-    expect(mapped.filter((n) => !onDisk.has(n) && !planned.has(n))).toEqual([])
+    expect(mapped.filter((n) => !onDisk.has(n))).toEqual([])
     const missionOnDisk = [...onDisk].filter((n) => /^Mission/.test(n))
     expect(missionOnDisk.filter((n) => !map.includes(n))).toEqual([])
   })

@@ -50,14 +50,15 @@ export type WalkKeyAction =
   | 'close-lightbox'
   | 'close-roadmap'
   | 'close-form'
+  | 'rerun'
 
 export type PaneMode =
-  'check' | 'roadmap' | 'failed-form' | 'skipped' | 'closeout' | 'empty' | 'error'
+  'check' | 'roadmap' | 'failed-form' | 'skipped' | 'closeout' | 'empty' | 'error' | 'past'
 
 export interface KeyContext {
   mode: PaneMode
   /** What Enter means on this screen, or `null` when no outcome is on offer. */
-  primary: 'done' | 'start' | 'try-again' | 'send' | 'close-out' | 'pick-skipped' | null
+  primary: 'done' | 'start' | 'try-again' | 'send' | 'rerun' | 'close-out' | 'pick-skipped' | null
   /** The outcomes on screen right now (the view's `outcomes` ids). A shortcut acts only for one of these. */
   available: ReadonlySet<string>
   lightbox: boolean
@@ -143,6 +144,7 @@ export function mapWalkKey(ev: KeyLike, ctx: KeyContext): { action: WalkKeyActio
       case 'start':
       case 'try-again':
       case 'send':
+      case 'rerun':
         return ctx.primary === 'done' && !ctx.available.has('done') ? null : { action: ctx.primary }
       default:
         return null

@@ -107,18 +107,22 @@ export const useWalkStore = defineStore('walk', () => {
     folder: string
     walkId: string
     runId: string
+    /** Opened on a past run (from the library): an ended run is shown read-only. */
+    past?: boolean
   }): Promise<void> {
     listen()
     const have = panes.get(a.paneId)
     if (have && have.walkId === a.walkId && have.runId === a.runId) {
+      have.ui.past = a.past === true
       await reload(a.paneId)
       return
     }
+    const { past, ...ids } = a
     panes.set(a.paneId, {
-      ...a,
+      ...ids,
       data: null,
       missing: false,
-      ui: freshUi(),
+      ui: { ...freshUi(), past: past === true },
       refusal: null,
       servedAt: null,
       cursor: null,
@@ -144,8 +148,13 @@ export const useWalkStore = defineStore('walk', () => {
       if (p.walkId === walkId && p.folder === folder) void reload(p.paneId)
   }
 
-  /** Point a pane at another run (a re-run) or another walk (the re-run offer). */
-  async function follow(paneId: string, runId: string, walkId?: string): Promise<void> {
+  /** Point a pane at another run (a re-run, the run selector) or another walk (the re-run offer). */
+  async function follow(
+    paneId: string,
+    runId: string,
+    walkId?: string,
+    opts: { past?: boolean } = {}
+  ): Promise<void> {
     const p = panes.get(paneId)
     if (!p) return
     if (walkId && walkId !== p.walkId) {
@@ -155,7 +164,7 @@ export const useWalkStore = defineStore('walk', () => {
     }
     p.runId = runId
     p.cursor = null
-    p.ui = freshUi()
+    p.ui = { ...freshUi(), past: opts.past === true }
     await reload(paneId)
   }
 
@@ -293,6 +302,33 @@ export const useWalkStore = defineStore('walk', () => {
     await window.api.walkDiscardReady({ folder: p.folder, walkId: p.walkId, runId: p.runId })
   }
 
+  // ---- the library, re-run and export (S-4) -------------------------------------------------------
+
+  /**
+   * Re-run a walk: a fresh run n + 1 with every check to do, or, while a run of the walk is live, that live run
+   * (`kind: 'live'`). Earlier runs are never touched.
+   */
+  async function rerun(
+    folder: string,
+    walkId: string
+  ): Promise<
+    | { ok: true; walkId: string; runId: string; kind: 'rerun' | 'reused' | 'live' }
+    | { ok: false; code: string }
+  > {
+    const res = await window.api.walkRerun({ folder, walkId })
+    return isRefusal(res) ? { ok: false, code: res.error.code } : res
+  }
+
+  /** Export a run as Markdown into the walk's own folder: the path of the file, or a refusal code. */
+  async function exportRun(
+    folder: string,
+    walkId: string,
+    runId?: string
+  ): Promise<{ ok: true; path: string } | { ok: false; code: string }> {
+    const res = await window.api.walkExport({ folder, walkId, ...(runId ? { runId } : {}) })
+    return res.ok ? { ok: true, path: res.path } : { ok: false, code: res.error.code }
+  }
+
   async function replay(paneId: string): Promise<void> {
     const p = panes.get(paneId)
     if (!p) return
@@ -314,6 +350,8 @@ export const useWalkStore = defineStore('walk', () => {
     tick,
     saveShot,
     rerunSaved,
+    rerun,
+    exportRun,
     discardIfReady,
     replay
   }

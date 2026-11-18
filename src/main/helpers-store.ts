@@ -25,6 +25,9 @@ export type HelperPaneType =
   // Guided walks S-3: the walk pane. Non-PTY; its `payload` carries `{ walkId, runId }` and never content, so a
   // restart restores it from the walk's record under `.harnu/walks/`.
   | 'walk'
+  // Guided walks S-4: the Walks library. Non-PTY and reproducible from nothing (the repo's walks are read from
+  // `.harnu/walks/`), so it persists like the Mission pane; one per worktree.
+  | 'walks'
 
 export interface HelperPane {
   /** Stable id; format: `h-<random>`. Used as the PTY identifier too. */

@@ -4,9 +4,11 @@ import { useI18n } from 'vue-i18n'
 import {
   ArrowUpRight,
   Bookmark,
+  Copy,
   Expand,
   GitBranch,
   GitPullRequest,
+  Library,
   Lightbulb,
   List,
   ListChecks,
@@ -44,6 +46,7 @@ import WalkCheck from './WalkCheck.vue'
 import WalkCloseOut from './WalkCloseOut.vue'
 import WalkCopy from './WalkCopy.vue'
 import WalkFailure from './WalkFailure.vue'
+import WalkPast from './WalkPast.vue'
 import WalkRoadmap from './WalkRoadmap.vue'
 import WalkStatus from './WalkStatus.vue'
 
@@ -67,7 +70,7 @@ interface Props {
 const props = defineProps<Props>()
 const emit = defineEmits<{ headerMouseDown: [ev: MouseEvent] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const helpers = useHelpersStore()
 const keybindings = useKeybindingsStore()
 const sessions = useSessionsStore()
@@ -87,15 +90,25 @@ function attach(): void {
   const walkId = typeof payload.value.walkId === 'string' ? payload.value.walkId : ''
   const runId = typeof payload.value.runId === 'string' ? payload.value.runId : ''
   if (!walkId || !runId) return
-  void walk.attach({ paneId: props.pane.id, folder: folder.value, walkId, runId })
+  void walk.attach({
+    paneId: props.pane.id,
+    folder: folder.value,
+    walkId,
+    runId,
+    past: payload.value.past === true
+  })
 }
 onMounted(attach)
 watch(
-  () => [payload.value.walkId, payload.value.runId],
+  () => [payload.value.walkId, payload.value.runId, payload.value.past === true],
   () => {
     const s = state.value
+    const past = payload.value.past === true
     if (s && (s.walkId !== payload.value.walkId || s.runId !== payload.value.runId))
-      void walk.follow(props.pane.id, String(payload.value.runId), String(payload.value.walkId))
+      void walk.follow(props.pane.id, String(payload.value.runId), String(payload.value.walkId), {
+        past
+      })
+    else if (s) s.ui.past = past
   }
 )
 onBeforeUnmount(() => {
@@ -112,13 +125,16 @@ const data = computed<WalkData | null>(() => {
   return d ? ({ ...d, now: now.value } as WalkData) : null
 })
 const view = computed(() =>
-  paneView(data.value, state.value?.ui ?? emptyUi, (k, p) => t(k, p ?? {}))
+  paneView(data.value, state.value?.ui ?? emptyUi, (k, p) => t(k, p ?? {}), {
+    locale: locale.value
+  })
 )
 const emptyUi = {
   explainOpen: false,
   formOpen: false,
   roadmapOpen: false,
   lightbox: false,
+  past: false,
   asking: { explain: [], simpler: [] }
 }
 
@@ -313,6 +329,75 @@ const lightboxImage = computed(() => {
   return im ? { ...im, url: imageUrl(im.src) } : null
 })
 
+// the screenshots of a past run's notes are files in the run's folder too
+watch(
+  () => view.value.past?.rows.flatMap((r) => r.notes?.shots.map((x) => x.path) ?? []).join('|'),
+  async () => {
+    for (const row of view.value.past?.rows ?? [])
+      for (const sh of row.notes?.shots ?? []) {
+        if (images.value[sh.path] !== undefined) continue
+        images.value = { ...images.value, [sh.path]: '' }
+        const res = await window.api.markdownRead(sh.path)
+        if (res.ok && res.kind === 'image')
+          images.value = { ...images.value, [sh.path]: res.content }
+      }
+  },
+  { immediate: true }
+)
+
+// ---- the library, the history, Re-run and Export (S-4) -----------------------------------------------
+
+/** The library icon of the header, and Open Walks on the close-out card: reveal the repo's Walks. */
+function onOpenLibrary(): void {
+  helpers.addWalksHelper(props.worktreePath)
+}
+
+/** `← Walks` on a past run: the library takes this cell back (a past run is only a viewer). */
+function onBackToLibrary(): void {
+  helpers.addWalksHelper(props.worktreePath)
+  helpers.removeHelper(props.worktreePath, props.pane.id)
+}
+
+/** The run selector: an ended run opens read-only, a live one continues. */
+async function onSelectRun(runId: string): Promise<void> {
+  const s = state.value
+  const opt = view.value.past?.run.options.find((o) => o.runId === runId)
+  if (!s || !opt) return
+  const past = !opt.live
+  helpers.setWalkRun(props.worktreePath, props.pane.id, runId, undefined, { past })
+  await walk.follow(props.pane.id, runId, undefined, { past })
+}
+
+/** A screenshot of a note opens in the viewer, which draws an image inline. */
+function onOpenShot(path: string): void {
+  helpers.addMarkdownHelper(folder.value, path, folder.value)
+}
+
+/** Re-run: run n + 1 of this walk, or the live run when one is live. This pane follows it. */
+async function onRerunWalk(): Promise<void> {
+  const s = state.value
+  if (!s) return
+  const res = await walk.rerun(folder.value, s.walkId)
+  if (!res.ok) {
+    ui.pushToast({ kind: 'danger', title: t('walksLibrary.rerunFailed') })
+    return
+  }
+  helpers.setWalkRun(props.worktreePath, props.pane.id, res.runId, undefined, { past: false })
+  await walk.follow(props.pane.id, res.runId, undefined, { past: false })
+}
+
+/** Export markdown: write the run into the walk's own folder and open the file in the viewer. */
+async function onExport(): Promise<void> {
+  const s = state.value
+  if (!s) return
+  const res = await walk.exportRun(folder.value, s.walkId, s.runId)
+  if (!res.ok) {
+    ui.pushToast({ kind: 'danger', title: t('walksLibrary.export.failed') })
+    return
+  }
+  helpers.addMarkdownHelper(folder.value, res.path, folder.value)
+}
+
 // ---- the operator's outcomes ------------------------------------------------------------------------
 
 const form = ref<{ canSend: boolean; line: string; shot: string | null }>({
@@ -376,6 +461,12 @@ async function run(id: OutcomeId): Promise<void> {
       break
     case 'close-out':
       await walk.operate(paneId, 'close-out-with-skipped')
+      break
+    case 'rerun':
+      await onRerunWalk()
+      break
+    case 'export':
+      await onExport()
       break
   }
 }
@@ -508,6 +599,17 @@ const hasFoot = computed(
         <b class="font-medium text-text">{{ $t('testWalk.title') }}</b>
         <template v-if="view.title"> · {{ view.title }}</template>
       </span>
+      <button
+        class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+        style="width: 18px; height: 18px"
+        :title="$t('walksLibrary.open')"
+        :aria-label="$t('walksLibrary.label')"
+        data-test="walk-library-open"
+        @mousedown.stop
+        @click="onOpenLibrary"
+      >
+        <Library :size="12" :stroke-width="1.5" />
+      </button>
       <button
         class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
         :class="isExpanded ? 'text-accent' : 'text-text-3'"
@@ -695,11 +797,25 @@ const hasFoot = computed(
         </ol>
       </template>
 
+      <WalkPast
+        v-else-if="view.mode === 'past' && view.past"
+        :past="view.past"
+        :image-url="imageUrl"
+        @back="onBackToLibrary"
+        @select-run="onSelectRun"
+        @open-shot="onOpenShot"
+      />
+
       <WalkCloseOut
         v-else-if="view.mode === 'closeout' && view.closeout"
         :closeout="view.closeout"
         @open-mission="openMission"
+        @open-walks="onOpenLibrary"
+        @export="onExport"
       />
+      <p v-if="view.waking" class="why waking" role="status" data-test="walk-waking">
+        {{ view.waking }}
+      </p>
       <p v-if="doorSent && view.mode === 'check'" class="why" role="status">
         {{ $t('testWalk.retry.doorSent') }}
       </p>
@@ -746,7 +862,12 @@ const hasFoot = computed(
             >{{ o.glyph }}</span
           >
           <Plus v-else-if="o.glyph === '+'" class="i i10" :size="10" />
-          <RefreshCw v-else-if="o.id === 'try-again'" class="i i10" :size="10" />
+          <RefreshCw
+            v-else-if="o.id === 'try-again' || o.id === 'rerun'"
+            class="i i10"
+            :size="10"
+          />
+          <Copy v-else-if="o.id === 'export'" class="i i10" :size="10" />
           <Send v-else-if="o.id === 'send'" class="i i10" :size="10" />
           <span>{{ o.label }}</span>
           <kbd v-if="o.chip">{{ o.chip }}</kbd>
@@ -1941,6 +2062,15 @@ const hasFoot = computed(
   margin-top: -8px;
   font-size: 11.5px;
   color: var(--color-text-4);
+}
+.wk .waking {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--color-text-3);
+}
+.wk .lt.failed,
+.wk .lt-hint.failed {
+  color: var(--color-warning);
 }
 .wk .redt {
   color: var(--color-red);
