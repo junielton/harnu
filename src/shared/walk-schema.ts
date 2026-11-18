@@ -89,7 +89,8 @@ export interface WalkCheck {
     idea?: { text: string; link?: WalkLink }
     why?: string
   }
-  edge?: { text: string; see: string }[]
+  /** `id` (`e1`, `e2`, ...) is given by the store when the script is accepted; a script never carries it. */
+  edge?: { id?: string; text: string; see: string }[]
   table?: { item: string; shows: string; source: string }[]
   blocks?: string[]
   blocksWhy?: string

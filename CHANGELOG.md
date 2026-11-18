@@ -12,6 +12,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-17
 
+### Added
+
+- **A session can now write you a guided walk.** Say "walk me through what we just built" or "test PR #48 with me" in any session and it can save a list of checks for you — what to do, where, and what you should see — for a feature, a pull request, a branch, a board card or a mission, with four new always-available verbs (`walk_open`, `walk_extend`, `walk_report`, `walk_get`). A script that breaks a rule is refused whole, with every broken rule named. Your answers (Done, Failed with your own line, Explain more, and so on) come back to the session as short `[harnu-walk]` messages that wake a parked session, and one no session could take is kept with the walk on disk and sent again, even after a restart. The pane you walk it in is not built yet, so for now the walk is saved but not shown.
+
 ### Fixed
 
 - An older campaign now reads right in the new Missions right after you upgrade. Before, a campaign with many chapters could show steps under the wrong chapter, vanish from the sidebar and Activity until something was written to it, forget which chapters were waiting on an earlier one, and count a chapter as done when its final check had never passed. Now an old step id (given with its chapter's mission) means the step it always meant, the campaign shows up in the sidebar and in Activity straight away, a chapter that needs something an earlier chapter has not delivered shows what it is waiting for, and each chapter's "Delivered and verified" step is visible and keeps the chapter from counting as done until the chapter is delivered, so the count matches what the old version showed. The first change you make to a campaign now keeps every detail of the old files (check ids and authors, who asked to close, step order); the old files are still never touched.

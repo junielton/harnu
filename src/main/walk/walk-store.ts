@@ -20,7 +20,8 @@
  * ends). A `ready` run (the roadmap is shown, nobody pressed Start) is not live: the walk reads
  * "not walked yet" and the run is discarded when its pane closes.
  *
- * Electron-free. No verb and no pane use this yet (S-2 and later).
+ * Electron-free. S-2 adds the verbs' needs: the walk's additions (`deepenings`, `simpler`, `added`),
+ * an atomic "run step plus the turns it owes the session" write, and `updateWalk` (a guarded `rev`).
  */
 import { randomBytes } from 'node:crypto'
 import { promises as fs } from 'node:fs'
@@ -29,7 +30,7 @@ import { dataDirAt, mainCheckoutRoot, mkdirDataDir } from '../data-dir'
 import { atomicWriteFile } from '../mcp/atomic-write'
 import { rawRm } from '../raw-fs'
 import { counts, newRun, type MachineError, type Run } from '../../shared/walk-machine'
-import { toMachineChecks, type WalkScript } from '../../shared/walk-schema'
+import { toMachineChecks, type DoItem, type WalkScript } from '../../shared/walk-schema'
 import type { WalkSource } from '../../shared/walk-source'
 
 // ---- Records ---------------------------------------------------------------------------------
@@ -47,6 +48,32 @@ export interface LastRun {
   total: number
 }
 
+/** One Explain more answer: the "why this matters" paragraph and the sub-checks it adds to a check. */
+export interface Deepening {
+  checkId: string
+  more?: string
+  /** Sub-checks of the same check; each has a stable id (`e1`, `e2`, ...) shared with the script's `edge`. */
+  extra?: (DoItem & { id: string })[]
+  /** The run ordinal it was added in; a past run hides what a later run added. */
+  addedInRun: number
+  at: number
+}
+
+/** One "I didn't get this step" answer. The latest of a check replaces the earlier (the list keeps both). */
+export interface SimplerCard {
+  checkId: string
+  text: string
+  do: DoItem[]
+  addedInRun: number
+  at: number
+}
+
+/** A check appended mid-walk (`walk_extend` with `append`), and the run it was added in. */
+export interface AddedCheck {
+  checkId: string
+  addedInRun: number
+}
+
 export interface WalkRecord {
   v: 1
   walkId: string
@@ -56,6 +83,10 @@ export interface WalkRecord {
   /** The live run, or `null`. A `ready` run is not live. */
   live: { runId: string; n: number } | null
   lastRun: LastRun | null
+  /** What Explain more added. Stored on the walk, never on a run. */
+  deepenings?: Deepening[]
+  simpler?: SimplerCard[]
+  added?: AddedCheck[]
 }
 
 export interface OutboxEntry {
@@ -94,13 +125,27 @@ export interface WalkLibraryEntry {
   lastRun: LastRun | null
 }
 
-export type StoreError = MachineError & { runId?: string }
+export type StoreError = MachineError & { runId?: string; rev?: number }
 export type StoreResult<T = object> = ({ ok: true } & T) | { ok: false; error: StoreError }
 
 export interface WalkStoreOptions {
   now?: () => number
   /** Test seam: a new `<prefix>-<8 hex>` id. */
   newId?: (prefix: 'wlk' | 'run' | 'out') => string
+}
+
+/** A turn the session is owed, written in the same file write as the step that caused it. */
+export interface OwedTurn {
+  kind: string
+  checkId?: string | null
+  text: string
+}
+
+export interface UpdateRunOptions {
+  /** The turns this step owes the session, built from the walk and the run AFTER the step. */
+  turns?: (next: Run, ctx: { walk: WalkRecord; rec: RunRecord }) => OwedTurn[]
+  /** The close-out text, kept with the run when this step ended it. */
+  closeOut?: (next: Run, ctx: { walk: WalkRecord; rec: RunRecord }) => string | null
 }
 
 // ---- Paths -----------------------------------------------------------------------------------
@@ -143,8 +188,29 @@ function asRun(x: unknown, walkId: string, runId: string): RunRecord | null {
 export interface WalkStore {
   createWalk(
     script: WalkScript,
-    opts?: { ownerSessionId?: string }
+    opts?: {
+      ownerSessionId?: string
+      /** Runs before the first write, with the walk's own directory (copy the script's images in). */
+      transform?: (
+        script: WalkScript,
+        ctx: { walkId: string; walkDir: string }
+      ) => Promise<WalkScript>
+    }
   ): Promise<{ walkId: string; runId: string; n: number }>
+  /** `<walks>/<walkId>/`; where the images and the runs live. */
+  walkDir(walkId: string): string
+  /** `<walks>/<walkId>/runs/<runId>/shots/`; where the operator's pasted screenshots are saved. */
+  shotsDir(walkId: string, runId: string): string
+  /** Every run the walk keeps, oldest first. */
+  listRuns(walkId: string): Promise<RunRecord[]>
+  /**
+   * Change the walk's own file atomically: `step` gets the record and returns the next one (without
+   * touching `rev`; the store bumps it) or a refusal. A refused step writes nothing.
+   */
+  updateWalk(
+    walkId: string,
+    step: (walk: WalkRecord) => { ok: true; walk: WalkRecord } | { ok: false; error: MachineError }
+  ): Promise<StoreResult<{ walk: WalkRecord }>>
   listWalks(): Promise<WalkLibraryEntry[]>
   readWalk(walkId: string): Promise<WalkRecord | null>
   readRun(walkId: string, runId: string): Promise<RunRecord | null>
@@ -155,8 +221,9 @@ export interface WalkStore {
   updateRun(
     walkId: string,
     runId: string,
-    step: (run: Run) => { ok: true; run: Run } | { ok: false; error: MachineError }
-  ): Promise<StoreResult<{ run: Run }>>
+    step: (run: Run) => { ok: true; run: Run } | { ok: false; error: MachineError },
+    opts?: UpdateRunOptions
+  ): Promise<StoreResult<{ run: Run; owed: OutboxEntry[] }>>
   /** A fresh `ready` run n + 1 of the walk. Refused `WALK_RUN_LIVE` while one is live. */
   newRun(walkId: string): Promise<StoreResult<{ runId: string; n: number }>>
   /** Discard a run that never started (its pane closed). The walk stays. */
@@ -259,21 +326,57 @@ export function createWalkStore(folder: string, opts: WalkStoreOptions = {}): Wa
     readWalk,
     readRun,
 
+    walkDir: (walkId) => join(base(), walkId),
+    shotsDir: (walkId, runId) => join(runsDir(base(), walkId), runId, 'shots'),
+
     async createWalk(script, o = {}) {
       const walkId = newId('wlk')
-      const walk: WalkRecord = {
-        v: 1,
-        walkId,
-        rev: 1,
-        createdAt: now(),
-        script,
-        live: null,
-        lastRun: null
-      }
       return locked(walkId, async () => {
+        const stored = o.transform
+          ? await o.transform(script, { walkId, walkDir: join(base(), walkId) })
+          : script
+        const walk: WalkRecord = {
+          v: 1,
+          walkId,
+          rev: 1,
+          createdAt: now(),
+          script: stored,
+          live: null,
+          lastRun: null
+        }
         await writeJson(walkFile(walkId), walk)
         const { runId, n } = await makeRun(walk, 1, o.ownerSessionId ?? null)
         return { walkId, runId, n }
+      })
+    },
+
+    async listRuns(walkId) {
+      if (!WALK_ID_RE.test(walkId)) return []
+      let names: string[] = []
+      try {
+        names = await fs.readdir(runsDir(base(), walkId))
+      } catch {
+        return []
+      }
+      const out: RunRecord[] = []
+      for (const name of names) {
+        const m = /^(run-[0-9a-f]{8})\.json$/.exec(name)
+        if (!m) continue
+        const rec = await readRun(walkId, m[1])
+        if (rec) out.push(rec)
+      }
+      return out.sort((a, b) => a.run.n - b.run.n)
+    },
+
+    updateWalk(walkId, step) {
+      return locked(walkId, async (): Promise<StoreResult<{ walk: WalkRecord }>> => {
+        const walk = await readWalk(walkId)
+        if (!walk) return { ok: false, error: { code: 'WALK_NOT_FOUND', message: 'No such walk.' } }
+        const res = step(walk)
+        if (!res.ok) return { ok: false, error: res.error }
+        const next: WalkRecord = { ...res.walk, rev: walk.rev + 1 }
+        await writeJson(walkFile(walkId), next)
+        return { ok: true, walk: next }
       })
     },
 
@@ -312,8 +415,8 @@ export function createWalkStore(folder: string, opts: WalkStoreOptions = {}): Wa
       })
     },
 
-    updateRun(walkId, runId, step) {
-      return locked(walkId, async (): Promise<StoreResult<{ run: Run }>> => {
+    updateRun(walkId, runId, step, o = {}) {
+      return locked(walkId, async (): Promise<StoreResult<{ run: Run; owed: OutboxEntry[] }>> => {
         const walk = await readWalk(walkId)
         if (!walk) return { ok: false, error: { code: 'WALK_NOT_FOUND', message: 'No such walk.' } }
         const rec = await readRun(walkId, runId)
@@ -346,11 +449,26 @@ export function createWalkStore(folder: string, opts: WalkStoreOptions = {}): Wa
             total: c.total
           }
         }
-        await writeJson(runFile(walkId, runId), { ...rec, run: next })
+        // the turns this step owes the session are written with it: a crash between the two cannot lose one
+        const owed: OutboxEntry[] = (o.turns?.(next, { walk, rec }) ?? []).map((t) => ({
+          id: newId('out'),
+          kind: t.kind,
+          checkId: t.checkId ?? null,
+          text: t.text,
+          createdAt: now(),
+          delivered: false
+        }))
+        const closeOut = o.closeOut?.(next, { walk, rec })
+        await writeJson(runFile(walkId, runId), {
+          ...rec,
+          run: next,
+          outbox: owed.length ? [...rec.outbox, ...owed] : rec.outbox,
+          ...(closeOut !== undefined ? { closeOut } : {})
+        })
         const changed = live?.runId !== walk.live?.runId || lastRun !== walk.lastRun
         if (changed)
           await writeJson(walkFile(walkId), { ...walk, rev: walk.rev + 1, live, lastRun })
-        return { ok: true, run: next }
+        return { ok: true, run: next, owed }
       })
     },
 

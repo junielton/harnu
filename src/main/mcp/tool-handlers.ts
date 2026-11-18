@@ -135,6 +135,17 @@ import { arm, disarm, listArmedSessionIds } from '../orchestrator-guard'
 import { resolveAgentTarget } from './target-scope'
 import { dataDirReady, mkdirDataDir, repoRoot } from '../data-dir'
 import { listMissionRecords, readMissionRecord } from '../missions/record-store'
+import { createWalkProbe } from '../walk/walk-links'
+import { walkServiceFor } from '../walk/walk-service'
+import {
+  missionFactsOf,
+  walkExtend,
+  walkGet,
+  walkOpen,
+  walkReport,
+  type WalkVerbEnv,
+  type WalkVerbResult
+} from './walk-handlers'
 import { dispatchAck, dispatchStep, realBoardIo, stampCardForStep } from '../missions/dispatch'
 import {
   anonymousKey,
@@ -3933,6 +3944,80 @@ function paneVerb(handler: Handler): Handler {
   }
 }
 
+// ---- Guided walks (S-2): the four core verbs ----------------------------------------------------------
+
+/**
+ * The real env of a walk verb for `folder`: the one service of its repo, and a probe that answers what a
+ * script's source asks of Harnu (the folder's board, the mission record, the known folders). Both reads are
+ * made BEFORE validating, so the validator itself stays synchronous.
+ */
+export function makeWalkEnv(folder: string, knownFolders: readonly string[]): WalkVerbEnv {
+  return {
+    service: walkServiceFor(folder),
+    async probeFor(source) {
+      const slugs = await listCardSlugs(folder).catch((): string[] => [])
+      let facts: ReturnType<typeof missionFactsOf> | null = null
+      const missionId =
+        typeof source === 'object' &&
+        source !== null &&
+        (source as { kind?: unknown }).kind === 'mission' &&
+        typeof (source as { missionId?: unknown }).missionId === 'string'
+          ? (source as { missionId: string }).missionId
+          : null
+      if (missionId) {
+        const read = await readMissionRecord(repoRoot(folder), missionId).catch(() => null)
+        if (read?.ok) facts = missionFactsOf(read.record)
+      }
+      return createWalkProbe({
+        folder,
+        knownFolders,
+        cardSlugs: () => slugs,
+        mission: (id) => (id === missionId ? facts : null)
+      })
+    }
+  }
+}
+
+/** The door the app itself uses to open a walk (dev only until the pane exists, S-3). */
+export async function openWalkFromApp(
+  folder: string,
+  script: unknown,
+  knownFolders: readonly string[],
+  sessionId?: string
+): Promise<WalkVerbResult> {
+  return walkOpen(
+    { script, ...(sessionId ? { sessionId } : {}) },
+    makeWalkEnv(folder, knownFolders)
+  )
+}
+
+function walkResult(res: WalkVerbResult): CallToolResult {
+  // a refusal is an error result carrying the whole body (code, message, `rejected`), like the browser verbs
+  if (res.ok === false)
+    return { content: [{ type: 'text', text: JSON.stringify(res) }], isError: true }
+  return textResult(res)
+}
+
+const walkEnvOf = (ctx: ToolHandlerCtx): WalkVerbEnv =>
+  makeWalkEnv(
+    ctx.folder,
+    ctx.folders.map((f) => f.path)
+  )
+
+const walkOpenHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  return walkResult(await walkOpen(args, walkEnvOf(ctx)))
+}
+const walkExtendHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  return walkResult(await walkExtend(args, walkEnvOf(ctx)))
+}
+const walkReportHandler: Handler = async (args, ctx) => {
+  if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
+  return walkResult(await walkReport(args, walkEnvOf(ctx)))
+}
+const walkGetHandler: Handler = async (args, ctx) => walkResult(await walkGet(args, walkEnvOf(ctx)))
+
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
 /** The pane-addressed reading verbs share one shape: a `paneId` and the verb's own arguments. */
 function paneArgs(args: Record<string, unknown>): { paneId: string } {
@@ -4293,6 +4378,10 @@ const TOOL_HANDLERS: Record<McpOp, Handler> = {
   browser_download: paneVerb(browserDownloadHandler),
   browser_set_data: paneVerb(browserSetDataHandler),
   browser_patch: paneVerb(browserPatchHandler),
+  walk_open: walkOpenHandler,
+  walk_extend: walkExtendHandler,
+  walk_report: walkReportHandler,
+  walk_get: walkGetHandler,
   adopt_folder: adoptFolderHandler,
   remove_folder: removeFolderHandler,
   plan_mission: planMissionHandler,
