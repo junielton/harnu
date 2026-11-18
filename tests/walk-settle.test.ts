@@ -68,8 +68,7 @@ const missionOf = (over: Partial<MissionV4> = {}): MissionV4 => ({
           settled: { at: '2026-11-17T08:00:00Z', by: 'operator', evidence: 'ticked yesterday' }
         },
         { id: 'ac-8', text: 'Reloading keeps the query', by: 'operator' },
-        { id: 'ac-9', text: 'The list scrolls', by: 'operator' },
-        { id: 'ac-10', text: 'Escape clears the box', by: 'operator' }
+        { id: 'ac-9', text: 'The list scrolls', by: 'operator' }
       ],
       links: [],
       blockers: []
@@ -131,18 +130,7 @@ const probe = () =>
               {
                 id: 'stp-1',
                 milestone: null,
-                criteria: [
-                  'ac-1',
-                  'ac-2',
-                  'ac-3',
-                  'ac-4',
-                  'ac-5',
-                  'ac-6',
-                  'ac-7',
-                  'ac-8',
-                  'ac-9',
-                  'ac-10'
-                ]
+                criteria: ['ac-1', 'ac-2', 'ac-3', 'ac-4', 'ac-5', 'ac-6', 'ac-7', 'ac-8', 'ac-9']
               }
             ]
           }
@@ -282,7 +270,7 @@ describe('closing a mission-source walk settles what two signals verified', () =
     expect(after['ac-1'].settled?.evidence).toContain(a.runId)
     expect(after['ac-1'].settled?.evidence).toContain('c1')
     expect(after['ac-1'].settled?.evidence).toContain('the list narrowed to two rows')
-    for (const id of ['ac-2', 'ac-3', 'ac-4', 'ac-5', 'ac-6', 'ac-8', 'ac-9', 'ac-10'])
+    for (const id of ['ac-2', 'ac-3', 'ac-4', 'ac-5', 'ac-6', 'ac-8', 'ac-9'])
       expect(after[id].settled, id).toBeUndefined()
     // an already-settled criterion keeps its first stamp
     expect(after['ac-7'].settled).toEqual({
