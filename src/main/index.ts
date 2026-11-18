@@ -212,7 +212,8 @@ import { registerCommandBridge, closeCommandBridge } from './command-bridge-ipc'
 import { configureWalkRuntime, createBridgeRuntime, walkServiceFor } from './walk/walk-service'
 import { walksDir } from './walk/walk-store'
 import { registerWalkIpc } from './walk/walk-ipc'
-import { openWalkFromApp } from './mcp/tool-handlers'
+import { makeWalkEnv, openWalkFromApp } from './mcp/tool-handlers'
+import { walkExtend, walkReport } from './mcp/walk-handlers'
 import { markdownKnownRoots } from './markdown-read'
 import { registerTerminalIpc } from './terminal-ipc'
 import { registerManifestDrain } from './manifest-drain-shell'
@@ -903,6 +904,20 @@ app.whenReady().then(async () => {
         if (!isRendererUrl(e.senderFrame?.url ?? ''))
           return { ok: false, error: 'NOT_THE_RENDERER' }
         return openWalkFromApp(args.folder, args.script, await markdownKnownRoots(), args.sessionId)
+      }
+    )
+    // The agent's two writes (`walk_report`, `walk_extend`) from the app itself, so a capture or a smoke case can play
+    // the session's part without an MCP client. Same dev-only, renderer-only door as above.
+    ipcMain.handle(
+      'walk:dev-call',
+      async (
+        e,
+        args: { folder: string; verb: 'report' | 'extend'; args: Record<string, unknown> }
+      ) => {
+        if (!isRendererUrl(e.senderFrame?.url ?? ''))
+          return { ok: false, error: 'NOT_THE_RENDERER' }
+        const env = makeWalkEnv(args.folder, await markdownKnownRoots())
+        return args.verb === 'report' ? walkReport(args.args, env) : walkExtend(args.args, env)
       }
     )
   }

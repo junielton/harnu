@@ -60,7 +60,11 @@ const retry = computed(() => props.check.phase === 'failed')
     <span class="eyebrow">{{ $t('testWalk.retry.reported') }}</span>
     <p v-if="check.reported.line">{{ check.reported.line }}</p>
     <span v-if="check.reported.shot" class="att small"
-      ><span class="trunc">{{ check.reported.shot }}</span></span
+      ><img
+        v-if="check.reported.shotPath && imageUrl(check.reported.shotPath)"
+        :src="imageUrl(check.reported.shotPath)"
+        alt=""
+      /><span class="trunc">{{ check.reported.shot }}</span></span
     >
   </div>
   <section
@@ -120,7 +124,6 @@ const retry = computed(() => props.check.phase === 'failed')
           <div class="li">
             <span><WalkSegments :parts="d.text" /></span>
             <WalkCode v-if="d.block" :text="d.block.text" :what="t('testWalk.copy.command')" />
-            <span v-if="d.see.length" class="d-see"><WalkSegments :parts="d.see" /></span>
           </div>
         </li>
       </ol>
@@ -247,6 +250,7 @@ const retry = computed(() => props.check.phase === 'failed')
       <section
         v-if="part === 'more' && check.explain.more.length"
         class="why-box"
+        data-walk-explain
         data-dsqa-part="why"
         data-test="walk-more"
       >
@@ -257,6 +261,7 @@ const retry = computed(() => props.check.phase === 'failed')
       <section
         v-else-if="part === 'teach' && check.explain.teach"
         class="teach"
+        data-walk-explain
         data-dsqa-part="teach"
         data-test="walk-teach"
       >

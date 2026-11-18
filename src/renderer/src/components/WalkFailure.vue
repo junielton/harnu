@@ -24,7 +24,6 @@ const secret = ref(false)
 const problem = ref<string | null>(null)
 const input = ref<HTMLInputElement | null>(null)
 let scanTimer: ReturnType<typeof setTimeout> | null = null
-let blobs: string[] = []
 
 function publish(): void {
   emit('ready', {
@@ -57,8 +56,13 @@ async function onPaste(ev: ClipboardEvent): Promise<void> {
     problem.value = t('testWalk.form.saveFailed')
     return
   }
-  const url = URL.createObjectURL(file)
-  blobs.push(url)
+  // a data: URL, not a blob: the renderer's CSP allows `img-src data:` only
+  const url = await new Promise<string>((done) => {
+    const r = new FileReader()
+    r.onload = () => done(String(r.result))
+    r.onerror = () => done('')
+    r.readAsDataURL(file)
+  })
   shot.value = { path: res.path, name: res.name, url }
 }
 
@@ -68,8 +72,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   if (scanTimer) clearTimeout(scanTimer)
-  blobs.forEach((u) => URL.revokeObjectURL(u))
-  blobs = []
 })
 defineExpose({ focus: () => input.value?.focus() })
 </script>
@@ -104,7 +106,7 @@ defineExpose({ focus: () => input.value?.focus() })
         <span class="kbd2">{{ $t('testWalk.form.pasteKey') }}</span>
       </div>
       <div v-if="shot" class="att" data-dsqa-part="attachment" data-test="walk-shot">
-        <img :src="shot.url" alt="" />
+        <img v-if="shot.url" :src="shot.url" alt="" />
         <span class="trunc">{{ shot.name }}</span>
         <button
           type="button"

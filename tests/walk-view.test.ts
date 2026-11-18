@@ -242,6 +242,8 @@ describe('walk view', () => {
     expect(ids(vf)).toEqual(['try-again', 'failed', 'back', 'skip', 'explain'])
     expect(vf.primary).toBe('try-again')
     // Failed itself opens one line and a paste target: the form, with Send and a way back, and nothing else
+    // Failed pressed on a fresh check opens the same form before anything is sent
+    expect(paneView(dataFor(script, run), ui({ formOpen: true }), t).mode).toBe('failed-form')
     const form = paneView(dataFor(script, failed), ui({ formOpen: true }), t)
     expect(form.mode).toBe('failed-form')
     expect(ids(form)).toEqual(['send', 'cancel-form'])

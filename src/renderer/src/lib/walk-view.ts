@@ -423,7 +423,7 @@ export interface CheckView {
   /** The latest "Said more simply" card, over the same check. */
   simpler: { text: string } | null
   correction: { text: string } | null
-  reported: { line: string | null; shot: string | null } | null
+  reported: { line: string | null; shot: string | null; shotPath: string | null } | null
   evidence: { ran: string; expected: Segment[]; found: string } | null
   explain: ExplainView
   /** The quiet "I didn't get this step" link. */
@@ -566,7 +566,8 @@ function checkView(data: WalkData, rc: RunCheck, ui: WalkUi, t: T): CheckView {
       rc.state === 'failed' && last
         ? {
             line: last.line ?? null,
-            shot: last.shot ? (last.shot.split('/').pop() ?? last.shot) : null
+            shot: last.shot ? (last.shot.split('/').pop() ?? last.shot) : null,
+            shotPath: last.shot ?? null
           }
         : null,
     evidence:
@@ -931,7 +932,7 @@ export function paneView(data: WalkData | null, ui: WalkUi, t: T): PaneView {
   const check = checkView(data, rc, ui, t)
   const progress = progressView(run, check.checkId, t)
 
-  if (check.phase === 'failed' && ui.formOpen) {
+  if (ui.formOpen && (check.phase === 'todo' || check.phase === 'failed')) {
     return {
       ...EMPTY,
       ...base,

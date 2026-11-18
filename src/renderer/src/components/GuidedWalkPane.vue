@@ -126,10 +126,13 @@ watch(
   (waiting) => {
     if (waiting && !tickTimer) {
       now.value = Date.now()
+      let beat = 0
       tickTimer = setInterval(() => {
         now.value = Date.now()
         // an outbox that is holding gets offered again: the pane asks, there is no retry timer in main
         if (view.value.mode === 'error') void walk.replay(props.pane.id)
+        // whether a turn is held is a matter of time, so a waiting pane reads the run again now and then
+        else if (++beat % 2 === 0) void walk.reload(props.pane.id)
       }, 1000)
     } else if (!waiting && tickTimer) {
       clearInterval(tickTimer)
@@ -250,6 +253,17 @@ watch(
   },
   { immediate: true }
 )
+// the screenshot the operator pasted (shown as a chip on the retry card) is a file in the run's folder too
+watch(
+  () => view.value.check?.reported?.shotPath,
+  async (p) => {
+    if (!p || images.value[p] !== undefined) return
+    images.value = { ...images.value, [p]: '' }
+    const res = await window.api.markdownRead(p)
+    if (res.ok && res.kind === 'image') images.value = { ...images.value, [p]: res.content }
+  },
+  { immediate: true }
+)
 const bigImage = ref(false)
 watch(
   () => view.value.check?.checkId,
@@ -262,8 +276,31 @@ function onZoom(): void {
   const s = state.value
   if (!s) return
   if (!bigImage.value) bigImage.value = true
-  else s.ui.lightbox = true
+  else {
+    s.ui.lightbox = true
+    // focus goes into the lightbox, so Esc (and Tab) stay inside the pane's own key map
+    void nextTick(() => rootEl.value?.querySelector<HTMLElement>('.lightbox .lb-x')?.focus())
+  }
 }
+// Explain more opened: bring what it revealed into view (the card sits under the check, maybe below the fold)
+watch(
+  () => state.value?.ui.explainOpen,
+  async (open) => {
+    if (!open) return
+    await nextTick()
+    rootEl.value
+      ?.querySelector<HTMLElement>('[data-walk-explain]')
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }
+)
+
+// the lightbox closed: focus goes back to the pane, so Enter keeps meaning Done
+watch(
+  () => state.value?.ui.lightbox,
+  (open, was) => {
+    if (was && !open) void nextTick(() => rootEl.value?.focus())
+  }
+)
 const lightboxImage = computed(() => {
   const im = view.value.check?.see.images[0]
   return im ? { ...im, url: imageUrl(im.src) } : null
@@ -465,6 +502,7 @@ const hasFoot = computed(
         "
         :aria-label="isExpanded ? $t('helperPane.exitExpand') : $t('helperPane.expand')"
         :aria-pressed="isExpanded"
+        data-test="pane-expand"
         @mousedown.stop
         @click="helpers.toggleExpandPane(worktreePath, pane.id)"
       >
@@ -624,6 +662,9 @@ const hasFoot = computed(
             <span class="n num">{{ r.n }}</span>
             <span class="t">{{ r.title }}</span>
             <span class="m">
+              <span class="m-k">{{
+                r.how.kind === 'check' ? $t('testWalk.roadmap.icheck') : $t('testWalk.roadmap.eyes')
+              }}</span>
               <button
                 type="button"
                 class="btn"
@@ -1055,6 +1096,11 @@ const hasFoot = computed(
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
+.wk .wk-head .sub {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--color-text-3);
+}
 .wk .blocks {
   font-size: 11px;
   color: var(--color-text-4);
@@ -1161,6 +1207,16 @@ const hasFoot = computed(
   color: var(--color-text);
   background: var(--color-surface-2);
 }
+.wk .cp.cp-l {
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border-2);
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+}
+.wk .cp .cp-ack {
+  display: none;
+}
 .wk .cp[data-copied],
 .wk .btn[data-copied] {
   color: var(--color-green);
@@ -1176,6 +1232,31 @@ const hasFoot = computed(
   border-bottom: 2px solid var(--color-green);
   transform: rotate(-45deg) translateY(-1px);
   display: inline-block;
+}
+.wk .cp[data-copied] .cp-ack {
+  display: inline;
+}
+.wk .cp:not(.cp-l)[data-copied] .cp-ack {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-green-line);
+  color: var(--color-green);
+  font-size: 10.5px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-pop);
+}
+.wk .cp.cp-l[data-copied] .cp-t {
+  display: none;
+}
+.wk .btn[data-copied] .cp-t {
+  display: none;
+}
+.wk .btn[data-copied] .cp-ack {
+  display: inline;
 }
 .wk .btn[data-copied] svg.i {
   display: none;
@@ -1944,11 +2025,6 @@ const hasFoot = computed(
 }
 .wk .btn.ghost:hover {
   background: var(--color-surface-2);
-}
-.wk .d-see {
-  display: block;
-  font-size: 11.5px;
-  color: var(--color-text-3);
 }
 .wk .where-text {
   font-size: 12px;

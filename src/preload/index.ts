@@ -1425,6 +1425,12 @@ const api = {
    */
   walkDevOpen: (args: { folder: string; script: unknown; sessionId?: string }): Promise<unknown> =>
     ipcRenderer.invoke('walk:dev-open', args),
+  /** Dev only (S-3): the agent's `walk_report` / `walk_extend` from the app itself, for captures and smoke cases. */
+  walkDevCall: (args: {
+    folder: string
+    verb: 'report' | 'extend'
+    args: Record<string, unknown>
+  }): Promise<unknown> => ipcRenderer.invoke('walk:dev-call', args),
   /**
    * Guided walks (S-3): the walk pane's channels. The pane reads a run (`walkLoad`), applies the operator's
    * outcomes (`walkOperate`), keeps its own ticks, saves a pasted screenshot inside the run's folder and opens
