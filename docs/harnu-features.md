@@ -1,4 +1,4 @@
-<!-- harnu-features v155 (2026-11-18) -->
+<!-- harnu-features v156 (2026-11-18) -->
 
 # You are running inside Harnu
 
@@ -970,7 +970,11 @@ links? }`, `do: [{ text, see, block? }]` (at most 8), `passes`, `fails` (optiona
   `check: { how }` (the read-only check YOU will run) or `nothingFromHere` (why you cannot), plus optional
   `images`, `precheck`, `more`, `teach`, `edge`, `table`, `blocks`, `undo`, `criterion` and
   `status`/`evidence`/`openPr` for a row already verified. Plain text only: no emoji, no secret, no
-  `<placeholder>` in a command; a link is data of kind `pr`, `file`, `url` or `folder`. Pass your own
+  `<placeholder>` in a command; a link is data of kind `pr`, `file`, `url` or `folder`. **A command, a file path
+  or a value the operator types or pastes goes in `do[].block` (one per step) or, when short, in a backtick chip;
+  a URL goes in `where.links`. A `do[].text`, `passes`, `fails` or `undo` that holds an `http(s)://` address is
+  refused whole (`URL_IN_PROSE`), and `walk_extend` refuses it in `extra`, `simpler.do` and `append` too. `undo`
+  stays one plain string; a command in it is a backtick chip, which the pane draws with a copy button.** Pass your own
   `sessionId`: you own the run and its turns come back to you. ACK: `walkId`, `runId`, `checks` (in the script),
   `toWalk` (N), `rejected` (empty when accepted; otherwise each violation with its JSON path and rule, and
   `ok:false` `SCRIPT_REJECTED`) and `opened` (whether the pane was put in the folder's helper stack: **true** once the operator's app shows it, in the

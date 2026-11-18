@@ -471,6 +471,8 @@ export interface CheckView {
   blocksLine: { from: number; to: number; why: string | null } | null
   /** Back leads with the check's `undo` when it has one. */
   undo: string | null
+  /** The same line with its backtick spans as copy chips: an undo command is copyable (BUG-293). */
+  undoParts: Segment[] | null
   do: DoView[]
   where: { text: string; path: string | null; approximate: boolean; links: LinkChip[] } | null
   see: {
@@ -603,6 +605,7 @@ function checkView(data: WalkData, rc: RunCheck, ui: WalkUi, t: T): CheckView {
     blocking: rc.blocks.length > 0,
     blocksLine: blocksLine(run, c),
     undo: c.undo ?? null,
+    undoParts: c.undo ? segments(c.undo) : null,
     do: doView(steps),
     where: latestSimpler
       ? null

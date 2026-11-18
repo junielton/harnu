@@ -167,4 +167,41 @@ describe('the walk skill', () => {
     const staged = await m.stageSkillsForFolder('/repo/with-no-mission')
     expect(staged === null || !existsSync(path.join(staged.dir, 'skills', 'walk'))).toBe(true)
   })
+
+  // BUG-293: a command or a URL written into prose cannot be copied or clicked.
+  it('teaches where a command, a value and a URL go (AC-1)', () => {
+    const panel = flat(read(WALK_DIR, 'references', 'panel-contract.md'))
+    const rule = /\*\*Commands, values and URLs have a home\.\*\*([\s\S]*?)(?=\n- \*\*|\n## )/.exec(
+      read(WALK_DIR, 'references', 'panel-contract.md')
+    )
+    expect(rule, 'the panel contract has the "Commands, values and URLs" rule').not.toBeNull()
+    const text = flat(rule![1])
+    // a command the operator types or pastes: one `block` per step
+    expect(text).toMatch(/command[^.]*goes in `do\[\]\.block`/)
+    expect(text).toMatch(/one block per step/)
+    // a short value: a backtick chip in the text
+    expect(text).toMatch(/short value[^.]*backtick/)
+    // a URL: `where.links`, and never inside the text
+    expect(text).toMatch(/URL[^.]*`where\.links`/)
+    expect(text).toMatch(/Neither[^.]*ever written inside `text`/)
+    // the validator refuses it, so the contract says what happens
+    expect(panel).toMatch(/URL_IN_PROSE/)
+    // `undo` carries commands as chips too
+    expect(text).toMatch(/`undo`/)
+  })
+
+  it('shows a do step with a block and an undo with a command (AC-4)', () => {
+    const raw = read(WALK_DIR, 'references', 'panel-contract.md')
+    const json = /```json\n([\s\S]*?)```/.exec(raw)?.[1]
+    expect(json, 'the contract carries a worked JSON example').toBeDefined()
+    const example = JSON.parse(json!) as {
+      do: { text: string; block?: { text: string } }[]
+      undo: string
+    }
+    expect(example.do.some((d) => typeof d.block?.text === 'string')).toBe(true)
+    expect(/`[^`]+`/.test(example.undo), 'the example undo holds a command as a chip').toBe(true)
+    // and the example practices the rule: no URL in any prose field
+    const prose = [...example.do.map((d) => d.text), example.undo]
+    for (const t of prose) expect(t).not.toMatch(/https?:\/\//)
+  })
 })
