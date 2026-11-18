@@ -26,6 +26,7 @@ import {
   type RunCheck
 } from '../../../shared/walk-machine'
 import { walkLinkKey } from '../../../shared/walk-schema'
+import { whyNotSettled } from '../../../shared/walk-settle'
 import type { DoItem, WalkCheck, WalkLink, WalkScript } from '../../../shared/walk-schema'
 import type { WalkSource } from '../../../shared/walk-source'
 import type { KeyContext, PaneMode } from './walk-keys'
@@ -54,6 +55,10 @@ export interface CriterionFact {
   text: string
   /** Read live from the mission record: `unavailable` when the mission was closed or removed. */
   state: 'open' | 'settled' | 'unavailable'
+  /** Who settles it: only an `operator` criterion is ever settled by a walk (T787). */
+  by?: 'operator' | 'person' | 'session' | 'fact'
+  /** Settled by the end of THIS run (two signals), not by the operator's Mark done. */
+  viaWalk?: boolean
 }
 
 /** The pane's saved, per-run bits that are not the machine's: which checks revealed their extras and which rows are ticked. */
@@ -766,6 +771,8 @@ export interface CloseoutView {
   title: string
   sub: string
   rows: CloseoutRow[]
+  /** A mission source's criteria, one row each: settled by this walk, or still open and why (T787). */
+  criteria: { id: string; text: string; state: string; open: boolean }[]
   /** The unticked extra checks of the checks whose card was opened (V-4). */
   unticked: { checkId: string; n: number | null; title: string; items: string[] }[]
   /** The `⚑ Still yours` card: drawn only when something is owed. */
@@ -843,6 +850,24 @@ function closeoutRow(data: WalkData, rc: RunCheck, t: T): CloseoutRow {
   }
 }
 
+/** What the walk did to one criterion, in words: settled by this walk, or still open and the reason (T787). */
+function criterionLine(data: WalkData, k: CriterionFact, t: T): string {
+  if (k.state === 'unavailable') return t('testWalk.closeout.criterion.unavailable')
+  if (k.state === 'settled')
+    return t(
+      k.viaWalk
+        ? 'testWalk.closeout.criterion.settledByWalk'
+        : 'testWalk.closeout.criterion.settled'
+    )
+  let why: string
+  if (k.by === 'fact' || k.by === 'person' || k.by === 'session') why = k.by
+  else {
+    const answering = data.script.checks.find((c) => c.criterion === k.id)
+    why = answering ? whyNotSettled(data.run.checks.find((rc) => rc.id === answering.id)) : 'none'
+  }
+  return t('testWalk.closeout.criterion.open', { why: t(`testWalk.closeout.criterionWhy.${why}`) })
+}
+
 function closeoutView(data: WalkData, t: T): CloseoutView {
   const run = data.run
   const c = counts(run)
@@ -885,9 +910,10 @@ function closeoutView(data: WalkData, t: T): CloseoutView {
   const criteria = data.criteria.map((k) => ({
     id: k.id,
     text: k.text,
-    state: t(`testWalk.closeout.criterion.${k.state}`),
+    state: criterionLine(data, k, t),
     open: k.state === 'open'
   }))
+  // the Still yours card lists only what is left (T787): a criterion the walk settled is not owed
   const openCriteria = criteria.some((k) => k.open)
   const owed = parts.length > 0 || recheck.length > 0 || openCriteria
   return {
@@ -899,6 +925,7 @@ function closeoutView(data: WalkData, t: T): CloseoutView {
       failed: c.failed
     }),
     rows,
+    criteria,
     unticked,
     owed: owed
       ? {
@@ -908,7 +935,7 @@ function closeoutView(data: WalkData, t: T): CloseoutView {
               })
             : '',
           recheck,
-          criteria,
+          criteria: criteria.filter((k) => k.open),
           link: openCriteria ? 'mission' : null,
           note: openCriteria ? t('testWalk.closeout.neverTick') : null
         }

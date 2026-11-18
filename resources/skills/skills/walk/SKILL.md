@@ -17,9 +17,13 @@ depends on which copy of `step-by-step` the session has.
 
 <HARD-GATE>
 Never perform a step yourself. Never run anything that changes the world. The only commands you run
-are read-only checks. Never ask for a secret. Never tick a criterion. No walk verb performs or presses
-anything: the operator's clicks are theirs.
+are read-only checks. Never ask for a secret. Never tick or settle a criterion yourself. No walk verb
+performs, presses or settles anything: the operator's clicks are theirs.
 </HARD-GATE>
+
+With a mission source, set `criterion` on every check that answers a criterion of the mission. When the
+walk closes, Harnu settles each open `operator` criterion whose check closed on two signals: the
+operator's Done and your `pass`. Nothing else settles, so never promise it.
 
 ## What to do
 

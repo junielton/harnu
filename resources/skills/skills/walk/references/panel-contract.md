@@ -16,8 +16,8 @@ everything the operator reads in the language they are speaking; the pane's own 
 - **Never ask the operator to paste a secret** (token, password, private key) into the chat or into a
   failure line. A secret is confirmed by a trace that is not secret: its name in `gh secret list`, the
   token listed in the dashboard, its last 4 characters.
-- **Never tick a criterion.** With a mission source the operator ticks it in the Mission dropdown; you
-  never call a criterion done because the operator said "done" in chat.
+- **Never tick or settle a criterion yourself.** No verb does. With a mission source the app settles at
+  the close (see Persistence); you never call a criterion done because the operator said "done" in chat.
 
 ## The contract
 
@@ -177,7 +177,15 @@ any mission and the walk has no criterion state.
   a second one, and a plan only grows.
 - Add a criterion only when its wording is not already on the step: read the step with `mission_get`
   first. You can neither edit nor remove one, and a step already done gets none.
-- A check cites an existing criterion with `criterion`; the walk adds none of its own.
+- A check cites an existing criterion with `criterion`; the walk adds none of its own. Set `criterion` on
+  every check that answers one: a check with no `criterion` can never settle anything.
+- **The close settles what two signals verified.** When the walk closes (every check closed, or the
+  operator ends it early), Harnu settles each open `by: operator` criterion that a check cited and that
+  closed on Done and your check: the operator's Done, then your read-only check with a `pass`. It never
+  settles a `session` criterion (a second session's), a `person` one (someone else's approval), a `fact`
+  one (Harnu reads it), a caveat, a skipped or failed check, or a check with nothing to check from here
+  (only one signal). Done and every key settle nothing while the walk runs. So run the read-only check on
+  every `done` turn that has one: your `pass` is the second signal.
 - Report a criterion as **open** or **settled** from `mission_get`, never from the chat. When the operator
   says done in chat and the criterion is still open, the check is closed for the walk but the criterion
   stays open: say so once.
@@ -202,6 +210,6 @@ any mission and the walk has no criterion state.
 | "Paste the token here so I can confirm it"            | Never. Confirm by its name in a list or its last 4 characters.                            |
 | "A ✅ in the label reads friendlier"                  | Emoji break the columns. Six glyphs, nothing else.                                        |
 | "The user is stuck, let me list every possible cause" | One most-likely cause with its fix. The next cause only if that fails.                    |
-| "They said done, I'll mark the criterion"             | You cannot. Say it is theirs to tick.                                                     |
+| "They said done, I'll mark the criterion"             | You cannot. If your check passes, the close-out settles it; otherwise it is theirs.       |
 | "I'll reword the criterion so it's clearer"           | A reworded one is a second criterion. Keep it stable.                                     |
 | "I'll add the criteria as we go"                      | Before the walk opens: the list on the mission is the no-skip guarantee.                  |

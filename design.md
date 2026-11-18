@@ -7240,7 +7240,8 @@ freely like the Markdown pane. One per live run, opened by a session, by the Wal
 **A walk is its own object, not a Mission feature.** It has a title, a **source**, a list of checks and a run
 history, and is saved per repo (`.harnu/walks/<id>/`). The source is a mission (a step, a milestone or the whole
 mission), a PR, a branch or diff, a card, or a feature description. The step-by-step contract applies unchanged to
-every source; the mission persistence (criteria `by: 'operator'`, never ticked) applies **only** to a mission source.
+every source; the mission persistence (criteria `by: 'operator'`) applies **only** to a mission source. Done never
+settles a criterion; the CLOSE of a mission-source run settles the ones two signals verified (T787, below).
 
 **Sources and entry points** (all open the same pane):
 
@@ -7335,8 +7336,16 @@ under it (`Extra checks · N`). A QA or PR walk keeps `Why this matters` + ticka
 
 **Close-out.** Besides the checklist: a `Saved in Walks` card (`Open Walks`, `Export markdown`) on every source; the
 `⚑ Still yours` card (what is owed: skipped, failed or unverified checks, "re-check N after #PR merges", and for a
-mission source the open criteria with the link to Mark done) is drawn only when something is owed. No control
-settles a criterion.
+mission source the criteria still open with the link to Mark done) is drawn only when something is owed. No control
+settles a criterion. With a mission source a `Mission criteria` section (an eyebrow, then one row each: the
+criterion text and a quiet `why` line, the same `crit-list` rows the card used) sits above the card and says what
+the walk did to each criterion: `criterion settled by this walk`, or `criterion still open: <why>` (no check
+answered it, another person approves it, a second session settles it, Harnu reads it from the pull request or CI,
+my check did not agree or you continued without it, only your Done with nothing for me to check, the check was
+skipped or failed, the walk ended before that check), or `mission not available`. The card lists only the open ones
+and keeps the link; its note reads "Done alone never settles a criterion: tick it in the Mission." (T787: when a
+mission-source run ends, the app settles each open `by: operator` criterion whose check closed on the operator's
+Done plus the agent's `pass`; the pane never carries a control that settles).
 
 Plain numbers with no token (documented here, as §4 allows): thumbnail 300×132, attachment chip 40×28,
 copy-button padding in a code block 76px, centred empty/error measure 340px.

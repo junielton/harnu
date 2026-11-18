@@ -1001,8 +1001,15 @@ links? }`, `do: [{ text, see, block? }]` (at most 8), `passes`, `fails` (optiona
   and `RUN_ENDED`.
 
 **No verb takes a command to run, presses Done, Back, Skip or Failed, re-runs a walk, exports or deletes one, or
-settles a criterion**: the operator's clicks are theirs, and with a mission source Mark done in the Mission stays
-the operator's (never tick it for them).
+settles a criterion**: the operator's clicks are theirs. **With a mission source, cite `criterion` on every check
+that answers one** (the id of a criterion of that mission). When the run ENDS (every check closed, or the operator
+ends it early) the app itself settles each open `by: operator` criterion whose check closed on two signals: the
+operator's Done and your `pass` (`closedHow: 'done-check'`), naming the walk, run and check in the Mission. A
+`session` criterion (a second session's, `mission_settle_ac`), a `person` one, a `fact` one, a caveat, a skipped or
+failed check, a check with `nothingFromHere` (one signal) and a check with no `criterion` stay open for the operator's
+Mark done; Done and every key settle nothing while the run is live. So run the read-only check on every `done` turn
+that has one: your `pass` is the second signal. Never tick a criterion yourself or call it settled from the chat;
+read it from `mission_get`.
 
 **Pane to session: `[harnu-walk]` user turns.** They ride the user-turn route (a new `walk` source), so a
 parked session is woken and a turn waits while the operator types; an undeliverable turn stays in the run's
@@ -1045,7 +1052,8 @@ brief: …
 Do what it says: call `walk_get` with that `source` (a walk that exists is named in one line, not duplicated), read
 the mission with `mission_get`, write the whole walk once and call `walk_open` with that exact `source`. The brief
 (at most 1,500 characters) restates the contract: read-only checks only, one check at a time, never tick or settle a
-criterion (the operator does it with Mark done), act afterwards only on `[harnu-walk]` turns. No request is sent
+criterion yourself (cite `criterion` on the check; the close settles what Done plus your pass verified, the rest is
+the operator's Mark done), act afterwards only on `[harnu-walk]` turns. No request is sent
 when a run for that source is already live: the app shows that pane instead, so a second `walk_open` would be
 refused `WALK_RUN_LIVE`. A request names the source and the walks that exist; it never writes a walk or a mission.
 

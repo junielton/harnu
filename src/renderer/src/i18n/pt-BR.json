@@ -5658,11 +5658,26 @@
       },
       "recheck": "Verificar “{n}” de novo depois que a #{pr} for mergeada",
       "criterion": {
-        "open": "critério aberto",
+        "open": "critério ainda aberto: {why}",
         "settled": "critério resolvido",
+        "settledByWalk": "critério resolvido por esta caminhada",
         "unavailable": "missão indisponível"
       },
-      "neverTick": "Eu nunca marco por você.",
+      "criterionWhy": {
+        "none": "nenhuma verificação desta caminhada o cobriu",
+        "person": "outra pessoa o aprova",
+        "session": "uma segunda sessão o resolve",
+        "fact": "o Harnu lê isso do pull request ou do CI",
+        "caveat": "minha verificação discordou, ou você continuou sem ela",
+        "nothingFromHere": "só o seu Pronto, sem nada para eu verificar",
+        "preClosed": "foi marcado como verificado antes da caminhada",
+        "failed": "a verificação falhou",
+        "skipped": "a verificação foi pulada",
+        "notReached": "a caminhada terminou antes dessa verificação",
+        "notWritten": "a caminhada não conseguiu gravar"
+      },
+      "criteria": "Critérios da missão",
+      "neverTick": "Só o Pronto nunca resolve um critério: marque na Missão.",
       "openMission": "Abrir na Missão",
       "nothingOwed": "Nada pendente",
       "unticked": "Verificações extras que você não marcou",

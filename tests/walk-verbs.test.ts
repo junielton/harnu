@@ -521,10 +521,24 @@ describe('walk verbs', () => {
       readFileSync(file, 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/^\s*\/\/.*$/gm, '')
+    // T787 amends the old "nothing here reaches markCriterion": the app, never a verb, settles at the close of a
+    // run. The door is reached from ONE walk module (`walk-settle.ts`), which only the service imports; the verbs'
+    // handlers, the catalog and every other walk module still cannot reach it, and `mission_settle_ac` (a second
+    // session's door) is reached by none.
+    const SETTLE = join(__dirname, '..', 'src', 'main', 'walk', 'walk-settle.ts')
     for (const file of files) {
       const text = code(file)
-      expect(text, file).not.toMatch(/markCriterion|missions\/doors|mission_settle_ac/)
+      expect(text, file).not.toMatch(/mission_settle_ac/)
+      if (file === SETTLE) {
+        expect(text, file).toMatch(/markCriterion/)
+        continue
+      }
+      expect(text, file).not.toMatch(/markCriterion|missions\/doors/)
     }
+    const importers = files.filter((f) => /from '\.\/walk-settle'/.test(code(f)))
+    expect(importers.map((f) => f.split('/').pop())).toEqual(['walk-service.ts'])
+    const catalogText = code(join(__dirname, '..', 'src', 'main', 'mcp', 'tool-catalog.ts'))
+    expect(catalogText).not.toMatch(/markCriterion|walk-settle|missions\/doors/)
     // the verbs' own module does not even import the operator side of the service
     const handlers = code(files[0])
     expect(handlers).not.toMatch(/\.operate\(|\.replay\(|newRun\(/)

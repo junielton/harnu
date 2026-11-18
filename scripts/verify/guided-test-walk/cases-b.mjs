@@ -427,6 +427,9 @@ export const casesB = [
   {
     id: 'W-11',
     title: 'Done never settles a criterion; the close-out links to Mark done',
+    // T787: the CLOSE of a run settles what Done plus the agent's check verified (W-23). Here the operator
+    // criterion's check has nothing to check from here (one signal) and the other criterion is a session's, so
+    // the close settles neither and the mission file stays byte-identical.
     faults: {
       'expect-criterion-settled': 'expect the operator criterion to be settled after the walk'
     },
@@ -440,8 +443,14 @@ export const casesB = [
       // Done on the criterion's check, with a click and then with Enter
       await ctx.press('done')
       await ctx.waitProgress('Check 2 of 3')
+      a.eq(
+        ctx.missionFiles(),
+        before,
+        'Done on the criterion check settles nothing while the walk runs'
+      )
       await ctx.agentDone(w, 'm2', 'pass')
       await ctx.waitProgress('Check 3 of 3')
+      a.eq(ctx.missionFiles(), before, 'a verified check settles nothing while the walk runs')
       await ctx.focusPane()
       await sleep(450)
       await ctx.key('Enter')
@@ -453,10 +462,17 @@ export const casesB = [
       )
       a.eq(rows, 3, 'the close-out prints one row per check')
       a.ok(
-        text.includes('criterion open'),
-        'the operator criterion reads "criterion open", not settled'
+        text.includes('criterion still open: only your Done, with nothing for me to check'),
+        'the operator criterion (one signal) reads "criterion still open" with the reason, not settled'
       )
-      a.ok(text.includes('I never tick it for you'), 'the close-out says it never ticks')
+      a.ok(
+        text.includes('criterion still open: a second session settles it'),
+        "the session's criterion is never settled by a walk"
+      )
+      a.ok(
+        text.includes('Done alone never settles a criterion'),
+        'the close-out says Done alone never settles'
+      )
       a.ok(!(await ctx.pane()).outcomes.length, 'no outcome button is left on the close-out')
       const controls = await ctx.cdp.eval(
         `[...document.querySelectorAll('[data-dsqa="walk"] button')].map((b) => b.textContent.trim().toLowerCase())`

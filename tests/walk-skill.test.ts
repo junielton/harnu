@@ -204,4 +204,30 @@ describe('the walk skill', () => {
     const prose = [...example.do.map((d) => d.text), example.undo]
     for (const t of prose) expect(t).not.toMatch(/https?:\/\//)
   })
+
+  it('a mission-source walk cites the criterion on every check that answers one, and the close settles (T787)', () => {
+    const contract = flat(read(WALK_DIR, 'references', 'panel-contract.md'))
+    const body = flat(skill())
+    for (const [name, text] of [
+      ['SKILL.md', body],
+      ['panel-contract.md', contract]
+    ] as const) {
+      // the agent still never ticks one itself, and the old "the operator ticks every criterion" is gone
+      expect(text, name).toMatch(/never tick or settle a criterion yourself/i)
+      expect(text, name).not.toMatch(
+        /Never tick a criterion\.? With a mission source the operator ticks it/
+      )
+      // a mission-source walk sets `criterion` on every check that answers a criterion
+      expect(text, name).toMatch(/`criterion` on every check that answers/)
+      // the close settles on two signals: Done and the agent's check
+      expect(text, name).toMatch(/when the (walk|run) (closes|ends)/i)
+      expect(text, name).toMatch(/Done and your (check|`pass`|pass)/)
+    }
+    // what the close never settles, so the agent does not promise it
+    for (const kind of ['`session`', '`person`', '`fact`', 'nothing to check from here'])
+      expect(contract, kind).toContain(kind)
+    expect(contract).toMatch(
+      /"They said done, I'll mark the criterion"\s*\|[^|]*the close-out settles/
+    )
+  })
 })

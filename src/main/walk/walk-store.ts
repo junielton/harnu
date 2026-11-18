@@ -110,6 +110,11 @@ export interface RunRecord {
   ownerSessionId: string | null
   outbox: OutboxEntry[]
   closeOut: string | null
+  /**
+   * T787: the ids of the mission criteria this run's end settled (a mission source only). Written once,
+   * right after the run ends; absent when none was settled or the run is older than the feature.
+   */
+  settledCriteria?: string[]
 }
 
 export type WalkStatus = 'live' | 'walked' | 'not-walked'
@@ -224,6 +229,8 @@ export interface WalkStore {
     step: (run: Run) => { ok: true; run: Run } | { ok: false; error: MachineError },
     opts?: UpdateRunOptions
   ): Promise<StoreResult<{ run: Run; owed: OutboxEntry[] }>>
+  /** Remember which mission criteria the run's end settled, in the run's own file (T787). */
+  recordSettled(walkId: string, runId: string, criteria: string[]): Promise<StoreResult>
   /** A fresh `ready` run n + 1 of the walk. Refused `WALK_RUN_LIVE` while one is live. */
   newRun(walkId: string): Promise<StoreResult<{ runId: string; n: number }>>
   /** Discard a run that never started (its pane closed). The walk stays. */
@@ -469,6 +476,15 @@ export function createWalkStore(folder: string, opts: WalkStoreOptions = {}): Wa
         if (changed)
           await writeJson(walkFile(walkId), { ...walk, rev: walk.rev + 1, live, lastRun })
         return { ok: true, run: next, owed }
+      })
+    },
+
+    recordSettled(walkId, runId, criteria) {
+      return locked(walkId, async (): Promise<StoreResult> => {
+        const rec = await readRun(walkId, runId)
+        if (!rec) return { ok: false, error: { code: 'RUN_NOT_FOUND', message: 'No such run.' } }
+        await writeJson(runFile(walkId, runId), { ...rec, settledCriteria: criteria })
+        return { ok: true }
       })
     },
 
