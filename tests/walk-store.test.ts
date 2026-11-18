@@ -227,4 +227,25 @@ describe('walk store', () => {
     expect(rec?.outbox).toHaveLength(8)
     expect(new Set(rec?.outbox.map((o) => o.id)).size).toBe(8)
   })
+
+  it('serialises writes across two store instances on the same walks directory', async () => {
+    // two stores over one directory (two worktrees of one repo) must queue behind one another
+    const a = createWalkStore(join(root), { now: clock() })
+    const b = createWalkStore(join(root), { now: clock() })
+    const c = await a.createWalk(script())
+    await a.updateRun(c.walkId, c.runId, (run) => startRun(run))
+    await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        (i % 2 === 0 ? a : b).enqueue(c.walkId, c.runId, {
+          kind: 'done',
+          text: `t${i}`,
+          checkId: 'c1'
+        })
+      )
+    )
+    const rec = await a.readRun(c.walkId, c.runId)
+    expect(rec?.outbox.map((o) => o.text).sort()).toEqual(
+      Array.from({ length: 10 }, (_, i) => `t${i}`).sort()
+    )
+  })
 })
