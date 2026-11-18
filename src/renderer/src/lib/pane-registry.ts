@@ -131,5 +131,13 @@ export const paneRegistry: Record<AnyHelperPane['type'], PaneRegistryEntry> = {
   mission: {
     persistable: true,
     dedupKey: () => 'mission'
+  },
+  // Guided walks S-3 — the walk pane. Non-PTY and reproducible from `payload.walkId` / `payload.runId`, so it
+  // persists like the memory pane and a restart restores it from the record under `.harnu/walks/`. One pane per
+  // WALK (`dedupKey`): opening a walk twice reveals the pane that has it. No `maxInstances` on purpose: the
+  // registry's cap recycles the OLDEST pane silently, and a walk the operator is in the middle of must never be.
+  walk: {
+    persistable: true,
+    dedupKey: (p) => (p as HelperPane).payload?.walkId as string | undefined
   }
 }

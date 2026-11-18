@@ -388,6 +388,8 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission pane — close dialog (§6 — S-22)            | `components/MissionCloseConfirmDialog.vue` + `stores/missions.ts`                |
 | Mission pane — sample mission (§6 — S-22)          | `lib/mission-sample.ts` + `stores/missions.ts`                                   |
 | Mission dropdown — shell (§6 — dropdown S-1)       | `components/MissionDropdown.vue` + `lib/mission-dropdown-position.ts`            |
+| Guided walk pane (helper stack, §6 — S-3)          | `GuidedWalkPane.vue` + `Walk*.vue` + `lib/walk-view.ts` + `lib/walk-keys.ts`     |
+| Walks library (helper stack, §6 — S-4)             | `WalksPane.vue` + `lib/walk-library.ts` (S-4)                                    |
 | Mission dropdown — head, switch (§6 — S-2)         | `components/MissionDropdownHead.vue` + `lib/mission-pane-view.ts`                |
 | Mission dropdown — next card (§6 — S-2)            | `components/MissionDropdownNext.vue` + `lib/mission-pane-view.ts`                |
 | Mission dropdown — tree and keys (§6 — S-3)        | `components/MissionDropdownTree.vue` + `lib/mission-dropdown-tree.ts`            |

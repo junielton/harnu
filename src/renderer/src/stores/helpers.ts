@@ -1183,6 +1183,55 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
+   * Guided walks S-3: open the walk pane for a run, in a worktree's stack. Non-PTY and reproducible from its
+   * `payload` (`walkId`, `runId`: never content), so it persists like the memory pane and a restart restores it
+   * from the walk's record. One per walk (registry `dedupKey`): opening a walk that is already open returns the
+   * pane that has it; an agent open (`walk_open`) lands in the background and never selects the worktree.
+   */
+  function addWalkHelper(
+    worktreePath: string,
+    walkId: string,
+    runId: string,
+    opts?: AddHelperOpts
+  ): string {
+    const id = `h-${crypto.randomUUID()}`
+    const paneId = addHelper(
+      worktreePath,
+      { id, type: 'walk', cwd: worktreePath, ratio: 0, payload: { walkId, runId } },
+      opts
+    )
+    // a walk already open on an earlier run (a re-run) now shows the new one
+    if (paneId !== id) setWalkRun(worktreePath, paneId, runId)
+    return paneId
+  }
+
+  /** The id of the pane that shows `walkId` in a worktree, or `undefined`. */
+  function walkHelperId(worktreePath: string, walkId: string): string | undefined {
+    return byWorktree.value
+      .get(worktreePath)
+      ?.panes.find((p) => p.type === 'walk' && (p as HelperPane).payload?.walkId === walkId)?.id
+  }
+
+  /** Point a walk pane at another run of the same walk (a re-run), or at another walk (the re-run offer). */
+  function setWalkRun(worktreePath: string, paneId: string, runId: string, walkId?: string): void {
+    mutateWorktree(worktreePath, (s) => ({
+      ...s,
+      panes: s.panes.map((p) =>
+        p.id === paneId && p.type === 'walk'
+          ? {
+              ...p,
+              payload: {
+                ...toRaw((p as HelperPane).payload ?? {}),
+                runId,
+                ...(walkId ? { walkId } : {})
+              }
+            }
+          : p
+      ) as AnyHelperPane[]
+    }))
+  }
+
+  /**
    * Open a root-backed project file-tree pane (Cluster D) in a worktree's stack.
    * Non-PTY like {@link addMemoryHelper} — cheap, reproducible from `root`, so it
    * never enters `liveHelpers`.
@@ -1754,6 +1803,19 @@ export const useHelpersStore = defineStore('helpers', () => {
     })
   }
 
+  // Guided walks S-3: a session opened a walk (`walk_open`). Show the pane in the background, as every agent open
+  // does (it never selects the worktree), and tell main whether it landed: that is the `opened` the verb answers.
+  if (typeof window !== 'undefined' && window.api?.onWalkOpen) {
+    window.api.onWalkOpen(({ reqId, folder, walkId, runId }) => {
+      void ensureLoaded(folder)
+        .then(() => {
+          const paneId = addWalkHelper(folder, walkId, runId, { origin: 'agent' })
+          window.api.walkOpened({ reqId, paneId })
+        })
+        .catch(() => window.api.walkOpened({ reqId, paneId: null }))
+    })
+  }
+
   return {
     byWorktree,
     currentWorktreePath,
@@ -1791,6 +1853,9 @@ export const useHelpersStore = defineStore('helpers', () => {
     addMemoryHelper,
     addExplorerHelper,
     addMissionHelper,
+    addWalkHelper,
+    walkHelperId,
+    setWalkRun,
     missionHelperId,
     toggleMissionHelper,
     addReviewCompanionHelper,
