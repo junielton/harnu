@@ -1,6 +1,6 @@
 /**
  * W-15 to W-22: the library, a past run, Re-run, Export, the sources that touch no mission, Delete, a plain sentence
- * in a never-briefed session (W-22), and the one case whose slice has not landed (W-21). Setup that is not the thing proven (finishing a run so there is something to
+ * in a never-briefed session (W-22), and Test it in the Mission dropdown (W-21). Setup that is not the thing proven (finishing a run so there is something to
  * list) goes through the preload's own operator channel, the same one the pane's buttons call.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -593,10 +593,265 @@ export const casesC = [
     id: 'W-21',
     title: 'Test it in the Mission dropdown names the source',
     pendingUntil: { file: 'src/main/walk/walk-request.ts', slice: 'S-7' },
-    async run() {
-      throw new Error(
-        'slice S-7 has landed: write the case (Test it on a step, a milestone and the mission, then the walk opens in the helper stack)'
+    faults: {
+      'expect-wrong-scope': 'expect the step request to name the scope "milestone"'
+    },
+    /**
+     * The Mission dropdown, opened from the Topbar pill of the mission's leader. A sign-off step (only an operator
+     * criterion) reads "waiting for review", so the operator owes it a check by hand: Test it is drawn on the step,
+     * on its milestone and, once the criterion is ticked, on the whole mission. Each click sends one request to the
+     * leader (the stub `claude` receives it and, as a session would, opens a walk of that source); the walk's pane
+     * lands in the helper stack and never in the dropdown, and an outside click closes the dropdown and keeps it. A
+     * source with a live run is not asked for again: its pane comes back to the stack instead.
+     */
+    async run(ctx, a) {
+      const leader = ctx.sessions.leader
+      const repo = ctx.repo
+      const R = (js) => ctx.cdp.eval(js)
+
+      // ---- a mission whose only step is a sign-off, led by the session the stub claude stands for
+      const made = await ctx.mcp.call('mission_create', {
+        folder: repo,
+        sessionId: leader,
+        title: 'Notes search by hand',
+        doneWhen: 'The search box was tried by hand',
+        milestones: [{ title: 'Try the search box' }],
+        steps: [
+          {
+            title: 'Type in the search box',
+            milestone: 'Try the search box',
+            criteria: [{ text: 'The operator has typed in the box', by: 'operator' }]
+          }
+        ]
+      })
+      const missionId = made.payload?.missionId ?? made.payload?.id
+      if (!/^mnt-/.test(missionId ?? ''))
+        throw new Error(`mission_create refused: ${JSON.stringify(made.payload).slice(0, 300)}`)
+      const got = await ctx.mcp.call('mission_get', { folder: repo, sessionId: leader, missionId })
+      const stepId = got.payload.steps?.[0]?.id
+      const milestoneId = got.payload.milestones?.[0]?.id
+      const criterionId = got.payload.steps?.[0]?.criteria?.[0]?.id
+      a.ok(
+        stepId && milestoneId && criterionId,
+        'the mission has a step, a milestone and a criterion'
       )
+      a.eq(
+        got.payload.steps?.[0]?.state,
+        'waiting-review',
+        'a sign-off step reads waiting for review'
+      )
+
+      // ---- the leader is the selected session, and the dropdown is opened from the Topbar pill
+      await R(`${ctx.S('sessions')}.select(${JSON.stringify(leader)})`)
+      await sleep(1500)
+      await R(
+        `${ctx.S('missions')}.chooseMission(${JSON.stringify(leader)}, ${JSON.stringify(missionId)})`
+      )
+      await R(`${ctx.S('missions')}.refreshV4()`)
+      const popover = () => R(`${ctx.S('ui')}.popovers.missionProgress === true`)
+      const walkPanes = () =>
+        R(`(() => {
+          const stack = document.querySelector('[data-island="helper-pane"]')?.parentElement
+          const panes = [...document.querySelectorAll('[data-dsqa="walk"]')]
+          return {
+            count: panes.length,
+            inDropdown: panes.some((p) => !!p.closest('[data-test="mission-dropdown"]')),
+            inStack: panes.every((p) => !!p.closest('[data-island="helper-pane"]'))
+          }
+        })()`)
+      async function openDropdown() {
+        if (await popover()) return
+        await ctx.clickIn('[data-test="mission-pill-label"]')
+        await ctx.cdp.waitFor(
+          `!!document.querySelector('[data-test="mission-dropdown"]')`,
+          15_000,
+          'the Mission dropdown'
+        )
+      }
+      async function openStep() {
+        await openDropdown()
+        if (
+          !(await R(`!!document.querySelector('[data-test="step-body"][data-step="${stepId}"]')`))
+        )
+          await ctx.clickIn('[data-test="step-row"]', 'Type in the search box')
+        await ctx.cdp.waitFor(
+          `!!document.querySelector('[data-test="step-body"][data-step="${stepId}"] [data-test="test-it-step"]')`,
+          15_000,
+          'Test it on the open step'
+        )
+      }
+      const requestSince = async (mark, scope) =>
+        ctx.waitStub(
+          mark,
+          new RegExp(`\\[harnu-walk-request\\][^\\n]*\\n[^\\n]*scope ${scope}`),
+          30_000
+        )
+      const opened = (text) =>
+        [...text.matchAll(/STUB-WALK (\{.*\})/g)].map((m) => JSON.parse(m[1])).pop()?.opened ?? null
+      const missionBefore = ctx.missionFiles()
+
+      // ---- Test it on the step: drawn, sends the request, the walk opens in the stack, the dropdown closes
+      await openStep()
+      a.ok(
+        await R(
+          `!!document.querySelector('[data-test="milestone-summary"] [data-test="test-it-milestone"]')`
+        ),
+        'Test it is drawn on the milestone too'
+      )
+      await ctx.shot('mission-dropdown-test-it')
+      let mark = ctx.stubMark()
+      await ctx.clickIn('[data-test="test-it-step"]')
+      const stepScope = ctx.fault('expect-wrong-scope') ? 'milestone' : 'step'
+      let seen = ''
+      try {
+        seen = await requestSince(mark, stepScope)
+      } catch (e) {
+        a.ok(false, `the stub received no request naming scope ${stepScope}: ${e.message}`)
+      }
+      a.ok(seen.includes('[harnu-walk-request]'), 'the leader received a [harnu-walk-request] turn')
+      a.ok(
+        seen.includes(missionId) && seen.includes(stepId),
+        'the request names the mission and the step'
+      )
+      a.ok(/existing walks: none/.test(seen), 'a source with no walk says so')
+      a.ok(
+        /mission_get/.test(seen) && /walk_open/.test(seen),
+        'the request carries the sources and the verb'
+      )
+      a.ok(!(await popover()), 'the dropdown closed after the click')
+      await ctx.cdp
+        .waitFor(
+          `document.querySelectorAll('[data-dsqa="walk"]').length >= 1`,
+          30_000,
+          'the walk pane'
+        )
+        .catch((e) => a.ok(false, e.message))
+      let panes = await walkPanes()
+      a.ok(
+        panes.count === 1 && panes.inStack && !panes.inDropdown,
+        'the walk opened in the helper stack, not the dropdown'
+      )
+      const stepWalk = opened(ctx.stubSince(mark))
+      a.ok(stepWalk?.ok === true && stepWalk?.walkId, 'the session opened a walk for the step')
+      await ctx.shot('walk-opened-from-step')
+
+      // ---- an outside click closes the dropdown and keeps the walk
+      await openStep()
+      // the Fleet heading, well outside the dropdown (the walk pane itself sits under it)
+      const tagged = await R(`(() => {
+        document.querySelectorAll('[data-hv-outside]').forEach((e) => e.removeAttribute('data-hv-outside'))
+        const h = [...document.querySelectorAll('span, div, h2')].find(
+          (e) => e.children.length === 0 && e.textContent.trim() === 'Fleet'
+        )
+        if (!h) return false
+        h.setAttribute('data-hv-outside', '')
+        return true
+      })()`)
+      a.ok(tagged, 'there is something outside the dropdown to click')
+      await ctx.clickIn('[data-hv-outside]')
+      await sleep(400)
+      a.ok(!(await popover()), 'an outside click closes the dropdown')
+      panes = await walkPanes()
+      a.ok(panes.count === 1, 'and the walk stays open')
+
+      // ---- Test it on the milestone
+      await openStep()
+      mark = ctx.stubMark()
+      await ctx.clickIn('[data-test="milestone-summary"] [data-test="test-it-milestone"]')
+      try {
+        seen = await requestSince(mark, 'milestone')
+        a.ok(seen.includes(milestoneId), 'the request names the milestone')
+      } catch (e) {
+        a.ok(false, `the stub received no request naming scope milestone: ${e.message}`)
+      }
+      await ctx.cdp
+        .waitFor(
+          `document.querySelectorAll('[data-dsqa="walk"]').length >= 2`,
+          30_000,
+          'a second walk pane'
+        )
+        .catch((e) => a.ok(false, e.message))
+      a.ok(!(await popover()), 'the dropdown closed after the milestone click')
+      a.eq(ctx.missionFiles(), missionBefore, 'asking for walks wrote nothing to the mission')
+
+      // ---- with a live run for the step: no new request, its pane comes back to the stack
+      if (stepWalk?.walkId) {
+        const w = { walkId: stepWalk.walkId, runId: stepWalk.runId }
+        await ctx.operate(w, 'start') // a run that has started is live; a ready one is not
+        const paneId = await R(
+          `${ctx.S('helpers')}.walkHelperId(${JSON.stringify(repo)}, ${JSON.stringify(w.walkId)})`
+        )
+        if (paneId) {
+          await R(
+            `${ctx.S('helpers')}.removeHelper(${JSON.stringify(repo)}, ${JSON.stringify(paneId)})`
+          )
+          await sleep(500)
+        }
+        const before = await R(
+          `!!${ctx.S('helpers')}.walkHelperId(${JSON.stringify(repo)}, ${JSON.stringify(w.walkId)})`
+        )
+        a.ok(!before, "the live walk's pane was closed")
+        await openStep()
+        mark = ctx.stubMark()
+        await ctx.clickIn('[data-test="test-it-step"]')
+        await sleep(2500)
+        a.ok(
+          !/\[harnu-walk-request\]/.test(ctx.stubSince(mark)),
+          'with a live run no request is sent'
+        )
+        await ctx.cdp
+          .waitFor(
+            `!!${ctx.S('helpers')}.walkHelperId(${JSON.stringify(repo)}, ${JSON.stringify(w.walkId)})`,
+            15_000,
+            "the live run's pane"
+          )
+          .catch((e) => a.ok(false, e.message))
+        a.ok(
+          await R(
+            `!!${ctx.S('helpers')}.walkHelperId(${JSON.stringify(repo)}, ${JSON.stringify(w.walkId)})`
+          ),
+          "the live run's pane is back in the stack"
+        )
+        a.ok(!(await popover()), 'the dropdown closed after the click')
+        await ctx.shot('live-run-focused')
+      }
+
+      // ---- the whole mission, once the operator ticked the criterion: ready to close
+      const door = await R(
+        `window.api.missionV4Door(${JSON.stringify({ door: 'mark', folder: repo, missionId, stepId, criterionId })})`
+      )
+      a.ok(
+        door?.ok === true,
+        `the operator's tick was accepted: ${JSON.stringify(door).slice(0, 120)}`
+      )
+      await R(`${ctx.S('missions')}.refreshV4()`)
+      await openDropdown()
+      await ctx.cdp
+        .waitFor(
+          `!!document.querySelector('[data-test="mission-dropdown-footer"] [data-test="test-it-mission"]')`,
+          15_000,
+          'Test the whole mission'
+        )
+        .catch((e) => a.ok(false, e.message))
+      a.ok(
+        !(await R(`!!document.querySelector('[data-test="test-it-step"]')`)),
+        'a step with nothing owed by hand is not offered a walk'
+      )
+      await ctx.shot('mission-end')
+      mark = ctx.stubMark()
+      await ctx.clickIn('[data-test="test-it-mission"]')
+      try {
+        seen = await requestSince(mark, 'mission')
+        a.ok(seen.includes(missionId), 'the request names the mission')
+      } catch (e) {
+        a.ok(false, `the stub received no request naming scope mission: ${e.message}`)
+      }
+      a.ok(!(await popover()), 'the dropdown closed after the whole-mission click')
+      await ctx.cdp
+        .waitFor(`!!document.querySelector('[data-dsqa="walk"]')`, 20_000, 'a walk pane')
+        .catch((e) => a.ok(false, e.message))
+      panes = await walkPanes()
+      a.ok(panes.inStack && !panes.inDropdown, 'every walk pane is in the helper stack')
     }
   },
 
