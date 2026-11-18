@@ -25,6 +25,7 @@ import {
   type Run,
   type RunCheck
 } from '../../../shared/walk-machine'
+import { walkLinkKey } from '../../../shared/walk-schema'
 import type { DoItem, WalkCheck, WalkLink, WalkScript } from '../../../shared/walk-schema'
 import type { WalkSource } from '../../../shared/walk-source'
 import type { KeyContext, PaneMode } from './walk-keys'
@@ -84,6 +85,8 @@ export interface WalkData {
   runs?: { runId: string; n: number; state: Run['state']; startedAt?: number; endedAt?: number }[]
   /** What each check said the last time it was walked (a re-run's quiet hint). */
   lastTime?: Record<string, LastTime>
+  /** Links whose target no longer exists (`walkLinkKey`s): the pane does not draw them (AC-25). */
+  goneLinks?: string[]
   /** The wait of D-7 before Continue without the check (30 s; a dev variable shortens it). */
   waitMs: number
   now: number
@@ -384,6 +387,12 @@ export interface LinkChip {
   note: 'login' | 'unchecked' | null
 }
 
+/** The links whose target still exists: a link the load found gone is not drawn (AC-25). */
+function liveLinks(links: WalkLink[], data: WalkData): WalkLink[] {
+  const gone = data.goneLinks
+  return gone && gone.length > 0 ? links.filter((l) => !gone.includes(walkLinkKey(l))) : links
+}
+
 function linkChip(l: WalkLink, folder: string): LinkChip {
   const abs =
     l.kind === 'file' ? `${folder.replace(/\/$/, '')}/${l.target.replace(/^\.?\//, '')}` : null
@@ -512,11 +521,14 @@ function explainView(data: WalkData, c: WalkCheck, ui: WalkUi): ExplainView {
   const teach: TeachView | null = c.teach
     ? {
         what: c.teach.what,
-        where: (c.teach.where ?? []).map((l) => linkChip(l, data.folder)),
+        where: liveLinks(c.teach.where ?? [], data).map((l) => linkChip(l, data.folder)),
         idea: c.teach.idea
           ? {
               text: c.teach.idea.text,
-              link: c.teach.idea.link ? linkChip(c.teach.idea.link, data.folder) : null
+              link:
+                c.teach.idea.link && liveLinks([c.teach.idea.link], data).length > 0
+                  ? linkChip(c.teach.idea.link, data.folder)
+                  : null
             }
           : null,
         why: c.teach.why ?? null
@@ -598,7 +610,7 @@ function checkView(data: WalkData, rc: RunCheck, ui: WalkUi, t: T): CheckView {
           text: c.where.text,
           path: c.where.path ?? null,
           approximate: c.where.approximate === true,
-          links: (c.where.links ?? []).map((l) => linkChip(l, data.folder))
+          links: liveLinks(c.where.links ?? [], data).map((l) => linkChip(l, data.folder))
         },
     see: {
       passes: segments(c.passes),
@@ -945,6 +957,15 @@ export interface PastRunView {
   rows: PastRow[]
 }
 
+/** The pane's own lightbox shape for a screenshot of a past run (the same one a check's image uses). */
+export function shotLightbox(shot: { path: string; name: string }): {
+  src: string
+  alt: string
+  caption: string
+} {
+  return { src: shot.path, alt: shot.name, caption: shot.name }
+}
+
 const baseName = (path: string): string => path.split('/').pop() ?? path
 
 function pastNotes(rc: RunCheck): PastNotes | null {
@@ -952,7 +973,8 @@ function pastNotes(rc: RunCheck): PastNotes | null {
   const notes: PastNotes = {
     lines: operator.flatMap((f) => (f.line ? [f.line] : [])),
     shots: operator.flatMap((f) => (f.shot ? [{ path: f.shot, name: baseName(f.shot) }] : [])),
-    correction: rc.correction?.text ?? null,
+    // the live card is cleared by Try again; the record keeps what the agent said (the latest one)
+    correction: rc.correction?.text ?? rc.correctionLog?.at(-1)?.text ?? null,
     evidence: rc.report?.evidence ?? null
   }
   return notes.lines.length || notes.shots.length || notes.correction || notes.evidence

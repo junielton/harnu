@@ -67,6 +67,7 @@ import {
 } from './walk-request'
 import { leaderOf } from '../missions/guard'
 import { buildMissionSummary } from '../missions/summary'
+import { findGoneLinks } from './walk-links'
 import type { OperatorOp } from './walk-turn'
 
 // ---- What the pane reads --------------------------------------------------------------------------
@@ -108,6 +109,8 @@ export interface WalkLoad {
   runs: RunSummary[]
   /** What each check said the last time it was walked, read from the run this one follows (a re-run). */
   lastTime: Record<string, LastTime>
+  /** Links whose target no longer exists (`walkLinkKey`s), read at load time: the pane does not draw them (AC-25). */
+  goneLinks: string[]
   waitMs: number
   now: number
   saved: { walkId: string; lastRun: { verified: number; total: number } } | null
@@ -314,6 +317,7 @@ export async function loadWalk(
         }
       }),
     lastTime: before ? lastTimeHints(before.run) : {},
+    goneLinks: findGoneLinks(svc.folder, walk.script),
     waitMs: env.waitMs ?? checkWaitMs(),
     now,
     saved: saved?.lastRun

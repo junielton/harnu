@@ -15,11 +15,13 @@ import {
 } from '../src/shared/walk-machine'
 import { toMachineChecks, type WalkScript } from '../src/shared/walk-schema'
 import { createWalkProbe } from '../src/main/walk/walk-links'
+import { walkLinkKey } from '../src/shared/walk-schema'
 import { mapWalkKey } from '../src/renderer/src/lib/walk-keys'
 import {
   freshUi,
   keyContext,
   paneView,
+  shotLightbox,
   type T,
   type WalkData,
   type WalkUi
@@ -332,6 +334,95 @@ describe('walk history', () => {
     expect(await rerunWalk(svc.store, 'wlk-00000000')).toMatchObject({
       ok: false,
       error: { code: 'WALK_NOT_FOUND' }
+    })
+  })
+})
+
+// ---- stp-19: the gaps the smoke test found ------------------------------------------------------------
+
+describe('walk smoke fixes (stp-19)', () => {
+  it('a link whose target is gone is not drawn, at render time (AC-25, W-9)', async () => {
+    mkdirSync(join(root, 'docs'), { recursive: true })
+    mkdirSync(join(root, 'sub'), { recursive: true })
+    writeFileSync(join(root, 'docs', 'keep.md'), 'keep')
+    writeFileSync(join(root, 'docs', 'gone.md'), 'gone')
+    const svc = createWalkService(root, { runtime: () => runtime, now: () => clock })
+    const opened = await svc.open({
+      sessionId: 'sess-owner',
+      script: {
+        title: 'Links',
+        purpose: 'check',
+        source: { kind: 'pr', number: 48, title: 'Links', author: 'alex' },
+        checks: [
+          check('c1', {
+            where: {
+              text: 'the page',
+              links: [
+                { label: 'Keep', kind: 'file', target: 'docs/keep.md' },
+                { label: 'Gone', kind: 'file', target: 'docs/gone.md' },
+                { label: 'Other', kind: 'folder', target: join(root, 'sub') },
+                { label: 'PR', kind: 'pr', target: '48' }
+              ]
+            }
+          })
+        ]
+      },
+      probe: createWalkProbe({
+        folder: root,
+        knownFolders: [root, join(root, 'sub')],
+        cardSlugs: () => [],
+        mission: () => null
+      })
+    })
+    if (!opened.ok) throw new Error(JSON.stringify(opened))
+    const drawn = async () => {
+      await svc.operate({ walkId: opened.walkId, runId: opened.runId, op: 'start' })
+      const data = await dataOf(svc, opened.walkId, opened.runId)
+      return {
+        data,
+        labels: paneView(data, ui(), t).check?.where?.links.map((l) => l.label) ?? []
+      }
+    }
+    // everything exists: every link is drawn
+    const first = await drawn()
+    expect(first.data.goneLinks ?? []).toEqual([])
+    expect(first.labels).toEqual(['Keep', 'Gone', 'Other', 'PR'])
+    // the targets disappear after the walk was accepted: the next read does not draw them
+    rmSync(join(root, 'docs', 'gone.md'))
+    rmSync(join(root, 'sub'), { recursive: true })
+    const after = await drawn()
+    expect(new Set(after.data.goneLinks)).toEqual(
+      new Set([
+        walkLinkKey({ kind: 'file', target: 'docs/gone.md' }),
+        walkLinkKey({ kind: 'folder', target: join(root, 'sub') })
+      ])
+    )
+    expect(after.labels).toEqual(['Keep', 'PR'])
+  })
+
+  it('a past run still shows the agent correction after Try again (AC-31, W-16)', async () => {
+    const w = await openWalk()
+    const a = { walkId: w.walkId, runId: w.runId }
+    const op = (o: Parameters<typeof w.svc.operate>[0]['op'], x: object = {}) =>
+      w.svc.operate({ ...a, op: o, ...x })
+    await op('start')
+    await op('fail', { line: 'It broke.' }) // c1
+    await w.svc.report({ ...a, checkId: 'c1', kind: 'correction', text: 'Open the filter first.' })
+    await op('try-again')
+    await op('done') // c1 passes now
+    await op('end')
+    await w.svc.idle()
+    const row = paneView(await dataOf(w.svc, w.walkId, w.runId), ui({ past: true }), t).past!
+      .rows[0]
+    expect(row.notes?.correction).toBe('Open the filter first.')
+    expect(row.notes?.lines).toEqual(['It broke.'])
+  })
+
+  it('a screenshot of a past run opens the pane lightbox, not the viewer (AC-31, W-16)', () => {
+    expect(shotLightbox({ path: '/w/runs/r/shots/shot-1.png', name: 'shot-1.png' })).toEqual({
+      src: '/w/runs/r/shots/shot-1.png',
+      alt: 'shot-1.png',
+      caption: 'shot-1.png'
     })
   })
 })

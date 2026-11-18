@@ -344,9 +344,10 @@ describe('walk machine: re-run (AC-22)', () => {
     const first = (await store.readRun(walkId, runId))!.run
     expect(first.state).toBe('ended')
 
-    // the hint is what the last run said, per check: the line the operator wrote, and nothing for a
-    // check the run never walked (the pre-closed row, the check that was not reached)
+    // the hint is what the last run said, per check: the line the operator wrote, the pre-closed row's own
+    // status, and nothing for a check the run never walked (the check that was not reached)
     expect(lastTimeHints(first)).toEqual({
+      c0: { result: 'passed' },
       c1: { result: 'passed' },
       c2: { result: 'skipped' },
       c3: { result: 'failed', line: 'Header row missing when the table is empty.' }
@@ -386,6 +387,40 @@ describe('walk machine: re-run (AC-22)', () => {
       ok: false,
       error: { code: 'WALK_RUN_LIVE', runId: again.runId }
     })
+  })
+
+  it('a pre-closed row of the earlier run carries its own status as the last-time hint (AC-31, W-17)', () => {
+    const checks = [
+      plain('p', { preClosed: { status: 'verified' } }),
+      plain('q', { preClosed: { status: 'caveat' } }),
+      plain('a')
+    ]
+    let run = newRun(checks, { n: 1 })
+    run = ok(startRun(run, 1))
+    run = ok(done(run, 2)) // a: the last to-do check, so the run ends with it
+    expect(run.state).toBe('ended')
+    expect(lastTimeHints(run)).toEqual({
+      p: { result: 'passed' },
+      q: { result: 'unverified' },
+      a: { result: 'passed' }
+    })
+  })
+
+  it('the agent correction stays in the run record after Try again (AC-31, W-16)', () => {
+    let run = live([plain('a')])
+    run = ok(fail(run, { line: 'It broke.', now: 1 }))
+    run = ok(report(run, { kind: 'correction', checkId: 'a', text: 'Open the filter first.' }))
+    run = ok(tryAgain(run))
+    // the live card no longer shows it, the record still holds it
+    expect(run.checks[0].correction).toBeNull()
+    expect(run.checks[0].correctionLog).toEqual([{ text: 'Open the filter first.' }])
+    // a second failure and a second correction add to the log; the first stays
+    run = ok(fail(run, { line: 'Still broke.', now: 2 }))
+    run = ok(report(run, { kind: 'correction', checkId: 'a', text: 'Reload after it.' }))
+    expect(run.checks[0].correctionLog).toEqual([
+      { text: 'Open the filter first.' },
+      { text: 'Reload after it.' }
+    ])
   })
 
   it('last-time hints say passed, failed, skipped or unverified, and only for checks that were walked', () => {
