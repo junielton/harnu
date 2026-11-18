@@ -5594,5 +5594,10 @@
         "body": "O Harnu pausou as checagens no GitHub até as {time} (em {minutes} min)."
       }
     }
+  },
+  "testWalk": {
+    "turn": {
+      "sent": "Resposta da caminhada enviada para ‹{session}›"
+    }
   }
 }

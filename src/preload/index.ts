@@ -1414,6 +1414,12 @@ const api = {
     ipcRenderer.invoke('external:showItemInFolder', path),
   // T45: pull + pin the folder Harnu was launched with (`harnu .`), if any.
   cliOpenPending: (): Promise<void> => ipcRenderer.invoke('cli:openPending'),
+  /**
+   * Dev only (guided walks, S-2): open a walk from the app itself, as `walk_open` does for a session. The
+   * main side registers the handler only outside a packaged build, so in a release this rejects.
+   */
+  walkDevOpen: (args: { folder: string; script: unknown; sessionId?: string }): Promise<unknown> =>
+    ipcRenderer.invoke('walk:dev-open', args),
   openInEditor: (path: string): Promise<OpenInEditorResult> =>
     ipcRenderer.invoke('external:openInEditor', path),
   // The folder's `origin` as its github.com `/pulls` URL, or `null` when there

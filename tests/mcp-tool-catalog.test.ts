@@ -194,7 +194,13 @@ describe('alwaysLoad turn-1 visibility (T93)', () => {
     'memory_read',
     'memory_query',
     'plan_mission',
-    'open_file'
+    'open_file',
+    // Guided walks (S-2, AC-43): a plain sentence in any session must open a walk, so the four verbs
+    // are core. This is a deliberate change to the pinned six-verb set.
+    'walk_open',
+    'walk_extend',
+    'walk_report',
+    'walk_get'
   ] as const
 
   it('ALWAYS_LOAD_OPS is exactly the intended turn-1 verb set', () => {
@@ -252,7 +258,14 @@ describe('T120 declarative gate fields — the def is the single source of truth
   ]
   // Your move (U3): `your_move` is durable-allow-eligible but NOT grantable: it files one
   // rate-capped card, so a mission grant never needs to buy it.
-  const alwaysAllowableExpected = [...grantableExpected, 'your_move']
+  const alwaysAllowableExpected = [
+    ...grantableExpected,
+    'your_move',
+    // Guided walks (S-2): free like open_file, so a plain sentence is not stopped by a confirm
+    'walk_open',
+    'walk_extend',
+    'walk_report'
+  ]
   const dangerousExpected = ['create_worktree', 'spawn_terminal']
   // Post-reversal this is EVERY mutating verb except the one that must always face a
   // human: `plan_mission` (mints a grant). `submit_manifest` (T187) carries this flag
@@ -342,7 +355,11 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'mission_settle_ac',
     'mission_attach',
     // Campaign ch.5a (T597): a local write, free like the mission writes.
-    'rebase_stack'
+    'rebase_stack',
+    // Guided walks (S-2): the three writes run free in an allowed folder, like open_file
+    'walk_open',
+    'walk_extend',
+    'walk_report'
   ]
   const bootstrapExpected = ['adopt_folder', 'plan_mission']
 
@@ -387,7 +404,7 @@ describe('T120 declarative gate fields — the def is the single source of truth
     expect([...actual].sort()).toEqual([...bootstrapExpected].sort())
   })
 
-  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup/list_terminals/browser_list:paths, everything else undefined', () => {
+  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup/list_terminals/browser_list/walk_get:paths, everything else undefined', () => {
     for (const t of MCP_TOOLS) {
       if (t.op === 'get_session') expect(t.discloses).toBe('transcript')
       else if (
@@ -395,17 +412,21 @@ describe('T120 declarative gate fields — the def is the single source of truth
         t.op === 'list_containers' ||
         t.op === 'list_cleanup' ||
         t.op === 'list_terminals' ||
-        t.op === 'browser_list'
+        t.op === 'browser_list' ||
+        // Guided walks (S-2): a failure's screenshot path rides in the read
+        t.op === 'walk_get'
       )
         expect(t.discloses).toBe('paths')
       else expect(t.discloses).toBeUndefined()
     }
   })
 
-  it('disclosesTranscript is get_session/memory_read/memory_query/read_terminal only', () => {
+  it('disclosesTranscript is get_session/memory_read/memory_query/read_terminal/walk_get only', () => {
+    // walk_get reads the walk's own content (the operator's failure lines, the checks): a blocked folder
+    // must not be readable through it, so it is gated by the folder allowlist like project memory.
     const actual = MCP_TOOLS.filter((t) => t.disclosesTranscript).map((t) => t.op)
     expect([...actual].sort()).toEqual(
-      ['get_session', 'memory_query', 'memory_read', 'read_terminal'].sort()
+      ['get_session', 'memory_query', 'memory_read', 'read_terminal', 'walk_get'].sort()
     )
   })
 
