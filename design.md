@@ -7707,7 +7707,9 @@ components compute nothing: the picker rows, who leads, the requests and the tex
   keeps the requests that name the selected session.
 - **Ask**, on an open milestone, is the compact pill in its summary line (a 10px `message-square`, `title` "Ask the
   session about this milestone"), drawn only when a session **leads** the mission. It opens, under the summary
-  line, the ask box (`rounded border border-accent-line bg-bg`, `padding: 8px 10px`): a textarea (`12.5px`, two
+  line, the ask box: **one** box (`rounded-sm border border-border-2 bg-bg`) that owns the border and the fill, with the
+  textarea flush inside it (no border and no fill of its own, so never a box inside a box). Focus shows on the box:
+  its border turns `border-accent` on `:focus-within`. The textarea (`12.5px`, two
   rows, "What is still missing to finish this milestone?") and a footer (`10.5px`, `text-text-4`) "Goes to the
   prompt of {leader}. The answer shows in that session." with **Cancel** and **Send** (off while the box is empty).
   **Send** puts **About the milestone “{title}”: {question}** into the **leading** session's prompt, one bracketed
