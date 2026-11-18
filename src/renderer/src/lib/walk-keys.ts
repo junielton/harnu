@@ -10,7 +10,9 @@
  *  - `F`, `B` / `Left`, `S`, `E` and `L` are the shortcuts of Failed, Back, Skip, Explain more and the roadmap.
  *    An outcome's key acts only while that outcome is on screen, and every key is off while a field has focus.
  *  - `Esc` closes what is open, innermost first: the lightbox, the roadmap, the failure form (also from its
- *    field, which is how a field is left).
+ *    field, which is how a field is left). While the pane holds a text selection, Esc clears the selection first.
+ *  - The pane's content is selectable (BUG-292), so while a text selection is held the bare-letter shortcuts are off:
+ *    a letter typed over a selection must never become an outcome. Enter keeps its meaning.
  *  - A held key never repeats an outcome, and a modifier hands the key back to the app and the browser.
  */
 
@@ -50,6 +52,7 @@ export type WalkKeyAction =
   | 'close-lightbox'
   | 'close-roadmap'
   | 'close-form'
+  | 'clear-selection'
   | 'rerun'
 
 export type PaneMode =
@@ -64,6 +67,8 @@ export interface KeyContext {
   lightbox: boolean
   roadmapOpen: boolean
   formOpen: boolean
+  /** The pane holds a non-empty text selection (see `lib/walk-selection.ts`). Absent means none. */
+  hasSelection?: boolean
 }
 
 const DONE_SELECTOR = '[data-walk-done]'
@@ -120,6 +125,8 @@ export function mapWalkKey(ev: KeyLike, ctx: KeyContext): { action: WalkKeyActio
   const k = ev.key
 
   if (k === 'Escape') {
+    // a held selection is cleared first, so the next Esc closes what is open
+    if (ctx.hasSelection) return { action: 'clear-selection' }
     // Esc leaves the failure form even from its field; everywhere else a field keeps it
     if (ctx.lightbox) return { action: 'close-lightbox' }
     if (ctx.roadmapOpen) return { action: 'close-roadmap' }
@@ -152,6 +159,8 @@ export function mapWalkKey(ev: KeyLike, ctx: KeyContext): { action: WalkKeyActio
   }
 
   if (ctx.lightbox) return null
+  // a letter typed over a selected piece of text is not an outcome
+  if (ctx.hasSelection) return null
   const hit = SHORTCUTS[k.toLowerCase()]
   if (!hit) return null
   // the shortcuts belong to a served check; the roadmap, the skipped list, the failure form and the close-out

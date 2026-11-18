@@ -5553,7 +5553,7 @@
       "source": "Fonte"
     },
     "lost": "Não entendi este passo",
-    "undoLead": "Antes, desfaça a última execução: {undo}",
+    "undoLead": "Antes, desfaça a última execução:",
     "working": {
       "checking": "Rodando minha verificação na verificação {n}",
       "quiet": "Isso leva um instante. Você não precisa fazer nada.",

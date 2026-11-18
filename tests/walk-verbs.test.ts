@@ -280,6 +280,27 @@ describe('walk verbs', () => {
     )
     expect(tooLong).toMatchObject({ ok: false, error: { code: 'EXTENSION_REJECTED' } })
     expect((tooLong.rejected as { path: string }[])[0].path).toBe('$.more')
+    // a URL in a sub-check or in the simpler steps is refused, naming where it belongs (BUG-293)
+    const urlExtra = await walkExtend(
+      {
+        folder,
+        walkId: feat.walkId,
+        checkId: 'c1',
+        extra: [{ text: 'Open http://localhost:8000/notes.', see: 'A list.' }],
+        simpler: {
+          text: 'Type the word.',
+          do: [{ text: 'Go to https://example.com/notes.', see: 'A list.' }]
+        }
+      },
+      e
+    )
+    expect(urlExtra).toMatchObject({ ok: false, error: { code: 'EXTENSION_REJECTED' } })
+    expect(urlExtra.rejected).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: '$.extra[0].text', rule: 'URL_IN_PROSE' }),
+        expect.objectContaining({ path: '$.simpler.do[0].text', rule: 'URL_IN_PROSE' })
+      ])
+    )
     // at most 18 sub-checks per check in all: the first answer added 1, so two sixes fit (13), a third does not
     const six = Array.from({ length: 6 }, (_, i) => ({ text: `Step ${i}.`, see: 'Fine.' }))
     for (let i = 0; i < 2; i++)

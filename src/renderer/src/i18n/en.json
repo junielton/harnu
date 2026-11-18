@@ -5553,7 +5553,7 @@
       "source": "Source"
     },
     "lost": "I didn’t get this step",
-    "undoLead": "First undo the last run: {undo}",
+    "undoLead": "First undo the last run:",
     "working": {
       "checking": "Running my check on check {n}",
       "quiet": "This takes a moment. You do not need to do anything.",

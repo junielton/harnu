@@ -7260,6 +7260,17 @@ a code block with the summary and its Copy) · `empty` · `error` (session gone,
 **Keyboard.** `Enter` = Done (also **Start with 1** on the roadmap and **Try again** on a retry), unless focus
 is in a field or on another button. `Esc` closes the lightbox. Focus starts on the primary action.
 
+**Selecting text.** A walk is mostly instructions the operator copies and runs elsewhere, so the content of the
+walk pane and of the Walks library (`.wk-body`: titles, `do` steps, "You should see", the failure hint, the undo
+line, run rows) is selectable and copies with Ctrl/Cmd+C. It opts back in with `select-text`, the same way the
+Markdown pane's body does, because `body` sets `user-select: none`. The header, the progress strip and every control
+stay non-selectable: buttons, chips, run-selector options and `kbd` hints. Three rules follow from a selectable
+pane. (1) While the pane holds a text selection the bare-letter shortcuts (`F`, `B`, `S`, `E`, `L`, `←`) do nothing,
+and `Esc` clears the selection before it closes anything; `Enter` and the modifier chords keep their meaning, so
+Ctrl+C copies. (2) A drag that starts on plain text and is released over a link, a copy button or Done does not
+press it. (3) A drag that starts on a link or chip stays non-selectable (the press must not move focus off the
+pane, and the chip has its own copy button).
+
 **Motion.** Only the §7 fade-in-scale on the lightbox and the pulse on the working dot; both are removed under
 `prefers-reduced-motion`.
 

@@ -60,8 +60,8 @@ const retry = computed(() => props.check.phase === 'failed')
     {{ check.lastTime.text }}
   </div>
   <div v-if="blocksText" class="blocks">{{ blocksText }}</div>
-  <div v-if="check.undo" class="blocks undo" data-test="walk-undo">
-    {{ $t('testWalk.undoLead', { undo: check.undo }) }}
+  <div v-if="check.undoParts" class="blocks undo" data-test="walk-undo">
+    {{ $t('testWalk.undoLead') }} <WalkSegments :parts="check.undoParts" />
   </div>
 
   <!-- the failed state: what the operator reported, then my one correction -->
