@@ -1,0 +1,220 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-11-17",
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css (@theme block = dark; :root[data-theme='light'] = tokens-light.css) + src/renderer/src/styles/main.css (font tokens)",
+  "viewports": [1280, 360],
+  "targets": [
+    "src/renderer/src/components/MissionPill.vue",
+    "new MissionDropdown.vue (+ MissionDropdown*.vue pieces)",
+    "removes MissionPane*.vue and the mission helper pane"
+  ],
+  "screens": [
+    {
+      "id": "mission-dropdown",
+      "title": "Mission dropdown (anchored to the Topbar pill)",
+      "status": "approved",
+      "approvedAt": "2026-11-17",
+      "states": [
+        "mid",
+        "closed",
+        "multi",
+        "chooser",
+        "owed",
+        "step-open",
+        "blocked",
+        "ask",
+        "done-when",
+        "attach-request",
+        "ready",
+        "close-confirm",
+        "empty",
+        "dots"
+      ],
+      "targets": ["src/renderer/src/components/MissionPill.vue", "new MissionDropdown.vue"],
+      "notes": "Everything about a mission in one dropdown under the Topbar pill. 1280 = a wide window; 360 = a narrow one. The EN/PT-BR and Dark/Light switch at the bottom right of the frame is mockup chrome, not product. Sample data: one made-up mission (3 milestones, 21 steps); sessions are not shown to the user."
+    },
+    {
+      "id": "entry",
+      "title": "Entry for guided walks (Test it on a step, a milestone and the whole mission)",
+      "status": "approved",
+      "approvedAt": "2026-11-17",
+      "states": ["step-open", "milestone", "mission", "closed"],
+      "targets": ["MissionDropdown*.vue (Test it control)"],
+      "notes": "The Mission dropdown with the Test it control. A stub: the walk milestone replaces what it calls."
+    }
+  ],
+  "parts": [
+    {
+      "id": "dropdown",
+      "variants": [
+        "mid",
+        "closed",
+        "multi",
+        "chooser",
+        "owed",
+        "step-open",
+        "blocked",
+        "ask",
+        "done-when",
+        "attach-request",
+        "ready",
+        "close-confirm",
+        "empty",
+        "dots"
+      ]
+    },
+    {
+      "id": "entry",
+      "variants": ["step-open", "milestone", "mission", "closed"]
+    }
+  ],
+  "flows": [
+    {
+      "id": "open-and-look",
+      "title": "Open the dropdown and look at a step",
+      "steps": [
+        {
+          "screen": "mission-dropdown",
+          "state": "closed",
+          "via": "the Topbar pill"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "mid",
+          "via": "the step \u201cScore the proofs each criterion names\u201d"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "step-open",
+          "via": "the same step row again"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "mid"
+        }
+      ]
+    },
+    {
+      "id": "what-you-owe",
+      "title": "See everything that waits on you",
+      "steps": [
+        {
+          "screen": "mission-dropdown",
+          "state": "mid",
+          "via": "\u201c2 more waiting on you\u201d"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "owed",
+          "via": "\u201cOpen step\u201d on the blocked item"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "blocked",
+          "via": "\u201cDone, continue\u201d on the blocker"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "mid"
+        }
+      ]
+    },
+    {
+      "id": "ask-a-milestone",
+      "title": "Ask the session about the current milestone",
+      "steps": [
+        {
+          "screen": "mission-dropdown",
+          "state": "mid",
+          "via": "Ask"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "ask",
+          "via": "Send"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "mid"
+        }
+      ]
+    },
+    {
+      "id": "approve-done-when",
+      "title": "Answer a staged Done when",
+      "steps": [
+        {
+          "screen": "mission-dropdown",
+          "state": "done-when",
+          "via": "Approve"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "mid"
+        }
+      ]
+    },
+    {
+      "id": "allow-a-session",
+      "title": "Let another session join",
+      "steps": [
+        {
+          "screen": "mission-dropdown",
+          "state": "attach-request",
+          "via": "Allow"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "mid"
+        }
+      ]
+    },
+    {
+      "id": "close-the-mission",
+      "title": "Close a finished mission",
+      "steps": [
+        {
+          "screen": "mission-dropdown",
+          "state": "ready",
+          "via": "\u201cClose mission\u2026\u201d"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "close-confirm",
+          "via": "Close mission"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "empty",
+          "via": "Attach"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "mid"
+        }
+      ]
+    },
+    {
+      "id": "switch-mission",
+      "title": "Choose among several missions",
+      "steps": [
+        {
+          "screen": "mission-dropdown",
+          "state": "multi",
+          "via": "\u201cMission 1 of 3 \u00b7 Change\u201d"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "chooser",
+          "via": "a mission in the list"
+        },
+        {
+          "screen": "mission-dropdown",
+          "state": "multi"
+        }
+      ]
+    }
+  ]
+}
