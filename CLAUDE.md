@@ -389,7 +389,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission pane — sample mission (§6 — S-22)          | `lib/mission-sample.ts` + `stores/missions.ts`                                   |
 | Mission dropdown — shell (§6 — dropdown S-1)       | `components/MissionDropdown.vue` + `lib/mission-dropdown-position.ts`            |
 | Guided walk pane (helper stack, §6 — S-3)          | `GuidedWalkPane.vue` + `Walk*.vue` + `lib/walk-view.ts` + `lib/walk-keys.ts`     |
-| Walks library (helper stack, §6 — S-4)             | `WalksPane.vue` + `lib/walk-library.ts` (S-4)                                    |
+| Walks library (helper stack, §6 — S-4)             | `WalksPane.vue` + `WalkPast.vue` + `lib/walk-library.ts`                         |
 | Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
 | Containers — Paused detail (§6 — U3.4)             | `src/renderer/src/components/ContainersPausedDetail.vue`                         |
 | Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                              |

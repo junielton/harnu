@@ -495,14 +495,16 @@ _another_ folder.
 | `arrow-up`                               | Canvas properties panel → Layers: Bring forward (T536 U4)                                                                                                                                                                              |
 | `arrow-up-to-line`                       | Canvas properties panel → Layers: Bring to front (T536 U4)                                                                                                                                                                             |
 | `list-checks`                            | Guided walk pane — the pane header glyph and the empty state (§6 "Guided test walk"). Lucide `ListChecks`                                                                                                                              |
-| `library`                                | Guided walk — the close-out's "Saved in Walks" card and the Walks door (S-4). Lucide `Library`                                                                                                                                         |
+| `library`                                | Guided walk — the close-out's "Saved in Walks" card, the walk pane's header door, the Walks pane header and the Topbar and folder-menu "Walks" items (S-4). Lucide `Library`                                                           |
 | `list`                                   | Guided walk — the roadmap icon beside "Check n of N" (opens the read-only roadmap, shortcut `L`). Lucide `List`                                                                                                                        |
 | `lightbulb`                              | Guided walk — the source line of a feature walk (§6 "Guided test walk" → Source line). Lucide `Lightbulb`                                                                                                                              |
 | `zoom-in`                                | Guided walk — "Enlarge" on an expected-result image. Lucide `ZoomIn`                                                                                                                                                                   |
-| `refresh-cw`                             | Guided walk — "Try again" on a retry and on a check the agent disagreed with. Lucide `RefreshCw`                                                                                                                                       |
+| `refresh-cw`                             | Guided walk — "Try again" on a retry and on a check the agent disagreed with; "Re-run" in the Walks library and on a past run (S-4). Lucide `RefreshCw`                                                                                |
 | `send`                                   | Guided walk — "Send" in the failure form. Lucide `Send`                                                                                                                                                                                |
 | `plug`                                   | Guided walk — the error state: no session could take a turn. Lucide `Plug`                                                                                                                                                             |
 | `sparkles`                               | Guided walk — "Behind this check", the teaching card of a walk-through. Lucide `Sparkles`                                                                                                                                              |
+| `chevron-down`                           | Guided walk — the past run's run selector (S-4). Lucide `ChevronDown`                                                                                                                                                                  |
+| `chevron-left`                           | Guided walk — `← Walks` on a past run (S-4). Lucide `ChevronLeft`                                                                                                                                                                      |
 
 ### Editor marks (brand glyphs, T581)
 
@@ -5670,8 +5672,8 @@ the bar. They come back, one at a time, as space returns. Nothing is removed and
 what it does: the menu runs the same handler as the button.
 
 - **What can overflow.** Every action button of the right cluster: `new-session` (folder view only),
-  `roadmap`, `pr-stack`, `review`, `open-folder`, `editor`, `github-pulls`, `explorer`, `terminal`,
-  `browser`, `split-layout`, `panel-right`. These never overflow: the left sidebar toggle (the
+  `roadmap`, `pr-stack`, `review`, `walks`, `open-folder`, `editor`, `github-pulls`, `explorer`,
+  `terminal`, `browser`, `split-layout`, `panel-right`. These never overflow: the left sidebar toggle (the
   collapsed sidebar must always be reopenable) and the Activity bell (a badge and a popover of its
   own, and it is reachable with nothing selected).
 - **Priority, declared once.** The order is one list in code (`TOPBAR_OVERFLOW_ORDER` in
@@ -5686,17 +5688,18 @@ what it does: the menu runs the same handler as the button.
   | 5th         | `split-layout` | A rare preference toggle; also reachable from Settings and its command |
   | 6th         | `browser`      | Opens a pane, right next to Terminal                                   |
   | 7th         | `terminal`     | Opens a pane; reachable with its shortcut                              |
-  | 8th         | `review`       | A per-repo takeover that acts inside Harnu                             |
-  | 9th         | `pr-stack`     | A per-repo takeover that acts inside Harnu                             |
-  | 10th        | `roadmap`      | The per-repo board: the view operators open most                       |
-  | 11th        | `panel-right`  | The only way to reopen a collapsed helper panel without the keyboard   |
-  | 12th (last) | `new-session`  | The primary action of a folder with no session                         |
+  | 8th         | `walks`        | Opens a pane: the repo's saved walks (also in the folder menu)         |
+  | 9th         | `review`       | A per-repo takeover that acts inside Harnu                             |
+  | 10th        | `pr-stack`     | A per-repo takeover that acts inside Harnu                             |
+  | 11th        | `roadmap`      | The per-repo board: the view operators open most                       |
+  | 12th        | `panel-right`  | The only way to reopen a collapsed helper panel without the keyboard   |
+  | 13th (last) | `new-session`  | The primary action of a folder with no session                         |
 
   An action that is not present right now (no `origin`, no helper panes, a session instead of a
   folder) is not in the list that frame, so it neither takes room nor leaves a gap.
 
 - **Order in the bar and in the menu.** Both keep the cluster order `[new-session] [roadmap]
-[pr-stack] [review] [open-folder] [editor] [github-pulls] [explorer] [terminal] [browser]
+[pr-stack] [review] [walks] [open-folder] [editor] [github-pulls] [explorer] [terminal] [browser]
 [split-layout] [panel-right] […]`, whatever the priority order is. The `…` button is last; it is
   drawn only while at least one action is hidden.
 - **Minimum title width: 96px.** The title (the session name, or the folder name in the folder
@@ -7311,9 +7314,40 @@ view-model; the component draws what it says and decides nothing.
 - **The `error` state** shows when a turn has waited in the run's outbox for more than a few seconds and no
   session took it. The pane asks main to offer waiting turns again on mount, once a second while the error shows,
   and on **Resume the session**, which selects the run's owner session.
-- **Not in this build:** the library door in the header and the close-out's Open Walks and Export buttons (they
-  arrive with the library, S-4; the card says only where the walk is saved), the "last time" hints of a re-run,
-  and the `working` frame for "Getting check N ready" (the whole script is delivered up front).
+- **Not in this build:** the `working` frame for "Getting check N ready" (the whole script is delivered up front).
+  The library door, the close-out's Open Walks and Export buttons and the re-run hints arrived with S-4 (below).
+
+**Built in S-4 (the Walks library, a past run, Re-run and Export).** `lib/walk-library.ts` is the library's
+view-model and `paneView` (`walk-view.ts`) adds the past run and the re-run hints; the components draw what they say.
+
+- **Reached from** a library icon (`library`, 12px, §5) at the left of the walk pane's header actions, **Walks** in the
+  folder menu (right after PR Stack) and a **Walks** button in the Topbar (`library`, 14px; it leaves the bar into the
+  `…` menu 8th, see "Topbar overflow"). One Walks pane per worktree (a constant `dedupKey`); opening it twice reveals it.
+- **The row menu.** `⋯` (`more-horizontal`) after Open opens a one-item menu (`trash-2` **Delete…**, `--red`,
+  `--red-soft` hover, `--surface-2`, `--shadow-pop`). Choosing it replaces nothing: it adds one line under the row,
+  `--red-line` left rule like a note, with the question (`Delete “Title” and its 3 runs? … This cannot be undone.`,
+  naming a run in progress) and **Delete** (`--red`, `--red-line` border) with ghost **Keep it**. Esc closes the
+  menu or the question. Never a dialog.
+- **Open and Re-run hand the cell over.** The library gives its place to the walk pane it opens (the mockup draws
+  one cell): Open on a run in progress continues it, on a finished walk shows its last run read-only, on a walk
+  never started starts its first run; **Re-run** opens the new run's roadmap. `← Walks` on a past run is the way back.
+- **The run selector** is a small `--surface-2` button (`Run 3 · Nov 16 ▾`, `chevron-down`) that opens a
+  `listbox` under it (`--surface-2`, `--border-2`, `--shadow-pop`, 11.5px rows; ↑ ↓ move, Enter picks, Esc
+  closes). It lists the runs that started: a finished one reads `Run n · date`, the one in progress `Run n · in
+progress`. With a single run it is a plain label with no chevron.
+- **A past run's notes** sit under their row on a `--red-line` rule (a neutral `--border-2` rule when a row has only the
+  session's findings): `You wrote` with each line in quotes, the screenshot chip (40×28, a button that opens the image
+  in the viewer), `My correction`, `My check found`. A check added to the walk after the run ended is not drawn.
+- **Re-run** sub line: `Same N checks · run n`; each roadmap row ends with `last time: passed | failed | skipped |
+not confirmed` (`--text-4`, `--warning` for failed) and the check's own line under its title reads `Last time:
+failed · “what you wrote”`. A check the last run never reached has no hint.
+- **Waking the session…** (S-3's carried fix): a turn waiting in the outbox for more than 6 s adds one quiet line
+  (`--text-3`, §8 voice) under the check and nothing else changes; the error state needs 45 s.
+- **Export markdown** is the neutral button of the past run's bar (`copy` icon) and of the close-out's Saved in Walks
+  card; it writes into the walk's own folder and opens the file in the viewer.
+
+Plain numbers with no token: the run selector is 22px high (as the mockup), the row menu 120px wide, the library row's
+three columns (`16px | main | auto`).
 
 ### Mission dropdown (Missions v4 — replaces the Mission pane)
 
