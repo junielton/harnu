@@ -1,6 +1,6 @@
 {
-  "status": "draft",
-  "approvedAt": null,
+  "status": "approved",
+  "approvedAt": "2026-11-17",
   "project": "harnu",
   "card": "T765",
   "tokensFrom": "src/renderer/src/styles/themes.css (@theme block = dark; :root[data-theme='light'] = tokens-light.css) + src/renderer/src/styles/main.css (font tokens)",
@@ -15,8 +15,8 @@
     {
       "id": "entry",
       "title": "Entry from a mission: Test it on a step, a milestone or the whole mission",
-      "status": "draft",
-      "approvedAt": null,
+      "status": "approved",
+      "approvedAt": "2026-11-17",
       "states": ["step-open", "milestone", "mission", "closed"],
       "targets": ["new MissionDropdown.vue (the open step's Criteria row)"],
       "notes": "The Mission dropdown (reused from the dropdown mockup) with Test it at three levels: an open step (Criteria row), a milestone (next to Ask) and the whole mission (footer, at the end). A mission is ONE source of a walk, not its home. The walk opens in the helper stack, never inside the dropdown."
@@ -24,8 +24,8 @@
     {
       "id": "walk",
       "title": "The walk pane (helper stack)",
-      "status": "draft",
-      "approvedAt": null,
+      "status": "approved",
+      "approvedAt": "2026-11-17",
       "states": [
         "roadmap",
         "pr",
@@ -53,8 +53,8 @@
     {
       "id": "library",
       "title": "The Walks library (helper stack)",
-      "status": "draft",
-      "approvedAt": null,
+      "status": "approved",
+      "approvedAt": "2026-11-17",
       "states": ["list", "empty"],
       "targets": ["new WalksPane.vue"],
       "notes": "A list of saved walks for this repo: title, source, last run date, outcome, Re-run and Open. Not a dashboard. Empty: how a walk starts, with a copyable command."
@@ -62,8 +62,8 @@
     {
       "id": "offer",
       "title": "Offer: the session asks to walk you through what it built",
-      "status": "draft",
-      "approvedAt": null,
+      "status": "approved",
+      "approvedAt": "2026-11-17",
       "states": ["feature-done"],
       "targets": ["session offer bar (new)"],
       "notes": "Outside any mission: a session that just finished a feature offers a walk once, above its prompt. It never starts one on its own."

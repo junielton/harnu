@@ -1,6 +1,7 @@
 ---
 status: approved
-tier: large
+tier: complex
+mockup: docs/design/guided-walks/
 ---
 
 # Guided walks: a fixed pane that walks the operator through a feature, a PR or a mission, one check at a time, saved and re-runnable
@@ -812,3 +813,4 @@ Append-only after approval. Never edit the sections above once the first card is
 | 2026-11-17 | amendment | The operator approved the walk mockup (revision 2) and its 28 visual decisions at their recommendations: the visual section is now the approved `design.md` text, the roadmap is shown first (D-5), the 4 px strip stays (M-28), links appear once in Where (M-34), nothing settles a criterion (D-2), skipped checks come back as a list, "I didn't get this step" and the escalation door are added; D-2, D-5, D-10, D-12, D-14, D-15 and D-17 are resolved; the mockup is committed at `docs/design/guided-walks/` | operator, relayed by the orchestrator |
 | 2026-11-17 | amendment | Triggering outside a mission is first-class: the four verbs are core, a bundled `walk` skill carries the contract (D-9), it ships on by default (D-21), the offer is asked in chat (D-20), and S-7 is renamed "Wire Test it in the Mission dropdown" as the only slice that depends on the dropdown milestone; the guided walk is step stp-2 of mission mnt-2e4564fc                                                                                                                                                  | operator, relayed by the orchestrator |
 | 2026-11-17 | amendment | Approved by the operator 2026-11-17: mockup revision 2 and every open D-n at its recommendation (D-1, D-3, D-4, D-6 to D-9, D-13, D-16, D-18 to D-21 are now resolved as recommended)                                                                                                                                                                                                                                                                                                                                 | operator, relayed by the orchestrator |
+| 2026-11-17 | amendment | Header names the approved mockup; mockup.json marked approved                                                                                                                                                                                                                                                                                                                                                                                                                                                         | spec author (session 38e8c18a)        |
