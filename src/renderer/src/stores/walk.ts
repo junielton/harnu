@@ -31,6 +31,8 @@ export interface PaneWalk {
   servedAt: number | null
   /** The check the pane last showed, to know when the cursor moved. */
   cursor: string | null
+  /** An operator step is in flight to main: a second press meanwhile is dropped, never queued behind it. */
+  busy: boolean
   /** When each question to the session was sent, so its answer (a later deepening / card) ends the "asking". */
   askedAt: Record<string, number>
 }
@@ -120,6 +122,7 @@ export const useWalkStore = defineStore('walk', () => {
       refusal: null,
       servedAt: null,
       cursor: null,
+      busy: false,
       askedAt: {}
     })
     void window.api.walkWatch({ folder: a.folder, walkId: a.walkId, on: true })
@@ -167,13 +170,19 @@ export const useWalkStore = defineStore('walk', () => {
     const p = panes.get(paneId)
     if (!p) return 'NO_PANE'
     p.refusal = null
-    const res = await window.api.walkOperate({
-      folder: p.folder,
-      walkId: p.walkId,
-      runId: p.runId,
-      op,
-      ...extra
-    })
+    p.busy = true
+    let res: Awaited<ReturnType<typeof window.api.walkOperate>>
+    try {
+      res = await window.api.walkOperate({
+        folder: p.folder,
+        walkId: p.walkId,
+        runId: p.runId,
+        op,
+        ...extra
+      })
+    } finally {
+      p.busy = false
+    }
     if (isRefusal(res)) {
       p.refusal = res.error.code
       await reload(paneId) // the run may have moved under us (a late report); draw what is true

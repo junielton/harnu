@@ -321,6 +321,9 @@ async function run(id: OutcomeId): Promise<void> {
   const s = state.value
   if (!s?.data) return
   const paneId = props.pane.id
+  // a press while the last step is still on its way to main is dropped: a held or doubled key must never walk
+  // through two checks (the 400 ms window after a served check covers the rest)
+  if (s.busy && id !== 'failed' && id !== 'cancel-form' && id !== 'explain') return
   switch (id) {
     case 'start':
       await walk.operate(paneId, 'start')
@@ -429,20 +432,28 @@ async function onDoor(): Promise<void> {
   doorSent.value = err === null
 }
 
-// focus follows the primary action when the pane already has it: Enter keeps meaning "go on" after a step
-watch(
-  () => [view.value.mode, view.value.check?.checkId, view.value.check?.phase],
-  async () => {
-    await nextTick()
-    const root = rootEl.value
-    if (!root || !root.contains(document.activeElement)) return
-    const target =
-      view.value.mode === 'failed-form'
-        ? root.querySelector<HTMLElement>('#walk-failure-line')
-        : root.querySelector<HTMLElement>('[data-walk-primary]')
-    ;(target ?? root).focus()
-  }
-)
+// Focus follows the primary action when the pane already has it: Enter keeps meaning "go on" after a step. The
+// element the operator pressed can leave the page (the action bar empties while the agent checks), so whether the
+// pane HAD the focus is read before the update and the focus is put back after it.
+const focusSignal = (): unknown[] => [
+  view.value.mode,
+  view.value.check?.checkId,
+  view.value.check?.phase
+]
+let hadFocus = false
+watch(focusSignal, () => (hadFocus = !!rootEl.value?.contains(document.activeElement)), {
+  flush: 'pre'
+})
+watch(focusSignal, async () => {
+  await nextTick()
+  const root = rootEl.value
+  if (!root || !hadFocus) return
+  const target =
+    view.value.mode === 'failed-form'
+      ? root.querySelector<HTMLElement>('#walk-failure-line')
+      : root.querySelector<HTMLElement>('[data-walk-primary]')
+  ;(target ?? root).focus()
+})
 
 // ---- presentation helpers ---------------------------------------------------------------------------
 const GLYPH: Record<string, string> = { '✓': 'gl-ok', '✗': 'gl-bad', '!': 'gl-warn', '-': 'gl-off' }

@@ -611,7 +611,7 @@ export interface RoadmapView {
   title: string
   sub: string
   rows: RoadmapRow[]
-  leftOut: { summary: string; rows: { text: string; owner: string }[] } | null
+  leftOut: { label: string; rows: { text: string; owner: string }[] } | null
   /** One line offering to re-run a saved walk of the same source instead (V-20). */
   rerunOffer: { walkId: string; text: string } | null
   startLabel: string | null
@@ -657,7 +657,7 @@ function roadmapView(data: WalkData, readOnly: boolean, t: T): RoadmapView {
     rows,
     leftOut: out.length
       ? {
-          summary: t('testWalk.roadmap.leftOut', { n: out.length, owners: owners.join(' · ') }),
+          label: t('testWalk.roadmap.leftOut', { n: out.length, owners: owners.join(' · ') }),
           rows: out
         }
       : null,

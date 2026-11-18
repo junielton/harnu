@@ -72,7 +72,7 @@ const glyphClass: Record<string, string> = {
   </ol>
 
   <details v-if="roadmap.leftOut" class="left" data-dsqa-part="left-out">
-    <summary><ChevronRight class="i i10 chev" :size="10" />{{ roadmap.leftOut.summary }}</summary>
+    <summary><ChevronRight class="i i10 chev" :size="10" />{{ roadmap.leftOut.label }}</summary>
     <p v-for="(o, i) in roadmap.leftOut.rows" :key="i">{{ o.text }}</p>
   </details>
 </template>

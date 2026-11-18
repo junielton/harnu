@@ -22,13 +22,13 @@
  * The dev-only `HARNU_WALK_CHECK_WAIT_MS` shortens the 30 s wait of D-7 so a capture does not wait for it.
  */
 import { app, ipcMain, type BrowserWindow } from 'electron'
-import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { promises as fs, watch, type FSWatcher } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { mkdirDataDir, repoRoot } from '../data-dir'
 import { atomicWriteFile } from '../mcp/atomic-write'
 import { readMissionRecord } from '../missions/record-store'
+import { runGh } from '../gh-runner'
 import { rawRm } from '../raw-fs'
 import { WALK_WAIT_MS, type Run } from '../../shared/walk-machine'
 import type { WalkScript } from '../../shared/walk-schema'
@@ -331,18 +331,20 @@ export async function saveShot(
 
 // ---- A PR number to a URL ---------------------------------------------------------------------------
 
-function ghPrUrl(folder: string, n: number): Promise<string | null> {
-  return new Promise((done) => {
-    execFile(
-      'gh',
-      ['pr', 'view', String(n), '--json', 'url', '-q', '.url'],
-      { cwd: folder, timeout: 8_000 },
-      (err, out) => {
-        const url = (out ?? '').toString().trim()
-        done(err || !/^https:\/\//.test(url) ? null : url)
-      }
-    )
-  })
+/** A PR number of the folder's repo to its URL, through the one place Harnu spawns `gh` (it counts the call). */
+async function ghPrUrl(folder: string, n: number): Promise<string | null> {
+  try {
+    const { stdout } = await runGh(['pr', 'view', String(n), '--json', 'url', '-q', '.url'], {
+      consumer: 'pr-stack',
+      resource: 'graphql',
+      cwd: folder,
+      timeout: 8_000
+    })
+    const url = stdout.trim()
+    return /^https:\/\//.test(url) ? url : null
+  } catch {
+    return null // gh missing, signed out, throttled or no such PR: the chip simply does not open
+  }
 }
 
 // ---- Registration -----------------------------------------------------------------------------------
