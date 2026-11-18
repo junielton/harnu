@@ -14,9 +14,10 @@
  * left OUT of the input. `false` means read, and it does not hold. A pull request seen once keeps its
  * state through an unreachable GitHub (the sticky last-known value): never a downgrade.
  *
- * It writes nothing and remembers nothing. What a pass may remember (the sticky sightings) and what it
- * found for each step (the pull requests to attach) come back as data from {@link gatherStepFacts}; only
- * the observer acts on them. Electron-free, and no import of a v3 module (AC-26).
+ * It writes no file and no cache. What a pass may remember across restarts (the sticky sightings) and what
+ * it found for each step (the pull requests to attach) come back as data from {@link gatherStepFacts};
+ * only the observer acts on them. The one thing it keeps itself is {@link stepMemory}: in memory only,
+ * so that a read which does not arrive repeats the previous read instead of dropping the pull request. Electron-free, and no import of a v3 module (AC-26).
  */
 
 import * as path from 'node:path'
@@ -121,6 +122,48 @@ function boardIndex(files: readonly CardFile[]): ReturnType<typeof indexStepCard
     boards.set(files, index)
   }
   return index
+}
+
+// ---- Step memory ----------------------------------------------------------------------
+
+/** What the last read that arrived showed for a step's pull request. */
+interface StepMemo {
+  state: 'open' | 'merged' | 'closed'
+  number: number
+  ci: string | undefined
+}
+
+/**
+ * The last pull request read for each step, by repo, mission and step. GitHub's list is read through a
+ * 60 s cache with a short wait on a miss, so once a minute a poll gets nothing back for a whole repo. That
+ * says nothing about the pull request, and the step must keep reading what it read before (unread is not a
+ * reason to drop). The observer's sticky cache cannot stand in for it: it never sees a mission the v4
+ * observer skips (a v3 file), a pull request found only through a worktree or card branch, or the CI
+ * verdicts that are neither passing nor failing, so it can hold an older one than the last read.
+ *
+ * In memory only, bounded, and written only from a read that arrived; the process restart empties it and
+ * the sticky cache covers that case. Read before the sticky cache because it is never older than it in
+ * this process: the observer's own reads come through here too.
+ */
+const stepMemory = new Map<string, StepMemo>()
+const STEP_MEMORY_MAX = 2000
+
+const memoKey = (root: string, missionId: string, stepId: string): string =>
+  `${root}\u0000${missionId}\u0000${stepId}`
+
+function remember(key: string, memo: StepMemo): void {
+  stepMemory.delete(key) // re-insert last: Map order = recency
+  stepMemory.set(key, memo)
+  while (stepMemory.size > STEP_MEMORY_MAX) {
+    const oldest = stepMemory.keys().next().value
+    if (oldest === undefined) break
+    stepMemory.delete(oldest)
+  }
+}
+
+/** Test seam: forget what earlier polls read. */
+export function resetStepFactsMemory(): void {
+  stepMemory.clear()
 }
 
 // ---- The adapter ----------------------------------------------------------------------
@@ -290,20 +333,34 @@ export async function gatherStepFacts(
 
     const { candidates, unresolved, askedByBranch } = prsOf.get(step.id) as StepPrs
     const row = chosen.get(step.id)
+    const key = memoKey(root, record.id, step.id)
     let prNumber: number | undefined
     let prMerged = false
+    // What the last read that arrived showed, when this poll reads nothing for the pull request.
+    let remembered: StepMemo | undefined
     if (row) {
       input.pr = PR_STATE[row.state]
       prNumber = row.state === 'CLOSED' ? undefined : row.number
       prMerged = row.state === 'MERGED'
-    } else {
-      const sticky = stickyPr(unresolved)
-      if (sticky) {
-        input.pr = sticky.state
-        prNumber = sticky.number
-        prMerged = sticky.state === 'merged'
-      } else if (unresolved.length === 0 && askedByBranch && join.ghAvailable === true) {
-        input.pr = 'none'
+      remember(key, { state: PR_STATE[row.state], number: row.number, ci: row.ci })
+    } else if (unresolved.length === 0 && askedByBranch && join.ghAvailable === true) {
+      // A read that arrived and found no pull request: that is an answer, and it ends the memory.
+      input.pr = 'none'
+      stepMemory.delete(key)
+    } else if (unresolved.length > 0 || askedByBranch) {
+      // Nothing was read for a pull request the step points at: repeat the last read, else the sticky one.
+      remembered = stepMemory.get(key)
+      if (remembered) {
+        input.pr = remembered.state
+        prNumber = remembered.state === 'closed' ? undefined : remembered.number
+        prMerged = remembered.state === 'merged'
+      } else {
+        const sticky = stickyPr(unresolved)
+        if (sticky) {
+          input.pr = sticky.state
+          prNumber = sticky.number
+          prMerged = sticky.state === 'merged'
+        }
       }
     }
 
@@ -332,7 +389,11 @@ export async function gatherStepFacts(
 
     // ci-green: the pull request's ci; main-green: the merge commit's CI, merged pull requests only.
     if (prNumber !== undefined) {
-      const ci = row ? ciFact(row.ci) : ciFact(deps.lastKnown('pr-ci', String(prNumber))?.state)
+      const ci = row
+        ? ciFact(row.ci)
+        : remembered
+          ? ciFact(remembered.ci)
+          : ciFact(deps.lastKnown('pr-ci', String(prNumber))?.state)
       if (ci !== undefined) facts['ci-green'] = ci
       if (prMerged) {
         const read = mainCi[prNumber]

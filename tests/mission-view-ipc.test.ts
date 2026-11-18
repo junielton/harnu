@@ -325,7 +325,9 @@ describe("the view carries the pane's data", () => {
     )
     if (reply.state !== 'mission') throw new Error(JSON.stringify(reply))
     expect(reply.closeWarnings.map((w) => w.kind)).not.toContain('unfinished-steps')
-    // And without the facts the same step reads not done: the warning is the facts' doing.
+    // And without the facts the same step reads not done: the warning is the facts' doing. A process that
+    // has read nothing yet is the one that is blind, so the step memory of the read above is cleared.
+    ;(await import('../src/main/missions/facts')).resetStepFactsMemory()
     const blind = await ipc.buildMissionV4View(
       { folder: root, sessionId: LEADER },
       { facts: factsDeps({ ghAvailable: false }) }
