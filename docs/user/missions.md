@@ -113,6 +113,28 @@ A session can ask to join a mission that already exists. The dropdown then shows
 
 When a session leads the mission, each open milestone has an **Ask** button at the end of its summary line. It opens a small box: type the question and press **Send**. Harnu puts "About the milestone "…": your question" into the prompt of the session that **leads** the mission, the way **Reference in session** does it. It does not press Enter, because the session may be waiting at a permission prompt: you press Enter there. The answer shows in that session, not in the dropdown. If the session that leads is not running, the dropdown says so and keeps your question. When nobody leads the mission there is no Ask button.
 
+### Test it: walking a step, a milestone or the whole mission by hand
+
+When something waits on you to check by hand, the dropdown offers a small **Test it** button. It starts a
+[guided walk](guided-test-walk.md): a list of checks you do one at a time, written by the session that leads the
+mission. It shows up in three places, and only where you really owe a check:
+
+- on an open step's **Criteria** line, when the step has a criterion that is yours (or another person's) and still open;
+- on a milestone's summary line, next to **Ask**, when a step of it is waiting on you;
+- as **Test the whole mission** in the footer, only once the mission is ready to close.
+
+A step with nothing owed by hand, a finished milestone and a mission that is still under way show no button.
+
+Press it and the dropdown closes. Harnu sends the mission's leader one request that names what you want walked and
+the walks that already exist for it, and the walk opens in the side stack as soon as the session has written it. If
+the leader is parked, Harnu wakes it first; if no leader can be reached, Harnu starts a new session and hands it the
+mission summary and the request (it does not become the mission's leader). A small notice says which of the two
+happened, and a refusal (a closed mission, for example) says why in the same place.
+
+If a walk of that step, milestone or mission is already running, pressing **Test it** again does not ask for a new
+one: it brings that walk's pane back. Clicking outside the dropdown closes it and leaves the walk where it is. A
+walk never settles a criterion: you still tick it yourself with **Mark done**.
+
 ### Closing a mission
 
 You close a mission from the dropdown. **Close mission…** is at its foot for any open mission, ready or not (when the card already says **Close mission…**, the foot does not repeat it). Either one only **opens a question**: nothing changes until you confirm.

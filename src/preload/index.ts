@@ -1506,6 +1506,22 @@ const api = {
     | { ok: true; walkId: string; runId: string; n: number; kind: 'rerun' | 'reused' | 'live' }
     | WalkIpcError
   > => ipcRenderer.invoke('walk:rerun', a),
+  /**
+   * "Test it" in the Mission dropdown (S-7): focus the source's live run (`focus`), send the request to the
+   * mission's leader (`sent`) or start a session handed the summary and the source (`started`, D-4).
+   */
+  walkRequest: (a: {
+    folder: string
+    source:
+      | { kind: 'step'; missionId: string; stepId: string }
+      | { kind: 'milestone'; missionId: string; milestoneId: string }
+      | { kind: 'mission'; missionId: string }
+  }): Promise<
+    | { ok: true; action: 'focus'; walkId: string; runId: string }
+    | { ok: true; action: 'sent'; sessionId: string; woke: boolean }
+    | { ok: true; action: 'started'; sessionId: string }
+    | WalkIpcError
+  > => ipcRenderer.invoke('walk:request', a),
   /** Delete a walk and its runs (the pane asked first). */
   walkDelete: (a: {
     folder: string

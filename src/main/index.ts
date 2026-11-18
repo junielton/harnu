@@ -886,9 +886,15 @@ app.whenReady().then(async () => {
   // session; one no session could take waits in the run's outbox on disk and is offered again here, a little
   // after the renderer announces itself, so a restart does not lose it.
   // S-3: the pane exists now, so `walk_open` asks the renderer for it directly (and learns whether it answered).
-  const walkIpc = registerWalkIpc(() => mainWindow)
+  const walkBridgeRuntime = createBridgeRuntime(cmdBridge.bridge, waitForSessionReady)
+  // S-7: "Test it" in the Mission dropdown delivers its request the same way and starts a session the way the
+  // hand-off does (the operator's own dispatch, never the agent-controlled `session.create`).
+  const walkIpc = registerWalkIpc(() => mainWindow, {
+    deliver: (turn) => walkBridgeRuntime.deliver(turn),
+    startSession: bridgeStarter(cmdBridge.bridge)
+  })
   configureWalkRuntime({
-    ...createBridgeRuntime(cmdBridge.bridge, waitForSessionReady),
+    ...walkBridgeRuntime,
     openPane: (a) => walkIpc.openPane(a)
   })
   ipcMain.on('renderer:ready', () => {

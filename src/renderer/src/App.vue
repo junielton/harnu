@@ -37,6 +37,7 @@ import HelperStack from './components/HelperStack.vue'
 import TakeoverHost from './components/TakeoverHost.vue'
 import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
+import { useWalkStore } from './stores/walk'
 import { formatWindowTitle } from './stores/attention'
 import { useUiStore, SETTINGS_TAB_IDS } from './stores/ui'
 import {
@@ -107,6 +108,8 @@ useThemeStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const helpers = useHelpersStore()
+// Guided walks S-7: the Mission dropdown's "Test it" asks this store whether a walk can start and starts it.
+useWalkStore().installEntry()
 const layout = useLayoutStore()
 const settings = useSettingsStore()
 const claudeChangelog = useClaudeChangelogStore()

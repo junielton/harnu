@@ -18,6 +18,8 @@
  *  - `walk:discard-ready` the pane of a run that never started was closed: discard that run
  *  - `walk:list`         the library: every walk of the repo, newest run first (S-4)
  *  - `walk:rerun`        Re-run: run `n + 1` of a walk, or the live run when one is live (S-4)
+ *  - `walk:request`      "Test it" in the Mission dropdown: focus the live run, send `[harnu-walk-request]` to the
+ *                        mission's leader or start a session with the summary (S-7, `walk-request.ts`)
  *  - `walk:delete`       Delete a walk and its runs, after the pane's confirmation (S-4, D-18)
  *  - `walk:export`       Export markdown into the walk's own folder; the path comes back (S-4, D-13)
  * and one main-to-renderer push, `walk:open` (with the renderer's `walk:opened` answer), plus `walk:changed`
@@ -57,6 +59,14 @@ import {
   type WalkStore
 } from './walk-store'
 import { exportWalk } from './walk-export'
+import {
+  requestWalk,
+  type MissionInfo,
+  type RequestSource,
+  type WalkRequestDeps
+} from './walk-request'
+import { leaderOf } from '../missions/guard'
+import { buildMissionSummary } from '../missions/summary'
 import type { OperatorOp } from './walk-turn'
 
 // ---- What the pane reads --------------------------------------------------------------------------
@@ -559,7 +569,54 @@ export interface WalkIpc {
 
 const OPEN_ANSWER_MS = 4_000
 
-export function registerWalkIpc(getWindow: () => BrowserWindow | null): WalkIpc {
+/** What "Test it" needs from the rest of main: a turn delivered to a session, and a session started. */
+export type WalkRequestWiring = Pick<WalkRequestDeps, 'deliver' | 'startSession'>
+
+/** The mission facts and the library `walk:request` reads: the real record and the repo's walk store. */
+function requestDepsOf(wiring: WalkRequestWiring): WalkRequestDeps {
+  return {
+    ...wiring,
+    async readMission(folder, missionId): Promise<MissionInfo | null> {
+      const read = await readMissionRecord(repoRoot(folder), missionId).catch(() => null)
+      if (!read || !read.ok) return null
+      const r = read.record
+      return {
+        title: r.title,
+        open: r.status !== 'closed',
+        leaderId: leaderOf(r),
+        steps: r.steps.map((x) => ({ id: x.id, title: x.title })),
+        milestones: r.milestones.map((m) => ({ id: m.id, title: m.title }))
+      }
+    },
+    async missionSummary(folder, missionId) {
+      const read = await readMissionRecord(repoRoot(folder), missionId).catch(() => null)
+      if (!read || !read.ok) return null
+      return buildMissionSummary(read.record, read.log, {}).text
+    },
+    listWalks: (folder) => walkServiceFor(folder).store.listWalks()
+  }
+}
+
+function requestSourceOf(x: unknown): RequestSource | null {
+  if (!isRecord(x)) return null
+  const missionId = str(x.missionId)
+  if (!missionId) return null
+  if (x.kind === 'mission') return { kind: 'mission', missionId }
+  if (x.kind === 'step') {
+    const stepId = str(x.stepId)
+    return stepId ? { kind: 'step', missionId, stepId } : null
+  }
+  if (x.kind === 'milestone') {
+    const milestoneId = str(x.milestoneId)
+    return milestoneId ? { kind: 'milestone', missionId, milestoneId } : null
+  }
+  return null
+}
+
+export function registerWalkIpc(
+  getWindow: () => BrowserWindow | null,
+  wiring: WalkRequestWiring | null = null
+): WalkIpc {
   const waiting = new Map<string, (paneId: string | null) => void>()
   ipcMain.on('walk:opened', (_e, a: unknown) => {
     if (!isRecord(a) || typeof a.reqId !== 'string') return
@@ -693,6 +750,18 @@ export function registerWalkIpc(getWindow: () => BrowserWindow | null): WalkIpc 
     const folder = str(a.folder)
     if (!folder) return { delivered: 0, pending: 0 }
     return walkServiceFor(folder).replay()
+  })
+
+  // "Test it" in the Mission dropdown (S-7): the click's whole decision is `requestWalk`; this only reads the
+  // arguments and hands it the real mission, library, delivery and session start.
+  ipcMain.handle('walk:request', async (_e, a: unknown) => {
+    if (!isRecord(a)) return refuse('BAD_ARGS', 'bad arguments')
+    const folder = str(a.folder)
+    const source = requestSourceOf(a.source)
+    if (!folder || !source) return refuse('BAD_ARGS', 'folder and source are required.')
+    if (!wiring) return refuse('NOT_READY', 'Harnu is still starting; try again in a moment.')
+    const res = await requestWalk(requestDepsOf(wiring), { folder, source })
+    return res.ok ? res : { ok: false, error: { code: res.code, message: res.message } }
   })
 
   ipcMain.handle('walk:rerun-saved', async (_e, a: unknown) => {
