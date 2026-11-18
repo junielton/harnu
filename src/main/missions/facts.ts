@@ -50,6 +50,13 @@ export interface FactsDeps {
   findMainCi: (
     numbers: number[]
   ) => Promise<{ ghAvailable: boolean | null; byNumber: Record<number, Ci | null> }>
+  /**
+   * CI of the current tip of each base branch (`main`), one read per branch per pass (BUG-294). Optional:
+   * a source without it reads `main-green` from the merge commits alone. A throw reads as "no tips".
+   */
+  findBaseCi?: (
+    bases: string[]
+  ) => Promise<{ ghAvailable: boolean | null; byBase: Record<string, Ci | null> }>
   /** The last-known resolution of a link (chapter 2's sticky cache), bound to the repo. */
   lastKnown: (kind: LinkCacheKind, ref: string) => LinkResolution | null
   /** Whether an absolute path exists. Asynchronous: the adapter reads no file itself. */
@@ -131,6 +138,8 @@ interface StepMemo {
   state: 'open' | 'merged' | 'closed'
   number: number
   ci: string | undefined
+  base: string | undefined
+  mergedAt: string | undefined
 }
 
 /**
@@ -282,15 +291,21 @@ export async function gatherStepFacts(
   }
 
   // The sticky state a step falls back on when nothing was read: never a downgrade.
-  const stickyPr = (
-    nums: readonly number[]
-  ): { state: 'open' | 'merged'; number: number } | undefined => {
-    let best: { state: 'open' | 'merged'; number: number } | undefined
+  interface Sticky {
+    state: 'open' | 'merged'
+    number: number
+    base: string | undefined
+    mergedAt: string | undefined
+  }
+  const stickyPr = (nums: readonly number[]): Sticky | undefined => {
+    let best: Sticky | undefined
     for (const n of nums) {
       const known = deps.lastKnown('pr', String(n))
       if (known?.state !== 'OPEN' && known?.state !== 'MERGED') continue
       const state = known.state === 'MERGED' ? 'merged' : 'open'
-      if (!best || (state === 'merged' && best.state === 'open')) best = { state, number: n }
+      if (!best || (state === 'merged' && best.state === 'open')) {
+        best = { state, number: n, base: known.baseRefName, mergedAt: known.mergedAt }
+      }
     }
     return best
   }
@@ -325,9 +340,22 @@ export async function gatherStepFacts(
   const found: FoundPr[] = []
   const foundKeys = new Set<string>()
 
+  // First pass: which pull request stands for each step, and what a read that did not arrive repeats.
+  interface Resolved {
+    step: StepV4
+    input: StepInput
+    candidates: PrRow[]
+    row: PrRow | undefined
+    remembered: StepMemo | undefined
+    prNumber: number | undefined
+    prMerged: boolean
+    /** Where the merged pull request landed, and when. */
+    base: string | undefined
+    mergedAt: string | undefined
+  }
+  const resolved: Resolved[] = []
   for (const step of record.steps) {
     const input: StepInput = {}
-    const facts: Partial<Record<ReadFact, boolean>> = {}
     const card = cards.get(step.id)
     if (card?.column !== undefined) input.card = card.column
 
@@ -336,13 +364,23 @@ export async function gatherStepFacts(
     const key = memoKey(root, record.id, step.id)
     let prNumber: number | undefined
     let prMerged = false
+    let base: string | undefined
+    let mergedAt: string | undefined
     // What the last read that arrived showed, when this poll reads nothing for the pull request.
     let remembered: StepMemo | undefined
     if (row) {
       input.pr = PR_STATE[row.state]
       prNumber = row.state === 'CLOSED' ? undefined : row.number
       prMerged = row.state === 'MERGED'
-      remember(key, { state: PR_STATE[row.state], number: row.number, ci: row.ci })
+      base = row.base
+      mergedAt = row.mergedAt ?? undefined
+      remember(key, {
+        state: PR_STATE[row.state],
+        number: row.number,
+        ci: row.ci,
+        base: row.base,
+        mergedAt: row.mergedAt ?? undefined
+      })
     } else if (unresolved.length === 0 && askedByBranch && join.ghAvailable === true) {
       // A read that arrived and found no pull request: that is an answer, and it ends the memory.
       input.pr = 'none'
@@ -354,15 +392,50 @@ export async function gatherStepFacts(
         input.pr = remembered.state
         prNumber = remembered.state === 'closed' ? undefined : remembered.number
         prMerged = remembered.state === 'merged'
+        base = remembered.base
+        mergedAt = remembered.mergedAt
       } else {
         const sticky = stickyPr(unresolved)
         if (sticky) {
           input.pr = sticky.state
           prNumber = sticky.number
           prMerged = sticky.state === 'merged'
+          base = sticky.base
+          mergedAt = sticky.mergedAt
         }
       }
     }
+    resolved.push({ step, input, candidates, row, remembered, prNumber, prMerged, base, mergedAt })
+  }
+
+  // One tip read per base branch (BUG-294): only the branches where a merged step's own merge commit is
+  // not known green, because only those can be cleared (or kept red) by a later commit.
+  const tipCi: Record<string, Ci | null> = {}
+  const tipBases = new Set<string>()
+  for (const r of resolved) {
+    if (!r.prMerged || r.prNumber === undefined || r.base === undefined) continue
+    if (mainCi[r.prNumber] !== 'passing') tipBases.add(r.base)
+  }
+  if (deps.findBaseCi && tipBases.size > 0) {
+    try {
+      Object.assign(tipCi, (await deps.findBaseCi([...tipBases])).byBase)
+    } catch {
+      /* unreadable: the merge commit's verdict stands */
+    }
+  }
+
+  for (const {
+    step,
+    input,
+    candidates,
+    row,
+    remembered,
+    prNumber,
+    prMerged,
+    base,
+    mergedAt
+  } of resolved) {
+    const facts: Partial<Record<ReadFact, boolean>> = {}
 
     for (const p of candidates) {
       const key = `${step.id}#${p.number}`
@@ -387,7 +460,8 @@ export async function gatherStepFacts(
       }
     }
 
-    // ci-green: the pull request's ci; main-green: the merge commit's CI, merged pull requests only.
+    // ci-green: the pull request's ci. main-green: the merge commit's CI, or the CI of a later commit on
+    // the base branch (its current tip, which holds the merge commit), merged pull requests only.
     if (prNumber !== undefined) {
       const ci = row
         ? ciFact(row.ci)
@@ -397,12 +471,21 @@ export async function gatherStepFacts(
       if (ci !== undefined) facts['ci-green'] = ci
       if (prMerged) {
         const read = mainCi[prNumber]
-        const main =
-          ciFact(read ?? undefined) ?? ciFact(deps.lastKnown('pr-main', String(prNumber))?.state)
+        const own = ciFact(read ?? undefined)
+        const earlier = ciFact(deps.lastKnown('pr-main', String(prNumber))?.state)
+        const tipGreen = base !== undefined && tipCi[base] === 'passing'
+        // A red merge a green commit already superseded stays history: `earlier` green wins over a fresh
+        // red read of the same merge commit, so a later, unrelated break does not blame this step.
+        const main = own === true || tipGreen ? true : own === false ? earlier === true : earlier
         if (main !== undefined) facts['main-green'] = main
-        if (read === 'passing' || read === 'failing') {
-          sight({ kind: 'pr-main', ref: String(prNumber), seen: { state: read, prNumber } })
+        // Remember what was read, but never let a red read of a superseded merge undo that memory.
+        const seen =
+          tipGreen || read === 'passing' ? 'passing' : read === 'failing' ? 'failing' : null
+        if (seen !== null && !(seen === 'failing' && earlier === true)) {
+          sight({ kind: 'pr-main', ref: String(prNumber), seen: { state: seen, prNumber } })
         }
+        input.base = base
+        if (mergedAt !== undefined) input.mergedAt = mergedAt
       }
     }
 
