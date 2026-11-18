@@ -47,6 +47,8 @@ import {
 } from '../../shared/walk-machine'
 import {
   LIMITS,
+  URL_IN_PROSE_MESSAGE,
+  URL_IN_PROSE_RE,
   toMachineChecks,
   validateWalkScript,
   type DoItem,
@@ -201,7 +203,10 @@ function doItems(
     const p = `${path}[${i}]`
     if (!isObj(it)) return v.add(p, 'NOT_AN_OBJECT', 'An item is an object.')
     if (!nonEmpty(it.text)) v.add(`${p}.text`, 'MISSING', 'Say what to do.')
-    else proseRules(v, probe, `${p}.text`, it.text, LIMITS.passes)
+    else {
+      proseRules(v, probe, `${p}.text`, it.text, LIMITS.passes)
+      if (URL_IN_PROSE_RE.test(it.text)) v.add(`${p}.text`, 'URL_IN_PROSE', URL_IN_PROSE_MESSAGE)
+    }
     if (!nonEmpty(it.see)) v.add(`${p}.see`, 'MISSING', 'Say what the operator should see.')
     else proseRules(v, probe, `${p}.see`, it.see, LIMITS.passes)
     if (it.block !== undefined) {

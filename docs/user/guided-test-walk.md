@@ -23,6 +23,7 @@ Later, the list icon beside the progress (or `L`) opens the same rows read-only,
 The pane shows exactly one check. Under the title:
 
 - **Do**: the steps, numbered. Every command is a block with a **Copy** button, and every `value` in the text copies with one click.
+- **Back** leads with the undo: when the check you return to changed something, the pane first says how to reverse it, and a command in that line is a chip you copy with one click.
 - **Where**: link chips (a PR, a file in the viewer, a page in a browser pane, a folder) and a path you have to click through. A path the session is not sure of is tagged `path approximate`. Each value has a copy button that puts the full text on the clipboard; the icon turns into a green check for a moment.
 - **You should see**: the text to look for, a muted `✗ Not:` line saying what would be wrong, and, when there is one, a picture of the expected result. The picture is a 300 px thumbnail; click it to enlarge it, click it again for a full-pane view (`Esc` closes it).
 - **I'll check**: what the session will check from its side when you press Done, or why nothing can be checked from here.
