@@ -26,7 +26,7 @@ export type HelperPaneType =
   // restart restores it from the walk's record under `.harnu/walks/`.
   | 'walk'
   // Guided walks S-4: the Walks library. Non-PTY and reproducible from nothing (the repo's walks are read from
-  // `.harnu/walks/`), so it persists like the Mission pane; one per worktree.
+  // `.harnu/walks/`), so it persists like any pane that needs no payload; one per worktree.
   | 'walks'
 
 export interface HelperPane {
