@@ -137,7 +137,7 @@ export const casesB = [
       await ctx.waitProgress('Check 2 of 9')
       // check 2: an inline chip, an id, a branch, a click path and a file path
       await check('an inline chip', wrong('milk'), 'milk')
-      await check('an id', val('note-4821'), 'note-4821')
+      await check('an id', val('note_4821'), 'note_4821')
       await check('a branch', val('feature/notes-search'), 'feature/notes-search')
       await check('a click path', val('Notes > Search'), 'Notes > Search')
       await check('a path', linkCopy('search.js'), `${ctx.repo}/src/notes/search.js:4`)
