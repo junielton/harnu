@@ -7433,6 +7433,14 @@ auto`, thin scrollbar on `border-border-2`) is the one scroller; the **footer** 
 Done / Blocked; criterion — Not settled yet / Settled. The pt-BR words are the app's translation of these,
 added to `pt-BR.json` in the same change as the English ones.
 
+**Tooltip and scroll.** The tooltip is placed once, when it shows, so it never outlives a scroll: while it shows,
+a capture-phase `scroll` listener hides it at once when the window or any scroller that holds the glyph scrolls
+(removed when it hides or the glyph unmounts). It comes back on the next hover, or when keyboard focus moves to
+another row (placed at that glyph's position); a scroll the row's own `focus()` caused leaves it showing. It is
+never drawn for a glyph outside the visible area of its scroller. The dropdown itself and the close dialog need no
+such rule: the dropdown is anchored to the Topbar pill (re-measured on resize) and its list scrolls inside it,
+and the dialog is a centred `inset-0` overlay.
+
 **Topbar pill** (`MissionPill.vue`, S-7). Anatomy, label and tones as in "The Topbar pill: label and tones" below ("{done}/{total} · {n} for you",
 warning / accent / success), plus a trailing **caret** (`chevron-down`, 10px). It is a button with
 `aria-haspopup="dialog"` and `aria-expanded` (not `aria-pressed`), drawn with the tone's `ring-2` while the
