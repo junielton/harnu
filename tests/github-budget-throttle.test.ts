@@ -150,6 +150,47 @@ describe('mission PR cache TTL (AC-5)', () => {
   })
 })
 
+describe('base branch tip CI (BUG-294 AC-4)', () => {
+  it('normal: one `gh run list` per branch per minute, however many callers', async () => {
+    const repo = freshRepo()
+    await Promise.all([ps.findBaseCi(repo, ['main']), ps.findBaseCi(repo, ['main', 'main'])])
+    expect(ghCount('run')).toBe(1)
+    advance(59_000)
+    await ps.findBaseCi(repo, ['main'])
+    expect(ghCount('run')).toBe(1)
+    advance(2_000)
+    await ps.findBaseCi(repo, ['main'])
+    expect(ghCount('run')).toBe(2)
+  })
+
+  it('low: the tip window stretches to 5 minutes like every other mission read', async () => {
+    const repo = freshRepo()
+    goLow()
+    await ps.findBaseCi(repo, ['main'])
+    advance(4 * 60_000)
+    await ps.findBaseCi(repo, ['main'])
+    expect(ghCount('run')).toBe(1)
+    advance(61_000)
+    await ps.findBaseCi(repo, ['main'])
+    expect(ghCount('run')).toBe(2)
+  })
+
+  it('exhausted: serves the last known tip with no gh call; a branch never read is unknown', async () => {
+    const repo = freshRepo()
+    gh.runs = [{ status: 'completed', conclusion: 'success' }]
+    expect((await ps.findBaseCi(repo, ['main'])).byBase.main).toBe('passing')
+    goExhausted(3600)
+    advance(20 * 60_000)
+    goExhausted(3600)
+    const spawned = gh.calls.length
+    expect((await ps.findBaseCi(repo, ['main'])).byBase.main).toBe('passing')
+    expect(gh.calls.length).toBe(spawned)
+    const unseen = await ps.findBaseCi(repo, ['release'])
+    expect(unseen.ghAvailable).toBe(false)
+    expect(gh.calls.length).toBe(spawned)
+  })
+})
+
 describe('exhausted: last known value, then resume (AC-6)', () => {
   it('serves the cached PR list however old it is, with no gh call', async () => {
     const repo = freshRepo()

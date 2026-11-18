@@ -49,7 +49,7 @@ import type { TaskState, FailureReason } from '../hook-state'
 import { getTaskStates } from '../hook-bridge'
 import { gatherStepInputs } from '../missions/facts'
 import { getTaskState } from '../detect/task-state-hub'
-import { findMainCi, findPrsForWorktrees } from '../pr-stack'
+import { findBaseCi, findMainCi, findPrsForWorktrees } from '../pr-stack'
 import { getLastKnown, ensureLinkCacheLoaded } from '../mission-link-cache'
 import type { FactsDeps } from '../missions/facts'
 import type { Actor } from '../missions/guard'
@@ -4259,6 +4259,7 @@ export async function realFactsDeps(root: string, waitMs?: number): Promise<Fact
     },
     findPrs: (refs) => findPrsForWorktrees(root, refs, { waitMs }),
     findMainCi: (numbers) => findMainCi(root, numbers, { waitMs }),
+    findBaseCi: (bases) => findBaseCi(root, bases, { waitMs }),
     lastKnown: (kind, ref) => getLastKnown(root, kind, ref),
     pathExists: async (abs) => {
       try {

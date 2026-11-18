@@ -178,6 +178,20 @@ describe('reconcileMissions', () => {
     expect(gone).toMatchObject({ closedBy: 'source-resolved', closedAt: 2_000 })
   })
 
+  it('BUG-294: the main-failing card closes when the item leaves the list (the base went green)', () => {
+    const red = records([view('mnt-1', [item.failing(), item.close()])])
+    const a = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, red)
+    expect(open(a).map((c) => c.sourceKey)).toEqual(['mnt-1:main-failing:stp-3', 'mnt-1:close'])
+    // A later commit turned the branch green: the same mission now owes only the close.
+    const green = records([view('mnt-1', [item.close()])])
+    const b = reconcileMissions(a, result(), roots, 'live', mint, 2_000, green)
+    expect(open(b).map((c) => c.sourceKey)).toEqual(['mnt-1:close'])
+    expect(b.cards.find((c) => c.sourceKey === 'mnt-1:main-failing:stp-3')).toMatchObject({
+      closedBy: 'source-resolved',
+      closedAt: 2_000
+    })
+  })
+
   it('a mission absent from the records under a queried root closes its cards', () => {
     const a = reconcileMissions(
       emptyState(),
