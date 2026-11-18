@@ -100,7 +100,7 @@ export interface NavTargetParams {
   repoLabel?: string
   /** T164: the card whose intent the review pane renders, when one is bound. */
   cardSlug?: string
-  /** BUG-173: the mission an Activity row names; `'mission'` opens the Mission pane for it. */
+  /** BUG-173: the mission an Activity row names; `'mission'` opens the Mission dropdown for it. */
   missionId?: string
 }
 
@@ -1099,10 +1099,10 @@ export const useUiStore = defineStore('ui', () => {
         return
       }
       case 'mission': {
-        // Not a takeover: select the owner first (the caller's job), then open the Mission pane, which
-        // follows the selected session (S-35, S-37).
+        // Not a takeover: select the owner first (the caller's job), then open the Mission dropdown under the
+        // Topbar pill, which follows the selected session (Mission dropdown S-7).
         if (!params?.missionId) return
-        useMissionsStore().openMissionPane(params.missionId)
+        useMissionsStore().openMissionDropdown(params.missionId)
         return
       }
     }

@@ -233,8 +233,8 @@ describe('AC-54 — ActivityBell', () => {
 })
 
 describe('AC-54 — MissionPill', () => {
-  // Since the cut-over (S-35) the pill is the anchor of `missionProgress` while its session is in a mission, but
-  // it draws no popover: the flag only carries the keyboard action, and the pill answers it by toggling the pane.
+  // Mission dropdown S-7: the pill is the anchor of `missionProgress` whenever it is drawn (a no-mission pill too)
+  // and the flag is the dropdown's open state: the button and the keyboard action flip the same flag.
   const SID = 'sess-1'
   const missionReply = {
     state: 'mission',
@@ -248,9 +248,17 @@ describe('AC-54 — MissionPill', () => {
       state: 'open',
       leads: SID,
       source: 'v3-mission',
-      progress: { unit: 'steps', total: 5, done: 2 },
-      waiting: { items: [] }
+      progress: { unit: 'steps', total: 5, done: 2, counts: {} },
+      milestones: [],
+      steps: [],
+      next: null,
+      waiting: { items: [], next: null, more: [], moreLine: null, people: [], peopleLine: null },
+      blockers: [],
+      links: [],
+      sessions: []
     },
+    closeWarnings: [],
+    pendingDoneWhen: null,
     sessions: [{ id: SID, role: 'leads', open: true, to: null }]
   }
   const panes = (): string[] => useHelpersStore().panesForCurrentWorktree.map((p) => p.type)
@@ -275,30 +283,32 @@ describe('AC-54 — MissionPill', () => {
     return wrapper
   }
 
-  it('its button toggles the Mission pane, never a popover', async () => {
+  it('its button flips the flag the dropdown reads, and opens no pane', async () => {
     const w = await mountPill()
     const ui = useUiStore()
     await w.get('button').trigger('click')
-    expect(panes()).toEqual(['mission'])
-    expect(ui.popovers.missionProgress).toBe(false)
-    await w.get('button').trigger('click')
+    expect(ui.popovers.missionProgress).toBe(true)
+    expect(ui.anyPopoverOpen).toBe(true)
     expect(panes()).toEqual([])
+    await w.get('button').trigger('click')
+    expect(ui.popovers.missionProgress).toBe(false)
     expect(ui.anyPopoverOpen).toBe(false)
   })
 
-  it('opens from its id (the keyboard action) as the button does: it toggles the pane', async () => {
+  it('opens from its id (the keyboard action) as the button does: the flag stays on until closed', async () => {
     await mountPill()
     const ui = useUiStore()
     expect(ui.popoverAnchors.missionProgress).toBe(true)
     ui.togglePopover('missionProgress')
     await flushPromises()
-    expect(panes()).toEqual(['mission'])
-    // The flag is put back at once: nothing is left open to swallow the next Esc.
-    expect(ui.popovers.missionProgress).toBe(false)
+    expect(ui.popovers.missionProgress).toBe(true)
+    expect(panes()).toEqual([])
+    // An Esc closes it, as the App's binding does for any popover that is open.
+    ui.closePopover('missionProgress')
     expect(ui.anyPopoverOpen).toBe(false)
   })
 
-  it('has no anchor when the session owns no mission', async () => {
+  it('is the anchor even when the session owns no mission (the quiet pill opens the empty state)', async () => {
     stubApi()
     wrapper = mount(MissionPill, {
       attachTo: document.body,
@@ -307,8 +317,18 @@ describe('AC-54 — MissionPill', () => {
     })
     await flushPromises()
     const ui = useUiStore()
+    expect(ui.popoverAnchors.missionProgress).toBe(true)
+    expect(ui.openPopover('missionProgress')).toBe(true)
+  })
+
+  it('drops its anchor and closes the dropdown when it leaves the page', async () => {
+    const w = await mountPill()
+    const ui = useUiStore()
+    ui.openPopover('missionProgress')
+    w.unmount()
+    wrapper = null
     expect(ui.popoverAnchors.missionProgress).toBe(false)
-    expect(ui.openPopover('missionProgress')).toBe(false)
+    expect(ui.popovers.missionProgress).toBe(false)
   })
 })
 
@@ -522,6 +542,7 @@ describe('AC-37 — each binding runs its button’s function', () => {
     ['view.pastedImages', 'pastedImages', 'components/StatusFooter.vue'],
     ['view.claudeStatus', 'claudeStatus', 'components/StatusFooter.vue'],
     ['view.usagePanel', 'usagePanel', 'components/StatusFooter.vue'],
+    ['view.missionProgress', 'missionProgress', 'components/MissionPill.vue'],
     ['inbox.filter', 'inboxFilter', 'components/InboxRail.vue']
   ]
   for (const [id, popover, file] of POPOVERS) {
@@ -532,16 +553,6 @@ describe('AC-37 — each binding runs its button’s function', () => {
       expect(read(`src/renderer/src/${file}`)).toContain(`@click="ui.togglePopover('${popover}')"`)
     })
   }
-
-  it("view.missionProgress toggles 'missionProgress', needs the pill rendered, and the pill answers it with the pane", () => {
-    const reg = registration('view.missionProgress')
-    expect(reg).toContain("ui.togglePopover('missionProgress')")
-    expect(reg).toContain('ui.popoverAnchors.missionProgress')
-    // Since S-35 the button toggles the pane; the keyboard action reaches the same function through the flag.
-    const pill = read('src/renderer/src/components/MissionPill.vue')
-    expect(pill).toContain('@click="togglePane"')
-    expect(pill).toContain('() => ui.popovers.missionProgress')
-  })
 
   const LAYOUT: Array<[string, string]> = [
     ['inbox.open', "layout.setInboxRailState('expanded')"],

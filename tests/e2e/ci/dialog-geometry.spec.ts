@@ -165,8 +165,8 @@ test.describe('dialog geometry invariants (T460 batch 0)', () => {
     }
   }
 
-  // The six surfaces this net does NOT measure, each reported in the Playwright report with its
-  // reason. Five cannot be opened from a seeded headless app; one is reachable and excluded by design.
+  // The seven surfaces this net does NOT measure, each reported in the Playwright report with its
+  // reason. Six cannot be opened from a seeded headless app; one is reachable and excluded by design.
   test('every surface the geometry net does not measure is listed with its reason', () => {
     const rest = ROUTES.filter((r: { reach: string }) => r.reach !== 'seed') as {
       id: string
@@ -180,6 +180,7 @@ test.describe('dialog geometry invariants (T460 batch 0)', () => {
       'HarnuModExternal',
       'ImageLightbox',
       'McpConfirmOverlay',
+      'MissionHandoffDialog',
       'ReviewPane.submitConfirm'
     ])
     expect(excluded.map((r) => r.id)).toEqual(['CommandPalette'])

@@ -542,7 +542,7 @@ describe('AC-10 — no comment says a v4 mission cannot be created, or that a po
 
 // ---- AC-11 · the Activity fallback --------------------------------------------------------------------------
 
-describe('AC-11 — an Activity row of a mission whose leader is not loaded says so; one that is loaded opens the pane', () => {
+describe('AC-11 — an Activity row of a mission whose leader is not loaded says so; one that is loaded opens the dropdown', () => {
   let activate: ReturnType<typeof vi.fn>
   const item = {
     id: 'mnt-1',
@@ -574,7 +574,7 @@ describe('AC-11 — an Activity row of a mission whose leader is not loaded says
     return w
   }
 
-  it('leader loaded: it activates the session and opens the pane for it', async () => {
+  it('leader loaded: it activates the session and opens the dropdown for it', async () => {
     const sessions = useSessionsStore()
     sessions.folders = [
       { path: FOLDER, sessions: [{ sessionId: 'owner-1', projectPath: FOLDER }] }
@@ -584,9 +584,12 @@ describe('AC-11 — an Activity row of a mission whose leader is not loaded says
       sessions.select(id)
       return true
     })
+    // The Topbar pill is drawn for the selected owner: it is the dropdown's anchor.
+    useUiStore().setPopoverAnchor('missionProgress', true)
     await w.get('[data-dsqa="activity-item"]').trigger('click')
     expect(activate).toHaveBeenCalledWith('owner-1')
-    expect(useHelpersStore().panesForCurrentWorktree.map((p) => p.type)).toContain('mission')
+    expect(useUiStore().popovers.missionProgress).toBe(true)
+    expect(useHelpersStore().panesForCurrentWorktree.map((p) => p.type)).not.toContain('mission')
   })
 
   it('leader not loaded: a notice that names the mission, no pane, never a dead click', async () => {

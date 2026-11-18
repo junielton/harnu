@@ -121,6 +121,13 @@ const CHOICES: ReadonlyArray<{ value: EndChoice; label: string; hint: string }> 
   { value: 'discarded', label: 'mission.end.asDiscarded', hint: 'mission.end.asDiscardedHint' }
 ]
 
+/** The confirm names what it does: a delivered end of a v4 mission reads "Close mission" (the mockup), Discard its own word. */
+const confirmLabel = computed(() =>
+  choice.value === 'delivered'
+    ? t(isV4.value ? 'missionPane.close.confirm' : 'mission.end.asDelivered')
+    : t('mission.end.asDiscarded')
+)
+
 function onConfirm(): void {
   const why = reason.value.trim()
   // Only a delivered end records; ids follow the order the record stores the drafts in.
@@ -189,6 +196,7 @@ onBeforeUnmount(() => {
         aria-modal="true"
         aria-labelledby="mission-close-confirm-title"
         data-test="mission-close-confirm"
+        :data-dsqa-part="isV4 ? 'close-dialog' : undefined"
         @mousedown.stop
       >
         <header
@@ -228,7 +236,14 @@ onBeforeUnmount(() => {
           </i18n-t>
 
           <fieldset class="flex flex-col" style="gap: 6px; margin-top: 10px">
-            <legend class="sr-only">{{ t('mission.end.choice') }}</legend>
+            <legend
+              v-if="isV4"
+              class="uppercase text-text-3"
+              style="font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 2px"
+            >
+              {{ t('missionPane.close.how') }}
+            </legend>
+            <legend v-else class="sr-only">{{ t('mission.end.choice') }}</legend>
             <label
               v-for="c in CHOICES"
               :key="c.value"
@@ -441,9 +456,7 @@ onBeforeUnmount(() => {
             @click="onConfirm"
           >
             <Check v-if="choice === 'delivered'" :size="14" :stroke-width="1.8" />
-            <Trash2 v-else :size="14" :stroke-width="1.8" />{{
-              t(choice === 'delivered' ? 'mission.end.asDelivered' : 'mission.end.asDiscarded')
-            }}
+            <Trash2 v-else :size="14" :stroke-width="1.8" />{{ confirmLabel }}
           </Button>
         </footer>
       </div>

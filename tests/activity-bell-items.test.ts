@@ -166,7 +166,7 @@ describe('ActivityBell — records without items are unchanged (I-7)', () => {
   })
 })
 
-describe('an Activity row opens the Mission pane (S-35)', () => {
+describe('an Activity row opens the Mission dropdown (S-7)', () => {
   const OWNER = 'sess-1'
   const panes = (): string[] => useHelpersStore().panesForCurrentWorktree.map((p) => p.type)
 
@@ -176,6 +176,8 @@ describe('an Activity row opens the Mission pane (S-35)', () => {
       { path: '/repo', sessions: [{ sessionId: OWNER, projectPath: '/repo' }] }
     ] as never
     sessions.select(OWNER)
+    // The Topbar pill is drawn for the selected session: it is the dropdown's anchor.
+    useUiStore().setPopoverAnchor('missionProgress', true)
   }
   beforeEach(() => {
     ;(window as unknown as { api: unknown }).api = {
@@ -186,23 +188,25 @@ describe('an Activity row opens the Mission pane (S-35)', () => {
     }
   })
 
-  it('opens the pane of the selected owner, and never a popover', () => {
+  it('opens the dropdown on the selected owner, and no pane', () => {
     select()
     useUiStore().openNavigableView('mission', { missionId: 'mnt-1' })
-    expect(panes()).toEqual(['mission'])
-    expect(useUiStore().popovers.missionProgress).toBe(false)
+    expect(useUiStore().popovers.missionProgress).toBe(true)
+    expect(panes()).toEqual([])
   })
 
-  it('leaves an open pane open', () => {
+  it('leaves an open dropdown open', () => {
     select()
     const ui = useUiStore()
     ui.openNavigableView('mission', { missionId: 'mnt-1' })
     ui.openNavigableView('mission', { missionId: 'mnt-1' })
-    expect(panes()).toEqual(['mission'])
+    expect(ui.popovers.missionProgress).toBe(true)
   })
 
-  it('opens nothing without a selected session', () => {
+  it('opens nothing without a selected session', async () => {
     useUiStore().openNavigableView('mission', { missionId: 'mnt-1' })
+    await Promise.resolve()
+    expect(useUiStore().popovers.missionProgress).toBe(false)
     expect(panes()).toEqual([])
   })
 })
