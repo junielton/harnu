@@ -17,6 +17,7 @@ import {
 } from '../src/shared/walk-machine'
 import { toMachineChecks, type WalkScript } from '../src/shared/walk-schema'
 import {
+  canSendFailure,
   explainAction,
   freshUi,
   keyContext,
@@ -28,6 +29,7 @@ import {
   type WalkUi
 } from '../src/renderer/src/lib/walk-view'
 import { closeOutText } from '../src/main/walk/walk-turn'
+import { redactTranscript } from '../src/main/mcp/transcript-redact'
 import { createWalkService, type WalkRuntime } from '../src/main/walk/walk-service'
 import { createWalkProbe } from '../src/main/walk/walk-links'
 import type { DeliveryOutcome, UserTurnPayload } from '../src/main/browser/page-delivery'
@@ -720,5 +722,78 @@ describe('walk view', () => {
       expect(refused.ok).toBe(false)
       expect(await svc.store.readWalk(third.walkId)).not.toBeNull()
     })
+  })
+})
+
+// The rules the spec's conformance matrix cites by name (guided walks S-7, AC-38). Each is also exercised inside the
+// broader tests above; these say the one rule in the words the matrix uses.
+describe('walk view: the rules the matrix cites by name', () => {
+  it('one check, a bare count and a source header', () => {
+    const script = baseScript()
+    const v = paneView(dataFor(script, live(script)), ui(), t)
+    expect(v.mode).toBe('check')
+    expect(v.check?.checkId).toBe('c1')
+    // nothing of the next check reaches the pane
+    expect(JSON.stringify(v)).not.toContain('TITLE-c2')
+    // the progress is a count and one cell per check, no other text
+    expect(Object.keys(v.progress!).sort()).toEqual(['cells', 'label', 'n', 'total'])
+    expect(v.progress?.label).toBe('Check 1 of 4')
+    expect(sourceHeader(script.source, t, {})).toMatchObject({ icon: 'lightbulb', link: null })
+  })
+
+  it('draws the precheck', () => {
+    const script = baseScript({
+      checks: [
+        check('c1', {
+          nothingFromHere: undefined,
+          check: { how: 'curl the page and count the rows' },
+          precheck: 'Fetched the page: the changed markup is there'
+        })
+      ] as never
+    })
+    const v = paneView(dataFor(script, live(script)), ui(), t)
+    expect(v.check?.icheck).toEqual({
+      kind: 'check',
+      precheck: 'Fetched the page: the changed markup is there',
+      how: 'curl the page and count the rows'
+    })
+  })
+
+  it('roadmap lists every check', () => {
+    const script = baseScript({
+      checks: [
+        check('c0', { status: 'verified', evidence: 'vitest 4 passed' }),
+        ...(baseScript().checks as unknown as Record<string, unknown>[])
+      ] as never,
+      leftOut: [{ text: 'Pick the colour', owner: 'decision' }]
+    } as never)
+    const rm = paneView(dataFor(script, ready(script)), ui(), t)
+    // every check has a row, the verified-before row included, in order
+    expect(rm.roadmap?.rows.map((r) => r.id)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4'])
+    expect(rm.roadmap?.rows.map((r) => r.title)).toEqual([
+      'TITLE-c0',
+      'TITLE-c1',
+      'TITLE-c2',
+      'TITLE-c3',
+      'TITLE-c4'
+    ])
+    // the left-out line is folded, and there is no "Order:" sentence
+    expect(rm.roadmap?.leftOut?.rows).toEqual([{ text: 'Pick the colour', owner: 'decision' }])
+    expect(JSON.stringify(rm.roadmap)).not.toMatch(/Order:/)
+  })
+
+  it('failure needs a line or an image', () => {
+    expect(canSendFailure('', null)).toBe(false)
+    expect(canSendFailure('   ', null)).toBe(false)
+    expect(canSendFailure('It did nothing.', null)).toBe(true)
+    expect(canSendFailure('', '/tmp/shot.png')).toBe(true)
+  })
+
+  it('flags a secret-looking line', () => {
+    // the failure field asks main (`walk:scan-line`), which is this redaction: a hit means a secret-looking line
+    const hit = (line: string): boolean => redactTranscript(line, { home: '' }).redactionCount > 0
+    expect(hit('export API_TOKEN=abcdef1234567890abcdef then it fails')).toBe(true)
+    expect(hit('curl -H "Authorization: Bearer abcdef1234567890abcdef" localhost')).toBe(true)
+    expect(hit('The list shows 3 rows instead of 2.')).toBe(false)
   })
 })

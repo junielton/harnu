@@ -5688,6 +5688,11 @@
     },
     "waking": "Waking the session…"
   },
+  "walkEntry": {
+    "sent": "Asked the mission's leader to write the walk",
+    "started": "Started a session to write the walk",
+    "failed": "Could not ask for a walk"
+  },
   "walksLibrary": {
     "label": "Walks",
     "title": "Walks",

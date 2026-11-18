@@ -2619,7 +2619,7 @@ peek are different things and keep their own names.
 
 Every surface that names a session — sidebar row, top bar, fleet card, triage
 and `RETURN HERE` rows, Approval Inbox, jump palette, `⌘K` palette, footer,
-folder view, cloud panel, mission pane, notifications — resolves it
+folder view, cloud panel, mission dropdown, notifications — resolves it
 through **one** function, `sessionTitle()` (`lib/session-label.ts`, BUG-78), so
 two surfaces can never show two different names for the same session. Order
 (each candidate trimmed; whitespace-only counts as empty):
@@ -7455,9 +7455,16 @@ carry `aria-label` "Test it · {what it walks}" and the same words as `title` ("
 visible words). A control starts a walk in the helper stack, never inside the dropdown. It is drawn only when
 `walkEntryAvailable(source)` says a walk can start from that source and the dropdown holds no other rule about it;
 until then nothing is drawn at all (not a disabled button, not a gap), so the shipped dropdown looks as if the
-control did not exist. A click calls `startWalk(source)` (`lib/walk-entry.ts`: `source` is `{ kind: 'step', missionId,
+control did not exist. The walk work installs the provider (`stores/walk.ts`, `installEntry()` at app start): it
+answers yes for a step that holds a criterion the operator or another person settles that is still open, for a
+milestone with an unfinished step the waiting list names, and for the whole mission only when it is ready to close;
+a made-up sample mission and a closed mission answer no. A click calls `startWalk(source)` (`lib/walk-entry.ts`: `source` is `{ kind: 'step', missionId,
 stepId }`, `{ kind: 'milestone', missionId, milestoneId }` or `{ kind: 'mission', missionId }`) and then closes the
-dropdown; opening the walk's pane is the provider's job. The mockup screen `entry` is captured with a provider that
+dropdown; opening the walk's pane is the provider's job: it asks main (`walk:request`) for one of three things, the live
+run of that source focused in the helper stack, one `[harnu-walk-request]` sent to the mission's leader (woken when
+parked) or, with no leader reachable, a session started with the mission summary and the request; one quiet toast
+says which (`walkEntry.sent`, `walkEntry.started`), a refusal is a `danger` toast, and nothing ever opens inside
+the dropdown. The mockup screen `entry` is captured with a provider that
 answers true, and its step tooltip's check count belongs to the walk (the provider), so the dropdown does not
 write one.
 

@@ -437,3 +437,71 @@ describe('walk machine: re-run (AC-22)', () => {
     })
   })
 })
+
+// The rules the spec's conformance matrix cites by name (guided walks S-7, AC-38). Each is also exercised inside the
+// broader tests above; these say the one rule in the words the matrix uses.
+describe('walk machine: the rules the matrix cites by name', () => {
+  it('appends at the end', () => {
+    const checks = [plain('a'), plain('b')]
+    const grown = ok(appendChecks(live(checks), [plain('c'), plain('d')]))
+    // new checks go last, nothing is reordered or renumbered, and N grows
+    expect(grown.checks.map((c) => c.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(totalChecks(grown)).toBe(4)
+    expect(['a', 'b', 'c', 'd'].map((id) => ordinalOf(grown, id))).toEqual([1, 2, 3, 4])
+    // a check that exists is never appended again, so nothing is replaced
+    expect(code(appendChecks(live(checks), [plain('b')]))).toBe('DUPLICATE_CHECK')
+  })
+
+  it('a failing report holds a blocking check', () => {
+    let run = live([agent('y', { blocks: ['z'] }), plain('z')])
+    run = ok(done(run, 100))
+    run = ok(report(run, { checkId: 'y', result: 'fail', evidence: 'found 3', now: 200 }))
+    expect(run.checks[0].state).toBe('disagrees')
+    expect(view(run)).toMatchObject({ checkId: 'y', phase: 'disagrees', blocking: true })
+    // it cannot be followed anyway, and the check it blocks is not served
+    expect(code(followAnyway(run))).toBe('BLOCKING_CHECK')
+    expect(at(run)).toBe('y')
+  })
+
+  it('a pre-closed openPr row closes as a caveat in the first run', () => {
+    const first = newRun([plain('p', { preClosed: { status: 'caveat' } }), plain('a')], { n: 1 })
+    expect(first.checks[0]).toMatchObject({
+      state: 'caveat',
+      closedHow: 'pre-closed',
+      countable: false
+    })
+    // a re-run starts it over like any other check
+    const again = newRun([plain('p', { preClosed: { status: 'caveat' } }), plain('a')], { n: 2 })
+    expect(again.checks[0]).toMatchObject({ state: 'todo', countable: true })
+  })
+
+  it('no attempt limit', () => {
+    let run = live([plain('a')])
+    for (let i = 1; i <= 12; i++) {
+      run = ok(fail(run, { line: `Nothing happened (${i}).` }))
+      expect(run.checks[0].attempts).toBe(i)
+      run = ok(tryAgain(run))
+    }
+    // after twelve failures the same check is served again and Done still closes it
+    expect(at(run)).toBe('a')
+    expect(ok(done(run, 0)).checks[0].state).toBe('verified')
+  })
+
+  it('back returns to the previous served check', () => {
+    let run = live([plain('a'), plain('b')])
+    expect(code(back(run))).toBe('NO_PREVIOUS')
+    run = ok(done(run, 0))
+    expect(at(run)).toBe('b')
+    run = ok(back(run))
+    expect(at(run)).toBe('a')
+    expect(run.checks[0].state).toBe('todo')
+  })
+
+  it('a pre-closed row is not served in the first run', () => {
+    const run = ok(
+      startRun(newRun([plain('p', { preClosed: { status: 'verified' } }), plain('a')], { n: 1 }))
+    )
+    expect(view(run)).toMatchObject({ mode: 'check', checkId: 'a', n: 1, total: 1 })
+    expect(ordinalOf(run, 'p')).toBeNull()
+  })
+})

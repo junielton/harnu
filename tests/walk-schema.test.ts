@@ -270,3 +270,119 @@ describe('walk script schema', () => {
     ).toContain('$.leftOut[0].owner BAD_VALUE')
   })
 })
+
+// The rules the spec's conformance matrix cites by name (guided walks S-7, AC-38). Each is also exercised inside the
+// broader tests above; these say the one rule in the words the matrix uses.
+describe('walk script schema: the rules the matrix cites by name', () => {
+  const withBlock = (text: string): Record<string, unknown> =>
+    script({ checks: [check({ do: [{ text: 'Run it.', see: 'Output.', block: { text } }] })] })
+
+  it('refuses a secret', () => {
+    expect(
+      rules(withBlock('curl -H "Authorization: Bearer abcdef1234567890abcdef" localhost'), probe)
+    ).toContain('$.checks[0].do[0].block.text SECRET')
+    expect(
+      rules(
+        script({ checks: [check({ check: { how: 'export API_TOKEN=abcdef1234567890abcdef' } })] }),
+        probe
+      )
+    ).toContain('$.checks[0].check.how SECRET')
+    expect(rules(withBlock('curl localhost:3000/notes'), probe)).toEqual([])
+  })
+
+  it('refuses an emoji', () => {
+    expect(rules(script({ title: 'Search box 🚀' }), probe)).toContain('$.title EMOJI')
+    expect(rules(script({ checks: [check({ passes: 'It works ✅' })] }), probe)).toContain(
+      '$.checks[0].passes EMOJI'
+    )
+    // the six glyph characters are plain text, never an emoji
+    expect(rules(script({ checks: [check({ passes: '✓ ✗ ! - ⚑ ?' })] }), probe)).toEqual([])
+  })
+
+  it('refuses a placeholder', () => {
+    expect(rules(withBlock('git checkout <branch-name>'), probe)).toContain(
+      '$.checks[0].do[0].block.text PLACEHOLDER_IN_COMMAND'
+    )
+    expect(rules(withBlock('git checkout feature/notes-search'), probe)).toEqual([])
+  })
+
+  it('accepts a pre-closed row', () => {
+    const closed = check({ id: 'c2', status: 'verified', evidence: 'Seen in the PR.' })
+    expect(rules(script({ checks: [check(), closed] }), probe)).toEqual([])
+    // a closed row without its evidence is refused
+    expect(rules(script({ checks: [check({ id: 'c2', status: 'verified' })] }), probe)).toContain(
+      '$.checks[0].evidence MISSING'
+    )
+  })
+
+  it('accepts a pre-closed row and left out', () => {
+    const closed = check({ id: 'c2', status: 'verified', evidence: 'Seen in the PR.' })
+    const out = [
+      { text: 'Rename the file', owner: 'ours' },
+      { text: 'Pick the colour', owner: 'decision' }
+    ]
+    expect(rules(script({ checks: [check(), closed], leftOut: out }), probe)).toEqual([])
+    // a decision is not a step: it goes to leftOut with an owner of `decision`; an unknown owner is refused
+    expect(rules(script({ leftOut: [{ text: 'Rename it', owner: 'someone' }] }), probe)).toContain(
+      '$.leftOut[0].owner BAD_VALUE'
+    )
+  })
+
+  it('requires where', () => {
+    const bare = check()
+    delete bare.where
+    expect(rules(script({ checks: [bare] }), probe)).toContain('$.checks[0].where MISSING')
+    expect(rules(script({ checks: [check({ where: { text: '  ' } })] }), probe)).toContain(
+      '$.checks[0].where.text MISSING'
+    )
+  })
+
+  it('requires check or nothingFromHere', () => {
+    expect(rules(script({ checks: [check({ check: undefined })] }), probe)).toContain(
+      '$.checks[0].check NO_CHECK_OR_NOTHING_FROM_HERE'
+    )
+    expect(
+      rules(
+        script({ checks: [check({ check: undefined, nothingFromHere: 'Needs eyes.' })] }),
+        probe
+      )
+    ).toEqual([])
+  })
+
+  it('requires approximate on a click path', () => {
+    expect(
+      rules(script({ checks: [check({ where: { text: 'here', path: 'Menu > Notes' } })] }), probe)
+    ).toContain('$.checks[0].where.approximate MISSING')
+    for (const approximate of [true, false])
+      expect(
+        rules(
+          script({
+            checks: [check({ where: { text: 'here', path: 'Menu > Notes', approximate } })]
+          }),
+          probe
+        )
+      ).toEqual([])
+  })
+
+  it('caps do items', () => {
+    const items = (n: number): Record<string, unknown>[] =>
+      Array.from({ length: n }, () => ({ text: 'a', see: 'b' }))
+    expect(rules(script({ checks: [check({ do: items(8) })] }), probe)).toEqual([])
+    expect(rules(script({ checks: [check({ do: items(9) })] }), probe)).toContain(
+      '$.checks[0].do TOO_MANY'
+    )
+  })
+
+  it('caps the table', () => {
+    const rows = (n: number): Record<string, unknown>[] =>
+      Array.from({ length: n }, (_, i) => ({
+        item: `row ${i}`,
+        shows: 'a value',
+        source: 'the spec'
+      }))
+    expect(rules(script({ checks: [check({ table: rows(12) })] }), probe)).toEqual([])
+    expect(rules(script({ checks: [check({ table: rows(13) })] }), probe)).toContain(
+      '$.checks[0].table TOO_MANY'
+    )
+  })
+})

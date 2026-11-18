@@ -1,7 +1,19 @@
 import { defineStore } from 'pinia'
 import { reactive } from 'vue'
 import type { WalkIpcError, WalkLoad } from '../../../preload'
+import { i18n } from '../i18n'
 import { explainAction, freshUi, tickExtra, type WalkData, type WalkUi } from '../lib/walk-view'
+import {
+  buildPaneTree,
+  isReadyToClose,
+  v4MissionOf,
+  type MissionV4Reply
+} from '../lib/mission-pane-view'
+import { setWalkEntryProvider, type WalkSource } from '../lib/walk-entry'
+import { useHelpersStore } from './helpers'
+import { useMissionsStore } from './missions'
+import { useSessionsStore } from './sessions'
+import { useUiStore } from './ui'
 
 /**
  * Guided walks S-3: what each open walk pane holds, and the operator's outcomes sent to main.
@@ -41,6 +53,31 @@ const isRefusal = (x: unknown): x is WalkIpcError =>
   typeof x === 'object' && x !== null && (x as { ok?: unknown }).ok === false
 
 const cursorOf = (d: WalkData): string | null => d.run.cursor
+
+// ---- "Test it" in the Mission dropdown (S-7) ------------------------------------------------------
+
+/**
+ * Whether a walk can start from `source` of the mission `detail` describes (V-20: only where something is owed by
+ * hand). A step needs a criterion the operator (or another person) settles that is still open; a milestone needs
+ * an unfinished step the waiting list names (the operator owes it something); the whole mission is offered only at its end, when it is ready to close. A
+ * closed mission offers nothing.
+ */
+export function entryAvailable(detail: MissionV4Reply['detail'], source: WalkSource): boolean {
+  if (detail.status !== 'open') return false
+  if (source.kind === 'mission') return isReadyToClose(detail)
+  const tree = buildPaneTree(detail)
+  const groups = [
+    ...tree.milestones.map((m) => ({ id: m.id, rows: [...m.shown, ...m.folded] })),
+    ...tree.optional.map((m) => ({ id: m.id, rows: [...m.shown, ...m.folded] })),
+    ...(tree.loose ? [{ id: null, rows: [...tree.loose.shown, ...tree.loose.folded] }] : [])
+  ]
+  if (source.kind === 'milestone') {
+    const group = groups.find((g) => g.id === source.milestoneId)
+    return !!group?.rows.some((r) => r.needsYou && r.state !== 'done')
+  }
+  const row = groups.flatMap((g) => g.rows).find((r) => r.id === source.stepId)
+  return !!row?.open.some((c) => c.canMark)
+}
 
 export const useWalkStore = defineStore('walk', () => {
   const panes = reactive(new Map<string, PaneWalk>())
@@ -336,6 +373,72 @@ export const useWalkStore = defineStore('walk', () => {
     await reload(paneId)
   }
 
+  // ---- Test it: the provider the Mission dropdown's seam asks (S-7) ----------------------------------
+
+  /** The mission the selected session shows in the dropdown, when it is the one `missionId` names. */
+  function shownMission(missionId: string): MissionV4Reply | null {
+    const missions = useMissionsStore()
+    if (missions.sampleView) return null // a made-up mission has nothing to walk
+    const sessionId = useSessionsStore().selectedSession?.sessionId
+    if (!sessionId) return null
+    const m = v4MissionOf(missions.v4ReplyForSession(sessionId), sessionId)
+    return m && m.missionId === missionId ? m : null
+  }
+
+  /** Sources with a request in flight: a second click on one is dropped, never sent twice. */
+  const requesting = new Set<string>()
+  const sourceKey = (s: WalkSource): string =>
+    `${s.kind}:${s.missionId}:${'stepId' in s ? s.stepId : 'milestoneId' in s ? s.milestoneId : ''}`
+
+  /**
+   * One click on a Test it control: main focuses the source's live run (and the pane is shown), sends the request
+   * to the mission's leader or starts a session with the summary. A refusal is one quiet toast; nothing opens in
+   * the dropdown, and the walk's pane arrives in the helper stack when the session calls `walk_open`.
+   */
+  async function requestFor(source: WalkSource): Promise<void> {
+    const key = sourceKey(source)
+    if (requesting.has(key)) return
+    const folder = useSessionsStore().selectedSession?.projectPath
+    if (!folder) return
+    const ui = useUiStore()
+    const { t } = i18n.global
+    requesting.add(key)
+    try {
+      const res = await window.api.walkRequest({ folder, source })
+      if (!res.ok) {
+        ui.pushToast({
+          kind: 'danger',
+          title: t('walkEntry.failed'),
+          description: res.error.message
+        })
+        return
+      }
+      if (res.action === 'focus') {
+        useHelpersStore().addWalkHelper(folder, res.walkId, res.runId)
+        return
+      }
+      ui.pushToast({
+        kind: 'success',
+        title: t(res.action === 'started' ? 'walkEntry.started' : 'walkEntry.sent')
+      })
+    } finally {
+      requesting.delete(key)
+    }
+  }
+
+  /** Install this store as the answer to the dropdown's `walk-entry` seam (once, at app start). */
+  function installEntry(): void {
+    setWalkEntryProvider({
+      available(source) {
+        const m = shownMission(source.missionId)
+        return m !== null && entryAvailable(m.detail, source)
+      },
+      start(source) {
+        void requestFor(source)
+      }
+    })
+  }
+
   return {
     panes,
     get,
@@ -353,6 +456,8 @@ export const useWalkStore = defineStore('walk', () => {
     rerun,
     exportRun,
     discardIfReady,
-    replay
+    replay,
+    requestFor,
+    installEntry
   }
 })

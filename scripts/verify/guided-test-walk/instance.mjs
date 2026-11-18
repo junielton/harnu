@@ -483,6 +483,8 @@ const git = (cwd, ...a) =>
  * `walkCall` scripts the one thing the stub ever does besides listening (W-22): when a line holds the plain
  * sentence "walk me through what we just built", it runs `node <helper> <its --mcp-config file> <cwd> <script>`,
  * which is what a model that picked the walk skill would do through the control server it was spawned with.
+ * The same helper answers a `[harnu-walk-request]` turn (W-21): the line that carries its `source` makes it open
+ * a walk of that source, which is what the session that got "Test it" is asked to do.
  */
 function writeStubs(bin, stubLog, walkCall) {
   mkdirSync(bin, { recursive: true })
@@ -499,6 +501,8 @@ while IFS= read -r line; do
   case "$line" in
     *"walk me through what we just built"*)
       '${walkCall.node}' '${walkCall.helper}' "$cfg" "$(pwd)" '${walkCall.script}' >> '${stubLog}' 2>&1 ;;
+    *'source: {"kind":"mission"'*)
+      '${walkCall.node}' '${walkCall.helper}' "$cfg" "$(pwd)" '${walkCall.requestScript}' "$line" >> '${stubLog}' 2>&1 ;;
   esac
 done
 exec sleep 3600
@@ -571,7 +575,8 @@ export async function startInstance({ repoRoot, id, fixtures, env: extraEnv = {}
   writeStubs(bin, stubLog, {
     node: process.execPath,
     helper: path.join(fixtures, 'stub-claude-walk.mjs'),
-    script: path.join(fixtures, 'plain-sentence-walk.json')
+    script: path.join(fixtures, 'plain-sentence-walk.json'),
+    requestScript: path.join(fixtures, 'request-walk.json')
   })
   env.PATH = `${bin}:${env.PATH}`
   writeTranscript(env.HOME, repo, SESSIONS.owner, 'walk smoke: the session that owns the walks')

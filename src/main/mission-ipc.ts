@@ -274,9 +274,10 @@ export type MissionV4ViewReply =
       pendingDoneWhen: { text: string; at?: string } | null
       sessions: SessionHistoryRow[]
       /**
-       * Whether to offer "Continue in a new session…": the leader's context from a LIVE reading, 80
-       * percent or more, quiet after a "Not now" until it grows five points. An offer only: nothing
-       * starts until the operator confirms the hand-off (S-16b).
+       * Whether the leader's context from a LIVE reading is high enough to offer a hand-off: 80 percent or
+       * more, quiet after a "Not now" until it grows five points. The Mission dropdown no longer draws the
+       * offer (it has no "Continue in a new session…" control), so nothing reads this field today; it stays
+       * in the reply for the dormant `mission:handOff` door below, which still starts nothing until asked.
        */
       handoff: HandoffOffer
     }
@@ -757,8 +758,8 @@ export function registerMissionIpc(): void {
   ipcMain.handle('mission:v4Door', async (_e, door: unknown) => runPaneDoor(door))
   // Mission dropdown S-4 — a read-only existence check for the paths of a step's links. No write, no content.
   ipcMain.handle('mission:pathKinds', (_e, paths: unknown) => readPathKinds(paths))
-  // Missions v4 S-16a — the view of one mission for the Mission dropdown. It reads and never writes. No
-  // renderer calls it until S-17. It also notes the folder, so the observer's v4 leg looks there.
+  // Missions v4 S-16a — the view of one mission for the Mission dropdown. It reads and never writes. The
+  // dropdown calls it for the selected session (and by mission id for the one it shows). It also notes the folder, so the observer's v4 leg looks there.
   ipcMain.handle('mission:v4View', async (_e, args: unknown): Promise<MissionV4ViewReply> => {
     const folder = (args as { folder?: unknown } | null)?.folder
     if (typeof folder === 'string') noteAskedFolders([folder])

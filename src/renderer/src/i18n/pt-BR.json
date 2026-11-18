@@ -5688,6 +5688,11 @@
     },
     "waking": "Acordando a sessão…"
   },
+  "walkEntry": {
+    "sent": "Pedi ao líder da missão para escrever a caminhada",
+    "started": "Abri uma sessão para escrever a caminhada",
+    "failed": "Não consegui pedir uma caminhada"
+  },
   "walksLibrary": {
     "label": "Caminhadas",
     "title": "Caminhadas",
