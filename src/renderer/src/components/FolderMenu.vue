@@ -14,6 +14,7 @@ import {
   GitFork,
   GraduationCap,
   LayoutList,
+  Library,
   NotebookText,
   KanbanSquare,
   PencilLine,
@@ -31,6 +32,7 @@ import {
 import { useI18n } from 'vue-i18n'
 import { useUiStore } from '../stores/ui'
 import { useSessionsStore } from '../stores/sessions'
+import { useHelpersStore } from '../stores/helpers'
 import { useModesStore } from '../stores/modes'
 import { useKeybindingsStore } from '../stores/keybindings'
 import type { ShortcutActionId } from '../../../main/keybindings-core'
@@ -68,6 +70,7 @@ const MODE_ICONS: Record<string, typeof EyeOff> = {
 const ui = useUiStore()
 const keybindings = useKeybindingsStore()
 const sessions = useSessionsStore()
+const helpers = useHelpersStore()
 const modes = useModesStore()
 const { t } = useI18n()
 // T486 §3.4: the items' functions, shared with their keybindings (AC-37).
@@ -424,6 +427,15 @@ const entries = computed<MenuItem[]>(() => [
     label: t('folderMenu.prStack'),
     icon: GitPullRequest,
     onSelect: (projectPath: string): void => ui.openPrStack(projectPath, folderLabel(projectPath))
+  },
+  // Guided walks S-4: the Walks library, a pane in the split (like Project memory: it attaches to the selected
+  // worktree's stack, else to this folder's own). The walks are the repo's, whichever worktree opens it.
+  {
+    id: 'walks',
+    label: t('folderMenu.walks'),
+    icon: Library,
+    onSelect: (projectPath: string): void =>
+      void helpers.addWalksHelper(sessions.selectedSession?.projectPath || projectPath)
   },
   // T69: create-or-open a subfolder + pin it, replacing the "leave Harnu and run
   // `harnu .`" round-trip. Their own block (separator above), always available

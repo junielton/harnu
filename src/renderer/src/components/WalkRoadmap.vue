@@ -67,6 +67,13 @@ const glyphClass: Record<string, string> = {
           <span class="m-k">{{ $t('testWalk.roadmap.earlier') }}</span>
           <WalkValue v-if="r.how.evidence" :text="r.how.evidence" />
         </template>
+        <span
+          v-if="r.lastTime"
+          class="lt"
+          :class="{ failed: r.lastTime.tone === 'warn' }"
+          data-dsqa-part="last-time"
+          >{{ r.lastTime.text }}</span
+        >
       </span>
     </li>
   </ol>

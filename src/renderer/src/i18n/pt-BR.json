@@ -154,7 +154,8 @@
     "providerBadgeTitle": "Rodando em {name} (endpoint custom), não na API da Anthropic",
     "orchestratorBadge": "Orquestrador",
     "orchestratorBadgeTitle": "Orquestrador — esta sessão coordena o trabalho neste repo",
-    "review": "Revisar esta branch"
+    "review": "Revisar esta branch",
+    "walks": "Caminhadas"
   },
   "helperStack": {
     "label": "Painéis auxiliares",
@@ -1003,7 +1004,8 @@
     },
     "blockAgent": "Bloquear controle do agente",
     "unblockAgent": "Desbloquear controle do agente",
-    "prStack": "PR Stack"
+    "prStack": "PR Stack",
+    "walks": "Caminhadas"
   },
   "memoryLocation": {
     "intro": "Escolha onde o Harnu guarda a memória de projeto — dentro de cada repo, ou num lugar central fora dele (uma pasta do Google Drive, um vault do Obsidian, um HD externo). Os overrides ficam só na config do Harnu, nunca nos seus repos.",
@@ -5747,7 +5749,9 @@
       "send": "Enviar",
       "cancelForm": "Voltar ao passo",
       "pickSkipped": "Verificar agora",
-      "closeOut": "Encerrar"
+      "closeOut": "Encerrar",
+      "rerun": "Repetir",
+      "export": "Exportar markdown"
     },
     "roadmap": {
       "sub": "{total} verificações",
@@ -5884,11 +5888,23 @@
         "notReached": "não alcançada"
       },
       "owed": "Ainda é sua",
-      "owedMore": "{parts} estão listadas acima.",
+      "owedMore": {
+        "one": "{parts} está listada acima.",
+        "other": "{parts} estão listadas acima."
+      },
       "part": {
-        "skipped": "{n} puladas",
-        "failed": "{n} com falha",
-        "unverified": "{n} não verificadas"
+        "skipped": {
+          "one": "{n} verificação pulada",
+          "other": "{n} verificações puladas"
+        },
+        "failed": {
+          "one": "{n} verificação com falha",
+          "other": "{n} verificações com falha"
+        },
+        "unverified": {
+          "one": "{n} verificação não verificada",
+          "other": "{n} verificações não verificadas"
+        }
       },
       "recheck": "Verificar “{n}” de novo depois que a #{pr} for mergeada",
       "criterion": {
@@ -5904,7 +5920,8 @@
       "savedBody": "Reabra esta execução ou repita as mesmas verificações depois.",
       "openWalks": "Abrir Caminhadas",
       "export": "Exportar markdown",
-      "copy": "Copiar resumo"
+      "copy": "Copiar resumo",
+      "partAnd": " e "
     },
     "end": {
       "title": "Encerrar a caminhada e ver o resumo?",
@@ -5925,6 +5942,86 @@
     },
     "turn": {
       "sent": "Resposta da caminhada enviada para ‹{session}›"
-    }
+    },
+    "waking": "Acordando a sessão…"
+  },
+  "walksLibrary": {
+    "label": "Caminhadas",
+    "title": "Caminhadas",
+    "sub": "{n} caminhadas · salvas nesta máquina",
+    "subOne": "1 caminhada · salva nesta máquina",
+    "rerun": "Repetir",
+    "open": "Abrir",
+    "list": "Caminhadas salvas",
+    "source": {
+      "mission": "Missão",
+      "pr": "PR #{number} · {author}",
+      "prNoAuthor": "PR #{number}",
+      "feature": "Funcionalidade",
+      "branch": "Branch {branch}",
+      "card": "Card · {slug}"
+    },
+    "outcome": {
+      "passed": "{verified} de {total} passaram",
+      "inProgress": "em andamento, verificação {check} de {total}",
+      "notWalked": "ainda não percorrida"
+    },
+    "empty": {
+      "title": "Nenhuma caminhada ainda",
+      "body": "Uma caminhada fica salva aqui depois que você a percorre. Peça a uma sessão para começar uma, ou use Testar na Missão.",
+      "command": "/step-by-step PR #48",
+      "hint": "Ou simplesmente diga: “me guie pelo que acabamos de construir”.",
+      "copy": "Copiar",
+      "copied": "Copiado"
+    },
+    "menu": {
+      "more": "Mais ações",
+      "delete": "Excluir…"
+    },
+    "delete": {
+      "ask": "Excluir “{title}” e {runs}? Isso não pode ser desfeito.",
+      "askLive": "Excluir “{title}” e {runs}? Uma execução está em andamento e vai junto. Isso não pode ser desfeito.",
+      "askNone": "Excluir “{title}”? Isso não pode ser desfeito.",
+      "confirm": "Excluir",
+      "cancel": "Manter",
+      "failed": "Não foi possível excluir a caminhada."
+    },
+    "runs": {
+      "one": "sua execução",
+      "other": "suas {n} execuções"
+    },
+    "past": {
+      "back": "Caminhadas",
+      "readOnly": "Somente leitura",
+      "run": "Execução {n} · {date}",
+      "runLive": "Execução {n} · em andamento",
+      "runs": "Execuções desta caminhada",
+      "sub": "{passed} passaram · {failed} falharam · {skipped} puladas",
+      "subUnverified": "{n} não confirmadas",
+      "subNotReached": "{n} não alcançadas",
+      "wrote": "Você escreveu",
+      "agent": "Minha verificação achou",
+      "correction": "Minha correção",
+      "shot": "Imagem colada {n}",
+      "openShot": "Abrir a captura"
+    },
+    "rerunSub": "Mesmas {total} verificações · execução {n}",
+    "lastTime": {
+      "passed": "da última vez: passou",
+      "failed": "da última vez: falhou",
+      "skipped": "da última vez: pulada",
+      "unverified": "da última vez: não confirmada"
+    },
+    "lastTimeHint": {
+      "passed": "Da última vez: passou",
+      "failed": "Da última vez: falhou",
+      "failedLine": "Da última vez: falhou · “{line}”",
+      "skipped": "Da última vez: pulada",
+      "unverified": "Da última vez: não confirmada"
+    },
+    "export": {
+      "failed": "Não foi possível exportar a caminhada."
+    },
+    "rerunFailed": "Não foi possível repetir a caminhada."
   }
 }

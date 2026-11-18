@@ -50,6 +50,15 @@ const retry = computed(() => props.check.phase === 'failed')
 
 <template>
   <h2 class="wk-title" data-dsqa-part="step-title">{{ check.title }}</h2>
+  <div
+    v-if="check.lastTime"
+    class="lt-hint"
+    :class="{ failed: check.lastTime.tone === 'warn' }"
+    data-dsqa-part="last-time"
+    data-test="walk-last-time"
+  >
+    {{ check.lastTime.text }}
+  </div>
   <div v-if="blocksText" class="blocks">{{ blocksText }}</div>
   <div v-if="check.undo" class="blocks undo" data-test="walk-undo">
     {{ $t('testWalk.undoLead', { undo: check.undo }) }}

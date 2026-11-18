@@ -154,7 +154,8 @@
     "providerBadgeTitle": "Running on {name} (custom endpoint), not the Anthropic API",
     "orchestratorBadge": "Orchestrator",
     "orchestratorBadgeTitle": "Orchestrator — this session coordinates work on this repo",
-    "review": "Review this branch"
+    "review": "Review this branch",
+    "walks": "Walks"
   },
   "helperStack": {
     "label": "Helper panes",
@@ -1003,7 +1004,8 @@
     },
     "blockAgent": "Block agent control",
     "unblockAgent": "Unblock agent control",
-    "prStack": "PR Stack"
+    "prStack": "PR Stack",
+    "walks": "Walks"
   },
   "memoryLocation": {
     "intro": "Choose where Harnu stores your project memory — inside each repo, or in one central place outside it (a Google Drive folder, an Obsidian vault, an external disk). Overrides live only in Harnu's config, never in your repos.",
@@ -5747,7 +5749,9 @@
       "send": "Send",
       "cancelForm": "Back to the step",
       "pickSkipped": "Check them now",
-      "closeOut": "Close out"
+      "closeOut": "Close out",
+      "rerun": "Re-run",
+      "export": "Export markdown"
     },
     "roadmap": {
       "sub": "{total} checks",
@@ -5884,11 +5888,23 @@
         "notReached": "not reached"
       },
       "owed": "Still yours",
-      "owedMore": "{parts} are listed above.",
+      "owedMore": {
+        "one": "{parts} is listed above.",
+        "other": "{parts} are listed above."
+      },
       "part": {
-        "skipped": "{n} skipped",
-        "failed": "{n} failed",
-        "unverified": "{n} unverified"
+        "skipped": {
+          "one": "{n} skipped check",
+          "other": "{n} skipped checks"
+        },
+        "failed": {
+          "one": "{n} failed check",
+          "other": "{n} failed checks"
+        },
+        "unverified": {
+          "one": "{n} unverified check",
+          "other": "{n} unverified checks"
+        }
       },
       "recheck": "Re-check “{n}” after #{pr} merges",
       "criterion": {
@@ -5904,7 +5920,8 @@
       "savedBody": "Reopen this run or re-run the same checks later.",
       "openWalks": "Open Walks",
       "export": "Export markdown",
-      "copy": "Copy summary"
+      "copy": "Copy summary",
+      "partAnd": " and "
     },
     "end": {
       "title": "End the walk and see the close-out?",
@@ -5925,6 +5942,86 @@
     },
     "turn": {
       "sent": "Walk answer sent to ‹{session}›"
-    }
+    },
+    "waking": "Waking the session…"
+  },
+  "walksLibrary": {
+    "label": "Walks",
+    "title": "Walks",
+    "sub": "{n} walks · saved on this machine",
+    "subOne": "1 walk · saved on this machine",
+    "rerun": "Re-run",
+    "open": "Open",
+    "list": "Saved walks",
+    "source": {
+      "mission": "Mission",
+      "pr": "PR #{number} · {author}",
+      "prNoAuthor": "PR #{number}",
+      "feature": "Feature",
+      "branch": "Branch {branch}",
+      "card": "Card · {slug}"
+    },
+    "outcome": {
+      "passed": "{verified} of {total} passed",
+      "inProgress": "in progress, check {check} of {total}",
+      "notWalked": "not walked yet"
+    },
+    "empty": {
+      "title": "No walks yet",
+      "body": "A walk is saved here after you run one. Ask a session to start one, or use Test it in the Mission.",
+      "command": "/step-by-step PR #48",
+      "hint": "Or just say: “walk me through what we just built”.",
+      "copy": "Copy",
+      "copied": "Copied"
+    },
+    "menu": {
+      "more": "More actions",
+      "delete": "Delete…"
+    },
+    "delete": {
+      "ask": "Delete “{title}” and its {runs}? This cannot be undone.",
+      "askLive": "Delete “{title}” and its {runs}? A run is in progress and goes with it. This cannot be undone.",
+      "askNone": "Delete “{title}”? This cannot be undone.",
+      "confirm": "Delete",
+      "cancel": "Keep it",
+      "failed": "The walk could not be deleted."
+    },
+    "runs": {
+      "one": "1 run",
+      "other": "{n} runs"
+    },
+    "past": {
+      "back": "Walks",
+      "readOnly": "Read-only",
+      "run": "Run {n} · {date}",
+      "runLive": "Run {n} · in progress",
+      "runs": "Runs of this walk",
+      "sub": "{passed} passed · {failed} failed · {skipped} skipped",
+      "subUnverified": "{n} not confirmed",
+      "subNotReached": "{n} not reached",
+      "wrote": "You wrote",
+      "agent": "My check found",
+      "correction": "My correction",
+      "shot": "Pasted image {n}",
+      "openShot": "Open the screenshot"
+    },
+    "rerunSub": "Same {total} checks · run {n}",
+    "lastTime": {
+      "passed": "last time: passed",
+      "failed": "last time: failed",
+      "skipped": "last time: skipped",
+      "unverified": "last time: not confirmed"
+    },
+    "lastTimeHint": {
+      "passed": "Last time: passed",
+      "failed": "Last time: failed",
+      "failedLine": "Last time: failed · “{line}”",
+      "skipped": "Last time: skipped",
+      "unverified": "Last time: not confirmed"
+    },
+    "export": {
+      "failed": "The walk could not be exported."
+    },
+    "rerunFailed": "The walk could not be re-run."
   }
 }
