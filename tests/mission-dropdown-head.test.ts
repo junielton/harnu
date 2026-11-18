@@ -245,7 +245,12 @@ describe('AC-8 — the switch shows only when the session leads several missions
       global: { plugins: [i18n] },
       attachTo: document.body
     })
-    expect(q('[data-test="mission-switch"]')?.getAttribute('aria-label')).toMatch(/Missão 1 de 3/)
+    const label = q('[data-test="mission-switch"]')?.getAttribute('aria-label')
+    // The expected text comes from the pt-BR catalog, so no Portuguese literal lives in this file.
+    expect(label).toBe(
+      i18n.global.t('missionDropdown.head.switchLabel', { n: 1, m: 3 }, { locale: 'pt-BR' })
+    )
+    expect(label).not.toBe('Mission 1 of 3 · Change')
     i18n.global.locale.value = 'en'
   })
 })
