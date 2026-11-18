@@ -77,6 +77,7 @@ import {
 } from './notifications'
 import { persistedRef } from './persisted'
 import { useSessionsStore } from './sessions'
+import { soundAllowed } from './session-notify'
 import { useUiStore } from './ui'
 
 const POLL_MS = 20_000
@@ -733,7 +734,11 @@ export const useMissionsStore = defineStore('missions', () => {
       cueMemory = decision.memory
       storedCues.value = serializeCueMemory(cueMemory)
       if (decision.cue) {
-        playNotificationSound()
+        // T154: the sound is the family of what is owed (one combined cue → the most urgent). It obeys
+        // the Sound switch and the family's mute; attention and the Activity entry do not.
+        if (decision.family && soundAllowed(sessions.notifyPrefs, decision.family)) {
+          playNotificationSound(decision.family)
+        }
         void window.api.requestAttention()
         postMissionActivity(decision.missionIds, cueViews)
       } else {

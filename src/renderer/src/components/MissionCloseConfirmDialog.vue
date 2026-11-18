@@ -28,7 +28,6 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Trash2, TriangleAlert, X } from 'lucide-vue-next'
 import { useFocusTrap } from '../composables/useFocusTrap'
-import { playNotificationSound } from '../lib/notification-sound'
 import type { EndChoice, EndWarning } from '../lib/mission-view'
 import type { CloseMatter } from '../lib/mission-pane-view'
 import type { MemoryDraft } from '../../../main/consolidator-core'
@@ -162,11 +161,11 @@ function onKeydown(e: KeyboardEvent): void {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown, true)
+  // T154: no sound — the operator opened this dialog themselves, so a chime tells them nothing.
   try {
-    playNotificationSound()
     window.api.requestAttention()
   } catch {
-    /* no audio device / IPC teardown — the dialog still guards the door */
+    /* IPC teardown — the dialog still guards the door */
   }
 })
 onBeforeUnmount(() => {

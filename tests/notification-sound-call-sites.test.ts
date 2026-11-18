@@ -258,7 +258,7 @@ describe('approval parked in the Inbox', () => {
 
   it('the sessions store wires the queue to the Sound switch and the family mutes', () => {
     const src = readFileSync(resolve(__dirname, '../src/renderer/src/stores/sessions.ts'), 'utf8')
-    expect(src).toMatch(/useMcpConfirmQueue\(\{\s*soundAllowed:/)
+    expect(src).toMatch(/useMcpConfirmQueue\(\{[^}]*soundAllowed:/)
   })
 })
 

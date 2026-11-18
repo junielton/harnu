@@ -1606,6 +1606,13 @@
     "notifications": {
       "label": "Notificações do sistema",
       "sound": "Som",
+      "soundHint": "Cada tipo de evento tem o seu som, então você distingue de ouvido. Pede algo: precisa de você, aprovações, uma missão esperando por você. Terminou: um turno acabou. Quebrou: uma sessão falhou ou a main está vermelha. Só pra saber: revisões, uso, orçamento, versão nova.",
+      "soundFamilies": {
+        "ask": "Pede algo",
+        "done": "Terminou",
+        "fail": "Quebrou",
+        "info": "Só pra saber"
+      },
       "description": "Receba uma notificação nativa do sistema quando uma sessão em background precisa de você ou termina. Suprimida pra sessão que você já está olhando.",
       "needsInput": "Precisa de você",
       "completed": "Concluída",

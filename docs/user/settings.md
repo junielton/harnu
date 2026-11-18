@@ -22,6 +22,23 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 - **Containers** — the inspector's own background scan, its idle clock and the new-zombie notification behind the [Containers](containers.md#settings) view.
 - **Claude Code** — renders Claude Code's own official changelog (fetched from Anthropic, separate from Harnu's own Changelog tab above). Claude's live service status (incidents, scheduled maintenance) is shown in the footer popover alongside your [usage](usage.md#the-footer-popover), not here.
 
+## Notification sounds
+
+**Settings → General → Notifications → Sound** turns Harnu's sounds on or off. It is the master for every sound in the app: with it off, nothing plays, including a session that asks for approval and a mission that waits on you. Harnu still flashes the window, shows the notification and adds the Activity entry; only the sound goes.
+
+Each kind of event has its own sound, so you can tell what happened by ear:
+
+| Sound                | Plays when                                                                                                                                                                                                               | Sounds like                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| **Asks you**         | a session needs your input, an approval is waiting in the Inbox, a mission waits on you (a blocker of yours, a request to join, ready to close, a criterion only you can mark, a re-scope, a decision, steps to confirm) | two notes rising                     |
+| **Finished**         | a session finished its turn                                                                                                                                                                                              | a bright two-note jump up            |
+| **Broke**            | a session failed, or `main` went red                                                                                                                                                                                     | two low, muffled thuds               |
+| **Just so you know** | a pull request waits for review, a mission has checks due, your 5-hour usage window reset, the daily budget crossed 80% or 100%, a new Claude Code version                                                               | the soft chime Harnu has always used |
+
+Under the **Sound** switch there is one more switch per kind. Turning off **Broke**, say, silences only the failure sound; the others keep playing. All four are on by default. If several things wait on you in one check, a mission plays only the most urgent sound once: **Broke**, then **Asks you**, then **Just so you know**.
+
+Opening the **Close mission** dialog plays nothing: you just opened it yourself.
+
 ## Floating panels
 
 **Settings → Appearance → Layout → Floating panels** turns each pane into its own rounded island on a darker background, with an even 4px gap between islands and around the window edge. It is **off by default**, and with it off Harnu looks exactly as it always has.

@@ -105,12 +105,12 @@ describe('mission cue → family', () => {
       prs: [],
       stepIds: []
     },
-    attach: { kind: 'attach', id: 'attach:s1', prs: [], stepIds: [] },
-    close: { kind: 'close', id: 'close', prs: [], stepIds: [] },
-    settle: { kind: 'settle', id: 'settle:stp-1:ac-1', prs: [], stepIds: [] },
-    rescope: { kind: 'rescope', id: 'rescope:x', prs: [], stepIds: [] },
-    review: { kind: 'review', id: 'review', prs: [1, 2], stepIds: [] },
-    mainFailing: { kind: 'main-failing', id: 'main-failing:abc', prs: [], stepIds: [] }
+    attach: { kind: 'attach', id: 'attach:s1', prs: [], stepIds: [], ask: 'x' },
+    close: { kind: 'close', id: 'close', prs: [], stepIds: [], ask: 'x' },
+    settle: { kind: 'settle', id: 'settle:stp-1:ac-1', prs: [], stepIds: [], ask: 'x' },
+    rescope: { kind: 'rescope', id: 'rescope:x', prs: [], stepIds: [], ask: 'x' },
+    review: { kind: 'review', id: 'review', prs: [1, 2], stepIds: [], ask: 'x' },
+    mainFailing: { kind: 'main-failing', id: 'main-failing:abc', prs: [], stepIds: [], ask: 'x' }
   }
   const v3 = {
     blocker: { kind: 'blocker', reason: 'merge PR #6', unblocks: 'merged' },

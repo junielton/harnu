@@ -1606,6 +1606,13 @@
     "notifications": {
       "label": "OS notifications",
       "sound": "Sound",
+      "soundHint": "Each kind of event has its own sound, so you can tell them apart by ear. Asks you: input needed, approvals, a mission waiting on you. Finished: a turn ended. Broke: a session failed or main is red. Just so you know: reviews, usage, budget, a new version.",
+      "soundFamilies": {
+        "ask": "Asks you",
+        "done": "Finished",
+        "fail": "Broke",
+        "info": "Just so you know"
+      },
       "description": "Get a native system notification when a background session needs your input or finishes. Suppressed for the session you're already looking at.",
       "needsInput": "Needs input",
       "completed": "Completed",
