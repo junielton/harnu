@@ -27,6 +27,7 @@ import { promises as fs } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { dataDirAt, mainCheckoutRoot, mkdirDataDir } from '../data-dir'
 import { atomicWriteFile } from '../mcp/atomic-write'
+import { rawRm } from '../raw-fs'
 import { counts, newRun, type MachineError, type Run } from '../../shared/walk-machine'
 import { toMachineChecks, type WalkScript } from '../../shared/walk-schema'
 import type { WalkSource } from '../../shared/walk-source'
@@ -385,7 +386,7 @@ export function createWalkStore(folder: string, opts: WalkStoreOptions = {}): Wa
             error: { code: 'RUN_NOT_READY', message: 'Only a run that never started is discarded.' }
           }
         await fs.rm(runFile(walkId, runId), { force: true })
-        await fs.rm(join(runsDir(base(), walkId), runId), { recursive: true, force: true })
+        await rawRm(join(runsDir(base(), walkId), runId), { recursive: true, force: true })
         return { ok: true }
       })
     },
