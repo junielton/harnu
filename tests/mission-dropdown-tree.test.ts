@@ -317,6 +317,15 @@ describe('AC-9 — milestone, step, criteria; only the current milestone is open
   })
 })
 
+describe('AC-11 — the step row puts the PR number before the Yours chip', () => {
+  it('reads `#21 Yours`, as the mockup draws it', () => {
+    mountTree(MID)
+    const meta = rowOf('s-review').querySelector('[data-test="step-meta"]') as HTMLElement
+    const kinds = Array.from(meta.children).map((c) => c.getAttribute('data-test'))
+    expect(kinds).toEqual(['step-pr', 'chip-yours'])
+  })
+})
+
 describe('AC-10 — order inside an open milestone, and the step row', () => {
   it('three running steps and no Blocked chip', async () => {
     mountTree(MID)
