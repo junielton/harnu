@@ -23,6 +23,11 @@
  * A mission absent from a poll keeps its entry for {@link ABSENT_TTL_MS} and is
  * never cued while absent.
  *
+ * Flap grace: a KEY that leaves a mission's list (a source that flickers for a poll or two, e.g. `review`)
+ * is not forgotten at once — it stays in the entry, unchanged and never cued, for {@link FLAP_GRACE_MS}.
+ * If it returns inside the window it keeps its count and schedule and cues only if its count grew; after
+ * the window it is dropped and a return is a new key.
+ *
  * The v4 kinds (S-23, the operator's rule: a false alarm beats a miss): an operator-owned blocker
  * (`unblock`), a request to join (`attach`), a mission ready to close, a red `main` and a criterion
  * only the operator can mark (`settle`) are all **blocking** — they chime when they appear and re-nudge
@@ -69,6 +74,13 @@ export const BLOCKING_NUDGE_MS: readonly number[] = [
 /** How long a mission absent from the polls keeps its memory entry (measured from `lastSeenAt`). */
 export const ABSENT_TTL_MS = 24 * 60 * 60 * 1000
 
+/**
+ * How long an owed key that left a poll is still remembered (measured from the first poll that missed
+ * it). 5 minutes is 15 polls at the 20 s cadence: far longer than the one-or-two-poll flaps a source
+ * produces, far shorter than a real resolve-then-recur (a review done, a new pull request opened later).
+ */
+export const FLAP_GRACE_MS = 5 * 60_000
+
 /** `${kind}` or `${kind}:${detail}` — one per owed kind (per blocker reason / re-scope target). */
 export type OwedKey = string
 
@@ -80,6 +92,12 @@ export interface KeyState {
   lastCuedAt: number
   /** Reminders already sent; at {@link BLOCKING_NUDGE_MS}`.length` the key is silent. */
   nudges: number
+  /**
+   * Set while the key is missing from the polls: the first poll that did not list it. The entry is kept
+   * (never cued) for {@link FLAP_GRACE_MS}, so a key that returns is not new. Optional: older stored
+   * memory has none.
+   */
+  absentSince?: number
 }
 
 export interface OwedEntry {
@@ -208,6 +226,14 @@ export function seedCueMemory(views: readonly CueView[], now: number): CueMemory
   return { owed }
 }
 
+/** A remembered key seen again: the same state without its absence mark (never mutates the memory). */
+function returned(state: KeyState | undefined): KeyState | undefined {
+  if (!state || state.absentSince === undefined) return state
+  const { absentSince: _gone, ...rest } = state
+  void _gone
+  return rest
+}
+
 /**
  * One decision per poll. A key cues when it is new, its count grew, or (blocking
  * kinds only) its next back-off step is due; everything that cues in the same
@@ -221,8 +247,10 @@ export function decideCue(views: readonly CueView[], memory: CueMemory, now: num
     const prev = memory.owed.get(id)
     const keys = new Map<OwedKey, KeyState>()
     let cued = false
-    for (const [k, count] of owedKeys(v)) {
-      const was = prev?.keys.get(k)
+    const owedNow = owedKeys(v)
+    for (const [k, count] of owedNow) {
+      // A key that returns inside the grace window keeps its count and schedule; only growth is news.
+      const was = returned(prev?.keys.get(k))
       if (!was || count > was.count) {
         // A new key or a grown count is a fresh cue: the schedule restarts.
         keys.set(k, { count, firstOwedAt: was?.firstOwedAt ?? now, lastCuedAt: now, nudges: 0 })
@@ -238,6 +266,12 @@ export function decideCue(views: readonly CueView[], memory: CueMemory, now: num
         // Same or fewer: remember the new count, so a later growth is measured from here.
         keys.set(k, { ...was, count })
       }
+    }
+    // A key that left this poll stays remembered, untouched, for the flap grace window; never cued here.
+    for (const [k, was] of prev?.keys ?? []) {
+      if (owedNow.has(k)) continue
+      const absentSince = was.absentSince ?? now
+      if (now - absentSince <= FLAP_GRACE_MS) keys.set(k, { ...was, absentSince })
     }
     // A mission that owes nothing now but was remembered keeps its (empty) entry.
     if (keys.size > 0 || prev) next.set(id, { keys, lastSeenAt: now })
@@ -292,7 +326,8 @@ export function isPersistedCueMemory(x: unknown): x is PersistedCueMemory {
           isNum(s.count) &&
           isNum(s.firstOwedAt) &&
           isNum(s.lastCuedAt) &&
-          isNum(s.nudges)
+          isNum(s.nudges) &&
+          (s.absentSince === undefined || isNum(s.absentSince))
       )
   )
 }
