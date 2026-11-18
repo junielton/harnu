@@ -170,21 +170,31 @@ export interface WalkStore {
   markDelivered(walkId: string, runId: string, entryId: string): Promise<boolean>
 }
 
+/** The write queues, one per walk directory, shared by every store instance in the process. */
+const chains = new Map<string, Promise<unknown>>()
+
 export function createWalkStore(folder: string, opts: WalkStoreOptions = {}): WalkStore {
   const now = opts.now ?? Date.now
   const newId =
     opts.newId ?? ((prefix: string): string => `${prefix}-${randomBytes(4).toString('hex')}`)
   const base = (): string => walksDir(folder)
 
-  // Writes to one walk run one at a time: a read-modify-write never interleaves with another.
-  const chains = new Map<string, Promise<unknown>>()
+  // Writes to one walk run one at a time: a read-modify-write never interleaves with another. The
+  // chain is keyed by the walk's directory and lives at module level, so two stores opened from
+  // different worktrees of one repo (same main-checkout directory) still queue behind each other.
   function locked<T>(walkId: string, fn: () => Promise<T>): Promise<T> {
-    const prev = chains.get(walkId) ?? Promise.resolve()
+    const key = join(base(), walkId)
+    const prev = chains.get(key) ?? Promise.resolve()
     const next = prev.then(fn, fn)
-    chains.set(
-      walkId,
-      next.catch(() => undefined)
+    const tail = next.then(
+      () => undefined,
+      () => undefined
     )
+    chains.set(key, tail)
+    // drop the entry once the queue is idle, so the map does not grow with every walk ever touched
+    void tail.then(() => {
+      if (chains.get(key) === tail) chains.delete(key)
+    })
     return next
   }
 
