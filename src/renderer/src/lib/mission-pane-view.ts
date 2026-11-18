@@ -789,7 +789,15 @@ export interface NextCard {
 }
 
 /** The server's ranking of what the operator owes (`waiting`); the staged Done when takes a re-scope's place. */
-const OWED_RANK = ['main-failing', 'unblock', 'rescope', 'settle', 'review', 'close', 'attach']
+export const OWED_RANK = [
+  'main-failing',
+  'unblock',
+  'rescope',
+  'settle',
+  'review',
+  'close',
+  'attach'
+]
 const rankOf = (kind: string): number => {
   const i = OWED_RANK.indexOf(kind)
   return i === -1 ? OWED_RANK.length : i
