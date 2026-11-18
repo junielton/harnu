@@ -232,4 +232,13 @@ describe('Ask box — one border, visible focus', () => {
     expect(cls(box)).toContain('focus-within:border-accent')
     expect(cls(box)).toContain('border-border-2')
   })
+
+  it('opts the textarea out of the global focus ring so only the box shows focus', async () => {
+    liveLeader()
+    mountTree()
+    await click('[data-test="ask-open"]')
+    const input = q('[data-test="ask-input"]')
+    expect(cls(input)).toContain('no-default-ring')
+    expect(cls(input)).toContain('outline-none')
+  })
 })
