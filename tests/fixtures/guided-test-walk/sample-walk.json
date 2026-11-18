@@ -1,0 +1,216 @@
+{
+  "title": "Search box on the notes list",
+  "purpose": "check",
+  "source": {
+    "kind": "pr",
+    "number": 101,
+    "title": "Add a search box to the notes list",
+    "author": "casey",
+    "url": "https://prs.example.invalid/example-org/example-web/pull/101"
+  },
+  "leftOut": [
+    { "text": "Sorting the notes by date is a separate change", "owner": "ours" },
+    { "text": "Whether the box should also search note bodies", "owner": "decision" }
+  ],
+  "checks": [
+    {
+      "id": "p1",
+      "title": "Notes list loads",
+      "why": "The list is what the search box filters, so it has to draw first.",
+      "where": { "text": "The Notes page of the preview" },
+      "do": [{ "text": "Open the Notes page", "see": "A list of four notes is drawn" }],
+      "passes": "Four rows: Milk run, Plan the week, Call the vet, Water the plants.",
+      "fails": "An empty list, or a spinner that never ends.",
+      "nothingFromHere": "The preview is only reachable from your browser.",
+      "status": "verified",
+      "evidence": "Opened the preview earlier: four notes drawn"
+    },
+    {
+      "id": "c1",
+      "title": "Open the Notes page",
+      "why": "Start from the page the search box lives on.",
+      "where": {
+        "text": "The local preview of the app",
+        "links": [
+          {
+            "label": "Preview page",
+            "kind": "url",
+            "target": "__URL__",
+            "checked": { "status": "ok", "at": "2026-11-17T09:00:00Z" }
+          }
+        ]
+      },
+      "do": [
+        {
+          "text": "Start the dev server",
+          "see": "The terminal prints the local address",
+          "block": { "text": "npm run dev -- --port 4173" }
+        },
+        {
+          "text": "Open the Notes page in the browser",
+          "see": "The notes list is drawn with a search box on top"
+        }
+      ],
+      "passes": "The page shows four notes and an empty search box.",
+      "fails": "The page is blank, or the search box is missing.",
+      "nothingFromHere": "Only you can see the page in your browser."
+    },
+    {
+      "id": "c2",
+      "title": "Type a word in the search box",
+      "why": "Typing is how the filter is used, so it is the first thing to try.",
+      "undo": "Clear the search box so the list is full again.",
+      "where": {
+        "text": "The Notes page, top of the list",
+        "path": "Notes > Search",
+        "approximate": false,
+        "links": [
+          { "label": "PR 101", "kind": "pr", "target": 101 },
+          { "label": "search.js", "kind": "file", "target": "src/notes/search.js", "line": 4 },
+          { "label": "Search doc", "kind": "file", "target": "docs/search.md" },
+          { "label": "Gone page", "kind": "file", "target": "docs/to-delete.md" },
+          { "label": "Other worktree", "kind": "folder", "target": "__FOLDER_B__" }
+        ]
+      },
+      "do": [
+        {
+          "text": "Click the box, type `milk` and look for note `note-4821`",
+          "see": "Only the row Milk run is left"
+        },
+        {
+          "text": "Switch to the branch `feature/notes-search` and reload",
+          "see": "The same single row"
+        }
+      ],
+      "passes": "The list shows only `Milk run`.",
+      "fails": "More than one row stays, or the box rejects the letters.",
+      "nothingFromHere": "The typing happens in your browser."
+    },
+    {
+      "id": "c3",
+      "title": "The filter keeps the list order",
+      "why": "A filtered list must keep the order of the full list.",
+      "precheck": "Already proved: the list helper filters without sorting.",
+      "where": { "text": "The Notes page" },
+      "do": [
+        {
+          "text": "Type `a` in the search box",
+          "see": "Plan the week, Call the vet and Water the plants stay, in that order"
+        }
+      ],
+      "passes": "The three rows keep their original order.",
+      "fails": "Any row moves above one that was above it before.",
+      "images": [
+        {
+          "src": "docs/shots/search-expected.png",
+          "alt": "The notes list filtered by the letter a",
+          "kind": "expected",
+          "caption": "Expected list after typing a"
+        }
+      ],
+      "check": { "how": "grep -c data-note src/notes/list.js" }
+    },
+    {
+      "id": "c4",
+      "title": "An empty result says so",
+      "why": "A blank list looks like a bug; the page should say nothing matched.",
+      "where": { "text": "The Notes page" },
+      "do": [
+        {
+          "text": "Type `zzz` in the search box",
+          "see": "The list is replaced by one line of text"
+        }
+      ],
+      "passes": "The page shows `No notes match` and no rows.",
+      "fails": "A blank area, or the old rows stay.",
+      "table": [
+        { "item": "Rows", "shows": "none", "source": "the list" },
+        { "item": "Message", "shows": "No notes match", "source": "search.js" },
+        { "item": "Box", "shows": "zzz", "source": "the input" }
+      ],
+      "check": { "how": "grep -n \"No notes match\" src/notes/search.js" }
+    },
+    {
+      "id": "p2",
+      "title": "Search word stays in the address",
+      "why": "A shared link should reopen the same filter.",
+      "where": { "text": "The address bar of the preview" },
+      "do": [
+        {
+          "text": "Type `milk` and read the address",
+          "see": "The address ends with the search word"
+        }
+      ],
+      "passes": "The address ends with `?q=milk`.",
+      "fails": "The address does not change.",
+      "nothingFromHere": "The address bar is in your browser.",
+      "status": "caveat",
+      "evidence": "Works in the preview of the open PR, not on the live site yet",
+      "openPr": 102
+    },
+    {
+      "id": "c5",
+      "title": "Escape clears the box",
+      "why": "Escape is the quick way back to the full list, and the next check counts rows.",
+      "where": { "text": "The Notes page" },
+      "do": [
+        {
+          "text": "Type `milk`, then press Escape",
+          "see": "The box empties and all four rows return"
+        }
+      ],
+      "passes": "The box is empty and four rows are drawn.",
+      "fails": "The box keeps the word.",
+      "blocks": ["c6"],
+      "blocksWhy": "The count line reads the cleared box",
+      "check": { "how": "grep -n Escape src/notes/search.js" }
+    },
+    {
+      "id": "c6",
+      "title": "The count line follows the filter",
+      "why": "The count line tells you how many notes are left after filtering.",
+      "where": { "text": "Under the search box" },
+      "do": [
+        {
+          "text": "Type `milk` and read the line under the box",
+          "see": "The line reads 1 of 4 notes"
+        }
+      ],
+      "passes": "The line reads `1 of 4 notes`.",
+      "fails": "The line still says 4 notes.",
+      "nothingFromHere": "The line is drawn in your browser."
+    },
+    {
+      "id": "c7",
+      "title": "Search ignores letter case",
+      "why": "People type capitals by habit.",
+      "where": { "text": "The Notes page" },
+      "do": [{ "text": "Type `MILK` in the search box", "see": "The row Milk run is still found" }],
+      "passes": "The row `Milk run` is shown for `MILK`.",
+      "fails": "The list is empty for capital letters.",
+      "check": { "how": "grep -n toLowerCase src/notes/list.js" }
+    },
+    {
+      "id": "c8",
+      "title": "Box stays visible on a narrow window",
+      "why": "Phones are narrow and the box must not fall off the page.",
+      "where": { "text": "The Notes page at 360 pixels wide" },
+      "do": [
+        { "text": "Make the window 360 pixels wide", "see": "The search box is still in view" }
+      ],
+      "passes": "The box is fully inside the window.",
+      "fails": "The box is cut off or needs sideways scroll.",
+      "nothingFromHere": "Only a real window shows the layout."
+    },
+    {
+      "id": "c9",
+      "title": "Reload keeps no stale rows",
+      "why": "After a reload the list should match the box, which is empty again.",
+      "where": { "text": "The Notes page" },
+      "do": [{ "text": "Type `milk`, then reload the page", "see": "All four rows are back" }],
+      "passes": "Four rows after the reload.",
+      "fails": "Only one row after the reload.",
+      "nothingFromHere": "The reload happens in your browser."
+    }
+  ]
+}

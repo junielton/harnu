@@ -182,6 +182,21 @@ run recipe and the AC-30 checklist; the short version:
 
 See [`scripts/dev/liveness-bench/README.md`](../../scripts/dev/liveness-bench/README.md).
 
+## A ready-made smoke test: the guided walk
+
+`scripts/verify/guided-test-walk.mjs` (`npm run verify:guided-walk`) is this recipe grown into a regression test:
+22 cases (W-1 to W-22) drive the walk pane and the Walks library of a freshly built second instance. It brings its
+own throwaway `HOME` and `--user-data-dir=/tmp/hv-walk-<id>`, a stub `claude` that only records the lines it is
+sent, a stub `gh`, a throwaway repo with two worktrees and a mission record, and a local http page, and it stops
+only the PIDs it started. The verbs go through the instance's own control-server transport; the pane is driven
+over CDP with trusted mouse and key events (a synthetic `click()` does not carry the user activation the
+clipboard needs). Flags: `--no-build`, `--case W-n`, `--list-proofs` (derives which conformance-matrix rows each
+case proves, with no app), `--plant-fault <name>` (breaks the script's own expectation, the run must exit 1),
+`--evidence <dir>`, `--keep`. Two things it learned the hard way: pass `--disable-renderer-backgrounding` and its
+siblings, or a window under xvfb can stop painting (a screenshot hangs, a terminal canvas sits on top of the
+pane); and a `Done` pressed within 400 ms of a new check is ignored on purpose, so a case that is not about the
+debounce waits it out.
+
 ## Notes
 
 - The window **does** appear on the user's screen (needs `DISPLAY`). It's brief;
