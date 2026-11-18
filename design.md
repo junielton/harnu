@@ -494,6 +494,15 @@ _another_ folder.
 | `arrow-down`                             | Canvas properties panel → Layers: Send backward (T536 U4)                                                                                                                                                                              |
 | `arrow-up`                               | Canvas properties panel → Layers: Bring forward (T536 U4)                                                                                                                                                                              |
 | `arrow-up-to-line`                       | Canvas properties panel → Layers: Bring to front (T536 U4)                                                                                                                                                                             |
+| `list-checks`                            | Guided walk pane — the pane header glyph and the empty state (§6 "Guided test walk"). Lucide `ListChecks`                                                                                                                              |
+| `library`                                | Guided walk — the close-out's "Saved in Walks" card and the Walks door (S-4). Lucide `Library`                                                                                                                                         |
+| `list`                                   | Guided walk — the roadmap icon beside "Check n of N" (opens the read-only roadmap, shortcut `L`). Lucide `List`                                                                                                                        |
+| `lightbulb`                              | Guided walk — the source line of a feature walk (§6 "Guided test walk" → Source line). Lucide `Lightbulb`                                                                                                                              |
+| `zoom-in`                                | Guided walk — "Enlarge" on an expected-result image. Lucide `ZoomIn`                                                                                                                                                                   |
+| `refresh-cw`                             | Guided walk — "Try again" on a retry and on a check the agent disagreed with. Lucide `RefreshCw`                                                                                                                                       |
+| `send`                                   | Guided walk — "Send" in the failure form. Lucide `Send`                                                                                                                                                                                |
+| `plug`                                   | Guided walk — the error state: no session could take a turn. Lucide `Plug`                                                                                                                                                             |
+| `sparkles`                               | Guided walk — "Behind this check", the teaching card of a walk-through. Lucide `Sparkles`                                                                                                                                              |
 
 ### Editor marks (brand glyphs, T581)
 
@@ -7180,6 +7189,131 @@ Non-interactive: the pane is reached from the Topbar pill.
   warning.
 - ❌ Show a draft state, an Approve button or an approval callout.
 - ❌ Show the mission's stored `status: 'stale'` — there is none; stale is derived.
+
+### Guided test walk (helper-stack pane, non-PTY)
+
+A helper-stack pane that walks the operator through a feature, a PR or a mission, **one check at a time**. It is
+the `step-by-step` skill's walk drawn as a panel. Component: `GuidedWalkPane.vue` (a fixed template fed with
+JSON: the steps, images and state; the agent never writes its markup). It has no PTY and mounts and unmounts
+freely like the Markdown pane. One per live run, opened by a session, by the Walks library or by **Test it**
+(below), never inside a dropdown (a walk lasts minutes while the operator clicks around the app).
+
+**A walk is its own object, not a Mission feature.** It has a title, a **source**, a list of checks and a run
+history, and is saved per repo (`.harnu/walks/<id>/`). The source is a mission (a step, a milestone or the whole
+mission), a PR, a branch or diff, a card, or a feature description. The step-by-step contract applies unchanged to
+every source; the mission persistence (criteria `by: 'operator'`, never ticked) applies **only** to a mission source.
+
+**Sources and entry points** (all open the same pane):
+
+| Entry                | Where                                                                                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A session            | The operator says it in a sentence or `/walk`, or the session offers one after a feature with three options in chat (Walk me through it, Test it end to end, Not now) |
+| The Mission dropdown | **Test it** on an open step (Criteria row) and on a milestone (next to Ask); **Test the whole mission** in the footer at the end of a mission                         |
+| The Walks library    | **Re-run** or **Open** on a row                                                                                                                                       |
+
+**Source line** (`.src`): 26px, under the pane header, `border-bottom --border`, 11px `--text-3`. A source icon
+(`target`, `git-pull-request`, `lightbulb`), the source as an accent underlined link with a trailing arrow (a PR
+opens the PR and has a copy for the URL; a mission opens the Mission dropdown; a feature is plain text) and, on a
+re-run, a `Re-run · run N` chip at the right (`--accent-soft`, `--accent-line`).
+
+**Entry: Test it.** A compact button (`.btn`, 20px, `list-checks` icon 10px, label `Test it`) on the
+**Criteria** row of an open step in the Mission dropdown, right-aligned on the `Criteria` eyebrow, on a milestone
+next to Ask, and `Test the whole mission` in the footer at the end of a mission. Shown only where something is
+owed by hand (V-20). `title` names the count ("9 checks · walk through this step by hand"). Neutral (not
+accent): it is an offer, not something the operator owes.
+
+**Anatomy** (a size container named `wk`: wide ≥ 480px, narrow below; minimum pane width 360px):
+
+| Part           | Spec                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pane header    | The 24px title bar of §6 "Pane header": `list-checks` icon, `Walk · <walk title>`, a library icon button, expand / maximize / close                                                                                                                                                                                                                                    |
+| Progress strip | `0 16px`, `10px` top. Text `Check N of M` (12.5px / 600, `--text`), a list icon button 18×18 at the right (opens the roadmap), under it one 4px cell per check (`--radius-xs`, 3px gap): closed `--green`, current `--accent`, rest `--surface-2` + `--border`. `role="progressbar"`. Nothing else is written about progress                                           |
+| Body           | Scrolls; padding `12px 16px 14px`; sections gap 14px. Title 13.5px / 600; eyebrows `.eyebrow` in `--text-4`                                                                                                                                                                                                                                                            |
+| Do             | Numbered, 12.5px / 1.45, 1 to 5 lines. A command is a code block: `--surface`, 1px `--border-2`, `--radius`, `--font-mono` 12px, `Copy` button top right                                                                                                                                                                                                               |
+| Where          | Link chips: accent text, underlined, trailing `arrow-up-right`, `--accent-soft` fill, `--accent-line` border; a split copy button when the value has a full form (path, URL, branch). Every link opens the real thing (PR, file in the viewer at its line, URL in a browser pane, a Settings screen). An approximate path carries a `--warning` tag `path approximate` |
+| You should see | Expected text 12.5px `--text`; one muted line `✗ Not: …`; an image when one exists: thumbnail 300×132 (clip), or large (full width) on click; caption row `Expected · …` + `Enlarge`                                                                                                                                                                                   |
+| I'll check     | One line: `terminal` icon, `I'll check`, the command and the expected value as copyable values; or `eye` icon + `Nothing from here: <why>`                                                                                                                                                                                                                             |
+| Action bar     | Pinned under the body: `--surface`, 1px top `--border`, padding `10px 16px`, gap 8px, wraps in the narrow pane. `✓ Done` (28px, accent, `Enter` chip) · `✗ Failed` (28px, neutral) · then compact ghost `Back` · `- Skip` · `+ Explain more`. Glyph colours: `✓` `--green`, `✗` `--red`, `!` `--warning`, `-` `--text-4`, `⚑` `--accent`                               |
+
+**Glyphs.** The skill's six (`✓ ✗ ! - ⚑ ?`), `--font-mono` 700, never emoji. They mark outcomes in the
+roadmap, the buttons and the close-out.
+
+**Values.** Every command, path, id, branch, URL and error text has a one-click copy (18px icon button,
+`--text-4` to `--text`). After a click the icon becomes a green check with the word `Copied` for 1.4s (a small
+`--surface-2` tag above an inline copy, in place on a labelled one). The copy puts the **full** value on the
+clipboard; absolute paths are never shown raw, only a short name.
+
+**States.** `roadmap` · `step` · `step-image` · `lightbox` (over the pane, `--color-scrim-strong`, Esc) · `failed`
+(one line + a paste area; the screenshot is a 40×28 chip) · `failed-retry` (the reported line, **one** correction
+card in the accent family, the same step again, and from the second failure a quiet door to whoever should
+fix it) · `check-failed` (warning card with ran / expected / found, then `Try again` primary and
+`! Follow anyway (unverified)`) · `explain-more` (the same step, then a `Why this matters` paragraph and
+`Extra checks · N` as tickable rows that never block Done, appended under it) · `did-not-understand` (an accent
+card `Said more simply` over the same step) · `working` (a trace line, a pulsing 8px `--accent` dot, one sentence;
+no spinner wall, no actions) · `skipped-at-end` (the skipped checks listed before the close, each with
+`Check now`) · `close-out` (a row per step: glyph, number, title, how it was verified; a `⚑ Still yours` card;
+a code block with the summary and its Copy) · `empty` · `error` (session gone, progress saved,
+`Resume the session`).
+
+**Keyboard.** `Enter` = Done (also **Start with 1** on the roadmap and **Try again** on a retry), unless focus
+is in a field or on another button. `Esc` closes the lightbox. Focus starts on the primary action.
+
+**Motion.** Only the §7 fade-in-scale on the lightbox and the pulse on the working dot; both are removed under
+`prefers-reduced-motion`.
+
+**Copy.** `testWalk.*` keys in both locales. Short labels have no trailing period; the glyphs and the layout
+are fixed, the words follow the operator's language.
+
+**Walks library** (`WalksPane.vue`, a helper-stack pane): a list, not a dashboard. Header `Walks`, `N walks · saved
+on this machine`. A row is `16px | main | actions`: a source icon, the title (12.5px), a meta line (source ·
+last run date · outcome glyph and `N of M passed`, `!` and `--warning` when anything did not pass) and a compact
+**Re-run** (neutral, `refresh` icon) and ghost **Open**; in the narrow pane the actions wrap under the meta. Newest
+first, hairline separators, no search or filter. Empty: the pane's centred block with `No walks yet`, one sentence
+and a copyable command block.
+
+**Runs.** **Open** shows a past run **read-only**: `← Walks`, the title, `N passed · N failed · N skipped`, a run
+selector (`Run 3 · Nov 16 ▾`) with a `Read-only` chip, one row per check (glyph, number, title, how it was
+verified); a failed or noted check shows the operator's note (`--red-line` left rule) and the screenshot chip. The
+action bar holds **Re-run** (primary) and **Export markdown**. **Re-run** starts a fresh run of the same checks: the
+roadmap and each check carry a quiet `last time: passed | failed | skipped` (`--text-4`; `--warning` when it
+failed, and the check shows what was written then). Nothing from the old run is pre-answered.
+
+**Teaching lens.** On a walk-through of a feature, **Explain more** appends a `Behind this check` card under the
+current check (`--accent-soft`, `--accent-line`, `--radius`): `What it does`, `Where it lives` (`file:line` link
+chips that copy), `The idea behind it` (text and a link) and `Why it behaves this way`; the edge-case checks fold
+under it (`Extra checks · N`). A QA or PR walk keeps `Why this matters` + tickable `Extra checks`.
+
+**Close-out.** Besides the checklist: a `Saved in Walks` card (`Open Walks`, `Export markdown`) on every source; the
+`⚑ Still yours` card (what is owed: skipped, failed or unverified checks, "re-check N after #PR merges", and for a
+mission source the open criteria with the link to Mark done) is drawn only when something is owed. No control
+settles a criterion.
+
+Plain numbers with no token (documented here, as §4 allows): thumbnail 300×132, attachment chip 40×28,
+copy-button padding in a code block 76px, centred empty/error measure 340px.
+
+**Built in S-3 (what the first build draws beyond, or differently from, the frames).** `walk-view.ts` is the one
+view-model; the component draws what it says and decides nothing.
+
+- **Where.** `where.text` is a quiet 12px `--text-2` line above the chips; `where.path` is a copy value with the
+  `path approximate` tag when `approximate` is true; a `url` link the agent could not open carries a quiet
+  `behind a login, not opened` / `not checked` note beside it.
+- **Do.** A Do step's `see` is validated for the script but not drawn: the frames draw only the check's `passes`
+  (as "You should see") and its `fails` (the muted `✗ Not:` line).
+- **The five outcomes.** Whenever a check asks for an answer the action bar holds the same five: Done (Try again in
+  its slot on a retry), Failed, Back, Skip, Explain more. While the agent checks the bar holds nothing but one
+  quiet line; after the wait of D-7 it holds one neutral `! Continue without the check`. After a disagreement it
+  holds Try again with Follow anyway (a check nothing depends on) or Treat as failed (one that blocks), and Back.
+- **The X's question** (V-11) is an inline bar that replaces the action bar ("End the walk and see the
+  close-out?", End the walk, Keep walking), never a dialog.
+- **Failed** opens one line and a paste area on the same check. A pasted image is saved by main inside the run's
+  own folder and shown as the 40×28 chip; a line that looks like a secret is flagged and Send waits until it is
+  changed.
+- **The `error` state** shows when a turn has waited in the run's outbox for more than a few seconds and no
+  session took it. The pane asks main to offer waiting turns again on mount, once a second while the error shows,
+  and on **Resume the session**, which selects the run's owner session.
+- **Not in this build:** the library door in the header and the close-out's Open Walks and Export buttons (they
+  arrive with the library, S-4; the card says only where the walk is saved), the "last time" hints of a re-run,
+  and the `working` frame for "Getting check N ready" (the whole script is delivered up front).
 
 ### Mission pane (helper stack — Missions v4, S-17 shell)
 
