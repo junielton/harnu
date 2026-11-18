@@ -23,6 +23,12 @@
  *
  *   node scripts/dev/dialog-routes/mission-dropdown.mjs capture [--out <dir>] [--widths 1280,360] [--only mid,owed]
  *
+ * S-6 adds the four states of the mockup screen `entry` (the "Test it" controls: `entry-step-open`,
+ * `entry-milestone`, `entry-mission`, `entry-closed`), captured as `entry-<state>-<width>-dark-en.png`. The
+ * shipped walk provider answers no, so the harness installs a test one (`walk` on the state: the kinds of
+ * source it answers yes for, the way each mockup state draws exactly one control) and records every
+ * `startWalk` in `window.__walkStarts`.
+ *
  * Set `MISSION_DROPDOWN_CHROMIUM` to a Chromium binary when Playwright's own download is not installed.
  *
  * Default output is `.harnu/out/mission-dropdown/<slice>/` (gitignored), one PNG per state and width, named
@@ -159,6 +165,47 @@ export const MISSION_DROPDOWN_STATES = [
 ]
 
 /**
+ * The 4 states of the mockup screen `entry`, in its order. `walk` is the kinds of source the test provider
+ * answers yes for in that state: the mockup draws one control per state (a step's in `step-open`, the milestone's
+ * in `milestone`, the footer's in `mission`), and a real provider decides per source the same way.
+ *
+ * @type {ReadonlyArray<{ id: string, sample: string, open: boolean, walk: ReadonlyArray<'step'|'milestone'|'mission'>, row?: string, note?: string }>}
+ */
+export const MISSION_DROPDOWN_ENTRY_STATES = [
+  {
+    id: 'entry-step-open',
+    sample: 'step-open',
+    open: true,
+    walk: ['step'],
+    note: 'an open step with "Test it" on its Criteria row (S-6)'
+  },
+  {
+    id: 'entry-milestone',
+    sample: 'default',
+    open: true,
+    walk: ['milestone'],
+    note: '"Test it" on the open milestone\'s summary line, next to Ask (S-6)'
+  },
+  {
+    id: 'entry-mission',
+    sample: 'done',
+    open: true,
+    walk: ['mission'],
+    note: '"Test the whole mission" alone in the footer of a mission ready to close (S-6)'
+  },
+  {
+    id: 'entry-closed',
+    sample: 'default',
+    open: false,
+    walk: [],
+    note: 'the pill alone, the dropdown closed (S-6)'
+  }
+]
+
+/** Every state the harness can show: the screen `mission-dropdown`'s, then the screen `entry`'s. */
+const ALL_STATES = [...MISSION_DROPDOWN_STATES, ...MISSION_DROPDOWN_ENTRY_STATES]
+
+/**
  * The page the harness serves. The Topbar band is a stand-in (42px, the pill at the left of its centre) so the
  * dropdown has the same anchor it will have in the app: it carries the `data-dsqa="topbar-pill--<tone>"` the
  * dropdown reads. Only the stand-in uses inline styles; the dropdown itself is the product's component.
@@ -174,6 +221,7 @@ import { useUiStore } from '/src/stores/ui.ts'
 import { useMissionsStore } from '/src/stores/missions.ts'
 import { useSessionsStore } from '/src/stores/sessions.ts'
 import { sampleOf } from '/src/lib/mission-sample.ts'
+import { setWalkEntryProvider } from '/src/lib/walk-entry.ts'
 
 // \`window.api\` is the preload's bridge; the sample mission needs none of it. A state with a \`mod\` goes through
 // the store's real path, so \`missionV4View\` answers the edited reply.
@@ -261,7 +309,15 @@ function ledReaders(base) {
 }
 
 window.__missionDropdown = {
-  async show(sample, open, mod, hover, row, click) {
+  async show(sample, open, mod, hover, row, click, walk) {
+    // The shipped walk provider answers no; a state that draws "Test it" installs one that answers yes for the
+    // kinds it lists, and records what a click starts.
+    window.__walkStarts = []
+    setWalkEntryProvider(
+      walk && walk.length
+        ? { available: (src) => walk.includes(src.kind), start: (src) => window.__walkStarts.push(src) }
+        : null
+    )
     // The worktrees the sample's links name are pinned folders, each on its branch.
     sessions.folders = [
       { path: '/sample', pinned: true, sessions: [{ sessionId: SESSION, projectPath: '/sample', summary: 'Leader' }, { sessionId: 'sample-idle', projectPath: '/sample', summary: 'Idle' }] },
@@ -385,11 +441,11 @@ export async function openHarnessPage(page, url) {
 
 /** Shows one state: the dropdown over its sample mission, or the bare pill for `closed`. */
 export async function showMissionDropdownState(page, state) {
-  const def = MISSION_DROPDOWN_STATES.find((s) => s.id === state)
+  const def = ALL_STATES.find((s) => s.id === state)
   if (!def) throw new Error(`unknown mission dropdown state "${state}"`)
   await page.evaluate(
-    ({ sample, open, mod, hover, row, click }) =>
-      window.__missionDropdown.show(sample, open, mod, hover, row, click),
+    ({ sample, open, mod, hover, row, click, walk }) =>
+      window.__missionDropdown.show(sample, open, mod, hover, row, click, walk),
     def
   )
   if (def.open) {
@@ -411,7 +467,7 @@ export async function showMissionDropdownState(page, state) {
  *
  * @type {Array<{ id: string, file: string, reach: 'dev-harness', note?: string, open: (ctx: { page: import('@playwright/test').Page, harness: { url: string } }) => Promise<void>, close?: (ctx: { page: import('@playwright/test').Page }) => Promise<void> }>}
  */
-export const ROUTES_MISSION_DROPDOWN = MISSION_DROPDOWN_STATES.map((s) => ({
+export const ROUTES_MISSION_DROPDOWN = ALL_STATES.map((s) => ({
   id: `MissionDropdown#${s.id}`,
   file: 'MissionDropdown.vue',
   reach: 'dev-harness',
@@ -468,7 +524,9 @@ async function capture(argv) {
         const state = route.id.split('#')[1]
         if (opts.only && !opts.only.includes(state)) continue
         await route.open({ page, harness })
-        const file = join(outDir, `mission-dropdown-${state}-${width}-dark-en.png`)
+        // The screen `entry`'s captures are named like the mockup's own: `entry-<state>-<width>-dark-en.png`.
+        const name = state.startsWith('entry-') ? state : `mission-dropdown-${state}`
+        const file = join(outDir, `${name}-${width}-dark-en.png`)
         await page.screenshot({ path: file })
         console.log(`  ✓ ${state} @${width} → ${file}`)
         await route.close?.({ page })

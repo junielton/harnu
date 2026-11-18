@@ -561,6 +561,20 @@
     },
     "footer": {
       "close": "Close mission…"
+    },
+    "testIt": {
+      "label": "Test it",
+      "aria": "Test it · {what}",
+      "step": {
+        "tip": "Walk through this step by hand"
+      },
+      "milestone": {
+        "tip": "Walk through this milestone by hand"
+      },
+      "mission": {
+        "label": "Test the whole mission",
+        "tip": "Walk through the whole mission by hand"
+      }
     }
   },
   "missionPane": {
