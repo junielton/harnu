@@ -367,6 +367,215 @@
   "missionDropdown": {
     "shell": {
       "label": "Missão"
+    },
+    "head": {
+      "barLabel": "Progresso da missão",
+      "count": {
+        "milestones": "{done} de {total} marco concluído | {done} de {total} marcos concluídos",
+        "steps": "{done} de {total} passo concluído | {done} de {total} passos concluídos"
+      },
+      "switchLabel": "Missão {n} de {m} · Trocar",
+      "switchCount": "Missão {n} de {m}",
+      "change": "Trocar",
+      "leads": "Esta sessão lidera {n} missões",
+      "choose": "Escolha a missão a mostrar",
+      "sub": {
+        "milestones": "{done} de {total} marco | {done} de {total} marcos",
+        "steps": "{done} de {total} passo | {done} de {total} passos",
+        "forYou": "{count} · {n} para você"
+      }
+    },
+    "next": {
+      "label": "O que vem a seguir",
+      "you": "Seu próximo passo",
+      "calm": "Próximo passo",
+      "running": "{n} passo em andamento. Nada para você agora. | {n} passos em andamento. Nada para você agora.",
+      "idle": "Nada em andamento. Nada para você agora.",
+      "more": "Mais {n} esperando por você",
+      "less": "Mostrar menos",
+      "openStep": "Abrir passo",
+      "close": "Fechar missão…",
+      "kind": {
+        "main-failing": "Corrigir",
+        "unblock": "Destravar",
+        "rescope": "Pronto quando",
+        "settle": "Conferir",
+        "review": "Revisar",
+        "close": "Fechar",
+        "attach": "Entrar"
+      },
+      "doneWhenEyebrow": "Novo Pronto quando proposto",
+      "doneWhenHint": "Aprovar o torna o fim da missão. Recusar mantém o atual.",
+      "approve": "Aprovar",
+      "decline": "Recusar",
+      "requestEyebrow": "Pede para entrar",
+      "requestText": "{session} pede para entrar em “{mission}”. Se você permitir, ela trabalha na missão. Ela não a lidera.",
+      "allow": "Permitir",
+      "deny": "Negar",
+      "already": "Alguém já respondeu a isto, então nada mudou.",
+      "error": "O Harnu não conseguiu salvar sua resposta. Tente de novo em instantes."
+    },
+    "tree": {
+      "label": "Passos da missão",
+      "waitsFor": "Espera por “{title}”",
+      "waitsForMany": "Espera por {titles}",
+      "running": "{n} em andamento",
+      "waitingReview": "{n} aguardando revisão",
+      "blocked": "{n} bloqueado | {n} bloqueados",
+      "nothingRunning": "Nada em andamento",
+      "allDone": "Todos os passos estão concluídos",
+      "more": "Mais {n} passo | Mais {n} passos",
+      "less": "Mostrar menos",
+      "optional": "{n} marco opcional | {n} marcos opcionais",
+      "chipYours": "Seu",
+      "noCriteria": "Ainda sem critérios.",
+      "openLink": "Abrir {label}"
+    },
+    "state": {
+      "milestone": {
+        "not-started": "Não iniciado",
+        "in-progress": "Em andamento",
+        "waiting-review": "Aguardando revisão",
+        "done": "Concluído"
+      },
+      "step": {
+        "todo": "A fazer",
+        "running": "Em andamento",
+        "waiting-review": "Aguardando revisão",
+        "done": "Concluído",
+        "blocked": "Bloqueado"
+      },
+      "criterion": {
+        "open": "Ainda não confirmado",
+        "settled": "Confirmado"
+      }
+    },
+    "ask": {
+      "open": "Perguntar",
+      "openTitle": "Perguntar à sessão sobre este marco",
+      "placeholder": "O que ainda falta para terminar este marco?",
+      "label": "Pergunta sobre “{title}”",
+      "hint": "Vai para o prompt de {name}. A resposta aparece nessa sessão.",
+      "cancel": "Cancelar",
+      "send": "Enviar",
+      "done": "Adicionado ao prompt de {name}. Aperte Enter lá para enviar. A resposta aparece nessa sessão.",
+      "notRunning": "{name} não está rodando. Retome-a e envie a pergunta de novo.",
+      "close": "Fechar"
+    },
+    "step": {
+      "criteria": "Critérios",
+      "verified": "{n} critério verificado | {n} critérios verificados",
+      "by": {
+        "fact": "Conferido automaticamente",
+        "session": "Conferido por uma segunda sessão",
+        "operator": "Você",
+        "person": "Esperando {person}",
+        "personUnnamed": "Esperando outra pessoa"
+      },
+      "selfCheck": "A sessão diz que terminou. Ainda não foi conferido.",
+      "mark": "Marcar como feito",
+      "markPerson": "Marcar como aprovado",
+      "markPersonTitle": "Marcar que {person} aprovou isto",
+      "blocked": {
+        "you": "Bloqueado · esperando você",
+        "session": "Bloqueado · esperando a sessão",
+        "withAge": "{head} · {age}"
+      },
+      "clear": "Pronto, continuar",
+      "links": "Links",
+      "evidence": "Evidência",
+      "evidenceTitle": "Abrir a evidência no visualizador",
+      "worktreeTitle": "Mostrar este worktree na barra lateral",
+      "titleWithPath": "{title} · {path}",
+      "copy": "Copiar o caminho",
+      "copied": "Caminho copiado",
+      "removed": "removido — branch mantida",
+      "addOffer": "Esta pasta não está na barra lateral. Adicionar?",
+      "add": "Adicionar",
+      "addCancel": "Agora não",
+      "page": "Página · {address}",
+      "openLink": "Abrir {label}",
+      "error": {
+        "NOT_FOUND": "Isso mudou enquanto você olhava. O mais recente está na tela. Confira e tente de novo se ainda precisar.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. O mais recente está na tela. Tente de novo.",
+        "MISSION_CLOSED": "Esta missão está fechada, então nada nela pode mudar.",
+        "SETTLES_ITSELF": "O Harnu confere este critério sozinho. Você não o marca.",
+        "other": "O Harnu não conseguiu salvar. Tente de novo em instantes. Se continuar, feche o menu e abra de novo."
+      }
+    },
+    "empty": {
+      "title": "Esta sessão não tem missão.",
+      "loading": "Lendo a missão…",
+      "refusedTitle": "Não foi possível ler esta missão agora.",
+      "retry": "Tentar de novo",
+      "pickerTitle": "Missões abertas nesta pasta",
+      "ledBy": "liderada por {name}",
+      "unled": "ninguém a lidera",
+      "attach": "Anexar",
+      "confirm": {
+        "text": "Anexar esta sessão a “{title}”? Ela fará parte da missão, mas não vai liderá-la.",
+        "cancel": "Cancelar",
+        "yes": "Anexar"
+      },
+      "start": "Começar uma nova missão",
+      "startDone": "Adicionado ao prompt desta sessão. Aperte Enter lá para enviar.",
+      "startError": "Esta sessão não está rodando. Retome-a e tente de novo.",
+      "none": "Não há missão aberta nesta pasta para anexar.",
+      "sampleOpen": "Ver uma missão de exemplo",
+      "requestThisSession": "Esta sessão",
+      "error": {
+        "NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
+        "MISSION_NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
+        "MISSION_CLOSED": "Esta missão foi encerrada, então uma sessão não pode entrar nela.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. Tente de novo.",
+        "other": "O Harnu não conseguiu anexar esta sessão. Tente de novo em instantes."
+      }
+    },
+    "sample": {
+      "label": "Missão de exemplo",
+      "note": "Dados inventados. Nada que você apertar aqui é salvo.",
+      "chooser": "Estado",
+      "leave": "Sair do exemplo",
+      "state": {
+        "default": "Padrão",
+        "waiting": "Esperando você",
+        "step-open": "Um passo aberto",
+        "step-blocked": "Um passo bloqueado",
+        "all-steps": "Todos os passos",
+        "ask": "Perguntando sobre um marco",
+        "clear": "Nada esperando",
+        "done": "Concluída, pronta para fechar",
+        "other-session": "Outra sessão",
+        "simple": "Tarefa pequena",
+        "simple-signoff": "Tarefa pequena, aprovações",
+        "big": "Missão grande",
+        "big-waiting": "Missão grande, esperando você",
+        "no-mission": "Sem missão",
+        "attach-request": "Pede para entrar",
+        "closed": "Missão fechada"
+      },
+      "hint": {
+        "waiting": "Aperte “{label}” no cartão do próximo passo.",
+        "all-steps": "Aperte “{label}” sob o marco aberto.",
+        "big-waiting": "Aperte “{label}” no cartão do próximo passo."
+      }
+    },
+    "footer": {
+      "close": "Fechar missão…"
+    },
+    "testIt": {
+      "label": "Testar",
+      "aria": "Testar · {what}",
+      "step": {
+        "tip": "Percorrer este passo na mão"
+      },
+      "milestone": {
+        "tip": "Percorrer este marco na mão"
+      },
+      "mission": {
+        "label": "Testar a missão inteira",
+        "tip": "Percorrer a missão inteira na mão"
+      }
     }
   },
   "missionPane": {

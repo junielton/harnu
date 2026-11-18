@@ -286,6 +286,20 @@ const SCORING_TITLES = [
   'Document how to run the tool'
 ]
 
+/** An open step in review: three criteria settled, two open (one the operator's own). */
+const reviewCriteria = (): CriterionSpec[] => [
+  { text: 'Every proof names its test', by: 'session', settled: true },
+  { text: 'The proofs are listed in the report', by: 'fact', settled: true },
+  { text: 'The report opens on a phone', by: 'session', settled: true },
+  { text: 'Check the scores of the first twelve specs by hand', by: 'operator' },
+  { text: 'The whole test set runs end to end', by: 'session' }
+]
+const reviewLinks = (): NonNullable<StepSpec['links']> => [
+  { kind: 'worktree', ref: '/sample/.claude/worktrees/card-score-proofs', label: '' },
+  { kind: 'doc', ref: '/sample/.harnu/out/score-proofs', label: '' },
+  { kind: 'url', ref: 'http://localhost:5173/score-report', label: '' }
+]
+
 function scoringSteps(): StepSpec[] {
   return SCORING_TITLES.map((title, i): StepSpec => {
     const n = i + 1
@@ -294,6 +308,18 @@ function scoringSteps(): StepSpec[] {
       title,
       state: n <= 5 ? 'running' : 'waiting-review',
       ...(n > 5 ? { pr: String(20 + n) } : {}),
+      // Two of the steps are opened by the sample (`step-open`, `step-blocked`): they carry what an open step
+      // draws, so the sample shows it fully (criteria with who settles them, and every kind of link).
+      ...(n === 7 ? { criteria: reviewCriteria(), links: reviewLinks() } : {}),
+      ...(n === 6
+        ? {
+            criteria: [{ text: 'The score of one spec is the same twice', by: 'session' as const }],
+            links: [
+              { kind: 'worktree', ref: '/sample/.claude/worktrees/card-score-slices', label: '' },
+              { kind: 'doc', ref: '/sample/.harnu/out/score-slices', label: '' }
+            ]
+          }
+        : {}),
       ...(n === 6
         ? {
             blocker: {
@@ -578,7 +604,7 @@ export function sampleOf(state: SampleState): Sample {
     case 'waiting':
       return mission(measure(), { hint: true })
     case 'step-open':
-      return mission(measure(), { ui: { openStep: 'stp-1' } })
+      return mission(measure(), { ui: { openStep: 'stp-11' } })
     case 'step-blocked':
       return mission(measure(), { ui: { openStep: stepIdOfBlocked } })
     case 'all-steps':

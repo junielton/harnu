@@ -17,6 +17,8 @@ import { v3MissionObject, writeV3Mission } from './helpers/v3-mission-file'
 
 const h = vi.hoisted(() => ({
   userDataDir: '',
+  /** The folders Harnu knows (`markdownKnownRoots`): what `mission:pathKinds` may look inside. */
+  roots: [] as string[],
   /** What `registerMissionIpc` registered, by channel (S-15). */
   handlers: new Map<string, (e: unknown, arg?: unknown) => unknown>()
 }))
@@ -36,6 +38,12 @@ vi.mock('electron', () => ({
     },
     on: (): void => {}
   }
+}))
+
+// The known roots are the test's own, not the machine's pinned folders and scanned sessions.
+vi.mock('../src/main/markdown-read', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/markdown-read')>()),
+  markdownKnownRoots: async (): Promise<string[]> => [...h.roots]
 }))
 
 // The fleet scan reads the real ~/.claude/projects — keep the tests off it.
@@ -101,6 +109,7 @@ let ipc: typeof import('../src/main/mission-ipc')
 beforeEach(async () => {
   h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-mission-ipc-ud-'))
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-mission-ipc-'))
+  h.roots = []
   vi.resetModules()
   ipc = await import('../src/main/mission-ipc')
 })
@@ -283,6 +292,7 @@ describe('registerMissionIpc — the v4 door channel (S-15)', () => {
       'mission:handOff',
       'mission:list',
       'mission:operatorDoor',
+      'mission:pathKinds',
       'mission:v4Door',
       'mission:v4View'
     ])
@@ -487,5 +497,93 @@ describe('the hand-off and the summary route on the app (S-16b)', () => {
       ''
     )
     expect(await ipc.answerMissionSummaryHook(body(LEADER, 'startup'))).toBe('')
+  })
+})
+
+describe('mission:pathKinds — the dropdown’s read-only existence check (S-4)', () => {
+  it('says file, dir or missing for each absolute path, and reads nothing else', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-pathkinds-'))
+    try {
+      h.roots = [dir]
+      const file = path.join(dir, 'report.md')
+      await fs.writeFile(file, 'x')
+      const gone = path.join(dir, 'gone')
+      h.handlers.clear()
+      ipc.registerMissionIpc()
+      const handler = h.handlers.get('mission:pathKinds')
+      expect(handler).toBeTypeOf('function')
+      expect(await handler!(null, [dir, file, gone, 'relative/path', 42])).toEqual({
+        [dir]: 'dir',
+        [file]: 'file',
+        [gone]: 'missing',
+        'relative/path': 'missing'
+      })
+      // Anything but a list answers nothing, and a long list is cut.
+      expect(await handler!(null, 'nope')).toEqual({})
+      const many = Array.from({ length: ipc.PATH_KINDS_MAX + 10 }, (_, i) =>
+        path.join(dir, `n${i}`)
+      )
+      expect(Object.keys((await handler!(null, many)) as object)).toHaveLength(ipc.PATH_KINDS_MAX)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  // Carried fix from S-4 (pathKinds confinement): the renderer is untrusted, so the channel looks only inside
+  // the folders Harnu knows, the same roots `markdown:read` is confined to.
+  it('answers missing for a path outside every known root, and never stats it', async () => {
+    const inside = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-pathkinds-in-'))
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-pathkinds-out-'))
+    const stat = vi.spyOn(fs, 'stat')
+    try {
+      h.roots = [inside]
+      const secret = path.join(outside, 'secret.txt')
+      await fs.writeFile(secret, 'x')
+      h.handlers.clear()
+      ipc.registerMissionIpc()
+      const handler = h.handlers.get('mission:pathKinds')!
+      // A real file and a real folder, outside; a `..` walk out of a root; a prefix that only looks like a root.
+      const escape = path.join(inside, '..', path.basename(outside), 'secret.txt')
+      const lookalike = `${inside}-sibling`
+      const answer = await handler(null, [secret, outside, escape, lookalike, '/etc/hostname', '/'])
+      expect(answer).toEqual({
+        [secret]: 'missing',
+        [outside]: 'missing',
+        [escape]: 'missing',
+        [lookalike]: 'missing',
+        '/etc/hostname': 'missing',
+        '/': 'missing'
+      })
+      expect(stat).not.toHaveBeenCalled()
+    } finally {
+      stat.mockRestore()
+      await fs.rm(inside, { recursive: true, force: true })
+      await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('still answers file or dir inside a known root, including a mission’s own worktrees', async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-pathkinds-repo-'))
+    try {
+      h.roots = [repo]
+      const worktree = path.join(repo, '.claude', 'worktrees', 'card-score-proofs')
+      const removed = path.join(repo, '.claude', 'worktrees', 'card-gone')
+      const evidence = path.join(repo, '.harnu', 'out', 'score-proofs', 'README.md')
+      await fs.mkdir(worktree, { recursive: true })
+      await fs.mkdir(path.dirname(evidence), { recursive: true })
+      await fs.writeFile(evidence, '# evidence')
+      h.handlers.clear()
+      ipc.registerMissionIpc()
+      const handler = h.handlers.get('mission:pathKinds')!
+      expect(await handler(null, [repo, worktree, removed, evidence])).toEqual({
+        [repo]: 'dir',
+        [worktree]: 'dir',
+        // Inside the root but gone: the dropdown reads it as removed.
+        [removed]: 'missing',
+        [evidence]: 'file'
+      })
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true })
+    }
   })
 })

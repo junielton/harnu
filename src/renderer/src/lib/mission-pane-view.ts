@@ -717,6 +717,129 @@ export function restRowGrid(mode: PaneLayout['mode']): RestRowGrid {
     : { columns: '1fr auto', buttonBeside: true }
 }
 
+// ---- Mission dropdown (S-2): the head, the next-step card and the switch --------------------------------
+
+/**
+ * The dropdown body's width, from which a card's compact button sits at the RIGHT of its text and under it
+ * below (design.md §6 "Mission dropdown" → "What it draws" 2). The rule itself is a container query in the
+ * markup (`@min-[380px]:`); this is the number it spells, so a test can hold the two together.
+ */
+export const NEXT_WIDE_MIN = 380
+
+/** The count under the head's bar: "1 of 3 milestones done", from the server's numbers (the unit agrees with the total). */
+export function dropdownProgressLine(t: Translate, detail: Detail): string {
+  const n = missionNumbers(detail)
+  return t(
+    n.unit === 'milestones'
+      ? 'missionDropdown.head.count.milestones'
+      : 'missionDropdown.head.count.steps',
+    { done: n.done, total: n.total },
+    n.total
+  )
+}
+
+/** One mission this session leads, as the switch lists it: the server's numbers for it, nothing recounted. */
+export interface LedMissionRow {
+  /** The id a named read of the mission uses. */
+  id: string
+  title: string
+  done: number
+  total: number
+  unit: 'milestones' | 'steps'
+  /** How many things wait on the operator in it (its waiting list's length). */
+  forYou: number
+}
+
+/** What a reader of the store holds of one mission that the switch needs. */
+interface LedReader {
+  title: string
+  lookupId?: string
+  mission: { id: string }
+  detail: Detail
+}
+
+/** The missions `sessionId` leads, in the readers' order (newest written first), as the switch lists them. */
+export function ledMissionRows(
+  readers: readonly LedReader[] | null | undefined,
+  sessionId: string | null | undefined
+): LedMissionRow[] {
+  if (!readers || !sessionId) return []
+  return readers
+    .filter((r) => r.detail.leads === sessionId)
+    .map((r) => {
+      const n = missionNumbers(r.detail)
+      return {
+        id: r.lookupId ?? r.mission.id,
+        title: r.title,
+        done: n.done,
+        total: n.total,
+        unit: n.unit,
+        forYou: n.forYou
+      }
+    })
+}
+
+/** One thing the one card (or a row of "more waiting") holds: a waiting item, or the staged Done when. */
+export type NextEntry = { kind: 'item'; item: WaitingItem } | { kind: 'staged'; text: string }
+
+/** The one card and what waits behind it. `primary` is `null` when nothing is owed. */
+export interface NextCard {
+  primary: NextEntry | null
+  more: NextEntry[]
+}
+
+/** The server's ranking of what the operator owes (`waiting`); the staged Done when takes a re-scope's place. */
+export const OWED_RANK = [
+  'main-failing',
+  'unblock',
+  'rescope',
+  'settle',
+  'review',
+  'close',
+  'attach'
+]
+const rankOf = (kind: string): number => {
+  const i = OWED_RANK.indexOf(kind)
+  return i === -1 ? OWED_RANK.length : i
+}
+
+/**
+ * What the dropdown's one card holds, from the reply alone. The waiting list is the server's, in its order; a
+ * staged Done when (the mission's `pendingDoneWhen`) is the same thing as the re-scope item an older mission
+ * stages, so it REPLACES that item and is never a second card. A Done when the list does not name is placed by
+ * rank (before the first thing that ranks after a re-scope), so it is never hidden behind a fold with no count.
+ */
+export function nextCardOf(mission: MissionV4Reply): NextCard {
+  const { next, more } = mission.detail.waiting
+  const items: WaitingItem[] = next ? [next, ...more] : [...more]
+  const staged = mission.pendingDoneWhen
+  const entries: NextEntry[] = items.map((item) => ({ kind: 'item', item }))
+  if (staged) {
+    const entry: NextEntry = { kind: 'staged', text: staged.text }
+    const at = items.findIndex((i) => i.kind === 'rescope')
+    const rest = entries.filter((e) => !(e.kind === 'item' && e.item.kind === 'rescope'))
+    if (at !== -1) rest.splice(at, 0, entry)
+    else {
+      const first = rest.findIndex(
+        (e) => e.kind === 'item' && rankOf(e.item.kind) > rankOf('rescope')
+      )
+      rest.splice(first === -1 ? rest.length : first, 0, entry)
+    }
+    return { primary: rest[0] ?? null, more: rest.slice(1) }
+  }
+  return { primary: entries[0] ?? null, more: entries.slice(1) }
+}
+
+/** The card's look: the operator owes the close (`ok`), a decision of theirs (`accent`), or a step (`you`); `calm` is nothing. */
+export type NextCardLook = NextLook | 'accent'
+
+export function nextEntryLook(entry: NextEntry | null): NextCardLook {
+  if (entry === null) return 'calm'
+  if (entry.kind === 'staged') return 'accent'
+  if (entry.item.kind === 'attach') return 'accent'
+  return entry.item.kind === 'close' ? 'ok' : 'you'
+}
+
 // ---- Sessions row and the hand-off (Missions v4, S-20) -----------------------------------------------
 
 type HistoryRow = MissionV4Reply['sessions'][number]

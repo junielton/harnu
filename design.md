@@ -404,7 +404,7 @@ _another_ folder.
 | `chevron-right`                          | Collapse folder / repo-group (rotates 90° when open)                                                                                                                                                                                   |
 | `recycle`                                | Workspace GC: the Cleanup summary line, the single footer pill (replaces `trash-2` + `container` there) and the first-cycle banner. The spec's ♻ glyph, as a Lucide icon (§5 forbids text glyphs); the takeover header keeps `trash-2` |
 | `circle-check` / `circle-help` / `lock`  | Cleanup bucket icons: Ready to clean / Needs review / In use — repeated in the legend, group headers, badges and list rows so a bucket never relies on colour alone                                                                    |
-| `check` · `square-check` · `list-checks` | Checked-block badge (`check`, 16px badge) · checked list row (`square-check`) · "Select all in repo" on narrow regions (`list-checks`, icon-only 22px Ghost)                                                                           |
+| `check` · `square-check` · `list-checks` | Checked-block badge (`check`, 16px badge) · checked list row (`square-check`) · "Select all in repo" on narrow regions (`list-checks`, icon-only 22px Ghost) · "Test it" in the Mission dropdown (`list-checks`, 10px)                 |
 | `triangle-alert` · `rotate-ccw`          | Failed block / partial-failure pill / warning callouts (`triangle-alert`) · Retry a failed item (`rotate-ccw`)                                                                                                                         |
 | `bookmark` · `sparkles`                  | Keep (`bookmark`) and Ask for an opinion (`sparkles`) on the Cleanup surface — new there; `package-minus` stays Dehydrate and `trash-2` stays Remove                                                                                   |
 | `layout-grid` / `list`                   | Cleanup Map / List toggle                                                                                                                                                                                                              |
@@ -7417,6 +7417,14 @@ auto`, thin scrollbar on `border-border-2`) is the one scroller; the **footer** 
    **worktree** as its branch name (click selects that folder in the sidebar) with a copy button for the
    path; the evidence as one **Evidence** link that opens its README; an address on this machine. A link
    that opens nothing is not drawn; no absolute path is ever drawn; an empty Links block is not drawn.
+   (`MissionDropdownStep.vue`, `lib/mission-dropdown-links.ts`.) A path link is one chip, `border-border-2`,
+   `11px`: the label (a `span`, `select-text`, because a button's text cannot be selected) and, after a
+   `border-l` divider, the copy button (`copy`, 10px, `text-text-4`; it shows `check` and says "Path copied"
+   for ~2s after a copy). A worktree whose path is gone is `text-text-3`, with "removed — branch kept"
+   after the branch name, opens nothing and keeps its copy. A click on a worktree that is not pinned opens
+   one line under the links, "This folder is not in the sidebar. Add it?" (`border-border-2`,
+   `bg-surface-2`, `11.5px`, compact Add and Not now). The Evidence link is drawn only when its README (or
+   the file) exists; a tooltip may hold the repo-relative path, never an absolute one.
 5. **Footer** (pinned, `border-t`, `padding: 7px 14px`): **Close mission…** (ghost, compact, `flag`).
    Not drawn when the next step already is "Close mission…", nor in the empty and chooser views.
 
@@ -7433,17 +7441,43 @@ dropdown is open; the `view.missionProgress` chord toggles the same dropdown and
 is drawn. A session in **no mission** draws a **muted, icon-only** pill (`border-border-2`, `text-text-3`,
 `target` glyph, `title` and `aria-label` "No mission") that opens the empty state.
 
-**Test it (the entry for guided walks).** A compact button (`h-5`, `px-2`, `11px`, the `list-checks`
-glyph at 10px, label "Test it"; `aria-label` "Test it · {what it walks}") on three places: the Criteria
-row of an open step (right end of the heading line), the open milestone's summary line (next to Ask) and,
-when the mission is ready to close, "Test the whole mission" in the footer. It starts a walk in the helper
-stack, never inside the dropdown, and is drawn only when a walk can start from that source (`walkEntryAvailable(source)`);
-until then it is not drawn at all. In the footer, "Test the whole mission" shares the footer with "Close mission…" or stands alone when the next card already is that. Mockup screen `entry`.
+**Test it (the entry for guided walks).** A compact **bordered** button (the same as "Mark done": `h-5`, `px-2`,
+`11px / 500`, `border-border-2 bg-surface-2 text-text`, the `list-checks` glyph at 10px, label "Test it") on three
+places, each inside a `rounded-sm` wrapper so its focus ring keeps a radius: the Criteria row of an open step (at the
+right end of the heading line, `justify-between`), the open milestone's summary line (right end, after Ask, 4px
+between the two) and, when the mission is ready to close, **"Test the whole mission"** in the footer (after
+"Close mission…" when both are there, alone when the next card already is the close). The step's and the milestone's
+carry `aria-label` "Test it · {what it walks}" and the same words as `title` ("Walk through this step by hand",
+"Walk through this milestone by hand"); the footer's visible text already names it, so it carries only a `title`
+("Walk through the whole mission by hand") and no `aria-label` (one that began "Test it" would not contain the
+visible words). A control starts a walk in the helper stack, never inside the dropdown. It is drawn only when
+`walkEntryAvailable(source)` says a walk can start from that source and the dropdown holds no other rule about it;
+until then nothing is drawn at all (not a disabled button, not a gap), so the shipped dropdown looks as if the
+control did not exist. A click calls `startWalk(source)` (`lib/walk-entry.ts`: `source` is `{ kind: 'step', missionId,
+stepId }`, `{ kind: 'milestone', missionId, milestoneId }` or `{ kind: 'mission', missionId }`) and then closes the
+dropdown; opening the walk's pane is the provider's job. The mockup screen `entry` is captured with a provider that
+answers true, and its step tooltip's check count belongs to the walk (the provider), so the dropdown does not
+write one.
 
-**Empty state** (session with no mission): the pill is a muted **icon-only** pill (`border-border-2`,
-`text-text-3`, title "No mission"). The dropdown shows `target` (14px, `text-text-4`), "This session has
-no mission.", the picker of the open missions in this folder (Attach, with its in-place confirmation),
-"Start a new mission" and, under the picker, "See a sample mission" (the sample keeps its "made up" label, its state chooser and a way to leave it), as in the pane.
+**Empty state** (session with no mission; `MissionDropdownEmpty.vue`): the pill is a muted **icon-only** pill
+(`border-border-2`, `text-text-3`, title "No mission"). The dropdown shows `target` (14px, `text-text-4`), "This session has
+no mission." (`12.5px / 500`, `text-text`), the picker of the open missions in this folder (a row per mission, `rounded
+border border-border`, `padding: 9px 10px`: its title, "{headline} · led by {name}" in `10.5px / text-text-4` and the compact
+Attach button at its right; Attach opens its confirmation **in place**, under a `border-t`, with Cancel and Attach),
+"Start a new mission" (ghost, compact, `plus`; it writes no record, it puts one instruction in the session's prompt) and,
+under the picker, **"See a sample mission"** (a text link, `text-accent`, `12px / 500`). A request to join this session is
+the whole state until it is answered (Allow, Deny). **Loading** is one line, "Reading the mission…" (`12px`, `text-text-3`).
+A **refused read** keeps the empty layout, centred: `target`, "This mission cannot be read right now.", the server's reason
+(`11.5px`, mono, `text-text-3`) and a compact **Retry**. **The sample**, once opened, shows a strip at the top of the body
+(`border-b border-accent-line bg-accent-soft`, `padding: 8px 14px`): the "Sample mission" label (`10px / 700`, uppercase,
+`text-accent`) with the compact "Leave the sample" button at its right, the note "Made-up data. Nothing you press here is
+saved.", a `State` select of the states the dropdown can show (not Sessions or the hand-off) and, for the three states a
+click away from another, a hint that quotes the dropdown's own label. The sample's open-step states carry criteria and
+links, so an open step shows fully. "Close mission…" on a sample changes nothing.
+
+**A dialog opened from the dropdown** (the close dialog) makes it `inert` and dims it (`saturate(0.7)`, the mockup's
+`.dd.dim`); focus goes to Cancel, Esc closes the dialog and gives focus back to the button that opened it, and a door that
+ends the mission closes the dropdown too.
 
 **Small windows.** The body is a container, so every width rule is on the dropdown's own width, not the
 window's: below **380px** the next-step button and each "more waiting" button go under their text, and the

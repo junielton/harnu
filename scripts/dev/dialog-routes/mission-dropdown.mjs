@@ -23,6 +23,12 @@
  *
  *   node scripts/dev/dialog-routes/mission-dropdown.mjs capture [--out <dir>] [--widths 1280,360] [--only mid,owed]
  *
+ * S-6 adds the four states of the mockup screen `entry` (the "Test it" controls: `entry-step-open`,
+ * `entry-milestone`, `entry-mission`, `entry-closed`), captured as `entry-<state>-<width>-dark-en.png`. The
+ * shipped walk provider answers no, so the harness installs a test one (`walk` on the state: the kinds of
+ * source it answers yes for, the way each mockup state draws exactly one control) and records every
+ * `startWalk` in `window.__walkStarts`.
+ *
  * Set `MISSION_DROPDOWN_CHROMIUM` to a Chromium binary when Playwright's own download is not installed.
  *
  * Default output is `.harnu/out/mission-dropdown/<slice>/` (gitignored), one PNG per state and width, named
@@ -46,7 +52,22 @@ const FADE_MS = 400
  * (`lib/mission-sample.ts`) the harness shows behind the dropdown; `open: false` draws the bare pill. A state
  * the sample cannot reach says so in `note`: the slice that draws it adds the data it needs to the sample.
  *
- * @type {ReadonlyArray<{ id: string, sample: string, open: boolean, note?: string }>}
+ * `mod` is a change the harness makes to the sample's reply, for the states a sample cannot be (a staged Done when,
+ * a request to join, several led missions): the reply then comes through the store's real path (`missionV4View`)
+ * instead of `showSample`, so the dropdown draws it exactly the way it draws a live mission.
+ *
+ * `hover` is a selector the harness points the mouse at once the dropdown is up, for the one state that is a
+ * tooltip (`dots`: a state glyph's label, S-3).
+ *
+ * `row` is a step row the harness clicks open once the dropdown is up (S-4: an open step, which a sample's own
+ * `ui.openStep` cannot do for a reply the harness edited).
+ *
+ * `none` is the store's real answer for a session in no mission, `refused` a read the view refused and `loading` a
+ * session the view has not answered yet (S-5: the empty state, which draws no sample until its link is used).
+ * `click` is a selector the harness presses once the dropdown is up (S-5: the close dialog, which opens from the
+ * next card's button).
+ *
+ * @type {ReadonlyArray<{ id: string, sample: string, open: boolean, mod?: 'staged'|'request'|'multi'|'chooser'|'more'|'none'|'refused'|'loading', row?: string, hover?: string, click?: string, note?: string }>}
  */
 export const MISSION_DROPDOWN_STATES = [
   { id: 'mid', sample: 'default', open: true },
@@ -55,40 +76,134 @@ export const MISSION_DROPDOWN_STATES = [
     id: 'multi',
     sample: 'default',
     open: true,
-    note: 'a session that leads several missions: the sample has one (S-2 adds the second)'
+    mod: 'multi',
+    note: 'a session that leads three missions: the head carries the switch (S-2)'
   },
   {
     id: 'chooser',
     sample: 'default',
     open: true,
-    note: 'the switch opened on the radiogroup of missions (S-2 draws it)'
+    mod: 'chooser',
+    note: 'the switch opened on the radiogroup of missions (S-2)'
   },
-  { id: 'owed', sample: 'waiting', open: true },
-  { id: 'step-open', sample: 'step-open', open: true },
-  { id: 'blocked', sample: 'step-blocked', open: true },
+  {
+    id: 'owed',
+    sample: 'waiting',
+    open: true,
+    mod: 'more',
+    note: 'the next card with "more waiting on you" opened in place (S-2)'
+  },
+  {
+    id: 'step-open',
+    sample: 'step-open',
+    open: true,
+    note: 'an open step with three verified criteria, two open ones and every kind of link (S-4)'
+  },
+  {
+    id: 'blocked',
+    sample: 'step-blocked',
+    open: true,
+    note: 'the blocked step open: its blocker, one criterion and two links (S-4)'
+  },
   { id: 'ask', sample: 'ask', open: true },
   {
     id: 'done-when',
     sample: 'default',
     open: true,
-    note: 'a staged Done when: the pane sample has none (S-2 adds it)'
+    mod: 'staged',
+    note: 'a staged Done when proposed over the sample mission (S-2): the one card, Approve and Decline'
   },
-  { id: 'attach-request', sample: 'attach-request', open: true },
+  {
+    id: 'attach-request',
+    sample: 'default',
+    open: true,
+    mod: 'request',
+    note: 'a request to join the sample mission (S-2): the one card, Allow and Deny'
+  },
   { id: 'ready', sample: 'done', open: true },
   {
     id: 'close-confirm',
     sample: 'done',
     open: true,
-    note: 'the close dialog over the dropdown (S-5 draws it)'
+    click: '[data-test="next-button"]',
+    note: 'the close dialog over the dropdown, which is inert and dimmed (S-5)'
   },
-  { id: 'empty', sample: 'no-mission', open: true },
+  {
+    id: 'empty',
+    sample: 'default',
+    open: true,
+    mod: 'none',
+    note: 'a session in no mission: the picker, Start a new mission and the sample link (S-5)'
+  },
   {
     id: 'dots',
     sample: 'default',
     open: true,
-    note: 'a state dot with its tooltip open (S-3 draws it)'
+    hover: '[data-glyph="blocked"]',
+    note: "the blocked step's glyph with its label shown (S-3)"
+  },
+  {
+    id: 'empty-sample',
+    sample: 'default',
+    open: true,
+    note: 'the sample opened from the empty state: its made-up strip, state chooser and the way out (S-5)'
+  },
+  {
+    id: 'loading',
+    sample: 'default',
+    open: true,
+    mod: 'loading',
+    note: 'the first answer has not come yet: one line inside the dropdown (S-5)'
+  },
+  {
+    id: 'refused',
+    sample: 'default',
+    open: true,
+    mod: 'refused',
+    note: 'the view refused the read: the words, the reason and Retry (S-5)'
   }
 ]
+
+/**
+ * The 4 states of the mockup screen `entry`, in its order. `walk` is the kinds of source the test provider
+ * answers yes for in that state: the mockup draws one control per state (a step's in `step-open`, the milestone's
+ * in `milestone`, the footer's in `mission`), and a real provider decides per source the same way.
+ *
+ * @type {ReadonlyArray<{ id: string, sample: string, open: boolean, walk: ReadonlyArray<'step'|'milestone'|'mission'>, row?: string, note?: string }>}
+ */
+export const MISSION_DROPDOWN_ENTRY_STATES = [
+  {
+    id: 'entry-step-open',
+    sample: 'step-open',
+    open: true,
+    walk: ['step'],
+    note: 'an open step with "Test it" on its Criteria row (S-6)'
+  },
+  {
+    id: 'entry-milestone',
+    sample: 'default',
+    open: true,
+    walk: ['milestone'],
+    note: '"Test it" on the open milestone\'s summary line, next to Ask (S-6)'
+  },
+  {
+    id: 'entry-mission',
+    sample: 'done',
+    open: true,
+    walk: ['mission'],
+    note: '"Test the whole mission" alone in the footer of a mission ready to close (S-6)'
+  },
+  {
+    id: 'entry-closed',
+    sample: 'default',
+    open: false,
+    walk: [],
+    note: 'the pill alone, the dropdown closed (S-6)'
+  }
+]
+
+/** Every state the harness can show: the screen `mission-dropdown`'s, then the screen `entry`'s. */
+const ALL_STATES = [...MISSION_DROPDOWN_STATES, ...MISSION_DROPDOWN_ENTRY_STATES]
 
 /**
  * The page the harness serves. The Topbar band is a stand-in (42px, the pill at the left of its centre) so the
@@ -104,11 +219,24 @@ import { i18n } from '/src/i18n/index.ts'
 import MissionDropdown from '/src/components/MissionDropdown.vue'
 import { useUiStore } from '/src/stores/ui.ts'
 import { useMissionsStore } from '/src/stores/missions.ts'
+import { useSessionsStore } from '/src/stores/sessions.ts'
+import { sampleOf } from '/src/lib/mission-sample.ts'
+import { setWalkEntryProvider } from '/src/lib/walk-entry.ts'
 
-// \`window.api\` is the preload's bridge; the sample mission needs none of it.
+// \`window.api\` is the preload's bridge; the sample mission needs none of it. A state with a \`mod\` goes through
+// the store's real path, so \`missionV4View\` answers the edited reply.
 const noop = () => undefined
+let current = null
 window.api = new Proxy({}, {
-  get: (_, key) => (String(key).startsWith('on') ? () => noop : async () => undefined)
+  get: (_, key) =>
+    key === 'missionV4View'
+      ? async () => current
+      : key === 'missionPathKinds'
+        // The paths of the sample's links exist: a folder, and a README inside the evidence folder.
+        ? async (paths) => Object.fromEntries(paths.map((p) => [p, p.endsWith('/README.md') ? 'file' : 'dir']))
+      : String(key).startsWith('on')
+        ? () => noop
+        : async () => undefined
 })
 
 const pinia = createPinia()
@@ -137,11 +265,117 @@ const ui = useUiStore()
 const missions = useMissionsStore()
 ui.setPopoverAnchor('missionProgress', true)
 
+const SESSION = sampleOf('default').sessionId
+const sessions = useSessionsStore()
+
+/** The sample reply with the harness's change (a staged Done when, a request to join, several led missions). */
+function edited(sample, mod) {
+  const r = structuredClone(sampleOf(sample).reply)
+  const w = r.detail.waiting
+  if (mod === 'staged') {
+    r.pendingDoneWhen = { text: 'The spec skill is scored, and both fixes are proven by a fresh run on the test set.' }
+    const rescope = { kind: 'rescope', id: 'rescope', ask: 'x', why: 'y' }
+    w.items = [rescope, ...w.items]
+    w.next = rescope
+    w.more = w.items.slice(1)
+  } else if (mod === 'request') {
+    const attach = { kind: 'attach', id: 'attach:atr-1', requestId: 'atr-1', sessionId: 'worker-3', ask: 'x', why: 'y' }
+    w.items = [attach, ...w.items]
+    w.next = attach
+    w.more = w.items.slice(1)
+  }
+  return r
+}
+
+/** Three missions this session leads, as the readers of the store know them (the first is the one shown). */
+function ledReaders(base) {
+  const one = (id, title, done, total, forYou) => ({
+    title,
+    lookupId: id,
+    mission: { id },
+    you: [],
+    detail: {
+      ...base.detail,
+      leads: SESSION,
+      progress: { ...base.detail.progress, done, total, unit: 'milestones' },
+      waiting: { ...base.detail.waiting, items: Array.from({ length: forYou }, (_, i) => ({ id: 'w' + i })) }
+    }
+  })
+  return [
+    one(base.missionId, base.detail.title, 1, 3, 3),
+    one('mnt-sample02', 'Collect partner listings every day, live in production', 0, 2, 1),
+    one('mnt-sample03', 'Tidy the release notes', 4, 10, 0)
+  ]
+}
+
 window.__missionDropdown = {
-  show(sample, open) {
-    missions.showSample(sample)
+  async show(sample, open, mod, hover, row, click, walk) {
+    // The shipped walk provider answers no; a state that draws "Test it" installs one that answers yes for the
+    // kinds it lists, and records what a click starts.
+    window.__walkStarts = []
+    setWalkEntryProvider(
+      walk && walk.length
+        ? { available: (src) => walk.includes(src.kind), start: (src) => window.__walkStarts.push(src) }
+        : null
+    )
+    // The worktrees the sample's links name are pinned folders, each on its branch.
+    sessions.folders = [
+      { path: '/sample', pinned: true, sessions: [{ sessionId: SESSION, projectPath: '/sample', summary: 'Leader' }, { sessionId: 'sample-idle', projectPath: '/sample', summary: 'Idle' }] },
+      { path: '/sample/.claude/worktrees/card-score-proofs', pinned: true, gitBranch: 'card/score-proofs', sessions: [] },
+      { path: '/sample/.claude/worktrees/card-score-slices', pinned: true, gitBranch: 'card/score-slices', sessions: [] }
+    ]
+    if (mod === 'none' || mod === 'refused' || mod === 'loading') {
+      // A session in no mission: the store's own answer, with no sample behind it. the loading state follows a session the
+      // view has not answered for yet.
+      sessions.select(mod === 'loading' ? 'sample-idle' : SESSION)
+      missions.showSample(null)
+      current =
+        mod === 'refused'
+          ? { state: 'refused', error: 'READ_FAILED: the record is locked by another process' }
+          : {
+              state: 'none',
+              missions: [
+                { id: 'mnt-sample01', title: sampleOf('default').title, headline: '4 of 21 steps done', leads: null },
+                { id: 'mnt-sample03', title: 'Collect partner listings every day, live in production', headline: '1 of 10 milestones done', leads: null }
+              ]
+            }
+      if (mod !== 'loading') await missions.refreshV4()
+      missions.readers = null
+    } else if (mod) {
+      sessions.select(SESSION)
+      missions.showSample(null)
+      current = edited(sample, mod)
+      await missions.refreshV4()
+      missions.readers = mod === 'multi' || mod === 'chooser' ? ledReaders(current) : null
+    } else {
+      current = null
+      missions.readers = null
+      missions.showSample(sample)
+    }
     if (open) ui.openPopover('missionProgress')
     else ui.closePopover('missionProgress')
+    if (open && (mod === 'chooser' || mod === 'more')) {
+      await new Promise((r) => setTimeout(r, 60))
+      const sel = mod === 'chooser' ? '[data-test="mission-switch"]' : '[data-test="next-more"]'
+      document.querySelector(sel)?.click()
+    }
+    // An open step: click its row the way the operator does.
+    if (open && row) {
+      await new Promise((r) => setTimeout(r, 60))
+      document.querySelector('[data-row="' + row + '"]')?.click()
+      await new Promise((r) => setTimeout(r, 60))
+    }
+    // A dialog state: press the button that opens it, the way the operator does.
+    if (open && click) {
+      await new Promise((r) => setTimeout(r, 60))
+      document.querySelector(click)?.click()
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    // A tooltip state: point at the glyph the way a mouse does (its label is shown on mouseenter).
+    if (open && hover) {
+      await new Promise((r) => setTimeout(r, 60))
+      document.querySelector(hover)?.dispatchEvent(new MouseEvent('mouseenter'))
+    }
   }
 }
 window.__missionDropdownReady = true
@@ -207,9 +441,13 @@ export async function openHarnessPage(page, url) {
 
 /** Shows one state: the dropdown over its sample mission, or the bare pill for `closed`. */
 export async function showMissionDropdownState(page, state) {
-  const def = MISSION_DROPDOWN_STATES.find((s) => s.id === state)
+  const def = ALL_STATES.find((s) => s.id === state)
   if (!def) throw new Error(`unknown mission dropdown state "${state}"`)
-  await page.evaluate(({ sample, open }) => window.__missionDropdown.show(sample, open), def)
+  await page.evaluate(
+    ({ sample, open, mod, hover, row, click, walk }) =>
+      window.__missionDropdown.show(sample, open, mod, hover, row, click, walk),
+    def
+  )
   if (def.open) {
     await page
       .locator('[data-dsqa="mission-dropdown"]')
@@ -229,7 +467,7 @@ export async function showMissionDropdownState(page, state) {
  *
  * @type {Array<{ id: string, file: string, reach: 'dev-harness', note?: string, open: (ctx: { page: import('@playwright/test').Page, harness: { url: string } }) => Promise<void>, close?: (ctx: { page: import('@playwright/test').Page }) => Promise<void> }>}
  */
-export const ROUTES_MISSION_DROPDOWN = MISSION_DROPDOWN_STATES.map((s) => ({
+export const ROUTES_MISSION_DROPDOWN = ALL_STATES.map((s) => ({
   id: `MissionDropdown#${s.id}`,
   file: 'MissionDropdown.vue',
   reach: 'dev-harness',
@@ -245,7 +483,7 @@ export const ROUTES_MISSION_DROPDOWN = MISSION_DROPDOWN_STATES.map((s) => ({
     await showMissionDropdownState(page, s.id)
   },
   close: async ({ page }) => {
-    await page.evaluate(() => window.__missionDropdown.show('default', false))
+    await page.evaluate(() => window.__missionDropdown.show('default', false, undefined))
   }
 }))
 
@@ -286,7 +524,9 @@ async function capture(argv) {
         const state = route.id.split('#')[1]
         if (opts.only && !opts.only.includes(state)) continue
         await route.open({ page, harness })
-        const file = join(outDir, `mission-dropdown-${state}-${width}-dark-en.png`)
+        // The screen `entry`'s captures are named like the mockup's own: `entry-<state>-<width>-dark-en.png`.
+        const name = state.startsWith('entry-') ? state : `mission-dropdown-${state}`
+        const file = join(outDir, `${name}-${width}-dark-en.png`)
         await page.screenshot({ path: file })
         console.log(`  ✓ ${state} @${width} → ${file}`)
         await route.close?.({ page })
