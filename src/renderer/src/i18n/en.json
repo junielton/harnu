@@ -366,6 +366,141 @@
   "missionDropdown": {
     "shell": {
       "label": "Mission"
+    },
+    "head": {
+      "barLabel": "Mission progress",
+      "count": {
+        "milestones": "{done} of {total} milestone done | {done} of {total} milestones done",
+        "steps": "{done} of {total} step done | {done} of {total} steps done"
+      },
+      "switchLabel": "Mission {n} of {m} · Change",
+      "switchCount": "Mission {n} of {m}",
+      "change": "Change",
+      "leads": "This session leads {n} missions",
+      "choose": "Choose the mission to show",
+      "sub": {
+        "milestones": "{done} of {total} milestone | {done} of {total} milestones",
+        "steps": "{done} of {total} step | {done} of {total} steps",
+        "forYou": "{count} · {n} for you"
+      }
+    },
+    "next": {
+      "label": "What is next",
+      "you": "Your next step",
+      "calm": "Next step",
+      "running": "{n} step is running. Nothing for you right now. | {n} steps are running. Nothing for you right now.",
+      "idle": "Nothing is running. Nothing for you right now.",
+      "more": "{n} more waiting on you",
+      "less": "Show less",
+      "openStep": "Open step",
+      "close": "Close mission…",
+      "kind": {
+        "main-failing": "Fix",
+        "unblock": "Unblock",
+        "rescope": "Done when",
+        "settle": "Check",
+        "review": "Review",
+        "close": "Close",
+        "attach": "Join"
+      },
+      "doneWhenEyebrow": "New Done when proposed",
+      "doneWhenHint": "Approve makes it the end of the mission. Decline keeps the current one.",
+      "approve": "Approve",
+      "decline": "Decline",
+      "requestEyebrow": "Asks to join",
+      "requestText": "{session} asks to join “{mission}”. If you allow it, it works on the mission. It does not lead it.",
+      "allow": "Allow",
+      "deny": "Deny",
+      "already": "Someone already answered this, so nothing changed.",
+      "error": "Harnu could not save your answer. Try again in a moment."
+    },
+    "tree": {
+      "label": "Steps of the mission",
+      "waitsFor": "Waits for “{title}”",
+      "waitsForMany": "Waits for {titles}",
+      "running": "{n} running",
+      "waitingReview": "{n} waiting for review",
+      "blocked": "{n} blocked",
+      "nothingRunning": "Nothing running",
+      "allDone": "Every step is done",
+      "more": "{n} more step | {n} more steps",
+      "less": "Show less",
+      "optional": "{n} optional milestone | {n} optional milestones",
+      "chipYours": "Yours",
+      "noCriteria": "No criteria yet.",
+      "openLink": "Open {label}"
+    },
+    "state": {
+      "milestone": {
+        "not-started": "Not started",
+        "in-progress": "In progress",
+        "waiting-review": "Waiting for review",
+        "done": "Done"
+      },
+      "step": {
+        "todo": "To do",
+        "running": "Running",
+        "waiting-review": "Waiting for review",
+        "done": "Done",
+        "blocked": "Blocked"
+      },
+      "criterion": {
+        "open": "Not settled yet",
+        "settled": "Settled"
+      }
+    },
+    "ask": {
+      "open": "Ask",
+      "openTitle": "Ask the session about this milestone",
+      "placeholder": "What is still missing to finish this milestone?",
+      "label": "Question about “{title}”",
+      "hint": "Goes to the prompt of {name}. The answer shows in that session.",
+      "cancel": "Cancel",
+      "send": "Send",
+      "done": "Added to the prompt of {name}. Press Enter there to send it. The answer shows in that session.",
+      "notRunning": "{name} is not running. Resume it, then send the question again.",
+      "close": "Close"
+    },
+    "step": {
+      "criteria": "Criteria",
+      "verified": "{n} criterion verified | {n} criteria verified",
+      "by": {
+        "fact": "Checked automatically",
+        "session": "Checked by a second session",
+        "operator": "You",
+        "person": "Waiting for {person}",
+        "personUnnamed": "Waiting for another person"
+      },
+      "selfCheck": "The session says it is done. Not checked yet.",
+      "mark": "Mark done",
+      "markPerson": "Mark approved",
+      "markPersonTitle": "Mark {person} as having approved this",
+      "blocked": {
+        "you": "Blocked · waiting for you",
+        "session": "Blocked · waiting for the session",
+        "withAge": "{head} · {age}"
+      },
+      "clear": "Done, continue",
+      "links": "Links",
+      "evidence": "Evidence",
+      "evidenceTitle": "Open the evidence in the viewer",
+      "worktreeTitle": "Show this worktree in the sidebar",
+      "titleWithPath": "{title} · {path}",
+      "copy": "Copy the path",
+      "copied": "Path copied",
+      "removed": "removed — branch kept",
+      "addOffer": "This folder is not in the sidebar. Add it?",
+      "add": "Add",
+      "addCancel": "Not now",
+      "page": "Page · {address}",
+      "openLink": "Open {label}",
+      "error": {
+        "NOT_FOUND": "That changed while you were looking. The latest is shown. Check it and try again if you still need to.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. The latest is shown. Try again.",
+        "MISSION_CLOSED": "This mission is closed, so nothing in it can change.",
+        "SETTLES_ITSELF": "Harnu checks this one by itself. You do not mark it.",
+        "other": "Harnu could not save that. Try again in a moment. If it keeps happening, close the dropdown and open it again."
+      }
     }
   },
   "missionPane": {
