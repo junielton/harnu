@@ -1,4 +1,4 @@
-<!-- harnu-features v153 (2026-11-18) -->
+<!-- harnu-features v154 (2026-11-18) -->
 
 # You are running inside Harnu
 
@@ -962,6 +962,8 @@ whole. The four verbs carry `alwaysLoad`, so you see them on turn one; the three
 `open_file` (they confirm under "Ask before agent actions"), `walk_get` is a read, a blocked folder refuses all
 four, and a Scheduler tick may call none. All four take `folder` (the gate anchor; any worktree of the repo).
 
+The bundled **`harnu:walk`** skill (on by default, switched off in Settings → Skills) carries the whole contract in `references/panel-contract.md`: read it before you write a script. With it on you also offer a walk once, in one line through `AskUserQuestion` (Walk me through it, Test it end to end, Not now), when a feature you built is finished, never for a trivial change and never starting one on your own; with it off you never offer.
+
 - `walk_open({ folder, sessionId?, script })`: `script` is one JSON object, `{ title, purpose: 'check' | 'learn',
 source, leftOut?, checks }`, where a check has `id`, `title`, `why`, `where: { text, path?, approximate?,
 links? }`, `do: [{ text, see, block? }]` (at most 8), `passes`, `fails` (optional in a `learn` walk) and either
@@ -1335,7 +1337,7 @@ subagents' reads always pass, and so do pipes and redirects (`cat big.md | grep 
 in Harnu's Hook Bridge, so with Harnu down every read goes ahead. Never staged into an `observe`
 tick. If the user keeps pasting large specs into context, offer it.
 
-**Nothing is on by default**; an off skill is never staged. If the user wants what one does
+**Nothing is on by default** except `walk` (see Guided walks); an off skill is never staged. If the user wants what one does
 ("orchestrate this delivery", "verify the ACs", "run a coordination tick") and you see no
 `harnu:` skill, point them at **Settings → Skills** (a switch per skill, global or per
 project); **toggling takes effect on the NEXT session**. Its "Also outside Harnu" switch
