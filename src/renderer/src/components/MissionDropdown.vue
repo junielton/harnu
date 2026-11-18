@@ -24,11 +24,15 @@
  * the strip over a shown sample, the footer ("Close mission…", pinned) and the close dialog the dropdown opens: a
  * dialog makes the dropdown `inert` and dimmed, takes initial focus on Cancel and gives focus back to its opener
  * on Esc, and a door that ends the mission closes the dropdown too.
+ * S-6 adds the "Test it" controls (the tree draws the step's and the milestone's; the footer draws "Test the whole
+ * mission" for a mission that is ready to close) and the seam they call, `lib/walk-entry.ts`: a control is drawn
+ * only when `walkEntryAvailable(source)` says yes, a click calls `startWalk(source)` and then this component
+ * closes the dropdown; opening the walk's pane is the provider's job. The shipped provider says no.
  * The pill still opens the Mission pane; nothing here is reachable by a user until S-7 switches the pill over.
  */
 import { computed, customRef, nextTick, onBeforeUnmount, ref, useSlots, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Flag } from 'lucide-vue-next'
+import { Flag, ListChecks } from 'lucide-vue-next'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import {
   DROPDOWN_SHORT_WINDOW,
@@ -49,6 +53,7 @@ import {
   type PaneKind
 } from '../lib/mission-pane-view'
 import { SAMPLE_STATES, type SampleState } from '../lib/mission-sample'
+import { startWalk, walkEntryAvailable, type WalkSource } from '../lib/walk-entry'
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
@@ -145,16 +150,37 @@ const showFooterClose = computed(
 )
 
 const slots = useSlots()
-const hasFooter = computed(() => showFooterClose.value || slots.footer !== undefined)
+const hasFooter = computed(
+  () => showFooterClose.value || showFooterTest.value || slots.footer !== undefined
+)
 /** The ghost, compact button (design.md §6 "Mission dropdown"): `h-5`, `px-2`, `11px`. */
 const FOOTER_BTN =
   'inline-flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent px-2 text-[11px] font-medium leading-none text-text-3 transition hover:bg-surface-2 hover:text-text'
+
+/** The bordered, compact button (design.md §6 "Mission dropdown"): what "Test the whole mission" is. */
+const TEST_BTN =
+  'inline-flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-border-2 bg-surface-2 px-2 text-[11px] font-medium leading-none text-text transition hover:border-text-4'
 
 const closeOpen = ref(false)
 const closeBusy = ref(false)
 const closeError = ref<string | null>(null)
 const matters = computed(() => closeMatters(mission.value?.closeWarnings ?? []))
 const readyToClose = computed(() => (mission.value ? isReadyToClose(mission.value.detail) : false))
+// "Test the whole mission" (S-6): at the end of a mission, when the provider offers a walk from the mission.
+const showFooterTest = computed(
+  () =>
+    mission.value !== null &&
+    !chooserOpen.value &&
+    readyToClose.value &&
+    walkEntryAvailable({ kind: 'mission', missionId: mission.value.missionId })
+)
+
+/** A control asked for a walk: start it, then close the dropdown. Opening the walk's pane is the provider's job. */
+function walk(source: WalkSource): void {
+  startWalk(source)
+  close()
+}
+
 /** The element that opened the dialog: focus goes back to it when the dialog closes. */
 let closeOpener: HTMLElement | null = null
 
@@ -439,6 +465,7 @@ function onClickOutside(e: MouseEvent): void {
             :detail="mission.detail"
             :ask-leader="askLeader"
             :session-links="sessionLinks"
+            @walk="walk"
           />
         </template>
         <MissionDropdownEmpty
@@ -458,13 +485,32 @@ function onClickOutside(e: MouseEvent): void {
           data-test="mission-dropdown-footer"
           data-dsqa-part="footer"
         >
-          <span v-if="showFooterClose" class="inline-flex rounded-sm">
-            <button type="button" :class="FOOTER_BTN" data-test="footer-close" @click="openClose">
-              <Flag :size="10" :stroke-width="1.8" data-glyph="flag" aria-hidden="true" />{{
-                t('missionDropdown.footer.close')
-              }}
-            </button>
-          </span>
+          <div
+            v-if="showFooterClose || showFooterTest"
+            class="flex flex-wrap items-center rounded-sm"
+            style="gap: 6px"
+          >
+            <span v-if="showFooterClose" class="inline-flex rounded-sm">
+              <button type="button" :class="FOOTER_BTN" data-test="footer-close" @click="openClose">
+                <Flag :size="10" :stroke-width="1.8" data-glyph="flag" aria-hidden="true" />{{
+                  t('missionDropdown.footer.close')
+                }}
+              </button>
+            </span>
+            <span v-if="showFooterTest" class="inline-flex rounded-sm">
+              <button
+                type="button"
+                :class="TEST_BTN"
+                :title="t('missionDropdown.testIt.mission.tip')"
+                data-test="test-it-mission"
+                @click="walk({ kind: 'mission', missionId: mission!.missionId })"
+              >
+                <ListChecks :size="10" :stroke-width="2" aria-hidden="true" />{{
+                  t('missionDropdown.testIt.mission.label')
+                }}
+              </button>
+            </span>
+          </div>
           <slot name="footer" />
         </div>
       </div>
@@ -476,13 +522,32 @@ function onClickOutside(e: MouseEvent): void {
         data-test="mission-dropdown-footer"
         data-dsqa-part="footer"
       >
-        <span v-if="showFooterClose" class="inline-flex rounded-sm">
-          <button type="button" :class="FOOTER_BTN" data-test="footer-close" @click="openClose">
-            <Flag :size="10" :stroke-width="1.8" data-glyph="flag" aria-hidden="true" />{{
-              t('missionDropdown.footer.close')
-            }}
-          </button>
-        </span>
+        <div
+          v-if="showFooterClose || showFooterTest"
+          class="flex flex-wrap items-center rounded-sm"
+          style="gap: 6px"
+        >
+          <span v-if="showFooterClose" class="inline-flex rounded-sm">
+            <button type="button" :class="FOOTER_BTN" data-test="footer-close" @click="openClose">
+              <Flag :size="10" :stroke-width="1.8" data-glyph="flag" aria-hidden="true" />{{
+                t('missionDropdown.footer.close')
+              }}
+            </button>
+          </span>
+          <span v-if="showFooterTest" class="inline-flex rounded-sm">
+            <button
+              type="button"
+              :class="TEST_BTN"
+              :title="t('missionDropdown.testIt.mission.tip')"
+              data-test="test-it-mission"
+              @click="walk({ kind: 'mission', missionId: mission!.missionId })"
+            >
+              <ListChecks :size="10" :stroke-width="2" aria-hidden="true" />{{
+                t('missionDropdown.testIt.mission.label')
+              }}
+            </button>
+          </span>
+        </div>
         <slot name="footer" />
       </div>
     </div>

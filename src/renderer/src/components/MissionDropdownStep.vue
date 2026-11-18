@@ -14,16 +14,28 @@
  * operator's doors (mark a criterion, clear a blocker), each through the store, which calls `mission:v4Door`
  * and reads the view again; and the links' own clicks (`lib/mission-dropdown-links.ts` decides what each is).
  *
+ * "Test it" (S-6): at the right end of the Criteria heading, drawn only when `walkEntryAvailable(source)` says a
+ * walk can start from this step. A click emits `walk` with the source; the shell calls `startWalk` and closes.
+ *
  * Width: the dropdown's body is the size container, so "below 380px" answers to its own width, never the
  * window's: the who-settles cell goes under the criterion's text.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, Copy, FileText, Flag, GitBranch, Link as LinkIcon } from 'lucide-vue-next'
+import {
+  Check,
+  Copy,
+  FileText,
+  Flag,
+  GitBranch,
+  Link as LinkIcon,
+  ListChecks
+} from 'lucide-vue-next'
 import MissionDot from './MissionDot.vue'
 import { useMissionsStore, type V4DoorCall } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
 import { useHelpersStore } from '../stores/helpers'
+import { walkEntryAvailable, type WalkSource } from '../lib/walk-entry'
 import {
   doorErrorKey,
   formatWaited,
@@ -41,9 +53,16 @@ import {
 } from '../lib/mission-dropdown-links'
 
 const props = defineProps<{
+  /** The mission the step belongs to: the source a walk starts from names it. */
+  missionId: string
   step: PaneStepRow
   /** The links the record holds for this step: the paths (a worktree, the evidence) are read from them. */
   rawLinks: readonly RawLink[]
+}>()
+
+const emit = defineEmits<{
+  /** "Test it": a walk is asked for from this step; the shell starts it and closes the dropdown. */
+  walk: [source: WalkSource]
 }>()
 
 const { t } = useI18n()
@@ -93,6 +112,16 @@ function blockedHead(owner: 'agent' | 'operator', waitedMs: number | null): stri
     ? head
     : t('missionDropdown.step.blocked.withAge', { head, age: formatWaited(waitedMs) })
 }
+
+// ---- Test it ------------------------------------------------------------------------------------------------
+
+const walkSource = computed<WalkSource>(() => ({
+  kind: 'step',
+  missionId: props.missionId,
+  stepId: props.step.id
+}))
+/** Drawn only where the provider says a walk can start: the dropdown holds no other rule about it. */
+const canWalk = computed(() => walkEntryAvailable(walkSource.value))
 
 // ---- the links ---------------------------------------------------------------------------------------------
 
@@ -282,12 +311,30 @@ const CHIP =
 
     <!-- Criteria: the settled ones fold into one line; only the open ones are listed. -->
     <div class="flex flex-col" style="gap: 6px" data-test="criteria" :data-step="step.id">
-      <span
-        class="uppercase text-text-4"
-        style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em"
-        data-test="criteria-heading"
-        >{{ $t('missionDropdown.step.criteria') }}</span
-      >
+      <div class="flex items-center justify-between rounded-sm" style="gap: 8px">
+        <span
+          class="uppercase text-text-4"
+          style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em"
+          data-test="criteria-heading"
+          >{{ $t('missionDropdown.step.criteria') }}</span
+        >
+        <span v-if="canWalk" class="inline-flex rounded-sm">
+          <button
+            type="button"
+            class="inline-flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-border-2 bg-surface-2 px-2 text-[11px] font-medium leading-none text-text transition hover:border-text-4"
+            :title="$t('missionDropdown.testIt.step.tip')"
+            :aria-label="
+              $t('missionDropdown.testIt.aria', { what: $t('missionDropdown.testIt.step.tip') })
+            "
+            data-test="test-it-step"
+            @click="emit('walk', walkSource)"
+          >
+            <ListChecks :size="10" :stroke-width="2" aria-hidden="true" />{{
+              $t('missionDropdown.testIt.label')
+            }}
+          </button>
+        </span>
+      </div>
       <div
         v-if="step.verified > 0"
         class="grid items-start text-text-2"

@@ -561,6 +561,20 @@
     },
     "footer": {
       "close": "Fechar missão…"
+    },
+    "testIt": {
+      "label": "Testar",
+      "aria": "Testar · {what}",
+      "step": {
+        "tip": "Percorrer este passo na mão"
+      },
+      "milestone": {
+        "tip": "Percorrer este marco na mão"
+      },
+      "mission": {
+        "label": "Testar a missão inteira",
+        "tip": "Percorrer a missão inteira na mão"
+      }
     }
   },
   "missionPane": {

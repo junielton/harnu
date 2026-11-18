@@ -21,10 +21,14 @@
  *
  * An open step draws `MissionDropdownStep.vue` (S-4): its blocker, its criteria with who settles them, and its
  * links, under the step's row.
+ *
+ * "Test it" (S-6) sits on the open milestone's summary line, after Ask, and is drawn only when
+ * `walkEntryAvailable(source)` says a walk can start from that milestone. A click, here or on an open step,
+ * emits `walk` with the source; the shell calls `startWalk` and closes the dropdown.
  */
 import { computed, nextTick, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight, MessageSquare } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, ListChecks, MessageSquare } from 'lucide-vue-next'
 import MissionDot from './MissionDot.vue'
 import MissionDropdownAsk from './MissionDropdownAsk.vue'
 import MissionDropdownStep from './MissionDropdownStep.vue'
@@ -40,6 +44,7 @@ import {
 } from '../lib/mission-pane-view'
 import { capRunning, treeKeyAction, type TreeRow } from '../lib/mission-dropdown-tree'
 import type { RawLink } from '../lib/mission-dropdown-links'
+import { walkEntryAvailable, type WalkSource } from '../lib/walk-entry'
 
 const props = defineProps<{
   detail: MissionV4Reply['detail']
@@ -48,6 +53,11 @@ const props = defineProps<{
   /** The links the session wrote, which give a step's PR number its address. */
   sessionLinks?: readonly SessionLinkLike[]
   now?: number
+}>()
+
+const emit = defineEmits<{
+  /** "Test it" on a milestone or an open step: the shell starts the walk and closes the dropdown. */
+  walk: [source: WalkSource]
 }>()
 
 const { t } = useI18n()
@@ -132,6 +142,18 @@ function summaryText(part: SummaryPart): string {
   }
 }
 const summaryLength = (m: PaneMilestoneRow): number => milestoneSummary(m).length
+
+// ---- Test it ----------------------------------------------------------------------------------------------
+
+/** The ghost, compact "Ask" button. */
+const ASK_BTN =
+  'inline-flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent bg-transparent px-2 text-[11px] font-medium leading-none text-text-3 transition hover:bg-surface-2 hover:text-text'
+
+const milestoneWalk = (m: PaneMilestoneRow): WalkSource => ({
+  kind: 'milestone',
+  missionId: props.detail.id,
+  milestoneId: m.id
+})
 
 // ---- the keyboard --------------------------------------------------------------------------------------
 
@@ -353,10 +375,11 @@ defineExpose({ openStep, openAsk })
                 >
               </template>
             </div>
+            <!-- Ask keeps its own place when no walk is offered; with one, the pair sits together at the right end. -->
             <button
-              v-if="askLeader"
+              v-if="askLeader && !walkEntryAvailable(milestoneWalk(block.milestone))"
               type="button"
-              class="inline-flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent bg-transparent px-2 text-[11px] font-medium leading-none text-text-3 transition hover:bg-surface-2 hover:text-text"
+              :class="ASK_BTN"
               :title="$t('missionDropdown.ask.openTitle')"
               :aria-expanded="askFor === block.milestone.id"
               data-test="ask-open"
@@ -366,6 +389,44 @@ defineExpose({ openStep, openAsk })
                 $t('missionDropdown.ask.open')
               }}
             </button>
+            <span
+              v-else-if="walkEntryAvailable(milestoneWalk(block.milestone))"
+              class="flex items-center rounded-sm"
+              style="gap: 4px"
+              data-test="milestone-acts"
+            >
+              <button
+                v-if="askLeader"
+                type="button"
+                :class="ASK_BTN"
+                :title="$t('missionDropdown.ask.openTitle')"
+                :aria-expanded="askFor === block.milestone.id"
+                data-test="ask-open"
+                @click="toggleAsk(block.milestone.id)"
+              >
+                <MessageSquare :size="10" :stroke-width="1.6" aria-hidden="true" />{{
+                  $t('missionDropdown.ask.open')
+                }}
+              </button>
+              <span class="inline-flex rounded-sm">
+                <button
+                  type="button"
+                  class="inline-flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-border-2 bg-surface-2 px-2 text-[11px] font-medium leading-none text-text transition hover:border-text-4"
+                  :title="$t('missionDropdown.testIt.milestone.tip')"
+                  :aria-label="
+                    $t('missionDropdown.testIt.aria', {
+                      what: $t('missionDropdown.testIt.milestone.tip')
+                    })
+                  "
+                  data-test="test-it-milestone"
+                  @click="emit('walk', milestoneWalk(block.milestone))"
+                >
+                  <ListChecks :size="10" :stroke-width="2" aria-hidden="true" />{{
+                    $t('missionDropdown.testIt.label')
+                  }}
+                </button>
+              </span>
+            </span>
           </div>
           <MissionDropdownAsk
             v-if="block.milestone && askLeader && askFor === block.milestone.id"
@@ -438,7 +499,13 @@ defineExpose({ openStep, openAsk })
                 </span>
               </div>
             </div>
-            <MissionDropdownStep v-if="stepOpen[s.id]" :step="s" :raw-links="rawLinksOf(s.id)" />
+            <MissionDropdownStep
+              v-if="stepOpen[s.id]"
+              :mission-id="detail.id"
+              :step="s"
+              :raw-links="rawLinksOf(s.id)"
+              @walk="emit('walk', $event)"
+            />
           </template>
 
           <button
