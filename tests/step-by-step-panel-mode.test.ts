@@ -142,7 +142,14 @@ const RULES: Rule[] = [
     panel: [
       /Glyphs are `✓ ✗ ! - ⚑ \?` and nothing else/,
       /No emoji anywhere/,
-      /A glyph marks an outcome/
+      /A glyph marks an outcome/,
+      /`✓` closed and verified, or confirmed by the operator where nothing can be checked from here/,
+      /`✗` failed and still open/,
+      /`!` closed with a caveat/,
+      /`-` not reached yet, or skipped/,
+      /`⚑` what the operator owes right now/,
+      /`\?` an open question/,
+      /Put exactly one space after a glyph/
     ]
   },
   {
@@ -176,6 +183,15 @@ const RULES: Rule[] = [
       /Merged is not deployed/,
       /preview or local app/
     ]
+  },
+  {
+    rows: 'M-43',
+    what: 'a check that changes something records how to undo it; Back leads with the undo',
+    panel: [
+      /records how to undo it in `undo`/,
+      /Back reopens the previous check and leads with its undo/
+    ],
+    chat: [/how to undo it/, /lead with how to undo it/]
   },
   {
     rows: 'M-19',

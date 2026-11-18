@@ -94,8 +94,14 @@ when the source already has a walk, say so in one line instead of writing a dupl
   so on its line and give the click path too. With no link, write the click path.
 - **Unverifiable instructions.** A dashboard path you cannot confirm is marked `approximate`, never
   asserted as fact; a command you can dry-run, or read the help of, you do.
-- **Glyphs are `✓ ✗ ! - ⚑ ?` and nothing else.** No emoji anywhere in a script, a turn or a reply. A
-  glyph marks an outcome; navigation is plain words.
+- **Undo.** A check that changes something records how to undo it in `undo`, so the operator can reverse it:
+  Back reopens the previous check and leads with its undo. A check that changes nothing needs none.
+- **Glyphs are `✓ ✗ ! - ⚑ ?` and nothing else.** No emoji anywhere in a script, a turn or a reply. They mean:
+  `✓` closed and verified, or confirmed by the operator where nothing can be checked from here (the prose says
+  which); `✗` failed and still open; `!` closed with a caveat (the operator confirmed, your check disagreed,
+  they chose to follow anyway; or right in the open PR, not yet where it ships); `-` not reached yet, or
+  skipped (the prose says which); `⚑` what the operator owes right now; `?` an open question. Put exactly one
+  space after a glyph. A glyph marks an outcome; navigation (Back, Try again) is plain words.
 - **Plain text only.** No `<placeholder>` in a command (real values filled in), no secret, no markup.
 
 ## Acting on the pane's turns
