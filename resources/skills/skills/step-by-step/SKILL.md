@@ -14,6 +14,7 @@ not something a chat scrolled past.
 things. Sister skills: `harnu:one-by-one` drains _decisions_; this drains _actions_.
 
 > Lessons: if a `LESSONS.md` exists in this skill's folder, read it first and apply its rules.
+> Panel: when `walk_open` is among your tools, load `harnu:walk` instead: it runs this same contract in the walk pane.
 
 <HARD-GATE>
 Never perform a step yourself. Never run anything that changes the world (deploys,
