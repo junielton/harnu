@@ -169,7 +169,7 @@ describe('BUG-292 — the walk pane content is selectable', () => {
     expect(rule).toMatch(/user-select:\s*none/)
     expect(rule).toContain('[data-walk-chip]')
     expect(rule).toContain('kbd')
-    expect(rule).toContain('[role="option"]')
+    expect(rule).toMatch(/\[role=['"]option['"]\]/)
   })
 })
 
