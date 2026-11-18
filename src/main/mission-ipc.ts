@@ -11,9 +11,11 @@
  */
 
 import { promises as fs } from 'node:fs'
-import { isAbsolute } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
 import { ipcMain } from 'electron'
 import { addTaskEventObserver } from './hook-bridge'
+import { markdownKnownRoots } from './markdown-read'
+import { isPathAllowed } from './settings'
 import { readUserProjects } from './user-projects'
 import type { RecordResult } from './mission-record'
 import { realFactsDeps } from './mcp/tool-handlers'
@@ -692,15 +694,21 @@ export const PATH_KINDS_MAX = 32
  * evidence link's README (or the file itself). It reads the file system's metadata and nothing else: no
  * content, no listing, no write. Only absolute paths are asked about (anything else answers `missing`) and at
  * most {@link PATH_KINDS_MAX} of them; the answer is keyed by the path asked.
+ *
+ * The renderer is untrusted, so a path is looked at only inside the folders Harnu knows (`markdownKnownRoots()`,
+ * the roots `markdown:read` is confined to): anything outside them answers `missing` and is never stat-ed. A
+ * mission's own worktrees sit under their repo's `.claude/worktrees/`, inside the repo's root, so they are
+ * covered; a worktree that is gone from disk still answers `missing`, which the dropdown reads as removed.
  */
 export async function readPathKinds(paths: unknown): Promise<Record<string, MissionPathKind>> {
   const asked = Array.isArray(paths)
     ? paths.filter((p): p is string => typeof p === 'string').slice(0, PATH_KINDS_MAX)
     : []
   const out: Record<string, MissionPathKind> = {}
+  const roots = asked.some((p) => isAbsolute(p)) ? await markdownKnownRoots() : []
   await Promise.all(
     asked.map(async (p) => {
-      if (!isAbsolute(p)) {
+      if (!isAbsolute(p) || !isPathAllowed(resolve(p), roots)) {
         out[p] = 'missing'
         return
       }

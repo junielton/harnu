@@ -501,6 +501,66 @@
         "SETTLES_ITSELF": "O Harnu confere este critério sozinho. Você não o marca.",
         "other": "O Harnu não conseguiu salvar. Tente de novo em instantes. Se continuar, feche o menu e abra de novo."
       }
+    },
+    "empty": {
+      "title": "Esta sessão não tem missão.",
+      "loading": "Lendo a missão…",
+      "refusedTitle": "Não foi possível ler esta missão agora.",
+      "retry": "Tentar de novo",
+      "pickerTitle": "Missões abertas nesta pasta",
+      "ledBy": "liderada por {name}",
+      "unled": "ninguém a lidera",
+      "attach": "Anexar",
+      "confirm": {
+        "text": "Anexar esta sessão a “{title}”? Ela fará parte da missão, mas não vai liderá-la.",
+        "cancel": "Cancelar",
+        "yes": "Anexar"
+      },
+      "start": "Começar uma nova missão",
+      "startDone": "Adicionado ao prompt desta sessão. Aperte Enter lá para enviar.",
+      "startError": "Esta sessão não está rodando. Retome-a e tente de novo.",
+      "none": "Não há missão aberta nesta pasta para anexar.",
+      "sampleOpen": "Ver uma missão de exemplo",
+      "requestThisSession": "Esta sessão",
+      "error": {
+        "NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
+        "MISSION_NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
+        "MISSION_CLOSED": "Esta missão foi encerrada, então uma sessão não pode entrar nela.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. Tente de novo.",
+        "other": "O Harnu não conseguiu anexar esta sessão. Tente de novo em instantes."
+      }
+    },
+    "sample": {
+      "label": "Missão de exemplo",
+      "note": "Dados inventados. Nada que você apertar aqui é salvo.",
+      "chooser": "Estado",
+      "leave": "Sair do exemplo",
+      "state": {
+        "default": "Padrão",
+        "waiting": "Esperando você",
+        "step-open": "Um passo aberto",
+        "step-blocked": "Um passo bloqueado",
+        "all-steps": "Todos os passos",
+        "ask": "Perguntando sobre um marco",
+        "clear": "Nada esperando",
+        "done": "Concluída, pronta para fechar",
+        "other-session": "Outra sessão",
+        "simple": "Tarefa pequena",
+        "simple-signoff": "Tarefa pequena, aprovações",
+        "big": "Missão grande",
+        "big-waiting": "Missão grande, esperando você",
+        "no-mission": "Sem missão",
+        "attach-request": "Pede para entrar",
+        "closed": "Missão fechada"
+      },
+      "hint": {
+        "waiting": "Aperte “{label}” no cartão do próximo passo.",
+        "all-steps": "Aperte “{label}” sob o marco aberto.",
+        "big-waiting": "Aperte “{label}” no cartão do próximo passo."
+      }
+    },
+    "footer": {
+      "close": "Fechar missão…"
     }
   },
   "missionPane": {

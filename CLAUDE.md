@@ -393,6 +393,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Mission dropdown — tree and keys (§6 — S-3)        | `components/MissionDropdownTree.vue` + `lib/mission-dropdown-tree.ts`            |
 | Mission dropdown — Ask on a milestone (§6 — S-3)   | `components/MissionDropdownAsk.vue` + `lib/mission-pane-view.ts`                 |
 | Mission dropdown — an open step, links (§6 — S-4)  | `components/MissionDropdownStep.vue` + `lib/mission-dropdown-links.ts`           |
+| Mission dropdown — empty and sample (§6 — S-5)     | `components/MissionDropdownEmpty.vue` + `lib/mission-pane-view.ts`               |
 | Mission state glyph + hover label (§6 — S-3)       | `components/MissionDot.vue` + `lib/mission-dropdown-tree.ts`                     |
 | Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
 | Containers — Paused detail (§6 — U3.4)             | `src/renderer/src/components/ContainersPausedDetail.vue`                         |

@@ -409,15 +409,8 @@ defineExpose({ openStep, openAsk })
                   style="gap: 6px; font-size: 10.5px"
                   data-test="step-meta"
                 >
-                  <span
-                    v-if="s.needsYou"
-                    class="rounded-sm border border-warning-line bg-warning-soft text-warning"
-                    style="padding: 0 5px; line-height: 14px"
-                    data-test="chip-yours"
-                    >{{ $t('missionDropdown.tree.chipYours') }}</span
-                  >
                   <!-- A link, not a button: the row is the tree item, and interactive content does not nest.
-                       Its own tab stop; it never toggles the step. -->
+                       Its own tab stop; it never toggles the step. It comes before the Yours chip (`#21 Yours`). -->
                   <span
                     v-if="s.pr"
                     class="rounded-sm font-mono text-accent"
@@ -434,6 +427,13 @@ defineExpose({ openStep, openAsk })
                     @keydown.enter="openPr($event, s)"
                     @keydown.space="openPr($event, s)"
                     >#{{ s.pr }}</span
+                  >
+                  <span
+                    v-if="s.needsYou"
+                    class="rounded-sm border border-warning-line bg-warning-soft text-warning"
+                    style="padding: 0 5px; line-height: 14px"
+                    data-test="chip-yours"
+                    >{{ $t('missionDropdown.tree.chipYours') }}</span
                   >
                 </span>
               </div>
