@@ -5255,7 +5255,6 @@
       "reading": "reading",
       "driving": "driving",
       "pausedLabel": "Agent paused",
-      "connectedPrefix": "Connected to",
       "drivingTab": "Driving this tab · {host}",
       "drivingTabBare": "Driving this tab"
     },

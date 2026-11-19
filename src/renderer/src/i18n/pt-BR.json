@@ -5255,7 +5255,6 @@
       "reading": "lendo",
       "driving": "operando",
       "pausedLabel": "Agente pausado",
-      "connectedPrefix": "Conectado a",
       "drivingTab": "Operando esta aba · {host}",
       "drivingTabBare": "Operando esta aba"
     },
