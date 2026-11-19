@@ -99,4 +99,13 @@ describe('resolveDividerDrag', () => {
     expect(r.ratio).toBeGreaterThanOrEqual(SPLIT_RATIO_MIN)
     expect(r.ratio).toBeLessThanOrEqual(SPLIT_RATIO_MAX)
   })
+
+  it('reports how far past the floor the pointer is, for the stretch the divider draws', () => {
+    const base = { startRatio: 0.65, totalPx: 1000 }
+    expect(resolveDividerDrag({ ...base, deltaPx: -100 }).overshootPx).toBe(0)
+    const r = resolveDividerDrag({ ...base, deltaPx: -(FLOOR_PX(1000, 0.65) + 30) })
+    expect(r.overshootPx).toBeCloseTo(30, 6)
+    expect(resolveDividerDrag({ ...base, deltaPx: 400 }).overshootPx).toBe(0)
+    expect(resolveDividerDrag({ ...base, deltaPx: -5000, totalPx: 0 }).overshootPx).toBe(0)
+  })
 })
