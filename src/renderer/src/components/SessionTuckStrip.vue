@@ -45,6 +45,20 @@ useNativeOverlay('session-tuck-chip', chipEl)
 
 const chordKeys = computed(() => (props.chord ? props.chord.split('+') : []))
 
+/**
+ * Floating panels mode (T790 delta 2): the strip is a 4px island and the bar IS the state dot, so the
+ * colour carries what the 6px dot does in classic mode. `main.css` draws it; classic mode hides it.
+ */
+const BAR_CLASS: Record<Dot, string> = {
+  working: 'bg-green',
+  'needs-input': 'bg-warning anim-attention-dot',
+  failed: 'bg-red',
+  stuck: 'bg-red',
+  completed: 'bg-text-4',
+  archived: 'bg-text-4',
+  idle: 'bg-text-4'
+}
+
 const DOT_CLASS: Record<Dot, string> = {
   working: 'anim-pulse-dot bg-green',
   'needs-input': 'anim-attention-dot bg-warning',
@@ -72,6 +86,7 @@ const DOT_CLASS: Record<Dot, string> = {
         : ''
     ]"
     data-test="session-tuck-strip"
+    data-tuck-strip
     :data-orientation="orientation"
     :data-state="needs ? 'needs' : 'idle'"
     :aria-label="$t('sessionTuck.strip', { name })"
@@ -87,11 +102,13 @@ const DOT_CLASS: Record<Dot, string> = {
       :class="DOT_CLASS[dot]"
       style="width: 6px; height: 6px"
       data-test="session-tuck-dot"
+      data-tuck-classic
       aria-hidden="true"
     />
     <!-- The grip gives way to the chevron on hover, and to the "Needs you" tag when amber. -->
     <span
       v-if="!needs"
+      data-tuck-classic
       class="flex gap-[3px] group-hover/tuck:hidden group-focus-visible/tuck:hidden"
       :class="horizontal ? 'mx-auto flex-row' : 'my-auto flex-col'"
       aria-hidden="true"
@@ -105,6 +122,7 @@ const DOT_CLASS: Record<Dot, string> = {
     </span>
     <ChevronRight
       v-if="!needs"
+      data-tuck-classic
       :size="12"
       :stroke-width="2"
       class="hidden text-text-2 group-hover/tuck:block group-focus-visible/tuck:block"
@@ -117,8 +135,25 @@ const DOT_CLASS: Record<Dot, string> = {
       :class="horizontal ? 'mx-auto' : 'my-auto [writing-mode:vertical-rl] rotate-180'"
       style="font-size: 10px; letter-spacing: 0.06em"
       data-test="session-tuck-tag"
+      data-tuck-classic
     >
       {{ $t('sessionTuck.needsYou') }}
+    </span>
+
+    <!-- Floating panels mode only (hidden in classic mode): the strip as its own 4px island. -->
+    <span
+      class="hidden"
+      :class="BAR_CLASS[dot]"
+      data-island="tuck-strip"
+      data-test="session-tuck-bar"
+      aria-hidden="true"
+    >
+      <ChevronRight
+        :size="10"
+        :stroke-width="2.5"
+        data-tuck-chev
+        :class="horizontal ? 'rotate-90' : ''"
+      />
     </span>
 
     <span
