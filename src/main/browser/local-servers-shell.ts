@@ -22,6 +22,11 @@ export interface ShellDeps {
   procIo: ProcIo
   /** Runs `file args` and resolves its stdout (an exit code of 1 with output, as `lsof` gives for "nothing", is not an error). */
   runCommand(file: string, args: readonly string[]): Promise<string>
+  /**
+   * Harnu's own pid. Its control server's listening socket is inherited by every shell it spawns, so a shell's tree
+   * "listens" on a port that is Harnu's, not the operator's; a listener on a socket this pid holds is dropped.
+   */
+  ownPid?: number
 }
 
 /** A `LISTEN` row of `/proc/net/tcp[6]`. */
@@ -131,11 +136,27 @@ function descendantsFromProc(roots: readonly number[], io: ProcIo): number[] {
   return [...seen]
 }
 
+/** The socket inodes a process holds open (`/proc/<pid>/fd`). */
+export function socketInodesOf(pid: number, io: ProcIo): Set<string> {
+  const out = new Set<string>()
+  for (const fd of io.listDir(`/proc/${pid}/fd`)) {
+    const inode = /^socket:\[(\d+)\]$/.exec(io.readLink(`/proc/${pid}/fd/${fd}`) ?? '')?.[1]
+    if (inode !== undefined) out.add(inode)
+  }
+  return out
+}
+
 /** Linux: the listening sockets of the shells' process trees, from `/proc`. */
-export function readProcListeners(shellPids: readonly number[], io: ProcIo): Listener[] {
+export function readProcListeners(
+  shellPids: readonly number[],
+  io: ProcIo,
+  excludeInodes: ReadonlySet<string> = new Set()
+): Listener[] {
   const byInode = new Map<string, NetListenRow>()
   for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
-    for (const row of parseProcNetTcp(io.readText(file) ?? '')) byInode.set(row.inode, row)
+    for (const row of parseProcNetTcp(io.readText(file) ?? '')) {
+      if (!excludeInodes.has(row.inode)) byInode.set(row.inode, row)
+    }
   }
   if (byInode.size === 0) return []
 
@@ -224,7 +245,11 @@ export async function listenersFor(
   deps: ShellDeps
 ): Promise<Listener[]> {
   if (shellPids.length === 0) return []
-  if (platform === 'linux') return readProcListeners(shellPids, deps.procIo)
+  if (platform === 'linux') {
+    const own =
+      deps.ownPid === undefined ? new Set<string>() : socketInodesOf(deps.ownPid, deps.procIo)
+    return readProcListeners(shellPids, deps.procIo, own)
+  }
   if (platform !== 'darwin') return []
   const pids = descendantsFromPs(shellPids, await deps.runCommand('ps', ['-Ao', 'pid=,ppid=']))
   const out = await deps.runCommand('lsof', [
@@ -235,7 +260,13 @@ export async function listenersFor(
     '-p',
     pids.join(',')
   ])
-  return sortListeners(parseLsof(out))
+  const found = parseLsof(out)
+  if (deps.ownPid === undefined) return sortListeners(found)
+  const own = parseLsof(
+    await deps.runCommand('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-a', '-p', String(deps.ownPid)])
+  )
+  const ownPorts = new Set(own.map((l) => l.port))
+  return sortListeners(found.filter((l) => !ownPorts.has(l.port)))
 }
 
 /** The real `/proc`: a path that is gone (a process that exited between two reads) is `null` or `[]`. */
