@@ -270,6 +270,139 @@ describe('dragging the divider past the floor', () => {
   })
 })
 
+describe('the terminal while the divider is pulled past the floor (delta 1)', () => {
+  // The island is 650px wide at the stored ratio 0.65, so the area it shares with the stack is 1000px
+  // and the floor (0.4) is 400px. jsdom has no layout: the island's box is what we say it is.
+  const sizeIsland = (w: VueWrapper): void => {
+    ;(w.get('[data-island="session"]').element as HTMLElement).getBoundingClientRect = () =>
+      ({ width: 650, height: 480 }) as DOMRect
+  }
+  const hostStyle = (w: VueWrapper): CSSStyleDeclaration =>
+    (w.get('[data-test="terminal-pane-host"]').element as HTMLElement).style
+
+  it('pins the terminal host at the floor size as soon as the pull passes the floor, so the PTY never reflows', async () => {
+    const w = await mountApp()
+    sizeIsland(w)
+    expect(hostStyle(w).width).toBe('')
+    await divider(w).trigger('mousedown', { clientX: 1000 })
+    mouse('mousemove', 1000 - FLOOR_GAP(SIDE_TOTAL()) - 30) // past the floor, short of the threshold
+    await nextTick()
+    expect(hostStyle(w).width).toBe('400px')
+    expect(hostStyle(w).height).toBe('480px')
+    mouse('mousemove', 1000 - FLOOR_GAP(SIDE_TOTAL()) - 90) // armed
+    await nextTick()
+    expect(w.find('[data-test="session-tuck-armed"]').exists()).toBe(true)
+    expect(hostStyle(w).width).toBe('400px')
+    mouse('mouseup', 0)
+    await flushPromises()
+    // Tucked: still the floor size, not the narrower drawn size and not the size before the pull.
+    expect(useHelpersStore().sessionTucked(FOLDER)).toBe(true)
+    expect(hostStyle(w).width).toBe('400px')
+  })
+
+  it('pins at the floor even when one move jumps from well above it to far past it', async () => {
+    const w = await mountApp()
+    sizeIsland(w)
+    await divider(w).trigger('mousedown', { clientX: 1000 })
+    mouse('mousemove', 1000 - 5000)
+    await nextTick()
+    expect(hostStyle(w).width).toBe('400px')
+    mouse('mouseup', 0)
+    await flushPromises()
+    expect(hostStyle(w).width).toBe('400px')
+  })
+
+  it('does not pin while the divider stays inside the normal range', async () => {
+    const w = await mountApp()
+    sizeIsland(w)
+    await divider(w).trigger('mousedown', { clientX: 1000 })
+    mouse('mousemove', 1000 - 60)
+    await nextTick()
+    expect(hostStyle(w).width).toBe('')
+    mouse('mouseup', 0)
+  })
+
+  it('lets go of the pin when the pull comes back inside the floor', async () => {
+    const w = await mountApp()
+    sizeIsland(w)
+    await divider(w).trigger('mousedown', { clientX: 1000 })
+    mouse('mousemove', 1000 - FLOOR_GAP(SIDE_TOTAL()) - 30)
+    await nextTick()
+    expect(hostStyle(w).width).toBe('400px')
+    mouse('mousemove', 1000 - 60)
+    await nextTick()
+    expect(hostStyle(w).width).toBe('')
+    mouse('mouseup', 0)
+  })
+})
+
+describe('the armed divider (delta 1)', () => {
+  const armIt = async (w: VueWrapper, stacked: boolean): Promise<void> => {
+    if (stacked) {
+      await divider(w).trigger('mousedown', { clientY: 700 })
+      mouse('mousemove', 0, 700 - FLOOR_GAP(STACK_TOTAL()) - 90)
+    } else {
+      await divider(w).trigger('mousedown', { clientX: 1000 })
+      mouse('mousemove', 1000 - FLOOR_GAP(SIDE_TOTAL()) - 90)
+    }
+    await nextTick()
+  }
+
+  it('side by side: the line sits 2px into the hit area, and the halo is layered above the pane and the scrim', async () => {
+    const w = await mountApp()
+    await armIt(w, false)
+    const line = w.get('[data-test="session-tuck-line"]')
+    expect(line.classes()).toEqual(expect.arrayContaining(['left-0.5', 'w-0.5', 'bg-accent']))
+    expect(line.classes()).not.toContain('relative')
+    const halo = w.get('[data-test="session-tuck-halo"]')
+    expect(halo.classes()).toEqual(expect.arrayContaining(['bg-accent-soft', '-inset-x-1.5']))
+    // The scrim is z-10 and the helper column is a later sibling: the divider outranks both.
+    expect(divider(w).classes()).toContain('z-20')
+    mouse('mouseup', 0)
+  })
+
+  it('stacked: the same on the Y axis', async () => {
+    useSettingsStore().setSplitLayout('stacked')
+    const w = await mountApp()
+    await armIt(w, true)
+    const line = w.get('[data-test="session-tuck-line"]')
+    expect(line.classes()).toEqual(expect.arrayContaining(['top-0.5', 'h-0.5', 'bg-accent']))
+    const halo = w.get('[data-test="session-tuck-halo"]')
+    expect(halo.classes()).toEqual(expect.arrayContaining(['bg-accent-soft', '-inset-y-1.5']))
+    expect(divider(w).classes()).toContain('z-20')
+    mouse('mouseup', 0)
+  })
+
+  it('at rest the divider is the plain 1px line and sits below the neighbours', async () => {
+    const w = await mountApp()
+    expect(w.find('[data-test="session-tuck-halo"]').exists()).toBe(false)
+    expect(divider(w).classes()).not.toContain('z-20')
+  })
+})
+
+describe('dragging the strip out hands setSplitRatio a ratio already inside [0.4, 0.8] (delta 1)', () => {
+  it('never asks the store for less than the floor or more than the ceiling', async () => {
+    const w = await mountApp()
+    const helpers = useHelpersStore()
+    const row = w.get('[data-island="session"]').element.parentElement as HTMLElement
+    row.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 600 }) as DOMRect
+    helpers.tuckSession(FOLDER)
+    await flushPromises()
+    const spy = vi.spyOn(helpers, 'setSplitRatio')
+    await w.get('[data-test="session-tuck-strip"]').trigger('mousedown', { clientX: 7, button: 0 })
+    for (const x of [600, 950, 100, -300, 1400]) mouse('mousemove', x)
+    mouse('mouseup', 0)
+    const asked = spy.mock.calls.map((c) => c[1])
+    expect(asked.length).toBeGreaterThanOrEqual(5)
+    for (const r of asked) {
+      expect(r).toBeGreaterThanOrEqual(SPLIT_RATIO_MIN)
+      expect(r).toBeLessThanOrEqual(0.8)
+    }
+    expect(asked).toContain(SPLIT_RATIO_MIN)
+    expect(asked).toContain(0.8)
+  })
+})
+
 describe('the tucked layout', () => {
   it('collapses the session area, gives the stack the whole row, keeps the terminal host its size', async () => {
     const w = await mountApp()
