@@ -47,15 +47,20 @@ const buttonBase =
     data-testid="browser-load-error"
   >
     <Unplug :size="22" :stroke-width="1.5" class="mb-1.5 text-text-3" aria-hidden="true" />
-    <div class="text-[15px] font-semibold text-text" data-testid="browser-load-error-title">
+    <div
+      class="text-[15px] leading-[normal] font-semibold text-text"
+      data-testid="browser-load-error-title"
+    >
       {{ title }}
     </div>
     <div class="text-[12px] leading-normal text-text-2" data-testid="browser-load-error-hint">
       {{ hint }}
     </div>
-    <code class="font-mono text-[10.5px] text-text-4" data-testid="browser-load-error-code">{{
-      loadError.code
-    }}</code>
+    <code
+      class="font-mono text-[10.5px] leading-[normal] text-text-4"
+      data-testid="browser-load-error-code"
+      >{{ loadError.code }}</code
+    >
     <div class="mt-2.5 flex flex-wrap gap-1.5">
       <button
         type="button"
