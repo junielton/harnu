@@ -6,6 +6,7 @@ import {
   agentRowLabel,
   agentTypeChip,
   splitAgentsByStatus,
+  agentRowPlan,
   TASK_LABEL_MAX
 } from '../src/renderer/src/lib/agent-rows'
 
@@ -79,5 +80,36 @@ describe('splitAgentsByStatus (AC-3, AC-4)', () => {
   it('handles all-done and empty lists', () => {
     expect(splitAgentsByStatus([mk('a', 'done')]).running).toEqual([])
     expect(splitAgentsByStatus([])).toEqual({ running: [], done: [] })
+  })
+})
+
+describe('agentRowPlan (AC-3, AC-4)', () => {
+  const mk = (
+    id: string,
+    status: 'running' | 'done'
+  ): { agentId: string; status: 'running' | 'done' } => ({
+    agentId: id,
+    status
+  })
+  const shape = (rows: ReturnType<typeof agentRowPlan>): string[] =>
+    rows.map((r) => (r.kind === 'fold' ? `fold:${r.count}:${r.expanded}` : r.agent.agentId))
+  const agents = [mk('a', 'done'), mk('b', 'running'), mk('c', 'done'), mk('d', 'done')]
+
+  it('collapsed: running agents, then ONE fold row, no done agents', () => {
+    expect(shape(agentRowPlan(agents, false))).toEqual(['b', 'fold:3:false'])
+  })
+
+  it('expanded: running agents, the fold row, then the done agents in order', () => {
+    expect(shape(agentRowPlan(agents, true))).toEqual(['b', 'fold:3:true', 'a', 'c', 'd'])
+  })
+
+  it('renders no fold row when nothing is done', () => {
+    expect(shape(agentRowPlan([mk('x', 'running')], false))).toEqual(['x'])
+    expect(shape(agentRowPlan([mk('x', 'running')], true))).toEqual(['x'])
+  })
+
+  it('keeps running agents listed while the fold is collapsed', () => {
+    const rows = agentRowPlan([mk('r1', 'running'), mk('r2', 'running'), mk('d', 'done')], false)
+    expect(shape(rows)).toEqual(['r1', 'r2', 'fold:1:false'])
   })
 })
