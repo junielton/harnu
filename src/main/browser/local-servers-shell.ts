@@ -7,8 +7,8 @@
  * The parsers are pure and tested against recorded fixtures; the real file system and `execFile` enter only through
  * {@link ProcIo} and `runCommand`, so a test supplies both.
  */
-import { execFile } from 'node:child_process'
 import { readFileSync, readdirSync, readlinkSync } from 'node:fs'
+import { runFile } from '../spawn-runner'
 import type { Listener } from './local-servers'
 
 /** The `/proc` reads, as plain functions: each answers `null` or `[]` for a path that is gone. */
@@ -294,13 +294,16 @@ export const realProcIo: ProcIo = {
   }
 }
 
-/** The real `execFile`: stdout even on a non-zero exit (`lsof` exits 1 when nothing matches), 5 s ceiling. */
-export function realRunCommand(file: string, args: readonly string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(file, [...args], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
-      const code = (err as { code?: unknown } | null)?.code
-      if (err && code !== 1) reject(err)
-      else resolve(stdout)
-    })
-  })
+/**
+ * The real command runner, through the one spawn runner (`spawn-runner.ts`): stdout even on a non-zero exit (`lsof`
+ * exits 1 when nothing matches), 5 s ceiling.
+ */
+export async function realRunCommand(file: string, args: readonly string[]): Promise<string> {
+  try {
+    return (await runFile(file, args, { timeout: 5000, maxBuffer: 4 * 1024 * 1024 })).stdout
+  } catch (err) {
+    const e = err as { code?: unknown; stdout?: unknown }
+    if (e.code === 1 && typeof e.stdout === 'string') return e.stdout
+    throw err
+  }
 }

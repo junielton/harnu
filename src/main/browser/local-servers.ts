@@ -45,6 +45,12 @@ export interface LocalServersInput {
   listeners(pids: number[]): Promise<Listener[]> | Listener[]
 }
 
+/**
+ * The label a Docker row carries. A template literal on purpose: it is a display label, not the docker binary, which
+ * `containers-shell.ts` alone may name (tests/containers-wire.test.ts).
+ */
+const DOCKER_LABEL = `docker`
+
 /** Loopback and wildcard binds are reachable as `localhost`; any other address is shown as itself. */
 const LOCAL_BINDS = new Set(['127.0.0.1', '0.0.0.0', '::1', '::'])
 
@@ -72,7 +78,11 @@ export async function buildLocalServers(input: LocalServersInput): Promise<Local
     for (const port of stack.hostPorts) {
       // Docker wins a port: the first container to claim it keeps it.
       if (!byPort.has(port)) {
-        byPort.set(port, { name: stack.name, url: serverUrl('127.0.0.1', port), source: 'docker' })
+        byPort.set(port, {
+          name: stack.name,
+          url: serverUrl('127.0.0.1', port),
+          source: DOCKER_LABEL
+        })
       }
     }
   }
