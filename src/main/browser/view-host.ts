@@ -504,6 +504,16 @@ export class BrowserViewHost implements BrowserReadHost {
   create(opts: { paneId: string; folder: string; partition: BrowserPartition; url: string }): void {
     const rec = this.deps.registry.get(opts.paneId)
     if (!rec) throw new Error('unknown pane')
+    // An operator pane opened with no address (the Topbar button, Shift+click, Split → Browser) starts on the start
+    // page. An agent pane and a live panel never do (spec R-3).
+    if (
+      rec.openedBy === 'operator' &&
+      !rec.pagePath &&
+      (opts.url === '' || opts.url === 'about:blank')
+    ) {
+      const first = rec.tabs.find((t) => t.tabId === rec.activeTabId)
+      if (first) first.hostView = 'start'
+    }
     this.createTabView(rec, rec.activeTabId, opts.url, { attach: true })
   }
 

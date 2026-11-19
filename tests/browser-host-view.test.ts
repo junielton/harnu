@@ -243,6 +243,48 @@ describe('start transitions', () => {
   })
 })
 
+describe('a pane opened with no address (browser-tabs S-5, AC-24)', () => {
+  const open = (
+    r: ReturnType<typeof rig>,
+    paneId: string,
+    openedBy: 'operator' | 'agent',
+    url: string
+  ) => {
+    r.registry.add({
+      paneId,
+      folder: FOLDER,
+      name: 'browser',
+      openedBy,
+      partition: openedBy,
+      ownerSessionId: null,
+      createdAt: 1,
+      lastActiveAt: 1,
+      seenHosts: new Set<string>(),
+      flagged: null
+    } as never)
+    r.host.create({ paneId, folder: FOLDER, partition: openedBy, url })
+    r.host.applyBounds(paneId, RECT, true)
+    return r.registry.get(paneId)!.activeTabId
+  }
+
+  it('an operator pane opened with no address starts on the start page', () => {
+    const r = rig()
+    const t = open(r, 'bp-1', 'operator', 'about:blank')
+    expect(r.tabState('bp-1', t).hostView).toBe('start')
+    expect(hostPlaceholderOf(r.tabState('bp-1', t))).toBe('start')
+    expect(r.viewOf('bp-1', t).getVisible()).toBe(false)
+  })
+
+  it('an operator pane opened with an address is a page; an agent pane with none is a page too', () => {
+    const r = rig()
+    const t1 = open(r, 'bp-1', 'operator', 'https://a.test/')
+    expect(r.tabState('bp-1', t1).hostView).toBe('page')
+    const t2 = open(r, 'bp-2', 'agent', 'about:blank')
+    expect(r.tabState('bp-2', t2).hostView).toBe('page')
+    expect(r.viewOf('bp-2', t2).getVisible()).toBe(true)
+  })
+})
+
 describe('restore placeholders', () => {
   const restored = (tabs: unknown[], activeTabId: string, openedBy = 'operator') => {
     const r = rig()
