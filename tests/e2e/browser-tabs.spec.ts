@@ -1,13 +1,16 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { createServer, type Server } from 'node:http'
-import { rmSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { AddressInfo } from 'node:net'
 import { launchApp } from './ci/fixtures/launch-app'
 import { seedDialogWorld, seedLaunchEnv, type DialogSeed } from './ci/fixtures/dialog-seed'
 
 /**
  * browser-tabs S-4 / AC-22, AC-40, AC-41 — the tab chords, the login shared across the tabs of a pane, and the Topbar
- * Browser button adding a tab.
+ * Browser button adding a tab. S-7 / AC-34 — every child of the pane header on one vertical centre line.
  *
  * Launches the BUILT app on a throwaway `userData` (the `ci` fixtures: it never touches the operator's running
  * Harnu), serves two tiny pages from a local HTTP server (one sets a cookie, the other records the cookie it was
@@ -189,5 +192,101 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
     await expect(tabs()).toHaveCount(2)
     await expect(page.getByTestId('browser-pane')).toHaveCount(1) // a tab, not one more pane
     await expect(address()).toBeFocused()
+  })
+  test('one centre line', async () => {
+    /** The vertical centre of every child of the pane header (and of the strip's own children), in px. */
+    const centres = (): Promise<Array<{ what: string; centre: number }>> =>
+      page.evaluate(() => {
+        const header = document.querySelector('[data-dsqa-part="header"]')
+        if (!header) throw new Error('no pane header')
+        const out: Array<{ what: string; centre: number }> = []
+        const visit = (el: Element, what: string): void => {
+          const r = el.getBoundingClientRect()
+          const pos = getComputedStyle(el).position
+          // Screen-reader-only nodes (1px, absolute) are not part of the visual row.
+          if (r.width === 0 || r.height === 0 || pos === 'absolute') return
+          out.push({ what, centre: r.top + r.height / 2 })
+        }
+        for (const child of Array.from(header.children)) {
+          const id = child.getAttribute('data-testid') ?? child.tagName.toLowerCase()
+          visit(child, id)
+          if (child.getAttribute('data-testid') === 'browser-tab-strip') {
+            const list = child.querySelector('[data-testid="browser-tab-list"]')
+            for (const tab of Array.from(list?.children ?? [])) visit(tab, 'tab')
+            for (const el of Array.from(child.children)) {
+              if (el !== list) visit(el, el.getAttribute('data-testid') ?? el.tagName.toLowerCase())
+            }
+          }
+          // A chip wrapper holds the icon and its buttons as children of its own.
+          if (
+            child.getAttribute('data-testid') === 'agent-connection-chip' ||
+            child.getAttribute('data-testid') === 'browser-chip'
+          ) {
+            for (const el of Array.from(child.children)) {
+              visit(el, el.getAttribute('data-testid') ?? el.tagName.toLowerCase())
+            }
+          }
+        }
+        return out
+      })
+    const expectOneLine = async (state: string): Promise<void> => {
+      const rows = await centres()
+      expect(rows.length, `${state}: header children measured`).toBeGreaterThan(3)
+      const spread = Math.max(...rows.map((r) => r.centre)) - Math.min(...rows.map((r) => r.centre))
+      expect(spread, `${state}: ${JSON.stringify(rows)}`).toBeLessThanOrEqual(0.5)
+    }
+
+    await test.step('single', async () => {
+      await openBrowserPane()
+      await go(`${base}/one`)
+      await expect(tabs()).toHaveCount(0)
+      await expectOneLine('single')
+    })
+
+    await test.step('tabs', async () => {
+      await address().press('Control+t')
+      await expect(tabs()).toHaveCount(2)
+      await expectOneLine('tabs')
+    })
+
+    await test.step('overflow', async () => {
+      for (let i = 0; i < 4; i++) await address().press('Control+t')
+      await expect(tabs().first()).toBeVisible()
+      // Out of the expanded view, back in the narrow stack: six tabs no longer fit the strip.
+      await page.locator('[data-test="pane-expand"]').first().click()
+      await expect(page.getByTestId('browser-tab-more')).toBeVisible()
+      await expectOneLine('overflow')
+    })
+
+    await test.step('agent', async () => {
+      await closePanes()
+      // Enable the control server and let an "agent" open a pane in the folder: its header carries the icon.
+      await page.evaluate(() =>
+        (
+          window as unknown as { api: { mcpSetEnabled(v: boolean): Promise<unknown> } }
+        ).api.mcpSetEnabled(true)
+      )
+      const cfg = JSON.parse(readFileSync(join(seed.userData, 'harnu.mcp.json'), 'utf8')) as {
+        mcpServers: Record<string, { url: string; headers?: Record<string, string> }>
+      }
+      const harnu = Object.values(cfg.mcpServers)[0]!
+      const client = new Client({ name: 'browser-tabs-e2e', version: '0.0.0' })
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(harnu.url), {
+          requestInit: { headers: harnu.headers ?? {} }
+        })
+      )
+      try {
+        const opened = await client.callTool({
+          name: 'browser_open',
+          arguments: { folder: seed.repo, url: `${base}/agent` }
+        })
+        expect(opened.isError).not.toBe(true)
+        await expect(page.getByTestId('agent-icon')).toBeVisible()
+        await expectOneLine('agent')
+      } finally {
+        await client.close()
+      }
+    })
   })
 })
