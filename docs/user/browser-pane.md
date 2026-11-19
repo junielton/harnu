@@ -21,6 +21,14 @@ Click the **Browser** button (the globe) in the Topbar, right next to the **Term
 
 - **Network counter** — a red dot and **Network 4:12** appear in the header while a session is recording the page's network traffic. It counts down to when the recording stops by itself. There is no stop button: close the pane or disconnect the session to end it sooner. When the pane is narrow the word "Network" gives way and the dot and the time stay.
 
+## When a page will not load
+
+If a page fails to load, the pane does not leave you with a blank page. It shows what went wrong: a plain title ("localhost:8000 refused to connect", "exmaple.com's address could not be found", "No internet connection"), one line about what to do, the error code (for example `ERR_CONNECTION_REFUSED`) and **Reload**. A load that was only cancelled (you clicked another link before it finished) is not an error and shows nothing. The address field keeps the address that failed, so you can fix a typo and press **Enter**.
+
+On your own machine (a green **local** address), the page also has **Reload when it is up**. Start your dev server, click it, and Harnu checks that host and port every two seconds and reloads the page by itself as soon as something answers. While it waits, the button reads **Waiting for localhost:8000…**; click it again to stop. It also stops after ten minutes, when you go to another address, and when you close the tab. It keeps checking while the pane is hidden. An **external** address has no such button.
+
+A browser tab with no address shows an empty page and the address field is ready for you to type in (the start page that lists your running servers and recent sites comes in a later change). A session's own browser pane never shows it, and a session that reads a pane showing the error is told the error code instead of getting an empty page. After a restart an error tab loads its address again, so it either comes back or shows the error again.
+
 ## Live panels: your own files, kept fresh by a session
 
 A session can open one of **your project's `.html` files** in a pane — or write a small panel from inline HTML — and keep it up to date while you watch: a status board, a checklist, a set of numbers. A panel pane shows a blue **page** badge, and its address field shows the file's path in your project (`docs/status.html`) instead of an address.
@@ -93,7 +101,7 @@ A page in a browser pane is treated as untrusted code, even your own dev server:
 - **The comment button does nothing, or Ctrl+Shift+C does not start it.** The shortcut works while the pane has the focus (click the page once first); the button works any time. The keybinding can be changed in Settings → Keybindings.
 - **"Comment not sent".** The notice says why: you disconnected the session from this pane, or the session could not take the message (the draft is kept until the message really went in).
 
-- **The page is blank or white.** A reload (**⟳**) usually fixes it. If the address is `about:blank` you haven't navigated yet.
+- **The page is blank or white.** A reload (**⟳**) usually fixes it. If the address is `about:blank` you haven't navigated yet. A page that failed to load shows an error with a reason instead (see [When a page will not load](#when-a-page-will-not-load)).
 - **A pane says "Paused to save memory".** It was hidden for ten minutes; click **Click to reload** (or just ask the session to use it). After a restart a pane says "Not loaded yet" until you look at it.
 - **A menu seems to flash a still picture of the page.** That is the frozen frame described above, working as intended.
 - **A panel doesn't update.** Check the pane's chip: **Pause agent** and the Settings switch both stop updates. A page that is not one of your own files (a dev server, a website) can't be updated by `set_data` or `patch`; the session is told so.
