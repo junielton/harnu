@@ -215,6 +215,10 @@ export const useBrowserStore = defineStore('browser', () => {
   async function tabReload(paneId: string, tabId: string): Promise<boolean> {
     return (await window.api.browserTabReload(paneId, tabId)).ok
   }
+  /** "Reload when it is up" on an error tab: `on` starts main's TCP poll of its local origin, `false` cancels it. */
+  async function tabReloadWhenUp(paneId: string, tabId: string, on: boolean): Promise<boolean> {
+    return (await window.api.browserTabReloadWhenUp(paneId, tabId, on)).ok
+  }
 
   async function pause(paneId: string): Promise<void> {
     const until = await window.api.browserPause(paneId)
@@ -377,6 +381,7 @@ export const useBrowserStore = defineStore('browser', () => {
     tabDuplicate,
     tabMoveToPane,
     tabReload,
+    tabReloadWhenUp,
     pause,
     resume,
     disconnect,

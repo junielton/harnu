@@ -15,8 +15,7 @@ import {
   refuse,
   refuseBadArgs,
   type BrowserHost,
-  type BrowserVerbDeps,
-  type Refusal
+  type BrowserVerbDeps
 } from './verbs-core'
 import { CONSOLE_LEVELS, type ConsoleLevel } from './console-buffer'
 import { DEFAULT_CAPTURE_MINUTES, MAX_CAPTURE_MINUTES, type NetworkEntry } from './network-capture'
@@ -114,7 +113,7 @@ async function openRead(
   paneId: string,
   deps: BrowserReadDeps,
   args?: Record<string, unknown>
-): Promise<{ refusal: Refusal } | { ctx: ReadCtx }> {
+): Promise<{ refusal: Record<string, unknown> } | { ctx: ReadCtx }> {
   const g = await gate(op, paneId, deps, args)
   if ('refusal' in g) return g
   const rec = g.rec!
@@ -131,7 +130,7 @@ async function openRead(
         ...(EMPTY_PAGE[op] ?? {}),
         loadError,
         note: BROWSER_NOTE
-      } as Refusal
+      }
     }
   }
   return {

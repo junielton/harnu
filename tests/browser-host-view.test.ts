@@ -394,3 +394,162 @@ describe('renderer placeholders', () => {
     w.unmount()
   })
 })
+
+describe('renderer placeholders: the pane host', () => {
+  const T = 'tab-0000000a'
+  const baseState = (over: Record<string, unknown>) => ({
+    paneId: 'bp-ui',
+    url: '',
+    title: '',
+    loading: false,
+    canGoBack: false,
+    canGoForward: false,
+    origin: 'blank',
+    openedBy: 'operator',
+    partition: 'operator',
+    flagged: null,
+    pausedUntil: null,
+    disconnected: false,
+    ownerSessionId: null,
+    notice: null,
+    agentReads: false,
+    leaseActive: false,
+    networkUntil: null,
+    zoom: 1,
+    emulation: {},
+    downloadPrompt: null,
+    pagePath: null,
+    allowNetwork: false,
+    pageFileRemoved: false,
+    discarded: null,
+    activeTabId: T,
+    lastFocusedAt: null,
+    ...over
+  })
+  const tabRow = (over: Record<string, unknown>) => ({
+    tabId: T,
+    url: '',
+    title: '',
+    favicon: null,
+    loading: false,
+    hostView: 'page',
+    waitingForUp: false,
+    discarded: false,
+    active: true,
+    agentActive: false,
+    ...over
+  })
+
+  async function mountPane(state: Record<string, unknown>) {
+    const { createPinia, setActivePinia } = await import('pinia')
+    const { mount, flushPromises } = await import('@vue/test-utils')
+    const { i18n } = await import('../src/renderer/src/i18n')
+    const BrowserPane = (await import('../src/renderer/src/components/BrowserPane.vue')).default
+    const { useBrowserStore } = await import('../src/renderer/src/stores/browser')
+    const calls: unknown[][] = []
+    ;(globalThis as any).window.api = new Proxy(
+      // eslint-disable-line @typescript-eslint/no-explicit-any
+      {},
+      {
+        get:
+          (_t, name: string) =>
+          (...args: unknown[]) => {
+            calls.push([name, ...args])
+            if (name === 'browserTabReload' || name === 'browserTabReloadWhenUp')
+              return Promise.resolve({ ok: true })
+            if (name === 'browserState') return Promise.resolve(null)
+            return name.startsWith('on') ? () => undefined : Promise.resolve(null)
+          }
+      }
+    )
+    ;(globalThis as any).ResizeObserver = class {
+      // eslint-disable-line @typescript-eslint/no-explicit-any
+      observe(): void {}
+      disconnect(): void {}
+    }
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const browser = useBrowserStore()
+    browser.states = { 'bp-ui': state as never }
+    const w = mount(BrowserPane, {
+      props: {
+        pane: {
+          id: 'bp-ui',
+          type: 'browser',
+          payload: { name: '', url: '', openedBy: 'operator', partition: 'operator' }
+        } as never,
+        worktreePath: FOLDER
+      },
+      global: { plugins: [pinia, i18n] },
+      attachTo: document.body
+    })
+    await flushPromises()
+    return { w, browser, calls, flushPromises }
+  }
+
+  it('a start tab draws an empty bg host and the address field has the focus', async () => {
+    const { w } = await mountPane(
+      baseState({ tabs: [tabRow({ hostView: 'start', url: 'about:blank' })] })
+    )
+    const host = w.get('[data-testid="browser-start-placeholder"]')
+    expect(host.element.textContent?.trim()).toBe('')
+    expect(host.classes()).toContain('bg-bg')
+    expect(w.find('[data-testid="browser-load-error"]').exists()).toBe(false)
+    const input = document.activeElement as HTMLElement | null
+    expect(input?.tagName).toBe('INPUT')
+    w.unmount()
+  })
+
+  it('a page tab draws neither placeholder', async () => {
+    const { w } = await mountPane(baseState({ tabs: [tabRow({ url: 'https://a.test/' })] }))
+    expect(w.find('[data-testid="browser-start-placeholder"]').exists()).toBe(false)
+    expect(w.find('[data-testid="browser-load-error"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('an error tab draws the error component from loadError; Reload and Reload when it is up reach main', async () => {
+    const loadError = {
+      code: 'ERR_CONNECTION_REFUSED',
+      url: 'http://localhost:8000/',
+      host: 'localhost:8000',
+      port: 8000,
+      local: true
+    }
+    const { w, calls, browser, flushPromises } = await mountPane(
+      baseState({
+        url: 'http://localhost:8000/',
+        origin: 'local',
+        tabs: [tabRow({ hostView: 'error', url: 'http://localhost:8000/', loadError })]
+      })
+    )
+    expect(w.get('[data-testid="browser-load-error-title"]').text()).toBe(
+      'localhost:8000 refused to connect'
+    )
+    await w.get('[data-testid="browser-load-error-reload"]').trigger('click')
+    expect(calls).toContainEqual(['browserTabReload', 'bp-ui', T])
+    await w.get('[data-testid="browser-load-error-when-up"]').trigger('click')
+    expect(calls).toContainEqual(['browserTabReloadWhenUp', 'bp-ui', T, true])
+    // Main reports the poll: the button reads the waiting label, and a second click cancels it.
+    browser.states = {
+      'bp-ui': baseState({
+        url: 'http://localhost:8000/',
+        origin: 'local',
+        tabs: [
+          tabRow({
+            hostView: 'error',
+            url: 'http://localhost:8000/',
+            loadError,
+            waitingForUp: true
+          })
+        ]
+      }) as never
+    }
+    await flushPromises()
+    expect(w.get('[data-testid="browser-load-error-when-up"]').text()).toBe(
+      'Waiting for localhost:8000…'
+    )
+    await w.get('[data-testid="browser-load-error-when-up"]').trigger('click')
+    expect(calls).toContainEqual(['browserTabReloadWhenUp', 'bp-ui', T, false])
+    w.unmount()
+  })
+})

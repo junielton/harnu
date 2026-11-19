@@ -818,6 +818,11 @@ export class BrowserViewHost implements BrowserReadHost {
   async reloadTab(paneId: string, tabId: string): Promise<boolean> {
     const rec = this.deps.registry.get(paneId)
     if (!rec || !findTab(rec, tabId)) return false
+    // An error tab reloads the address that failed (the hidden view only holds Chromium's own error page).
+    const failed =
+      findTab(rec, tabId)?.hostView === 'error' ? this.loadErrors.get(tabId) : undefined
+    if (failed && this.entries.has(tabId))
+      return this.operatorNavigate(paneId, { url: failed.address }, tabId).ok
     if (this.entries.has(tabId))
       return this.operatorNavigate(paneId, { action: 'reload' }, tabId).ok
     return this.revive(paneId, { tabId })
