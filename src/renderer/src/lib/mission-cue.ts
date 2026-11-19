@@ -42,6 +42,7 @@
  * polls never reaches the operator.
  */
 import type { MissionYouItem, WaitingItemV4 } from '../../../main/missions/waiting'
+import type { SoundFamily } from './notification-sound'
 
 /**
  * What the cue reads of a mission: its id and the ONE waiting list. The v3 view the list poll returns
@@ -113,6 +114,11 @@ export interface CueMemory {
 
 export interface CueDecision {
   cue: boolean
+  /**
+   * The sound this cue plays (T154): the most urgent family among every key that cued in this poll
+   * (fail > ask > info), `null` when nothing cued.
+   */
+  family: SoundFamily | null
   /** The missions this cue is about — one combined cue covers all of them. */
   missionIds: string[]
   memory: CueMemory
@@ -188,6 +194,27 @@ function isBlocking(key: OwedKey): boolean {
   )
 }
 
+/**
+ * The sound family one owed key plays (T154): a red `main` is a `fail`; every other blocking kind (an
+ * operator blocker, a request to join, a mission ready to close, a criterion only the operator can mark,
+ * a re-scope, a pending decision, human steps) `ask`s; reviews, due checks and an imported end are `info`.
+ */
+export function cueFamilyOfKey(key: OwedKey): SoundFamily {
+  if (key.startsWith('main-failing:')) return 'fail'
+  // A v3 `close` is the same ask as a v4 `ready-to-close`, though it never re-nudges.
+  if (key === 'close' || isBlocking(key)) return 'ask'
+  return 'info'
+}
+
+const FAMILY_RANK: Record<SoundFamily, number> = { info: 0, ask: 1, done: 2, fail: 3 }
+
+/** The most urgent family of several (fail > ask > info), or `null` for none. */
+export function mostUrgentFamily(families: readonly SoundFamily[]): SoundFamily | null {
+  let best: SoundFamily | null = null
+  for (const f of families) if (best === null || FAMILY_RANK[f] > FAMILY_RANK[best]) best = f
+  return best
+}
+
 /** Everything this mission owes that deserves a sound, as key → count (empty = nothing). */
 export function owedKeys(view: CueView): Map<OwedKey, number> {
   const out = new Map<OwedKey, number>()
@@ -242,6 +269,7 @@ function returned(state: KeyState | undefined): KeyState | undefined {
 export function decideCue(views: readonly CueView[], memory: CueMemory, now: number): CueDecision {
   const next: CueMemory['owed'] = new Map()
   const cueIds: string[] = []
+  const cuedFamilies: SoundFamily[] = []
   for (const v of uniqueById(views)) {
     const id = v.mission.id
     const prev = memory.owed.get(id)
@@ -255,6 +283,7 @@ export function decideCue(views: readonly CueView[], memory: CueMemory, now: num
         // A new key or a grown count is a fresh cue: the schedule restarts.
         keys.set(k, { count, firstOwedAt: was?.firstOwedAt ?? now, lastCuedAt: now, nudges: 0 })
         cued = true
+        cuedFamilies.push(cueFamilyOfKey(k))
       } else if (
         isBlocking(k) &&
         was.nudges < BLOCKING_NUDGE_MS.length &&
@@ -262,6 +291,7 @@ export function decideCue(views: readonly CueView[], memory: CueMemory, now: num
       ) {
         keys.set(k, { ...was, count, lastCuedAt: now, nudges: was.nudges + 1 })
         cued = true
+        cuedFamilies.push(cueFamilyOfKey(k))
       } else {
         // Same or fewer: remember the new count, so a later growth is measured from here.
         keys.set(k, { ...was, count })
@@ -281,7 +311,12 @@ export function decideCue(views: readonly CueView[], memory: CueMemory, now: num
   for (const [id, entry] of memory.owed) {
     if (!next.has(id) && now - entry.lastSeenAt <= ABSENT_TTL_MS) next.set(id, entry)
   }
-  return { cue: cueIds.length > 0, missionIds: cueIds, memory: { owed: next } }
+  return {
+    cue: cueIds.length > 0,
+    family: mostUrgentFamily(cuedFamilies),
+    missionIds: cueIds,
+    memory: { owed: next }
+  }
 }
 
 /** Maps → plain objects for `localStorage`. */

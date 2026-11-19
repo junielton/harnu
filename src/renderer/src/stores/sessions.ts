@@ -89,8 +89,10 @@ import {
   type WindowCtx
 } from './session-window'
 import {
+  NOTIFY_KIND_FAMILY,
   decideNotification,
   parseNotifyPrefs,
+  soundAllowed,
   type NotifyPrefs,
   type NotifyKind
 } from './session-notify'
@@ -1243,7 +1245,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     addParkedConfirm,
     removeParkedConfirm,
     resolveParkedConfirm
-  } = useMcpConfirmQueue()
+  } = useMcpConfirmQueue({
+    // T154: a parked approval's sound obeys the Sound switch and the Asks-you mute.
+    soundAllowed: (family) => soundAllowed(notifyPrefs.value, family)
+  })
 
   /**
    * Set of session ids whose nested agent list is expanded in the sidebar
@@ -4525,7 +4530,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     })
     if (needsChimeFallback(outcome, chimeAlreadyPlayed)) {
       try {
-        playNotificationSound()
+        // T154: the fallback plays the event's own family, and only when sound is allowed at all —
+        // a failed voice must not sneak a sound past the Sound switch or a family mute.
+        const family = NOTIFY_KIND_FAMILY[kind]
+        if (soundAllowed(notifyPrefs.value, family)) playNotificationSound(family)
       } catch {
         // The fallback is a courtesy, not a contract — never escape the caller.
       }
@@ -4573,6 +4581,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       body,
       channel: decision.channel,
       sound: decision.sound,
+      family: NOTIFY_KIND_FAMILY[decision.kind],
       sessionId: s.sessionId,
       toastKind: TOAST_KIND[decision.kind],
       // T599: tag the Activity row with its unit so repeats fold into one.
@@ -4714,7 +4723,8 @@ export const useSessionsStore = defineStore('sessions', () => {
       title: i18n.global.t('notifications.usageReset.title'),
       body: i18n.global.t('notifications.usageReset.body'),
       channel: windowFocused.value ? 'toast' : 'os',
-      sound: notifyPrefs.value.sound,
+      sound: soundAllowed(notifyPrefs.value, 'info'),
+      family: 'info',
       sessionId: '',
       toastKind: 'info'
     })
@@ -4758,7 +4768,8 @@ export const useSessionsStore = defineStore('sessions', () => {
             pct: Math.max(0, Math.round(budget.budgetPct - budget.spentPct))
           }),
       channel: windowFocused.value ? 'toast' : 'os',
-      sound: notifyPrefs.value.sound,
+      sound: soundAllowed(notifyPrefs.value, 'info'),
+      family: 'info',
       sessionId: '',
       toastKind: threshold === 100 ? 'warning' : 'info'
     })
