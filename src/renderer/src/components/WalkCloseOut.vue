@@ -8,8 +8,9 @@ import { useI18n } from 'vue-i18n'
  * The close-out (design.md §6 "Guided test walk" → Close-out): the pane IS the report. One row per check with
  * how it was verified, the extra checks that were not ticked, the `⚑ Still yours` card only when something is
  * owed, the Saved in Walks card, and the summary the session received as its `closed` turn. There is no footer
- * button and no control that settles a criterion: with a mission source the card shows each criterion's state
- * and a link to the Mission, where the operator ticks it themself.
+ * button and no control that settles a criterion: with a mission source the close of the run has already settled
+ * the criteria two signals verified (the operator's Done and the agent's check), a section names each criterion's
+ * outcome, and the card lists only what is left with a link to the Mission, where the operator ticks it themself.
  */
 defineProps<{ closeout: CloseoutView }>()
 defineEmits<{ 'open-mission': []; 'open-walks': []; export: [] }>()
@@ -43,6 +44,21 @@ const glyphClass: Record<string, string> = {
       </span>
     </li>
   </ol>
+
+  <section
+    v-if="closeout.criteria.length"
+    class="sec"
+    data-dsqa-part="criteria"
+    data-test="walk-criteria"
+  >
+    <div class="eyebrow">{{ $t('testWalk.closeout.criteria') }}</div>
+    <ul class="crit-list">
+      <li v-for="c in closeout.criteria" :key="c.id" data-test="walk-criterion">
+        <span class="ask sm">{{ c.text }}</span>
+        <span class="why">{{ c.state }}</span>
+      </li>
+    </ul>
+  </section>
 
   <section
     v-if="closeout.unticked.length"

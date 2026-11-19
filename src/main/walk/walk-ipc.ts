@@ -3,8 +3,9 @@
  * the link opens and what the pane reads to draw a run all cross here.
  *
  * What this module is NOT: a verb. The pane talks to the service's `operate` (the operator side of S-2) and
- * nothing here takes a command to run, settles a criterion or reaches `markCriterion` (NG-4, D-2). A criterion
- * is only READ, live, for the close-out; the operator ticks it in the Mission.
+ * nothing here takes a command to run, settles a criterion or reaches `markCriterion` (NG-4). A criterion is
+ * only READ, live, for the close-out. The close of a run settles what two signals verified (T787, in the
+ * service through `walk-settle.ts`); everything else the operator ticks in the Mission.
  *
  * Channels (request/response, `walk:verb`):
  *  - `walk:load`          what the pane needs to draw a run (the walk, the run, the pane's ticks, the criteria)
@@ -83,6 +84,10 @@ export interface WalkCriterion {
   id: string
   text: string
   state: 'open' | 'settled' | 'unavailable'
+  /** Who settles it (T787: a walk settles only an `operator` criterion). */
+  by?: 'operator' | 'person' | 'session' | 'fact'
+  /** Settled by the end of THIS run, not by the operator's Mark done. */
+  viaWalk?: boolean
 }
 
 export interface WalkLoad {
@@ -208,7 +213,8 @@ async function writeTick(
 
 async function missionFacts(
   folder: string,
-  script: WalkScript
+  script: WalkScript,
+  settledByRun: readonly string[] = []
 ): Promise<{ criteria: WalkCriterion[]; mission: WalkLoad['mission'] }> {
   const src = script.source
   if (src.kind !== 'mission') return { criteria: [], mission: null }
@@ -239,7 +245,9 @@ async function missionFacts(
     criteria: wanted.map((a) => ({
       id: a.id,
       text: a.text,
-      state: a.settled ? ('settled' as const) : ('open' as const)
+      state: a.settled ? ('settled' as const) : ('open' as const),
+      by: a.by,
+      ...(a.settled && settledByRun.includes(a.id) ? { viaWalk: true } : {})
     })),
     mission: {
       title: record.title,
@@ -281,7 +289,7 @@ export async function loadWalk(
   const pending = rec.outbox.filter((o) => !o.delivered)
   const oldest = pending.reduce((age, o) => Math.max(age, now - o.createdAt), 0)
   const heldAt = env.heldAfterMs ?? heldAfterMs()
-  const facts = await missionFacts(svc.folder, walk.script)
+  const facts = await missionFacts(svc.folder, walk.script, rec.settledCriteria ?? [])
   const runs = await store.listRuns(a.walkId)
   // a re-run reads what each check said last time from the latest run that ended before it
   const before = runs.filter((r) => r.run.state === 'ended' && r.run.n < rec.run.n).at(-1)

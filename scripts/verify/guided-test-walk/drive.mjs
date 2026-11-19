@@ -182,6 +182,39 @@ export function makeCtx({ inst, fixtures, evidence, faults, repoRoot, caseId }) 
       inst._mission = { id, operator, session }
       return inst._mission
     },
+    /**
+     * A fresh mission (never cached) with one step carrying these criteria (`{ text, by }`), made through the
+     * instance's own `mission_create`; resolves `{ id, criteria: [{ id, text, by }] }`.
+     */
+    async newMission(title, criteria) {
+      const r = await inst.mcp.call('mission_create', {
+        folder: inst.repo,
+        sessionId: inst.sessions.leader,
+        title,
+        doneWhen: `${title} works end to end`,
+        steps: [{ title: `Build ${title}`, criteria }]
+      })
+      const id = r.payload?.missionId ?? r.payload?.id
+      if (!/^mnt-/.test(id ?? ''))
+        throw new Error(`mission_create refused: ${JSON.stringify(r.payload).slice(0, 300)}`)
+      return {
+        id,
+        criteria: (await ctx.missionCriteria(id)).map(({ id: cid, text, by }) => ({
+          id: cid,
+          text,
+          by
+        }))
+      }
+    },
+    /** The criteria of a mission's first step as `mission_get` reads them (state, `by`, who and what settled it). */
+    async missionCriteria(id) {
+      const g = await inst.mcp.call('mission_get', {
+        folder: inst.repo,
+        sessionId: inst.sessions.leader,
+        missionId: id
+      })
+      return g.payload.steps?.[0]?.criteria ?? []
+    },
     /** The mission walk fixture for a mission made by `makeMission`. */
     mission(m) {
       return JSON.parse(

@@ -102,7 +102,7 @@ const BRIEF = [
   '2. One check at a time, exactly one: never preview the next one or bundle two.',
   '3. Every check says where, what to do (each action with what the operator will see), what should be seen, and what a failure looks like.',
   '4. Quote every expected value and check every link you give; never ask for a secret.',
-  '5. Never tick or settle a criterion: with this source the operator does it in the Mission dropdown (Mark done).',
+  '5. Never tick or settle a criterion yourself: cite it with `criterion` on the check that answers it; when the walk closes Harnu settles the operator criteria that Done plus your pass verified, and the rest stay with the operator in the Mission dropdown (Mark done).',
   '6. After walk_open act only on [harnu-walk] turns: run the read-only check and answer with walk_report.',
   '7. Silence, "ok" or "it should have worked" never close a check.',
   "Say in one line that the walk is open, then stop: the next move is the operator's."

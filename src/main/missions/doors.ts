@@ -56,9 +56,19 @@ const now = (at: string | undefined): string => at ?? new Date().toISOString()
 export async function markCriterion(
   folder: string,
   missionId: string,
-  args: { stepId: string; criterionId: string; evidence?: string; at?: string }
+  args: {
+    stepId: string
+    criterionId: string
+    evidence?: string
+    at?: string
+    via?: WalkSettleVia
+  }
 ): Promise<DoorResult<{ stepId: string; criterionId: string }>> {
   const at = now(args.at)
+  // T787: the close of a guided walk reaches this same door, but its stamp and Log line say a walk settled it
+  // (two signals: the operator's Done and the agent's check), never that the operator pressed Mark done.
+  const evidence =
+    args.via !== undefined ? walkSettleEvidence(args.via, args.evidence) : args.evidence
   const result = await applyChange(folder, missionId, OPERATOR, 'operator', (record, log) => {
     const stepId = resolveStepId(record, args.stepId, missionId)
     const step = record.steps.find((s) => s.id === stepId)
@@ -79,7 +89,7 @@ export async function markCriterion(
     const settled: Settled = {
       at,
       by: 'operator',
-      ...(args.evidence !== undefined ? { evidence: args.evidence } : {}),
+      ...(evidence !== undefined ? { evidence } : {}),
       ...(criterion.by === 'person' && criterion.person !== undefined
         ? { person: criterion.person }
         : {})
@@ -96,9 +106,11 @@ export async function markCriterion(
       log: logEntry(
         log,
         at,
-        `operator marked "${criterion.text}" done on "${step.title}"${
-          settled.person ? ` for ${settled.person}` : ''
-        }`
+        args.via !== undefined
+          ? `walk ${args.via.walkId} (run ${args.via.runId}) settled "${criterion.text}" on "${step.title}": check ${args.via.checkId} had the operator's Done and the agent's check agreeing`
+          : `operator marked "${criterion.text}" done on "${step.title}"${
+              settled.person ? ` for ${settled.person}` : ''
+            }`
       )
     }
   })
@@ -109,6 +121,19 @@ export async function markCriterion(
         criterionId: args.criterionId
       }
     : result
+}
+
+/** Which walk, run and check settled a criterion at the close of a run (T787). */
+export interface WalkSettleVia {
+  walkId: string
+  runId: string
+  checkId: string
+}
+
+/** The one-line evidence a walk's settle stamps: where it came from, then the agent's own words. */
+export function walkSettleEvidence(via: WalkSettleVia, agent: string | undefined): string {
+  const said = (agent ?? '').replace(/\s+/g, ' ').trim().slice(0, 400)
+  return `Settled by walk ${via.walkId}, run ${via.runId}, check ${via.checkId} (Done plus the agent's check)${said ? `: ${said}` : ''}`
 }
 
 // ---- Clear a blocker -----------------------------------------------------------------

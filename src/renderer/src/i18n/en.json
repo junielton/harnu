@@ -5658,11 +5658,26 @@
       },
       "recheck": "Re-check “{n}” after #{pr} merges",
       "criterion": {
-        "open": "criterion open",
+        "open": "criterion still open: {why}",
         "settled": "criterion settled",
+        "settledByWalk": "criterion settled by this walk",
         "unavailable": "mission not available"
       },
-      "neverTick": "I never tick it for you.",
+      "criterionWhy": {
+        "none": "no check of this walk answered it",
+        "person": "another person approves it",
+        "session": "a second session settles it",
+        "fact": "Harnu reads it from the pull request or CI",
+        "caveat": "my check did not agree, or you continued without it",
+        "nothingFromHere": "only your Done, with nothing for me to check",
+        "preClosed": "it was marked verified before the walk",
+        "failed": "the check failed",
+        "skipped": "the check was skipped",
+        "notReached": "the walk ended before that check",
+        "notWritten": "the walk could not write it"
+      },
+      "criteria": "Mission criteria",
+      "neverTick": "Done alone never settles a criterion: tick it in the Mission.",
       "openMission": "Open in the Mission",
       "nothingOwed": "Nothing owed",
       "unticked": "Extra checks you did not tick",

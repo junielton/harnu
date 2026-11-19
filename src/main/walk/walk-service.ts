@@ -15,7 +15,10 @@
  * {@link WalkRuntime}, which `src/main/index.ts` wires to the command bridge.
  *
  * No verb here takes a command to run, presses an outcome, re-runs, exports, deletes, or settles a
- * criterion; nothing in this module reaches `markCriterion` (the operator's Mark done stays theirs).
+ * criterion. T787 amends one thing: when a mission-source run ENDS (every check closed, or the operator ends
+ * it early), `settleOnEnd` hands the run to `walk-settle.ts`, the one module that reaches the operator's door
+ * `markCriterion`, and a criterion settles only when the operator's Done and the agent's check both landed.
+ * Done and every key still settle nothing while the walk runs.
  */
 import { copyFile, mkdir } from 'node:fs/promises'
 import { rawRm } from '../raw-fs'
@@ -59,6 +62,7 @@ import {
   type WalkScript
 } from '../../shared/walk-schema'
 import { sourceIdentity, type WalkSource } from '../../shared/walk-source'
+import { settleRunEnd } from './walk-settle'
 import {
   createWalkStore,
   walksDir,
@@ -473,6 +477,28 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
     return [{ kind: 'closed', checkId: null, text }]
   }
 
+  /**
+   * T787: the one place a run's end settles mission criteria. Called by every step that can end a run (the
+   * operator's outcomes and `end`, and the agent's report), with whether the run was already over before the
+   * step. Never throws: the run has ended whatever happens to the mission.
+   */
+  async function settleOnEnd(
+    walkId: string,
+    runId: string,
+    wasEnded: boolean,
+    run: Run
+  ): Promise<void> {
+    if (wasEnded || run.state !== 'ended') return
+    try {
+      const walk = await store.readWalk(walkId)
+      if (!walk) return
+      const settled = await settleRunEnd(folder, walk, runId, run)
+      if (settled.length) await store.recordSettled(walkId, runId, settled)
+    } catch {
+      /* the criteria stay open as Mark done links in the Mission */
+    }
+  }
+
   // ---- the verbs -----------------------------------------------------------------------------
 
   const svc: WalkService = {
@@ -655,6 +681,7 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
         return { ...refuse('REPORT_REJECTED', 'The text broke rules.'), rejected: v.list }
       const at = now()
       const owner = await ownerOfRun(a.walkId, runId)
+      let wasEnded = true
       const res = await store.updateRun(
         a.walkId,
         runId,
@@ -666,7 +693,10 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
               : { kind: 'check', checkId: a.checkId, result: a.result, evidence: text, now: at }
           ),
         {
-          turns: (next, ctx) => closedTurn(ctx.rec.run, next, ctx, owner, undefined),
+          turns: (next, ctx) => {
+            wasEnded = ctx.rec.run.state === 'ended'
+            return closedTurn(ctx.rec.run, next, ctx, owner, undefined)
+          },
           closeOut: (next, ctx) =>
             ctx.rec.run.state !== 'ended' && next.state === 'ended'
               ? closeOutText(next, ctx.walk.script)
@@ -674,6 +704,7 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
         }
       )
       if (!res.ok) return fromMachine(res.error)
+      await settleOnEnd(a.walkId, runId, wasEnded, res.run)
       if (res.owed.length) kick(a.walkId, runId)
       return {
         ok: true,
@@ -689,10 +720,12 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
       const at = now()
       const step = (run: Run): MachineResult => applyOp(run, a, at)
       let sent: WalkTurnKind[] = []
+      let wasEnded = true
       const owner = await ownerOfRun(a.walkId, a.runId)
       const res = await store.updateRun(a.walkId, a.runId, step, {
         turns: (next, ctx) => {
           const prev = ctx.rec.run
+          wasEnded = prev.state === 'ended'
           const answered = prev.cursor ? prev.checks.find((c) => c.id === prev.cursor) : undefined
           const kind = turnKindFor(a.op, answered ?? null)
           const turns: OwedTurn[] = []
@@ -726,6 +759,7 @@ export function createWalkService(folder: string, opts: WalkServiceOptions = {})
             : null
       })
       if (!res.ok) return fromMachine(res.error)
+      await settleOnEnd(a.walkId, a.runId, wasEnded, res.run)
       if (res.owed.length) kick(a.walkId, a.runId)
       return { ok: true, run: res.run, sent }
     },

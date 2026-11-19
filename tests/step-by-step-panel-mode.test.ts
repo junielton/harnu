@@ -57,8 +57,9 @@ const RULES: Rule[] = [
   {
     rows: 'M-3, M-69',
     what: 'HARD-GATE: never tick a criterion; the operator ticks it',
+    // T787: the panel's agent never ticks or settles one itself; the app settles at the close (see walk-settle.test.ts)
     panel: [
-      /Never tick a criterion/,
+      /Never tick or settle a criterion yourself/,
       /never call a criterion done because the operator said "done" in chat/
     ],
     chat: [/Never tick a criterion/]
@@ -388,7 +389,7 @@ describe('step-by-step: the contract in both modes', () => {
     const walk = WALK()
     expect(walk).toContain('references/panel-contract.md')
     expect(walk).toMatch(/<HARD-GATE>/)
-    expect(walk).toMatch(/Never ask for a secret\. Never tick a criterion/)
+    expect(walk).toMatch(/Never ask for a secret\. Never tick or settle a criterion yourself/)
     expect(walk).toMatch(/Ask `walk_get\(\{ folder, source \}\)` before you write/)
     expect(walk).toMatch(/Only a \*\*mission\*\* source writes anything to a mission/)
   })

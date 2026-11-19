@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   back,
+  continueWithout,
   done,
   endRun,
   fail,
@@ -290,6 +291,61 @@ describe('walk view', () => {
     expect(ids(vb)).not.toContain('done')
   })
 
+  // ---- T787: the close-out says what the walk did to each criterion -------------------------------
+
+  it('close-out criteria: settled by this walk, or still open with the reason', async () => {
+    const script = baseScript({
+      source: { kind: 'mission', missionId: 'mnt-1', scope: 'step', id: 'stp-1' },
+      checks: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map((id, i) =>
+        check(id, {
+          criterion: `ac-${i + 1}`,
+          ...(id !== 'c6' && id !== 'c4'
+            ? { nothingFromHere: undefined, check: { how: 'curl it' } }
+            : {})
+        })
+      ) as never
+    })
+    let run = live(script)
+    run = ok(done(run, 200)) // c1 awaits
+    run = ok(report(run, { checkId: 'c1', result: 'pass', evidence: 'one row', now: 210 })) // two signals
+    run = ok(done(run, 220)) // c2 awaits
+    run = ok(report(run, { checkId: 'c2', result: 'pass', evidence: 'ok', now: 230 })) // person: not the walk's
+    run = ok(done(run, 240)) // c3 awaits
+    run = ok(continueWithout(run, 300_000, 0)) // c3 caveat
+    run = ok(done(run, 310)) // c4: nothing to check from here
+    run = ok(skip(run, 320)) // c5 skipped
+    run = ok(fail(run, { line: 'wrong', now: 330 })) // c6 failed
+    run = ok(endRun(run, 340))
+    const facts = [
+      { id: 'ac-1', text: 'One', state: 'settled', by: 'operator', viaWalk: true },
+      { id: 'ac-2', text: 'Two', state: 'open', by: 'person' },
+      { id: 'ac-3', text: 'Three', state: 'open', by: 'operator' },
+      { id: 'ac-4', text: 'Four', state: 'open', by: 'operator' },
+      { id: 'ac-5', text: 'Five', state: 'open', by: 'operator' },
+      { id: 'ac-6', text: 'Six', state: 'open', by: 'operator' },
+      { id: 'ac-7', text: 'Seven', state: 'open', by: 'fact' }
+    ] as never
+    const v = paneView(dataFor(script, run, { closeOut: 'x', criteria: facts }), ui(), t)
+    expect(v.closeout?.criteria.map((c) => [c.id, c.state])).toEqual([
+      ['ac-1', 'criterion settled by this walk'],
+      ['ac-2', 'criterion still open: another person approves it'],
+      ['ac-3', 'criterion still open: my check did not agree, or you continued without it'],
+      ['ac-4', 'criterion still open: only your Done, with nothing for me to check'],
+      ['ac-5', 'criterion still open: the check was skipped'],
+      ['ac-6', 'criterion still open: the check failed'],
+      ['ac-7', 'criterion still open: Harnu reads it from the pull request or CI']
+    ])
+    // the Still yours card lists only what is left
+    expect(v.closeout?.owed?.criteria.map((c) => c.id)).toEqual([
+      'ac-2',
+      'ac-3',
+      'ac-4',
+      'ac-5',
+      'ac-6',
+      'ac-7'
+    ])
+  })
+
   // ---- AC-16 -------------------------------------------------------------------------------------
 
   it('close-out rail, you block and summary', async () => {
@@ -371,11 +427,15 @@ describe('walk view', () => {
       t
     )
     expect(mv.closeout?.owed?.link).toBe('mission')
-    expect(mv.closeout?.owed?.note).toBe('I never tick it for you.')
-    expect(mv.closeout?.owed?.criteria.map((c) => [c.id, c.state, c.open])).toEqual([
-      ['ac-1', 'criterion open', true],
+    expect(mv.closeout?.owed?.note).toBe(
+      'Done alone never settles a criterion: tick it in the Mission.'
+    )
+    // every criterion has a row saying what the walk did; the Still yours card lists only what is left (T787)
+    expect(mv.closeout?.criteria.map((c) => [c.id, c.state, c.open])).toEqual([
+      ['ac-1', 'criterion still open: no check of this walk answered it', true],
       ['ac-2', 'criterion settled', false]
     ])
+    expect(mv.closeout?.owed?.criteria.map((c) => [c.id, c.open])).toEqual([['ac-1', true]])
     expect(mv.outcomes).toEqual([]) // still nothing that settles
     // a mission that is gone
     const gone = paneView(
@@ -386,7 +446,8 @@ describe('walk view', () => {
       ui(),
       t
     )
-    expect(gone.closeout?.owed?.criteria[0].state).toBe('mission not available')
+    expect(gone.closeout?.criteria[0].state).toBe('mission not available')
+    expect(gone.closeout?.owed?.criteria).toEqual([])
 
     // nothing owed: no card, one quiet line
     const allDone = baseScript({ checks: [check('c1')] as never })

@@ -7,7 +7,8 @@
  *
  * What NO verb here can do (NG-4, AC-9): take a command to run, press Done, Back, Skip or Failed, re-run a
  * walk, export or delete one, or settle a criterion. The operator's outcomes are the pane's (S-3); this
- * file does not import the service's `operate`, and nothing here reaches `markCriterion`.
+ * file does not import the service's `operate`, and nothing here reaches `markCriterion`. (T787: the APP, not
+ * a verb, settles the criteria two signals verified when a mission-source run closes; see `walk-settle.ts`.)
  */
 import type { WalkProbe } from '../../shared/walk-schema'
 import type { MissionFacts } from '../../shared/walk-source'

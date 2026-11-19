@@ -983,6 +983,141 @@ export const casesC = [
   },
 
   {
+    id: 'W-23',
+    title: 'Closing the walk settles what Done plus the agent verified',
+    faults: {
+      'expect-session-settled': 'expect the session criterion to be settled by the walk'
+    },
+    async run(ctx, a) {
+      const mission = (id) => {
+        const dir = path.join(ctx.repo, '.harnu', 'missions-v4')
+        const f = readdirSync(dir).find((n) => n.startsWith(id))
+        return f ? readFileSync(path.join(dir, f), 'utf8') : ''
+      }
+      const settledBy = (text, walkId) => text.split(`Settled by walk ${walkId}`).length - 1
+      const check = (id, title, criterion, how) => ({
+        id,
+        title,
+        why: 'It answers a criterion of the mission.',
+        where: { text: 'The Notes page' },
+        do: [{ text: 'Type `milk` in the search box', see: 'Only the row Milk run stays' }],
+        passes: 'One row, Milk run.',
+        fails: 'More rows, or none.',
+        criterion,
+        ...(how ? { check: { how } } : { nothingFromHere: 'The typing happens in your browser.' })
+      })
+
+      // ---- a whole run: two signals settle, one signal and a session criterion do not (AC-1, AC-2) ----
+      const m = await ctx.newMission('Search settle', [
+        { text: 'Typing narrows the notes list', by: 'operator' },
+        { text: 'The empty state reads well', by: 'operator' },
+        'The filter code is in the list module'
+      ])
+      const [two, one, sess] = m.criteria
+      const w = await ctx.open({
+        title: 'Search box, settle at the close',
+        purpose: 'check',
+        source: { kind: 'mission', missionId: m.id, scope: 'mission' },
+        checks: [
+          check(
+            'n1',
+            'The search box narrows the list',
+            two.id,
+            'grep -n includes src/notes/list.js'
+          ),
+          check('n2', 'The empty state reads well', one.id),
+          check(
+            'n3',
+            'The filter code is in the list module',
+            sess.id,
+            'grep -n filter src/notes/list.js'
+          )
+        ]
+      })
+      const before = ctx.missionFiles()
+      await ctx.press('start')
+      await ctx.waitProgress('Check 1 of 3')
+      await ctx.agentDone(w, 'n1', 'pass')
+      await ctx.waitProgress('Check 2 of 3')
+      a.eq(ctx.missionFiles(), before, 'a verified check settles nothing while the walk is live')
+      await ctx.press('done') // n2: nothing to check from here, one signal
+      await ctx.waitProgress('Check 3 of 3')
+      await ctx.agentDone(w, 'n3', 'pass')
+      await ctx.waitState('closeout')
+      const text = mission(m.id)
+      a.eq(settledBy(text, w.walkId), 1, 'exactly one criterion carries this walk in its evidence')
+      a.ok(
+        text.includes(`run ${w.runId}, check n1`),
+        'the evidence names the walk, the run and the check'
+      )
+      a.ok(
+        !text.includes('check n2') && !text.includes('check n3'),
+        'no other check settled a criterion'
+      )
+      const pane = (await ctx.pane()).text
+      a.ok(
+        pane.includes('criterion settled by this walk'),
+        'the close-out says the walk settled it'
+      )
+      a.ok(
+        pane.includes('criterion still open: only your Done, with nothing for me to check'),
+        'a one-signal criterion stays open, with the reason'
+      )
+      a.ok(
+        pane.includes('criterion still open: a second session settles it'),
+        'a session criterion stays open, with the reason'
+      )
+      a.eq(
+        ctx.fault('expect-session-settled'),
+        false,
+        'the session criterion is not settled by the walk (planted fault flips this)'
+      )
+      const owed = await ctx.cdp.eval(
+        `document.querySelector('[data-test="walk-owed"]')?.textContent ?? ''`
+      )
+      a.ok(
+        !owed.includes('narrows the notes list') && owed.includes('The empty state reads well'),
+        'the Still yours card lists only what is left'
+      )
+      await ctx.shot('settled-by-walk')
+
+      // ---- ending early settles only what was verified so far (AC-3) ----
+      const m2 = await ctx.newMission('Search early end', [
+        { text: 'The clear button empties the box', by: 'operator' },
+        { text: 'Escape also empties the box', by: 'operator' }
+      ])
+      const w2 = await ctx.open({
+        title: 'Search box, ended early',
+        purpose: 'check',
+        source: { kind: 'mission', missionId: m2.id, scope: 'mission' },
+        checks: [
+          check(
+            'e1',
+            'The clear button empties the box',
+            m2.criteria[0].id,
+            'grep -n clear src/notes/list.js'
+          ),
+          check(
+            'e2',
+            'Escape also empties the box',
+            m2.criteria[1].id,
+            'grep -n Escape src/notes/list.js'
+          )
+        ]
+      })
+      await ctx.press('start')
+      await ctx.waitProgress('Check 1 of 2')
+      await ctx.agentDone(w2, 'e1', 'pass')
+      await ctx.waitProgress('Check 2 of 2')
+      await ctx.operate(w2, 'end') // the pane's X, then its confirm, call this same channel
+      await ctx.waitState('closeout')
+      const text2 = mission(m2.id)
+      a.eq(settledBy(text2, w2.walkId), 1, 'only the criterion verified before the end is settled')
+      a.ok(text2.includes('check e1') && !text2.includes('check e2'), 'and it is the first one')
+    }
+  },
+
+  {
     id: 'W-12',
     title: "the operator's files are untouched",
     guard: true,
