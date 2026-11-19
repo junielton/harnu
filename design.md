@@ -4920,8 +4920,9 @@ chrome adds three things and changes one.
   the strip keeps the active tab and the first k = max(0, ⌊(W − 36 − 168) ÷ 28⌋) inactive tabs in order, and the
   rest move behind `+N`; the active tab is never moved. An icon-only tab keeps its full title in its native
   `title`. **`+N` list:** a standard context menu (§6 "Context menu"), `min-width 220px`, anchored under the button,
-  listing every tab in order (favicon 12px + title); the active tab is marked (`--accent-soft` row and a mono
-  "open" tag); picking one activates it and closes the list. It registers with the native-overlay composable.
+  listing every tab in order (favicon 12px + title, 26px rows, a rule where the tabs behind `+N` begin); the active
+  tab is marked with `--text` colour and a mono "open" tag at the right; picking one activates it and closes the
+  list. A narrow pane keeps the list inside it (it never runs past the strip's left edge). It registers with the native-overlay composable.
 
 - **Tab menu** (right-click a tab; a standard context menu, `--shadow-pop`, anchored at the tab's lower-left, the
   tab keeping its hover look while it is open): **New tab to the right** (`plus`), **Reload** (`rotate-cw`),
