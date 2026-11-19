@@ -22,6 +22,7 @@ import {
 } from '../lib/pane-alert'
 import type { BrowserEmulationState, WorktreeHelperState, HelperPane } from '../../../preload'
 import type { PersistedPayloadFields } from '../lib/browser-persist'
+import type { BrowserTabPayloadFields } from '../../../shared/browser-tabs'
 import { scrubUrl } from '../../../shared/browser-comment'
 import type { AgentTerminalSplit } from './command-router'
 import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-corrective'
@@ -253,6 +254,10 @@ export interface BrowserPanePayload {
   disconnected?: boolean
   scroll?: { x: number; y: number } | null
   pins?: unknown[]
+  /** The pane's tabs in order, its active tab and when it was last focused (browser tabs): a restart brings them back. */
+  tabs?: BrowserTabPayloadFields['tabs']
+  activeTabId?: BrowserTabPayloadFields['activeTabId']
+  lastFocusedAt?: BrowserTabPayloadFields['lastFocusedAt']
 }
 
 /** Read a browser pane's payload with safe defaults. */
@@ -1196,12 +1201,15 @@ export const useHelpersStore = defineStore('helpers', () => {
    */
   function patchBrowserPayload(
     paneId: string,
-    makePatch: (saved: PersistedPayloadFields) => PersistedPayloadFields | null
+    makePatch: (
+      saved: PersistedPayloadFields & BrowserTabPayloadFields
+    ) => (PersistedPayloadFields & BrowserTabPayloadFields) | null
   ): void {
     for (const [worktreePath, state] of byWorktree.value) {
       const pane = state.panes.find((p) => p.id === paneId && p.type === 'browser')
       if (!pane) continue
-      const saved = ((pane as HelperPane).payload ?? {}) as PersistedPayloadFields
+      const saved = ((pane as HelperPane).payload ?? {}) as PersistedPayloadFields &
+        BrowserTabPayloadFields
       const patch = makePatch(saved)
       if (!patch) return
       mutateWorktree(worktreePath, (s) => ({

@@ -1386,11 +1386,17 @@ useShortcuts(
       // before the cursor — overriding it at the app level would break
       // muscle memory inside the terminal. When the sidebar or topbar own
       // focus, this binding does fire and the selection is cleared.
-      enabled: () => !!sessions.selectedId && !terminalFocused.value,
+      // browser-tabs S-4: while a browser pane's header or address bar has the focus, the chord is the pane's
+      // close-tab (macOS routes ⌘W here through the menu before the pane's own key handler sees it).
+      enabled: () =>
+        !!browser.chromeFocusPaneId || (!!sessions.selectedId && !terminalFocused.value),
       // Clears the selection (back to the empty/idle pane). We do NOT
       // delete the session — the JSONL on disk and the sessions store
       // model entry stay intact; ⌘W is "close current tab", not "delete".
-      handler: () => sessions.clearSelection()
+      handler: () => {
+        if (browser.chromeFocusPaneId) void browser.tabCloseActive(browser.chromeFocusPaneId)
+        else sessions.clearSelection()
+      }
     },
     // --- T486 §3.2: the Session menu's items, on the SELECTED session. ---
     // Unbound by default. Each runs the menu item's own function and is
@@ -1628,6 +1634,35 @@ useShortcuts(
       keys: kb('browser.overlay.toggle'),
       enabled: () => !!browser.chordPaneId,
       handler: () => void browser.toggleOverlay(browser.chordPaneId!)
+    },
+    // browser-tabs S-4: the focused pane's tab chords (from the page through main, or from the pane chrome).
+    {
+      id: 'browser.tab.new',
+      scope: 'browser',
+      keys: kb('browser.tab.new'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.tabNewActive(browser.chordPaneId!)
+    },
+    {
+      id: 'browser.tab.close',
+      scope: 'browser',
+      keys: kb('browser.tab.close'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.tabCloseActive(browser.chordPaneId!)
+    },
+    {
+      id: 'browser.tab.next',
+      scope: 'browser',
+      keys: kb('browser.tab.next'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.tabStep(browser.chordPaneId!, 1)
+    },
+    {
+      id: 'browser.tab.prev',
+      scope: 'browser',
+      keys: kb('browser.tab.prev'),
+      enabled: () => !!browser.chordPaneId,
+      handler: () => void browser.tabStep(browser.chordPaneId!, -1)
     },
     // --- Sidebar arrow-key navigation (T-4.6). ---
     // The four arrow keys + Enter walk the flattened visible tree

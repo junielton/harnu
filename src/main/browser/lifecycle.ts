@@ -75,8 +75,13 @@ export function createHiddenTracker(): HiddenTracker {
 
 /* ---- Whether to discard -------------------------------------------------------------------------- */
 
-/** What the sweep knows about one live pane. */
+/**
+ * What the sweep knows about one live view. With tabs (browser-tabs ADR-0026) the unit that is discarded is the TAB:
+ * the host puts the tab id in `paneId`, the key the sweep hands back, so a verb or a download blocks its own tab and
+ * a capture (the pane's) blocks every tab of its pane.
+ */
 export interface DiscardFacts {
+  /** The key of the view being judged: the tab id. */
   paneId: string
   /** Already discarded: nothing to do. */
   discarded: boolean

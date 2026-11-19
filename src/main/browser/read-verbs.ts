@@ -9,14 +9,15 @@
 import {
   BROWSER_NOTE,
   ackBase,
+  activateForVerb,
   noteAgentWrite,
   gate,
   originOf,
   refuse,
   refuseBadArgs,
+  withTab,
   type BrowserHost,
-  type BrowserVerbDeps,
-  type Refusal
+  type BrowserVerbDeps
 } from './verbs-core'
 import { CONSOLE_LEVELS, type ConsoleLevel } from './console-buffer'
 import { DEFAULT_CAPTURE_MINUTES, MAX_CAPTURE_MINUTES, type NetworkEntry } from './network-capture'
@@ -70,13 +71,13 @@ export interface CaptureResult {
 
 /** What the view host adds for the reading verbs (`view-host.ts` implements it over Electron). */
 export interface BrowserReadHost extends BrowserHost {
-  readers(paneId: string): PaneReaders | undefined
-  /** One CDP command against the pane; rejects when the command fails. */
-  cdp(paneId: string, method: string, params?: object): Promise<unknown>
-  viewMode(paneId: string): ViewMode | undefined
-  /** Whether a device is being emulated (U5; always false before). */
+  readers(paneId: string, tabId?: string): PaneReaders | undefined
+  /** One CDP command against the pane's tab (the active one without `tabId`); rejects when the command fails. */
+  cdp(paneId: string, method: string, params?: object, tabId?: string): Promise<unknown>
+  viewMode(paneId: string, tabId?: string): ViewMode | undefined
+  /** Whether a device is being emulated (U5; always false before). A pane-level fact. */
   deviceMode(paneId: string): boolean
-  capture(paneId: string, req: CaptureRequest): Promise<CaptureResult>
+  capture(paneId: string, req: CaptureRequest, tabId?: string): Promise<CaptureResult>
 }
 
 export interface BrowserReadDeps extends BrowserVerbDeps {
@@ -102,25 +103,45 @@ interface ReadCtx {
   ack: Record<string, unknown>
 }
 
+/** What each read says about an empty page: the fields a caller reads, as they are when there is nothing to read. */
+const EMPTY_PAGE: Partial<Record<Parameters<typeof gate>[0], Record<string, unknown>>> = {
+  browser_snapshot: { text: '', nodes: 0, truncated: false },
+  browser_console: { entries: [], cursor: null, droppedEntries: 0 }
+}
+
 /** Gate a pane-addressed read and build the common ACK fields; a refusal comes back as `{ refusal }`. */
 async function openRead(
   op: Parameters<typeof gate>[0],
   paneId: string,
   deps: BrowserReadDeps,
-  args?: Record<string, unknown>
-): Promise<{ refusal: Refusal } | { ctx: ReadCtx }> {
-  const g = await gate(op, paneId, deps, args)
+  args?: Record<string, unknown>,
+  tabId?: string
+): Promise<{ refusal: Record<string, unknown> } | { ctx: ReadCtx }> {
+  const g = await gate(op, paneId, deps, args, tabId)
   if ('refusal' in g) return g
   const rec = g.rec!
   const readers = deps.host.readers(rec.paneId)
   // A record without a view is a pane that is mid-close.
   if (!readers || !g.live) return { refusal: refuse('PANE_NOT_FOUND', { folder: rec.folder }) }
+  // A tab showing the load error page has no page to read (its view is hidden, spec S-3): the read answers `ok` with
+  // `loadError` and an empty page. It rides the `refusal` slot only because that is the verbs' early return.
+  const loadError = op === 'browser_network' ? undefined : deps.host.loadErrorOf?.(rec.paneId)
+  if (loadError) {
+    return {
+      refusal: {
+        ...ackBase(rec, g.live, g.origin ?? originOf(rec, g.live, deps), tabId),
+        ...(EMPTY_PAGE[op] ?? {}),
+        loadError,
+        note: BROWSER_NOTE
+      }
+    }
+  }
   return {
     ctx: {
       paneId: rec.paneId,
       folder: rec.folder,
       readers,
-      ack: ackBase(rec, g.live, g.origin ?? originOf(rec, g.live, deps))
+      ack: ackBase(rec, g.live, g.origin ?? originOf(rec, g.live, deps), tabId)
     }
   }
 }
@@ -161,6 +182,8 @@ function isSelectorSyntaxError(err: unknown): boolean {
 
 export interface SnapshotArgs {
   paneId: string
+  /** The tab to read (default: the active tab); a background tab is read as it is. */
+  tabId?: string
   selector?: string
   interactiveOnly?: boolean
   maxNodes?: number
@@ -206,9 +229,10 @@ interface FrameTreeNode {
 
 export async function snapshotVerb(
   args: SnapshotArgs,
-  deps: BrowserReadDeps
+  unboundDeps: BrowserReadDeps
 ): Promise<Record<string, unknown>> {
-  const opened = await openRead('browser_snapshot', args.paneId, deps)
+  const deps = withTab(unboundDeps, args.tabId)
+  const opened = await openRead('browser_snapshot', args.paneId, deps, undefined, args.tabId)
   if ('refusal' in opened) return opened.refusal
   const { ctx } = opened
   const host = deps.host
@@ -324,6 +348,8 @@ function hostLabel(url: string): string {
 
 export interface ScreenshotArgs {
   paneId: string
+  /** The tab to capture (default: the active tab); a background tab is brought forward first (`activated`). */
+  tabId?: string
   ref?: string
   selector?: string
   fullPage?: boolean
@@ -340,9 +366,10 @@ interface LayoutMetrics {
 
 export async function screenshotVerb(
   args: ScreenshotArgs,
-  deps: BrowserReadDeps
+  unboundDeps: BrowserReadDeps
 ): Promise<Record<string, unknown>> {
-  const opened = await openRead('browser_screenshot', args.paneId, deps)
+  const deps = withTab(unboundDeps, args.tabId)
+  const opened = await openRead('browser_screenshot', args.paneId, deps, undefined, args.tabId)
   if ('refusal' in opened) return opened.refusal
   const { ctx } = opened
   const host = deps.host
@@ -365,6 +392,9 @@ export async function screenshotVerb(
     return refuseBadArgs('`quality` must be an integer between 1 and 100.')
   }
   deps.registry.touch(ctx.paneId)
+  // A picture is of what shows: a background tab comes forward first, and the ACK says so.
+  const paneRec = deps.registry.get(ctx.paneId)
+  if (paneRec) activateForVerb('browser_screenshot', args as never, paneRec, deps)
 
   const mode = host.viewMode(ctx.paneId)
   if (!mode) return refuse('PANE_NOT_FOUND', { folder: ctx.folder })
@@ -464,6 +494,8 @@ export async function screenshotVerb(
 
 export interface ConsoleArgs {
   paneId: string
+  /** The tab whose console to read (default: the active tab). */
+  tabId?: string
   mode?: 'tail' | 'since'
   lines?: number
   since?: string
@@ -476,9 +508,10 @@ export const CONSOLE_MAX_LINES = 500
 
 export async function consoleVerb(
   args: ConsoleArgs,
-  deps: BrowserReadDeps
+  unboundDeps: BrowserReadDeps
 ): Promise<Record<string, unknown>> {
-  const opened = await openRead('browser_console', args.paneId, deps)
+  const deps = withTab(unboundDeps, args.tabId)
+  const opened = await openRead('browser_console', args.paneId, deps, undefined, args.tabId)
   if ('refusal' in opened) return opened.refusal
   const { ctx } = opened
 
@@ -653,6 +686,8 @@ function scrubValues(
 
 export interface WaitForArgs {
   paneId: string
+  /** The tab to wait on (default: the active tab); a background tab is waited on as it is. */
+  tabId?: string
   selector?: string
   text?: string
   textGone?: string
@@ -665,9 +700,10 @@ const MAX_PAGE_TEXT_CHARS = 2_000_000
 
 export async function waitForVerb(
   args: WaitForArgs,
-  deps: BrowserReadDeps
+  unboundDeps: BrowserReadDeps
 ): Promise<Record<string, unknown>> {
-  const opened = await openRead('browser_wait_for', args.paneId, deps)
+  const deps = withTab(unboundDeps, args.tabId)
+  const opened = await openRead('browser_wait_for', args.paneId, deps, undefined, args.tabId)
   if ('refusal' in opened) return opened.refusal
   const { ctx } = opened
   const host = deps.host

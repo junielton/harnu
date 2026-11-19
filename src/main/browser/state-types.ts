@@ -3,9 +3,11 @@
  * re-exports them so the renderer never imports main code at runtime.
  */
 
-// Deliberately import-free: the preload re-exports these to the renderer project, which lists main files
-// explicitly. The unions below mirror `origin-class.ts`, `guest-prefs.ts` and `access.ts`; the pure cores'
-// tests pin the values, and `view-host.ts` (which assigns them) is type-checked against them.
+// The preload re-exports these to the renderer project, which lists main files explicitly, so this file imports only
+// from `src/shared` (listed in both projects). The unions below mirror `origin-class.ts`, `guest-prefs.ts` and
+// `access.ts`; the pure cores' tests pin the values, and `view-host.ts` (which assigns them) is type-checked
+// against them.
+import type { BrowserTabState } from '../../shared/browser-tabs'
 
 export type BrowserOriginClass = 'page' | 'local' | 'external' | 'blank'
 export type BrowserPartitionName = 'operator' | 'agent'
@@ -25,6 +27,8 @@ export type BrowserNotice =
   | { kind: 'offline' }
   /** A page event or a comment pick was dropped because a session had just acted on the page (T574 F4). */
   | { kind: 'agent-input' }
+  /** A page's new window was refused: the pane already holds the most tabs it may (browser-tabs D-2). */
+  | { kind: 'tab-limit' }
 
 /** A device the pane emulates; mirrors `DeviceSpec` in `src/shared/browser-emulation.ts` (a test pins the two). */
 export interface BrowserDeviceState {
@@ -104,6 +108,15 @@ export interface BrowserPaneState {
    * `hiddenMs` how long it had been hidden.
    */
   discarded: { reason: 'idle' | 'restored'; hiddenMs: number } | null
+  /**
+   * The pane's tabs, in order (browser-tabs S-2). The pane-level `url`, `title`, `loading` and the rest above are the
+   * ACTIVE tab's, so a chrome that does not know about tabs keeps drawing today's pane.
+   */
+  tabs: BrowserTabState[]
+  /** The tab whose page the pane shows. */
+  activeTabId: string
+  /** Epoch ms the operator last focused the pane, or `null` (the Topbar's last-used pane, S-4). */
+  lastFocusedAt: number | null
 }
 
 /** A rectangle in CSS px, as the renderer measures it. */
@@ -119,6 +132,14 @@ export type BrowserOverlayRect = BrowserRect | 'fullscreen'
 
 /** The live word on the chip while a verb runs (spec §7.4). */
 export type BrowserActivityWord = 'reading' | 'driving' | null
+
+/** What `browser:activity` carries: the pane's word, and the word of the tab a verb named. */
+export interface BrowserActivityEvent {
+  paneId: string
+  tabId?: string
+  word: BrowserActivityWord
+  tabWord?: BrowserActivityWord
+}
 
 export interface BrowserOpenResult {
   ok: true

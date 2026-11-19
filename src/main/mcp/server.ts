@@ -1202,7 +1202,9 @@ async function runToolCall(
       def.op === 'browser_open' || def.op === 'browser_list' ? undefined : strField(args, 'paneId'),
       projectsFile,
       strField(args, 'folder'),
-      def.op
+      def.op,
+      // The tab the call names (browser-tabs S-6): its view and origin are what the tier and the lease are judged on.
+      strField(args, 'tabId')
     )
     if (def.op !== 'browser_open' && def.op !== 'browser_list') gateFolder = resolved.folder
     browser = resolved.input
@@ -1492,7 +1494,9 @@ async function parkMutationConfirm(
       ? terminalRegistry.get(strField(args, 'terminalId') ?? '')?.ptyId
       : undefined
   // T571: which view the operator is being asked about, fixed at the moment of asking.
-  const parkedViewToken = browserLease ? getBrowserHost().viewToken(browserLease.paneId) : undefined
+  const parkedViewToken = browserLease
+    ? getBrowserHost().viewToken(browserLease.paneId, strField(args, 'tabId'))
+    : undefined
   const parked = deps.confirm.park(disclosure)
 
   // Immediate fail-closed (no operator surface / saturated) — nothing parked.
@@ -1690,23 +1694,26 @@ async function browserLeasePrompt(
   folder: string
 ): Promise<string> {
   const paneId = strField(args, 'paneId') ?? ''
+  const tabId = strField(args, 'tabId')
   const rec = browserRegistry.get(paneId)
   const host = getBrowserHost()
-  const live = host.info(paneId)
+  const live = host.info(paneId, tabId)
   const home = os.homedir()
   const tilde = (p: string): string =>
     p === home || p.startsWith(home + path.sep) ? '~' + p.slice(home.length) : p
   let target: { role: string; name: string } | null = null
   const ref = strField(args, 'ref')
-  const readers = host.readers(paneId)
+  const readers = host.readers(paneId, tabId)
   if (ref && readers) {
     const r = readers.refs.resolve(ref)
     if (r.ok) {
       try {
-        const res = (await host.cdp(paneId, 'Accessibility.getPartialAXTree', {
-          backendNodeId: r.backendNodeId,
-          fetchRelatives: false
-        })) as { nodes?: Array<{ role?: { value?: unknown }; name?: { value?: unknown } }> }
+        const res = (await host.cdp(
+          paneId,
+          'Accessibility.getPartialAXTree',
+          { backendNodeId: r.backendNodeId, fetchRelatives: false },
+          tabId
+        )) as { nodes?: Array<{ role?: { value?: unknown }; name?: { value?: unknown } }> }
         const n = res.nodes?.[0]
         if (n) {
           target = {
@@ -1747,14 +1754,16 @@ async function grantBrowserLease(
   paneId: string,
   parkedViewToken: string | undefined
 ): Promise<CallToolResult> {
-  const resolved = await resolveBrowserGate(paneId, undefined, undefined, op)
+  const tabId = strField(args, 'tabId')
+  const resolved = await resolveBrowserGate(paneId, undefined, undefined, op, tabId)
   const refusal =
     isBrowserOp(op) && resolved.input.pane
       ? gateBrowserOpDetailed(op, { ...resolved.input })
       : { reason: 'PANE_NOT_FOUND' as const }
   if (refusal) return steerError(refusal.reason, folder)
   const rec = browserRegistry.get(paneId)
-  const token = getBrowserHost().viewToken(paneId)
+  // The lease is for the view of the tab the call names (a lease is one slot per pane and follows that tab).
+  const token = getBrowserHost().viewToken(paneId, tabId)
   // The operator answered about ONE view. If the id now names a different page (restored under the same id),
   // that Allow says nothing about the new one.
   if (!rec || token === undefined || parkedViewToken === undefined) {

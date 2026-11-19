@@ -88,8 +88,9 @@ async function mountChip(props: Record<string, unknown> = {}) {
   return w
 }
 
+/** The icon's words, head only: its accessible name is "head · detail" (browser-tabs S-7 replaced the pill). */
 const label = (w: Awaited<ReturnType<typeof mountChip>>): string =>
-  w.find('[data-testid="agent-chip-label"]').text()
+  w.find('[data-testid="agent-icon"]').attributes('aria-label')!.split(' · ')[0]!
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -109,20 +110,20 @@ describe('AC-U1-2 — the states', () => {
   it('agent-spawned, owner known: "Connected to ‹session›"', async () => {
     const w = await mountChip()
     expect(label(w)).toBe('Connected to Fix login bug')
-    expect(w.find('[data-testid="agent-chip-parked"]').exists()).toBe(false)
+    expect(label(w)).not.toContain('(parked)')
     expect(w.find('[data-testid="agent-disconnect"]').exists()).toBe(true)
   })
 
   it('a parked owner gets "(parked)"', async () => {
     seedSessions([{ sessionId: 'sess-1', summary: 'Fix login bug', hibernated: true }])
     const w = await mountChip()
-    expect(w.find('[data-testid="agent-chip-parked"]').text()).toBe('(parked)')
+    expect(label(w)).toBe('Connected to Fix login bug (parked)')
   })
 
   it('an owner the sessions store does not know reads "a closed session", with no click target', async () => {
     const w = await mountChip({ ownerSessionId: 'sess-gone' })
     expect(label(w)).toBe('Connected to a closed session')
-    expect(w.find('button[data-testid="agent-chip"]').exists()).toBe(false)
+    expect(w.find('button[data-testid="agent-icon"]').exists()).toBe(false)
   })
 
   it('no owner at all reads "an agent"', async () => {
@@ -141,7 +142,7 @@ describe('AC-U1-2 — the states', () => {
     chip = agentChip({ origin: 'operator', ownerSessionId: 'sess-1', leaseActive: true })
     const w = await mountChip({ origin: undefined, ownerSessionId: null })
     expect(label(w)).toBe('An agent can type here')
-    expect(w.find('button[data-testid="agent-chip"]').exists()).toBe(false)
+    expect(w.find('button[data-testid="agent-icon"]').exists()).toBe(false)
   })
 
   it('an operator-opened terminal shows nothing until an agent reads it, then "reading" with NO Disconnect', async () => {
@@ -152,8 +153,10 @@ describe('AC-U1-2 — the states', () => {
     activityCb?.({ terminalId: T, kind: 'read', at: 1 })
     await flushPromises()
     expect(label(w)).toBe('An agent is reading')
-    // The label says it already: no second "· reading" beside it.
-    expect(w.find('[data-testid="agent-chip-word"]').exists()).toBe(false)
+    // The head says it already: no second "Reading" under it.
+    expect(w.find('[data-testid="agent-icon"]').attributes('aria-label')).toBe(
+      'An agent is reading'
+    )
     expect(w.find('[data-testid="agent-disconnect"]').exists()).toBe(false)
   })
 
@@ -209,7 +212,7 @@ describe('AC-U1-3 — click and Disconnect', () => {
     const sessions = useSessionsStore()
     const select = vi.spyOn(sessions, 'select').mockImplementation(() => {})
     const w = await mountChip()
-    await w.find('button[data-testid="agent-chip"]').trigger('click')
+    await w.find('button[data-testid="agent-icon"]').trigger('click')
     expect(select).toHaveBeenCalledWith('sess-1')
   })
 
@@ -271,27 +274,28 @@ describe('AC-U1-3 — click and Disconnect', () => {
 })
 
 describe('AC-U1-4 — the live word', () => {
-  it('shows nothing and does not pulse while idle', async () => {
+  it('says nothing in the tip while idle, and the icon pulses all the same (S-7: it is always on)', async () => {
     const w = await mountChip()
-    expect(w.find('[data-testid="agent-chip-word"]').exists()).toBe(false)
-    expect(w.find('[data-testid="agent-chip-dot"]').classes()).not.toContain('anim-pulse-dot')
+    const icon = w.find('[data-testid="agent-icon"]')
+    await icon.trigger('mouseenter')
+    expect(w.find('[data-testid="agent-icon-tip-detail"]').exists()).toBe(false)
+    expect(icon.classes()).toEqual(
+      expect.arrayContaining(['anim-pulse-dot', 'anim-pulse-dot--accent'])
+    )
     expect(w.find('[data-testid="agent-chip-live"]').text()).toBe('')
   })
 
-  it('shows reading, then typing (write outranks read), with the accent pulse and an aria-live node', async () => {
+  it('shows Reading, then Typing (write outranks read), with an aria-live node', async () => {
     const w = await mountChip()
+    await w.find('[data-testid="agent-icon"]').trigger('mouseenter')
     activityCb?.({ terminalId: T, kind: 'read', at: 1 })
     await flushPromises()
-    expect(w.find('[data-testid="agent-chip-word"]').text()).toBe('· reading')
-    const dot = w.find('[data-testid="agent-chip-dot"]')
-    expect(dot.classes()).toEqual(
-      expect.arrayContaining(['anim-pulse-dot', 'anim-pulse-dot--accent'])
-    )
+    expect(w.find('[data-testid="agent-icon-tip-detail"]').text()).toBe('Reading')
     expect(w.find('[data-testid="agent-chip-live"]').attributes('aria-live')).toBe('polite')
 
     activityCb?.({ terminalId: T, kind: 'write', at: 2 })
     await flushPromises()
-    expect(w.find('[data-testid="agent-chip-word"]').text()).toBe('· typing')
+    expect(w.find('[data-testid="agent-icon-tip-detail"]').text()).toBe('Typing')
     expect(w.find('[data-testid="agent-chip-live"]').text()).toBe('typing')
   })
 
@@ -299,7 +303,7 @@ describe('AC-U1-4 — the live word', () => {
     const w = await mountChip()
     activityCb?.({ terminalId: 'h-other', kind: 'write', at: 1 })
     await flushPromises()
-    expect(w.find('[data-testid="agent-chip-word"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-chip-live"]').text()).toBe('')
   })
 })
 
@@ -362,18 +366,20 @@ describe('Disconnect that main did not apply (L2: a safety control must not fail
   })
 })
 
-describe('accessibility and truncation recovery (L4, L5)', () => {
-  it('the title is the full label plus where a click goes, "(parked)" included', async () => {
+describe('accessibility (L4, L5)', () => {
+  it('the icon is named by the full head, "(parked)" included, and is a button that goes to the session', async () => {
     seedSessions([{ sessionId: 'sess-1', summary: 'Fix login bug', hibernated: true }])
     const w = await mountChip()
-    expect(w.find('[data-testid="agent-chip"]').attributes('title')).toBe(
-      'Connected to Fix login bug (parked) — Go to session'
-    )
+    const icon = w.find('button[data-testid="agent-icon"]')
+    expect(icon.attributes('aria-label')).toBe('Connected to Fix login bug (parked)')
   })
 
-  it('a chip with no click target has the label alone as its title', async () => {
+  it('an icon with no click target is a focusable image named by the head alone', async () => {
     const w = await mountChip({ ownerSessionId: null })
-    expect(w.find('[data-testid="agent-chip"]').attributes('title')).toBe('Connected to an agent')
+    const icon = w.find('[data-testid="agent-icon"]')
+    expect(icon.element.tagName).toBe('SPAN')
+    expect(icon.attributes('tabindex')).toBe('0')
+    expect(icon.attributes('aria-label')).toBe('Connected to an agent')
   })
 
   it('the aria-live node is OUTSIDE the button, so its name does not repeat the word', async () => {
@@ -382,21 +388,15 @@ describe('accessibility and truncation recovery (L4, L5)', () => {
     await flushPromises()
     const live = w.find('[data-testid="agent-chip-live"]')
     expect(live.text()).toBe('typing')
-    const chipEl = w.find('button[data-testid="agent-chip"]').element
+    const chipEl = w.find('button[data-testid="agent-icon"]').element
     expect(chipEl.contains(live.element)).toBe(false)
   })
 
-  it('narrow: the label, "(parked)" and the word hide with the header container; the chip clips instead of overflowing', async () => {
-    seedSessions([{ sessionId: 'sess-1', summary: 'Fix login bug', hibernated: true }])
+  it('narrow: the icon never shrinks or clips, there is no label left to hide', async () => {
     const w = await mountChip()
-    activityCb?.({ terminalId: T, kind: 'read', at: 1 })
-    await flushPromises()
-    for (const id of ['agent-chip-label', 'agent-chip-parked', 'agent-chip-word']) {
-      expect(w.find(`[data-testid="${id}"]`).classes()).toContain('@max-[180px]:hidden')
-    }
-    expect(w.find('[data-testid="agent-chip"]').classes()).toEqual(
-      expect.arrayContaining(['min-w-0', 'shrink', 'overflow-hidden'])
-    )
+    const icon = w.find('[data-testid="agent-icon"]')
+    expect(icon.classes()).toContain('shrink-0')
+    expect(w.find('[data-testid="agent-chip-label"]').exists()).toBe(false)
   })
 })
 

@@ -4701,10 +4701,22 @@ holding `document.activeElement` is the focused one.
 `AgentConnectionChip.vue`. A terminal an agent can reach shows **who** is connected,
 **when** the agent reads or types, and a one-click way to cut it off (T474, spec
 `docs/specs/T474-agent-terminals/spec.md` §7). It sits in the default pane header
-(the 24px strip above), between the cwd label and the maximize button:
+(the 24px strip above), between the cwd label and the maximize button.
+
+**Compact icon (browser-tabs S-7, decision D-4).** The text pill below is replaced, in the
+terminal header and in the browser pane header alike, by one **18px round `--accent-soft`
+icon** (`bot` 10px `--accent`) with the accent `pulse-ring` halo (§7, `--pulse-from: 0.69`),
+and the words move into its **tip** (the full spec is "Compact agent icon" under "Browser
+pane"): the head "Connected to ‹session›" (plus "(parked)" for a parked owner), and below it
+"Typing" or "Reading" while the agent works there. The icon is a `<button>` that selects the
+owner session when one is known (a plain focusable `<span>` otherwise); hover or keyboard
+focus shows the tip; Disconnect stays the 18×18 `unplug` button beside it and the live-word
+`aria-live` node is unchanged. The geometry notes below that mention the pill (padding,
+leading dot, container-query hides) describe the pill that the Paused and Disconnected states
+of the browser pane still use; the terminal header shows no pill any more.
 
 ```
-▸_ app-api   ● Connected to ‹Fix login bug› · typing   ⏏  ⤢ ✕
+▸_ app-api   (🤖)  ⏏  ⤢ ✕        tip: Connected to ‹Fix login bug› / Typing
 ```
 
 - **Chip** — a `<button>` (a plain `<span>` when there is nothing to click through to),
@@ -4790,7 +4802,12 @@ must freeze it first (see "Frozen frame").
   in "Pane header"), with: `globe` 12px `--text-3`; the **page title** (falls back to the host, then to
   `browserPane.newTab`), `min-w-0 flex-1 truncate`, native `title` = the full URL; the **connection chip**
   (below); a `more-horizontal` button (18×18) that opens the pane menu; maximize; close. Maximize keeps the same
-  view and re-bounds it (spec decision 26); it never re-parents it.
+  view and re-bounds it (spec decision 26); it never re-parents it. **One centre line (browser-tabs S-7):** the
+  header is 24px with a 1px bottom border, so its content box is 23px, and **every child sits on that box's
+  vertical centre** (±0.5px) in the single, tabs, overflow and agent states: the header is `items-center`, the
+  strip is the one child that stretches (`self-stretch`, its tabs fill the box, so their centre is the same line)
+  and the strip's own buttons (`+`, `+N`) use `align-self: center`. The Expand button the pane header carries (the
+  mockup has none) is a header child like the others: same 18×18 target, same line.
 - **Address bar** — a 28px row (`h-7`, `--bg`, `border-b border-border`, `px-2`, `gap-1`): back, forward and
   reload as 18×18 icon buttons (`arrow-left`, `arrow-right`, `rotate-cw`; **disabled** is `text-text-disabled`,
   never hidden; reload becomes `x` = stop while a load is in flight), then the **origin badge**, then the
@@ -4831,11 +4848,28 @@ It shows for an agent-opened pane, and while paused or disconnected.
 
 | State                       | Chip                                                                                                                                                                                                                                                                                                                                               |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Agent-opened, owner known   | accent pill, "Connected to ‹session›", live word `driving` while a navigation verb runs (`reading` arrives with the read verbs of a later unit); **Disconnect** (`unplug`) at its right. The session name is the part that stays: "Connected to" is dropped first (below 300px) and the name truncates last; the hover title keeps the whole text  |
-| Agent-opened, owner unknown | "Connected to an agent"; same Disconnect                                                                                                                                                                                                                                                                                                           |
-| Operator-opened             | no chip until the folder's read opt-in is on. Opt-in on, no lease: "An agent can read here" (no Disconnect: the reader is unidentifiable). A lease active: "An agent can drive here" (a lease records no grantee) with **Disconnect**. Same pill geometry as the agent chip                                                                        |
+| Agent-opened, owner known   | the **compact agent icon** (below), its tip "Connected to ‹session›" and, while a verb runs, "Driving this tab · ‹host›" or "Reading"; **Disconnect** (`unplug`) beside it                                                                                                                                                                         |
+| Agent-opened, owner unknown | the same icon, tip "Connected to an agent"; same Disconnect                                                                                                                                                                                                                                                                                        |
+| Operator-opened             | no chip until the folder's read opt-in is on. Opt-in on, no lease: the icon, tip "An agent can read here" (no Disconnect: the reader is unidentifiable). A lease active: the icon, tip "An agent can drive here" (a lease records no grantee) with **Disconnect**                                                                                  |
 | **Paused**                  | `--warning` 10% pill, `--warning` text, "Agent paused · 9:41" (m:ss, counts down each second), then a bordered **Resume** text button (`play` 10px + "Resume", 1px `--warning` 40% border). Below 300px the header has no room for the words, so the same chip (text, Resume, Disconnect) becomes a 22px strip under the header on `--warning` 10% |
 | **Disconnected**            | `--red-soft` pill, `--red` text, "Disconnected" (the mockup's red chip), no button. Permanent; the operator keeps using the pane                                                                                                                                                                                                                   |
+
+**Compact agent icon** (browser-tabs S-7, decision D-4; mockup states `agent`, `agent-hover`; the same view serves the
+terminal pane header, see "Agent connection chip"). Connected states no longer draw a text pill: they draw an **18px
+round icon**, `--accent-soft` fill, `bot` 10px `--accent`, 4px left margin, with the `pulse-ring` halo of §7
+(`.anim-pulse-dot.anim-pulse-dot--accent`, `--pulse-from: 0.69` = 18 ÷ 26), always on while the icon shows; no
+halo under `prefers-reduced-motion`. **Tip** on hover and on keyboard focus (the icon is focusable), a `--surface`
+card, 1px `--border-2`, `--radius`, `--shadow-pop`, `padding 6px 9px`, 11px, `line-height: normal`, one line each: the head in `--accent`
+with a `bot` 10px glyph, "Connected to ‹session›"; below it, in `--text-3`, what the agent is doing when a word is
+live: "Driving this tab · ‹host›", "Reading" or "Typing" (the chip's existing words, capitalised). It opens 5px under
+the icon, right-aligned to it (the mockup draws it 20px further left; this rule wins), and registers with the
+native-overlay composable while it shows. It never clips: it is at most the header's width less 8px (longer text
+wraps) and moves right only as far as needed to start inside the header. **Spacing:** the group is the strip, 4px,
+the icon, then Disconnect with no gap; the chip takes back the header's own 6px gap (`-ml-1.5`) and no other
+header child's spacing changes. The icon's
+`aria-label` carries the same text, so the words stay available without hovering. **Disconnect** stays an `unplug`
+button (18×18) beside the icon. **Paused** and **Disconnected** keep their pills, unchanged. The tab whose activity
+word is live shows its accent dot in place of the favicon (see "Tab strip").
 
 The pause countdown is the only chip text that ticks. It is plain text with no animation, so nothing changes under
 `prefers-reduced-motion`. Disconnect needs **no confirm** (revoking is the safe direction) and is **permanent**,
@@ -4996,6 +5030,107 @@ chrome adds three things and changes one.
   loads by itself as soon as it is shown. Any verb that needs a live page also brings a discarded pane back, with
   `revived: true` in its ACK. A discarded pane keeps its header chips, its pins and the operator's Disconnect and
   Pause; it only has no page.
+
+- **Load-error page** (browser-tabs spec S-3, mockup state `load-error`). When a tab's main-frame load fails with
+  any code but `ERR_ABORTED` (a subframe failure never counts), main hides the tab's native view and the host shows
+  a left-aligned column on `--bg`, vertically centred, at most 440px wide with 32px side padding and 6px gaps:
+  `unplug` 22px `--text-3` (6px under it), a title in 15px weight 600 `--text`, one hint line in 12px `--text-2`
+  (line height 1.5), the error code in mono 10.5px `--text-4`, then a row 10px below with **Reload** (primary:
+  `--accent` fill and border, `--accent-ink` text, `rotate-cw` 12px) and, on a `local` origin only, **Reload when it
+  is up** (ghost: 1px `--border-2`, `--text-2`, `--surface-2` fill on hover). Buttons are 24px high, 11.5px,
+  `--radius-sm`, standard `--accent-line` focus ring. While "Reload when it is up" polls, the second button reads
+  "Waiting for ‹host:port›…" and a second click cancels it. Title and hint come from one table keyed by the code
+  (`browserPane.loadError.*`): refused on a `local` origin ("‹host› refused to connect" / "Nothing is answering on
+  port ‹n›. Start the server, then reload."), refused or reset elsewhere, name not resolved, timed out, no internet,
+  `ERR_CERT_*`, and a fallback for any other code. No spinner and no motion. The next main-frame commit, or a
+  navigation, clears the page; the address field keeps the address that failed.
+- **Start page** (browser-tabs spec S-5, mockup states `start` and `new-tab`). A tab with no address
+  (`hostView: 'start'`, set by `+`, the Topbar button, "New tab to the right" and a restored start tab) hides its
+  native view; the address field is empty (placeholder "Type an address and press Enter") and has the focus, a
+  single-tab header reads "New tab", and the host draws the start page on `--bg`, scrolling
+  when it is taller than the pane. An agent pane never shows it. It is one column at most 560px wide (no token: a
+  readable measure) with 18px top and bottom and 20px side padding and 6px gaps, and two sections, **each left out
+  when it has nothing to show** (a folder with no server running and no history shows an empty `--bg` host):
+  - A **section label**: `server` (Running in this folder) or `clock` (Recent) 12px `--text-3`, the words in 10.5px
+    uppercase with 0.04em tracking, `--text-3`; the second section starts 8px lower.
+  - **Running in this folder**: one row per server, 30px high, `padding 0 10px`, 8px gap, 1px `--border`,
+    `--radius`, `--surface` fill, `--surface-2` fill and `--border-2` on hover and `--accent-line` on keyboard focus.
+    Left to right: a 12px letter icon (the favicon fallback of the tab strip: the name's first letter, `local`
+    `--green-soft` and `--green`), the name in 12px `--text`, the address in mono 10.5px `--text-3` pushed to the right
+    (`localhost:5173`, or `<address>:<port>` for a server bound only to another address), and the source in 10px
+    `--text-4`: `docker` or the listening process's name. Names and addresses truncate with an ellipsis.
+  - **Recent**: a grid of tiles, `repeat(auto-fill, minmax(150px, 1fr))`, 6px gaps, at most 8, newest first. A tile is
+    a 12px / 1fr grid with a 7px column gap and a 2px row gap, `padding 8px 10px`, the same border, radius, fill and
+    hover as a server row: the letter icon (the title's first letter; `local` for loopback, `*.localhost` and `*.test`
+    hosts, else `--surface-2` and `--text-2`), the title in 12px `--text`, and the host (with its port) in mono 10.5px
+    `--text-3` under the title in the second column. The tile's `title` attribute is its address.
+  - Picking a row or a tile opens its address **in the same tab**, through the address bar's own navigation. The page
+    asks main for both lists when it shows and at most every 5 s while it stays shown; a failed read leaves a section
+    out. No spinner and no motion.
+  - Main builds the lists. Servers: the host ports of the folder's running Docker containers (named by compose service
+    or container name, labelled `docker`), plus the ports listened on under the folder's Harnu terminals (Linux and
+    macOS only; named by the folder's basename, labelled by process), deduped by port with Docker first, sorted by
+    port. Recent: the folder's last sites, recorded when an operator tab commits a main-frame navigation with a 2xx or
+    3xx status: origin and path only (no query or fragment), a path segment of 20 or more letters, digits, `-` or `_`
+    shown as `…`, and never a path containing `reset`, `token`, `oauth`, `callback`, `verify` or `magic`, never an
+    agent pane, `about:blank`, an error page or a `harnu-page:` page; 50 kept, 8 shown. Clearing Recent joins "Clear
+    browsing data" when that pane-menu action lands.
+
+- **Tab strip** (browser-tabs spec S-4, mockup states `single`, `tabs`, `tab-menu`, `overflow`, `overflow-list`).
+  A pane holds up to 8 tabs of one partition. **One tab:** today's header (globe, title, chip, comment, ⋯,
+  maximize, close) plus a `+` icon button (18×18, `plus` 12px, `--text-3`, `--surface-2` on hover) right after the
+  title; no strip, no second row. **Two or more:** the strip takes the place of the globe and the title in the same
+  24px header (the header loses its left padding; the tabs run to its edge). A tab is a flex row, `gap 5px`,
+  `padding 0 4px 0 8px`, 1px `--border` on its right, 11px: a **favicon** 12×12 (the page's own icon, else the
+  host's first letter, 8px weight 600, `--radius-xs`, in the origin badge's colours: `local` `--green-soft` fill and
+  `--green` text, `external` `--surface-2` and `--text-2`, `page` `--accent-soft` and `--accent`; a start tab shows
+  `globe`), the **title** (truncated), and a **close** `x` 10px in a 14×14 `--radius-xs` target that shows on hover
+  and on the active tab (`--border-2` fill on its own hover). Inactive: `--text-3`; hover `--surface-2` and
+  `--text-2`. **Active:** `--bg` fill and `--text`, raised over the header's 1px bottom border by a `0 1px 0 --bg`
+  shadow so it opens into the address bar below; **no accent line, no top or bottom rule in `--accent`**. A
+  discarded tab keeps its look. `+` follows the last tab (4px side margins), adds a `start` tab right of the active
+  one and puts the cursor in its address field; at 8 tabs it is `disabled` (`text-text-disabled`) and its title says
+  "Tab limit reached (8)". A `page` pane (live panel) keeps one tab: no `+` and no strip. The tab whose activity
+  word is live (`agentActive`) shows a 6px `--accent` dot (with a 3px `--accent-soft` ring) in place of its favicon,
+  on a collapsed icon tab too; its native `title` says "The agent is driving this tab" (S-7).
+- **Overflow** (the sizes are in CSS px; W is the strip's width: the header minus the right-hand buttons and `+`).
+  The strip takes the first mode that fits, n being the tab count:
+
+  | mode   | active tab         | inactive tabs      | fits when                           |
+  | ------ | ------------------ | ------------------ | ----------------------------------- |
+  | full   | 168px              | 168px              | n × 168 ≤ W                         |
+  | short  | 168px              | 112px, title kept  | W > 480 and 168 + (n − 1) × 112 ≤ W |
+  | shrink | equal width ≥ 80px | equal width ≥ 80px | n × 80 ≤ W                          |
+  | icons  | 168px              | 28px, icon only    | 168 + (n − 1) × 28 ≤ W              |
+
+  When none fits, the icons mode applies with **40px reserved for a `+N` button** (mono 10.5px, `--text-2`, 18px
+  high, `padding 0 5px`, `chevron-down` 10px, about 35px wide, no margin of its own, `--surface-2` on hover only: it is
+  drawn plain while its list is open, as in the mockup, with `aria-expanded` on it; placed before `+`): the strip
+  keeps the active tab (always 168px) and the first k = max(0, ⌊(W − 40 − 168) ÷ 28⌋) inactive tabs in order, and
+  the rest move behind `+N`; the active tab is never moved. An icon-only tab keeps its full title in its native
+  `title`. **`+N` list:** a standard context menu (§6 "Context menu"), `min-width 220px`, `top` 23px, listing every
+  tab in order (favicon 12px + title, 26px rows, no separator); its right edge sits 26px short of the strip's right
+  edge (the mockup's anchor) and it never leaves the strip (4px from either side); the active tab is marked with
+  `--text` colour and a mono "open" tag at the right; picking one activates it and closes the list. It registers
+  with the native-overlay composable.
+
+- **Tab menu** (right-click a tab; a standard context menu, `--shadow-pop`, anchored at the tab's lower-left, the
+  tab keeping its hover look while it is open): **New tab to the right** (`plus`), **Reload** (`rotate-cw`),
+  **Duplicate** (`copy`: a new tab right of it loading the same URL, without history or scroll), **Move to a new
+  pane** (`panel-right`: the tab becomes its own pane, placed below the current one; disabled, `text-text-disabled`,
+  on a pane's only tab and for an agent pane at the 4-agent-pane cap), a separator, **Close other tabs**, **Close
+  tab** (`x`, with the chord's label at the right edge). It registers with the native-overlay composable.
+- **Tab limit notice.** A page's new window at 8 tabs is refused and the notice strip says "Tab limit reached (8).
+  Close a tab to open more." (`--warning` tone, like the other refusals).
+- **Keys** (pane chords: caught before the page sees them, in the page and in the pane chrome; the action ids
+  `browser.tab.new`, `browser.tab.close`, `browser.tab.next`, `browser.tab.prev`, `browser` scope, so they act on the
+  focused pane's tabs and never on the app): `Ctrl+T` new tab, `Ctrl+W` close tab (`Cmd` on macOS); `Ctrl+Tab` and
+  `Ctrl+Shift+Tab` next and previous tab on every platform. While a browser pane has the focus its close-tab chord
+  wins over the app's close-session chord.
+- **Topbar Browser button.** With an operator pane of the folder open it adds a `start` tab right of the active tab
+  of the pane with the latest `lastFocusedAt` (focus in its header, address bar or page stamps it; a pane with no
+  stamp ranks by creation, below the stamped ones) and the address field takes the focus; with none, or at 8 tabs,
+  it opens a pane as before; **Shift+click** always opens a pane; an agent pane is never a target.
 
 #### Point-and-comment overlay (browser pane)
 

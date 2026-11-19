@@ -50,10 +50,16 @@ import { browserPayload, useHelpersStore, type AnyHelperPane } from '../stores/h
 import { useBrowserStore } from '../stores/browser'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import AgentConnectionChip from './AgentConnectionChip.vue'
+import { chipPresentation, sentenceCase, type IconModel } from '../lib/agent-chip'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { createFrameScheduler } from '../lib/frame-scheduler'
 import { sessionTitle } from '../lib/session-label'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
+import BrowserLoadError from './BrowserLoadError.vue'
+import BrowserStartPage from './BrowserStartPage.vue'
+import BrowserTabStrip from './BrowserTabStrip.vue'
+import { hostPlaceholderOf } from '../../../shared/browser-tabs'
 import {
   FRAME_BEZEL_PX,
   FRAME_RING_PX,
@@ -86,8 +92,11 @@ import {
 } from '../lib/browser-comment'
 import { COMMENT_MAX_CHARS } from '../../../shared/browser-comment'
 import { renderKeysString } from '../../../main/keybindings-core'
+import { tabActionForKey } from '../lib/browser-chords'
+import { dispatchForwardedChord } from '../composables/useShortcuts'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { isMac } from '../lib/platform'
+import type { TabMenuAction } from '../lib/browser-tabs-view'
 import type { BrowserPaneState } from '../../../preload'
 
 interface Props {
@@ -138,6 +147,57 @@ const state = computed<BrowserPaneState>(
     }
 )
 
+/* ---- Host placeholder (browser-tabs S-3) ---------------------------------------------------------- */
+
+/** The pane's active tab, as main sent it (`tabs` is empty before main's first push). */
+const activeTab = computed(() => state.value.tabs?.find((t) => t.tabId === state.value.activeTabId))
+/** What the host draws for the active tab: nothing (the page shows), the start placeholder, or the load error. */
+const placeholder = computed(() => hostPlaceholderOf(activeTab.value))
+const onErrorReload = (): void => {
+  const tab = activeTab.value
+  if (tab) void browser.tabReload(paneId, tab.tabId)
+}
+const onErrorReloadWhenUp = (on: boolean): void => {
+  const tab = activeTab.value
+  if (tab) void browser.tabReloadWhenUp(paneId, tab.tabId, on)
+}
+
+/* ---- Tab strip (browser-tabs S-4) ----------------------------------------------------------------- */
+
+const tabs = computed(() => state.value.tabs ?? [])
+/** Two or more tabs: the strip replaces the globe and the title in the header. */
+const hasStrip = computed(() => tabs.value.length >= 2)
+/** A live panel keeps one tab: no `+`, no strip. */
+const canAddTab = computed(() => state.value.origin !== 'page' && !state.value.pagePath)
+const tabKeys = (id: 'browser.tab.new' | 'browser.tab.close'): string => keybindings.chordLabel(id)
+const onTabAdd = (): void => void browser.tabNewStart(paneId, state.value.activeTabId)
+const onTabMenu = (action: TabMenuAction, tabId: string): void =>
+  void browser.tabMenu(paneId, tabId, action)
+
+/** The operator is using this pane's header or address bar: main stamps it as the last used one (AC-39). */
+const onChromeFocus = (): void => {
+  browser.chromeFocusPaneId = paneId
+  browser.paneFocused(paneId)
+}
+const onChromeBlur = (ev: FocusEvent): void => {
+  const next = ev.relatedTarget as Node | null
+  if (next && rootEl.value?.contains(next)) return
+  if (browser.chromeFocusPaneId === paneId) browser.chromeFocusPaneId = null
+}
+/**
+ * The tab chords with the keyboard in the pane chrome (header, address bar): the same actions the page's chords run
+ * (main forwards those), taken before the app's own bindings, so Ctrl+W closes the tab and not the session.
+ */
+function onChromeKeydown(ev: KeyboardEvent): void {
+  const id = tabActionForKey(keybindings.resolved.list, ev, isMac)
+  if (!id) return
+  ev.preventDefault()
+  ev.stopPropagation()
+  browser.chordPaneId = paneId
+  dispatchForwardedChord(id)
+}
+const rootEl = ref<HTMLElement | null>(null)
+
 /* ---- Discarded (T574, spec §10.1) ---------------------------------------------------------------- */
 
 /** The line under the title: the address, and for a pane the timer paused how long it had been hidden. */
@@ -154,8 +214,11 @@ const onReviveClick = (): void => void browser.revive(paneId)
 
 /* ---- Header ---------------------------------------------------------------------------------- */
 
-const title = computed(
-  () => headerTitle(state.value) || payload.value.name || t('browserPane.newTab')
+// A tab with no address holds `about:blank`, which is not a title: its header reads "New tab" (mockup state `start`).
+const title = computed(() =>
+  placeholder.value === 'start'
+    ? t('browserPane.newTab')
+    : headerTitle(state.value) || payload.value.name || t('browserPane.newTab')
 )
 
 const isMaximized = computed(() => helpers.maximizedPaneId(props.worktreePath) === paneId)
@@ -194,6 +257,32 @@ const chipLabel = computed(() => {
   return t('browserPane.chip.connectedToAgent')
 })
 const wordText = computed(() => (chip.value?.word ? t(`browserPane.chip.${chip.value.word}`) : ''))
+
+/** The compact icon's words (design.md "Compact agent icon"): the head names the session, the second line the verb. */
+const iconModel = computed<IconModel | null>(() => {
+  const c = chip.value
+  if (!c || chipPresentation(c.kind) !== 'icon') return null
+  const head =
+    c.kind === 'connected'
+      ? t('browserPane.chip.connectedTo', { session: `‹${ownerTitle.value}›` })
+      : chipLabel.value
+  let detail = ''
+  if (c.word === 'driving') {
+    const host = splitAddress(state.value.url).host
+    detail = host
+      ? t('browserPane.chip.drivingTab', { host })
+      : t('browserPane.chip.drivingTabBare')
+  } else if (c.word === 'reading') {
+    detail = sentenceCase(wordText.value)
+  }
+  return {
+    head,
+    detail,
+    live: wordText.value,
+    clickSessionId: null,
+    disconnectable: c.disconnectable
+  }
+})
 
 async function onDisconnect(): Promise<void> {
   const ok = await browser.disconnect(paneId)
@@ -285,6 +374,7 @@ const noticeText = computed(() => {
   if (n.kind === 'download-failed') return t('browserPane.noticeDownloadFailed')
   if (n.kind === 'offline') return t('browserPane.notice.offline')
   if (n.kind === 'agent-input') return t('browserPane.notice.agentInput')
+  if (n.kind === 'tab-limit') return t('browserPane.notice.tabLimit')
   return t('browserPane.notice.crashed')
 })
 const noticeIsInfo = computed(() =>
@@ -511,7 +601,16 @@ watch(
   { flush: 'post' }
 )
 
+// A start tab has no address to show: the field takes the focus so the operator can type one (browser-tabs S-3).
+watch(
+  () => (placeholder.value === 'start' ? state.value.activeTabId : null),
+  (tabId) => {
+    if (tabId) void nextTick(focusAddress)
+  }
+)
+
 onMounted(() => {
+  if (placeholder.value === 'start') void nextTick(focusAddress)
   areaObserver = new ResizeObserver(() => {
     const el = areaEl.value
     if (el) areaSize.value = { width: el.clientWidth, height: el.clientHeight }
@@ -535,6 +634,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // A pane that goes away while its chrome holds the focus fires no `focusout`: release the hold here, or Ctrl+W
+  // keeps closing a tab of a pane that no longer exists instead of the session.
+  if (browser.chromeFocusPaneId === paneId) browser.chromeFocusPaneId = null
   areaObserver?.disconnect()
   areaObserver = null
   stopTracking()
@@ -749,24 +851,49 @@ watch(isFrozen, async (frozen) => {
 
 <template>
   <div
+    ref="rootEl"
     class="@container relative flex h-full w-full flex-col overflow-hidden bg-bg"
     :aria-label="$t('browserPane.label')"
     data-testid="browser-pane"
+    data-dsqa="browser-pane"
+    @focusout="onChromeBlur"
+    @keydown.capture="onChromeKeydown"
   >
     <header
-      class="@container flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
-      :class="
+      class="@container flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface pr-2 text-[11px] text-text-2 transition-colors"
+      :class="[
+        hasStrip ? 'pl-0' : 'pl-2',
         resizable ? 'cursor-row-resize border-t border-t-border-2 hover:border-t-accent-line' : ''
-      "
-      @mousedown="onHeaderMouseDown"
+      ]"
+      data-dsqa-part="header"
+      @mousedown="(onHeaderMouseDown($event), browser.paneFocused(paneId))"
+      @focusin="onChromeFocus"
     >
-      <Globe :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-      <span class="min-w-[2rem] flex-1 truncate" :title="state.url" data-testid="browser-title">{{
-        title
-      }}</span>
+      <!-- One tab: today's header (globe and title) plus `+`. Two or more: the strip takes their place. -->
+      <template v-if="!hasStrip">
+        <Globe :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
+        <span class="min-w-[2rem] flex-1 truncate" :title="state.url" data-testid="browser-title">{{
+          title
+        }}</span>
+      </template>
+      <BrowserTabStrip
+        :tabs="tabs"
+        :active-tab-id="state.activeTabId"
+        :can-add="canAddTab"
+        :new-keys="tabKeys('browser.tab.new')"
+        :close-keys="tabKeys('browser.tab.close')"
+        :agent-pane-at-cap="browser.agentPaneAtCap(paneId)"
+        :pane-id="paneId"
+        @activate="(id) => void browser.tabActivate(paneId, id)"
+        @close="(id) => void browser.tabClose(paneId, id)"
+        @add="onTabAdd"
+        @menu="onTabMenu"
+      />
 
+      <AgentConnectionChip v-if="iconModel" :model="iconModel" @disconnect="onDisconnect" />
+      <!-- Paused and Disconnected keep their text pill (design.md "Connection chip"). -->
       <span
-        v-if="chip"
+        v-else-if="chip"
         class="flex min-w-0 shrink items-center gap-1"
         :class="chip.kind === 'paused' ? '@max-[300px]:hidden' : ''"
         data-testid="browser-chip"
@@ -777,64 +904,19 @@ watch(isFrozen, async (frozen) => {
           :class="
             chip.kind === 'disconnected'
               ? 'border-red/40 bg-red-soft text-red'
-              : chip.kind === 'paused'
-                ? 'border-warning/30 bg-warning/10 text-warning'
-                : 'border-accent-line bg-accent-soft text-accent'
+              : 'border-warning/30 bg-warning/10 text-warning'
           "
           style="padding: 1px 7px; font-size: 10px"
           :title="chipLabel"
         >
           <span
             class="h-1.5 w-1.5 shrink-0 rounded-full"
-            :class="[
-              chip.kind === 'disconnected'
-                ? 'bg-red'
-                : chip.kind === 'paused'
-                  ? 'bg-warning'
-                  : 'bg-accent',
-              chip.word ? 'anim-pulse-dot anim-pulse-dot--accent' : ''
-            ]"
-            aria-hidden="true"
-          />
-          <Bot
-            v-if="chip.kind === 'connected' || chip.kind === 'connectedAgent'"
-            :size="10"
-            :stroke-width="1.6"
-            class="shrink-0"
+            :class="chip.kind === 'disconnected' ? 'bg-red' : 'bg-warning'"
             aria-hidden="true"
           />
           <!-- Paused: "Agent paused · m:ss", always whole (on a narrow pane the chip moves to the strip below). -->
-          <span
-            v-if="chip.kind === 'paused'"
-            class="min-w-0 truncate"
-            data-testid="browser-chip-label"
-            >{{ chipLabel }}</span
-          >
-          <!-- Connected: the session name is what matters, so "Connected to" gives way first. -->
-          <span
-            v-else-if="chip.kind === 'connected'"
-            class="flex min-w-0 items-baseline"
-            data-testid="browser-chip-label"
-          >
-            <span class="truncate @max-[300px]:hidden" style="flex-shrink: 8"
-              >{{ $t('browserPane.chip.connectedPrefix') }}&nbsp;</span
-            >
-            <span class="flex min-w-0 items-baseline"
-              ><span class="min-w-0 truncate">‹{{ ownerTitle }}</span
-              ><span class="shrink-0">›</span></span
-            >
-          </span>
-          <span
-            v-else
-            class="min-w-0 truncate @max-[180px]:hidden"
-            data-testid="browser-chip-label"
-            >{{ chipLabel }}</span
-          >
-          <span v-if="wordText" class="shrink-0 text-text-3 @max-[180px]:hidden"
-            >· {{ wordText }}</span
-          >
+          <span class="min-w-0 truncate" data-testid="browser-chip-label">{{ chipLabel }}</span>
         </span>
-        <span class="sr-only" aria-live="polite">{{ wordText }}</span>
         <button
           v-if="chip.kind === 'paused'"
           type="button"
@@ -850,7 +932,7 @@ watch(isFrozen, async (frozen) => {
         <button
           v-if="chip.disconnectable"
           type="button"
-          class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded text-text-3 transition-colors hover:bg-surface-2 hover:text-text"
+          class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-sm text-text-3 transition-colors hover:bg-surface-2 hover:text-text"
           :title="$t('browserPane.chip.disconnectHint')"
           :aria-label="$t('browserPane.chip.disconnect')"
           data-testid="browser-disconnect"
@@ -878,7 +960,7 @@ watch(isFrozen, async (frozen) => {
 
       <button
         type="button"
-        class="flex shrink-0 items-center justify-center rounded transition"
+        class="flex shrink-0 items-center justify-center rounded-sm transition"
         :class="
           commentsOff
             ? 'cursor-default text-text-disabled'
@@ -898,7 +980,7 @@ watch(isFrozen, async (frozen) => {
         <MessageSquarePlus :size="12" :stroke-width="1.5" />
       </button>
       <button
-        class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+        class="flex shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
         :title="$t('browserPane.menu')"
         :aria-label="$t('browserPane.menu')"
@@ -909,7 +991,7 @@ watch(isFrozen, async (frozen) => {
         <MoreHorizontal :size="12" :stroke-width="1.5" />
       </button>
       <button
-        class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
+        class="flex shrink-0 items-center justify-center rounded-sm transition hover:bg-surface-2 hover:text-text"
         :class="isExpanded ? 'text-accent' : 'text-text-3'"
         style="width: 18px; height: 18px"
         data-test="pane-expand"
@@ -922,7 +1004,7 @@ watch(isFrozen, async (frozen) => {
         <Expand :size="12" :stroke-width="1.5" />
       </button>
       <button
-        class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+        class="flex shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
         :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
@@ -933,7 +1015,7 @@ watch(isFrozen, async (frozen) => {
         <Maximize2 v-else :size="12" :stroke-width="1.5" />
       </button>
       <button
-        class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+        class="-mr-1 flex shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
         :title="$t('helperPane.close')"
         :aria-label="$t('helperPane.close')"
@@ -978,6 +1060,8 @@ watch(isFrozen, async (frozen) => {
     <!-- Address bar (design.md "Address bar"). -->
     <div
       class="@container relative flex h-7 shrink-0 items-center gap-1 border-b border-border bg-bg px-2"
+      data-dsqa-part="address-bar"
+      @focusin="onChromeFocus"
     >
       <button
         type="button"
@@ -1069,7 +1153,7 @@ watch(isFrozen, async (frozen) => {
           type="text"
           spellcheck="false"
           autocomplete="off"
-          class="h-5 w-full rounded-sm border border-border bg-surface px-1.5 font-mono text-[11px] outline-none focus:border-accent-line"
+          class="no-default-ring h-5 w-full rounded-sm border border-border bg-surface px-1.5 font-mono text-[11px] outline-none focus:border-accent-line"
           :class="editing ? 'text-text' : 'text-transparent'"
           :placeholder="$t('browserPane.addressPlaceholder')"
           :aria-label="$t('browserPane.address')"
@@ -1489,7 +1573,7 @@ watch(isFrozen, async (frozen) => {
       <!-- "Paused to save memory" placeholder (spec §10.1, design.md "Discarded pane"): the page and its view are
            gone; the pane keeps its place and one click loads it again. -->
       <div
-        v-if="state.discarded"
+        v-if="state.discarded && placeholder !== 'start'"
         class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1.5 bg-bg px-4 text-center"
         role="status"
         data-testid="browser-discarded"
@@ -1521,6 +1605,29 @@ watch(isFrozen, async (frozen) => {
         </button>
       </div>
 
+      <!-- Start page (browser-tabs S-5): a tab with no address; its native view is hidden, the address field has the
+           focus, and a server or recent site opens in this same tab through the address bar's navigation call. -->
+      <div
+        v-if="placeholder === 'start'"
+        class="absolute inset-0 z-[1] overflow-auto bg-bg"
+        data-testid="browser-start-placeholder"
+      >
+        <BrowserStartPage
+          :folder="worktreePath"
+          @open="(url: string) => void browser.navigate(paneId, { url })"
+        />
+      </div>
+
+      <!-- Load-error page (browser-tabs S-3): the tab's main-frame load failed, so main hid its view. -->
+      <BrowserLoadError
+        v-else-if="placeholder === 'error' && activeTab?.loadError"
+        class="absolute inset-0 z-[1] bg-bg"
+        :load-error="activeTab.loadError"
+        :waiting-for-up="activeTab.waitingForUp"
+        @reload="onErrorReload"
+        @reload-when-up="onErrorReloadWhenUp"
+      />
+
       <div
         v-if="layout && device"
         class="flex min-h-full min-w-full flex-col items-center justify-center"
@@ -1542,6 +1649,7 @@ watch(isFrozen, async (frozen) => {
             class="relative bg-bg"
             :style="{ width: `${layout.screenWidth}px`, height: `${layout.screenHeight}px` }"
             data-testid="browser-host"
+            data-dsqa-part="host"
           >
             <img
               v-if="isFrozen && frozenSrc"
@@ -1566,7 +1674,13 @@ watch(isFrozen, async (frozen) => {
           {{ caption }}
         </div>
       </div>
-      <div v-else ref="hostEl" class="absolute inset-0 bg-bg" data-testid="browser-host">
+      <div
+        v-else
+        ref="hostEl"
+        class="absolute inset-0 bg-bg"
+        data-testid="browser-host"
+        data-dsqa-part="host"
+      >
         <!-- Frozen frame (spec §2.4): a still of the page while an app layer overlaps the native view. -->
         <img
           v-if="isFrozen && frozenSrc"

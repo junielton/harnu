@@ -1,0 +1,7 @@
+COMMAND   PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+node     4101 user   23u  IPv4 0x1a2b3c4d5e6f7081      0t0  TCP 127.0.0.1:5173 (LISTEN)
+python3  4103 user    5u  IPv4 0x1a2b3c4d5e6f7082      0t0  TCP *:8080 (LISTEN)
+ruby     4110 user   12u  IPv4 0x1a2b3c4d5e6f7083      0t0  TCP 192.168.1.20:3000 (LISTEN)
+node     4101 user   24u  IPv6 0x1a2b3c4d5e6f7084      0t0  TCP [::1]:4000 (LISTEN)
+python3  4103 user    6u  IPv6 0x1a2b3c4d5e6f7085      0t0  TCP *:9000 (LISTEN)
+Code\x20H 4120 user   30u  IPv4 0x1a2b3c4d5e6f7086      0t0  TCP 127.0.0.1:6000 (LISTEN)

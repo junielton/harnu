@@ -1833,7 +1833,11 @@
       "browser_reload": "Painel do navegador: recarregar",
       "browser_back": "Painel do navegador: voltar",
       "browser_forward": "Painel do navegador: avançar",
-      "browser_focusAddress": "Painel do navegador: focar na barra de endereço"
+      "browser_focusAddress": "Painel do navegador: focar na barra de endereço",
+      "browser_tab_new": "Painel do navegador: nova aba",
+      "browser_tab_close": "Painel do navegador: fechar a aba",
+      "browser_tab_next": "Painel do navegador: próxima aba",
+      "browser_tab_prev": "Painel do navegador: aba anterior"
     }
   },
   "notifications": {
@@ -5212,13 +5216,34 @@
     },
     "label": "Navegador",
     "newTab": "Nova aba",
+    "tabs": {
+      "new": "Nova aba ({keys})",
+      "newPlain": "Nova aba",
+      "limit": "Limite de abas atingido (8)",
+      "strip": "Abas",
+      "close": "Fechar aba",
+      "closeNamed": "Fechar {title}",
+      "agentDriving": "O agente está operando esta aba",
+      "more": "Mais {count} abas",
+      "moreList": "Todas as abas",
+      "open": "aberta",
+      "untitled": "Nova aba",
+      "menu": {
+        "newRight": "Nova aba à direita",
+        "reload": "Recarregar",
+        "duplicate": "Duplicar",
+        "move": "Mover para um novo painel",
+        "closeOthers": "Fechar as outras abas",
+        "close": "Fechar aba"
+      }
+    },
     "menu": "Mais ações",
     "back": "Voltar",
     "forward": "Avançar",
     "reload": "Recarregar",
     "stop": "Parar",
     "address": "Endereço",
-    "addressPlaceholder": "Digite um endereço",
+    "addressPlaceholder": "Digite um endereço e pressione Enter",
     "pauseAgent": "Pausar o agente por 10 min",
     "resumeAgent": "Retomar o agente",
     "devtools": "Abrir DevTools",
@@ -5248,7 +5273,8 @@
       "reading": "lendo",
       "driving": "operando",
       "pausedLabel": "Agente pausado",
-      "connectedPrefix": "Conectado a"
+      "drivingTab": "Operando esta aba · {host}",
+      "drivingTabBare": "Operando esta aba"
     },
     "notice": {
       "blocked": "Bloqueado: endereços {scheme}: não podem ser abertos",
@@ -5258,7 +5284,8 @@
       "crashed": "A página parou de responder",
       "dismiss": "Dispensar",
       "offline": "Bloqueado: este painel está offline e não pode abrir outros endereços. Ative Rede ativa para seguir links externos.",
-      "agentInput": "Ignorado — uma sessão acabou de agir nesta página"
+      "agentInput": "Ignorado — uma sessão acabou de agir nesta página",
+      "tabLimit": "Limite de abas atingido (8). Feche uma aba para abrir mais."
     },
     "zoom": {
       "in": "Aumentar zoom",
@@ -5294,6 +5321,43 @@
     "noticeDownloaded": "{name} salvo",
     "noticeDownloadCancelled": "Download cancelado",
     "noticeDownloadFailed": "O download falhou",
+    "start": {
+      "running": "Rodando nesta pasta",
+      "recent": "Recentes"
+    },
+    "loadError": {
+      "reload": "Recarregar",
+      "reloadWhenUp": "Recarregar quando estiver no ar",
+      "waiting": "Aguardando {target}…",
+      "refusedLocal": {
+        "title": "{host} recusou a conexão",
+        "hint": "Nada está respondendo na porta {port}. Inicie o servidor e recarregue."
+      },
+      "refused": {
+        "title": "{host} recusou a conexão",
+        "hint": "O site pode estar fora do ar. Tente de novo daqui a pouco."
+      },
+      "notFound": {
+        "title": "Não foi possível encontrar o endereço de {host}",
+        "hint": "Confira se o endereço tem algum erro de digitação."
+      },
+      "timeout": {
+        "title": "{host} demorou demais para responder",
+        "hint": "O site pode estar lento ou inacessível a partir desta rede."
+      },
+      "offline": {
+        "title": "Sem conexão com a internet",
+        "hint": "Verifique sua conexão e recarregue."
+      },
+      "cert": {
+        "title": "A conexão com {host} não é segura",
+        "hint": "O certificado não foi aceito, então a página não foi carregada."
+      },
+      "other": {
+        "title": "Não foi possível carregar {host}",
+        "hint": "A página falhou ao carregar."
+      }
+    },
     "discarded": {
       "titleIdle": "Pausado para economizar memória",
       "titleRestored": "Ainda não carregado",
