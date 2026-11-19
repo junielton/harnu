@@ -24,6 +24,50 @@ export interface BrowserTabLoadError {
   local: boolean
 }
 
+/** Which row of the load-error table (`browserPane.loadError.*`) a failure code belongs to. */
+export type LoadErrorKind =
+  'refusedLocal' | 'refused' | 'notFound' | 'timeout' | 'offline' | 'cert' | 'other'
+
+/**
+ * The row of the load-error table for a failure `code` (spec "Load error"). `ERR_CONNECTION_REFUSED` on a `local`
+ * origin has its own row, which tells the operator to start the server.
+ */
+export function loadErrorKind(code: string, local: boolean): LoadErrorKind {
+  if (code === 'ERR_CONNECTION_REFUSED') return local ? 'refusedLocal' : 'refused'
+  if (code === 'ERR_CONNECTION_RESET') return 'refused'
+  if (code === 'ERR_NAME_NOT_RESOLVED') return 'notFound'
+  if (code === 'ERR_CONNECTION_TIMED_OUT' || code === 'ERR_TIMED_OUT') return 'timeout'
+  if (code === 'ERR_INTERNET_DISCONNECTED') return 'offline'
+  if (code.startsWith('ERR_CERT_')) return 'cert'
+  return 'other'
+}
+
+/** The `host:port` the "Waiting for ‹host:port›…" label names (the host already carries an explicit port). */
+export function loadErrorTarget(e: Pick<BrowserTabLoadError, 'host' | 'port'>): string {
+  if (e.host.includes(':') || e.port === null) return e.host
+  return `${e.host}:${e.port}`
+}
+
+/** What the pane's host `<div>` draws in place of the page for a tab. */
+export type BrowserHostPlaceholder = 'none' | 'start' | 'error'
+
+/**
+ * What the host draws for `tab` (the pane's active tab): the start placeholder, the load-error page (only when main
+ * sent its `loadError`), or nothing because the page itself shows.
+ */
+export function hostPlaceholderOf(
+  tab: Pick<BrowserTabState, 'hostView' | 'loadError'> | undefined
+): BrowserHostPlaceholder {
+  if (!tab) return 'none'
+  if (tab.hostView === 'start') return 'start'
+  if (tab.hostView === 'error' && tab.loadError) return 'error'
+  return 'none'
+}
+
+/** "Reload when it is up" polls every 2 s and gives up after 10 min (spec "Load error"). */
+export const RELOAD_WHEN_UP_POLL_MS = 2000
+export const RELOAD_WHEN_UP_MAX_MS = 10 * 60 * 1000
+
 /** The per-tab record main sends the renderer. */
 export interface BrowserTabState {
   tabId: string

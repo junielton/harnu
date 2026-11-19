@@ -5276,6 +5276,39 @@
     "noticeDownloaded": "Saved {name}",
     "noticeDownloadCancelled": "Download cancelled",
     "noticeDownloadFailed": "The download failed",
+    "loadError": {
+      "reload": "Reload",
+      "reloadWhenUp": "Reload when it is up",
+      "waiting": "Waiting for {target}…",
+      "refusedLocal": {
+        "title": "{host} refused to connect",
+        "hint": "Nothing is answering on port {port}. Start the server, then reload."
+      },
+      "refused": {
+        "title": "{host} refused to connect",
+        "hint": "The site may be down. Try again in a moment."
+      },
+      "notFound": {
+        "title": "{host}'s address could not be found",
+        "hint": "Check the address for a typo."
+      },
+      "timeout": {
+        "title": "{host} took too long to respond",
+        "hint": "The site may be slow or unreachable from this network."
+      },
+      "offline": {
+        "title": "No internet connection",
+        "hint": "Check your connection, then reload."
+      },
+      "cert": {
+        "title": "The connection to {host} is not secure",
+        "hint": "Its certificate was not accepted, so the page was not loaded."
+      },
+      "other": {
+        "title": "{host} could not be loaded",
+        "hint": "The page failed to load."
+      }
+    },
     "discarded": {
       "titleIdle": "Paused to save memory",
       "titleRestored": "Not loaded yet",

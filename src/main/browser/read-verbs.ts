@@ -102,6 +102,12 @@ interface ReadCtx {
   ack: Record<string, unknown>
 }
 
+/** What each read says about an empty page: the fields a caller reads, as they are when there is nothing to read. */
+const EMPTY_PAGE: Partial<Record<Parameters<typeof gate>[0], Record<string, unknown>>> = {
+  browser_snapshot: { text: '', nodes: 0, truncated: false },
+  browser_console: { entries: [], cursor: null, droppedEntries: 0 }
+}
+
 /** Gate a pane-addressed read and build the common ACK fields; a refusal comes back as `{ refusal }`. */
 async function openRead(
   op: Parameters<typeof gate>[0],
@@ -115,6 +121,19 @@ async function openRead(
   const readers = deps.host.readers(rec.paneId)
   // A record without a view is a pane that is mid-close.
   if (!readers || !g.live) return { refusal: refuse('PANE_NOT_FOUND', { folder: rec.folder }) }
+  // A tab showing the load error page has no page to read (its view is hidden, spec S-3): the read answers `ok` with
+  // `loadError` and an empty page. It rides the `refusal` slot only because that is the verbs' early return.
+  const loadError = op === 'browser_network' ? undefined : deps.host.loadErrorOf?.(rec.paneId)
+  if (loadError) {
+    return {
+      refusal: {
+        ...ackBase(rec, g.live, g.origin ?? originOf(rec, g.live, deps)),
+        ...(EMPTY_PAGE[op] ?? {}),
+        loadError,
+        note: BROWSER_NOTE
+      } as Refusal
+    }
+  }
   return {
     ctx: {
       paneId: rec.paneId,

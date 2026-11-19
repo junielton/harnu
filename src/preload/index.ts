@@ -2822,6 +2822,9 @@ const api = {
     ipcRenderer.invoke('browser:tab:move-to-pane', { paneId, tabId }),
   browserTabReload: (paneId: string, tabId: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('browser:tab:reload', { paneId, tabId }),
+  /** "Reload when it is up" on an error tab: `on` starts the TCP poll of its local origin, `false` cancels it. */
+  browserTabReloadWhenUp: (paneId: string, tabId: string, on: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('browser:tab:reload-when-up', { paneId, tabId, on }),
   // T31: the Sentinel auto-denied a catastrophic command — surface it prominently.
   onSentinelBlocked: (cb: (p: { reason: string; sessionId: string }) => void): (() => void) =>
     subscribe('sentinel:blocked', cb),

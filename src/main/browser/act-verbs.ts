@@ -660,6 +660,9 @@ export async function evalVerb(
     const paneId = ctx.rec.paneId
     const folder = ctx.rec.folder
     const timeoutMs = Math.min(args.timeoutMs ?? EVAL_DEFAULT_TIMEOUT_MS, EVAL_MAX_TIMEOUT_MS)
+    // A tab showing the load error page has no page to run in (browser-tabs S-3).
+    const loadError = deps.host.loadErrorOf?.(paneId)
+    if (loadError) return { loadError }
     let contextId: number | undefined
     if (args.frame !== undefined) {
       const fr = await frameContext(deps, ctx, args.frame)

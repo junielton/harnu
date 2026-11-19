@@ -5276,6 +5276,39 @@
     "noticeDownloaded": "{name} salvo",
     "noticeDownloadCancelled": "Download cancelado",
     "noticeDownloadFailed": "O download falhou",
+    "loadError": {
+      "reload": "Recarregar",
+      "reloadWhenUp": "Recarregar quando estiver no ar",
+      "waiting": "Aguardando {target}…",
+      "refusedLocal": {
+        "title": "{host} recusou a conexão",
+        "hint": "Nada está respondendo na porta {port}. Inicie o servidor e recarregue."
+      },
+      "refused": {
+        "title": "{host} recusou a conexão",
+        "hint": "O site pode estar fora do ar. Tente de novo daqui a pouco."
+      },
+      "notFound": {
+        "title": "Não foi possível encontrar o endereço de {host}",
+        "hint": "Confira se o endereço tem algum erro de digitação."
+      },
+      "timeout": {
+        "title": "{host} demorou demais para responder",
+        "hint": "O site pode estar lento ou inacessível a partir desta rede."
+      },
+      "offline": {
+        "title": "Sem conexão com a internet",
+        "hint": "Verifique sua conexão e recarregue."
+      },
+      "cert": {
+        "title": "A conexão com {host} não é segura",
+        "hint": "O certificado não foi aceito, então a página não foi carregada."
+      },
+      "other": {
+        "title": "Não foi possível carregar {host}",
+        "hint": "A página falhou ao carregar."
+      }
+    },
     "discarded": {
       "titleIdle": "Pausado para economizar memória",
       "titleRestored": "Ainda não carregado",

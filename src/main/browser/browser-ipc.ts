@@ -142,6 +142,12 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     const a = tabArgs(payload)
     return { ok: a ? await host().reloadTab(a.paneId, a.tabId) : false }
   })
+  // "Reload when it is up" (S-3): `on` starts the TCP poll of an error tab's local origin, `false` cancels it.
+  handleApp('browser:tab:reload-when-up', (payload: unknown) => {
+    const a = tabArgs(payload)
+    const on = isRecord(payload) && typeof payload.on === 'boolean' ? payload.on : null
+    return { ok: a && on !== null ? host().reloadWhenUp(a.paneId, a.tabId, on) : false }
+  })
 
   // Geometry and overlays are fire-and-forget: they ride animation frames.
   onApp('browser:bounds', (payload: unknown) => {

@@ -181,6 +181,7 @@ export type FolderAllowed = (folder: string, openedBy: 'agent' | 'operator') => 
 function restoreTabs(
   p: Record<string, unknown>,
   paneUrl: string,
+  operatorPane: boolean,
   addressOf: (raw: unknown) => string,
   discardedFor: (address: string, title: string, active: boolean) => TabRecord['discarded']
 ): { tabs: TabRecord[]; activeTabId: string } {
@@ -198,7 +199,8 @@ function restoreTabs(
     if (!isRecord(item)) continue
     const tabId = isTabId(item.tabId) && !taken.has(item.tabId) ? item.tabId : mintTabId(taken)
     taken.add(tabId)
-    const hostView = item.hostView === 'start' ? 'start' : 'page'
+    // The start page is the operator's: an agent pane (or a hand-edited file) never restores one.
+    const hostView = item.hostView === 'start' && operatorPane ? 'start' : 'page'
     staged.push({
       tabId,
       address: hostView === 'start' ? 'about:blank' : addressOf(item.url),
@@ -272,7 +274,13 @@ export function restorePane(
       now,
       hiddenSince: null
     })
-  const { tabs, activeTabId } = restoreTabs(p, url, addressOf, discardedFor)
+  const { tabs, activeTabId } = restoreTabs(
+    p,
+    url,
+    openedBy === 'operator' && pagePath === null,
+    addressOf,
+    discardedFor
+  )
   const rec: TabbedPaneRecord = {
     paneId,
     folder: input.worktreePath,
