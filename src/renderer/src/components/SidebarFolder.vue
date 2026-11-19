@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import type { Folder, Session, SessionAgent } from '../stores/sessions'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
+import { agentRowLabel, agentRowPlan, agentTypeChip } from '../lib/agent-rows'
 import { useHelpersStore } from '../stores/helpers'
 import { useHoverPreview } from '../composables/useHoverPreview'
 import { useContextMenu } from '../composables/useContextMenu'
@@ -458,7 +459,19 @@ function trailingScrimClass(s: Session): string {
 }
 
 function agentLabel(a: SessionAgent): string {
-  return a.agentType || t('agent.subagentLabel')
+  return agentRowLabel(a, t('agent.subagentLabel'))
+}
+
+/** Rows under a session: running agents, one "N done" fold row, then done ones if open. */
+function agentRowsOf(s: Session): ReturnType<typeof agentRowPlan<SessionAgent>> {
+  return agentRowPlan(agentsOf(s), sessions.isAgentsDoneExpanded(s.sessionId))
+}
+
+/** Max-height (px) for the animated agent list: one child row per planned row. */
+function agentsListMaxHeight(s: Session): string {
+  return sessions.isAgentsExpanded(s.sessionId)
+    ? `${agentRowsOf(s).length * metrics.value.childRowHeight}px`
+    : '0'
 }
 
 function agentOrigin(a: SessionAgent): string {
@@ -920,47 +933,89 @@ function onSelectTeammate(session: Session): void {
           <div
             v-if="agentsOf(s).length"
             class="overflow-hidden transition-[max-height] duration-300 ease-out"
-            :style="{ maxHeight: sessions.isAgentsExpanded(s.sessionId) ? '1000px' : '0' }"
+            :style="{ maxHeight: agentsListMaxHeight(s) }"
           >
-            <div
-              v-for="a in agentsOf(s)"
-              :key="a.agentId"
-              class="agent-row flex w-full items-center text-left text-text-2 transition"
-              :style="{
-                height: `${metrics.childRowHeight}px`,
-                paddingLeft: `${childPaddingLeft}px`,
-                paddingRight: '12px',
-                gap: '7px',
-                fontSize: '11.5px'
-              }"
-              :title="a.task || agentLabel(a)"
+            <template
+              v-for="agentRow in agentRowsOf(s)"
+              :key="agentRow.kind === 'fold' ? 'fold' : agentRow.agent.agentId"
             >
-              <CornerDownRight :size="11" :stroke-width="1.6" class="shrink-0 text-text-4" />
-              <Bot :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-              <span class="flex-1 truncate">{{ agentLabel(a) }}</span>
-              <span
-                v-if="agentOrigin(a)"
-                class="shrink-0 truncate font-mono text-text-4"
-                style="font-size: 10px; max-width: 120px"
-                :title="agentOrigin(a)"
-                >{{ agentOrigin(a) }}</span
+              <button
+                v-if="agentRow.kind === 'fold'"
+                type="button"
+                class="agent-agentRow flex w-full items-center text-left text-text-3 transition hover:text-text-2"
+                data-dsqa="sidebar-agents-done-fold"
+                :aria-expanded="agentRow.expanded"
+                :style="{
+                  height: `${metrics.childRowHeight}px`,
+                  paddingLeft: `${childPaddingLeft}px`,
+                  paddingRight: '12px',
+                  gap: '7px',
+                  fontSize: '11.5px'
+                }"
+                @click.stop="sessions.toggleAgentsDone(s.sessionId)"
               >
-              <span
-                v-if="a.status === 'running'"
-                class="flex shrink-0 items-center text-green"
-                style="gap: 5px"
-              >
-                <span
-                  class="anim-pulse-dot rounded-full bg-green"
-                  style="width: 6px; height: 6px"
+                <ChevronRight
+                  :size="11"
+                  :stroke-width="1.8"
+                  class="shrink-0 text-text-4 transition-transform"
+                  :style="{
+                    transform: agentRow.expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    transitionDuration: 'var(--dur)',
+                    transitionTimingFunction: 'var(--ease)'
+                  }"
+                  aria-hidden="true"
                 />
-                <span style="font-size: 10.5px">{{ $t('agent.statusRunning') }}</span>
-              </span>
-              <span v-else class="flex shrink-0 items-center text-text-4" style="gap: 4px">
-                <Check :size="11" :stroke-width="1.8" />
-                <span style="font-size: 10.5px">{{ $t('agent.statusDone') }}</span>
-              </span>
-            </div>
+                <span class="flex-1 truncate">{{
+                  $t('agent.doneFold', { n: agentRow.count })
+                }}</span>
+              </button>
+              <div
+                v-else
+                class="agent-agentRow flex w-full items-center text-left text-text-2 transition"
+                :style="{
+                  height: `${metrics.childRowHeight}px`,
+                  paddingLeft: `${childPaddingLeft}px`,
+                  paddingRight: '12px',
+                  gap: '7px',
+                  fontSize: '11.5px'
+                }"
+                :title="agentRow.agent.task || agentLabel(agentRow.agent)"
+              >
+                <CornerDownRight :size="11" :stroke-width="1.6" class="shrink-0 text-text-4" />
+                <Bot :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
+                <span class="flex-1 truncate">{{ agentLabel(agentRow.agent) }}</span>
+                <span
+                  v-if="agentTypeChip(agentRow.agent)"
+                  class="shrink-0 truncate font-mono text-text-4"
+                  style="font-size: 10px; max-width: 96px"
+                  data-dsqa="sidebar-agent-type-chip"
+                  :title="agentTypeChip(agentRow.agent)"
+                  >{{ agentTypeChip(agentRow.agent) }}</span
+                >
+                <span
+                  v-if="agentOrigin(agentRow.agent)"
+                  class="shrink-0 truncate font-mono text-text-4"
+                  style="font-size: 10px; max-width: 120px"
+                  :title="agentOrigin(agentRow.agent)"
+                  >{{ agentOrigin(agentRow.agent) }}</span
+                >
+                <span
+                  v-if="agentRow.agent.status === 'running'"
+                  class="flex shrink-0 items-center text-green"
+                  style="gap: 5px"
+                >
+                  <span
+                    class="anim-pulse-dot rounded-full bg-green"
+                    style="width: 6px; height: 6px"
+                  />
+                  <span style="font-size: 10.5px">{{ $t('agent.statusRunning') }}</span>
+                </span>
+                <span v-else class="flex shrink-0 items-center text-text-4" style="gap: 4px">
+                  <Check :size="11" :stroke-width="1.8" />
+                  <span style="font-size: 10.5px">{{ $t('agent.statusDone') }}</span>
+                </span>
+              </div>
+            </template>
           </div>
 
           <!-- Nested teammates (T99): collapsed by default, expand via the chip

@@ -1247,6 +1247,7 @@
     "statusRunning": "running",
     "statusDone": "done",
     "count": "{n} agents",
+    "doneFold": "{n} done",
     "toggle": "Toggle agents"
   },
   "actions": {
