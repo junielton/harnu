@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: browser-pane</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      /* Each block declares the states it belongs to in data-show; everything else hides. */
+      [data-dsqa='browser-pane'][data-state='single'] [data-show]:not([data-show~='single']),
+      [data-dsqa='browser-pane'][data-state='new-tab'] [data-show]:not([data-show~='new-tab']),
+      [data-dsqa='browser-pane'][data-state='start'] [data-show]:not([data-show~='start']),
+      [data-dsqa='browser-pane'][data-state='load-error']
+        [data-show]:not([data-show~='load-error']),
+      [data-dsqa='browser-pane'][data-state='tabs'] [data-show]:not([data-show~='tabs']),
+      [data-dsqa='browser-pane'][data-state='tab-menu'] [data-show]:not([data-show~='tab-menu']),
+      [data-dsqa='browser-pane'][data-state='overflow'] [data-show]:not([data-show~='overflow']),
+      [data-dsqa='browser-pane'][data-state='overflow-list']
+        [data-show]:not([data-show~='overflow-list']),
+      [data-dsqa='browser-pane'][data-state='agent'] [data-show]:not([data-show~='agent']),
+      [data-dsqa='browser-pane'][data-state='agent-hover']
+        [data-show]:not([data-show~='agent-hover']) {
+        display: none;
+      }
+      /* the right-clicked tab keeps its hover look while the menu is open */
+      [data-dsqa='browser-pane'][data-state='tab-menu'] .tab.ctx {
+        background: var(--color-surface-2);
+        color: var(--color-text-2);
+      }
+      .tab-menu {
+        top: 23px;
+        left: 4px;
+      }
+      .overflow-list {
+        top: 23px;
+        right: 70px; /* no token: anchored under the +4 button */
+        min-width: 220px;
+      }
+    </style>
+  </head>
+  <body
+    data-states="single start new-tab load-error tabs tab-menu overflow overflow-list agent agent-hover"
+  >
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-globe" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <path
+          d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+        />
+      </symbol>
+      <symbol id="i-left" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7" /></symbol>
+      <symbol id="i-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7" /></symbol>
+      <symbol id="i-reload" viewBox="0 0 24 24">
+        <path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.9 1 6.7 2.7L21 8" />
+        <path d="M21 3v5h-5" />
+      </symbol>
+      <symbol id="i-more" viewBox="0 0 24 24">
+        <circle cx="5" cy="12" r="1" />
+        <circle cx="12" cy="12" r="1" />
+        <circle cx="19" cy="12" r="1" />
+      </symbol>
+      <symbol id="i-max" viewBox="0 0 24 24">
+        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14" /></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+      <symbol id="i-bot" viewBox="0 0 24 24">
+        <rect x="3" y="11" width="18" height="10" rx="2" />
+        <circle cx="12" cy="5" r="2" />
+        <path d="M12 7v4M8 16h.01M16 16h.01" />
+      </symbol>
+      <symbol id="i-unplug" viewBox="0 0 24 24">
+        <path
+          d="m19 5 3-3M2 22l3-3M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4zM7.5 13.5 10 11M10.5 16.5 13 14M12 6l6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0z"
+        />
+      </symbol>
+      <symbol id="i-comment" viewBox="0 0 24 24">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v6M9 10h6" />
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24">
+        <rect x="8" y="8" width="14" height="14" rx="2" />
+        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+      </symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24">
+        <rect x="6" y="2" width="12" height="20" rx="2" />
+        <path d="M11 18h2" />
+      </symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" /></symbol>
+      <symbol id="i-server" viewBox="0 0 24 24">
+        <rect x="2" y="3" width="20" height="8" rx="2" />
+        <rect x="2" y="13" width="20" height="8" rx="2" />
+        <path d="M6 7h.01M6 17h.01" />
+      </symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 6v6l4 2" />
+      </symbol>
+      <symbol id="i-pane" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <path d="M15 3v18" />
+      </symbol>
+    </svg>
+
+    <div class="pane" data-dsqa="browser-pane">
+      <!-- ═════ HEADER ═════ -->
+
+      <!-- single: exactly today's header, plus one + button -->
+      <header class="ph" data-dsqa-part="header" data-show="single start load-error">
+        <svg class="i globe"><use href="#i-globe" /></svg>
+        <span class="title" title="http://localhost:5173/dashboard" data-show="single"
+          >example-web · Dashboard</span
+        >
+        <span class="title" data-show="start">New tab</span>
+        <span class="title" title="http://localhost:8000/" data-show="load-error"
+          >localhost:8000</span
+        >
+        <button
+          class="ib"
+          type="button"
+          title="New tab (Ctrl+T)"
+          data-goto="browser-pane?state=new-tab"
+        >
+          <svg class="i"><use href="#i-plus" /></svg>
+        </button>
+        <span class="end">
+          <button class="ib" type="button" title="Comment on this page">
+            <svg class="i"><use href="#i-comment" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-more" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-max" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-x" /></svg>
+          </button>
+        </span>
+      </header>
+
+      <!-- new-tab: the strip appears with the second tab -->
+      <header class="ph has-tabs" data-dsqa-part="header" data-show="new-tab">
+        <div class="tabs" data-dsqa-part="tab-strip">
+          <div class="tab" data-goto="browser-pane?state=single">
+            <span class="fav local">e</span><span class="t">example-web · Dashboard</span
+            ><span class="x"
+              ><svg class="i s10"><use href="#i-x" /></svg
+            ></span>
+          </div>
+          <div class="tab on">
+            <svg class="i globe"><use href="#i-globe" /></svg><span class="t">New tab</span
+            ><span class="x"
+              ><svg class="i s10"><use href="#i-x" /></svg
+            ></span>
+          </div>
+          <button class="ib newtab" type="button" title="New tab (Ctrl+T)">
+            <svg class="i"><use href="#i-plus" /></svg>
+          </button>
+        </div>
+        <span class="end">
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-comment" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-more" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-max" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-x" /></svg>
+          </button>
+        </span>
+      </header>
+
+      <!-- tabs / tab-menu: three tabs, Mail active (signed in once, every tab of this pane shares the login) -->
+      <header class="ph has-tabs" data-dsqa-part="header" data-show="tabs tab-menu">
+        <div class="tabs" data-dsqa-part="tab-strip">
+          <div
+            class="tab ctx"
+            title="Right-click for tab actions"
+            data-goto="browser-pane?state=tab-menu"
+          >
+            <span class="fav local">e</span><span class="t">example-web · Dashboard</span
+            ><span class="x"
+              ><svg class="i s10"><use href="#i-x" /></svg
+            ></span>
+          </div>
+          <div class="tab">
+            <span class="fav ext">D</span><span class="t">Docs · Getting started</span
+            ><span class="x"
+              ><svg class="i s10"><use href="#i-x" /></svg
+            ></span>
+          </div>
+          <div class="tab on">
+            <span class="fav mail">M</span><span class="t">Inbox (3) · Mail</span
+            ><span class="x"
+              ><svg class="i s10"><use href="#i-x" /></svg
+            ></span>
+          </div>
+          <button
+            class="ib newtab"
+            type="button"
+            title="New tab (Ctrl+T)"
+            data-goto="browser-pane?state=new-tab"
+          >
+            <svg class="i"><use href="#i-plus" /></svg>
+          </button>
+        </div>
+        <span class="end">
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-comment" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-more" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-max" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-x" /></svg>
+          </button>
+        </span>
+      </header>
+
+      <!-- overflow: nine tabs; inactive ones collapse to their icon, the rest go behind +4 -->
+      <header class="ph has-tabs" data-dsqa-part="header" data-show="overflow overflow-list">
+        <div class="tabs" data-dsqa-part="tab-strip">
+          <div class="tab icon" title="example-web · Dashboard">
+            <span class="fav local">e</span><span class="t">example-web · Dashboard</span>
+          </div>
+          <div class="tab icon" title="example-web · Settings">
+            <span class="fav local">e</span><span class="t">example-web · Settings</span>
+          </div>
+          <div class="tab on">
+            <span class="fav ext">D</span><span class="t">Docs · API reference</span
+            ><span class="x"
+              ><svg class="i s10"><use href="#i-x" /></svg
+            ></span>
+          </div>
+          <div class="tab icon" title="Inbox (3) · Mail">
+            <span class="fav mail">M</span><span class="t">Inbox (3) · Mail</span>
+          </div>
+          <div class="tab icon" title="portal · Login">
+            <span class="fav local">p</span><span class="t">portal · Login</span>
+          </div>
+          <button
+            class="more"
+            type="button"
+            title="4 more tabs"
+            data-goto="browser-pane?state=overflow-list"
+            data-dsqa-part="overflow-button"
+          >
+            +4<svg class="i s10"><use href="#i-down" /></svg>
+          </button>
+          <button class="ib newtab" type="button" title="New tab (Ctrl+T)">
+            <svg class="i"><use href="#i-plus" /></svg>
+          </button>
+        </div>
+        <span class="end">
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-more" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-x" /></svg>
+          </button>
+        </span>
+      </header>
+
+      <!-- agent: an agent-opened pane with two tabs; the driven tab carries the live dot -->
+      <header class="ph has-tabs" data-dsqa-part="header" data-show="agent agent-hover">
+        <div class="tabs" data-dsqa-part="tab-strip">
+          <div class="tab on" title="The agent is driving this tab">
+            <span class="agent-dot"></span><span class="t">web-api · Sign in</span
+            ><span class="x"
+              ><svg class="i s10"><use href="#i-x" /></svg
+            ></span>
+          </div>
+          <div class="tab">
+            <span class="fav local">w</span><span class="t">web-api · Settings</span
+            ><span class="x"
+              ><svg class="i s10"><use href="#i-x" /></svg
+            ></span>
+          </div>
+          <button class="ib newtab" type="button">
+            <svg class="i"><use href="#i-plus" /></svg>
+          </button>
+        </div>
+        <span
+          class="agent-ic"
+          data-dsqa-part="connection-chip"
+          data-goto="browser-pane?state=agent-hover"
+          aria-label="Connected to ‹Fix login bug› · driving"
+          ><svg class="i s10"><use href="#i-bot" /></svg
+        ></span>
+        <span class="end">
+          <button class="ib" type="button" title="Disconnect">
+            <svg class="i"><use href="#i-unplug" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-more" /></svg>
+          </button>
+          <button class="ib" type="button">
+            <svg class="i"><use href="#i-x" /></svg>
+          </button>
+        </span>
+      </header>
+
+      <!-- ═════ ADDRESS BAR (per active tab) ═════ -->
+      <div class="ab" data-dsqa-part="address-bar" data-show="single">
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-left" /></svg>
+        </button>
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-right" /></svg>
+        </button>
+        <button class="ib" type="button">
+          <svg class="i"><use href="#i-reload" /></svg>
+        </button>
+        <span class="badge local">local</span>
+        <span class="url">http://<b>localhost:5173</b>/dashboard</span>
+        <span class="ab-end"
+          ><button class="ib" type="button" title="Device mode">
+            <svg class="i"><use href="#i-phone" /></svg></button
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-minus" /></svg></button
+          ><span class="zoom">100%</span
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-plus" /></svg></button
+        ></span>
+      </div>
+      <div class="ab" data-dsqa-part="address-bar" data-show="load-error">
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-left" /></svg>
+        </button>
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-right" /></svg>
+        </button>
+        <button class="ib" type="button">
+          <svg class="i"><use href="#i-reload" /></svg>
+        </button>
+        <span class="badge local">local</span>
+        <span class="url">http://<b>localhost:8000</b>/</span>
+        <span class="ab-end"
+          ><button class="ib" type="button" title="Device mode">
+            <svg class="i"><use href="#i-phone" /></svg></button
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-minus" /></svg></button
+          ><span class="zoom">100%</span
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-plus" /></svg></button
+        ></span>
+      </div>
+      <div class="ab" data-dsqa-part="address-bar" data-show="new-tab start">
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-left" /></svg>
+        </button>
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-right" /></svg>
+        </button>
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-reload" /></svg>
+        </button>
+        <form class="url focus" data-goto="browser-pane?state=tabs">
+          <input autofocus placeholder="Type an address and press Enter" aria-label="Address" />
+        </form>
+        <span class="ab-end"
+          ><button class="ib" type="button" title="Device mode">
+            <svg class="i"><use href="#i-phone" /></svg></button
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-minus" /></svg></button
+          ><span class="zoom">100%</span
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-plus" /></svg></button
+        ></span>
+      </div>
+      <div class="ab" data-dsqa-part="address-bar" data-show="tabs tab-menu">
+        <button class="ib" type="button">
+          <svg class="i"><use href="#i-left" /></svg>
+        </button>
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-right" /></svg>
+        </button>
+        <button class="ib" type="button">
+          <svg class="i"><use href="#i-reload" /></svg>
+        </button>
+        <span class="badge external">external</span>
+        <span class="url">https://<b>mail.example.com</b>/inbox</span>
+        <span class="ab-end"
+          ><button class="ib" type="button" title="Device mode">
+            <svg class="i"><use href="#i-phone" /></svg></button
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-minus" /></svg></button
+          ><span class="zoom">100%</span
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-plus" /></svg></button
+        ></span>
+      </div>
+      <div class="ab" data-dsqa-part="address-bar" data-show="overflow overflow-list">
+        <button class="ib" type="button">
+          <svg class="i"><use href="#i-left" /></svg>
+        </button>
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-right" /></svg>
+        </button>
+        <button class="ib" type="button">
+          <svg class="i"><use href="#i-reload" /></svg>
+        </button>
+        <span class="badge external">external</span>
+        <span class="url">https://<b>docs.example.com</b>/api</span>
+        <span class="ab-end"
+          ><button class="ib" type="button" title="Device mode">
+            <svg class="i"><use href="#i-phone" /></svg></button
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-minus" /></svg></button
+          ><span class="zoom">100%</span
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-plus" /></svg></button
+        ></span>
+      </div>
+      <div class="ab" data-dsqa-part="address-bar" data-show="agent agent-hover">
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-left" /></svg>
+        </button>
+        <button class="ib" type="button" disabled>
+          <svg class="i"><use href="#i-right" /></svg>
+        </button>
+        <button class="ib" type="button">
+          <svg class="i"><use href="#i-reload" /></svg>
+        </button>
+        <span class="badge local">local</span>
+        <span class="url">http://<b>localhost:8080</b>/login</span>
+        <span class="ab-end"
+          ><button class="ib" type="button" title="Device mode">
+            <svg class="i"><use href="#i-phone" /></svg></button
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-minus" /></svg></button
+          ><span class="zoom">100%</span
+          ><button class="ib" type="button">
+            <svg class="i"><use href="#i-plus" /></svg></button
+        ></span>
+      </div>
+
+      <!-- ═════ HOST (native view; sample pages) ═════ -->
+      <div class="host" data-dsqa-part="host">
+        <div class="pg" data-show="single">
+          <h1>Dashboard</h1>
+          <div class="tiles">
+            <div class="tile">
+              <div class="k">Requests</div>
+              <div class="v">12,480</div>
+            </div>
+            <div class="tile">
+              <div class="k">Errors</div>
+              <div class="v">37</div>
+            </div>
+            <div class="tile">
+              <div class="k">p95</div>
+              <div class="v">212 ms</div>
+            </div>
+          </div>
+          <div class="row"><b>api-gateway</b> deployed<span class="r">2 min ago</span></div>
+          <div class="row"><b>portal</b> build passed<span class="r">14 min ago</span></div>
+        </div>
+        <div class="sp" data-show="start new-tab" data-dsqa-part="start-page">
+          <div class="sp-sec">
+            <svg class="i"><use href="#i-server" /></svg>Running in this folder
+          </div>
+          <div class="sp-row" data-goto="browser-pane?state=single">
+            <span class="fav local">e</span><span class="sp-t">example-web</span
+            ><span class="sp-u">localhost:5173</span><span class="sp-k">vite</span>
+          </div>
+          <div class="sp-row">
+            <span class="fav local">a</span><span class="sp-t">api-gateway</span
+            ><span class="sp-u">localhost:8080</span><span class="sp-k">docker</span>
+          </div>
+          <div class="sp-sec">
+            <svg class="i"><use href="#i-clock" /></svg>Recent
+          </div>
+          <div class="sp-grid">
+            <div class="sp-tile">
+              <span class="fav ext">D</span><span class="sp-t">Docs · Getting started</span
+              ><span class="sp-u">docs.example.com</span>
+            </div>
+            <div class="sp-tile">
+              <span class="fav mail">M</span><span class="sp-t">Inbox · Mail</span
+              ><span class="sp-u">mail.example.com</span>
+            </div>
+            <div class="sp-tile">
+              <span class="fav local">p</span><span class="sp-t">portal · Login</span
+              ><span class="sp-u">localhost:3000</span>
+            </div>
+            <div class="sp-tile">
+              <span class="fav local">w</span><span class="sp-t">web-api · Health</span
+              ><span class="sp-u">localhost:8080/health</span>
+            </div>
+          </div>
+        </div>
+        <div class="err" data-show="load-error" data-dsqa-part="error-page">
+          <svg class="i err-ic"><use href="#i-unplug" /></svg>
+          <div class="err-h">localhost:8000 refused to connect</div>
+          <div class="err-p">Nothing is answering on port 8000. Start the server, then reload.</div>
+          <code class="err-c">ERR_CONNECTION_REFUSED</code>
+          <div class="err-a">
+            <button class="err-b pri" type="button">
+              <svg class="i"><use href="#i-reload" /></svg>Reload
+            </button>
+            <button class="err-b" type="button">Reload when it is up</button>
+          </div>
+        </div>
+        <div class="pg" data-show="tabs tab-menu">
+          <div class="who"><span class="av">Y</span>you@example.com</div>
+          <h1>Inbox</h1>
+          <div class="row"><b>Release notes</b> · v2.4 is out<span class="r">09:12</span></div>
+          <div class="row"><b>CI</b> · portal build passed<span class="r">08:47</span></div>
+          <div class="row"><b>Acme</b> · Contract review<span class="r">Mon</span></div>
+        </div>
+        <div class="pg" data-show="overflow overflow-list">
+          <h1>API reference</h1>
+          <div class="row"><b>GET</b> /v1/items<span class="r">list</span></div>
+          <div class="row"><b>POST</b> /v1/items<span class="r">create</span></div>
+          <div class="row"><b>DELETE</b> /v1/items/:id<span class="r">remove</span></div>
+        </div>
+        <div class="pg" data-show="agent agent-hover">
+          <h1>Sign in to web-api</h1>
+          <div class="field drv">dev@example.com</div>
+          <div class="field">••••••••</div>
+          <span class="btn">Sign in</span>
+        </div>
+      </div>
+
+      <!-- ═════ MENUS ═════ -->
+      <div class="menu tab-menu" data-dsqa-part="tab-menu" data-show="tab-menu">
+        <div class="mi">
+          <svg class="i"><use href="#i-plus" /></svg>New tab to the right
+        </div>
+        <div class="mi">
+          <svg class="i"><use href="#i-reload" /></svg>Reload
+        </div>
+        <div class="mi">
+          <svg class="i"><use href="#i-copy" /></svg>Duplicate
+        </div>
+        <div class="mi">
+          <svg class="i"><use href="#i-pane" /></svg>Move to a new pane
+        </div>
+        <hr />
+        <div class="mi" data-goto="browser-pane?state=single">Close other tabs</div>
+        <div class="mi">
+          <svg class="i"><use href="#i-x" /></svg>Close tab<span class="k">Ctrl+W</span>
+        </div>
+      </div>
+
+      <div
+        class="tip agent-tip"
+        data-dsqa-part="connection-tip"
+        data-show="agent-hover"
+        data-goto="browser-pane?state=agent"
+      >
+        <div class="tip-h">
+          <svg class="i s10"><use href="#i-bot" /></svg>Connected to ‹Fix login bug›
+        </div>
+        <div class="tip-p">Driving this tab · localhost:8080</div>
+      </div>
+
+      <div class="menu overflow-list" data-dsqa-part="overflow-list" data-show="overflow-list">
+        <div class="mi" data-goto="browser-pane?state=overflow">
+          <span class="fav local">e</span><span class="t">example-web · Dashboard</span>
+        </div>
+        <div class="mi" data-goto="browser-pane?state=overflow">
+          <span class="fav local">e</span><span class="t">example-web · Settings</span>
+        </div>
+        <div class="mi cur" data-goto="browser-pane?state=overflow">
+          <span class="fav ext">D</span><span class="t">Docs · API reference</span
+          ><span class="k">open</span>
+        </div>
+        <div class="mi" data-goto="browser-pane?state=overflow">
+          <span class="fav mail">M</span><span class="t">Inbox (3) · Mail</span>
+        </div>
+        <div class="mi" data-goto="browser-pane?state=overflow">
+          <span class="fav local">p</span><span class="t">portal · Login</span>
+        </div>
+        <hr />
+        <div class="mi" data-goto="browser-pane?state=overflow">
+          <span class="fav ext">D</span><span class="t">Docs · Webhooks</span>
+        </div>
+        <div class="mi" data-goto="browser-pane?state=overflow">
+          <span class="fav ext">D</span><span class="t">Docs · Rate limits</span>
+        </div>
+        <div class="mi" data-goto="browser-pane?state=overflow">
+          <span class="fav local">a</span><span class="t">api-gateway · Health</span>
+        </div>
+        <div class="mi" data-goto="browser-pane?state=overflow">
+          <span class="fav local">a</span><span class="t">api-gateway · Logs</span>
+        </div>
+      </div>
+    </div>
+    <script src="../mockup.js"></script>
+  </body>
+</html>
