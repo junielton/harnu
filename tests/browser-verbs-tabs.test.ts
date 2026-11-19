@@ -5,7 +5,7 @@
  * handling: which tab a host call names, when a tab is activated or revived, and what the ACK says.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { createBrowserAccess } from '../src/main/browser/access'
+import { createBrowserAccess, gateBrowserOpDetailed } from '../src/main/browser/access'
 import { createBrowserRegistry, type BrowserPaneRecord } from '../src/main/browser/registry'
 import { createPaneReaders, type PaneReaders } from '../src/main/browser/pane-readers'
 import { BrowserLeases } from '../src/main/browser/lease'
@@ -609,5 +609,63 @@ describe('tabId', () => {
     expect(operator.tabs).toEqual([
       { tabId: C, url: null, title: null, active: true, state: 'live' }
     ])
+  })
+})
+
+describe('tabId at plan level', () => {
+  const agentPane = {
+    openedBy: 'agent' as const,
+    originClass: 'external' as const,
+    disconnected: false,
+    paused: false
+  }
+
+  it('refuses an unknown tab as TAB_NOT_FOUND before any confirm, even where the tier would ask for a lease', () => {
+    const input = { pane: { ...agentPane, tabKnown: false }, writesEnabled: true }
+    for (const op of [
+      'browser_eval',
+      'browser_click',
+      'browser_navigate',
+      'browser_snapshot'
+    ] as const) {
+      expect(gateBrowserOpDetailed(op, input)).toEqual({ reason: 'TAB_NOT_FOUND' })
+    }
+    // A known tab (or none named) is judged as before: an external page is a lease row for the input verbs.
+    expect(
+      gateBrowserOpDetailed('browser_eval', {
+        pane: agentPane,
+        writesEnabled: true,
+        enforceLease: true
+      })
+    ).toEqual({ reason: 'BROWSER_LEASE_ENDED' })
+  })
+
+  it('tells an agent nothing about the tabs of a pane it may not read', () => {
+    const operatorPane = { ...agentPane, openedBy: 'operator' as const, tabKnown: false }
+    expect(
+      gateBrowserOpDetailed('browser_snapshot', { pane: operatorPane, writesEnabled: true })
+    ).toEqual({
+      reason: 'BROWSER_READ_NOT_ENABLED'
+    })
+    expect(
+      gateBrowserOpDetailed('browser_snapshot', {
+        pane: { ...operatorPane, disconnected: true },
+        writesEnabled: true
+      })
+    ).toEqual({ reason: 'BROWSER_DISCONNECTED' })
+  })
+
+  it('does not count a browser_open that adds a tab as a fifth pane', () => {
+    const four = ['bp-1', 'bp-2', 'bp-3', 'bp-4']
+    const base = { pane: undefined, writesEnabled: true, agentPaneIds: four, openFolder: FOLDER }
+    expect(
+      gateBrowserOpDetailed('browser_open', { ...base, args: { folder: FOLDER, url: LOCAL } })
+    ).toMatchObject({ reason: 'PANE_LIMIT' })
+    expect(
+      gateBrowserOpDetailed('browser_open', {
+        ...base,
+        args: { folder: FOLDER, paneId: 'bp-1', url: LOCAL }
+      })
+    ).toBeNull()
   })
 })

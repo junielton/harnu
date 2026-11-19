@@ -3818,7 +3818,9 @@ const browserOpenHandler: Handler = async (args, ctx) => {
         ? { ownerSessionId: optStr(args, 'ownerSessionId') }
         : {}),
       ...(optStr(args, 'device') !== undefined ? { device: optStr(args, 'device') } : {}),
-      ...(typeof args.background === 'boolean' ? { background: args.background } : {})
+      ...(typeof args.background === 'boolean' ? { background: args.background } : {}),
+      // `paneId` adds a tab to that agent pane of the folder (browser-tabs S-6).
+      ...(optStr(args, 'paneId') !== undefined ? { paneId: optStr(args, 'paneId') } : {})
     },
     browserDeps(ctx)
   )
@@ -3850,7 +3852,7 @@ const browserNavigateHandler: Handler = async (args, ctx) => {
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
   const res = await navigateVerb(
     {
-      paneId: optStr(args, 'paneId') ?? '',
+      ...paneArgs(args),
       ...(optStr(args, 'url') !== undefined ? { url: optStr(args, 'url') } : {}),
       ...(typeof args.action === 'string'
         ? { action: args.action as 'back' | 'forward' | 'reload' | 'stop' }
@@ -3867,7 +3869,7 @@ const browserNavigateHandler: Handler = async (args, ctx) => {
 }
 
 const browserCloseHandler: Handler = async (args, ctx) => {
-  const res = await closeVerb({ paneId: optStr(args, 'paneId') ?? '' }, browserDeps(ctx))
+  const res = await closeVerb(paneArgs(args), browserDeps(ctx))
   return browserResult({ op: 'browser_close', ...res })
 }
 
@@ -3935,7 +3937,14 @@ const browserDownloadHandler: Handler = async (args, ctx) => {
 function paneVerb(handler: Handler): Handler {
   return async (args, ctx) => {
     const paneId = typeof args.paneId === 'string' ? args.paneId : ''
-    const end = paneId ? beginPaneVerb(browserRegistry, paneId) : undefined
+    // A verb on a named tab keeps that tab from being discarded under it, not the pane's active one.
+    const end = paneId
+      ? beginPaneVerb(
+          browserRegistry,
+          paneId,
+          typeof args.tabId === 'string' ? args.tabId : undefined
+        )
+      : undefined
     try {
       return await runWithRevival(() => handler(args, ctx))
     } finally {
@@ -4020,8 +4029,9 @@ const walkGetHandler: Handler = async (args, ctx) => walkResult(await walkGet(ar
 
 /** The single dispatch table: every {@link McpOp} maps to exactly one handler. */
 /** The pane-addressed reading verbs share one shape: a `paneId` and the verb's own arguments. */
-function paneArgs(args: Record<string, unknown>): { paneId: string } {
-  return { paneId: optStr(args, 'paneId') ?? '' }
+function paneArgs(args: Record<string, unknown>): { paneId: string; tabId?: string } {
+  const tabId = optStr(args, 'tabId')
+  return { paneId: optStr(args, 'paneId') ?? '', ...(tabId !== undefined ? { tabId } : {}) }
 }
 
 const browserSnapshotHandler: Handler = async (args, ctx) => {

@@ -12,6 +12,10 @@ export const BROWSER_DENIAL_CODES = [
   'BROWSER_PAUSED',
   'URL_SCHEME_BLOCKED',
   'PANE_LIMIT',
+  // browser-tabs S-6: agent tabs.
+  'TAB_NOT_FOUND',
+  'TAB_LIMIT',
+  'NOT_AN_AGENT_PANE',
   'PANE_REVIVE_FAILED',
   'PANE_FOLDER_BLOCKED',
   'NOT_YET_AVAILABLE',
@@ -207,6 +211,39 @@ export function shapeBrowserDenial(
                 ? `Reuse one: browser_navigate on ${ctx.reusablePaneIds.join(', ')}, or browser_close one first.`
                 : 'Call browser_list and reuse one of the panes, or close one with browser_close.',
             why: 'A pane that outlived its task still holds a page in memory; reusing one is cheaper than another.'
+          }
+        ]
+      }
+    case 'TAB_NOT_FOUND':
+      return {
+        error: code,
+        message: 'That pane has no tab with that id: it never did, or it was closed.',
+        nextActions: [
+          {
+            do: 'Call browser_list for the pane’s tabs and pass one of their `tabId`s, or leave `tabId` out to act on the active tab.',
+            why: 'Tab ids belong to one pane and do not survive its closing; closing the last tab closes the pane.'
+          }
+        ]
+      }
+    case 'TAB_LIMIT':
+      return {
+        error: code,
+        message: `That pane${at} already holds 8 tabs, so Harnu will not open a ninth.`,
+        nextActions: [
+          {
+            do: 'Reuse a tab with browser_navigate and its `tabId`, or close one with browser_close and its `tabId`, then open again.',
+            why: 'Every tab holds a page in memory; a pane stops at 8.'
+          }
+        ]
+      }
+    case 'NOT_AN_AGENT_PANE':
+      return {
+        error: code,
+        message: `That pane${at} is not one you opened for browsing: it belongs to the operator, or it is a live panel, so a tab cannot be added to it.`,
+        nextActions: [
+          {
+            do: 'Call browser_open with a `url` and no `paneId` to get a pane of your own, then pass that pane’s `paneId` to add tabs.',
+            why: 'Agents get tabs only in their own panes; the operator’s panes and live panels keep the pages the operator chose.'
           }
         ]
       }
