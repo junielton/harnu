@@ -150,8 +150,10 @@ export interface SessionAgent {
   parentSessionId: string
   fullPath: string
   fileMtime: number
-  /** `attributionAgent` (e.g. `general-purpose`); '' → render the generic label. */
+  /** meta.json `agentType`, else `attributionAgent` (e.g. `general-purpose`); '' → no type chip. */
   agentType: string
+  /** meta.json `description` — what the subagent did; '' → label falls back to the task. */
+  description: string
   /** `attributionSkill` origin (e.g. `superpowers:…`); '' if absent. */
   skill: string
   /** `attributionPlugin` origin; '' if absent. */
@@ -551,6 +553,7 @@ const SUBAGENT_ACTIVE_WINDOW_MS = 15000
 
 /** localStorage key for the per-session agent-list expand/collapse state. */
 const AGENTS_EXPANDED_KEY = 'om2tab.agentsExpanded'
+const AGENTS_DONE_EXPANDED_KEY = 'om2tab.agentsDoneExpanded'
 
 /**
  * localStorage key for the teammate-group expand/collapse state (T99), keyed
@@ -1266,6 +1269,22 @@ export const useSessionsStore = defineStore('sessions', () => {
   /** Toggle (and persist) a session's nested agent list expand/collapse state. */
   function toggleAgents(sessionId: string): void {
     agentsExpandedSet.toggle(sessionId)
+  }
+
+  /**
+   * Set of session ids whose folded "N done" subagent row is expanded. Same
+   * pattern as `agentsExpandedSet`; absent → folded (collapsed by default).
+   */
+  const agentsDoneExpandedSet = persistedSet(AGENTS_DONE_EXPANDED_KEY)
+
+  /** Whether a session's finished-subagents fold is currently expanded. */
+  function isAgentsDoneExpanded(sessionId: string): boolean {
+    return agentsDoneExpandedSet.set.value.has(sessionId)
+  }
+
+  /** Toggle (and persist) a session's finished-subagents fold. */
+  function toggleAgentsDone(sessionId: string): void {
+    agentsDoneExpandedSet.toggle(sessionId)
   }
 
   /**
@@ -5407,6 +5426,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         fullPath: '',
         fileMtime: Date.now(),
         agentType: meta.agentType ?? '',
+        description: '',
         skill: meta.skill ?? '',
         plugin: meta.plugin ?? '',
         model: meta.model ?? '',
@@ -6464,6 +6484,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     actionableInboxCount,
     agentsExpanded,
     isAgentsExpanded,
+    isAgentsDoneExpanded,
+    toggleAgentsDone,
     toggleAgents,
     cursorDown,
     cursorUp,

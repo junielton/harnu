@@ -2508,6 +2508,16 @@ tokens. Once the scan resolves (success or failure), `foldersLoading` flips to
 state above — manual rescans (the toolbar's own spinner) never re-trigger this
 state.
 
+**Status states in drill-in mode — BUG-257:** the empty, loading and filter
+no-match states render at EVERY drill level, never as a blank body. On the root
+screen the tree host shows them as above. On a drilled screen (a repo or folder
+screen, including a position restored from `localStorage` on a cold boot before
+the folder model has loaded) `SidebarDrillView` keeps its Back row and shows the
+same state under it, in the same spinner / text anatomy and tokens
+(`sidebar.loading`, `sidebar.emptyShort`, `sidebar.filter.empty`), so the
+operator keeps their place. Once folders load, the restored position resolves as
+before (T289). No new tokens.
+
 ### Repo-group header (sidebar)
 
 `RepoGroupHeader.vue` — the synthetic header for a **repo-group** (2+ visible
@@ -2896,24 +2906,47 @@ Indent `pl 60px` (one level beyond sessions, which sit at 44px). Height `24px`,
 1. **Connector** `corner-down-right` (`size 11`, `stroke 1.6`, `--text-4`) — the
    `↳`.
 2. **Agent icon** `bot` (`size 12`, `stroke 1.6`, `--text-3`).
-3. **Agent type** (`attributionAgent`, e.g. `general-purpose`, `explore`) in
-   `--text-2`, `truncate`, `flex-1`. When `attributionAgent` is empty, falls
-   back to the generic label `$t('agent.subagentLabel')` ("subagent").
-4. **Source** (optional — `attributionSkill`/`attributionPlugin`, e.g.
+3. **Label** in `--text-2`, `truncate`, `flex-1`: names what the subagent did.
+   Resolution order: the `description` from the sidecar
+   `agent-<id>.meta.json` (Claude Code writes it next to each subagent
+   transcript), else a one-line truncation of the task (first user message,
+   whitespace collapsed, ≤ 60 chars + `…`), else the generic
+   `$t('agent.subagentLabel')` ("subagent"). The full task stays in the row
+   tooltip.
+4. **Type chip** (optional) — the agent type (`agentType` from meta.json, then
+   `attributionAgent`, e.g. `general-purpose`, `Explore`) in mono `--text-4`,
+   `font-size: 10px`, `truncate`, `max-width: 72px`. Omitted when unknown; the
+   word "subagent" is never shown as a chip. The label has a fixed flex-basis (`112px` on `done` rows, `96px` on `running` rows, which
+   also carry the pill) and never shrinks below it; the chip and source shrink first, so a narrow sidebar never reduces the
+   label to a letter.
+5. **Source** (optional — `attributionSkill`/`attributionPlugin`, e.g.
    `superpowers:dispatching-parallel-agents`) in mono `--text-4`, `font-size:
 10px`, `truncate`, `max-width: 120px`. Omitted when empty.
-5. **Status pill** (see below).
+6. **Status pill** (see below) — **running rows only**. A `done` row carries no
+   pill: it sits under the "N done" fold row, which already says so.
 
 Hover uses the same `rgba(255,255,255,0.025)` as session rows. The agent row
 **isn't selectable** in v1 (no terminal of its own — the subagent flows in the
 parent's transcript); it's informational.
+
+#### Finished agents fold
+
+A session that ran many subagents would otherwise list dozens of identical
+`done` rows. Inside the expanded agent list, **running agents stay listed**
+first; every `done` agent folds into **one row** below them: `chevron-right`
+(`size 11`, `--text-4`, rotates 90° when open) + `$t('agent.doneFold', { n })`
+("N done") in `--text-3`, same height/indent as an agent row, clickable
+(`role="button"`, `aria-expanded`). **Collapsed by default**; expanding lists
+the done agents under the fold row. The open state is persisted per session in
+`localStorage` (`om2tab.agentsDoneExpanded`), like the parent toggle. With zero
+done agents the fold row is not rendered.
 
 #### Agent status
 
 | State       | Visual                                                                                                                        | Notes                                           |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | **running** | Green 6px dot `--green` + pulsing `--green-soft` halo (same `pulse-ring` as an active session) + `running` label in `--green` | Subagent file received a recent append (< 15 s) |
-| **done**    | `check` icon (`size 11`, `--text-4`) + `done` label in `--text-4`                                                             | No recent append; finished (or historical)      |
+| **done**    | No pill — the row sits under the "N done" fold row (see "Finished agents fold")                                               | No recent append; finished (or historical)      |
 
 Status derivation (heuristic — there's no clean end marker in the subagent's
 JSONL; the last line is `assistant/text` with `stop_reason: null`): at seed,
@@ -4525,6 +4558,98 @@ hides is the **Expand hides** setting.
   gives up its share along the split axis).
 - **Browser panes.** A native view cannot follow the animation, so it is swapped for the JPEG
   stand-in below for the whole motion (see §7 "Layout motion").
+
+#### Tucking the session away (T790)
+
+The split is clamped to [0.4, 0.8] for a normal drag (above). **Tucking** is the stage beyond the
+floor: the operator gives the whole main area to the helper stack (a guided walk next to a browser
+pane on a CMS) and a thin **edge strip** keeps the session one gesture away. The approved mockup is
+`docs/design/T790-session-tuck/` (screens `split-side`, `split-stacked`).
+
+- **Resistance, then arm.** Dragging the divider toward the session stops at the 0.4 floor. Pulling
+  **80px** further (`SESSION_TUCK_ARM_PX`, measured on the drag axis: X side by side, Y stacked) **arms**
+  the tuck. Armed: the divider turns `--accent` and widens from 1px to **2px**, drawn **2px into** the 6px
+  hit area (not flush against the helper stack), with an `--accent-soft` halo **6px beyond each side** of
+  that hit area (18px in all). The divider is lifted above its neighbours while armed, so the halo shows
+  over both the helper pane and the session scrim; the session area dims under a `--scrim` layer carrying a centred hint chip
+  (`--surface-2`, `--accent-line` border, `--radius`, `--shadow-pop`, a chevron in `--accent`):
+  "Release to tuck the session away"; a **dashed `--accent-line` marker** with a small `--accent` tag
+  ("40% · session floor") shows where the floor is. Releasing while armed tucks the session;
+  releasing earlier (or pulling back under 80px) leaves the ratio at the floor, 0.4. The 80px is a
+  constant in `lib/session-tuck.ts`; the [0.4, 0.8] clamp of a normal drag is unchanged.
+- **No reflow while pulling.** Past the floor the session area is only **drawn** narrower (up to the arm
+  threshold, clipped). The main terminal's host is pinned at the size it has at the **floor** from the
+  moment the pull crosses it, so the PTY keeps the same cols and rows from arm to tuck to a strip restore at
+  0.4. A pull that comes back inside the floor, or a release short of the threshold, lets the pin go.
+- **Tucked.** The session area collapses to zero along the split axis (the T628 `.lm-collapse`
+  mechanism, §7 "Layout motion") and the helper stack takes the whole main area. Nothing is unmounted:
+  the main terminal keeps its PTY and its scrollback, and its host keeps the pixel size it had (the
+  T628 `pinnedTerminal` pin, now also held while tucked: the floor size after a drag, the size at the moment
+  of the chord otherwise) so Claude Code never reflows to two columns.
+  Restoring shows the scrollback intact.
+- **Helper layout while tucked (D-1).** The helper panes lay out **side by side** (a row), in either
+  orientation; side by side is the new case, stacked already lays its panes out in a row. Restoring
+  the session brings the normal arrangement back.
+- **The edge strip.** Where the session was, a strip stays (`role="button"`, `tabindex="0"`,
+  `data-test="session-tuck-strip"`, `aria-label` = "Show session {name}"). Side by side it is a
+  vertical strip on the left edge of the main row; stacked it is a horizontal strip along the top.
+  - **Rest:** **14px** thick, `--sidebar` fill, a 1px `--border` edge toward the helper stack, the
+    session's **state dot** (6px, the Session status table colours) at the top/start, three 2px
+    `--text-disabled` grip dots centred. Cursor `col-resize` (side by side) / `row-resize` (stacked).
+  - **Hover and keyboard focus:** widens to **20px** (`--dur`, `--ease`; `background` too), fill
+    `--surface-2`, edge `--accent-line`; the grip gives way to a chevron (`--text-2`, 12px, pointing at
+    the area it opens) and a **chip** appears beside the strip: `--surface-2`, `--border-2`, `--radius`,
+    `--shadow-pop`, 8px 10px padding, at most 280px wide, offset 8px from the strip. The chip shows the
+    session name (12px, 500), its state in plain words (11px, `--text-3`), the hint "Click or drag to
+    bring it back" (11px, `--text-2`) and the chord as `<kbd>` caps (10px mono).
+  - **Needs you** (the session is `needs-input`): fill `--warning-soft`, edge `--warning-line`, held at
+    20px; the dot is `--warning` and blinks with the existing `anim-attention-dot` (`attention-blink`
+    1.2s); the grip is replaced by a vertical "Needs you" tag (10px, 600, uppercase, 0.06em, `--warning`;
+    horizontal on the stacked strip) so it reads from across the room. The chip's dot turns `--warning`
+    and its state reads "Waiting for your approval". Under `prefers-reduced-motion` the dot stays still.
+  - **Gestures.** A click, Enter or Space **restores at exactly 0.4** and the helper stack adapts.
+    Pressing and dragging the strip restores as soon as the pointer moves 4px and then follows the
+    pointer, the ratio clamped to [0.4, 0.8] and no more tucking until the next mousedown on the divider.
+- **Floating panels mode (T790 delta 2, `:root[data-floating='on']` only).** The classic strip above stays
+  exactly as approved; with Floating panels on (§6 "Floating panels layout") the strip is **its own island**
+  between the sidebar and the helper stack instead of a flush 14px column:
+  - **Island.** A bar with `data-island="tuck-strip"`: **4px** wide (4px tall when stacked), `--float-radius`
+    corners, no border (a 1px border would leave 2px of colour), full height of the row so it has the same
+    gap to the canvas edge top and bottom as the other islands. Next to the helper stack it keeps
+    `--float-gap`: the strip's layout box is `bar + --float-gap` (8px at the default tokens), so the gap is
+    the strip's own and no divider is needed (the main divider is collapsed while tucked).
+  - **Hit area.** Unchanged: at least **14px** across the axis (`--tuck-hit`), the whole row long. The extra
+    reach is invisible: a transparent `::before` on the strip extends the box toward the helper stack, so
+    the bar and the gaps are exactly the island's and the target is no smaller than in classic mode.
+  - **State on the bar.** The 6px dot does not fit, so the **bar is the dot**: `--color-text-4` idle,
+    `--color-green` working, `--color-red` failed or stuck, and **needs-you turns the whole bar
+    `--color-warning` with `anim-attention-dot`** (`attention-blink`, still under reduced motion). The grip,
+    the dot and the vertical "Needs you" tag are not drawn: a tag does not fit a 4px island without breaking
+    the gaps, so the colour, the blink and the hover chip carry it.
+  - **Hover and focus.** The bar widens to **10px** (`--tuck-bar-w-hover`; the box grows with it, the gaps
+    stay) over `--dur` / `--ease`, shows the chevron (`--color-bg`, 12px) and the same chip (name, state,
+    hint, chord).
+  - **Tokens and sizes.** Colours and radius are tokens; the three sizes (`--tuck-bar-w: 4px`,
+    `--tuck-bar-w-hover: 10px`, `--tuck-hit: 14px`) are declared once in the floating block of `main.css`
+    and nowhere else. Every rule starts with `:root[data-floating='on']`, so with the layout off no pixel
+    changes.
+- **No auto-restore on attention.** A permission request never opens the session: the strip's dot,
+  its tag and the Approval Inbox carry it.
+- **Other ways back.** `session.toggleTuck` (group Views, `Ctrl+Shift+J` / `⌘⇧J`, in the command
+  palette as "Show or tuck the session") toggles the state with the keyboard. Closing the last helper
+  pane restores the session at once: an empty main area is never left on screen. While a pane is
+  expanded to the window (T628) the chord, like `⌘⇧M`, leaves the expanded view first and does nothing
+  else.
+- **State.** Per worktree, in memory, never written to `helpers.json`: switching session or worktree
+  never carries it elsewhere, and a restart starts with the session shown. It is independent of
+  maximize (a maximized pane stays maximized inside the tucked stack) and of expand to window: while a
+  pane is expanded the strip collapses with the rest of the session area and comes back, still tucked,
+  when the expanded view ends. A tuck needs a visible helper stack: with no pane (or a takeover that
+  does not host the stack) the area is simply shown.
+- **Motion.** Tucking and restoring are layout state changes, so they raise the layout-motion flag
+  (§7 "Layout motion"): the session area eases to zero and back over `--dur-slow` with `--ease`; the
+  strip's own widening uses `--dur`. The drag itself never animates, and `prefers-reduced-motion`
+  snaps it all.
 
 #### Pane focus (T486 U5b)
 

@@ -1071,4 +1071,80 @@ textarea,
 :root[data-floating='on'] [data-rail-column][data-rail-state='minimized'] {
   margin-left: var(--float-gap);
 }
+/* T790 delta 2 — the session tuck strip as its own island (design.md §6 "Tucking the session away",
+   the floating bullet). The strip is `bar + --float-gap` in layout (so the gap to the helper stack is its
+   own; the main divider is collapsed while tucked), the visible bar is a 4px island with --float-radius
+   corners, and the hit area stays 14px through an invisible ::before reaching over the helper stack's
+   edge. The bar is the state dot: its colour comes from utilities on the bar itself. The three sizes are
+   declared here once. Classic mode never sees any of this: the bar is `hidden` there. */
+:root[data-floating='on'] [data-tuck-strip] {
+  --tuck-bar-w: 4px;
+  --tuck-bar-w-hover: 10px;
+  --tuck-hit: 14px;
+  --bar: var(--tuck-bar-w);
+  width: calc(var(--bar) + var(--float-gap));
+  background: transparent;
+  border: 0;
+  padding: 0;
+  gap: 0;
+  transition:
+    width var(--dur) var(--ease),
+    height var(--dur) var(--ease);
+}
+:root[data-floating='on'] [data-tuck-strip]:hover,
+:root[data-floating='on'] [data-tuck-strip]:focus-visible {
+  --bar: var(--tuck-bar-w-hover);
+}
+:root[data-floating='on'] [data-tuck-strip][data-orientation='horizontal'] {
+  width: 100%;
+  height: calc(var(--bar) + var(--float-gap));
+}
+:root[data-floating='on'] [data-tuck-strip]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--tuck-hit);
+}
+:root[data-floating='on'] [data-tuck-strip][data-orientation='horizontal']::before {
+  top: 0;
+  right: 0;
+  bottom: auto;
+  width: auto;
+  height: var(--tuck-hit);
+}
+:root[data-floating='on'] [data-tuck-classic] {
+  display: none;
+}
+:root[data-floating='on'] [data-island='tuck-strip'] {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--bar);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--float-radius);
+  transition:
+    width var(--dur) var(--ease),
+    height var(--dur) var(--ease);
+}
+:root[data-floating='on']
+  [data-tuck-strip][data-orientation='horizontal']
+  [data-island='tuck-strip'] {
+  top: 0;
+  right: 0;
+  bottom: auto;
+  width: auto;
+  height: var(--bar);
+}
+:root[data-floating='on'] [data-tuck-strip] [data-tuck-chev] {
+  color: var(--color-bg);
+}
+:root[data-floating='on'] [data-tuck-strip]:not(:hover):not(:focus-visible) [data-tuck-chev] {
+  display: none;
+}
 /* floating-panels:end */

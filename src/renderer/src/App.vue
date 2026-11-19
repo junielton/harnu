@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArchiveRestore } from 'lucide-vue-next'
+import { ArchiveRestore, ChevronLeft, ChevronUp } from 'lucide-vue-next'
 import Sidebar from './components/Sidebar.vue'
 import TerminalPane from './components/TerminalPane.vue'
 import Topbar from './components/Topbar.vue'
@@ -11,6 +11,9 @@ import FolderView from './components/FolderView.vue'
 import CloudSessionPanel from './components/CloudSessionPanel.vue'
 import { isCloudStub } from './lib/cloud-session'
 import { sessionTitle } from './lib/session-label'
+import { dotFor } from './components/session-dot'
+import { resolveDividerDrag, SESSION_TUCK_ARM_PX } from './lib/session-tuck'
+import { SPLIT_RATIO_MIN, SPLIT_RATIO_MAX } from './lib/split-orientation'
 import Onboarding from './components/Onboarding.vue'
 import AddFolderDialog from './components/AddFolderDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
@@ -34,6 +37,7 @@ import InboxRail from './components/InboxRail.vue'
 import McpConfirmOverlay from './components/McpConfirmOverlay.vue'
 import ToastStack from './components/ToastStack.vue'
 import HelperStack from './components/HelperStack.vue'
+import SessionTuckStrip from './components/SessionTuckStrip.vue'
 import TakeoverHost from './components/TakeoverHost.vue'
 import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
@@ -205,7 +209,19 @@ watch(
 
 // Which axis the session-area / helper-stack divider drags on (T627): X when the two sit side by
 // side, Y when they are stacked. `startRatio` is the active orientation's ratio at mousedown.
-let mainDragging: { start: number; startRatio: number; stacked: boolean } | null = null
+let mainDragging: {
+  start: number
+  startRatio: number
+  stacked: boolean
+  /** The island's share of the row at mousedown, as a size along the axis; with `startRatio` it gives the floor's. */
+  availablePx: number
+  /** The island's size across the axis, which a pull along the axis never changes. */
+  crossPx: number
+} | null = null
+/** T790: the drag is past the floor by the arm threshold, so releasing tucks the session away. */
+const tuckArmed = ref(false)
+/** T790: how far (px, at most the arm threshold) the divider is drawn past the floor, and the row's size. */
+const dragOvershoot = ref({ px: 0, total: 1 })
 
 // T627 — the box that holds the session area and the helper stack. `auto` resolves the split
 // orientation from its shape, so it is measured here (ResizeObserver) and fed to the layout store.
@@ -216,6 +232,15 @@ const activeSplitRatio = computed(() =>
   stackedLayout.value
     ? helpers.stackedSplitRatioForCurrentWorktree
     : helpers.splitRatioForCurrentWorktree
+)
+/**
+ * T790: what the layout draws. The stored ratio stops at the floor; while the divider is pulled past it
+ * the session area is drawn that much narrower (up to the arm threshold), so the operator sees the
+ * resistance and, once armed, the picture the mockup approved. Released short of the threshold it
+ * springs back to the stored ratio.
+ */
+const displaySplitRatio = computed(
+  () => activeSplitRatio.value - dragOvershoot.value.px / dragOvershoot.value.total
 )
 let mainRowObserver: ResizeObserver | null = null
 watch(mainRowEl, (el) => {
@@ -259,10 +284,17 @@ function onMainDividerMouseDown(ev: MouseEvent): void {
   if (!wt) return
   ev.preventDefault()
   const stacked = stackedLayout.value
+  // The island and the helper column split the row by flex ratio from a zero basis, so the island is
+  // `available * ratio` along the axis. Reading `available` here, while the DOM still shows the start
+  // ratio, gives the size the island has at the floor without waiting for a render.
+  const box = sessionIslandEl.value?.getBoundingClientRect()
+  const startRatio = activeSplitRatio.value
   mainDragging = {
     start: stacked ? ev.clientY : ev.clientX,
-    startRatio: activeSplitRatio.value,
-    stacked
+    startRatio,
+    stacked,
+    availablePx: box && startRatio > 0 ? (stacked ? box.height : box.width) / startRatio : 0,
+    crossPx: box ? (stacked ? box.width : box.height) : 0
   }
   document.addEventListener('mousemove', onMainDividerMouseMove)
   document.addEventListener('mouseup', onMainDividerMouseUp)
@@ -285,11 +317,28 @@ function onMainDividerMouseMove(ev: MouseEvent): void {
         : window.innerWidth - 250
   if (total < 1) return
   const delta = (mainDragging.stacked ? ev.clientY : ev.clientX) - mainDragging.start
-  helpers.setSplitRatio(
-    wt,
-    mainDragging.startRatio + delta / total,
-    mainDragging.stacked ? 'stacked' : 'side-by-side'
-  )
+  const drag = resolveDividerDrag({
+    startRatio: mainDragging.startRatio,
+    deltaPx: delta,
+    totalPx: total
+  })
+  helpers.setSplitRatio(wt, drag.ratio, mainDragging.stacked ? 'stacked' : 'side-by-side')
+  tuckArmed.value = drag.armed
+  dragOvershoot.value = { px: Math.min(drag.overshootPx, SESSION_TUCK_ARM_PX), total }
+  // T790: past the floor the session area is only DRAWN narrower. The terminal keeps the size it has at
+  // the floor from the moment the pull crosses it, so the PTY never reflows from arm to tuck to restore
+  // (a strip restore lands on that same size).
+  if (drag.overshootPx > 0 && !pinnedTerminal.value) {
+    const { availablePx, crossPx, stacked } = mainDragging
+    if (availablePx > 0 && crossPx > 0) {
+      const floorPx = availablePx * SPLIT_RATIO_MIN
+      pinnedTerminal.value = stacked
+        ? { width: crossPx, height: floorPx }
+        : { width: floorPx, height: crossPx }
+    }
+  } else if (drag.overshootPx === 0 && pinnedTerminal.value && !sessionCollapsed.value) {
+    pinnedTerminal.value = null
+  }
 }
 
 // Double-click resets the helper-stack split to its default, like the sidebar
@@ -306,9 +355,70 @@ function onMainDividerDblClick(): void {
 
 function onMainDividerMouseUp(): void {
   mainDragging = null
+  // T790: released armed → the session tucks away; released short of the threshold → it springs back
+  // to the floor. Either is a layout state change, so it animates (§7 "Layout motion").
+  const wt = helpers.currentWorktreePath
+  const animated =
+    tuckArmed.value || dragOvershoot.value.px > 0 ? layout.beginLayoutMotion() : false
+  if (tuckArmed.value && wt) helpers.tuckSession(wt)
+  // A pull that ends short of the threshold springs back to the floor, which is the size the pin holds:
+  // let it go with the motion (or at once when motion is reduced).
+  else if (!animated && !sessionCollapsed.value) pinnedTerminal.value = null
+  tuckArmed.value = false
+  dragOvershoot.value = { px: 0, total: 1 }
   document.removeEventListener('mousemove', onMainDividerMouseMove)
   document.removeEventListener('mouseup', onMainDividerMouseUp)
 }
+/**
+ * T790 — the edge strip. A plain click (or Enter / Space) restores the session at exactly the floor.
+ * Pressing and dragging restores it as soon as the pointer has moved a few pixels and then follows the
+ * pointer, clamped to the normal [0.4, 0.8] range; the click that ends such a drag never reaches the
+ * strip because the strip is gone by then.
+ */
+const STRIP_DRAG_SLOP_PX = 4
+let stripDrag: { x: number; y: number; stacked: boolean; moved: boolean } | null = null
+
+function onTuckStripRestore(): void {
+  const wt = helpers.currentWorktreePath
+  if (!wt) return
+  layout.beginLayoutMotion()
+  helpers.restoreSessionAtFloor(wt, stackedLayout.value ? 'stacked' : 'side-by-side')
+}
+
+function onTuckStripDragStart(ev: MouseEvent): void {
+  if (ev.button !== 0 || !helpers.currentWorktreePath) return
+  stripDrag = { x: ev.clientX, y: ev.clientY, stacked: stackedLayout.value, moved: false }
+  document.addEventListener('mousemove', onTuckStripDragMove)
+  document.addEventListener('mouseup', onTuckStripDragEnd)
+}
+
+function onTuckStripDragMove(ev: MouseEvent): void {
+  const wt = helpers.currentWorktreePath
+  const row = mainRowEl.value
+  if (!stripDrag || !wt || !row) return
+  if (!stripDrag.moved) {
+    const travelled = Math.hypot(ev.clientX - stripDrag.x, ev.clientY - stripDrag.y)
+    if (travelled < STRIP_DRAG_SLOP_PX) return
+    stripDrag.moved = true
+    helpers.showSession(wt)
+  }
+  const box = row.getBoundingClientRect()
+  const total = stripDrag.stacked ? box.height : box.width
+  if (total < 1) return
+  const pos = stripDrag.stacked ? ev.clientY - box.top : ev.clientX - box.left
+  helpers.setSplitRatio(
+    wt,
+    Math.min(SPLIT_RATIO_MAX, Math.max(SPLIT_RATIO_MIN, pos / total)),
+    stripDrag.stacked ? 'stacked' : 'side-by-side'
+  )
+}
+
+function onTuckStripDragEnd(): void {
+  stripDrag = null
+  document.removeEventListener('mousemove', onTuckStripDragMove)
+  document.removeEventListener('mouseup', onTuckStripDragEnd)
+}
+
 /**
  * Shared `terminalFocused` flag — flipped by `TerminalPane.vue` on the
  * xterm-managed element's `focusin`/`focusout` DOM events. Read here by the
@@ -348,7 +458,8 @@ function onSidebarDividerMouseUp(): void {
   document.removeEventListener('mouseup', onSidebarDividerMouseUp)
 }
 
-const showOnboarding = computed(() => sessions.folders.length === 0)
+// BUG-257: not while the folder model is still loading — a cold boot is "loading", not "empty".
+const showOnboarding = computed(() => sessions.folders.length === 0 && !sessions.foldersLoading)
 // T212: a selected FOLDER renders its own view. It ranks BELOW the takeovers
 // (see `showTerminalForeground`'s priority, BUG-103), so opening the Roadmap
 // board from a folder shows the board, and closing it returns here — the
@@ -521,6 +632,42 @@ const expandMode = computed<'everything' | 'session-only' | null>(() =>
 const sidebarHidden = computed(() => layout.sidebarCollapsed || expandMode.value === 'everything')
 
 /**
+ * T790 — the session area is tucked away: the operator pulled the divider past the floor (or used the
+ * chord) and the helper stack owns the main area. Only while the stack is actually on screen: with no
+ * pane, a collapsed panel or a takeover that does not host it, the session is simply shown.
+ */
+const sessionTucked = computed(
+  () => showHelperStack.value && helpers.sessionTuckedForCurrentWorktree
+)
+/** The session area is out of the way, for either reason; its terminal host is pinned meanwhile. */
+const sessionCollapsed = computed<boolean>(() => !!expandMode.value || sessionTucked.value)
+/** The strip takes the session's place: along the left edge side by side, the top edge stacked. */
+const tuckStripOrientation = computed(() => (stackedLayout.value ? 'horizontal' : 'vertical'))
+/** What the strip says about the session: its dot, its name and its state in words. */
+const tuckSession = computed(() => {
+  const s = sessions.selectedSession
+  if (!s) {
+    const path = sessions.activeFolderPath ?? ''
+    return { name: path.split('/').filter(Boolean).pop() ?? '', dot: 'idle' as const, where: '' }
+  }
+  const dot = dotFor(
+    s.taskState,
+    s.status,
+    sessions.activityOf(s, sessions.nowTick),
+    s.transcriptState
+  )
+  const name = s.isShellTerminal
+    ? t('topbar.terminal')
+    : sessionTitle(s, sessions.allSessions, t) || t('session.unnamed')
+  return { name, dot, where: (s.projectPath ?? '').split('/').filter(Boolean).pop() ?? '' }
+})
+const tuckStateLabel = computed(() =>
+  t(
+    `sessionTuck.state.${tuckSession.value.dot === 'needs-input' ? 'needsInput' : tuckSession.value.dot}`
+  )
+)
+
+/**
  * T628 — layout motion (design.md §7). Each of these is a layout STATE change (never a drag, which
  * only moves a width or a ratio), so each raises the transient motion flag first: the `pre` flush
  * runs before this component patches, so the flag and the new sizes land in the same frame and the
@@ -536,6 +683,7 @@ const flipping = ref(false)
 watch(
   [
     expandMode,
+    sessionTucked,
     () => helpers.maximizedPaneIdForCurrentWorktree,
     () => layout.sidebarCollapsed,
     () => layout.inboxRailState
@@ -546,10 +694,13 @@ watch(
 
 // The main terminal sits inside the session area. Collapsing that area to zero would resize its host
 // and reflow the PTY to two columns, so its host keeps the pixel size it had until the area is back.
+// T790: tucking the session collapses the same area, so the same pin holds for it.
 watch(
-  expandMode,
-  (mode, prev) => {
-    if (!mode || prev) return
+  sessionCollapsed,
+  (collapsed, prev) => {
+    if (!collapsed || prev) return
+    // A drag past the floor already pinned the host at the floor size: that is the size to keep.
+    if (pinnedTerminal.value) return
     const box = sessionIslandEl.value?.getBoundingClientRect()
     if (box && box.width > 0 && box.height > 0) {
       pinnedTerminal.value = { width: box.width, height: box.height }
@@ -557,8 +708,8 @@ watch(
   },
   { flush: 'pre' }
 )
-watch([() => layout.layoutMotion, expandMode], ([moving, mode]) => {
-  if (!mode && !moving) pinnedTerminal.value = null
+watch([() => layout.layoutMotion, sessionCollapsed], ([moving, collapsed]) => {
+  if (!collapsed && !moving) pinnedTerminal.value = null
 })
 watch(
   () => layout.layoutMotion,
@@ -750,7 +901,8 @@ const paneDeps: PaneCommandDeps = {
     paneRing(
       applyExpandToRing(
         {
-          mainForeground: showTerminalForeground.value,
+          // T790: a tucked session is not reachable by F6 either.
+          mainForeground: showTerminalForeground.value && !sessionTucked.value,
           stackShown: showHelperStack.value,
           helperCollapsed: layout.helperCollapsed,
           paneIds: helpers.panesForCurrentWorktree.map((p) => p.id),
@@ -819,6 +971,21 @@ function onExpandToWindow(): void {
     return
   }
   helpers.exitExpand(wt)
+}
+
+/**
+ * `session.toggleTuck` (T790): tuck the session away, or bring it back. While a pane is expanded to the
+ * window nothing of the session is on screen, so — like ⌘⇧M — the chord leaves the expanded view first
+ * and does nothing else.
+ */
+function onToggleTuckChord(): void {
+  const wt = helpers.currentWorktreePath
+  if (!wt) return
+  if (helpers.expandedPaneId(wt)) {
+    helpers.exitExpand(wt)
+    return
+  }
+  helpers.toggleSessionTuck(wt)
 }
 
 function kb(id: ShortcutActionId): string | undefined {
@@ -1018,6 +1185,15 @@ useShortcuts(
       scope: 'global',
       keys: kb('pane.close'),
       handler: () => closeFocusedPane(paneDeps)
+    },
+    {
+      // T790 — Ctrl+Shift+J / ⌘⇧J. Tuck the session away, or bring it back. Bubbles out of xterm.
+      id: 'session.toggleTuck',
+      scope: 'global',
+      keys: kb('session.toggleTuck'),
+      enabled: () =>
+        !!helpers.currentWorktreePath && (showHelperStack.value || sessionTucked.value),
+      handler: onToggleTuckChord
     },
     {
       // T627 — unbound. The Topbar split-layout button's twin: auto → side-by-side → stacked → auto.
@@ -1960,7 +2136,27 @@ onUnmounted(() => {
       </div>
       <main class="flex min-w-0 flex-1 flex-col" data-main>
         <Topbar />
-        <div ref="mainRowEl" class="flex min-h-0 flex-1" :class="{ 'flex-col': stackedLayout }">
+        <div
+          ref="mainRowEl"
+          class="relative flex min-h-0 flex-1"
+          :class="{ 'flex-col': stackedLayout }"
+          :data-session-tucked="sessionTucked ? '' : undefined"
+        >
+          <!-- T790: where a tucked session was, a thin strip brings it back (design.md §6 "Tucking
+               the session away"). It collapses with the session area while a pane is expanded. -->
+          <SessionTuckStrip
+            v-if="sessionTucked"
+            data-lm
+            :class="expandMode ? (stackedLayout ? 'lm-collapse-h' : 'lm-collapse-w') : undefined"
+            :orientation="tuckStripOrientation"
+            :name="tuckSession.name"
+            :dot="tuckSession.dot"
+            :state-label="tuckStateLabel"
+            :where="tuckSession.where"
+            :chord="keybindings.chordLabel('session.toggleTuck')"
+            @restore="onTuckStripRestore"
+            @drag-start="onTuckStripDragStart"
+          />
           <!--
             Main-content view. Wrapped in a sizing div (rather than each view
             owning its own flex-basis) so the SAME split-ratio math applies
@@ -1971,10 +2167,14 @@ onUnmounted(() => {
           <div
             ref="sessionIslandEl"
             class="relative flex min-w-0 min-h-0 flex-col"
-            :class="{ 'lm-collapse': expandMode }"
+            :class="{
+              'lm-collapse': sessionCollapsed,
+              'overflow-hidden': dragOvershoot.px > 0
+            }"
             data-lm
             data-island="session"
-            :style="showHelperStack ? { flex: `${activeSplitRatio} 1 0` } : { flex: '1 1 0' }"
+            :inert="sessionTucked || undefined"
+            :style="showHelperStack ? { flex: `${displaySplitRatio} 1 0` } : { flex: '1 1 0' }"
           >
             <!--
               BUG-103: TerminalPane renders UNCONDITIONALLY here (never `v-if`),
@@ -2057,6 +2257,27 @@ onUnmounted(() => {
                 </i18n-t>
               </div>
             </div>
+            <!-- T790: the divider is pulled far enough past the floor that releasing tucks the session
+                 away: dim it and say so (design.md §6 "Tucking the session away"). -->
+            <div
+              v-if="tuckArmed"
+              class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-scrim"
+              data-test="session-tuck-armed"
+            >
+              <div
+                class="flex items-center rounded border border-accent-line bg-surface-2 text-text shadow-pop"
+                style="gap: 8px; padding: 8px 12px; font-size: 12px"
+              >
+                <component
+                  :is="stackedLayout ? ChevronUp : ChevronLeft"
+                  :size="14"
+                  :stroke-width="2"
+                  class="text-accent"
+                  aria-hidden="true"
+                />
+                {{ $t('sessionTuck.armedHint') }}
+              </div>
+            </div>
           </div>
           <!--
             Right helper panel — auto-show gated by `showHelperStack`, which ANDs
@@ -2070,37 +2291,91 @@ onUnmounted(() => {
           <div
             v-if="showHelperStack && !stackedLayout"
             data-lm
-            class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
-            :class="{ 'lm-collapse-w': expandMode }"
+            class="group relative flex w-1.5 shrink-0 cursor-col-resize justify-end"
+            :class="{ 'lm-collapse-w': sessionCollapsed, 'z-20': tuckArmed }"
             data-float-divider
             role="separator"
             aria-orientation="vertical"
+            :data-armed="tuckArmed ? '' : undefined"
             @mousedown="onMainDividerMouseDown"
             @dblclick="onMainDividerDblClick"
           >
-            <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
+            <!-- Armed (design.md §6 "Tucking the session away"): the mockup's line, 2px wide and 2px into the
+                 6px hit area, and an accent-soft halo 6px beyond each side. The divider is lifted to z-20 so the
+                 halo shows above both the helper pane (a later sibling) and the session scrim (z-10). -->
+            <template v-if="tuckArmed">
+              <div
+                class="pointer-events-none absolute inset-y-0 -inset-x-1.5 bg-accent-soft"
+                data-test="session-tuck-halo"
+              />
+              <div
+                class="pointer-events-none absolute inset-y-0 left-0.5 w-0.5 bg-accent"
+                data-test="session-tuck-line"
+              />
+            </template>
+            <div
+              v-else
+              class="relative h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line"
+            />
           </div>
           <div
             v-else-if="showHelperStack"
             data-lm
-            class="group flex h-1.5 shrink-0 cursor-row-resize items-end"
-            :class="{ 'lm-collapse-h': expandMode }"
+            class="group relative flex h-1.5 shrink-0 cursor-row-resize items-end"
+            :class="{ 'lm-collapse-h': sessionCollapsed, 'z-20': tuckArmed }"
             data-float-divider
             role="separator"
             aria-orientation="horizontal"
+            :data-armed="tuckArmed ? '' : undefined"
             @mousedown="onMainDividerMouseDown"
             @dblclick="onMainDividerDblClick"
           >
-            <div class="h-px w-full bg-border-2 transition-colors group-hover:bg-accent-line" />
+            <template v-if="tuckArmed">
+              <div
+                class="pointer-events-none absolute inset-x-0 -inset-y-1.5 bg-accent-soft"
+                data-test="session-tuck-halo"
+              />
+              <div
+                class="pointer-events-none absolute inset-x-0 top-0.5 h-0.5 bg-accent"
+                data-test="session-tuck-line"
+              />
+            </template>
+            <div
+              v-else
+              class="relative h-px w-full bg-border-2 transition-colors group-hover:bg-accent-line"
+            />
           </div>
           <div
             v-if="showHelperStack"
             ref="helperColEl"
             data-lm
             class="flex min-w-0 min-h-0 flex-col"
-            :style="{ flex: expandMode ? '1 1 0' : `${1 - activeSplitRatio} 1 0` }"
+            :style="{ flex: sessionCollapsed ? '1 1 0' : `${1 - displaySplitRatio} 1 0` }"
           >
             <HelperStack />
+          </div>
+          <!-- T790: a dashed marker where the 40% floor is, while armed. -->
+          <div
+            v-if="tuckArmed"
+            class="pointer-events-none absolute z-10"
+            :class="
+              stackedLayout
+                ? 'inset-x-0 border-t border-dashed border-accent-line'
+                : 'inset-y-0 border-l border-dashed border-accent-line'
+            "
+            :style="
+              stackedLayout
+                ? { top: `${SPLIT_RATIO_MIN * 100}%` }
+                : { left: `${SPLIT_RATIO_MIN * 100}%` }
+            "
+            data-test="session-tuck-floor"
+          >
+            <span
+              class="absolute rounded-xs border border-accent-line bg-surface-2 text-accent"
+              :class="stackedLayout ? 'right-2 top-1.5' : 'bottom-3 left-1.5'"
+              style="padding: 2px 6px; font-size: 10px; white-space: nowrap"
+              >{{ $t('sessionTuck.floor') }}</span
+            >
           </div>
         </div>
       </main>
