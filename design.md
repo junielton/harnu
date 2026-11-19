@@ -4887,7 +4887,8 @@ chrome adds three things and changes one.
   navigation, clears the page; the address field keeps the address that failed.
 - **Start page** (browser-tabs spec S-5, mockup states `start` and `new-tab`). A tab with no address
   (`hostView: 'start'`, set by `+`, the Topbar button, "New tab to the right" and a restored start tab) hides its
-  native view; the address field is empty and has the focus, and the host draws the start page on `--bg`, scrolling
+  native view; the address field is empty (placeholder "Type an address and press Enter") and has the focus, a
+  single-tab header reads "New tab", and the host draws the start page on `--bg`, scrolling
   when it is taller than the pane. An agent pane never shows it. It is one column at most 560px wide (no token: a
   readable measure) with 18px top and bottom and 20px side padding and 6px gaps, and two sections, **each left out
   when it has nothing to show** (a folder with no server running and no history shows an empty `--bg` host):
