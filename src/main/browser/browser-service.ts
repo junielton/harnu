@@ -33,6 +33,7 @@ import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import { resolveDiscardMs } from './lifecycle'
 import { getContainersService } from '../containers/containers-ipc'
 import { terminalRegistry } from '../terminal-registry'
+import { normalizePath as normalizeFolderPath } from '../user-projects'
 import { buildLocalServers, type LocalServerRow, type LocalServerStack } from './local-servers'
 import { listenersFor, realProcIo, realRunCommand } from './local-servers-shell'
 import { createRecentStore, topRecent, type RecentStore } from './recent-sites'
@@ -165,12 +166,18 @@ export async function startRecentFor(
 }
 
 /** The running containers of `folder` with published host ports, one entry each (browser-tabs S-5, D-5). */
-function dockerStacksOf(folder: string): LocalServerStack[] {
+async function dockerStacksOf(folder: string): Promise<LocalServerStack[]> {
   const snap = getContainersService()?.snapshot()
   if (!snap || !snap.dockerAvailable) return []
   const out: LocalServerStack[] = []
   for (const stack of snap.stacks) {
-    if ((stack.attribution.folderPath ?? stack.attribution.path) !== folder) continue
+    const at = stack.attribution.folderPath ?? stack.attribution.path
+    if (
+      at === null ||
+      (at !== folder && (await normalizeFolderPath(at).catch(() => at)) !== folder)
+    ) {
+      continue
+    }
     for (const c of stack.containers) {
       if (c.running && c.ports.length > 0) {
         out.push({ folder, name: c.service ?? c.name, hostPorts: c.ports })
@@ -180,17 +187,25 @@ function dockerStacksOf(folder: string): LocalServerStack[] {
   return out
 }
 
-/** "Running in this folder" for the start page of a pane in `folder` (browser-tabs S-5, D-5). */
-export function startServersFor(folder: string): Promise<LocalServerRow[]> {
+/**
+ * "Running in this folder" for the start page of a pane in `folder` (browser-tabs S-5, D-5). The folder is compared in
+ * its canonical form, the one the terminal registry and the containers scan hold it in.
+ */
+export async function startServersFor(folder: string): Promise<LocalServerRow[]> {
+  const canonical = await normalizeFolderPath(folder).catch(() => folder)
   return buildLocalServers({
-    folder,
+    folder: canonical,
     platform: process.platform,
-    stacks: dockerStacksOf(folder),
+    stacks: await dockerStacksOf(canonical),
     terminals: terminalRegistry
-      .listTerminalsByFolder(folder)
-      .map((t) => ({ folder, shellPid: t.shellPid })),
+      .listTerminalsByFolder(canonical)
+      .map((t) => ({ folder: canonical, shellPid: t.shellPid })),
     listeners: (pids) =>
-      listenersFor(process.platform, pids, { procIo: realProcIo, runCommand: realRunCommand })
+      listenersFor(process.platform, pids, {
+        procIo: realProcIo,
+        runCommand: realRunCommand,
+        ownPid: process.pid
+      })
   })
 }
 
