@@ -4535,17 +4535,24 @@ pane on a CMS) and a thin **edge strip** keeps the session one gesture away. The
 
 - **Resistance, then arm.** Dragging the divider toward the session stops at the 0.4 floor. Pulling
   **80px** further (`SESSION_TUCK_ARM_PX`, measured on the drag axis: X side by side, Y stacked) **arms**
-  the tuck. Armed: the divider turns `--accent` and widens from 1px to **2px** with an `--accent-soft`
-  halo 6px each side; the session area dims under a `--scrim` layer carrying a centred hint chip
+  the tuck. Armed: the divider turns `--accent` and widens from 1px to **2px**, drawn **2px into** the 6px
+  hit area (not flush against the helper stack), with an `--accent-soft` halo **6px beyond each side** of
+  that hit area (18px in all). The divider is lifted above its neighbours while armed, so the halo shows
+  over both the helper pane and the session scrim; the session area dims under a `--scrim` layer carrying a centred hint chip
   (`--surface-2`, `--accent-line` border, `--radius`, `--shadow-pop`, a chevron in `--accent`):
   "Release to tuck the session away"; a **dashed `--accent-line` marker** with a small `--accent` tag
   ("40% · session floor") shows where the floor is. Releasing while armed tucks the session;
   releasing earlier (or pulling back under 80px) leaves the ratio at the floor, 0.4. The 80px is a
   constant in `lib/session-tuck.ts`; the [0.4, 0.8] clamp of a normal drag is unchanged.
+- **No reflow while pulling.** Past the floor the session area is only **drawn** narrower (up to the arm
+  threshold, clipped). The main terminal's host is pinned at the size it has at the **floor** from the
+  moment the pull crosses it, so the PTY keeps the same cols and rows from arm to tuck to a strip restore at
+  0.4. A pull that comes back inside the floor, or a release short of the threshold, lets the pin go.
 - **Tucked.** The session area collapses to zero along the split axis (the T628 `.lm-collapse`
   mechanism, §7 "Layout motion") and the helper stack takes the whole main area. Nothing is unmounted:
   the main terminal keeps its PTY and its scrollback, and its host keeps the pixel size it had (the
-  T628 `pinnedTerminal` pin, now also held while tucked) so Claude Code never reflows to two columns.
+  T628 `pinnedTerminal` pin, now also held while tucked: the floor size after a drag, the size at the moment
+  of the chord otherwise) so Claude Code never reflows to two columns.
   Restoring shows the scrollback intact.
 - **Helper layout while tucked (D-1).** The helper panes lay out **side by side** (a row), in either
   orientation; side by side is the new case, stacked already lays its panes out in a row. Restoring

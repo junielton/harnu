@@ -490,6 +490,9 @@ describe('the edge strip', () => {
     expect(chip.text()).toContain('Click or drag to bring it back')
     expect(chip.text()).toContain('Ctrl')
     expect(chip.text()).toContain('J')
+    // The mockup's `.chip .k` row is 11px (the keycaps inside are 10px).
+    expect(chip.get('kbd').element.parentElement!.style.fontSize).toBe('11px')
+    expect((chip.get('kbd').element as HTMLElement).style.fontSize).toBe('10px')
     await strip.trigger('mouseleave')
     expect(w.find('[data-test="session-tuck-chip"]').exists()).toBe(false)
     await strip.trigger('focus')

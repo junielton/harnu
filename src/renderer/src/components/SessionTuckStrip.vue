@@ -145,7 +145,11 @@ const DOT_CLASS: Record<Dot, string> = {
       <span class="mt-1.5 block text-text-2" style="font-size: 11px">{{
         $t('sessionTuck.hint')
       }}</span>
-      <span v-if="chordKeys.length" class="mt-1 flex items-center gap-1 text-text-4">
+      <span
+        v-if="chordKeys.length"
+        class="mt-1 flex items-center gap-1 text-text-4"
+        style="font-size: 11px"
+      >
         <kbd
           v-for="k in chordKeys"
           :key="k"

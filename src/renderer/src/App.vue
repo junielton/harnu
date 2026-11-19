@@ -209,7 +209,15 @@ watch(
 
 // Which axis the session-area / helper-stack divider drags on (T627): X when the two sit side by
 // side, Y when they are stacked. `startRatio` is the active orientation's ratio at mousedown.
-let mainDragging: { start: number; startRatio: number; stacked: boolean } | null = null
+let mainDragging: {
+  start: number
+  startRatio: number
+  stacked: boolean
+  /** The island's share of the row at mousedown, as a size along the axis; with `startRatio` it gives the floor's. */
+  availablePx: number
+  /** The island's size across the axis, which a pull along the axis never changes. */
+  crossPx: number
+} | null = null
 /** T790: the drag is past the floor by the arm threshold, so releasing tucks the session away. */
 const tuckArmed = ref(false)
 /** T790: how far (px, at most the arm threshold) the divider is drawn past the floor, and the row's size. */
@@ -276,10 +284,17 @@ function onMainDividerMouseDown(ev: MouseEvent): void {
   if (!wt) return
   ev.preventDefault()
   const stacked = stackedLayout.value
+  // The island and the helper column split the row by flex ratio from a zero basis, so the island is
+  // `available * ratio` along the axis. Reading `available` here, while the DOM still shows the start
+  // ratio, gives the size the island has at the floor without waiting for a render.
+  const box = sessionIslandEl.value?.getBoundingClientRect()
+  const startRatio = activeSplitRatio.value
   mainDragging = {
     start: stacked ? ev.clientY : ev.clientX,
-    startRatio: activeSplitRatio.value,
-    stacked
+    startRatio,
+    stacked,
+    availablePx: box && startRatio > 0 ? (stacked ? box.height : box.width) / startRatio : 0,
+    crossPx: box ? (stacked ? box.width : box.height) : 0
   }
   document.addEventListener('mousemove', onMainDividerMouseMove)
   document.addEventListener('mouseup', onMainDividerMouseUp)
@@ -310,6 +325,20 @@ function onMainDividerMouseMove(ev: MouseEvent): void {
   helpers.setSplitRatio(wt, drag.ratio, mainDragging.stacked ? 'stacked' : 'side-by-side')
   tuckArmed.value = drag.armed
   dragOvershoot.value = { px: Math.min(drag.overshootPx, SESSION_TUCK_ARM_PX), total }
+  // T790: past the floor the session area is only DRAWN narrower. The terminal keeps the size it has at
+  // the floor from the moment the pull crosses it, so the PTY never reflows from arm to tuck to restore
+  // (a strip restore lands on that same size).
+  if (drag.overshootPx > 0 && !pinnedTerminal.value) {
+    const { availablePx, crossPx, stacked } = mainDragging
+    if (availablePx > 0 && crossPx > 0) {
+      const floorPx = availablePx * SPLIT_RATIO_MIN
+      pinnedTerminal.value = stacked
+        ? { width: crossPx, height: floorPx }
+        : { width: floorPx, height: crossPx }
+    }
+  } else if (drag.overshootPx === 0 && pinnedTerminal.value && !sessionCollapsed.value) {
+    pinnedTerminal.value = null
+  }
 }
 
 // Double-click resets the helper-stack split to its default, like the sidebar
@@ -329,8 +358,12 @@ function onMainDividerMouseUp(): void {
   // T790: released armed → the session tucks away; released short of the threshold → it springs back
   // to the floor. Either is a layout state change, so it animates (§7 "Layout motion").
   const wt = helpers.currentWorktreePath
-  if (tuckArmed.value || dragOvershoot.value.px > 0) layout.beginLayoutMotion()
+  const animated =
+    tuckArmed.value || dragOvershoot.value.px > 0 ? layout.beginLayoutMotion() : false
   if (tuckArmed.value && wt) helpers.tuckSession(wt)
+  // A pull that ends short of the threshold springs back to the floor, which is the size the pin holds:
+  // let it go with the motion (or at once when motion is reduced).
+  else if (!animated && !sessionCollapsed.value) pinnedTerminal.value = null
   tuckArmed.value = false
   dragOvershoot.value = { px: 0, total: 1 }
   document.removeEventListener('mousemove', onMainDividerMouseMove)
@@ -665,6 +698,8 @@ watch(
   sessionCollapsed,
   (collapsed, prev) => {
     if (!collapsed || prev) return
+    // A drag past the floor already pinned the host at the floor size: that is the size to keep.
+    if (pinnedTerminal.value) return
     const box = sessionIslandEl.value?.getBoundingClientRect()
     if (box && box.width > 0 && box.height > 0) {
       pinnedTerminal.value = { width: box.width, height: box.height }
@@ -2096,7 +2131,10 @@ onUnmounted(() => {
           <div
             ref="sessionIslandEl"
             class="relative flex min-w-0 min-h-0 flex-col"
-            :class="{ 'lm-collapse': sessionCollapsed }"
+            :class="{
+              'lm-collapse': sessionCollapsed,
+              'overflow-hidden': dragOvershoot.px > 0
+            }"
             data-lm
             data-island="session"
             :inert="sessionTucked || undefined"
@@ -2218,7 +2256,7 @@ onUnmounted(() => {
             v-if="showHelperStack && !stackedLayout"
             data-lm
             class="group relative flex w-1.5 shrink-0 cursor-col-resize justify-end"
-            :class="{ 'lm-collapse-w': sessionCollapsed }"
+            :class="{ 'lm-collapse-w': sessionCollapsed, 'z-20': tuckArmed }"
             data-float-divider
             role="separator"
             aria-orientation="vertical"
@@ -2226,20 +2264,29 @@ onUnmounted(() => {
             @mousedown="onMainDividerMouseDown"
             @dblclick="onMainDividerDblClick"
           >
+            <!-- Armed (design.md §6 "Tucking the session away"): the mockup's line, 2px wide and 2px into the
+                 6px hit area, and an accent-soft halo 6px beyond each side. The divider is lifted to z-20 so the
+                 halo shows above both the helper pane (a later sibling) and the session scrim (z-10). -->
+            <template v-if="tuckArmed">
+              <div
+                class="pointer-events-none absolute inset-y-0 -inset-x-1.5 bg-accent-soft"
+                data-test="session-tuck-halo"
+              />
+              <div
+                class="pointer-events-none absolute inset-y-0 left-0.5 w-0.5 bg-accent"
+                data-test="session-tuck-line"
+              />
+            </template>
             <div
-              v-if="tuckArmed"
-              class="pointer-events-none absolute inset-y-0 -inset-x-1.5 bg-accent-soft"
-            />
-            <div
-              class="relative h-full transition-colors"
-              :class="tuckArmed ? 'w-0.5 bg-accent' : 'w-px bg-border-2 group-hover:bg-accent-line'"
+              v-else
+              class="relative h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line"
             />
           </div>
           <div
             v-else-if="showHelperStack"
             data-lm
             class="group relative flex h-1.5 shrink-0 cursor-row-resize items-end"
-            :class="{ 'lm-collapse-h': sessionCollapsed }"
+            :class="{ 'lm-collapse-h': sessionCollapsed, 'z-20': tuckArmed }"
             data-float-divider
             role="separator"
             aria-orientation="horizontal"
@@ -2247,13 +2294,19 @@ onUnmounted(() => {
             @mousedown="onMainDividerMouseDown"
             @dblclick="onMainDividerDblClick"
           >
+            <template v-if="tuckArmed">
+              <div
+                class="pointer-events-none absolute inset-x-0 -inset-y-1.5 bg-accent-soft"
+                data-test="session-tuck-halo"
+              />
+              <div
+                class="pointer-events-none absolute inset-x-0 top-0.5 h-0.5 bg-accent"
+                data-test="session-tuck-line"
+              />
+            </template>
             <div
-              v-if="tuckArmed"
-              class="pointer-events-none absolute inset-x-0 -inset-y-1.5 bg-accent-soft"
-            />
-            <div
-              class="relative w-full transition-colors"
-              :class="tuckArmed ? 'h-0.5 bg-accent' : 'h-px bg-border-2 group-hover:bg-accent-line'"
+              v-else
+              class="relative h-px w-full bg-border-2 transition-colors group-hover:bg-accent-line"
             />
           </div>
           <div
