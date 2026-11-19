@@ -4526,6 +4526,68 @@ hides is the **Expand hides** setting.
 - **Browser panes.** A native view cannot follow the animation, so it is swapped for the JPEG
   stand-in below for the whole motion (see §7 "Layout motion").
 
+#### Tucking the session away (T790)
+
+The split is clamped to [0.4, 0.8] for a normal drag (above). **Tucking** is the stage beyond the
+floor: the operator gives the whole main area to the helper stack (a guided walk next to a browser
+pane on a CMS) and a thin **edge strip** keeps the session one gesture away. The approved mockup is
+`docs/design/T790-session-tuck/` (screens `split-side`, `split-stacked`).
+
+- **Resistance, then arm.** Dragging the divider toward the session stops at the 0.4 floor. Pulling
+  **80px** further (`SESSION_TUCK_ARM_PX`, measured on the drag axis: X side by side, Y stacked) **arms**
+  the tuck. Armed: the divider turns `--accent` and widens from 1px to **2px** with an `--accent-soft`
+  halo 6px each side; the session area dims under a `--scrim` layer carrying a centred hint chip
+  (`--surface-2`, `--accent-line` border, `--radius`, `--shadow-pop`, a chevron in `--accent`):
+  "Release to tuck the session away"; a **dashed `--accent-line` marker** with a small `--accent` tag
+  ("40% · session floor") shows where the floor is. Releasing while armed tucks the session;
+  releasing earlier (or pulling back under 80px) leaves the ratio at the floor, 0.4. The 80px is a
+  constant in `lib/session-tuck.ts`; the [0.4, 0.8] clamp of a normal drag is unchanged.
+- **Tucked.** The session area collapses to zero along the split axis (the T628 `.lm-collapse`
+  mechanism, §7 "Layout motion") and the helper stack takes the whole main area. Nothing is unmounted:
+  the main terminal keeps its PTY and its scrollback, and its host keeps the pixel size it had (the
+  T628 `pinnedTerminal` pin, now also held while tucked) so Claude Code never reflows to two columns.
+  Restoring shows the scrollback intact.
+- **Helper layout while tucked (D-1).** The helper panes lay out **side by side** (a row), in either
+  orientation; side by side is the new case, stacked already lays its panes out in a row. Restoring
+  the session brings the normal arrangement back.
+- **The edge strip.** Where the session was, a strip stays (`role="button"`, `tabindex="0"`,
+  `data-test="session-tuck-strip"`, `aria-label` = "Show session {name}"). Side by side it is a
+  vertical strip on the left edge of the main row; stacked it is a horizontal strip along the top.
+  - **Rest:** **14px** thick, `--sidebar` fill, a 1px `--border` edge toward the helper stack, the
+    session's **state dot** (6px, the Session status table colours) at the top/start, three 2px
+    `--text-disabled` grip dots centred. Cursor `col-resize` (side by side) / `row-resize` (stacked).
+  - **Hover and keyboard focus:** widens to **20px** (`--dur`, `--ease`; `background` too), fill
+    `--surface-2`, edge `--accent-line`; the grip gives way to a chevron (`--text-2`, 12px, pointing at
+    the area it opens) and a **chip** appears beside the strip: `--surface-2`, `--border-2`, `--radius`,
+    `--shadow-pop`, 8px 10px padding, at most 280px wide, offset 8px from the strip. The chip shows the
+    session name (12px, 500), its state in plain words (11px, `--text-3`), the hint "Click or drag to
+    bring it back" (11px, `--text-2`) and the chord as `<kbd>` caps (10px mono).
+  - **Needs you** (the session is `needs-input`): fill `--warning-soft`, edge `--warning-line`, held at
+    20px; the dot is `--warning` and blinks with the existing `anim-attention-dot` (`attention-blink`
+    1.2s); the grip is replaced by a vertical "Needs you" tag (10px, 600, uppercase, 0.06em, `--warning`;
+    horizontal on the stacked strip) so it reads from across the room. The chip's dot turns `--warning`
+    and its state reads "Waiting for your approval". Under `prefers-reduced-motion` the dot stays still.
+  - **Gestures.** A click, Enter or Space **restores at exactly 0.4** and the helper stack adapts.
+    Pressing and dragging the strip restores as soon as the pointer moves 4px and then follows the
+    pointer, the ratio clamped to [0.4, 0.8] and no more tucking until the next mousedown on the divider.
+- **No auto-restore on attention.** A permission request never opens the session: the strip's dot,
+  its tag and the Approval Inbox carry it.
+- **Other ways back.** `session.toggleTuck` (group Views, `Ctrl+Shift+J` / `⌘⇧J`, in the command
+  palette as "Show or tuck the session") toggles the state with the keyboard. Closing the last helper
+  pane restores the session at once: an empty main area is never left on screen. While a pane is
+  expanded to the window (T628) the chord, like `⌘⇧M`, leaves the expanded view first and does nothing
+  else.
+- **State.** Per worktree, in memory, never written to `helpers.json`: switching session or worktree
+  never carries it elsewhere, and a restart starts with the session shown. It is independent of
+  maximize (a maximized pane stays maximized inside the tucked stack) and of expand to window: while a
+  pane is expanded the strip collapses with the rest of the session area and comes back, still tucked,
+  when the expanded view ends. A tuck needs a visible helper stack: with no pane (or a takeover that
+  does not host the stack) the area is simply shown.
+- **Motion.** Tucking and restoring are layout state changes, so they raise the layout-motion flag
+  (§7 "Layout motion"): the session area eases to zero and back over `--dur-slow` with `--ease`; the
+  strip's own widening uses `--dur`. The drag itself never animates, and `prefers-reduced-motion`
+  snaps it all.
+
 #### Pane focus (T486 U5b)
 
 The main terminal and every helper pane are **focus regions**. Each root carries
