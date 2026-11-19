@@ -34,7 +34,7 @@
       }
       .overflow-list {
         top: 23px;
-        right: 70px; /* no token: anchored under the +4 button */
+        right: 70px; /* no token: anchored under the +N button */
         min-width: 220px;
       }
     </style>
@@ -225,7 +225,9 @@
         </span>
       </header>
 
-      <!-- overflow: nine tabs; inactive ones collapse to their icon, the rest go behind +4 -->
+      <!-- overflow: eight tabs (the cap). Icons mode keeps the active tab and the first k inactive ones,
+       k = max(0, floor((W - 36 - 168) / 28)); at 360px that is 2 and the other 5 go behind +5.
+       A pane of 480px or more fits all eight as icons and shows no +N. -->
       <header class="ph has-tabs" data-dsqa-part="header" data-show="overflow overflow-list">
         <div class="tabs" data-dsqa-part="tab-strip">
           <div class="tab icon" title="example-web · Dashboard">
@@ -240,20 +242,29 @@
               ><svg class="i s10"><use href="#i-x" /></svg
             ></span>
           </div>
-          <div class="tab icon" title="Inbox (3) · Mail">
+          <div class="tab icon ovf" title="Inbox (3) · Mail">
             <span class="fav mail">M</span><span class="t">Inbox (3) · Mail</span>
           </div>
-          <div class="tab icon" title="portal · Login">
+          <div class="tab icon ovf" title="portal · Login">
             <span class="fav local">p</span><span class="t">portal · Login</span>
+          </div>
+          <div class="tab icon ovf" title="Docs · Webhooks">
+            <span class="fav ext">D</span><span class="t">Docs · Webhooks</span>
+          </div>
+          <div class="tab icon ovf" title="api-gateway · Health">
+            <span class="fav local">a</span><span class="t">api-gateway · Health</span>
+          </div>
+          <div class="tab icon ovf" title="api-gateway · Logs">
+            <span class="fav local">a</span><span class="t">api-gateway · Logs</span>
           </div>
           <button
             class="more"
             type="button"
-            title="4 more tabs"
+            title="5 more tabs"
             data-goto="browser-pane?state=overflow-list"
             data-dsqa-part="overflow-button"
           >
-            +4<svg class="i s10"><use href="#i-down" /></svg>
+            +5<svg class="i s10"><use href="#i-down" /></svg>
           </button>
           <button class="ib newtab" type="button" title="New tab (Ctrl+T)">
             <svg class="i"><use href="#i-plus" /></svg>
@@ -581,12 +592,8 @@
         <div class="mi" data-goto="browser-pane?state=overflow">
           <span class="fav local">p</span><span class="t">portal · Login</span>
         </div>
-        <hr />
         <div class="mi" data-goto="browser-pane?state=overflow">
           <span class="fav ext">D</span><span class="t">Docs · Webhooks</span>
-        </div>
-        <div class="mi" data-goto="browser-pane?state=overflow">
-          <span class="fav ext">D</span><span class="t">Docs · Rate limits</span>
         </div>
         <div class="mi" data-goto="browser-pane?state=overflow">
           <span class="fav local">a</span><span class="t">api-gateway · Health</span>

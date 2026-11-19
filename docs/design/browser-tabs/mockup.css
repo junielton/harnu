@@ -652,15 +652,17 @@ svg.i.err-ic {
   border-color: var(--color-accent);
   color: var(--color-accent-ink);
 }
-/* a wide pane has room for short titles even in overflow */
+/* overflow (icons mode, 8 tabs): narrow panes keep active + first 2 inactive and show +N;
+   a pane of 480px or more fits all eight icons and has no +N (spec Overflow table and k rule) */
+.tab.ovf {
+  display: none;
+}
 @container (min-width: 480px) {
-  .tab.icon {
-    flex: 0 1 112px; /* no token: compressed tab width */
-    padding: 0 4px 0 8px;
-    justify-content: flex-start;
+  .tab.ovf {
+    display: flex;
   }
-  .tab.icon .t {
-    display: block;
+  .more {
+    display: none;
   }
 }
 
