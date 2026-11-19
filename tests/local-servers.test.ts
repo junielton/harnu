@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { buildLocalServers, type Listener } from '../src/main/browser/local-servers'
+import { TerminalRegistry } from '../src/main/terminal-registry'
 
 const FOLDER = '/home/user/org/proj/www'
 
@@ -125,5 +126,37 @@ describe('docker and terminals', () => {
       }
     })
     expect(rows).toEqual([{ name: 'api-gateway', url: 'http://localhost:8080', source: 'docker' }])
+  })
+})
+
+describe('the terminal registry accessor', () => {
+  const reg = (): TerminalRegistry => {
+    const r = new TerminalRegistry(() => 1000)
+    const base = { origin: 'operator' as const, size: { cols: 80, rows: 24 } }
+    r.register({ ...base, terminalId: 'h-a', ptyId: 'p-a', folder: FOLDER, shellPid: 4100 })
+    r.register({ ...base, terminalId: 'h-b', ptyId: 'p-b', folder: FOLDER, shellPid: 4200 })
+    r.register({
+      ...base,
+      terminalId: 'h-c',
+      ptyId: 'p-c',
+      folder: '/home/user/org/other/www',
+      shellPid: 4300
+    })
+    r.register({ ...base, terminalId: 'h-d', ptyId: 'p-d', folder: FOLDER })
+    return r
+  }
+
+  it('lists the folder’s live terminals with their shell pid', () => {
+    expect(reg().listTerminalsByFolder(FOLDER)).toEqual([
+      { terminalId: 'h-a', shellPid: 4100 },
+      { terminalId: 'h-b', shellPid: 4200 }
+    ])
+  })
+
+  it('leaves out an exited terminal and one whose pid is not known', () => {
+    const r = reg()
+    r.markExited('p-b', 0)
+    expect(r.listTerminalsByFolder(FOLDER)).toEqual([{ terminalId: 'h-a', shellPid: 4100 }])
+    expect(r.listTerminalsByFolder('/nowhere')).toEqual([])
   })
 })
