@@ -2825,6 +2825,16 @@ const api = {
   /** "Reload when it is up" on an error tab: `on` starts the TCP poll of its local origin, `false` cancels it. */
   browserTabReloadWhenUp: (paneId: string, tabId: string, on: boolean): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('browser:tab:reload-when-up', { paneId, tabId, on }),
+  /** The start page's "Running in this folder": the folder's Docker and terminal servers (browser-tabs S-5). */
+  browserStartServers: (
+    folder: string
+  ): Promise<Array<{ name: string; url: string; source: string }>> =>
+    ipcRenderer.invoke('browser:start:servers', folder),
+  /** The start page's "Recent": the folder's newest sites, at most 8 (browser-tabs S-5). */
+  browserStartRecent: (
+    folder: string
+  ): Promise<Array<{ title: string; url: string; host: string }>> =>
+    ipcRenderer.invoke('browser:start:recent', folder),
   /** The operator focused this pane's header or address bar: main stamps its `lastFocusedAt` (browser-tabs S-4). */
   browserPaneFocused: (paneId: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('browser:pane:focused', paneId),

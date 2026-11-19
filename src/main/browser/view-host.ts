@@ -122,6 +122,7 @@ import {
   type DiscardReason
 } from './lifecycle'
 import type { BrowserRegistry, TabbedPaneRecord } from './registry'
+import type { Visit } from './recent-sites'
 import type { BrowserNotice, BrowserOverlayRect, BrowserPaneState } from './state-types'
 import {
   addTab,
@@ -180,6 +181,14 @@ export interface ViewHostDeps {
   discardMs?: number
   /** One TCP connect attempt for "Reload when it is up" (S-3). Absent = a real `net.connect`. */
   tcpProbe?(host: string, port: number): Promise<boolean>
+  /**
+   * The start page's Recent list (S-5). `visit` is a main-frame commit of a tab (never an in-page navigation), `title`
+   * a later title of the page at `url`. The sink decides what is kept (`recent-sites.ts`): this host only reports.
+   */
+  recentSites?: {
+    visit(folder: string, visit: Visit): void
+    title(folder: string, url: string, title: string): void
+  }
 }
 
 /** What the view host asks of the page service (`page-service.ts`). */
@@ -495,6 +504,16 @@ export class BrowserViewHost implements BrowserReadHost {
   create(opts: { paneId: string; folder: string; partition: BrowserPartition; url: string }): void {
     const rec = this.deps.registry.get(opts.paneId)
     if (!rec) throw new Error('unknown pane')
+    // An operator pane opened with no address (the Topbar button, Shift+click, Split → Browser) starts on the start
+    // page. An agent pane and a live panel never do (spec R-3).
+    if (
+      rec.openedBy === 'operator' &&
+      !rec.pagePath &&
+      (opts.url === '' || opts.url === 'about:blank')
+    ) {
+      const first = rec.tabs.find((t) => t.tabId === rec.activeTabId)
+      if (first) first.hostView = 'start'
+    }
     this.createTabView(rec, rec.activeTabId, opts.url, { attach: true })
   }
 
@@ -2408,7 +2427,10 @@ export class BrowserViewHost implements BrowserReadHost {
       e.loading = false
       this.publish(e)
     })
-    wc.on('page-title-updated', () => this.publish(e))
+    wc.on('page-title-updated', (_ev, title: string) => {
+      if (rec()?.openedBy === 'operator') this.deps.recentSites?.title(e.folder, wc.getURL(), title)
+      this.publish(e)
+    })
     wc.on('page-favicon-updated', (_ev, favicons: string[]) => {
       e.favicon = Array.isArray(favicons) && typeof favicons[0] === 'string' ? favicons[0] : null
       this.publish(e)
@@ -2434,7 +2456,13 @@ export class BrowserViewHost implements BrowserReadHost {
           this.showLoadError(e, normalizeNetError(errorDescription), url)
       }
     )
-    wc.on('did-navigate', (_ev, url) => {
+    wc.on('did-navigate', (_ev, url, httpResponseCode: number) => {
+      this.deps.recentSites?.visit(e.folder, {
+        url,
+        title: wc.getTitle(),
+        status: httpResponseCode,
+        openedBy: rec()?.openedBy === 'operator' ? 'operator' : 'agent'
+      })
       this.showPage(e, url)
       e.inputState = nextInputReadyState(e.inputState, {
         host: hostOf(url),

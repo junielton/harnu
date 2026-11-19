@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { mkdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { join } from 'node:path'
@@ -31,6 +31,12 @@ import { openPaneUrls } from './pane-urls'
 import type { BrowserReadDeps } from './read-verbs'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import { resolveDiscardMs } from './lifecycle'
+import { getContainersService } from '../containers/containers-ipc'
+import { terminalRegistry } from '../terminal-registry'
+import { normalizePath as normalizeFolderPath } from '../user-projects'
+import { buildLocalServers, type LocalServerRow, type LocalServerStack } from './local-servers'
+import { listenersFor, realProcIo, realRunCommand } from './local-servers-shell'
+import { createRecentStore, topRecent, type RecentStore } from './recent-sites'
 import { runRestore } from './restore-run'
 import { moveTabToNewPane } from './tabs'
 import type {
@@ -121,6 +127,86 @@ function browserPrefs(): BrowserPrefsStore {
     }
   })
   return prefsStore
+}
+
+/** The start page's Recent list, `<userData>/browser-recent.json`. Created on first use. */
+let recentStore: RecentStore | null = null
+function recentSites(): RecentStore {
+  if (recentStore) return recentStore
+  const file = join(app.getPath('userData'), 'browser-recent.json')
+  recentStore = createRecentStore({
+    now: () => Date.now(),
+    io: {
+      read: async () => {
+        try {
+          return await readFile(file, 'utf8')
+        } catch {
+          return null
+        }
+      },
+      write: async (text) => {
+        const tmp = `${file}.${process.pid}.tmp`
+        await writeFile(tmp, text, 'utf8')
+        await rename(tmp, file)
+      }
+    }
+  })
+  return recentStore
+}
+
+/** "Recent" for the start page of a pane in `folder`: its newest sites, at most 8 (browser-tabs S-5). */
+export async function startRecentFor(
+  folder: string
+): Promise<Array<{ title: string; url: string; host: string }>> {
+  return topRecent(await recentSites().list(folder)).map(({ title, url, host }) => ({
+    title,
+    url,
+    host
+  }))
+}
+
+/** The running containers of `folder` with published host ports, one entry each (browser-tabs S-5, D-5). */
+async function dockerStacksOf(folder: string): Promise<LocalServerStack[]> {
+  const snap = getContainersService()?.snapshot()
+  if (!snap || !snap.dockerAvailable) return []
+  const out: LocalServerStack[] = []
+  for (const stack of snap.stacks) {
+    const at = stack.attribution.folderPath ?? stack.attribution.path
+    if (
+      at === null ||
+      (at !== folder && (await normalizeFolderPath(at).catch(() => at)) !== folder)
+    ) {
+      continue
+    }
+    for (const c of stack.containers) {
+      if (c.running && c.ports.length > 0) {
+        out.push({ folder, name: c.service ?? c.name, hostPorts: c.ports })
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * "Running in this folder" for the start page of a pane in `folder` (browser-tabs S-5, D-5). The folder is compared in
+ * its canonical form, the one the terminal registry and the containers scan hold it in.
+ */
+export async function startServersFor(folder: string): Promise<LocalServerRow[]> {
+  const canonical = await normalizeFolderPath(folder).catch(() => folder)
+  return buildLocalServers({
+    folder: canonical,
+    platform: process.platform,
+    stacks: await dockerStacksOf(canonical),
+    terminals: terminalRegistry
+      .listTerminalsByFolder(canonical)
+      .map((t) => ({ folder: canonical, shellPid: t.shellPid })),
+    listeners: (pids) =>
+      listenersFor(process.platform, pids, {
+        procIo: realProcIo,
+        runCommand: realRunCommand,
+        ownPid: process.pid
+      })
+  })
 }
 
 let mainWindowGetter: (() => BrowserWindow | null) | null = null
@@ -214,7 +300,18 @@ export function getBrowserHost(): BrowserViewHost {
     // A closed pane's pins go with it; a discarded one keeps them (spec §10.1).
     onPaneClosed: (paneId) => getOverlayBridge().forget(paneId),
     onViewDiscarded: (paneId) => getOverlayBridge().onViewDiscarded(paneId),
-    discardMs: resolveDiscardMs(process.env, app.isPackaged)
+    discardMs: resolveDiscardMs(process.env, app.isPackaged),
+    // The start page's Recent list: a committed navigation of an operator tab, then its title (S-5).
+    recentSites: {
+      visit: (folder, visit) =>
+        void recentSites()
+          .record(folder, visit)
+          .catch(() => undefined),
+      title: (folder, url, title) =>
+        void recentSites()
+          .setTitle(folder, url, title)
+          .catch(() => undefined)
+    }
   })
   // A lease that starts or ends repaints the pane's chip (display only).
   browserLeases.onChange((paneId) => host?.refresh(paneId))

@@ -243,6 +243,48 @@ describe('start transitions', () => {
   })
 })
 
+describe('a pane opened with no address (browser-tabs S-5, AC-24)', () => {
+  const open = (
+    r: ReturnType<typeof rig>,
+    paneId: string,
+    openedBy: 'operator' | 'agent',
+    url: string
+  ) => {
+    r.registry.add({
+      paneId,
+      folder: FOLDER,
+      name: 'browser',
+      openedBy,
+      partition: openedBy,
+      ownerSessionId: null,
+      createdAt: 1,
+      lastActiveAt: 1,
+      seenHosts: new Set<string>(),
+      flagged: null
+    } as never)
+    r.host.create({ paneId, folder: FOLDER, partition: openedBy, url })
+    r.host.applyBounds(paneId, RECT, true)
+    return r.registry.get(paneId)!.activeTabId
+  }
+
+  it('an operator pane opened with no address starts on the start page', () => {
+    const r = rig()
+    const t = open(r, 'bp-1', 'operator', 'about:blank')
+    expect(r.tabState('bp-1', t).hostView).toBe('start')
+    expect(hostPlaceholderOf(r.tabState('bp-1', t))).toBe('start')
+    expect(r.viewOf('bp-1', t).getVisible()).toBe(false)
+  })
+
+  it('an operator pane opened with an address is a page; an agent pane with none is a page too', () => {
+    const r = rig()
+    const t1 = open(r, 'bp-1', 'operator', 'https://a.test/')
+    expect(r.tabState('bp-1', t1).hostView).toBe('page')
+    const t2 = open(r, 'bp-2', 'agent', 'about:blank')
+    expect(r.tabState('bp-2', t2).hostView).toBe('page')
+    expect(r.viewOf('bp-2', t2).getVisible()).toBe(true)
+  })
+})
+
 describe('restore placeholders', () => {
   const restored = (tabs: unknown[], activeTabId: string, openedBy = 'operator') => {
     const r = rig()
@@ -490,16 +532,28 @@ describe('renderer placeholders: the pane host', () => {
     return { w, browser, calls, flushPromises }
   }
 
-  it('a start tab draws an empty bg host and the address field has the focus', async () => {
+  it('a start tab draws the start page on the bg host and the address field has the focus', async () => {
     const { w } = await mountPane(
       baseState({ tabs: [tabRow({ hostView: 'start', url: 'about:blank' })] })
     )
     const host = w.get('[data-testid="browser-start-placeholder"]')
-    expect(host.element.textContent?.trim()).toBe('')
+    // S-3 drew an empty host here; S-5 puts the start page in it (tests/browser-start-page.test.ts).
+    expect(host.find('[data-testid="browser-start-page"]').exists()).toBe(true)
     expect(host.classes()).toContain('bg-bg')
     expect(w.find('[data-testid="browser-load-error"]').exists()).toBe(false)
     const input = document.activeElement as HTMLElement | null
     expect(input?.tagName).toBe('INPUT')
+    w.unmount()
+  })
+
+  it('a single start tab titles its header "New tab", not the blank page it holds', async () => {
+    const { w } = await mountPane(
+      baseState({
+        title: 'about:blank',
+        tabs: [tabRow({ hostView: 'start', url: 'about:blank', title: 'about:blank' })]
+      })
+    )
+    expect(w.get('[data-testid="browser-title"]').text()).toBe('New tab')
     w.unmount()
   })
 

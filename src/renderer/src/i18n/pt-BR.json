@@ -5224,7 +5224,7 @@
     "reload": "Recarregar",
     "stop": "Parar",
     "address": "Endereço",
-    "addressPlaceholder": "Digite um endereço",
+    "addressPlaceholder": "Digite um endereço e pressione Enter",
     "pauseAgent": "Pausar o agente por 10 min",
     "resumeAgent": "Retomar o agente",
     "devtools": "Abrir DevTools",
@@ -5301,6 +5301,10 @@
     "noticeDownloaded": "{name} salvo",
     "noticeDownloadCancelled": "Download cancelado",
     "noticeDownloadFailed": "O download falhou",
+    "start": {
+      "running": "Rodando nesta pasta",
+      "recent": "Recentes"
+    },
     "loadError": {
       "reload": "Recarregar",
       "reloadWhenUp": "Recarregar quando estiver no ar",
