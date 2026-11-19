@@ -504,6 +504,17 @@ describe('renderer placeholders: the pane host', () => {
     w.unmount()
   })
 
+  it('a single start tab titles its header "New tab", not the blank page it holds', async () => {
+    const { w } = await mountPane(
+      baseState({
+        title: 'about:blank',
+        tabs: [tabRow({ hostView: 'start', url: 'about:blank', title: 'about:blank' })]
+      })
+    )
+    expect(w.get('[data-testid="browser-title"]').text()).toBe('New tab')
+    w.unmount()
+  })
+
   it('a page tab draws neither placeholder', async () => {
     const { w } = await mountPane(baseState({ tabs: [tabRow({ url: 'https://a.test/' })] }))
     expect(w.find('[data-testid="browser-start-placeholder"]').exists()).toBe(false)
