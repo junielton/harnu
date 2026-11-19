@@ -4577,6 +4577,29 @@ pane on a CMS) and a thin **edge strip** keeps the session one gesture away. The
   - **Gestures.** A click, Enter or Space **restores at exactly 0.4** and the helper stack adapts.
     Pressing and dragging the strip restores as soon as the pointer moves 4px and then follows the
     pointer, the ratio clamped to [0.4, 0.8] and no more tucking until the next mousedown on the divider.
+- **Floating panels mode (T790 delta 2, `:root[data-floating='on']` only).** The classic strip above stays
+  exactly as approved; with Floating panels on (§6 "Floating panels layout") the strip is **its own island**
+  between the sidebar and the helper stack instead of a flush 14px column:
+  - **Island.** A bar with `data-island="tuck-strip"`: **4px** wide (4px tall when stacked), `--float-radius`
+    corners, no border (a 1px border would leave 2px of colour), full height of the row so it has the same
+    gap to the canvas edge top and bottom as the other islands. Next to the helper stack it keeps
+    `--float-gap`: the strip's layout box is `bar + --float-gap` (8px at the default tokens), so the gap is
+    the strip's own and no divider is needed (the main divider is collapsed while tucked).
+  - **Hit area.** Unchanged: at least **14px** across the axis (`--tuck-hit`), the whole row long. The extra
+    reach is invisible: a transparent `::before` on the strip extends the box toward the helper stack, so
+    the bar and the gaps are exactly the island's and the target is no smaller than in classic mode.
+  - **State on the bar.** The 6px dot does not fit, so the **bar is the dot**: `--color-text-4` idle,
+    `--color-green` working, `--color-red` failed or stuck, and **needs-you turns the whole bar
+    `--color-warning` with `anim-attention-dot`** (`attention-blink`, still under reduced motion). The grip,
+    the dot and the vertical "Needs you" tag are not drawn: a tag does not fit a 4px island without breaking
+    the gaps, so the colour, the blink and the hover chip carry it.
+  - **Hover and focus.** The bar widens to **10px** (`--tuck-bar-w-hover`; the box grows with it, the gaps
+    stay) over `--dur` / `--ease`, shows the chevron (`--color-bg`, 12px) and the same chip (name, state,
+    hint, chord).
+  - **Tokens and sizes.** Colours and radius are tokens; the three sizes (`--tuck-bar-w: 4px`,
+    `--tuck-bar-w-hover: 10px`, `--tuck-hit: 14px`) are declared once in the floating block of `main.css`
+    and nowhere else. Every rule starts with `:root[data-floating='on']`, so with the layout off no pixel
+    changes.
 - **No auto-restore on attention.** A permission request never opens the session: the strip's dot,
   its tag and the Approval Inbox carry it.
 - **Other ways back.** `session.toggleTuck` (group Views, `Ctrl+Shift+J` / `⌘⇧J`, in the command
