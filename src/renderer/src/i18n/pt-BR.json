@@ -5205,6 +5205,7 @@
       "strip": "Abas",
       "close": "Fechar aba",
       "closeNamed": "Fechar {title}",
+      "agentDriving": "O agente está operando esta aba",
       "more": "Mais {count} abas",
       "moreList": "Todas as abas",
       "open": "aberta",
@@ -5254,7 +5255,9 @@
       "reading": "lendo",
       "driving": "operando",
       "pausedLabel": "Agente pausado",
-      "connectedPrefix": "Conectado a"
+      "connectedPrefix": "Conectado a",
+      "drivingTab": "Operando esta aba · {host}",
+      "drivingTabBare": "Operando esta aba"
     },
     "notice": {
       "blocked": "Bloqueado: endereços {scheme}: não podem ser abertos",

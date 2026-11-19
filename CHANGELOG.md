@@ -12,6 +12,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-19
 
+### Changed
+
+- **The agent connection is now one small pulsing icon instead of a text pill, in browser panes and in terminal headers.** Point at it (or Tab to it) and a tip names the session and says what it is doing: "Driving this tab · localhost:8080", "Reading" or "Typing". The unplug button stays next to it, and **Paused** and **Disconnected** keep their text pills. In a pane with tabs, the tab the agent is driving shows an accent dot in place of its page icon, also when the tab is collapsed to its icon.
+- **Everything in a browser pane's header now sits on one centre line**, whether the pane has one tab, several, a `+N` overflow button or an agent connected, and its buttons use the same corner radius as the rest of the pane.
+
 ### Added
 
 - **A new browser tab now opens on a start page instead of an empty one.** With the address field ready for you to type in, it lists **Running in this folder** (the published ports of the folder's Docker containers and the ports that programs started in its Harnu terminals are listening on, each named and marked with where it comes from; a server reachable only on your network address shows as `address:port`) and **Recent** (the last 8 sites you opened in the folder's browser panes, newest first, with their title and address). Click a row or a tile and it opens in the same tab. A section with nothing to show is left out. Recent keeps up to 50 sites per folder in a file in Harnu's data folder, without the query or fragment, with long token-like pieces of an address hidden and sign-in or password-reset style addresses never kept; a session's own pane never adds to it. Finding what a terminal started works on Linux and macOS; on Windows only Docker servers show. Documented in `docs/user/browser-pane.md`.

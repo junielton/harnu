@@ -50,6 +50,8 @@ import { browserPayload, useHelpersStore, type AnyHelperPane } from '../stores/h
 import { useBrowserStore } from '../stores/browser'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
+import AgentConnectionChip from './AgentConnectionChip.vue'
+import { chipPresentation, sentenceCase, type IconModel } from '../lib/agent-chip'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { createFrameScheduler } from '../lib/frame-scheduler'
 import { sessionTitle } from '../lib/session-label'
@@ -255,6 +257,32 @@ const chipLabel = computed(() => {
   return t('browserPane.chip.connectedToAgent')
 })
 const wordText = computed(() => (chip.value?.word ? t(`browserPane.chip.${chip.value.word}`) : ''))
+
+/** The compact icon's words (design.md "Compact agent icon"): the head names the session, the second line the verb. */
+const iconModel = computed<IconModel | null>(() => {
+  const c = chip.value
+  if (!c || chipPresentation(c.kind) !== 'icon') return null
+  const head =
+    c.kind === 'connected'
+      ? t('browserPane.chip.connectedTo', { session: `‹${ownerTitle.value}›` })
+      : chipLabel.value
+  let detail = ''
+  if (c.word === 'driving') {
+    const host = splitAddress(state.value.url).host
+    detail = host
+      ? t('browserPane.chip.drivingTab', { host })
+      : t('browserPane.chip.drivingTabBare')
+  } else if (c.word === 'reading') {
+    detail = sentenceCase(wordText.value)
+  }
+  return {
+    head,
+    detail,
+    live: wordText.value,
+    clickSessionId: null,
+    disconnectable: c.disconnectable
+  }
+})
 
 async function onDisconnect(): Promise<void> {
   const ok = await browser.disconnect(paneId)
@@ -862,8 +890,10 @@ watch(isFrozen, async (frozen) => {
         @menu="onTabMenu"
       />
 
+      <AgentConnectionChip v-if="iconModel" :model="iconModel" @disconnect="onDisconnect" />
+      <!-- Paused and Disconnected keep their text pill (design.md "Connection chip"). -->
       <span
-        v-if="chip"
+        v-else-if="chip"
         class="flex min-w-0 shrink items-center gap-1"
         :class="chip.kind === 'paused' ? '@max-[300px]:hidden' : ''"
         data-testid="browser-chip"
@@ -874,64 +904,19 @@ watch(isFrozen, async (frozen) => {
           :class="
             chip.kind === 'disconnected'
               ? 'border-red/40 bg-red-soft text-red'
-              : chip.kind === 'paused'
-                ? 'border-warning/30 bg-warning/10 text-warning'
-                : 'border-accent-line bg-accent-soft text-accent'
+              : 'border-warning/30 bg-warning/10 text-warning'
           "
           style="padding: 1px 7px; font-size: 10px"
           :title="chipLabel"
         >
           <span
             class="h-1.5 w-1.5 shrink-0 rounded-full"
-            :class="[
-              chip.kind === 'disconnected'
-                ? 'bg-red'
-                : chip.kind === 'paused'
-                  ? 'bg-warning'
-                  : 'bg-accent',
-              chip.word ? 'anim-pulse-dot anim-pulse-dot--accent' : ''
-            ]"
-            aria-hidden="true"
-          />
-          <Bot
-            v-if="chip.kind === 'connected' || chip.kind === 'connectedAgent'"
-            :size="10"
-            :stroke-width="1.6"
-            class="shrink-0"
+            :class="chip.kind === 'disconnected' ? 'bg-red' : 'bg-warning'"
             aria-hidden="true"
           />
           <!-- Paused: "Agent paused · m:ss", always whole (on a narrow pane the chip moves to the strip below). -->
-          <span
-            v-if="chip.kind === 'paused'"
-            class="min-w-0 truncate"
-            data-testid="browser-chip-label"
-            >{{ chipLabel }}</span
-          >
-          <!-- Connected: the session name is what matters, so "Connected to" gives way first. -->
-          <span
-            v-else-if="chip.kind === 'connected'"
-            class="flex min-w-0 items-baseline"
-            data-testid="browser-chip-label"
-          >
-            <span class="truncate @max-[300px]:hidden" style="flex-shrink: 8"
-              >{{ $t('browserPane.chip.connectedPrefix') }}&nbsp;</span
-            >
-            <span class="flex min-w-0 items-baseline"
-              ><span class="min-w-0 truncate">‹{{ ownerTitle }}</span
-              ><span class="shrink-0">›</span></span
-            >
-          </span>
-          <span
-            v-else
-            class="min-w-0 truncate @max-[180px]:hidden"
-            data-testid="browser-chip-label"
-            >{{ chipLabel }}</span
-          >
-          <span v-if="wordText" class="shrink-0 text-text-3 @max-[180px]:hidden"
-            >· {{ wordText }}</span
-          >
+          <span class="min-w-0 truncate" data-testid="browser-chip-label">{{ chipLabel }}</span>
         </span>
-        <span class="sr-only" aria-live="polite">{{ wordText }}</span>
         <button
           v-if="chip.kind === 'paused'"
           type="button"
@@ -947,7 +932,7 @@ watch(isFrozen, async (frozen) => {
         <button
           v-if="chip.disconnectable"
           type="button"
-          class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded text-text-3 transition-colors hover:bg-surface-2 hover:text-text"
+          class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-sm text-text-3 transition-colors hover:bg-surface-2 hover:text-text"
           :title="$t('browserPane.chip.disconnectHint')"
           :aria-label="$t('browserPane.chip.disconnect')"
           data-testid="browser-disconnect"
@@ -975,7 +960,7 @@ watch(isFrozen, async (frozen) => {
 
       <button
         type="button"
-        class="flex shrink-0 items-center justify-center rounded transition"
+        class="flex shrink-0 items-center justify-center rounded-sm transition"
         :class="
           commentsOff
             ? 'cursor-default text-text-disabled'
@@ -995,7 +980,7 @@ watch(isFrozen, async (frozen) => {
         <MessageSquarePlus :size="12" :stroke-width="1.5" />
       </button>
       <button
-        class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+        class="flex shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
         :title="$t('browserPane.menu')"
         :aria-label="$t('browserPane.menu')"
@@ -1006,7 +991,7 @@ watch(isFrozen, async (frozen) => {
         <MoreHorizontal :size="12" :stroke-width="1.5" />
       </button>
       <button
-        class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
+        class="flex shrink-0 items-center justify-center rounded-sm transition hover:bg-surface-2 hover:text-text"
         :class="isExpanded ? 'text-accent' : 'text-text-3'"
         style="width: 18px; height: 18px"
         data-test="pane-expand"
@@ -1019,7 +1004,7 @@ watch(isFrozen, async (frozen) => {
         <Expand :size="12" :stroke-width="1.5" />
       </button>
       <button
-        class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+        class="flex shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
         :title="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
         :aria-label="isMaximized ? $t('helperPane.restore') : $t('helperPane.maximize')"
@@ -1030,7 +1015,7 @@ watch(isFrozen, async (frozen) => {
         <Maximize2 v-else :size="12" :stroke-width="1.5" />
       </button>
       <button
-        class="-mr-1 flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
+        class="-mr-1 flex shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
         :title="$t('helperPane.close')"
         :aria-label="$t('helperPane.close')"

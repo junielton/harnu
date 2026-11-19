@@ -173,7 +173,8 @@ describe('the shared icon view in the browser header', () => {
     expect(src).toMatch(/import AgentConnectionChip from '\.\/AgentConnectionChip\.vue'/)
     expect(src).toMatch(/<AgentConnectionChip[^>]*:model=/s)
     // The browser no longer paints its own accent pill for a connected agent.
-    expect(src).not.toMatch(/border-accent-line bg-accent-soft text-accent/)
+    expect(src).not.toContain("chip.kind === 'connected'")
+    expect(src).not.toContain('browserPane.chip.connectedPrefix')
   })
 
   it('mounted with the browser words, the view says "Driving this tab · ‹host›" and "Reading"', async () => {

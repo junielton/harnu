@@ -238,7 +238,7 @@ const hostBadge = (tab: BrowserTabState): string => {
   <button
     v-if="tabs.length < 2 && canAdd"
     type="button"
-    class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text disabled:cursor-default disabled:text-text-disabled disabled:hover:bg-transparent"
+    class="flex shrink-0 items-center justify-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text disabled:cursor-default disabled:text-text-disabled disabled:hover:bg-transparent"
     style="width: 18px; height: 18px"
     :disabled="atLimit"
     :title="newTitle"
@@ -304,7 +304,10 @@ const hostBadge = (tab: BrowserTabState): string => {
           v-if="tab.agentActive"
           class="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
           style="box-shadow: 0 0 0 3px var(--color-accent-soft)"
-          aria-hidden="true"
+          role="img"
+          :title="$t('browserPane.tabs.agentDriving')"
+          :aria-label="$t('browserPane.tabs.agentDriving')"
+          data-testid="browser-tab-agent-dot"
         />
         <Globe
           v-else-if="tab.hostView === 'start'"
@@ -369,7 +372,7 @@ const hostBadge = (tab: BrowserTabState): string => {
     <button
       v-if="canAdd"
       type="button"
-      class="mx-1 flex shrink-0 items-center justify-center self-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text disabled:cursor-default disabled:text-text-disabled disabled:hover:bg-transparent"
+      class="mx-1 flex shrink-0 items-center justify-center self-center rounded-sm text-text-3 transition hover:bg-surface-2 hover:text-text disabled:cursor-default disabled:text-text-disabled disabled:hover:bg-transparent"
       style="width: 18px; height: 18px"
       :disabled="atLimit"
       :title="newTitle"

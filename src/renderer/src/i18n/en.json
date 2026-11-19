@@ -5205,6 +5205,7 @@
       "strip": "Tabs",
       "close": "Close tab",
       "closeNamed": "Close {title}",
+      "agentDriving": "The agent is driving this tab",
       "more": "{count} more tabs",
       "moreList": "All tabs",
       "open": "open",
@@ -5254,7 +5255,9 @@
       "reading": "reading",
       "driving": "driving",
       "pausedLabel": "Agent paused",
-      "connectedPrefix": "Connected to"
+      "connectedPrefix": "Connected to",
+      "drivingTab": "Driving this tab · {host}",
+      "drivingTabBare": "Driving this tab"
     },
     "notice": {
       "blocked": "Blocked: {scheme}: addresses cannot be opened",
