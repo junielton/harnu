@@ -627,7 +627,8 @@ describe('reload when it is up', () => {
 
   it('a navigation of the tab and closing the tab both stop the wait; "off" cancels', async () => {
     vi.useFakeTimers()
-    const r = rig(async () => false)
+    const probe = vi.fn(async () => false)
+    const r = rig(probe)
     const t1 = r.addPane('bp-1')
     const added = r.host.newTab('bp-1', { url: 'http://localhost:8001/' })
     if (!added.ok) throw new Error('newTab refused')
@@ -646,8 +647,15 @@ describe('reload when it is up', () => {
 
     r.fail('bp-1', REFUSED, 'ERR_CONNECTION_REFUSED', 'http://localhost:8001/', true, t2)
     r.host.reloadWhenUp('bp-1', t2, true)
+    // Left running, the poll reaches the port every 2 s.
+    await vi.advanceTimersByTimeAsync(RELOAD_WHEN_UP_POLL_MS * 2)
+    const polledWhileOpen = probe.mock.calls.length
+    expect(polledWhileOpen).toBeGreaterThan(0)
     r.host.closeTab('bp-1', t2)
     expect(r.registry.get('bp-1')!.tabs.map((t) => t.tabId)).toEqual([t1])
     expect(r.host.reloadWhenUp('bp-1', t2, true)).toBe(false)
+    // Closing the tab stops the poll: several intervals later the port was not probed again.
+    await vi.advanceTimersByTimeAsync(RELOAD_WHEN_UP_POLL_MS * 5)
+    expect(probe).toHaveBeenCalledTimes(polledWhileOpen)
   })
 })
