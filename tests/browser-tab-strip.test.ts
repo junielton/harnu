@@ -19,6 +19,7 @@ import {
   chooseBrowserTarget,
   lastUsedOperatorPane,
   layoutTabStrip,
+  moreListLeft,
   runTabMenuAction,
   tabMenuState,
   type TabPaneCandidate
@@ -989,6 +990,85 @@ describe('delta 1', () => {
     expect(sent).toContainEqual({
       channel: 'browser:chord',
       payload: { paneId: 'bp-1', chord: 'Cmd+W' }
+    })
+  })
+})
+
+/* ---- delta 3: the narrow strip and the +N list follow the re-approved 8-tab mockup ----------------------- */
+
+describe('delta 3', () => {
+  describe('narrow strip at 360px (strip 314px, W 288)', () => {
+    it('keeps the active tab at 168px and 2 inactive icons, the other 5 behind +5', () => {
+      const t = ids(8)
+      const l = layoutTabStrip(288, t, t[2]!)
+      expect(l.mode).toBe('icons')
+      expect(l.activeWidth).toBe(168)
+      expect(l.inactiveWidth).toBe(28)
+      expect(l.visible).toEqual([t[0], t[1], t[2]])
+      expect(l.overflow).toEqual(t.slice(3))
+      expect(l.overflow).toHaveLength(5)
+    })
+
+    it('k = max(0, floor((W - 40 - 168) / 28)): 2 up to W 291, 3 from W 292', () => {
+      const t = ids(8)
+      const kAt = (w: number): number => layoutTabStrip(w, t, t[7]!).visible.length - 1
+      expect(kAt(263)).toBe(1)
+      expect(kAt(264)).toBe(2)
+      expect(kAt(291)).toBe(2)
+      expect(kAt(292)).toBe(3)
+    })
+  })
+
+  describe('+N button and list', () => {
+    async function mountOverflow() {
+      const { mount } = await import('@vue/test-utils')
+      const { i18n } = await import('../src/renderer/src/i18n')
+      const TabStrip = (await import('../src/renderer/src/components/BrowserTabStrip.vue')).default
+      const t = ids(8)
+      const w = mount(TabStrip, {
+        props: {
+          tabs: t.map((id, i) => tab(id, { active: i === 2 })),
+          activeTabId: t[2]!,
+          canAdd: true,
+          stripWidth: 288
+        },
+        global: { plugins: [i18n] },
+        attachTo: document.body
+      })
+      return w
+    }
+
+    it('+N has no left margin (the mockup draws it flush after the last tab)', async () => {
+      const w = await mountOverflow()
+      const cls = w.get('[data-testid="browser-tab-more"]').classes()
+      expect(cls).not.toContain('mx-1')
+      expect(cls).not.toContain('ml-1')
+      expect(w.get('[data-testid="browser-tab-more"]').text()).toContain('+5')
+      w.unmount()
+    })
+
+    it('+N is drawn plain while its list is open', async () => {
+      const w = await mountOverflow()
+      await w.get('[data-testid="browser-tab-more"]').trigger('click')
+      const btn = w.get('[data-testid="browser-tab-more"]')
+      expect(btn.attributes('aria-expanded')).toBe('true')
+      expect(btn.classes()).not.toContain('bg-surface-2')
+      w.unmount()
+    })
+
+    it('the list has no separator before the first hidden tab', async () => {
+      const w = await mountOverflow()
+      await w.get('[data-testid="browser-tab-more"]').trigger('click')
+      expect(w.findAll('[data-testid="browser-tab-more-list"] [role="separator"]')).toHaveLength(0)
+      expect(w.findAll('[data-testid="browser-tab-more-item"]')).toHaveLength(8)
+      w.unmount()
+    })
+
+    it('the list sits where the mockup puts it: right edge 26px short of the strip, kept inside the pane', () => {
+      // 360px pane: strip 314, list 220 wide -> left 68 (the mockup's `right: 70px` in a 358px frame).
+      expect(moreListLeft(314, 220)).toBe(68)
+      // A strip narrower than the list never pushes it off the pane's left edge.
+      expect(moreListLeft(180, 220)).toBe(4)
     })
   })
 })

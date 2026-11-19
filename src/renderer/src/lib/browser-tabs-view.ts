@@ -18,8 +18,14 @@ export const TAB_FULL_PX = 168
 export const TAB_SHORT_PX = 112
 export const TAB_MIN_SHRINK_PX = 80
 export const TAB_ICON_PX = 28
-/** Room kept for the `+N` button when some tabs do not fit. */
-export const TAB_MORE_PX = 36
+/**
+ * Room kept for the `+N` button when some tabs do not fit: the button is about 35px wide (`+5`, a 10px chevron,
+ * 5px padding each side) and the approved 8-tab mockup, at its 314px strip, keeps the active tab and 2 icons, which
+ * 40 reproduces (the spec's earlier 36 gave 3).
+ */
+export const TAB_MORE_PX = 40
+/** `+` and its 4px side margins: the part of the strip the layout's width leaves out. */
+export const TAB_PLUS_PX = 26
 /** "short" needs a strip wider than this. */
 const SHORT_MIN_STRIP_PX = 480
 
@@ -84,6 +90,15 @@ export function layoutTabStrip(
     visible: all.filter((id) => keep.has(id)),
     overflow: all.filter((id) => !keep.has(id))
   }
+}
+
+/**
+ * Where the `+N` list's left edge sits in the strip: its right edge is {@link TAB_PLUS_PX} short of the strip's right
+ * edge (the approved mockup's anchor), and the list never leaves the strip, 4px from either side.
+ */
+export function moreListLeft(rootWidth: number, listWidth: number): number {
+  const wanted = rootWidth - TAB_PLUS_PX - listWidth
+  return Math.max(4, Math.min(wanted, rootWidth - listWidth - 4))
 }
 
 /* ---- Tab menu (design.md "Tab menu") ------------------------------------------------------------------- */

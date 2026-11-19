@@ -4915,14 +4915,16 @@ chrome adds three things and changes one.
   | shrink | equal width ≥ 80px | equal width ≥ 80px | n × 80 ≤ W                          |
   | icons  | 168px              | 28px, icon only    | 168 + (n − 1) × 28 ≤ W              |
 
-  When none fits, the icons mode applies with **36px reserved for a `+N` button** (mono 10.5px, `--text-2`, 18px
-  high, `padding 0 5px`, `chevron-down` 10px, `--surface-2` on hover and while its list is open, placed before `+`):
-  the strip keeps the active tab and the first k = max(0, ⌊(W − 36 − 168) ÷ 28⌋) inactive tabs in order, and the
-  rest move behind `+N`; the active tab is never moved. An icon-only tab keeps its full title in its native
-  `title`. **`+N` list:** a standard context menu (§6 "Context menu"), `min-width 220px`, anchored under the button,
-  listing every tab in order (favicon 12px + title, 26px rows, a rule where the tabs behind `+N` begin); the active
-  tab is marked with `--text` colour and a mono "open" tag at the right; picking one activates it and closes the
-  list. A narrow pane keeps the list inside it (it never runs past the strip's left edge). It registers with the native-overlay composable.
+  When none fits, the icons mode applies with **40px reserved for a `+N` button** (mono 10.5px, `--text-2`, 18px
+  high, `padding 0 5px`, `chevron-down` 10px, about 35px wide, no margin of its own, `--surface-2` on hover only: it is
+  drawn plain while its list is open, as in the mockup, with `aria-expanded` on it; placed before `+`): the strip
+  keeps the active tab (always 168px) and the first k = max(0, ⌊(W − 40 − 168) ÷ 28⌋) inactive tabs in order, and
+  the rest move behind `+N`; the active tab is never moved. An icon-only tab keeps its full title in its native
+  `title`. **`+N` list:** a standard context menu (§6 "Context menu"), `min-width 220px`, `top` 23px, listing every
+  tab in order (favicon 12px + title, 26px rows, no separator); its right edge sits 26px short of the strip's right
+  edge (the mockup's anchor) and it never leaves the strip (4px from either side); the active tab is marked with
+  `--text` colour and a mono "open" tag at the right; picking one activates it and closes the list. It registers
+  with the native-overlay composable.
 
 - **Tab menu** (right-click a tab; a standard context menu, `--shadow-pop`, anchored at the tab's lower-left, the
   tab keeping its hover look while it is open): **New tab to the right** (`plus`), **Reload** (`rotate-cw`),
