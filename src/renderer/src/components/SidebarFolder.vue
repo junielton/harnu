@@ -942,7 +942,7 @@ function onSelectTeammate(session: Session): void {
               <button
                 v-if="agentRow.kind === 'fold'"
                 type="button"
-                class="agent-agentRow flex w-full items-center text-left text-text-3 transition hover:text-text-2"
+                class="agent-row flex w-full items-center text-left text-text-3 transition hover:text-text-2"
                 data-dsqa="sidebar-agents-done-fold"
                 :aria-expanded="agentRow.expanded"
                 :style="{
@@ -971,7 +971,7 @@ function onSelectTeammate(session: Session): void {
               </button>
               <div
                 v-else
-                class="agent-agentRow flex w-full items-center text-left text-text-2 transition"
+                class="agent-row flex w-full items-center text-left text-text-2 transition"
                 :style="{
                   height: `${metrics.childRowHeight}px`,
                   paddingLeft: `${childPaddingLeft}px`,
