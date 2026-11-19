@@ -4737,7 +4737,11 @@ halo under `prefers-reduced-motion`. **Tip** on hover and on keyboard focus (the
 card, 1px `--border-2`, `--radius`, `--shadow-pop`, `padding 6px 9px`, 11px, `line-height: normal`, one line each: the head in `--accent`
 with a `bot` 10px glyph, "Connected to ‹session›"; below it, in `--text-3`, what the agent is doing when a word is
 live: "Driving this tab · ‹host›", "Reading" or "Typing" (the chip's existing words, capitalised). It opens 5px under
-the icon, right-aligned to it, and registers with the native-overlay composable while it shows. The icon's
+the icon, right-aligned to it (the mockup draws it 20px further left; this rule wins), and registers with the
+native-overlay composable while it shows. It never clips: it is at most the header's width less 8px (longer text
+wraps) and moves right only as far as needed to start inside the header. **Spacing:** the group is the strip, 4px,
+the icon, then Disconnect with no gap; the chip takes back the header's own 6px gap (`-ml-1.5`) and no other
+header child's spacing changes. The icon's
 `aria-label` carries the same text, so the words stay available without hovering. **Disconnect** stays an `unplug`
 button (18×18) beside the icon. **Paused** and **Disconnected** keep their pills, unchanged. The tab whose activity
 word is live shows its accent dot in place of the favicon (see "Tab strip").

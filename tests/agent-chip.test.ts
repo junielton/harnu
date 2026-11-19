@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { readFileSync } from 'node:fs'
+import { nextTick } from 'vue'
 import AgentConnectionChip from '../src/renderer/src/components/AgentConnectionChip.vue'
 import { i18n } from '@renderer/i18n'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
@@ -287,6 +288,7 @@ describe('the tip stays inside the pane (S-7 delta 1)', () => {
     const w = await mountInHeader()
     await w.find('[data-testid="agent-icon"]').trigger('mouseenter')
     await flushPromises()
+    await nextTick() // the placed style reaches the DOM one tick after the measure
     const r = tipBox(w)
     expect(r.left).toBeGreaterThanOrEqual(HEADER.left)
     expect(r.right).toBeLessThanOrEqual(HEADER.left + HEADER.width)
@@ -298,6 +300,7 @@ describe('the tip stays inside the pane (S-7 delta 1)', () => {
     const w = await mountInHeader()
     await w.find('[data-testid="agent-icon"]').trigger('mouseenter')
     await flushPromises()
+    await nextTick()
     const max = parseFloat(
       w
         .find('[data-testid="agent-icon-tip"]')
@@ -313,6 +316,7 @@ describe('the tip stays inside the pane (S-7 delta 1)', () => {
     const w = await mountInHeader()
     await w.find('[data-testid="agent-icon"]').trigger('mouseenter')
     await flushPromises()
+    await nextTick()
     const tip = w.find('[data-testid="agent-icon-tip"]')
     expect(tip.attributes('style') ?? '').not.toMatch(/right:\s*-?[1-9]/)
     expect(tipBox(w).right).toBe(238)

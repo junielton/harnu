@@ -15,6 +15,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Changed
 
 - **The agent connection is now one small pulsing icon instead of a text pill, in browser panes and in terminal headers.** Point at it (or Tab to it) and a tip names the session and says what it is doing: "Driving this tab · localhost:8080", "Reading" or "Typing". The unplug button stays next to it, and **Paused** and **Disconnected** keep their text pills. In a pane with tabs, the tab the agent is driving shows an accent dot in place of its page icon, also when the tab is collapsed to its icon.
+- **The agent icon's tip now always stays inside its pane**, wrapping instead of being cut off at the left edge in a narrow terminal, and the icon sits 4px from the tab strip with its Disconnect button right beside it.
 - **Everything in a browser pane's header now sits on one centre line**, whether the pane has one tab, several, a `+N` overflow button or an agent connected, and its buttons use the same corner radius as the rest of the pane.
 
 ### Added
