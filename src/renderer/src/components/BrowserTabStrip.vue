@@ -109,10 +109,16 @@ const firstHiddenIndex = computed(() => {
 })
 const iconOnly = (tab: BrowserTabState): boolean =>
   layout.value.mode === 'icons' && tab.tabId !== props.activeTabId
-const widthOf = (tab: BrowserTabState): string => {
-  const w = tab.tabId === props.activeTabId ? layout.value.activeWidth : layout.value.inactiveWidth
-  return `${w}px`
-}
+const widthPx = (tab: BrowserTabState): number =>
+  tab.tabId === props.activeTabId ? layout.value.activeWidth : layout.value.inactiveWidth
+const widthOf = (tab: BrowserTabState): string => `${widthPx(tab)}px`
+/**
+ * The tab list is as wide as its tabs together: a flex container sized by its content would measure the tabs'
+ * text, not the widths the layout gives them. It still shrinks when the strip is narrower than that.
+ */
+const listWidth = computed(
+  () => `${visibleTabs.value.reduce((sum, tab) => sum + widthPx(tab), 0)}px`
+)
 
 const atLimit = computed(() => props.tabs.length >= MAX_TABS_PER_PANE)
 const newTitle = computed(() => {
@@ -135,7 +141,8 @@ const onIconError = (tabId: string): void => {
 }
 const faviconOf = (tab: BrowserTabState): TabIcon => {
   const view = tabFaviconView(tab)
-  const letter = (titleOf(tab).charAt(0) || view.host.charAt(0)).toString()
+  // The host's first letter (spec "Tab strip"), the title's only when the address has no host.
+  const letter = view.host.charAt(0) || titleOf(tab).charAt(0)
   return {
     ...view,
     letter,
@@ -254,7 +261,11 @@ const hostBadge = (tab: BrowserTabState): string => {
     data-dsqa-part="tab-strip"
     @keydown="onMenuKeydown"
   >
-    <div class="flex min-w-0 shrink items-stretch">
+    <div
+      class="flex min-w-0 shrink items-stretch"
+      :style="{ width: listWidth }"
+      data-testid="browser-tab-list"
+    >
       <div
         v-for="tab in visibleTabs"
         :key="tab.tabId"
@@ -270,6 +281,7 @@ const hostBadge = (tab: BrowserTabState): string => {
           'group'
         ]"
         :style="{
+          width: widthOf(tab),
           flex: `0 1 ${widthOf(tab)}`,
           minWidth: '28px',
           ...(tab.tabId === activeTabId ? { boxShadow: '0 1px 0 var(--color-bg)' } : {})

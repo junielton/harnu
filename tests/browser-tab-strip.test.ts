@@ -729,6 +729,270 @@ describe('tab chords', () => {
   })
 })
 
+/* ---- delta 1: rendered widths, focus wiring, preventDefault, favicon letter -------------------------- */
+
+describe('delta 1', () => {
+  async function mountStrip(
+    count: number,
+    width: number,
+    activeIndex = 0,
+    over: Partial<BrowserTabState>[] = []
+  ) {
+    const { mount } = await import('@vue/test-utils')
+    const { i18n } = await import('../src/renderer/src/i18n')
+    const TabStrip = (await import('../src/renderer/src/components/BrowserTabStrip.vue')).default
+    const t = ids(count)
+    return mount(TabStrip, {
+      props: {
+        tabs: t.map((id, i) => tab(id, { active: i === activeIndex, ...(over[i] ?? {}) })),
+        activeTabId: t[activeIndex]!,
+        canAdd: true,
+        stripWidth: width
+      },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+  }
+  const widths = (w: Awaited<ReturnType<typeof mountStrip>>): string[] =>
+    w.findAll('[data-testid="browser-tab"]').map((t) => (t.element as HTMLElement).style.width)
+
+  describe('rendered tab widths (AC-14)', () => {
+    it('W 600, 3 tabs: every tab is drawn 168px wide, and + follows the last tab', async () => {
+      const w = await mountStrip(3, 600)
+      expect(widths(w)).toEqual(['168px', '168px', '168px'])
+      const list = w.get('[data-testid="browser-tab-list"]').element as HTMLElement
+      expect(list.style.width).toBe('504px')
+      expect(list.nextElementSibling?.getAttribute('data-testid')).toBe('browser-tab-new')
+      w.unmount()
+    })
+
+    it('W 600, 5 tabs: every tab is drawn 120px wide', async () => {
+      const w = await mountStrip(5, 600)
+      expect(widths(w)).toEqual(Array(5).fill('120px'))
+      w.unmount()
+    })
+
+    it('W 700, 5 tabs: the active tab 168px, the others 112px', async () => {
+      const w = await mountStrip(5, 700, 2)
+      expect(widths(w)).toEqual(['112px', '112px', '168px', '112px', '112px'])
+      w.unmount()
+    })
+
+    it('W 300, 5 tabs: the active tab 168px, the others 28px', async () => {
+      const w = await mountStrip(5, 300, 1)
+      expect(widths(w)).toEqual(['28px', '168px', '28px', '28px', '28px'])
+      w.unmount()
+    })
+  })
+
+  describe('the favicon letter is the host first letter', () => {
+    it('draws the first letter of the host, not of the title', async () => {
+      const w = await mountStrip(2, 600, 0, [
+        { url: 'https://docs.example.com/start', title: 'Zeta guide' },
+        { url: 'http://localhost:5173/', title: 'Alpha' }
+      ])
+      const letters = w
+        .findAll('[data-testid="browser-tab"]')
+        .map((t) => t.find('span[aria-hidden="true"].grid').text())
+      expect(letters).toEqual(['d', 'l'])
+      w.unmount()
+    })
+  })
+
+  describe('the pane chrome', () => {
+    const calls: unknown[][] = []
+    async function pane() {
+      const { createPinia, setActivePinia } = await import('pinia')
+      const { mount, flushPromises } = await import('@vue/test-utils')
+      const { i18n } = await import('../src/renderer/src/i18n')
+      const BrowserPane = (await import('../src/renderer/src/components/BrowserPane.vue')).default
+      const { useBrowserStore } = await import('../src/renderer/src/stores/browser')
+      calls.length = 0
+      const g = globalThis as unknown as { window: { api: unknown }; ResizeObserver: unknown }
+      g.window.api = new Proxy(
+        {},
+        {
+          get:
+            (_t, name: string) =>
+            (...args: unknown[]) => {
+              calls.push([name, ...args])
+              if (name === 'browserTabNew')
+                return Promise.resolve({ ok: true, tabId: 'tab-0000ffff' })
+              return name.startsWith('on') ? () => undefined : Promise.resolve(null)
+            }
+        }
+      )
+      g.ResizeObserver = class {
+        observe(): void {
+          /* the fake pane never resizes */
+        }
+        unobserve(): void {
+          /* nothing observed */
+        }
+        disconnect(): void {
+          /* nothing to release */
+        }
+      }
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const browser = useBrowserStore()
+      const t = ids(2)
+      browser.states = {
+        'bp-ui': {
+          paneId: 'bp-ui',
+          url: 'https://a.test/',
+          title: 'A',
+          loading: false,
+          canGoBack: false,
+          canGoForward: false,
+          origin: 'external',
+          openedBy: 'operator',
+          partition: 'operator',
+          flagged: null,
+          pausedUntil: null,
+          disconnected: false,
+          ownerSessionId: null,
+          notice: null,
+          networkUntil: null,
+          zoom: 1,
+          emulation: {},
+          downloadPrompt: null,
+          pagePath: null,
+          allowNetwork: false,
+          pageFileRemoved: false,
+          discarded: null,
+          tabs: t.map((id, i) => tab(id, { active: i === 0 })),
+          activeTabId: t[0]!,
+          lastFocusedAt: null
+        } as never
+      }
+      const w = mount(BrowserPane, {
+        props: {
+          pane: {
+            id: 'bp-ui',
+            type: 'browser',
+            payload: { name: '', url: '', openedBy: 'operator', partition: 'operator' }
+          } as never,
+          worktreePath: FOLDER
+        },
+        global: { plugins: [pinia, i18n] },
+        attachTo: document.body
+      })
+      await flushPromises()
+      calls.length = 0
+      return { w, browser }
+    }
+    const focused = () => calls.filter((c) => c[0] === 'browserPaneFocused')
+
+    it('focus in the header calls browserPaneFocused with the pane id', async () => {
+      const { w } = await pane()
+      w.get('[data-dsqa-part="header"]').element.dispatchEvent(
+        new FocusEvent('focusin', { bubbles: true })
+      )
+      expect(focused()).toContainEqual(['browserPaneFocused', 'bp-ui'])
+      w.unmount()
+    })
+
+    it('focus in the address field calls browserPaneFocused with the pane id', async () => {
+      const { w } = await pane()
+      w.get('[data-testid="browser-address"]').element.dispatchEvent(
+        new FocusEvent('focusin', { bubbles: true })
+      )
+      expect(focused()).toContainEqual(['browserPaneFocused', 'bp-ui'])
+      w.unmount()
+    })
+
+    it('a tab chord in the chrome is prevented and stopped, so neither the page nor the app sees it', async () => {
+      const { w } = await pane()
+      const seenByApp = vi.fn()
+      window.addEventListener('keydown', seenByApp)
+      const press = (key: string, init: KeyboardEventInit = {}) => {
+        const ev = new KeyboardEvent('keydown', {
+          key,
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+          ...init
+        })
+        w.get('[data-testid="browser-address"]').element.dispatchEvent(ev)
+        return ev
+      }
+      for (const [key, init] of [
+        ['t', {}],
+        ['w', {}],
+        ['Tab', {}],
+        ['Tab', { shiftKey: true }]
+      ] as const) {
+        const ev = press(key, init)
+        expect(ev.defaultPrevented).toBe(true)
+      }
+      expect(seenByApp).not.toHaveBeenCalled()
+      // A key that is not a tab chord is left alone.
+      expect(press('k').defaultPrevented).toBe(false)
+      window.removeEventListener('keydown', seenByApp)
+      w.unmount()
+    })
+  })
+
+  it('main prevents the chord before the page sees it and hands it to the renderer', async () => {
+    views.length = 0
+    sent.length = 0
+    const clock = 7_000_000
+    const registry = createBrowserRegistry(() => clock)
+    const host = new BrowserViewHost({
+      getWindow: () => win as never,
+      guestPreloadPath: '/x/browser-guest.js',
+      registry,
+      access: createBrowserAccess(() => clock),
+      now: () => clock,
+      harnuPorts: () => [],
+      trustedHosts: () => [],
+      readOptIn: () => false,
+      leaseActive: () => false,
+      scrub: (t: string) => t,
+      prefs: { zoomFor: () => 1, setZoom: vi.fn() }
+    } as never)
+    registry.add({
+      paneId: 'bp-1',
+      folder: FOLDER,
+      name: 'browser',
+      openedBy: 'operator',
+      partition: 'operator',
+      ownerSessionId: null,
+      createdAt: clock,
+      lastActiveAt: clock,
+      seenHosts: new Set<string>(),
+      flagged: null
+    } as never)
+    host.create({ paneId: 'bp-1', folder: FOLDER, partition: 'operator', url: 'https://a.test/' })
+    host.setBoundChords(
+      boundChordsFrom(
+        KEYBINDINGS.map((d) => ({ id: d.id, keys: defaultKeysFor(d, false), scope: d.scope })),
+        false
+      )
+    )
+    const wc = host.webContentsOf('bp-1') as unknown as FakeWebContents
+    const preventDefault = vi.fn()
+    wc.emit(
+      'before-input-event',
+      { preventDefault },
+      {
+        type: 'keyDown',
+        key: 'w',
+        control: true,
+        alt: false,
+        shift: false,
+        meta: false
+      }
+    )
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(sent).toContainEqual({
+      channel: 'browser:chord',
+      payload: { paneId: 'bp-1', chord: 'Cmd+W' }
+    })
+  })
+})
+
 beforeEach(() => {
   views.length = 0
   sent.length = 0
