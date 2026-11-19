@@ -163,6 +163,22 @@
     "hide": "Ocultar painel",
     "show": "Mostrar painel"
   },
+  "sessionTuck": {
+    "strip": "Mostrar a sessão {name}",
+    "needsYou": "Precisa de você",
+    "hint": "Clique ou arraste para trazer de volta",
+    "armedHint": "Solte para recolher a sessão",
+    "floor": "40% · limite da sessão",
+    "state": {
+      "working": "Trabalhando",
+      "idle": "Ociosa",
+      "needsInput": "Aguardando sua aprovação",
+      "stuck": "Travada",
+      "failed": "Falhou",
+      "completed": "Concluída",
+      "archived": "Arquivada"
+    }
+  },
   "agentTerminal": {
     "connectedTo": "Conectado a {session}",
     "connectedToClosed": "Conectado a uma sessão fechada",
@@ -1802,6 +1818,7 @@
       "pane_close": "Fechar o painel focado",
       "terminal_toggle": "Alternar o painel do terminal",
       "layout_cycleSplitOrientation": "Alternar a divisão da tela (automático, lado a lado, empilhado)",
+      "session_toggleTuck": "Recolher a sessão ou trazê'la de volta",
       "app_reload": "Recarregar a janela",
       "app_devtools": "Alternar o DevTools",
       "app_quit": "Sair do Harnu",

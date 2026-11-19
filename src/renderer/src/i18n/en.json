@@ -163,6 +163,22 @@
     "hide": "Hide panel",
     "show": "Show panel"
   },
+  "sessionTuck": {
+    "strip": "Show session {name}",
+    "needsYou": "Needs you",
+    "hint": "Click or drag to bring it back",
+    "armedHint": "Release to tuck the session away",
+    "floor": "40% · session floor",
+    "state": {
+      "working": "Working",
+      "idle": "Idle",
+      "needsInput": "Waiting for your approval",
+      "stuck": "Stuck",
+      "failed": "Failed",
+      "completed": "Finished",
+      "archived": "Archived"
+    }
+  },
   "agentTerminal": {
     "connectedTo": "Connected to {session}",
     "connectedToClosed": "Connected to a closed session",
@@ -1802,6 +1818,7 @@
       "pane_close": "Close the focused pane",
       "terminal_toggle": "Toggle the terminal pane",
       "layout_cycleSplitOrientation": "Cycle the split layout (auto, side by side, stacked)",
+      "session_toggleTuck": "Tuck the session away or bring it back",
       "app_reload": "Reload the window",
       "app_devtools": "Toggle DevTools",
       "app_quit": "Quit Harnu",
