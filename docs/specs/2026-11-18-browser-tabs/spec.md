@@ -158,7 +158,7 @@ When none fits, the icons mode applies with 36px reserved for a `+N` button (mon
 
 ### S-3 · The host placeholder and the load error page
 
-- depends-on: S-2
+- depends-on: S-1, S-2
 - substrate: worktree
 - files-may-touch: `src/main/browser/view-host.ts`, `src/main/browser/view-logic.ts`, `src/main/browser/load-error.ts`, `src/main/browser/restore-plan.ts`, `src/main/browser/restore-run.ts`, `src/main/browser/browser-ipc.ts`, `src/preload/index.ts`, `src/shared/browser-tabs.ts`, `src/renderer/src/stores/browser.ts`, `src/renderer/src/components/BrowserPane.vue`, `src/renderer/src/components/BrowserLoadError.vue`, `src/renderer/src/i18n/en.json`, `src/renderer/src/i18n/pt-BR.json`, `design.md`, `docs/user/browser-pane.md`, `CHANGELOG.md`, `tests/browser-load-error.test.ts`, `tests/browser-host-view.test.ts`
 - produces: browser-host-placeholder
@@ -167,7 +167,7 @@ When none fits, the icons mode applies with 36px reserved for a `+N` button (mon
 
 ### S-4 · The tab strip, popups as tabs, its menu, keys and the Topbar button
 
-- depends-on: S-2, S-3
+- depends-on: S-3
 - substrate: worktree
 - files-may-touch: `src/renderer/src/components/BrowserPane.vue`, `src/renderer/src/components/BrowserTabStrip.vue`, `src/renderer/src/components/Topbar.vue`, `src/renderer/src/components/HelperStack.vue`, `src/renderer/src/stores/browser.ts`, `src/renderer/src/stores/helpers.ts`, `src/renderer/src/lib/browser-tabs-view.ts`, `src/renderer/src/lib/browser-chords.ts`, `src/renderer/src/composables/useShortcuts.ts`, `src/main/browser/chord.ts`, `src/main/browser/view-host.ts`, `src/main/browser/nav-policy.ts`, `src/main/browser/browser-service.ts`, `src/main/browser/browser-ipc.ts`, `src/renderer/src/i18n/en.json`, `src/renderer/src/i18n/pt-BR.json`, `design.md`, `docs/user/browser-pane.md`, `CHANGELOG.md`, `tests/browser-tab-strip.test.ts`, `tests/browser-popup-tab.test.ts`, `tests/e2e/browser-tabs.spec.ts`
 - produces: browser-tab-strip
@@ -176,7 +176,7 @@ When none fits, the icons mode applies with 36px reserved for a `+N` button (mon
 
 ### S-5 · The start page
 
-- depends-on: S-3, S-4
+- depends-on: S-4
 - substrate: worktree
 - files-may-touch: `src/main/browser/local-servers.ts`, `src/main/browser/local-servers-shell.ts`, `src/main/browser/recent-sites.ts`, `src/main/browser/browser-ipc.ts`, `src/main/browser/browser-service.ts`, `src/main/browser/view-host.ts`, `src/main/terminal-registry.ts`, `src/preload/index.ts`, `src/renderer/src/components/BrowserStartPage.vue`, `src/renderer/src/components/BrowserPane.vue`, `src/renderer/src/stores/browser.ts`, `src/renderer/src/i18n/en.json`, `src/renderer/src/i18n/pt-BR.json`, `design.md`, `docs/user/browser-pane.md`, `CHANGELOG.md`, `tests/browser-start-page.test.ts`, `tests/local-servers.test.ts`, `tests/local-servers-shell.test.ts`, `tests/recent-sites.test.ts`, `tests/fixtures/local-servers/proc-net-tcp.txt`, `tests/fixtures/local-servers/proc-net-tcp6.txt`, `tests/fixtures/local-servers/proc-fd.json`, `tests/fixtures/local-servers/lsof.txt`
 - produces: browser-start-page
@@ -185,7 +185,7 @@ When none fits, the icons mode applies with 36px reserved for a `+N` button (mon
 
 ### S-6 · Agent verbs with tabs
 
-- depends-on: S-2
+- depends-on: S-7
 - substrate: worktree
 - files-may-touch: `src/main/browser/verbs-core.ts`, `src/main/browser/read-verbs.ts`, `src/main/browser/act-verbs.ts`, `src/main/browser/device-verbs.ts`, `src/main/browser/page-verbs.ts`, `src/main/browser/access.ts`, `src/main/browser/browser-service.ts`, `src/main/mcp/tool-catalog.ts`, `docs/harnu-features.md`, `docs/user/agent-control.md`, `CHANGELOG.md`, `tests/browser-verbs-tabs.test.ts`
 - produces: browser-tab-verbs
@@ -194,14 +194,14 @@ When none fits, the icons mode applies with 36px reserved for a `+N` button (mon
 
 ### S-7 · The compact agent icon and one centre line
 
-- depends-on: S-4
+- depends-on: S-5
 - substrate: worktree
 - files-may-touch: `src/renderer/src/components/AgentConnectionChip.vue`, `src/renderer/src/components/HelperPane.vue`, `src/renderer/src/lib/agent-chip.ts`, `src/renderer/src/components/BrowserPane.vue`, `src/renderer/src/components/BrowserTabStrip.vue`, `src/renderer/src/i18n/en.json`, `src/renderer/src/i18n/pt-BR.json`, `design.md`, `CHANGELOG.md`, `tests/agent-chip.test.ts`, `tests/e2e/browser-tabs.spec.ts`
 - produces: —
 - consumes: browser-tab-strip
 - acs: AC-31, AC-32, AC-33, AC-34
 
-Merge order for the shared files follows the graph: S-1 at any time; S-2 before the rest; then S-3, then S-4 (S-4 `depends-on` S-3 because both edit `BrowserPane.vue`); S-6 after S-2 at any time; S-5 after S-4; S-7 after S-5. Each rebases on what landed before it. Popups stay panes until S-4 lands; a popup tab in an agent pane is active, so before S-6 the agent still reaches it through the active-tab default.
+Merge order follows the depends-on chain: S-1 and S-2 first (independent of each other), then S-3, S-4, S-5, S-7 and S-6, each after the one before it. Each rebases on what landed before it. Popups stay panes until S-4 lands.
 
 ## Acceptance criteria
 
@@ -268,5 +268,9 @@ All six were answered on 2026-11-18; their detail is under "Decisions taken".
 
 ## Amendments · Deviations
 
-| date | kind | what changed | by  |
-| ---- | ---- | ------------ | --- |
+| date       | kind      | what changed                                                                                                                                                                                                                      | by           |
+| ---------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| 2026-11-18 | amendment | depends-on chain S-3 (S-1, S-2), S-4 (S-3), S-5 (S-4), S-7 (S-5), S-6 (S-7) and the merge-order paragraph, so the card planner can derive S-3 to S-7; no AC or files-may-touch changed; S-1 and S-2 already carded and unaffected | orchestrator |
+| 2026-11-18 | card      | S-1 → T794-show-one-border-on-the-focused-address-field                                                                                                                                                                           | orchestrator |
+| 2026-11-18 | card      | S-2 → T795-give-each-browser-tab-its-own-page-view                                                                                                                                                                                | orchestrator |
+| 2026-11-18 | deviation | S-1 AC-1 settled by an independent verifier at PR #370 head 93a2edcb (tests/e2e/browser-address-focus.spec.ts::one border, planted fault red, CI 11/11)                                                                           | verifier     |
