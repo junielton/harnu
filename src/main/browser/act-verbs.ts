@@ -49,14 +49,14 @@ export interface BrowserActHost extends BrowserReadHost {
    * The factor between page CSS px and the view's coordinates while a device is emulated (assumption A5); `1`
    * without one. CDP mouse and touch events take VIEW coordinates.
    */
-  inputScale?(paneId: string): number
+  inputScale?(paneId: string, tabId?: string): number
   /**
    * The pane emulates touch (T572): pointer input is sent as touch taps, because mouse presses never acknowledge
    * while the touch emulator is on. Absent = `false`.
    */
   touchActive?(paneId: string): boolean
-  /** Show the pane header's `driving` word while a verb runs. */
-  drive?(paneId: string, on: boolean): void
+  /** Show the `driving` word of the tab a verb acts on (the active tab without `tabId`) while it runs. */
+  drive?(paneId: string, on: boolean, tabId?: string): void
 }
 
 export interface BrowserActDeps extends BrowserReadDeps {

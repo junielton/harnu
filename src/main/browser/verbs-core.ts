@@ -61,13 +61,18 @@ export type NavigateTarget = { url: string } | { action: 'back' | 'forward' | 'r
 
 /** The view host seam (`view-host.ts` implements it over Electron). */
 export interface BrowserHost {
-  /** Create the guest view parked and start loading `url`; throws if it cannot. */
+  /**
+   * Every method keyed by `paneId` acts on the pane's ACTIVE tab; the optional `tabId` of the methods below names
+   * another tab of the pane instead (browser-tabs S-2, ADR-0026). The agent verbs pass it through (S-6).
+   */
+  /** Create the guest view of the pane's first tab, parked, and start loading `url`; throws if it cannot. */
   create(opts: { paneId: string; folder: string; partition: BrowserPartition; url: string }): void
-  info(paneId: string): LivePaneInfo | undefined
+  info(paneId: string, tabId?: string): LivePaneInfo | undefined
   navigate(
     paneId: string,
     target: NavigateTarget,
-    opts: { waitUntil: 'commit' | 'domcontentloaded' | 'load'; timeoutMs: number; hard: boolean }
+    opts: { waitUntil: 'commit' | 'domcontentloaded' | 'load'; timeoutMs: number; hard: boolean },
+    tabId?: string
   ): Promise<NavigateOutcome>
   /** Destroy the view and everything hanging off it. Idempotent. */
   destroy(paneId: string): void
@@ -76,18 +81,18 @@ export interface BrowserHost {
   /** Whether network capture is on for the pane and when it stops itself (`browser_list`'s `network`). */
   captureStatus?(paneId: string): { active: boolean; expiresAt: number | null }
   /** Mouse and key events reach the pane's current document (false on its first page). Absent = ready. */
-  inputReady?(paneId: string): boolean
+  inputReady?(paneId: string, tabId?: string): boolean
   /**
    * Names the view that shows the pane now. A lease is granted for ONE view: a pane re-created under the same id
    * (discard and restore) is a page the operator never saw, so its token differs and the lease is dead.
    */
-  viewToken?(paneId: string): string | undefined
+  viewToken?(paneId: string, tabId?: string): string | undefined
   /** The zoom factor the pane shows now (1 in device mode); absent = 1 (`browser_list`, T572). */
   zoomOf?(paneId: string): number
   /** The pane's page is discarded (T574, spec §10.1): `info` answers from the record, the view is gone. */
-  isDiscarded?(paneId: string): boolean
+  isDiscarded?(paneId: string, tabId?: string): boolean
   /** Bring a discarded pane back (resolves true when it is live). Absent = nothing is ever discarded. */
-  revive?(paneId: string, opts?: { primeInput?: boolean }): Promise<boolean>
+  revive?(paneId: string, opts?: { primeInput?: boolean; tabId?: string }): Promise<boolean>
 }
 
 /** The page-protocol seam the live-panel verbs and `browser_open({ path | html })` use (`page-service.ts`). */
@@ -223,9 +228,10 @@ export function noteAgentWrite(deps: Pick<BrowserVerbDeps, 'leases'>, paneId: st
  */
 export function beginPaneVerb(
   registry: Pick<BrowserRegistry, 'beginVerb'>,
-  paneId: string
+  paneId: string,
+  tabId?: string
 ): () => void {
-  return registry.beginVerb(paneId)
+  return registry.beginVerb(paneId, tabId)
 }
 
 /**

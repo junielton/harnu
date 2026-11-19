@@ -70,13 +70,13 @@ export interface CaptureResult {
 
 /** What the view host adds for the reading verbs (`view-host.ts` implements it over Electron). */
 export interface BrowserReadHost extends BrowserHost {
-  readers(paneId: string): PaneReaders | undefined
-  /** One CDP command against the pane; rejects when the command fails. */
-  cdp(paneId: string, method: string, params?: object): Promise<unknown>
-  viewMode(paneId: string): ViewMode | undefined
-  /** Whether a device is being emulated (U5; always false before). */
+  readers(paneId: string, tabId?: string): PaneReaders | undefined
+  /** One CDP command against the pane's tab (the active one without `tabId`); rejects when the command fails. */
+  cdp(paneId: string, method: string, params?: object, tabId?: string): Promise<unknown>
+  viewMode(paneId: string, tabId?: string): ViewMode | undefined
+  /** Whether a device is being emulated (U5; always false before). A pane-level fact. */
   deviceMode(paneId: string): boolean
-  capture(paneId: string, req: CaptureRequest): Promise<CaptureResult>
+  capture(paneId: string, req: CaptureRequest, tabId?: string): Promise<CaptureResult>
 }
 
 export interface BrowserReadDeps extends BrowserVerbDeps {

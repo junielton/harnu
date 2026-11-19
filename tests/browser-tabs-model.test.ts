@@ -81,6 +81,9 @@ const h = vi.hoisted(() => {
       }
       return this.on(ev, wrap)
     }
+    off(ev: string, fn: Fn): this {
+      return this.removeListener(ev, fn)
+    }
     removeListener(ev: string, fn: Fn): this {
       this.listeners.set(
         ev,
@@ -674,6 +677,36 @@ describe('capture per pane', () => {
     request(r.wcOf('bp-1', t1), '1', 'https://x.test/')
     request(r.wcOf('bp-1', t2), '1', 'https://y.test/')
     expect(read(r, 'bp-1')).toEqual([])
+  })
+
+  const bufferCmds = (r: ReturnType<typeof rig>, paneId: string, tabId: string) =>
+    (
+      r.wcOf(paneId, tabId).cmds as Array<{
+        method: string
+        params: { maxTotalBufferSize?: number }
+      }>
+    )
+      .filter((c) => c.method === 'Network.enable')
+      .map((c) => c.params.maxTotalBufferSize)
+
+  it('joins: a tab created while a bodies capture runs has its network buffers sized up like the others', () => {
+    const r = rig()
+    const t1 = r.addPane('bp-1')
+    r.host.readers('bp-1')!.startCapture({ maxMinutes: 5, bodies: true })
+    const t2 = newTab(r, 'bp-1', { background: true })
+    const big = 8 * 1024 * 1024
+    expect(bufferCmds(r, 'bp-1', t1).at(-1)).toBe(big)
+    expect(bufferCmds(r, 'bp-1', t2).at(-1)).toBe(big)
+  })
+
+  it('one stop: the network buffers of every tab go back down', () => {
+    const r = rig()
+    const t1 = r.addPane('bp-1')
+    const t2 = newTab(r, 'bp-1', { background: true })
+    r.host.readers('bp-1')!.startCapture({ maxMinutes: 5, bodies: true })
+    r.host.readers('bp-1', t2)!.stopCapture('stopped')
+    expect(bufferCmds(r, 'bp-1', t1).at(-1)).toBeLessThan(8 * 1024 * 1024)
+    expect(bufferCmds(r, 'bp-1', t2).at(-1)).toBeLessThan(8 * 1024 * 1024)
   })
 
   it('tabId on entries: every entry says which tab made the request', () => {

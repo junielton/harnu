@@ -9,6 +9,14 @@ import { useUiStore } from './ui'
 import { useHelpersStore } from './helpers'
 import { useKeybindingsStore } from './keybindings'
 import { payloadPatchFromPersist, payloadPatchFromState } from '../lib/browser-persist'
+import { scrubUrl } from '../../../shared/browser-comment'
+import {
+  tabsPatchFromState,
+  type BrowserTabCloseResult,
+  type BrowserTabMoveResult,
+  type BrowserTabNewOptions,
+  type BrowserTabResult
+} from '../../../shared/browser-tabs'
 import type {
   BrowserActivityWord,
   BrowserEmulatePatch,
@@ -50,8 +58,13 @@ export const useBrowserStore = defineStore('browser', () => {
 
   function applyState(state: BrowserPaneState): void {
     states.value = { ...states.value, [state.paneId]: state }
-    // Keep what a restart restores on the pane in `helpers.json` (T574, spec §10.3).
-    helpers.patchBrowserPayload(state.paneId, (saved) => payloadPatchFromState(saved, state))
+    // Keep what a restart restores on the pane in `helpers.json` (T574, spec §10.3): the page the pane shows, and
+    // its tabs in order with each one's address, title and `hostView` (browser tabs).
+    helpers.patchBrowserPayload(state.paneId, (saved) => {
+      const page = payloadPatchFromState(saved, state)
+      const tabs = tabsPatchFromState(saved, state, scrubUrl)
+      return page || tabs ? { ...page, ...tabs } : null
+    })
   }
 
   async function refresh(paneId: string): Promise<void> {
@@ -110,17 +123,20 @@ export const useBrowserStore = defineStore('browser', () => {
       window.api.onBrowserCommentState((state) => {
         comments.value = { ...comments.value, [state.paneId]: state }
       }),
-      window.api.onBrowserPopup(({ paneId, worktreePath, url, partition }) => {
-        // A popup the operator clicked open: an operator-class pane that inherits the opener's partition.
-        helpers.addBrowserHelper(worktreePath, {
-          paneId,
-          name: '',
-          url,
-          openedBy: 'operator',
-          partition,
-          ownerSessionId: null
-        })
-      }),
+      window.api.onBrowserPopup(
+        ({ paneId, worktreePath, url, partition, openedBy, ownerSessionId, name }) => {
+          // A pane main made: a popup the operator clicked open (an operator-class pane that inherits the opener's
+          // partition) or a tab moved to a new pane (which keeps who opened the pane it came from).
+          helpers.addBrowserHelper(worktreePath, {
+            paneId,
+            name: name ?? '',
+            url,
+            openedBy: openedBy ?? 'operator',
+            partition,
+            ownerSessionId: ownerSessionId ?? null
+          })
+        }
+      ),
       startNativeOverlayWatcher((overlays) => window.api.browserOverlays(overlays))
     )
     // Main swallows a guest key only if Harnu binds that chord, so keep main's set current.
@@ -177,6 +193,27 @@ export const useBrowserStore = defineStore('browser', () => {
     target: { url: string } | { action: 'back' | 'forward' | 'reload' | 'stop' }
   ): Promise<{ ok: true } | { ok: false; scheme: string }> {
     return window.api.browserNavigate({ paneId, ...target })
+  }
+
+  /* ---- Tabs: main owns every tab; these relay the operator's gestures (the strip is S-4) ---------- */
+
+  function tabNew(paneId: string, opts?: BrowserTabNewOptions): Promise<BrowserTabResult> {
+    return window.api.browserTabNew(paneId, opts)
+  }
+  function tabClose(paneId: string, tabId: string): Promise<BrowserTabCloseResult> {
+    return window.api.browserTabClose(paneId, tabId)
+  }
+  async function tabActivate(paneId: string, tabId: string): Promise<boolean> {
+    return (await window.api.browserTabActivate(paneId, tabId)).ok
+  }
+  function tabDuplicate(paneId: string, tabId: string): Promise<BrowserTabResult> {
+    return window.api.browserTabDuplicate(paneId, tabId)
+  }
+  function tabMoveToPane(paneId: string, tabId: string): Promise<BrowserTabMoveResult> {
+    return window.api.browserTabMoveToPane(paneId, tabId)
+  }
+  async function tabReload(paneId: string, tabId: string): Promise<boolean> {
+    return (await window.api.browserTabReload(paneId, tabId)).ok
   }
 
   async function pause(paneId: string): Promise<void> {
@@ -334,6 +371,12 @@ export const useBrowserStore = defineStore('browser', () => {
     revive,
     forget,
     navigate,
+    tabNew,
+    tabClose,
+    tabActivate,
+    tabDuplicate,
+    tabMoveToPane,
+    tabReload,
     pause,
     resume,
     disconnect,

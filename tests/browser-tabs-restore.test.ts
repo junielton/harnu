@@ -113,6 +113,11 @@ import { createBrowserAccess } from '../src/main/browser/access'
 import { createBrowserRegistry } from '../src/main/browser/registry'
 import { planRestore, restorePane } from '../src/main/browser/restore-plan'
 import { BrowserViewHost } from '../src/main/browser/view-host'
+import {
+  persistedTabsOf,
+  tabsPatchFromState,
+  type BrowserTabState
+} from '../src/shared/browser-tabs'
 
 const FOLDER = '/work/acme-store'
 const T1 = 'tab-00000001'
@@ -250,5 +255,64 @@ describe('restore tabs', () => {
       10
     )
     expect(out.map((o) => o.rec.tabs.length)).toEqual([3, 1])
+  })
+})
+
+describe('persist tabs', () => {
+  const tab = (tabId: string, over: Partial<BrowserTabState> = {}): BrowserTabState => ({
+    tabId,
+    url: 'https://one.test/a?token=secret#frag',
+    title: 'One',
+    favicon: null,
+    loading: false,
+    hostView: 'page',
+    waitingForUp: false,
+    discarded: false,
+    active: false,
+    agentActive: false,
+    ...over
+  })
+  const state = {
+    tabs: [
+      tab(T1, { active: true }),
+      tab(T2, { hostView: 'start', url: 'about:blank', title: '' })
+    ],
+    activeTabId: T1,
+    lastFocusedAt: 42
+  }
+  const scrub = (u: string): string => u.split('?')[0]!.split('#')[0]!
+
+  it('keeps each tab in order with its address, title and hostView, and the active tab and focus stamp', () => {
+    expect(tabsPatchFromState({}, state, scrub)).toEqual({
+      tabs: [
+        { tabId: T1, url: 'https://one.test/a', title: 'One', hostView: 'page' },
+        { tabId: T2, url: 'about:blank', title: '', hostView: 'start' }
+      ],
+      activeTabId: T1,
+      lastFocusedAt: 42
+    })
+  })
+
+  it('writes nothing when nothing changed, and nothing for a state without tabs', () => {
+    const saved = {
+      tabs: persistedTabsOf(state.tabs, scrub),
+      activeTabId: T1,
+      lastFocusedAt: 42
+    }
+    expect(tabsPatchFromState(saved, state, scrub)).toBeNull()
+    expect(
+      tabsPatchFromState(saved, { tabs: [], activeTabId: '', lastFocusedAt: null }, scrub)
+    ).toBeNull()
+  })
+
+  it('what it writes is what restore reads back', () => {
+    const patch = tabsPatchFromState({}, state, scrub)!
+    const r = restorePane(pane({ ...patch, url: 'https://one.test/a' }), 10)!
+    expect(r.rec.tabs.map((t) => [t.tabId, t.hostView])).toEqual([
+      [T1, 'page'],
+      [T2, 'start']
+    ])
+    expect(r.rec.activeTabId).toBe(T1)
+    expect(r.rec.lastFocusedAt).toBe(42)
   })
 })
