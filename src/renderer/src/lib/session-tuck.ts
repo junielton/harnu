@@ -4,7 +4,7 @@
  * The session/helper divider stops at the 0.4 floor; pulling it {@link SESSION_TUCK_ARM_PX} further
  * arms the tuck. Pure, so the rules are unit-testable without a DOM.
  */
-import { clampSplitRatio } from './split-orientation'
+import { SPLIT_RATIO_MIN, clampSplitRatio } from './split-orientation'
 
 /** How far past the floor (px, on the drag axis) the divider must be pulled to arm the tuck. */
 export const SESSION_TUCK_ARM_PX = 80
@@ -25,7 +25,16 @@ export interface DividerDragResult {
   armed: boolean
 }
 
+/** Float slack for the threshold compare (the ratio maths is not exact in binary). */
+const EPSILON_PX = 1e-6
+
 export function resolveDividerDrag(input: DividerDragInput): DividerDragResult {
   const { startRatio, deltaPx, totalPx } = input
-  return { ratio: clampSplitRatio(startRatio + deltaPx / totalPx), armed: false }
+  if (!(totalPx > 0)) return { ratio: clampSplitRatio(startRatio), armed: false }
+  const raw = startRatio + deltaPx / totalPx
+  const overshootPx = (SPLIT_RATIO_MIN - raw) * totalPx
+  return {
+    ratio: clampSplitRatio(raw),
+    armed: overshootPx + EPSILON_PX >= SESSION_TUCK_ARM_PX
+  }
 }
