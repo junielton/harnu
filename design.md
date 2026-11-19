@@ -2508,6 +2508,16 @@ tokens. Once the scan resolves (success or failure), `foldersLoading` flips to
 state above — manual rescans (the toolbar's own spinner) never re-trigger this
 state.
 
+**Status states in drill-in mode — BUG-257:** the empty, loading and filter
+no-match states render at EVERY drill level, never as a blank body. On the root
+screen the tree host shows them as above. On a drilled screen (a repo or folder
+screen, including a position restored from `localStorage` on a cold boot before
+the folder model has loaded) `SidebarDrillView` keeps its Back row and shows the
+same state under it, in the same spinner / text anatomy and tokens
+(`sidebar.loading`, `sidebar.emptyShort`, `sidebar.filter.empty`), so the
+operator keeps their place. Once folders load, the restored position resolves as
+before (T289). No new tokens.
+
 ### Repo-group header (sidebar)
 
 `RepoGroupHeader.vue` — the synthetic header for a **repo-group** (2+ visible
