@@ -5,7 +5,7 @@
  * the `+N` button for the tabs that do not fit, and `+`. It holds no page state: it draws the tabs main sent and
  * emits what the operator did (`activate`, `close`, `add`, `menu`); `BrowserPane.vue` relays those to the store.
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, Copy, Globe, PanelRight, Plus, RotateCw, X } from 'lucide-vue-next'
 import { useNativeOverlay } from '../composables/useNativeOverlay'
@@ -63,15 +63,22 @@ const PLUS_PX = 26
 const rootEl = ref<HTMLElement | null>(null)
 const measured = ref(0)
 let observer: ResizeObserver | null = null
-onMounted(() => {
-  if (typeof ResizeObserver === 'undefined' || !rootEl.value) return
-  observer = new ResizeObserver(() => {
-    measured.value = rootEl.value?.clientWidth ?? 0
-  })
-  observer.observe(rootEl.value)
-  measured.value = rootEl.value.clientWidth
-  window.addEventListener('pointerdown', onWindowPointerDown, true)
-})
+// The strip's root only exists from the second tab on, so the observer follows the element, not the mount.
+watch(
+  rootEl,
+  (el) => {
+    observer?.disconnect()
+    observer = null
+    if (!el || typeof ResizeObserver === 'undefined') return
+    observer = new ResizeObserver(() => {
+      measured.value = el.clientWidth
+    })
+    observer.observe(el)
+    measured.value = el.clientWidth
+  },
+  { flush: 'post' }
+)
+onMounted(() => window.addEventListener('pointerdown', onWindowPointerDown, true))
 onBeforeUnmount(() => {
   observer?.disconnect()
   window.removeEventListener('pointerdown', onWindowPointerDown, true)
@@ -142,7 +149,7 @@ const menuFor = ref<{ tabId: string; left: number } | null>(null)
 const menuEl = ref<HTMLElement | null>(null)
 useNativeOverlay(`browser-tab-menu-${props.paneId}`, menuEl)
 const moreOpen = ref(false)
-const moreRight = ref(0)
+const moreLeft = ref(0)
 const moreEl = ref<HTMLElement | null>(null)
 const moreListEl = ref<HTMLElement | null>(null)
 useNativeOverlay(`browser-tab-more-${props.paneId}`, moreListEl)
@@ -167,20 +174,31 @@ const rowDisabled = (action: TabMenuAction): boolean =>
 function openMenu(tabId: string, ev: MouseEvent): void {
   moreOpen.value = false
   const el = (ev.currentTarget as HTMLElement | null) ?? null
-  menuFor.value = { tabId, left: el?.offsetLeft ?? 0 }
+  // The menu hangs 4px right of the tab's left edge (the mockup's anchor).
+  menuFor.value = { tabId, left: (el?.offsetLeft ?? 0) + 4 }
 }
 function pickMenu(action: TabMenuAction): void {
   const id = menuFor.value?.tabId
   menuFor.value = null
   if (id && !rowDisabled(action)) emit('menu', action, id)
 }
-function toggleMore(): void {
+async function toggleMore(): Promise<void> {
   menuFor.value = null
   moreOpen.value = !moreOpen.value
   if (!moreOpen.value) return
   const root = rootEl.value
   const more = moreEl.value
-  moreRight.value = root && more ? root.clientWidth - (more.offsetLeft + more.offsetWidth) : 0
+  const edge = root && more ? more.offsetLeft + more.offsetWidth : 0
+  moreLeft.value = Math.max(4, edge - 220)
+  // Right-aligned under +N, but never past the strip's left edge or the pane's right edge.
+  await nextTick()
+  const list = moreListEl.value
+  if (root && list) {
+    moreLeft.value = Math.max(
+      4,
+      Math.min(edge - list.offsetWidth, root.clientWidth - list.offsetWidth - 4)
+    )
+  }
 }
 function pickMore(tabId: string): void {
   moreOpen.value = false
@@ -233,82 +251,87 @@ const hostBadge = (tab: BrowserTabState): string => {
     role="tablist"
     :aria-label="$t('browserPane.tabs.strip')"
     data-testid="browser-tab-strip"
+    data-dsqa-part="tab-strip"
     @keydown="onMenuKeydown"
   >
-    <div
-      v-for="tab in visibleTabs"
-      :key="tab.tabId"
-      class="relative flex min-w-0 shrink-0 cursor-default items-center border-r border-border text-[11px] transition-colors"
-      :class="[
-        tab.tabId === activeTabId
-          ? 'z-[1] bg-bg text-text'
-          : 'text-text-3 hover:bg-surface-2 hover:text-text-2',
-        iconOnly(tab) ? 'justify-center' : 'gap-[5px] pl-2 pr-1',
-        menuFor?.tabId === tab.tabId && tab.tabId !== activeTabId ? 'bg-surface-2 text-text-2' : '',
-        'group'
-      ]"
-      :style="{
-        width: widthOf(tab),
-        flex: `0 0 ${widthOf(tab)}`,
-        ...(tab.tabId === activeTabId ? { boxShadow: '0 1px 0 var(--color-bg)' } : {})
-      }"
-      role="tab"
-      tabindex="0"
-      :aria-selected="tab.tabId === activeTabId"
-      :title="iconOnly(tab) ? titleOf(tab) : tab.url"
-      :data-tab-id="tab.tabId"
-      :data-active="tab.tabId === activeTabId"
-      data-testid="browser-tab"
-      @mousedown.stop
-      @click="tab.tabId !== activeTabId && emit('activate', tab.tabId)"
-      @keydown.enter.prevent="emit('activate', tab.tabId)"
-      @keydown.space.prevent="emit('activate', tab.tabId)"
-      @contextmenu.prevent="openMenu(tab.tabId, $event)"
-    >
-      <!-- Favicon: the live tab shows its dot (S-7), a start tab the globe, else the page icon or the host's letter. -->
-      <span
-        v-if="tab.agentActive"
-        class="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-        style="box-shadow: 0 0 0 3px var(--color-accent-soft)"
-        aria-hidden="true"
-      />
-      <Globe
-        v-else-if="tab.hostView === 'start'"
-        :size="12"
-        :stroke-width="1.6"
-        class="shrink-0 text-text-3"
-      />
-      <img
-        v-else-if="faviconOf(tab).src"
-        :src="faviconOf(tab).src!"
-        alt=""
-        class="h-3 w-3 shrink-0 rounded-xs"
-        @error="onIconError(tab.tabId)"
-      />
-      <span
-        v-else
-        class="grid h-3 w-3 shrink-0 place-items-center rounded-xs text-[8px] font-semibold"
-        :class="hostBadge(tab)"
-        aria-hidden="true"
-        >{{ faviconOf(tab).letter }}</span
+    <div class="flex min-w-0 shrink items-stretch">
+      <div
+        v-for="tab in visibleTabs"
+        :key="tab.tabId"
+        class="relative flex cursor-default items-center border-r border-border text-[11px] transition-colors"
+        :class="[
+          tab.tabId === activeTabId
+            ? 'z-[1] bg-bg text-text'
+            : 'text-text-3 hover:bg-surface-2 hover:text-text-2',
+          iconOnly(tab) ? 'justify-center' : 'gap-[5px] pl-2 pr-1',
+          menuFor?.tabId === tab.tabId && tab.tabId !== activeTabId
+            ? 'bg-surface-2 text-text-2'
+            : '',
+          'group'
+        ]"
+        :style="{
+          flex: `0 1 ${widthOf(tab)}`,
+          minWidth: '28px',
+          ...(tab.tabId === activeTabId ? { boxShadow: '0 1px 0 var(--color-bg)' } : {})
+        }"
+        role="tab"
+        tabindex="0"
+        :aria-selected="tab.tabId === activeTabId"
+        :title="iconOnly(tab) ? titleOf(tab) : tab.url"
+        :data-tab-id="tab.tabId"
+        :data-active="tab.tabId === activeTabId"
+        data-testid="browser-tab"
+        @mousedown.stop
+        @click="tab.tabId !== activeTabId && emit('activate', tab.tabId)"
+        @keydown.enter.prevent="emit('activate', tab.tabId)"
+        @keydown.space.prevent="emit('activate', tab.tabId)"
+        @contextmenu.prevent="openMenu(tab.tabId, $event)"
       >
-      <template v-if="!iconOnly(tab)">
-        <span class="min-w-0 flex-1 truncate" data-testid="browser-tab-title">{{
-          titleOf(tab)
-        }}</span>
-        <button
-          type="button"
-          class="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-xs text-text-3 hover:bg-border-2 hover:text-text"
-          :class="tab.tabId === activeTabId ? 'visible' : 'invisible group-hover:visible'"
-          :aria-label="$t('browserPane.tabs.closeNamed', { title: titleOf(tab) })"
-          :title="$t('browserPane.tabs.close')"
-          data-testid="browser-tab-close"
-          @mousedown.stop
-          @click.stop="emit('close', tab.tabId)"
+        <!-- Favicon: the live tab shows its dot (S-7), a start tab the globe, else the page icon or the host's letter. -->
+        <span
+          v-if="tab.agentActive"
+          class="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+          style="box-shadow: 0 0 0 3px var(--color-accent-soft)"
+          aria-hidden="true"
+        />
+        <Globe
+          v-else-if="tab.hostView === 'start'"
+          :size="12"
+          :stroke-width="1.6"
+          class="shrink-0 text-text-3"
+        />
+        <img
+          v-else-if="faviconOf(tab).src"
+          :src="faviconOf(tab).src!"
+          alt=""
+          class="h-3 w-3 shrink-0 rounded-xs"
+          @error="onIconError(tab.tabId)"
+        />
+        <span
+          v-else
+          class="grid h-3 w-3 shrink-0 place-items-center rounded-xs text-[8px] font-semibold"
+          :class="hostBadge(tab)"
+          aria-hidden="true"
+          >{{ faviconOf(tab).letter }}</span
         >
-          <X :size="10" :stroke-width="1.6" />
-        </button>
-      </template>
+        <template v-if="!iconOnly(tab)">
+          <span class="min-w-0 flex-1 truncate" data-testid="browser-tab-title">{{
+            titleOf(tab)
+          }}</span>
+          <button
+            type="button"
+            class="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-xs text-text-3 hover:bg-border-2 hover:text-text"
+            :class="tab.tabId === activeTabId ? 'visible' : 'invisible group-hover:visible'"
+            :aria-label="$t('browserPane.tabs.closeNamed', { title: titleOf(tab) })"
+            :title="$t('browserPane.tabs.close')"
+            data-testid="browser-tab-close"
+            @mousedown.stop
+            @click.stop="emit('close', tab.tabId)"
+          >
+            <X :size="10" :stroke-width="1.6" />
+          </button>
+        </template>
+      </div>
     </div>
 
     <!-- The tabs that do not fit. -->
@@ -323,6 +346,7 @@ const hostBadge = (tab: BrowserTabState): string => {
       :aria-expanded="moreOpen"
       data-tab-more-trigger
       data-testid="browser-tab-more"
+      data-dsqa-part="overflow-button"
       @mousedown.stop
       @click="toggleMore"
     >
@@ -358,6 +382,7 @@ const hostBadge = (tab: BrowserTabState): string => {
       style="background: var(--color-surface); border: 1px solid var(--color-border-2)"
       role="menu"
       data-testid="browser-tab-menu"
+      data-dsqa-part="tab-menu"
       @mousedown.stop
     >
       <template v-for="action in TAB_MENU_ACTIONS" :key="action">
@@ -398,7 +423,7 @@ const hostBadge = (tab: BrowserTabState): string => {
       ref="moreListEl"
       class="anim-fade-in absolute top-[23px] z-20 min-w-[220px] p-1 text-[12px] text-text-2"
       :style="{
-        right: `${moreRight}px`,
+        left: `${moreLeft}px`,
         boxShadow: 'var(--shadow-pop)',
         borderRadius: 'var(--radius)'
       }"
@@ -406,6 +431,7 @@ const hostBadge = (tab: BrowserTabState): string => {
       role="menu"
       :aria-label="$t('browserPane.tabs.moreList')"
       data-testid="browser-tab-more-list"
+      data-dsqa-part="overflow-list"
       @mousedown.stop
     >
       <template v-for="(tab, i) in tabs" :key="tab.tabId">

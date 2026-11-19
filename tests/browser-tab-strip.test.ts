@@ -304,9 +304,15 @@ describe('start callers', () => {
       }
     )
     g.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
+      observe(): void {
+        /* the fake pane never resizes */
+      }
+      unobserve(): void {
+        /* nothing observed */
+      }
+      disconnect(): void {
+        /* nothing to release */
+      }
     }
     const pinia = createPinia()
     setActivePinia(pinia)

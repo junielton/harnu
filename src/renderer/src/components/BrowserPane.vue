@@ -820,14 +820,17 @@ watch(isFrozen, async (frozen) => {
     class="@container relative flex h-full w-full flex-col overflow-hidden bg-bg"
     :aria-label="$t('browserPane.label')"
     data-testid="browser-pane"
+    data-dsqa="browser-pane"
     @focusout="onChromeBlur"
     @keydown.capture="onChromeKeydown"
   >
     <header
-      class="@container flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
-      :class="
+      class="@container flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface pr-2 text-[11px] text-text-2 transition-colors"
+      :class="[
+        hasStrip ? 'pl-0' : 'pl-2',
         resizable ? 'cursor-row-resize border-t border-t-border-2 hover:border-t-accent-line' : ''
-      "
+      ]"
+      data-dsqa-part="header"
       @mousedown="(onHeaderMouseDown($event), onChromeFocus())"
       @focusin="onChromeFocus"
     >
@@ -1065,6 +1068,7 @@ watch(isFrozen, async (frozen) => {
     <!-- Address bar (design.md "Address bar"). -->
     <div
       class="@container relative flex h-7 shrink-0 items-center gap-1 border-b border-border bg-bg px-2"
+      data-dsqa-part="address-bar"
       @focusin="onChromeFocus"
     >
       <button
@@ -1648,6 +1652,7 @@ watch(isFrozen, async (frozen) => {
             class="relative bg-bg"
             :style="{ width: `${layout.screenWidth}px`, height: `${layout.screenHeight}px` }"
             data-testid="browser-host"
+            data-dsqa-part="host"
           >
             <img
               v-if="isFrozen && frozenSrc"
@@ -1672,7 +1677,13 @@ watch(isFrozen, async (frozen) => {
           {{ caption }}
         </div>
       </div>
-      <div v-else ref="hostEl" class="absolute inset-0 bg-bg" data-testid="browser-host">
+      <div
+        v-else
+        ref="hostEl"
+        class="absolute inset-0 bg-bg"
+        data-testid="browser-host"
+        data-dsqa-part="host"
+      >
         <!-- Frozen frame (spec §2.4): a still of the page while an app layer overlaps the native view. -->
         <img
           v-if="isFrozen && frozenSrc"

@@ -31,6 +31,8 @@ async function openBrowserPane(): Promise<void> {
   await page.locator(`[data-folder-path="${seed.repo}"]`).first().click()
   await page.getByRole('button', { name: 'Browser', exact: true }).first().click()
   await expect(address()).toBeVisible()
+  // The helper stack is narrow: expand the pane to the window so every tab fits in the strip.
+  await page.locator('[data-test="pane-expand"]').first().click()
 }
 
 async function go(url: string): Promise<void> {
@@ -118,6 +120,16 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
       await expect(page.getByTestId('browser-tab-strip')).toBeVisible()
       await expect(tabs()).toHaveCount(2)
       expect(before).toBeGreaterThan(0)
+      // Ctrl+W from the page closes the pane's active tab (the app's close-session never sees it). Take the keyboard
+      // out of the pane chrome first, so only the page's chord path can do it.
+      await address().evaluate((el: HTMLInputElement) => el.blur())
+      await app.evaluate(({ webContents }, origin) => {
+        const guest = webContents.getAllWebContents().find((wc) => wc.getURL().startsWith(origin))
+        if (!guest) throw new Error('no guest page')
+        guest.sendInputEvent({ type: 'keyDown', keyCode: 'W', modifiers: ['control'] })
+        guest.sendInputEvent({ type: 'keyUp', keyCode: 'W', modifiers: ['control'] })
+      }, base)
+      await expect(tabs()).toHaveCount(0)
     })
   })
 
