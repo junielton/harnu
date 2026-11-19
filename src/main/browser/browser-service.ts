@@ -38,7 +38,7 @@ import { buildLocalServers, type LocalServerRow, type LocalServerStack } from '.
 import { listenersFor, realProcIo, realRunCommand } from './local-servers-shell'
 import { createRecentStore, topRecent, type RecentStore } from './recent-sites'
 import { runRestore } from './restore-run'
-import { moveTabToNewPane } from './tabs'
+import { findTab, moveTabToNewPane } from './tabs'
 import type {
   BrowserTabCloseResult,
   BrowserTabMoveResult,
@@ -459,7 +459,12 @@ export async function resolveBrowserGate(
   /** `browser_open` / `browser_list` carry a folder of their own: its trusted hosts are loaded for them. */
   folder?: string,
   /** The verb being judged: `browser_close` is the one write that outlives the kill-switch. */
-  op?: string
+  op?: string,
+  /**
+   * The tab the call names (browser-tabs S-6). Its view, origin and lease are what is judged: a lease is granted for
+   * one view, so one on another tab does not cover this one. An id the pane does not hold is `TAB_NOT_FOUND`.
+   */
+  tabId?: string
 ): Promise<GateResolution> {
   const writesEnabled = await readAgentBrowserWrites()
   // Switching agent browser control off ends every lease. The Settings toggle does that itself; doing it here too
@@ -474,10 +479,10 @@ export async function resolveBrowserGate(
   // A lease on an operator pane rides on the folder's opt-in: whenever the opt-in is seen OFF the lease ends,
   // whatever turned it off, so turning it back on can never revive an old approval.
   if (rec && rec.openedBy === 'operator' && !readOptIn) browserLeases.revoke(rec.paneId)
-  const token = rec ? getBrowserHost().viewToken(rec.paneId) : undefined
-  return resolveGateInput({
+  const token = rec ? getBrowserHost().viewToken(rec.paneId, tabId) : undefined
+  const resolution = resolveGateInput({
     rec,
-    liveUrl: rec ? (getBrowserHost().info(rec.paneId)?.url ?? '') : '',
+    liveUrl: rec ? (getBrowserHost().info(rec.paneId, tabId)?.url ?? '') : '',
     writesEnabled,
     disconnected: rec ? browserAccess.isDisconnected(rec.paneId) : false,
     paused: rec ? browserAccess.isPaused(rec.paneId) : false,
@@ -485,7 +490,7 @@ export async function resolveBrowserGate(
     leaseActive:
       rec !== undefined && token !== undefined ? browserLeases.isActive(rec.paneId, token) : false,
     writeDenied: rec ? browserLeases.isDenied(rec.paneId) : false,
-    inputReady: rec ? getBrowserHost().inputReady(rec.paneId) : true,
+    inputReady: rec ? getBrowserHost().inputReady(rec.paneId, tabId) : true,
     harnuPorts: collectHarnuPorts(mcpPort),
     trustedHosts: rec ? trustedHostsSync(rec.folder) : [],
     ...(op === 'browser_open' && folder !== undefined
@@ -499,6 +504,12 @@ export async function resolveBrowserGate(
         }
       : {})
   })
+  if (rec && resolution.input.pane) {
+    // The tab the call is judged on, for a refusal that must name it (PANE_INPUT_NOT_READY's reload).
+    resolution.input.pane.tabId = tabId ?? rec.activeTabId
+    if (tabId !== undefined && !findTab(rec, tabId)) resolution.input.pane.tabKnown = false
+  }
+  return resolution
 }
 
 /** What the handlers pass in: the bits of the MCP call context the verbs need. */

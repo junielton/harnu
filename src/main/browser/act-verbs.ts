@@ -34,11 +34,14 @@ import type { BrowserOp } from './access'
 import {
   BROWSER_NOTE,
   ackBase,
+  activateForVerb,
   gate,
   noteAgentWrite,
   originOf,
   refuse,
   refuseBadArgs,
+  tabIdOf,
+  withTab,
   type Refusal
 } from './verbs-core'
 import type { BrowserWriteQueue } from './write-queue'
@@ -109,10 +112,13 @@ export async function runWrite(
   op: BrowserOp,
   args: { paneId: string } & Record<string, unknown>,
   key: object,
-  deps: BrowserActDeps,
+  unboundDeps: BrowserActDeps,
   body: (ctx: ActCtx) => Promise<Record<string, unknown> | Refusal>
 ): Promise<Record<string, unknown>> {
-  const first = await gate(op, args.paneId, deps, args)
+  // The tab the call names (browser-tabs S-6): its view, readers, activity word and lease are what this run uses.
+  const tabId = tabIdOf(args)
+  const deps = withTab(unboundDeps, tabId)
+  const first = await gate(op, args.paneId, deps, args, tabId)
   if ('refusal' in first) return first.refusal
   const rec = first.rec!
   const readers = deps.host.readers(rec.paneId)
@@ -122,8 +128,10 @@ export async function runWrite(
   const exec = async (): Promise<Record<string, unknown> | Refusal> => {
     // The queue wait is real time: the lease can end, the operator can Pause or Disconnect, the folder can be
     // blocked. Judge the pane again right before acting.
-    const again = await gate(op, args.paneId, deps, args)
+    const again = await gate(op, args.paneId, deps, args, tabId)
     if ('refusal' in again) return again.refusal
+    // A background tab comes forward before its input runs; the ACK says so (`activated: true`).
+    activateForVerb(op, args, rec, deps)
     const token = deps.registry.beginWrite(rec.paneId)
     // Every acting verb is agent INPUT for the emit gate (spec §5.4): stamped before dispatch, ended after.
     deps.registry.beginAgentInput(rec.paneId)
@@ -161,7 +169,7 @@ export async function runWrite(
   const { __othersWrote, ...rest } = out as Record<string, unknown> & { __othersWrote?: boolean }
   const live = deps.host.info(rec.paneId)
   return {
-    ...ackBase(rec, live, originOf(rec, live, deps)),
+    ...ackBase(rec, live, originOf(rec, live, deps), tabId),
     ...rest,
     othersWrote: queued.othersWrote || __othersWrote === true,
     note: BROWSER_NOTE
@@ -320,6 +328,8 @@ async function releaseObjects(deps: BrowserActDeps, ctx: ActCtx): Promise<void> 
 
 export interface ClickArgs {
   paneId: string
+  /** The tab to act on (default: the active tab); a background tab comes forward first for input. */
+  tabId?: string
   ref: string
   button?: MouseButton
   clickCount?: number
@@ -329,9 +339,10 @@ export interface ClickArgs {
 
 export async function clickVerb(
   args: ClickArgs,
-  deps: BrowserActDeps,
+  unboundDeps: BrowserActDeps,
   key: object = args
 ): Promise<Record<string, unknown>> {
+  const deps = withTab(unboundDeps, args.tabId)
   return runWrite('browser_click', args as never, key, deps, (ctx) => performClick(args, ctx, deps))
 }
 
@@ -398,6 +409,8 @@ export async function performClick(
 
 export interface TypeArgs {
   paneId: string
+  /** The tab to act on (default: the active tab); a background tab comes forward first for input. */
+  tabId?: string
   ref?: string
   text: string
   delayMs?: number
@@ -414,9 +427,10 @@ async function pressChord(deps: BrowserActDeps, ctx: ActCtx, name: string): Prom
 
 export async function typeVerb(
   args: TypeArgs,
-  deps: BrowserActDeps,
+  unboundDeps: BrowserActDeps,
   key: object = args
 ): Promise<Record<string, unknown>> {
+  const deps = withTab(unboundDeps, args.tabId)
   return runWrite('browser_type', args as never, key, deps, async (ctx) => {
     try {
       let target: { role: string; name: string } | null = null
@@ -481,14 +495,17 @@ export async function typeVerb(
 
 export interface FillArgs {
   paneId: string
+  /** The tab to act on (default: the active tab); a background tab comes forward first for input. */
+  tabId?: string
   fields: Array<{ ref: string; value: string }>
 }
 
 export async function fillVerb(
   args: FillArgs,
-  deps: BrowserActDeps,
+  unboundDeps: BrowserActDeps,
   key: object = args
 ): Promise<Record<string, unknown>> {
+  const deps = withTab(unboundDeps, args.tabId)
   return runWrite('browser_fill', args as never, key, deps, async (ctx) => {
     try {
       // Every ref is checked before anything is touched, so a stale one cannot leave a half-filled form.
@@ -541,15 +558,18 @@ export async function fillVerb(
 
 export interface PressArgs {
   paneId: string
+  /** The tab to act on (default: the active tab); a background tab comes forward first for input. */
+  tabId?: string
   keys: string[]
   ref?: string
 }
 
 export async function pressVerb(
   args: PressArgs,
-  deps: BrowserActDeps,
+  unboundDeps: BrowserActDeps,
   key: object = args
 ): Promise<Record<string, unknown>> {
+  const deps = withTab(unboundDeps, args.tabId)
   return runWrite('browser_press', args as never, key, deps, async (ctx) => {
     try {
       let stale = false
@@ -590,6 +610,8 @@ export async function pressVerb(
 
 export interface EvalArgs {
   paneId: string
+  /** The tab to run in (default: the active tab); a background tab is used as it is. */
+  tabId?: string
   expression: string
   awaitPromise?: boolean
   frame?: string
@@ -653,9 +675,10 @@ function cutBytes(text: string, max: number): string {
 
 export async function evalVerb(
   args: EvalArgs,
-  deps: BrowserActDeps,
+  unboundDeps: BrowserActDeps,
   key: object = args
 ): Promise<Record<string, unknown>> {
+  const deps = withTab(unboundDeps, args.tabId)
   return runWrite('browser_eval', args as never, key, deps, async (ctx) => {
     const paneId = ctx.rec.paneId
     const folder = ctx.rec.folder
