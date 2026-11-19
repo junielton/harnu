@@ -1,4 +1,4 @@
-<!-- harnu-features v157 (2026-11-18) -->
+<!-- harnu-features v158 (2026-11-19) -->
 
 # You are running inside Harnu
 
@@ -773,6 +773,34 @@ then need a lease ("Who may do what").
 
 Agent panes use their own cookie jar and start logged out; log in only inside a pane you
 opened, never ask the operator for credentials to type here.
+
+**Tabs in an agent pane.** A pane holds up to 8 tabs, all in its own cookie jar.
+`browser_open({ folder, paneId, url })` with the `paneId` of an agent pane of the same
+folder adds a tab instead of a pane and returns `tabId` (`tab-` and 8 hex digits): it loads
+in the background (`background: false` makes it the active tab), flags an `external` host
+like a navigation, and does not count toward the 4 panes. An operator pane or a live panel
+is `NOT_AN_AGENT_PANE`, a pane of another folder is `PANE_NOT_FOUND`, a ninth tab is
+`TAB_LIMIT` (reuse one with `browser_navigate`, or close one). `browser_navigate`,
+`browser_close`, `browser_snapshot`, `browser_screenshot`, `browser_console`,
+`browser_wait_for`, `browser_eval`, `browser_click`, `browser_type`, `browser_fill`,
+`browser_press`, `browser_upload` and `browser_download` take `tabId?` (default: the active
+tab) and name the tab they acted on in the ACK's `tabId`; an unknown one is `TAB_NOT_FOUND`.
+Refs, console entries and snapshots belong to one tab: click in the tab you snapshotted.
+Reads (`browser_snapshot`, `browser_console`, `browser_wait_for`, `browser_eval`) and
+`browser_navigate` work on a background tab without switching to it. `browser_screenshot`
+and the input verbs bring their tab forward first and say `activated: true` (the operator
+sees the pane switch). A discarded tab revives first (`revived: true`).
+`browser_close({ paneId, tabId })` closes that tab and says `paneClosed`: `true` when it was
+the last one and the pane went with it (a later verb on it is `PANE_NOT_FOUND`); without
+`tabId` it closes the whole pane. A live panel has one tab, whose `tabId` the verbs take.
+`browser_list` gives each pane `tabs: [{ tabId, url, title, active, state }]` (`state` is
+`live` or `discarded`; `url` and `title` are `null` while the pane is not `readable`).
+`browser_emulate`, `browser_network`, `browser_set_data` and `browser_patch` act on the whole
+pane and take no `tabId`. On a tab whose main-frame load failed, the reads answer `ok` with
+`loadError: { code, url }` and an empty page, `browser_eval` returns `loadError` instead of
+a value, and `browser_screenshot` returns no image; navigate it or ask the operator. A lease
+is one slot per pane, granted for one tab's page and origin: it does not cover another tab,
+and the next verb that names another tab ends it, so that tab asks for its own.
 
 **Operator switches** — their decisions; tell them what you wanted, don't route around them.
 **Allow agents to drive browser panes** (Settings → Control server, on by default): off
