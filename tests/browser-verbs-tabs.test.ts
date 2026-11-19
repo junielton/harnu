@@ -6,6 +6,9 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { createBrowserAccess, gateBrowserOpDetailed } from '../src/main/browser/access'
+import { planToolCall } from '../src/main/mcp/plan-tool-call'
+import { buildPlanInput } from '../src/main/mcp/plan-input'
+import { shapeDenial } from '../src/main/mcp/deny-hint'
 import { createBrowserRegistry, type BrowserPaneRecord } from '../src/main/browser/registry'
 import { createPaneReaders, type PaneReaders } from '../src/main/browser/pane-readers'
 import { BrowserLeases } from '../src/main/browser/lease'
@@ -667,5 +670,63 @@ describe('tabId at plan level', () => {
         args: { folder: FOLDER, paneId: 'bp-1', url: LOCAL }
       })
     ).toBeNull()
+  })
+})
+
+describe('PANE_INPUT_NOT_READY names the tab to reload', () => {
+  const reloadCall = (res: Record<string, unknown>): string =>
+    (res.nextActions as Array<{ do: string }>).map((a) => a.do).join('\n')
+
+  it('a refused click on a background tab tells the agent to reload that tab', async () => {
+    const r = rig()
+    r.addPane('bp-1', [
+      { id: A, url: LOCAL },
+      { id: B, url: 'http://localhost:3000/b' }
+    ])
+    r.host.inputReady = vi.fn((_p: string, tabId?: string) => tabId !== B)
+    const res = await r.run(() => clickVerb({ paneId: 'bp-1', tabId: B, ref: 's1e1' }, r.deps))
+    expect(res).toMatchObject({ ok: false, error: 'PANE_INPUT_NOT_READY' })
+    expect(reloadCall(res)).toContain(
+      `browser_navigate({ paneId, tabId: "${B}", action: "reload" })`
+    )
+    expect(r.cdpLog).toHaveLength(0)
+  })
+
+  it('without a tabId the hint names the active tab', async () => {
+    const r = rig()
+    r.addPane(
+      'bp-1',
+      [
+        { id: A, url: LOCAL },
+        { id: B, url: 'http://localhost:3000/b' }
+      ],
+      { active: B }
+    )
+    r.host.inputReady = vi.fn(() => false)
+    const res = await r.run(() => clickVerb({ paneId: 'bp-1', ref: 's1e1' }, r.deps))
+    expect(res).toMatchObject({ ok: false, error: 'PANE_INPUT_NOT_READY' })
+    expect(reloadCall(res)).toContain(`tabId: "${B}"`)
+  })
+
+  it('at plan level the refusal carries the tab and its hint names it', () => {
+    const pane = {
+      openedBy: 'agent' as const,
+      originClass: 'local' as const,
+      disconnected: false,
+      paused: false,
+      inputReady: false,
+      tabId: B
+    }
+    const p = planToolCall({
+      tool: 'browser_click',
+      input: buildPlanInput('browser_click', { paneId: 'bp-1', tabId: B, ref: 's1e1' }, FOLDER),
+      policy: { serverEnabled: true, ask: false, denyFolders: [], knownRoots: ['/work'] },
+      now: 1,
+      browser: { pane, writesEnabled: true }
+    })
+    expect(p.verdict).toBe('deny')
+    const hint = shapeDenial(p.auditRecord.result as string, { folder: FOLDER })
+    expect(hint?.error).toBe('PANE_INPUT_NOT_READY')
+    expect(hint?.nextActions.map((a) => a.do).join('\n')).toContain(`tabId: "${B}"`)
   })
 })
