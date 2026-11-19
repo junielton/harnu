@@ -4576,10 +4576,22 @@ holding `document.activeElement` is the focused one.
 `AgentConnectionChip.vue`. A terminal an agent can reach shows **who** is connected,
 **when** the agent reads or types, and a one-click way to cut it off (T474, spec
 `docs/specs/T474-agent-terminals/spec.md` §7). It sits in the default pane header
-(the 24px strip above), between the cwd label and the maximize button:
+(the 24px strip above), between the cwd label and the maximize button.
+
+**Compact icon (browser-tabs S-7, decision D-4).** The text pill below is replaced, in the
+terminal header and in the browser pane header alike, by one **18px round `--accent-soft`
+icon** (`bot` 10px `--accent`) with the accent `pulse-ring` halo (§7, `--pulse-from: 0.69`),
+and the words move into its **tip** (the full spec is "Compact agent icon" under "Browser
+pane"): the head "Connected to ‹session›" (plus "(parked)" for a parked owner), and below it
+"Typing" or "Reading" while the agent works there. The icon is a `<button>` that selects the
+owner session when one is known (a plain focusable `<span>` otherwise); hover or keyboard
+focus shows the tip; Disconnect stays the 18×18 `unplug` button beside it and the live-word
+`aria-live` node is unchanged. The geometry notes below that mention the pill (padding,
+leading dot, container-query hides) describe the pill that the Paused and Disconnected states
+of the browser pane still use; the terminal header shows no pill any more.
 
 ```
-▸_ app-api   ● Connected to ‹Fix login bug› · typing   ⏏  ⤢ ✕
+▸_ app-api   (🤖)  ⏏  ⤢ ✕        tip: Connected to ‹Fix login bug› / Typing
 ```
 
 - **Chip** — a `<button>` (a plain `<span>` when there is nothing to click through to),
@@ -4665,7 +4677,12 @@ must freeze it first (see "Frozen frame").
   in "Pane header"), with: `globe` 12px `--text-3`; the **page title** (falls back to the host, then to
   `browserPane.newTab`), `min-w-0 flex-1 truncate`, native `title` = the full URL; the **connection chip**
   (below); a `more-horizontal` button (18×18) that opens the pane menu; maximize; close. Maximize keeps the same
-  view and re-bounds it (spec decision 26); it never re-parents it.
+  view and re-bounds it (spec decision 26); it never re-parents it. **One centre line (browser-tabs S-7):** the
+  header is 24px with a 1px bottom border, so its content box is 23px, and **every child sits on that box's
+  vertical centre** (±0.5px) in the single, tabs, overflow and agent states: the header is `items-center`, the
+  strip is the one child that stretches (`self-stretch`, its tabs fill the box, so their centre is the same line)
+  and the strip's own buttons (`+`, `+N`) use `align-self: center`. The Expand button the pane header carries (the
+  mockup has none) is a header child like the others: same 18×18 target, same line.
 - **Address bar** — a 28px row (`h-7`, `--bg`, `border-b border-border`, `px-2`, `gap-1`): back, forward and
   reload as 18×18 icon buttons (`arrow-left`, `arrow-right`, `rotate-cw`; **disabled** is `text-text-disabled`,
   never hidden; reload becomes `x` = stop while a load is in flight), then the **origin badge**, then the
@@ -4706,11 +4723,24 @@ It shows for an agent-opened pane, and while paused or disconnected.
 
 | State                       | Chip                                                                                                                                                                                                                                                                                                                                               |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Agent-opened, owner known   | accent pill, "Connected to ‹session›", live word `driving` while a navigation verb runs (`reading` arrives with the read verbs of a later unit); **Disconnect** (`unplug`) at its right. The session name is the part that stays: "Connected to" is dropped first (below 300px) and the name truncates last; the hover title keeps the whole text  |
-| Agent-opened, owner unknown | "Connected to an agent"; same Disconnect                                                                                                                                                                                                                                                                                                           |
-| Operator-opened             | no chip until the folder's read opt-in is on. Opt-in on, no lease: "An agent can read here" (no Disconnect: the reader is unidentifiable). A lease active: "An agent can drive here" (a lease records no grantee) with **Disconnect**. Same pill geometry as the agent chip                                                                        |
+| Agent-opened, owner known   | the **compact agent icon** (below), its tip "Connected to ‹session›" and, while a verb runs, "Driving this tab · ‹host›" or "Reading"; **Disconnect** (`unplug`) beside it                                                                                                                                                                         |
+| Agent-opened, owner unknown | the same icon, tip "Connected to an agent"; same Disconnect                                                                                                                                                                                                                                                                                        |
+| Operator-opened             | no chip until the folder's read opt-in is on. Opt-in on, no lease: the icon, tip "An agent can read here" (no Disconnect: the reader is unidentifiable). A lease active: the icon, tip "An agent can drive here" (a lease records no grantee) with **Disconnect**                                                                                  |
 | **Paused**                  | `--warning` 10% pill, `--warning` text, "Agent paused · 9:41" (m:ss, counts down each second), then a bordered **Resume** text button (`play` 10px + "Resume", 1px `--warning` 40% border). Below 300px the header has no room for the words, so the same chip (text, Resume, Disconnect) becomes a 22px strip under the header on `--warning` 10% |
 | **Disconnected**            | `--red-soft` pill, `--red` text, "Disconnected" (the mockup's red chip), no button. Permanent; the operator keeps using the pane                                                                                                                                                                                                                   |
+
+**Compact agent icon** (browser-tabs S-7, decision D-4; mockup states `agent`, `agent-hover`; the same view serves the
+terminal pane header, see "Agent connection chip"). Connected states no longer draw a text pill: they draw an **18px
+round icon**, `--accent-soft` fill, `bot` 10px `--accent`, 4px left margin, with the `pulse-ring` halo of §7
+(`.anim-pulse-dot.anim-pulse-dot--accent`, `--pulse-from: 0.69` = 18 ÷ 26), always on while the icon shows; no
+halo under `prefers-reduced-motion`. **Tip** on hover and on keyboard focus (the icon is focusable), a `--surface`
+card, 1px `--border-2`, `--radius`, `--shadow-pop`, `padding 6px 9px`, 11px, one line each: the head in `--accent`
+with a `bot` 10px glyph, "Connected to ‹session›"; below it, in `--text-3`, what the agent is doing when a word is
+live: "Driving this tab · ‹host›", "Reading" or "Typing" (the chip's existing words, capitalised). It opens 5px under
+the icon, right-aligned to it, and registers with the native-overlay composable while it shows. The icon's
+`aria-label` carries the same text, so the words stay available without hovering. **Disconnect** stays an `unplug`
+button (18×18) beside the icon. **Paused** and **Disconnected** keep their pills, unchanged. The tab whose activity
+word is live shows its accent dot in place of the favicon (see "Tab strip").
 
 The pause countdown is the only chip text that ticks. It is plain text with no animation, so nothing changes under
 `prefers-reduced-motion`. Disconnect needs **no confirm** (revoking is the safe direction) and is **permanent**,
@@ -4932,7 +4962,8 @@ chrome adds three things and changes one.
   discarded tab keeps its look. `+` follows the last tab (4px side margins), adds a `start` tab right of the active
   one and puts the cursor in its address field; at 8 tabs it is `disabled` (`text-text-disabled`) and its title says
   "Tab limit reached (8)". A `page` pane (live panel) keeps one tab: no `+` and no strip. The tab whose activity
-  word is live shows a 6px `--accent` dot (with a 3px `--accent-soft` ring) in place of its favicon (S-7 draws it).
+  word is live (`agentActive`) shows a 6px `--accent` dot (with a 3px `--accent-soft` ring) in place of its favicon,
+  on a collapsed icon tab too; its native `title` says "The agent is driving this tab" (S-7).
 - **Overflow** (the sizes are in CSS px; W is the strip's width: the header minus the right-hand buttons and `+`).
   The strip takes the first mode that fits, n being the tab count:
 
