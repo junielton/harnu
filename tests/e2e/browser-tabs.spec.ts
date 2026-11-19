@@ -1,6 +1,6 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { createServer, type Server } from 'node:http'
-import { readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -65,6 +65,21 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 
     seed = seedDialogWorld({ worktrees: 1 })
+    // One transcript in the folder, so the control server tracks it (its fleet scan reads `~/.claude/projects`).
+    const slug = seed.repo.replace(/[^a-zA-Z0-9]/g, '-')
+    const sessionId = '00000000-0000-4000-8000-0000000000a7'
+    mkdirSync(join(seed.userData, '.claude', 'projects', slug), { recursive: true })
+    writeFileSync(
+      join(seed.userData, '.claude', 'projects', slug, `${sessionId}.jsonl`),
+      JSON.stringify({
+        type: 'user',
+        cwd: seed.repo,
+        sessionId,
+        gitBranch: 'main',
+        timestamp: new Date().toISOString(),
+        message: { role: 'user', content: 'hello' }
+      }) + '\n'
+    )
     app = await launchApp({ userData: seed.userData, env: seedLaunchEnv(seed) })
     page = await app.firstWindow()
     await expect(page.locator('body')).toBeVisible()
@@ -277,11 +292,19 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
         })
       )
       try {
-        const opened = await client.callTool({
-          name: 'browser_open',
-          arguments: { folder: seed.repo, url: `${base}/agent` }
-        })
-        expect(opened.isError).not.toBe(true)
+        // The control server's scan picks the seeded transcript up a moment after boot: retry until the folder is known.
+        await expect
+          .poll(
+            async () => {
+              const res = await client.callTool({
+                name: 'browser_open',
+                arguments: { folder: seed.repo, url: `${base}/agent` }
+              })
+              return res.isError === true ? JSON.stringify(res.content) : 'opened'
+            },
+            { timeout: 15_000 }
+          )
+          .toBe('opened')
         await expect(page.getByTestId('agent-icon')).toBeVisible()
         await expectOneLine('agent')
       } finally {
