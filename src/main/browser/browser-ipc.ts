@@ -142,6 +142,11 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     const a = tabArgs(payload)
     return { ok: a ? await host().reloadTab(a.paneId, a.tabId) : false }
   })
+  // The operator focused a pane's header or address bar (S-4): stamp it as the last used one. A focus event of the
+  // page itself is caught in main (`view-host.ts`).
+  handleApp('browser:pane:focused', (paneId: unknown) => ({
+    ok: isPaneId(paneId) ? host().markFocused(paneId) : false
+  }))
   // "Reload when it is up" (S-3): `on` starts the TCP poll of an error tab's local origin, `false` cancels it.
   handleApp('browser:tab:reload-when-up', (payload: unknown) => {
     const a = tabArgs(payload)

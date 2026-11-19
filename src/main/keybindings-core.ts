@@ -161,6 +161,11 @@ export type ShortcutActionId =
   | 'browser.back'
   | 'browser.forward'
   | 'browser.focusAddress'
+  // browser-tabs S-4: the focused pane's tab chords.
+  | 'browser.tab.new'
+  | 'browser.tab.close'
+  | 'browser.tab.next'
+  | 'browser.tab.prev'
 
 export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal' | 'browser'
 
@@ -483,7 +488,14 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('browser.reload', 'panes', 'Cmd+R', { scope: 'browser', palette: false }),
   def('browser.back', 'panes', 'Cmd+[', { scope: 'browser', palette: false }),
   def('browser.forward', 'panes', 'Cmd+]', { scope: 'browser', palette: false }),
-  def('browser.focusAddress', 'panes', 'Cmd+L', { scope: 'browser', palette: false })
+  def('browser.focusAddress', 'panes', 'Cmd+L', { scope: 'browser', palette: false }),
+  // browser-tabs S-4: the tab chords of a focused browser pane. `browser.tab.close` shares Cmd+W with the global
+  // `session.close`: with a browser pane focused the `browser` scope wins, so the chord closes the tab. Next and
+  // previous are Ctrl+Tab on every platform (Cmd+Tab belongs to the OS on macOS).
+  def('browser.tab.new', 'panes', 'Cmd+T', { scope: 'browser', palette: false }),
+  def('browser.tab.close', 'panes', 'Cmd+W', { scope: 'browser', palette: false }),
+  def('browser.tab.next', 'panes', 'Ctrl+Tab', { scope: 'browser', palette: false }),
+  def('browser.tab.prev', 'panes', 'Ctrl+Shift+Tab', { scope: 'browser', palette: false })
 ]
 
 export const DESCRIPTOR_BY_ID: Readonly<Record<ShortcutActionId, KeyBindingDescriptor>> =

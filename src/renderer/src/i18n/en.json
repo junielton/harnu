@@ -1815,7 +1815,11 @@
       "browser_reload": "Browser pane: reload",
       "browser_back": "Browser pane: back",
       "browser_forward": "Browser pane: forward",
-      "browser_focusAddress": "Browser pane: focus the address bar"
+      "browser_focusAddress": "Browser pane: focus the address bar",
+      "browser_tab_new": "Browser pane: new tab",
+      "browser_tab_close": "Browser pane: close the tab",
+      "browser_tab_next": "Browser pane: next tab",
+      "browser_tab_prev": "Browser pane: previous tab"
     }
   },
   "notifications": {
@@ -5194,6 +5198,26 @@
     },
     "label": "Browser pane",
     "newTab": "New tab",
+    "tabs": {
+      "new": "New tab ({keys})",
+      "newPlain": "New tab",
+      "limit": "Tab limit reached (8)",
+      "strip": "Tabs",
+      "close": "Close tab",
+      "closeNamed": "Close {title}",
+      "more": "{count} more tabs",
+      "moreList": "All tabs",
+      "open": "open",
+      "untitled": "New tab",
+      "menu": {
+        "newRight": "New tab to the right",
+        "reload": "Reload",
+        "duplicate": "Duplicate",
+        "move": "Move to a new pane",
+        "closeOthers": "Close other tabs",
+        "close": "Close tab"
+      }
+    },
     "menu": "More actions",
     "back": "Back",
     "forward": "Forward",
@@ -5240,7 +5264,8 @@
       "crashed": "The page stopped responding",
       "dismiss": "Dismiss",
       "offline": "Blocked: this panel is offline, so it cannot open other addresses. Turn on Network on to follow links out.",
-      "agentInput": "Ignored — a session just acted on this page"
+      "agentInput": "Ignored — a session just acted on this page",
+      "tabLimit": "Tab limit reached (8). Close a tab to open more."
     },
     "zoom": {
       "in": "Zoom in",

@@ -168,8 +168,6 @@ export interface ViewHostDeps {
   onMainFrameCommit?(paneId: string, tabId: string): void
   /** Redact page-derived text recorded by the readers (best-effort, the `read_terminal` scrubber). */
   scrub(text: string): string
-  /** The operator's click opened a popup: create an operator-class pane in `folder` (spec §3.2). */
-  openPopupPane(opts: { folder: string; partition: BrowserPartition; url: string }): void
   /** `<userData>/browser-prefs.json`: the zoom remembered per origin (T572, spec §9.1). */
   prefs: BrowserPrefsStore
   /** The `harnu-page://` side (T569 U2); absent in a unit that never loads a page. */
@@ -1701,6 +1699,18 @@ export class BrowserViewHost implements BrowserReadHost {
     if (e && !e.wc.isDestroyed()) e.wc.openDevTools({ mode: 'detach' })
   }
 
+  /**
+   * Stamp the pane as the one the operator used last (browser-tabs S-4): focus in its page, header or address bar.
+   * The stamp rides the pane state, and the renderer keeps it with the pane in `helpers.json`.
+   */
+  markFocused(paneId: string): boolean {
+    const rec = this.deps.registry.get(paneId)
+    if (!rec) return false
+    rec.lastFocusedAt = this.deps.now()
+    this.publishPane(paneId)
+    return true
+  }
+
   /** Re-publish a pane's state (a pause, a resume, a Disconnect changed). */
   refresh(paneId: string): void {
     this.publishPane(paneId)
@@ -2479,8 +2489,10 @@ export class BrowserViewHost implements BrowserReadHost {
       }
     })
 
-    // Layer 2: popups. Denied as popups; with a real user activation the target opens as a NEW operator-class
-    // pane that inherits the opener's partition, with no `opener` link (spec §3.2, Q10).
+    // Layer 2: popups. Denied as popups; with a real user activation and an allowed scheme the target opens as a
+    // NEW TAB right of its opener, in the same pane and partition, with no `opener` link (spec §3.2, Q10, D-2).
+    // A Ctrl+click (Cmd+click on macOS) arrives as a `background-tab` disposition and opens behind the opener.
+    // At the tab limit the window is refused and the pane notice says so.
     wc.setWindowOpenHandler((details) => {
       // No popup from an offline page pane: its target would be the same exfiltration channel (F2).
       if (
@@ -2493,7 +2505,12 @@ export class BrowserViewHost implements BrowserReadHost {
       const decision = decidePopup(details.url, e.gestures.pending())
       if (decision.action === 'open-pane') {
         e.gestures.consume()
-        this.deps.openPopupPane({ folder: e.folder, partition: e.partition, url: decision.url })
+        const res = this.newTab(e.paneId, {
+          url: decision.url,
+          afterTabId: e.tabId,
+          background: details.disposition === 'background-tab'
+        })
+        if (!res.ok && res.error === 'TAB_LIMIT') this.publish(e, { notice: { kind: 'tab-limit' } })
       } else if (decision.reason === 'scheme-blocked') {
         this.publish(e, { notice: { kind: 'blocked', scheme: schemeOf(details.url) } })
       }
@@ -2532,6 +2549,8 @@ export class BrowserViewHost implements BrowserReadHost {
       // An action that needs the app (focus the address bar) asks for it through `focusApp`.
       this.send('browser:chord', { paneId: e.paneId, chord: decision.chord })
     })
+    // Focus in the page makes this pane the operator's last used one (the Topbar's Browser button adds its tab there).
+    wc.on('focus', () => this.markFocused(e.paneId))
     wc.on('before-mouse-event', (_event, mouse) => {
       if (mouse.type !== 'mouseDown') return
       this.noteGesture(e)

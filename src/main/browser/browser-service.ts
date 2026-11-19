@@ -209,8 +209,6 @@ export function getBrowserHost(): BrowserViewHost {
       if (token !== undefined) browserLeases.noteToken(paneId, token)
     },
     scrub: (text) => scrubTerminalText(text, os.homedir()),
-    openPopupPane: ({ folder, partition, url }) =>
-      openOperatorPane({ folder, partition, url, popup: true }),
     prefs: browserPrefs(),
     pageHooks: getPageService().hooks,
     // A closed pane's pins go with it; a discarded one keeps them (spec §10.1).
@@ -228,14 +226,13 @@ export function bindBrowserWindow(getWindow: () => BrowserWindow | null): void {
 }
 
 /**
- * Create a pane the OPERATOR opened (the Topbar Browser button, a popup the operator clicked). Operator panes use the
- * operator partition (a popup inherits its opener's) and are never capped (spec §10.1).
+ * Create a pane the OPERATOR opened (the Topbar Browser button). Operator panes use the operator partition and are
+ * never capped (spec §10.1). A page's new window is a tab of its opener's pane, not a pane (browser-tabs D-2).
  */
 export function openOperatorPane(opts: {
   folder: string
   url: string
   partition?: BrowserPartition
-  popup?: boolean
 }): { paneId: string } {
   const paneId = `bp-${randomUUID().slice(0, 8)}`
   const now = Date.now()
@@ -261,14 +258,6 @@ export function openOperatorPane(opts: {
   } catch (err) {
     browserRegistry.remove(paneId)
     throw err
-  }
-  if (opts.popup) {
-    mainWindowGetter?.()?.webContents.send('browser:popup', {
-      paneId,
-      worktreePath: opts.folder,
-      url: opts.url,
-      partition
-    })
   }
   return { paneId }
 }

@@ -55,6 +55,7 @@ import { createFrameScheduler } from '../lib/frame-scheduler'
 import { sessionTitle } from '../lib/session-label'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import BrowserLoadError from './BrowserLoadError.vue'
+import BrowserTabStrip from './BrowserTabStrip.vue'
 import { hostPlaceholderOf } from '../../../shared/browser-tabs'
 import {
   FRAME_BEZEL_PX,
@@ -88,8 +89,11 @@ import {
 } from '../lib/browser-comment'
 import { COMMENT_MAX_CHARS } from '../../../shared/browser-comment'
 import { renderKeysString } from '../../../main/keybindings-core'
+import { tabActionForKey } from '../lib/browser-chords'
+import { dispatchForwardedChord } from '../composables/useShortcuts'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { isMac } from '../lib/platform'
+import type { TabMenuAction } from '../lib/browser-tabs-view'
 import type { BrowserPaneState } from '../../../preload'
 
 interface Props {
@@ -154,6 +158,42 @@ const onErrorReloadWhenUp = (on: boolean): void => {
   const tab = activeTab.value
   if (tab) void browser.tabReloadWhenUp(paneId, tab.tabId, on)
 }
+
+/* ---- Tab strip (browser-tabs S-4) ----------------------------------------------------------------- */
+
+const tabs = computed(() => state.value.tabs ?? [])
+/** Two or more tabs: the strip replaces the globe and the title in the header. */
+const hasStrip = computed(() => tabs.value.length >= 2)
+/** A live panel keeps one tab: no `+`, no strip. */
+const canAddTab = computed(() => state.value.origin !== 'page' && !state.value.pagePath)
+const tabKeys = (id: 'browser.tab.new' | 'browser.tab.close'): string => keybindings.chordLabel(id)
+const onTabAdd = (): void => void browser.tabNewStart(paneId, state.value.activeTabId)
+const onTabMenu = (action: TabMenuAction, tabId: string): void =>
+  void browser.tabMenu(paneId, tabId, action)
+
+/** The operator is using this pane's header or address bar: main stamps it as the last used one (AC-39). */
+const onChromeFocus = (): void => {
+  browser.chromeFocusPaneId = paneId
+  browser.paneFocused(paneId)
+}
+const onChromeBlur = (ev: FocusEvent): void => {
+  const next = ev.relatedTarget as Node | null
+  if (next && rootEl.value?.contains(next)) return
+  if (browser.chromeFocusPaneId === paneId) browser.chromeFocusPaneId = null
+}
+/**
+ * The tab chords with the keyboard in the pane chrome (header, address bar): the same actions the page's chords run
+ * (main forwards those), taken before the app's own bindings, so Ctrl+W closes the tab and not the session.
+ */
+function onChromeKeydown(ev: KeyboardEvent): void {
+  const id = tabActionForKey(keybindings.resolved.list, ev, isMac)
+  if (!id) return
+  ev.preventDefault()
+  ev.stopPropagation()
+  browser.chordPaneId = paneId
+  dispatchForwardedChord(id)
+}
+const rootEl = ref<HTMLElement | null>(null)
 
 /* ---- Discarded (T574, spec §10.1) ---------------------------------------------------------------- */
 
@@ -302,6 +342,7 @@ const noticeText = computed(() => {
   if (n.kind === 'download-failed') return t('browserPane.noticeDownloadFailed')
   if (n.kind === 'offline') return t('browserPane.notice.offline')
   if (n.kind === 'agent-input') return t('browserPane.notice.agentInput')
+  if (n.kind === 'tab-limit') return t('browserPane.notice.tabLimit')
   return t('browserPane.notice.crashed')
 })
 const noticeIsInfo = computed(() =>
@@ -561,6 +602,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // A pane that goes away while its chrome holds the focus fires no `focusout`: release the hold here, or Ctrl+W
+  // keeps closing a tab of a pane that no longer exists instead of the session.
+  if (browser.chromeFocusPaneId === paneId) browser.chromeFocusPaneId = null
   areaObserver?.disconnect()
   areaObserver = null
   stopTracking()
@@ -775,21 +819,44 @@ watch(isFrozen, async (frozen) => {
 
 <template>
   <div
+    ref="rootEl"
     class="@container relative flex h-full w-full flex-col overflow-hidden bg-bg"
     :aria-label="$t('browserPane.label')"
     data-testid="browser-pane"
+    data-dsqa="browser-pane"
+    @focusout="onChromeBlur"
+    @keydown.capture="onChromeKeydown"
   >
     <header
-      class="@container flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2 text-[11px] text-text-2 transition-colors"
-      :class="
+      class="@container flex h-6 shrink-0 items-center gap-1.5 border-b border-border bg-surface pr-2 text-[11px] text-text-2 transition-colors"
+      :class="[
+        hasStrip ? 'pl-0' : 'pl-2',
         resizable ? 'cursor-row-resize border-t border-t-border-2 hover:border-t-accent-line' : ''
-      "
-      @mousedown="onHeaderMouseDown"
+      ]"
+      data-dsqa-part="header"
+      @mousedown="(onHeaderMouseDown($event), browser.paneFocused(paneId))"
+      @focusin="onChromeFocus"
     >
-      <Globe :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-      <span class="min-w-[2rem] flex-1 truncate" :title="state.url" data-testid="browser-title">{{
-        title
-      }}</span>
+      <!-- One tab: today's header (globe and title) plus `+`. Two or more: the strip takes their place. -->
+      <template v-if="!hasStrip">
+        <Globe :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
+        <span class="min-w-[2rem] flex-1 truncate" :title="state.url" data-testid="browser-title">{{
+          title
+        }}</span>
+      </template>
+      <BrowserTabStrip
+        :tabs="tabs"
+        :active-tab-id="state.activeTabId"
+        :can-add="canAddTab"
+        :new-keys="tabKeys('browser.tab.new')"
+        :close-keys="tabKeys('browser.tab.close')"
+        :agent-pane-at-cap="browser.agentPaneAtCap(paneId)"
+        :pane-id="paneId"
+        @activate="(id) => void browser.tabActivate(paneId, id)"
+        @close="(id) => void browser.tabClose(paneId, id)"
+        @add="onTabAdd"
+        @menu="onTabMenu"
+      />
 
       <span
         v-if="chip"
@@ -1004,6 +1071,8 @@ watch(isFrozen, async (frozen) => {
     <!-- Address bar (design.md "Address bar"). -->
     <div
       class="@container relative flex h-7 shrink-0 items-center gap-1 border-b border-border bg-bg px-2"
+      data-dsqa-part="address-bar"
+      @focusin="onChromeFocus"
     >
       <button
         type="button"
@@ -1586,6 +1655,7 @@ watch(isFrozen, async (frozen) => {
             class="relative bg-bg"
             :style="{ width: `${layout.screenWidth}px`, height: `${layout.screenHeight}px` }"
             data-testid="browser-host"
+            data-dsqa-part="host"
           >
             <img
               v-if="isFrozen && frozenSrc"
@@ -1610,7 +1680,13 @@ watch(isFrozen, async (frozen) => {
           {{ caption }}
         </div>
       </div>
-      <div v-else ref="hostEl" class="absolute inset-0 bg-bg" data-testid="browser-host">
+      <div
+        v-else
+        ref="hostEl"
+        class="absolute inset-0 bg-bg"
+        data-testid="browser-host"
+        data-dsqa-part="host"
+      >
         <!-- Frozen frame (spec §2.4): a still of the page while an app layer overlaps the native view. -->
         <img
           v-if="isFrozen && frozenSrc"
