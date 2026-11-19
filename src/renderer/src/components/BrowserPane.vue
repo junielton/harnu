@@ -602,6 +602,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // A pane that goes away while its chrome holds the focus fires no `focusout`: release the hold here, or Ctrl+W
+  // keeps closing a tab of a pane that no longer exists instead of the session.
+  if (browser.chromeFocusPaneId === paneId) browser.chromeFocusPaneId = null
   areaObserver?.disconnect()
   areaObserver = null
   stopTracking()
@@ -831,7 +834,7 @@ watch(isFrozen, async (frozen) => {
         resizable ? 'cursor-row-resize border-t border-t-border-2 hover:border-t-accent-line' : ''
       ]"
       data-dsqa-part="header"
-      @mousedown="(onHeaderMouseDown($event), onChromeFocus())"
+      @mousedown="(onHeaderMouseDown($event), browser.paneFocused(paneId))"
       @focusin="onChromeFocus"
     >
       <!-- One tab: today's header (globe and title) plus `+`. Two or more: the strip takes their place. -->
