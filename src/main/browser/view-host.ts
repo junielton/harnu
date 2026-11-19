@@ -132,10 +132,20 @@ import {
 } from './tabs'
 import type {
   BrowserTabCloseResult,
+  BrowserTabLoadError,
   BrowserTabNewOptions,
   BrowserTabResult,
   BrowserTabState
 } from '../../shared/browser-tabs'
+import {
+  buildLoadError,
+  createReloadWhenUp,
+  isErrorPageUrl,
+  isMainFrameFailure,
+  tcpProbe as realTcpProbe,
+  type ReloadWhenUp
+} from './load-error'
+import { normalizeNetError } from './nav-wait'
 import type { BrowserReadHost } from './read-verbs'
 import type { LivePaneInfo, NavigateOutcome, NavigateTarget } from './verbs-core'
 
@@ -170,6 +180,8 @@ export interface ViewHostDeps {
   onViewDiscarded?(paneId: string): void
   /** How long a pane stays hidden before the sweep discards it. Absent = {@link HIDDEN_DISCARD_MS}. */
   discardMs?: number
+  /** One TCP connect attempt for "Reload when it is up" (S-3). Absent = a real `net.connect`. */
+  tcpProbe?(host: string, port: number): Promise<boolean>
 }
 
 /** What the view host asks of the page service (`page-service.ts`). */
@@ -328,6 +340,15 @@ export class BrowserViewHost implements BrowserReadHost {
   /** A revival already in flight, per tab, so two verbs (or a click and a verb) share one load. */
   private readonly reviving = new Map<string, Promise<boolean>>()
   private sweepTimer: ReturnType<typeof setInterval> | null = null
+  /** The load error each `error` tab shows (S-3): the record the chrome draws and the full address that failed. */
+  private readonly loadErrors = new Map<string, { error: BrowserTabLoadError; address: string }>()
+  /** "Reload when it is up" polls, by tab id: they run while the tab is hidden too. */
+  private readonly reloadWaits: ReloadWhenUp = createReloadWhenUp({
+    probe: (host, port) => (this.deps.tcpProbe ?? realTcpProbe)(host, port),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    now: () => this.deps.now()
+  })
   /** One-shot download allowances, keyed by TAB id (a download belongs to the tab whose page starts it). */
   private readonly arms: DownloadArms = createDownloadArms({
     setTimer: (fn, ms) => setTimeout(fn, ms),
@@ -683,6 +704,9 @@ export class BrowserViewHost implements BrowserReadHost {
 
   /** Tear one tab's view down: webContents, debugger, watchers, readers, held downloads. The tab itself stays known. */
   private release(tabId: string, discard = false): void {
+    // A closed tab stops its "Reload when it is up" poll; a discarded one never has one (it blocks the discard).
+    this.reloadWaits.cancel(tabId)
+    this.loadErrors.delete(tabId)
     const e = this.entries.get(tabId)
     if (!e) return
     e.gen.bump()
@@ -737,7 +761,9 @@ export class BrowserViewHost implements BrowserReadHost {
   newTab(paneId: string, opts: BrowserTabNewOptions = {}): BrowserTabResult {
     const rec = this.deps.registry.get(paneId)
     if (!rec) return { ok: false, error: 'PANE_NOT_FOUND' }
-    const hostView = opts.hostView === 'start' ? 'start' : 'page'
+    // An agent pane (and a live panel) never shows the start page: it is the operator's.
+    const hostView =
+      opts.hostView === 'start' && rec.openedBy === 'operator' && !rec.pagePath ? 'start' : 'page'
     const url = hostView === 'start' ? 'about:blank' : (opts.url ?? 'about:blank')
     const added = addTab(rec, {
       hostView,
@@ -792,6 +818,11 @@ export class BrowserViewHost implements BrowserReadHost {
   async reloadTab(paneId: string, tabId: string): Promise<boolean> {
     const rec = this.deps.registry.get(paneId)
     if (!rec || !findTab(rec, tabId)) return false
+    // An error tab reloads the address that failed (the hidden view only holds Chromium's own error page).
+    const failed =
+      findTab(rec, tabId)?.hostView === 'error' ? this.loadErrors.get(tabId) : undefined
+    if (failed && this.entries.has(tabId))
+      return this.operatorNavigate(paneId, { url: failed.address }, tabId).ok
     if (this.entries.has(tabId))
       return this.operatorNavigate(paneId, { action: 'reload' }, tabId).ok
     return this.revive(paneId, { tabId })
@@ -847,6 +878,105 @@ export class BrowserViewHost implements BrowserReadHost {
     else if (findTab(to, tabId)?.discarded) this.restoreDiscarded(toPaneId)
     this.publishPane(fromPaneId)
     this.publishPane(toPaneId)
+    return true
+  }
+
+  /* ---------------------------------------------------------------------------------------- */
+  /* The host placeholder and the load error page (browser-tabs S-3)                             */
+  /* ---------------------------------------------------------------------------------------- */
+
+  /**
+   * The pane's host `<div>` draws something (the start placeholder or the load error page) in place of this tab's
+   * page, so its native view stays hidden.
+   */
+  private hostDraws(e: ViewEntry): boolean {
+    const tab = findTab(this.deps.registry.get(e.paneId) ?? { tabs: [], activeTabId: '' }, e.tabId)
+    return tab !== undefined && tab.hostView !== 'page'
+  }
+
+  /** The address a tab is at: the one that failed while its load error shows, else what the page says. */
+  private addressOf(e: ViewEntry): string {
+    const failed = this.hostDraws(e) ? this.loadErrors.get(e.tabId) : undefined
+    return failed?.address ?? liveUrlOf(e.wc.getURL(), e.requestedUrl)
+  }
+
+  /** A main-frame load failed: the tab shows the error page and its view hides. */
+  private showLoadError(e: ViewEntry, code: string, url: string): void {
+    const rec = this.deps.registry.get(e.paneId)
+    const tab = rec ? findTab(rec, e.tabId) : undefined
+    // A live panel (`harnu-page:`) has its own placeholder and watcher; only a real page gets the error page.
+    if (!rec || !tab || rec.pagePath) return
+    const origin = classifyOrigin(url, {
+      extraTrustedHosts: this.deps.trustedHosts(e.folder),
+      harnuPorts: this.deps.harnuPorts()
+    })
+    this.loadErrors.set(e.tabId, {
+      error: buildLoadError(code, url, origin === 'local'),
+      address: url
+    })
+    tab.hostView = 'error'
+    this.place(e)
+    this.publish(e)
+  }
+
+  /** A main-frame commit: the tab shows its page again (a `start` tab keeps its own blank commit). */
+  private showPage(e: ViewEntry, committedUrl: string): void {
+    const rec = this.deps.registry.get(e.paneId)
+    const tab = rec ? findTab(rec, e.tabId) : undefined
+    if (!tab || tab.hostView === 'page') return
+    if (isErrorPageUrl(committedUrl)) return
+    if (tab.hostView === 'start' && committedUrl === 'about:blank') return
+    tab.hostView = 'page'
+    this.loadErrors.delete(e.tabId)
+    this.place(e)
+  }
+
+  /** The tab's load error as the read verbs answer it, or `undefined` when its page shows. */
+  loadErrorOf(paneId: string, tabId?: string): { code: string; url: string } | undefined {
+    const rec = this.deps.registry.get(paneId)
+    const tab = rec ? findTab(rec, tabId) : undefined
+    const le = tab?.hostView === 'error' ? this.loadErrors.get(tab.tabId) : undefined
+    return le ? { code: le.error.code, url: le.error.url } : undefined
+  }
+
+  /**
+   * "Reload when it is up" on an `error` tab of a `local` origin: TCP-poll its host and port every 2 s and reload on
+   * the first success; `on: false` (the second click) cancels. @returns whether the request applied (false: no such
+   * tab, no load error, or an `external` origin).
+   */
+  reloadWhenUp(paneId: string, tabId: string, on: boolean): boolean {
+    const rec = this.deps.registry.get(paneId)
+    const tab = rec ? findTab(rec, tabId) : undefined
+    if (!rec || !tab) return false
+    if (!on) {
+      this.reloadWaits.cancel(tabId)
+      return true
+    }
+    const le = tab.hostView === 'error' ? this.loadErrors.get(tabId) : undefined
+    if (!le || !le.error.local || le.error.port === null) return false
+    let hostname: string
+    try {
+      hostname = new URL(le.address).hostname.replace(/^\[|\]$/g, '')
+    } catch {
+      return false
+    }
+    this.reloadWaits.start(
+      tabId,
+      { host: hostname, port: le.error.port },
+      {
+        onUp: () => {
+          const e = this.entries.get(tabId)
+          if (e && !e.wc.isDestroyed()) {
+            e.requestedUrl = le.address
+            e.harnuNavigation = true
+            e.wc.loadURL(le.address).catch(() => undefined)
+          }
+          this.publishPane(paneId)
+        },
+        onStop: () => this.publishPane(paneId)
+      }
+    )
+    this.publishPane(paneId)
     return true
   }
 
@@ -1456,7 +1586,7 @@ export class BrowserViewHost implements BrowserReadHost {
     e.parked = placement.parked
     e.view.setBounds(placement.bounds)
     // A removed page file hides the view; the pane chrome shows the placeholder (design.md "Page pane").
-    e.view.setVisible(placement.visible && !e.fileRemoved)
+    e.view.setVisible(placement.visible && !e.fileRemoved && !this.hostDraws(e))
     // Parked → real rect clears the parking override and applies the pane's own emulation record (spec §2.3);
     // a changed rect in device mode changes the scale the page is shown at (spec §9.2).
     this.syncMetrics(e)
@@ -1651,7 +1781,7 @@ export class BrowserViewHost implements BrowserReadHost {
     }
     const state = buildDiscardState({
       reason,
-      url: liveUrlOf(e.wc.getURL(), e.requestedUrl),
+      url: this.addressOf(e),
       title: e.wc.getTitle(),
       scroll,
       zoom: e.wc.getZoomFactor(),
@@ -1659,6 +1789,9 @@ export class BrowserViewHost implements BrowserReadHost {
       hiddenSince: this.hidden.since(e.tabId)
     })
     setTabDiscarded(rec, e.tabId, state)
+    // A discarded error tab comes back as a page that loads its address (and fails again, or does not).
+    const discardedTab = findTab(rec, e.tabId)
+    if (discardedTab?.hostView === 'error') discardedTab.hostView = 'page'
     if (rec.activeTabId === e.tabId) {
       // What the discard recorded is also what a restart should find (the saved scroll is the shown page's).
       this.send('browser:persist', { paneId, scroll: state.scroll })
@@ -1770,7 +1903,8 @@ export class BrowserViewHost implements BrowserReadHost {
         reg.verbsInFlight(e.paneId, e.tabId) > 0 ||
         reg.agentInput(e.paneId).inFlight ||
         e.activity !== null ||
-        e.loading,
+        e.loading ||
+        this.reloadWaits.isWaiting(e.tabId),
       captureActive: this.groupOf(e.paneId).status().expiresAt !== null,
       operatorAt: reg.operatorInteractionAt(e.paneId),
       downloadPending: e.prompt !== null || e.agentDownload != null || this.arms.isArmed(e.tabId)
@@ -1872,12 +2006,15 @@ export class BrowserViewHost implements BrowserReadHost {
       const live = e !== undefined && !e.wc.isDestroyed()
       return {
         tabId: t.tabId,
-        url: live ? liveUrlOf(e.wc.getURL(), e.requestedUrl) : (d?.url ?? ''),
+        url: live ? this.addressOf(e) : (d?.url ?? ''),
         title: live ? e.wc.getTitle() : (d?.title ?? ''),
         favicon: live ? e.favicon : null,
         loading: live ? e.loading : false,
         hostView: t.hostView,
-        waitingForUp: false,
+        ...(t.hostView === 'error' && this.loadErrors.has(t.tabId)
+          ? { loadError: this.loadErrors.get(t.tabId)!.error }
+          : {}),
+        waitingForUp: this.reloadWaits.isWaiting(t.tabId),
         discarded: !live && d != null,
         active: t.tabId === rec.activeTabId,
         agentActive: live && e.activity !== null
@@ -2012,7 +2149,7 @@ export class BrowserViewHost implements BrowserReadHost {
   private park(e: ViewEntry): void {
     e.parked = true
     e.view.setBounds(parkedBounds(this.contentSize()))
-    e.view.setVisible(true)
+    e.view.setVisible(!this.hostDraws(e))
     // The metrics override is sent when the page first becomes ready (`syncMetrics`), not here: the U1 live run
     // crashed the app (SIGSEGV) when `Emulation.setDeviceMetricsOverride` reached a view that had not yet created
     // its first frame.
@@ -2159,7 +2296,8 @@ export class BrowserViewHost implements BrowserReadHost {
     e.frozen = false
     e.gen.bump()
     e.paintedWaiter?.()
-    if ((e.parked || e.visibleReported) && !e.fileRemoved) e.view.setVisible(true)
+    if ((e.parked || e.visibleReported) && !e.fileRemoved && !this.hostDraws(e))
+      e.view.setVisible(true)
     if (!e.parked) this.send('browser:unfreeze', { paneId: e.paneId })
   }
 
@@ -2267,10 +2405,27 @@ export class BrowserViewHost implements BrowserReadHost {
     })
     wc.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument) {
+        // Any navigation of the tab ends its "Reload when it is up" poll.
+        this.reloadWaits.cancel(e.tabId)
         this.deps.pageHooks?.onNavigationStart(e.paneId)
       }
     })
+    // A failed main-frame load shows the load error page; ERR_ABORTED and subframe failures never do.
+    wc.on(
+      'did-fail-load',
+      (
+        _ev: unknown,
+        errorCode: number,
+        errorDescription: string,
+        url: string,
+        isMainFrame: boolean
+      ) => {
+        if (isMainFrameFailure(errorCode, isMainFrame))
+          this.showLoadError(e, normalizeNetError(errorDescription), url)
+      }
+    )
     wc.on('did-navigate', (_ev, url) => {
+      this.showPage(e, url)
       e.inputState = nextInputReadyState(e.inputState, {
         host: hostOf(url),
         initiatedByHarnu: e.harnuNavigation
@@ -2452,7 +2607,7 @@ export class BrowserViewHost implements BrowserReadHost {
 
   private snapshot(e: ViewEntry): BrowserPaneState {
     const r = this.deps.registry.get(e.paneId)
-    const url = e.wc.isDestroyed() ? '' : e.wc.getURL()
+    const url = e.wc.isDestroyed() ? '' : this.hostDraws(e) ? this.addressOf(e) : e.wc.getURL()
     return {
       paneId: e.paneId,
       url,

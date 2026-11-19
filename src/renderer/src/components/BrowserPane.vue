@@ -54,6 +54,8 @@ import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { createFrameScheduler } from '../lib/frame-scheduler'
 import { sessionTitle } from '../lib/session-label'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
+import BrowserLoadError from './BrowserLoadError.vue'
+import { hostPlaceholderOf } from '../../../shared/browser-tabs'
 import {
   FRAME_BEZEL_PX,
   FRAME_RING_PX,
@@ -137,6 +139,21 @@ const state = computed<BrowserPaneState>(
       discarded: null
     }
 )
+
+/* ---- Host placeholder (browser-tabs S-3) ---------------------------------------------------------- */
+
+/** The pane's active tab, as main sent it (`tabs` is empty before main's first push). */
+const activeTab = computed(() => state.value.tabs?.find((t) => t.tabId === state.value.activeTabId))
+/** What the host draws for the active tab: nothing (the page shows), the start placeholder, or the load error. */
+const placeholder = computed(() => hostPlaceholderOf(activeTab.value))
+const onErrorReload = (): void => {
+  const tab = activeTab.value
+  if (tab) void browser.tabReload(paneId, tab.tabId)
+}
+const onErrorReloadWhenUp = (on: boolean): void => {
+  const tab = activeTab.value
+  if (tab) void browser.tabReloadWhenUp(paneId, tab.tabId, on)
+}
 
 /* ---- Discarded (T574, spec §10.1) ---------------------------------------------------------------- */
 
@@ -511,7 +528,16 @@ watch(
   { flush: 'post' }
 )
 
+// A start tab has no address to show: the field takes the focus so the operator can type one (browser-tabs S-3).
+watch(
+  () => (placeholder.value === 'start' ? state.value.activeTabId : null),
+  (tabId) => {
+    if (tabId) void nextTick(focusAddress)
+  }
+)
+
 onMounted(() => {
+  if (placeholder.value === 'start') void nextTick(focusAddress)
   areaObserver = new ResizeObserver(() => {
     const el = areaEl.value
     if (el) areaSize.value = { width: el.clientWidth, height: el.clientHeight }
@@ -1489,7 +1515,7 @@ watch(isFrozen, async (frozen) => {
       <!-- "Paused to save memory" placeholder (spec §10.1, design.md "Discarded pane"): the page and its view are
            gone; the pane keeps its place and one click loads it again. -->
       <div
-        v-if="state.discarded"
+        v-if="state.discarded && placeholder !== 'start'"
         class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1.5 bg-bg px-4 text-center"
         role="status"
         data-testid="browser-discarded"
@@ -1520,6 +1546,24 @@ watch(isFrozen, async (frozen) => {
           }}
         </button>
       </div>
+
+      <!-- Start placeholder (browser-tabs S-3): a tab with no address shows an empty host until S-5 draws the start
+           page; its native view is hidden and the address field has the focus. -->
+      <div
+        v-if="placeholder === 'start'"
+        class="absolute inset-0 z-[1] bg-bg"
+        data-testid="browser-start-placeholder"
+      />
+
+      <!-- Load-error page (browser-tabs S-3): the tab's main-frame load failed, so main hid its view. -->
+      <BrowserLoadError
+        v-else-if="placeholder === 'error' && activeTab?.loadError"
+        class="absolute inset-0 z-[1] bg-bg"
+        :load-error="activeTab.loadError"
+        :waiting-for-up="activeTab.waitingForUp"
+        @reload="onErrorReload"
+        @reload-when-up="onErrorReloadWhenUp"
+      />
 
       <div
         v-if="layout && device"

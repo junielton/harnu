@@ -91,6 +91,11 @@ export interface BrowserHost {
   zoomOf?(paneId: string): number
   /** The pane's page is discarded (T574, spec §10.1): `info` answers from the record, the view is gone. */
   isDiscarded?(paneId: string, tabId?: string): boolean
+  /**
+   * The tab shows the load error page (browser-tabs S-3): its view is hidden and there is no page to read. The reading
+   * verbs answer `loadError: { code, url }` with an empty page instead of reading the hidden error page.
+   */
+  loadErrorOf?(paneId: string, tabId?: string): { code: string; url: string } | undefined
   /** Bring a discarded pane back (resolves true when it is live). Absent = nothing is ever discarded. */
   revive?(paneId: string, opts?: { primeInput?: boolean; tabId?: string }): Promise<boolean>
 }

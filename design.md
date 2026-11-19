@@ -4872,6 +4872,23 @@ chrome adds three things and changes one.
   `revived: true` in its ACK. A discarded pane keeps its header chips, its pins and the operator's Disconnect and
   Pause; it only has no page.
 
+- **Load-error page** (browser-tabs spec S-3, mockup state `load-error`). When a tab's main-frame load fails with
+  any code but `ERR_ABORTED` (a subframe failure never counts), main hides the tab's native view and the host shows
+  a left-aligned column on `--bg`, vertically centred, at most 440px wide with 32px side padding and 6px gaps:
+  `unplug` 22px `--text-3` (6px under it), a title in 15px weight 600 `--text`, one hint line in 12px `--text-2`
+  (line height 1.5), the error code in mono 10.5px `--text-4`, then a row 10px below with **Reload** (primary:
+  `--accent` fill and border, `--accent-ink` text, `rotate-cw` 12px) and, on a `local` origin only, **Reload when it
+  is up** (ghost: 1px `--border-2`, `--text-2`, `--surface-2` fill on hover). Buttons are 24px high, 11.5px,
+  `--radius-sm`, standard `--accent-line` focus ring. While "Reload when it is up" polls, the second button reads
+  "Waiting for ‹host:port›…" and a second click cancels it. Title and hint come from one table keyed by the code
+  (`browserPane.loadError.*`): refused on a `local` origin ("‹host› refused to connect" / "Nothing is answering on
+  port ‹n›. Start the server, then reload."), refused or reset elsewhere, name not resolved, timed out, no internet,
+  `ERR_CERT_*`, and a fallback for any other code. No spinner and no motion. The next main-frame commit, or a
+  navigation, clears the page; the address field keeps the address that failed.
+- **Start placeholder** (browser-tabs spec S-3, until S-5 draws the start page). A tab with no address
+  (`hostView: 'start'`) hides its native view and the host is an empty `--bg` area; the address field takes the
+  focus. An agent pane never shows it.
+
 #### Point-and-comment overlay (browser pane)
 
 T564 U6, spec `docs/specs/2026-10-21-T564-browser-pane.md` §8; approved mockup
