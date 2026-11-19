@@ -114,4 +114,43 @@ describe('fixtures', () => {
 
     expect(await listenersFor('win32', [4100], { procIo, runCommand })).toEqual([])
   })
+
+  describe("Harnu's own sockets", () => {
+    // Harnu's control server socket is inherited by every shell it spawns, so the shell's tree "listens" on it too.
+    const OWN_PID = 4999
+    const ownIo: ProcIo = {
+      ...procIo,
+      listDir: (path) => (path === `/proc/${OWN_PID}/fd` ? ['0', '1'] : procIo.listDir(path)),
+      readLink: (path) =>
+        path === `/proc/${OWN_PID}/fd/0`
+          ? 'socket:[41001]'
+          : path === `/proc/${OWN_PID}/fd/1`
+            ? '/dev/null'
+            : procIo.readLink(path)
+    }
+
+    it('Linux: a listener on a socket Harnu itself holds is not a server of the folder', async () => {
+      const runCommand = async (): Promise<string> => ''
+      const got = await listenersFor('linux', [4100], {
+        procIo: ownIo,
+        runCommand,
+        ownPid: OWN_PID
+      })
+      // node (4101) holds the leaked inode 41001 (port 5173): gone; everything else stays.
+      expect(got.map((l) => l.port)).toEqual([4000, 6001, 8080, 9000])
+      const without = await listenersFor('linux', [4100], { procIo: ownIo, runCommand })
+      expect(without.map((l) => l.port)).toContain(5173)
+    })
+
+    it('macOS: a port Harnu itself listens on is dropped', async () => {
+      const runCommand = async (file: string, args: readonly string[]): Promise<string> => {
+        if (file === 'ps') return '4100 1\n4101 4100\n'
+        return args.at(-1) === String(OWN_PID)
+          ? 'COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\nElectron 4999 user 74u IPv4 0x1 0t0 TCP 127.0.0.1:5173 (LISTEN)\n'
+          : text('lsof.txt')
+      }
+      const got = await listenersFor('darwin', [4100], { procIo, runCommand, ownPid: OWN_PID })
+      expect(got.map((l) => l.port)).toEqual([3000, 4000, 6000, 8080, 9000])
+    })
+  })
 })
