@@ -118,8 +118,8 @@ afterEach(() => {
   localStorage.clear()
 })
 
-describe('Sidebar cold boot with a restored drill stack (BUG-257)', () => {
-  it('AC-1: shows the loading state, not the drill view, while the folder model loads', async () => {
+describe('Sidebar status states at every drill level (BUG-257)', () => {
+  it('AC-1: shows the loading state UNDER the Back row of a restored drilled screen while folders load', async () => {
     seedPersistedDrillStack()
     const { release } = installGatedWindow(REPO)
     const store = useSessionsStore()
@@ -131,6 +131,48 @@ describe('Sidebar cold boot with a restored drill stack (BUG-257)', () => {
 
     expect(store.foldersLoading).toBe(true)
     expect(store.folders).toHaveLength(0)
+    // The operator keeps their place: the drill view stays mounted, loader inside it.
+    const drill = wrapper.find('[data-drill-view]')
+    expect(drill.exists()).toBe(true)
+    expect(drill.find('[data-drill-back]').exists()).toBe(true)
+    expect(drill.find('[data-sidebar-loading]').exists()).toBe(true)
+    expect(drill.text()).toContain('Loading folders')
+    // ...and nothing else is rendered as if it were an empty screen.
+    expect(wrapper.text()).not.toContain(i18n.global.t('sidebar.emptyShort'))
+
+    release()
+    await boot
+  })
+
+  it('AC-1: the repo (group) screen shows the loading state too, not only the folder screen', async () => {
+    localStorage.setItem(DRILL_DEPTH_KEY, '2')
+    localStorage.setItem(DRILL_STACK_KEY, JSON.stringify([{ kind: 'group', key: 'repo:repo-x' }]))
+    const { release } = installGatedWindow(REPO)
+    const store = useSessionsStore()
+    expect(store.drillStack).toHaveLength(1)
+
+    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
+    const boot = store.init()
+    await flushPromises()
+
+    const drill = wrapper.find('[data-drill-view]')
+    expect(drill.find('[data-drill-back]').exists()).toBe(true)
+    expect(drill.find('[data-sidebar-loading]').exists()).toBe(true)
+
+    release()
+    await boot
+  })
+
+  it('AC-1: the root screen still shows the loading state with an empty stack', async () => {
+    localStorage.setItem(DRILL_DEPTH_KEY, '2')
+    const { release } = installGatedWindow(REPO)
+    const store = useSessionsStore()
+    expect(store.drillStack).toHaveLength(0)
+
+    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
+    const boot = store.init()
+    await flushPromises()
+
     expect(wrapper.find('[data-sidebar-loading]').exists()).toBe(true)
     expect(wrapper.find('[data-drill-back]').exists()).toBe(false)
 
@@ -138,7 +180,52 @@ describe('Sidebar cold boot with a restored drill stack (BUG-257)', () => {
     await boot
   })
 
-  it('AC-2: once loaded, the restored drill screen renders (T289 restore kept)', async () => {
+  it('AC-2: a filter that matches nothing shows the no-match message on a drilled screen, not a blank body', async () => {
+    localStorage.setItem(DRILL_DEPTH_KEY, '2')
+    const { release } = installGatedWindow(REPO)
+    const store = useSessionsStore()
+    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
+    const boot = store.init()
+    release()
+    await boot
+    await flushPromises()
+    store.drillIntoGroup('repo:repo-x')
+    await flushPromises()
+    expect(store.drillStack).toHaveLength(1)
+    expect(wrapper.find('[data-drill-back]').exists()).toBe(true)
+
+    store.filterQuery = 'zzz-no-folder-matches-this'
+    await flushPromises()
+
+    const drill = wrapper.find('[data-drill-view]')
+    expect(drill.find('[data-drill-back]').exists()).toBe(true)
+    expect(drill.text()).toContain(i18n.global.t('sidebar.filter.empty'))
+  })
+
+  it('AC-2: an empty folder list shows the "nothing yet" message on a drilled screen, not a blank body', async () => {
+    localStorage.setItem(DRILL_DEPTH_KEY, '2')
+    const { release } = installGatedWindow(REPO)
+    const store = useSessionsStore()
+    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
+    const boot = store.init()
+    release()
+    await boot
+    await flushPromises()
+    store.drillIntoGroup('repo:repo-x')
+    await flushPromises()
+    expect(store.drillStack).toHaveLength(1)
+
+    // The folders vanish while a screen is drilled (e.g. every worktree removed).
+    store.folders = []
+    await flushPromises()
+
+    const drill = wrapper.find('[data-drill-view]')
+    expect(drill.find('[data-drill-back]').exists()).toBe(true)
+    expect(drill.text()).toContain(i18n.global.t('sidebar.emptyShort'))
+    expect(drill.find('[data-sidebar-loading]').exists()).toBe(false)
+  })
+
+  it('AC-4: once loaded, the restored drill screen resolves exactly as before (T289 restore kept)', async () => {
     seedPersistedDrillStack()
     const { release } = installGatedWindow(REPO)
     const store = useSessionsStore()
@@ -157,6 +244,22 @@ describe('Sidebar cold boot with a restored drill stack (BUG-257)', () => {
     ])
     expect(wrapper.find('[data-sidebar-loading]').exists()).toBe(false)
     expect(wrapper.find('[data-drill-back]').exists()).toBe(true)
+  })
+
+  it('AC-4: a restored stack that no longer resolves is still dropped once loaded', async () => {
+    seedPersistedDrillStack()
+    const { release } = installGatedWindow([REPO[0]]) // wt-b is gone
+    const store = useSessionsStore()
+
+    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
+    const boot = store.init()
+    await flushPromises()
+    release()
+    await boot
+    await flushPromises()
+
+    expect(store.drillStack).toEqual([])
+    expect(wrapper.find('[data-sidebar-loading]').exists()).toBe(false)
   })
 })
 
@@ -196,7 +299,7 @@ describe('App onboarding while folders load (BUG-257)', () => {
     ].map((n) => [n, true])
   )
 
-  it('AC-3a: renders no onboarding while foldersLoading is true', async () => {
+  it('onboarding-a: renders no onboarding while foldersLoading is true', async () => {
     installGatedWindow([])
     const store = useSessionsStore()
     expect(store.foldersLoading).toBe(true)
@@ -208,7 +311,7 @@ describe('App onboarding while folders load (BUG-257)', () => {
     expect(wrapper.find('onboarding-stub').exists()).toBe(false)
   })
 
-  it('AC-3b: still renders onboarding once loading finished with zero folders', async () => {
+  it('onboarding-b: still renders onboarding once loading finished with zero folders', async () => {
     const { release } = installGatedWindow([])
     const store = useSessionsStore()
 
