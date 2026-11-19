@@ -14,12 +14,18 @@ import {
   browserAccess,
   browserLeases,
   browserRegistry,
+  activateTabFromOperator,
   closePaneFromOperator,
+  closeTabFromOperator,
+  duplicateTabFromOperator,
   getBrowserHost,
   getOverlayBridge,
   getPageService,
-  openOperatorPane
+  moveTabFromOperator,
+  openOperatorPane,
+  openTabFromOperator
 } from './browser-service'
+import { isTabId } from '../../shared/browser-tabs'
 import type { EmulateArgs } from '../../shared/browser-emulation'
 import type { BrowserOverlayRect, BrowserRect } from './state-types'
 import type { NavigateTarget } from './verbs-core'
@@ -86,6 +92,55 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }
+  })
+
+  // Browser tabs (browser-tabs S-2): the operator's tab operations. Every id is checked here, and the refusals come
+  // back as `{ ok: false, error }`: `TAB_LIMIT`, `TAB_NOT_FOUND`, `PANE_NOT_FOUND`, `PANE_LIMIT`, `BAD_ARGS`.
+  const tabArgs = (payload: unknown): { paneId: string; tabId: string } | null =>
+    isRecord(payload) && isPaneId(payload.paneId) && isTabId(payload.tabId)
+      ? { paneId: payload.paneId, tabId: payload.tabId }
+      : null
+  handleApp('browser:tab:new', (payload: unknown) => {
+    if (!isRecord(payload) || !isPaneId(payload.paneId))
+      return { ok: false as const, error: 'BAD_ARGS' }
+    const start = payload.hostView === 'start'
+    let url: string | undefined
+    if (!start && typeof payload.url === 'string' && payload.url.length > 0) {
+      const verdict = checkTopLevelNavigation(payload.url, 'operator')
+      if (!verdict.ok) return { ok: false as const, error: 'BAD_ARGS' }
+      url = verdict.url
+    }
+    if (payload.afterTabId !== undefined && !isTabId(payload.afterTabId)) {
+      return { ok: false as const, error: 'BAD_ARGS' }
+    }
+    return openTabFromOperator(payload.paneId, {
+      ...(url !== undefined ? { url } : {}),
+      hostView: start ? 'start' : 'page',
+      ...(typeof payload.afterTabId === 'string' ? { afterTabId: payload.afterTabId } : {}),
+      background: payload.background === true
+    })
+  })
+  handleApp('browser:tab:close', (payload: unknown) => {
+    const a = tabArgs(payload)
+    return a ? closeTabFromOperator(a.paneId, a.tabId) : { ok: false as const, error: 'BAD_ARGS' }
+  })
+  handleApp('browser:tab:activate', (payload: unknown) => {
+    const a = tabArgs(payload)
+    return { ok: a ? activateTabFromOperator(a.paneId, a.tabId) : false }
+  })
+  handleApp('browser:tab:duplicate', (payload: unknown) => {
+    const a = tabArgs(payload)
+    return a
+      ? duplicateTabFromOperator(a.paneId, a.tabId)
+      : { ok: false as const, error: 'BAD_ARGS' }
+  })
+  handleApp('browser:tab:move-to-pane', (payload: unknown) => {
+    const a = tabArgs(payload)
+    return a ? moveTabFromOperator(a.paneId, a.tabId) : { ok: false as const, error: 'BAD_ARGS' }
+  })
+  handleApp('browser:tab:reload', async (payload: unknown) => {
+    const a = tabArgs(payload)
+    return { ok: a ? await host().reloadTab(a.paneId, a.tabId) : false }
   })
 
   // Geometry and overlays are fire-and-forget: they ride animation frames.

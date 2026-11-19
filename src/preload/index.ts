@@ -37,6 +37,12 @@ import type { CardView } from '../main/your-move/core'
 import type { InspectNowResult, YourMoveExitResult, YourMovePrefsView } from '../main/your-move/ipc'
 import type { YourMovePrefs } from '../main/your-move/prefs'
 import type { CommentPaneState, CommentSubmitResult, OverlayTheme } from '../shared/browser-comment'
+import type {
+  BrowserTabCloseResult,
+  BrowserTabMoveResult,
+  BrowserTabNewOptions,
+  BrowserTabResult
+} from '../shared/browser-tabs'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
 import type { ShadowEntry } from '../main/responder-registry'
@@ -257,6 +263,18 @@ export type {
   BrowserPersistEvent,
   BrowserRect
 } from '../main/browser/state-types'
+// Browser tabs (browser-tabs S-2): the per-tab record and the tab operations' shapes.
+export type {
+  BrowserPersistedTab,
+  BrowserTabCloseResult,
+  BrowserTabError,
+  BrowserTabHostView,
+  BrowserTabLoadError,
+  BrowserTabMoveResult,
+  BrowserTabNewOptions,
+  BrowserTabResult,
+  BrowserTabState
+} from '../shared/browser-tabs'
 // T564 U6: the point-and-comment wire types.
 export type {
   CommentPaneState,
@@ -2764,17 +2782,46 @@ const api = {
   onBrowserChord: (cb: (p: { paneId: string; chord: string }) => void): (() => void) =>
     subscribe('browser:chord', cb),
   onBrowserActivity: (
-    cb: (p: { paneId: string; word: BrowserActivityWord }) => void
+    cb: (p: {
+      paneId: string
+      /** The tab a verb named (browser tabs); `word` is the PANE's word, `tabWord` that tab's. */
+      tabId?: string
+      word: BrowserActivityWord
+      tabWord?: BrowserActivityWord
+    }) => void
   ): (() => void) => subscribe('browser:activity', cb),
-  /** A popup the operator clicked open: add an operator-class pane (spec §3.2). */
+  /**
+   * A pane main made for the renderer to place: a popup the operator clicked open (an operator-class pane, spec §3.2)
+   * or a tab moved to a new pane, which keeps the opener's `openedBy`, owner and name.
+   */
   onBrowserPopup: (
     cb: (p: {
       paneId: string
       worktreePath: string
       url: string
       partition: 'operator' | 'agent'
+      openedBy?: 'operator' | 'agent'
+      ownerSessionId?: string | null
+      name?: string
     }) => void
   ): (() => void) => subscribe('browser:popup', cb),
+  // ---- Browser tabs (browser-tabs S-2): the operator's tab operations; main owns every tab. ----
+  /** Add a tab to a pane (right of `afterTabId`, active unless `background`); `hostView: 'start'` = no address. */
+  browserTabNew: (paneId: string, opts: BrowserTabNewOptions = {}): Promise<BrowserTabResult> =>
+    ipcRenderer.invoke('browser:tab:new', { paneId, ...opts }),
+  /** Close a tab; the last tab closes the pane (`paneClosed: true`). */
+  browserTabClose: (paneId: string, tabId: string): Promise<BrowserTabCloseResult> =>
+    ipcRenderer.invoke('browser:tab:close', { paneId, tabId }),
+  browserTabActivate: (paneId: string, tabId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('browser:tab:activate', { paneId, tabId }),
+  /** A new tab right of `tabId` loading the same address, without history or scroll. */
+  browserTabDuplicate: (paneId: string, tabId: string): Promise<BrowserTabResult> =>
+    ipcRenderer.invoke('browser:tab:duplicate', { paneId, tabId }),
+  /** "Move to a new pane": main makes the pane and sends `browser:popup` to place it below this one. */
+  browserTabMoveToPane: (paneId: string, tabId: string): Promise<BrowserTabMoveResult> =>
+    ipcRenderer.invoke('browser:tab:move-to-pane', { paneId, tabId }),
+  browserTabReload: (paneId: string, tabId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('browser:tab:reload', { paneId, tabId }),
   // T31: the Sentinel auto-denied a catastrophic command — surface it prominently.
   onSentinelBlocked: (cb: (p: { reason: string; sessionId: string }) => void): (() => void) =>
     subscribe('sentinel:blocked', cb),

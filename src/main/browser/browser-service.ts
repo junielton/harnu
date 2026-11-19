@@ -32,6 +32,13 @@ import type { BrowserReadDeps } from './read-verbs'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import { resolveDiscardMs } from './lifecycle'
 import { runRestore } from './restore-run'
+import { moveTabToNewPane } from './tabs'
+import type {
+  BrowserTabCloseResult,
+  BrowserTabMoveResult,
+  BrowserTabNewOptions,
+  BrowserTabResult
+} from '../../shared/browser-tabs'
 import { readHelpers } from '../helpers-store'
 import { isFolderDenied } from '../mcp/permission-core'
 import { createPageService, type PageService } from './page-service'
@@ -167,7 +174,19 @@ export function noteMcpPort(port: number): void {
  * looking at is in use). The view host is only touched when a pane exists.
  */
 export function listOpenPaneUrls(): string[] {
-  return openPaneUrls(browserRegistry.list(), (paneId) => getBrowserHost().info(paneId)?.url)
+  // Every TAB counts, the shown one or not: a background tab looking at a stack's port keeps that stack in use. The
+  // pure list is keyed by tab id here, and each tab id resolves back to its pane for the live address.
+  const paneOf = new Map<string, string>()
+  const tabs = browserRegistry.list().flatMap((rec) =>
+    rec.tabs.map((t) => {
+      paneOf.set(t.tabId, rec.paneId)
+      return { paneId: t.tabId, discarded: t.discarded }
+    })
+  )
+  return openPaneUrls(tabs, (tabId) => {
+    const paneId = paneOf.get(tabId)
+    return paneId ? getBrowserHost().info(paneId, tabId)?.url : undefined
+  })
 }
 
 /** The view host. Created on first use so a headless unit never builds electron views. */
@@ -184,8 +203,9 @@ export function getBrowserHost(): BrowserViewHost {
     trustedHosts: trustedHostsSync,
     readOptIn: (folder) => readOptInCache.get(folder) === true,
     leaseActive: (paneId, token) => browserLeases.isActive(paneId, token),
-    onMainFrameCommit: (paneId) => {
-      const token = host?.viewToken(paneId)
+    onMainFrameCommit: (paneId, tabId) => {
+      // The token of the tab that committed: a lease on another tab is not that tab's business.
+      const token = host?.viewToken(paneId, tabId)
       if (token !== undefined) browserLeases.noteToken(paneId, token)
     },
     scrub: (text) => scrubTerminalText(text, os.homedir()),
@@ -286,6 +306,52 @@ export async function restoreBrowserPanes(): Promise<number> {
       getBrowserHost().restoreDiscarded(rec.paneId)
     }
   })
+}
+
+/**
+ * The operator's tab operations (browser-tabs S-2): the IPC handlers call these. A tab is added to, activated in or
+ * closed in a pane; closing the last tab closes the pane for good, its access state and leases with it.
+ */
+export function openTabFromOperator(paneId: string, opts: BrowserTabNewOptions): BrowserTabResult {
+  return getBrowserHost().newTab(paneId, opts)
+}
+
+export function duplicateTabFromOperator(paneId: string, tabId: string): BrowserTabResult {
+  return getBrowserHost().duplicateTab(paneId, tabId)
+}
+
+export function activateTabFromOperator(paneId: string, tabId: string): boolean {
+  return getBrowserHost().activateTab(paneId, tabId)
+}
+
+export function closeTabFromOperator(paneId: string, tabId: string): BrowserTabCloseResult {
+  const res = getBrowserHost().closeTab(paneId, tabId)
+  if (res.ok && res.paneClosed) {
+    browserAccess.forget(paneId)
+    browserLeases.forget(paneId)
+  }
+  return res
+}
+
+/** "Move to a new pane": the new pane is placed below the current one through the same event a popup pane uses. */
+export function moveTabFromOperator(paneId: string, tabId: string): BrowserTabMoveResult {
+  return moveTabToNewPane(
+    {
+      registry: browserRegistry,
+      access: browserAccess,
+      leases: browserLeases,
+      host: getBrowserHost(),
+      newPaneId: () => `bp-${randomUUID().slice(0, 8)}`,
+      now: () => Date.now(),
+      notifyPopup: (payload) => {
+        // The chip shows whether agents may read the new pane: fetch the folder's opt-in once, then repaint.
+        void readOptInFor(payload.worktreePath).then(() => host?.refresh(payload.paneId))
+        mainWindowGetter?.()?.webContents.send('browser:popup', payload)
+      }
+    },
+    paneId,
+    tabId
+  )
 }
 
 /** Close a pane from the operator's side (X button, a removed helper): the view, the record, the access state. */

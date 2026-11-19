@@ -32,7 +32,9 @@ import { scrubUrl } from '../../shared/browser-comment'
 import { checkTopLevelNavigation } from './nav-policy'
 import type { PinRecord } from './comment-pins'
 import { buildDiscardState, sanitizeScroll } from './lifecycle'
-import type { BrowserPaneRecord } from './registry'
+import type { TabbedPaneRecord } from './registry'
+import { MAX_TABS_PER_PANE, isTabId } from '../../shared/browser-tabs'
+import { mintTabId, type TabRecord } from './tabs'
 
 /** One pane as `helpers.json` holds it (`HelperPane` of `helpers-store.ts`), with the stack it was in. */
 export interface PersistedPaneInput {
@@ -44,7 +46,7 @@ export interface PersistedPaneInput {
 }
 
 export interface RestoredPane {
-  rec: BrowserPaneRecord
+  rec: TabbedPaneRecord
   pins: PinRecord[]
   /** The operator disconnected the agent from this pane before the restart: it comes back disconnected (spec §7.4). */
   disconnected: boolean
@@ -168,6 +170,57 @@ function ownerOf(raw: unknown): string | null {
 /** Which folders a restored pane may come back in, for which kind of pane. */
 export type FolderAllowed = (folder: string, openedBy: 'agent' | 'operator') => boolean
 
+/* ---- Tabs ---------------------------------------------------------------------------------------------- */
+
+/**
+ * The tabs a pane comes back with (browser-tabs spec D-6): every one DISCARDED, in order, with its address, title and
+ * `hostView`; only the persisted active tab loads, when the pane is shown. A file without `tabs` (an older build)
+ * restores as one tab from the pane's own address. An `error` tab comes back as a page that reloads its address; a
+ * `start` tab comes back as the start page, which has no address.
+ */
+function restoreTabs(
+  p: Record<string, unknown>,
+  paneUrl: string,
+  addressOf: (raw: unknown) => string,
+  discardedFor: (address: string, title: string, active: boolean) => TabRecord['discarded']
+): { tabs: TabRecord[]; activeTabId: string } {
+  const raw = Array.isArray(p.tabs) ? p.tabs : []
+  const taken = new Set<string>()
+  const staged: Array<{
+    tabId: string
+    address: string
+    title: string
+    hostView: 'page' | 'start'
+    original: unknown
+  }> = []
+  for (const item of raw) {
+    if (staged.length >= MAX_TABS_PER_PANE) break
+    if (!isRecord(item)) continue
+    const tabId = isTabId(item.tabId) && !taken.has(item.tabId) ? item.tabId : mintTabId(taken)
+    taken.add(tabId)
+    const hostView = item.hostView === 'start' ? 'start' : 'page'
+    staged.push({
+      tabId,
+      address: hostView === 'start' ? 'about:blank' : addressOf(item.url),
+      title: str(item.title, MAX_NAME_CHARS) ?? '',
+      hostView,
+      original: item.tabId
+    })
+  }
+  if (staged.length === 0) {
+    const tabId = mintTabId(taken)
+    staged.push({ tabId, address: paneUrl, title: '', hostView: 'page', original: undefined })
+  }
+  const requested = typeof p.activeTabId === 'string' ? p.activeTabId : ''
+  const active = staged.find((t) => t.tabId === requested && t.original === requested) ?? staged[0]!
+  const tabs: TabRecord[] = staged.map((t) => ({
+    tabId: t.tabId,
+    hostView: t.hostView,
+    discarded: discardedFor(t.address, t.title, t === active)
+  }))
+  return { tabs, activeTabId: active.tabId }
+}
+
 /* ---- The pane ---------------------------------------------------------------------------------------- */
 
 /**
@@ -185,17 +238,18 @@ export function restorePane(
   const p = isRecord(input.payload) ? input.payload : {}
 
   const pagePath = str(p.pagePath, 1024) || null
-  const rawUrl = str(p.url, MAX_URL_CHARS) ?? ''
   // The address is judged as an operator navigation would be: http(s), `about:blank`, or our own page scheme.
   // A `harnu-page:` address only comes back for a pane that was showing a page file.
-  let url = 'about:blank'
-  if (rawUrl !== '') {
+  const addressOf = (raw: unknown): string => {
+    const rawUrl = str(raw, MAX_URL_CHARS) ?? ''
+    if (rawUrl === '') return 'about:blank'
     const verdict = checkTopLevelNavigation(rawUrl, 'operator')
     const isPageUrl = rawUrl.startsWith('harnu-page:')
     // Userinfo, query and fragment are dropped here too (main side): a file written by an older build, or by hand,
     // must not bring a token back into a loaded page.
-    if (verdict.ok && (!isPageUrl || pagePath !== null)) url = scrubUrl(verdict.url)
+    return verdict.ok && (!isPageUrl || pagePath !== null) ? scrubUrl(verdict.url) : 'about:blank'
   }
+  const url = addressOf(p.url)
 
   const openedBy = p.openedBy === 'agent' ? 'agent' : 'operator'
   // The stack's folder feeds the `harnu-page:` servable-folder index, so a hand-edited file must not name any
@@ -206,7 +260,20 @@ export function restorePane(
   const partition = openedBy === 'agent' || p.partition === 'agent' ? 'agent' : 'operator'
   const zoom = finite(p.zoom) ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, p.zoom)) : 1
   const emulation = sanitizeEmulation(p.emulation)
-  const rec: BrowserPaneRecord = {
+  const scroll = sanitizeScroll(p.scroll)
+  const discardedFor = (address: string, title: string, active: boolean): TabRecord['discarded'] =>
+    buildDiscardState({
+      reason: 'restored',
+      url: address,
+      title,
+      // The pane's saved scroll belongs to the page it was showing: the active tab.
+      scroll: active ? scroll : null,
+      zoom,
+      now,
+      hiddenSince: null
+    })
+  const { tabs, activeTabId } = restoreTabs(p, url, addressOf, discardedFor)
+  const rec: TabbedPaneRecord = {
     paneId,
     folder: input.worktreePath,
     name: str(p.name, MAX_NAME_CHARS) ?? '',
@@ -222,15 +289,11 @@ export function restorePane(
     pagePath,
     allowNetwork: pagePath !== null && p.allowNetwork === true,
     ...(Object.keys(emulation).length > 0 ? { emulation } : {}),
-    discarded: buildDiscardState({
-      reason: 'restored',
-      url,
-      title: '',
-      scroll: sanitizeScroll(p.scroll),
-      zoom,
-      now,
-      hiddenSince: null
-    })
+    tabs,
+    activeTabId,
+    ...(finite(p.lastFocusedAt) && p.lastFocusedAt >= 0 ? { lastFocusedAt: p.lastFocusedAt } : {}),
+    // Mirrors the active tab, which is what the pane is restored showing.
+    discarded: tabs.find((t) => t.tabId === activeTabId)?.discarded ?? null
   }
   return { rec, pins: sanitizePins(p.pins), disconnected: p.disconnected === true }
 }
