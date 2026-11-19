@@ -1263,6 +1263,7 @@
     "statusRunning": "rodando",
     "statusDone": "concluído",
     "count": "{n} agentes",
+    "doneFold": "{n} concluídos",
     "toggle": "Mostrar/ocultar agentes"
   },
   "actions": {

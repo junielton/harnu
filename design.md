@@ -2896,24 +2896,47 @@ Indent `pl 60px` (one level beyond sessions, which sit at 44px). Height `24px`,
 1. **Connector** `corner-down-right` (`size 11`, `stroke 1.6`, `--text-4`) — the
    `↳`.
 2. **Agent icon** `bot` (`size 12`, `stroke 1.6`, `--text-3`).
-3. **Agent type** (`attributionAgent`, e.g. `general-purpose`, `explore`) in
-   `--text-2`, `truncate`, `flex-1`. When `attributionAgent` is empty, falls
-   back to the generic label `$t('agent.subagentLabel')` ("subagent").
-4. **Source** (optional — `attributionSkill`/`attributionPlugin`, e.g.
+3. **Label** in `--text-2`, `truncate`, `flex-1`: names what the subagent did.
+   Resolution order: the `description` from the sidecar
+   `agent-<id>.meta.json` (Claude Code writes it next to each subagent
+   transcript), else a one-line truncation of the task (first user message,
+   whitespace collapsed, ≤ 60 chars + `…`), else the generic
+   `$t('agent.subagentLabel')` ("subagent"). The full task stays in the row
+   tooltip.
+4. **Type chip** (optional) — the agent type (`agentType` from meta.json, then
+   `attributionAgent`, e.g. `general-purpose`, `Explore`) in mono `--text-4`,
+   `font-size: 10px`, `truncate`, `max-width: 72px`. Omitted when unknown; the
+   word "subagent" is never shown as a chip. The label has a fixed flex-basis (`112px` on `done` rows, `96px` on `running` rows, which
+   also carry the pill) and never shrinks below it; the chip and source shrink first, so a narrow sidebar never reduces the
+   label to a letter.
+5. **Source** (optional — `attributionSkill`/`attributionPlugin`, e.g.
    `superpowers:dispatching-parallel-agents`) in mono `--text-4`, `font-size:
 10px`, `truncate`, `max-width: 120px`. Omitted when empty.
-5. **Status pill** (see below).
+6. **Status pill** (see below) — **running rows only**. A `done` row carries no
+   pill: it sits under the "N done" fold row, which already says so.
 
 Hover uses the same `rgba(255,255,255,0.025)` as session rows. The agent row
 **isn't selectable** in v1 (no terminal of its own — the subagent flows in the
 parent's transcript); it's informational.
+
+#### Finished agents fold
+
+A session that ran many subagents would otherwise list dozens of identical
+`done` rows. Inside the expanded agent list, **running agents stay listed**
+first; every `done` agent folds into **one row** below them: `chevron-right`
+(`size 11`, `--text-4`, rotates 90° when open) + `$t('agent.doneFold', { n })`
+("N done") in `--text-3`, same height/indent as an agent row, clickable
+(`role="button"`, `aria-expanded`). **Collapsed by default**; expanding lists
+the done agents under the fold row. The open state is persisted per session in
+`localStorage` (`om2tab.agentsDoneExpanded`), like the parent toggle. With zero
+done agents the fold row is not rendered.
 
 #### Agent status
 
 | State       | Visual                                                                                                                        | Notes                                           |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | **running** | Green 6px dot `--green` + pulsing `--green-soft` halo (same `pulse-ring` as an active session) + `running` label in `--green` | Subagent file received a recent append (< 15 s) |
-| **done**    | `check` icon (`size 11`, `--text-4`) + `done` label in `--text-4`                                                             | No recent append; finished (or historical)      |
+| **done**    | No pill — the row sits under the "N done" fold row (see "Finished agents fold")                                               | No recent append; finished (or historical)      |
 
 Status derivation (heuristic — there's no clean end marker in the subagent's
 JSONL; the last line is `assistant/text` with `stop_reason: null`): at seed,
