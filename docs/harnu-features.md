@@ -876,7 +876,9 @@ after `about:blank` → a site, after a move to another site (host or port), and
 own `location.replace` — until Harnu navigates the pane again on the same site (a reload is
 enough). There `browser_click`, `browser_press`, `browser_download` by `ref`, and
 `browser_type` with `delayMs` or `submit: true` refuse `PANE_INPUT_NOT_READY` before sending
-or confirming. On your pane: `browser_navigate({ paneId, action: "reload" })`,
+or confirming. On your pane: `browser_navigate({ paneId, tabId, action: "reload" })` with the
+`tabId` of the tab you were clicking in (the refusal's hint names it; a plain reload hits the active
+tab),
 `browser_snapshot`, call again. On an operator pane don't reload (it can lose their state) —
 ask them. `browser_fill`, a plain `browser_type` and `browser_eval` always work; check
 `browser_list`'s `inputReady`.

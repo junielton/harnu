@@ -172,6 +172,8 @@ export interface BrowserPaneAccess {
    * confirm. Absent = the call names no tab, or the tab exists.
    */
   tabKnown?: boolean
+  /** The tab the call is judged on (the one it names, else the active tab), so a refusal can name it. */
+  tabId?: string
 }
 
 export interface BrowserGateInput {

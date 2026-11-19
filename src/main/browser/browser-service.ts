@@ -504,8 +504,10 @@ export async function resolveBrowserGate(
         }
       : {})
   })
-  if (rec && tabId !== undefined && resolution.input.pane && !findTab(rec, tabId)) {
-    resolution.input.pane.tabKnown = false
+  if (rec && resolution.input.pane) {
+    // The tab the call is judged on, for a refusal that must name it (PANE_INPUT_NOT_READY's reload).
+    resolution.input.pane.tabId = tabId ?? rec.activeTabId
+    if (tabId !== undefined && !findTab(rec, tabId)) resolution.input.pane.tabKnown = false
   }
   return resolution
 }

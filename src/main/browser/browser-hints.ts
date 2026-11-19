@@ -90,6 +90,8 @@ export interface BrowserHintContext {
   detail?: string
   /** `ELEMENT_NOT_VISIBLE`: the verb that asked, so the hint speaks of input and not of a capture. */
   during?: 'input'
+  /** `PANE_INPUT_NOT_READY`: the tab the refused call was judged on, which the reload must name (browser-tabs S-6). */
+  tabId?: string
   /** `PANE_INPUT_NOT_READY`: who opened the pane. An agent may reload its own pane; an operator's page is theirs. */
   openedBy?: 'agent' | 'operator'
   /** `REV_CONFLICT`: the rev the sidecar holds now. */
@@ -485,7 +487,7 @@ export function shapeBrowserDenial(
                 why: 'The operator opened this pane: a reload can lose what they have typed or the state they are in. After that the pane delivers clicks and key presses.'
               }
             : {
-                do: 'Reload it with browser_navigate({ paneId, action: "reload" }), then browser_snapshot for fresh refs, and call again. A reload (or navigating the same site again) fixes it.',
+                do: `Reload it with browser_navigate({ paneId, ${ctx.tabId ? `tabId: "${ctx.tabId}", ` : ''}action: "reload" }), then browser_snapshot for fresh refs, and call again. A reload (or navigating the same site again) fixes it.`,
                 why: 'After that the pane delivers clicks and key presses, whether or not the operator is looking at it.'
               },
           {

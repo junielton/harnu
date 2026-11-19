@@ -412,7 +412,8 @@ export async function gate(
       return {
         refusal: refuse(denied.reason as BrowserDenialCode, {
           folder: rec?.folder,
-          ...(rec ? { openedBy: rec.openedBy } : {})
+          ...(rec ? { openedBy: rec.openedBy } : {}),
+          ...(rec && (tabId ?? rec.activeTabId) ? { tabId: tabId ?? rec.activeTabId } : {})
         })
       }
     }
