@@ -366,6 +366,8 @@ hasn't said anything yet shows no number at all rather than a `0`.
 
 Selecting a folder never stops a running session. Pressing **Enter** on a folder with the arrow-key sidebar navigation does the same as clicking it. Sessions keep running in the background with their scrollback and conversation intact; clicking one brings you straight back to it.
 
+**Walks.** Right-click a folder and choose **Walks** to open the repo's saved [guided test walks](guided-test-walk.md#the-walks-library) in a pane, or use the **Walks** button in the top bar. The walks belong to the repo, so every worktree of it shows the same list.
+
 **Folder actions no longer need a session.** The Topbar's buttons (Roadmap board, PR Stack, Browse files, Open in your [editor](settings.md#editor), Pull requests on GitHub, Open folder, terminal) act on whichever folder you have selected. Previously they were only available while a session was selected, which made a folder with no sessions a dead end — you had to start a session just to open that folder's board.
 
 **Pull requests on GitHub.** When the selected folder's `origin` remote points at github.com, the Topbar shows a pull-request button that opens the repo's **Pull requests** page in your browser. Both HTTPS and SSH remotes work, including SSH host aliases like `git@github.com-work:owner/repo.git`. The button is hidden when the folder isn't a git repo, has no `origin`, or its `origin` is somewhere else (GitLab, Bitbucket, a GitHub Enterprise host). It only reads `origin`, so a fork whose `origin` is your own copy opens your fork's pull requests, not the upstream's.

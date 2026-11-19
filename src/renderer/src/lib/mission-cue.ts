@@ -13,7 +13,7 @@
  * Two classes of kind:
  * - **standing** (`close`, `checks`, `review-import`): a to-do nobody is waiting
  *   on. Cue once, never re-nudge — the pill and the bell still show it.
- * - **blocking** (`rescope`, `blocker`, `human-steps`): something an agent or a
+ * - **blocking** (`rescope`, `blocker`, `decide`, `human-steps`): something an agent or a
  *   later step waits on. Re-nudge on {@link BLOCKING_NUDGE_MS} after the last
  *   cue, then go silent.
  *
@@ -23,6 +23,17 @@
  * A mission absent from a poll keeps its entry for {@link ABSENT_TTL_MS} and is
  * never cued while absent.
  *
+ * Flap grace: a KEY that leaves a mission's list (a source that flickers for a poll or two, e.g. `review`)
+ * is not forgotten at once — it stays in the entry, unchanged and never cued, for {@link FLAP_GRACE_MS}.
+ * If it returns inside the window it keeps its count and schedule and cues only if its count grew; after
+ * the window it is dropped and a return is a new key.
+ *
+ * The v4 kinds (S-23, the operator's rule: a false alarm beats a miss): an operator-owned blocker
+ * (`unblock`), a request to join (`attach`), a mission ready to close, a red `main` and a criterion
+ * only the operator can mark (`settle`) are all **blocking** — they chime when they appear and re-nudge
+ * on the same back-off. Pull requests waiting for review (`review`) chime when one more waits and never
+ * re-nudge. A decrease never chimes, for any kind.
+ *
  * Approvals and needs-input are left out on purpose — the Approval Inbox and
  * the task-state notifications already chime for them. There is no draft kind:
  * a dead legacy draft reads `active` + stale, and stale is not owed.
@@ -30,8 +41,24 @@
  * Only what a poll sees exists here: a blocker raised and cleared between two
  * polls never reaches the operator.
  */
-import type { MissionView } from '../../../main/mission-ipc'
-import type { MissionYouItem } from '../../../main/mcp/tool-handlers'
+import type { MissionYouItem, WaitingItemV4 } from '../../../main/missions/waiting'
+import type { SoundFamily } from './notification-sound'
+
+/**
+ * What the cue reads of a mission: its id and the ONE waiting list. The v3 view the list poll returns
+ * fits (`you` holds v3 items); so does the v4 reader view (`you` holds {@link WaitingItemV4}, worded once
+ * by the server in `ask`). Missions v4 S-23: the store feeds it the v4 view, for v3 and v4 records alike.
+ */
+export interface CueView {
+  mission: { id: string }
+  you: readonly (MissionYouItem | WaitingItemV4)[]
+}
+
+/** One item of either list. */
+export type CueItem = MissionYouItem | WaitingItemV4
+
+/** A v4 item carries its own `ask`; a v3 one never does. */
+const isV4Item = (item: CueItem): item is WaitingItemV4 => 'ask' in item
 
 /**
  * How long a blocking key waits after its last cue before the next reminder: the
@@ -48,6 +75,13 @@ export const BLOCKING_NUDGE_MS: readonly number[] = [
 /** How long a mission absent from the polls keeps its memory entry (measured from `lastSeenAt`). */
 export const ABSENT_TTL_MS = 24 * 60 * 60 * 1000
 
+/**
+ * How long an owed key that left a poll is still remembered (measured from the first poll that missed
+ * it). 5 minutes is 15 polls at the 20 s cadence: far longer than the one-or-two-poll flaps a source
+ * produces, far shorter than a real resolve-then-recur (a review done, a new pull request opened later).
+ */
+export const FLAP_GRACE_MS = 5 * 60_000
+
 /** `${kind}` or `${kind}:${detail}` — one per owed kind (per blocker reason / re-scope target). */
 export type OwedKey = string
 
@@ -59,6 +93,12 @@ export interface KeyState {
   lastCuedAt: number
   /** Reminders already sent; at {@link BLOCKING_NUDGE_MS}`.length` the key is silent. */
   nudges: number
+  /**
+   * Set while the key is missing from the polls: the first poll that did not list it. The entry is kept
+   * (never cued) for {@link FLAP_GRACE_MS}, so a key that returns is not new. Optional: older stored
+   * memory has none.
+   */
+  absentSince?: number
 }
 
 export interface OwedEntry {
@@ -74,6 +114,11 @@ export interface CueMemory {
 
 export interface CueDecision {
   cue: boolean
+  /**
+   * The sound this cue plays (T154): the most urgent family among every key that cued in this poll
+   * (fail > ask > info), `null` when nothing cued.
+   */
+  family: SoundFamily | null
   /** The missions this cue is about — one combined cue covers all of them. */
   missionIds: string[]
   memory: CueMemory
@@ -86,7 +131,8 @@ export interface PersistedCueMemory {
 }
 
 /** One `you` item's key and count, or `null` for the kinds that never cue. */
-function keyOf(item: MissionYouItem): [OwedKey, number] | null {
+function keyOf(item: CueItem): [OwedKey, number] | null {
+  if (isV4Item(item)) return keyOfV4(item)
   switch (item.kind) {
     case 'rescope':
       return [`rescope:${item.end.target}`, 1]
@@ -94,14 +140,15 @@ function keyOf(item: MissionYouItem): [OwedKey, number] | null {
       return ['close', 1]
     case 'blocker':
       return [`blocker:${item.reason}`, 1]
+    // A pending decision blocks the steps it names until the operator chooses: it is a blocking key.
+    case 'decide':
+      return [`decide:${item.stepId}`, 1]
     case 'checks':
       return ['checks', item.count]
     case 'human-steps':
       return ['human-steps', item.stepIds.length]
     case 'review-import':
       return ['review-import', 1]
-    // The operator paused the steward themselves: standing, never news — nothing to chime about.
-    case 'steward-paused':
     case 'main-red':
     case 'approvals':
     case 'needs-input':
@@ -109,13 +156,67 @@ function keyOf(item: MissionYouItem): [OwedKey, number] | null {
   }
 }
 
+/**
+ * One v4 waiting item's key and count. The key rides on the item's own id, which is stable while the
+ * thing it names is unchanged, so a different blocker or request is a new key and a cleared one just
+ * leaves. `review` is one item for all the pull requests, so its count is how many wait.
+ */
+function keyOfV4(item: WaitingItemV4): [OwedKey, number] {
+  switch (item.kind) {
+    case 'review':
+      return ['review', Math.max(1, item.prs.length || item.stepIds.length)]
+    case 'close':
+      return ['ready-to-close', 1]
+    // A blocker's `blk-N` is a position, and a v3 record renumbers its blockers when one is cleared: the key
+    // is its scope plus its words, so clearing a neighbour never makes it new (a decrease never chimes).
+    case 'unblock':
+      return [`unblock:${item.stepId ?? 'mission'}:${item.ask}`, 1]
+    case 'main-failing':
+    case 'settle':
+    case 'attach':
+    case 'rescope':
+      return [item.id, 1]
+  }
+}
+
 /** Blocking keys re-nudge on the back-off; every other key is standing. */
 function isBlocking(key: OwedKey): boolean {
-  return key.startsWith('rescope:') || key.startsWith('blocker:') || key === 'human-steps'
+  return (
+    key === 'ready-to-close' ||
+    key.startsWith('unblock:') ||
+    key.startsWith('attach:') ||
+    key.startsWith('main-failing:') ||
+    key.startsWith('settle:') ||
+    key.startsWith('rescope:') ||
+    key.startsWith('blocker:') ||
+    key.startsWith('decide:') ||
+    key === 'human-steps'
+  )
+}
+
+/**
+ * The sound family one owed key plays (T154): a red `main` is a `fail`; every other blocking kind (an
+ * operator blocker, a request to join, a mission ready to close, a criterion only the operator can mark,
+ * a re-scope, a pending decision, human steps) `ask`s; reviews, due checks and an imported end are `info`.
+ */
+export function cueFamilyOfKey(key: OwedKey): SoundFamily {
+  if (key.startsWith('main-failing:')) return 'fail'
+  // A v3 `close` is the same ask as a v4 `ready-to-close`, though it never re-nudges.
+  if (key === 'close' || isBlocking(key)) return 'ask'
+  return 'info'
+}
+
+const FAMILY_RANK: Record<SoundFamily, number> = { info: 0, ask: 1, done: 2, fail: 3 }
+
+/** The most urgent family of several (fail > ask > info), or `null` for none. */
+export function mostUrgentFamily(families: readonly SoundFamily[]): SoundFamily | null {
+  let best: SoundFamily | null = null
+  for (const f of families) if (best === null || FAMILY_RANK[f] > FAMILY_RANK[best]) best = f
+  return best
 }
 
 /** Everything this mission owes that deserves a sound, as key → count (empty = nothing). */
-export function owedKeys(view: MissionView): Map<OwedKey, number> {
+export function owedKeys(view: CueView): Map<OwedKey, number> {
   const out = new Map<OwedKey, number>()
   for (const item of view.you) {
     const k = keyOf(item)
@@ -125,12 +226,12 @@ export function owedKeys(view: MissionView): Map<OwedKey, number> {
 }
 
 /** The first `you` item that cues — what the cue's Activity entry names. */
-export function firstOwed(view: MissionView): MissionYouItem | null {
+export function firstOwed<V extends CueView>(view: V): V['you'][number] | null {
   return view.you.find((item) => keyOf(item) !== null) ?? null
 }
 
 /** The views with a repeated `mission.id` dropped (first wins) — defence in depth, main de-duplicates. */
-function uniqueById(views: readonly MissionView[]): MissionView[] {
+function uniqueById<V extends CueView>(views: readonly V[]): V[] {
   const seen = new Set<string>()
   return views.filter((v) => !seen.has(v.mission.id) && !!seen.add(v.mission.id))
 }
@@ -140,7 +241,7 @@ function uniqueById(views: readonly MissionView[]): MissionView[] {
  * `lastCuedAt = now`, every schedule spent — so the first poll is silent and a
  * later change is news.
  */
-export function seedCueMemory(views: readonly MissionView[], now: number): CueMemory {
+export function seedCueMemory(views: readonly CueView[], now: number): CueMemory {
   const owed: CueMemory['owed'] = new Map()
   for (const v of uniqueById(views)) {
     const keys = new Map<OwedKey, KeyState>()
@@ -152,29 +253,37 @@ export function seedCueMemory(views: readonly MissionView[], now: number): CueMe
   return { owed }
 }
 
+/** A remembered key seen again: the same state without its absence mark (never mutates the memory). */
+function returned(state: KeyState | undefined): KeyState | undefined {
+  if (!state || state.absentSince === undefined) return state
+  const { absentSince: _gone, ...rest } = state
+  void _gone
+  return rest
+}
+
 /**
  * One decision per poll. A key cues when it is new, its count grew, or (blocking
  * kinds only) its next back-off step is due; everything that cues in the same
  * poll lands in ONE combined decision.
  */
-export function decideCue(
-  views: readonly MissionView[],
-  memory: CueMemory,
-  now: number
-): CueDecision {
+export function decideCue(views: readonly CueView[], memory: CueMemory, now: number): CueDecision {
   const next: CueMemory['owed'] = new Map()
   const cueIds: string[] = []
+  const cuedFamilies: SoundFamily[] = []
   for (const v of uniqueById(views)) {
     const id = v.mission.id
     const prev = memory.owed.get(id)
     const keys = new Map<OwedKey, KeyState>()
     let cued = false
-    for (const [k, count] of owedKeys(v)) {
-      const was = prev?.keys.get(k)
+    const owedNow = owedKeys(v)
+    for (const [k, count] of owedNow) {
+      // A key that returns inside the grace window keeps its count and schedule; only growth is news.
+      const was = returned(prev?.keys.get(k))
       if (!was || count > was.count) {
         // A new key or a grown count is a fresh cue: the schedule restarts.
         keys.set(k, { count, firstOwedAt: was?.firstOwedAt ?? now, lastCuedAt: now, nudges: 0 })
         cued = true
+        cuedFamilies.push(cueFamilyOfKey(k))
       } else if (
         isBlocking(k) &&
         was.nudges < BLOCKING_NUDGE_MS.length &&
@@ -182,10 +291,17 @@ export function decideCue(
       ) {
         keys.set(k, { ...was, count, lastCuedAt: now, nudges: was.nudges + 1 })
         cued = true
+        cuedFamilies.push(cueFamilyOfKey(k))
       } else {
         // Same or fewer: remember the new count, so a later growth is measured from here.
         keys.set(k, { ...was, count })
       }
+    }
+    // A key that left this poll stays remembered, untouched, for the flap grace window; never cued here.
+    for (const [k, was] of prev?.keys ?? []) {
+      if (owedNow.has(k)) continue
+      const absentSince = was.absentSince ?? now
+      if (now - absentSince <= FLAP_GRACE_MS) keys.set(k, { ...was, absentSince })
     }
     // A mission that owes nothing now but was remembered keeps its (empty) entry.
     if (keys.size > 0 || prev) next.set(id, { keys, lastSeenAt: now })
@@ -195,7 +311,12 @@ export function decideCue(
   for (const [id, entry] of memory.owed) {
     if (!next.has(id) && now - entry.lastSeenAt <= ABSENT_TTL_MS) next.set(id, entry)
   }
-  return { cue: cueIds.length > 0, missionIds: cueIds, memory: { owed: next } }
+  return {
+    cue: cueIds.length > 0,
+    family: mostUrgentFamily(cuedFamilies),
+    missionIds: cueIds,
+    memory: { owed: next }
+  }
 }
 
 /** Maps → plain objects for `localStorage`. */
@@ -240,7 +361,8 @@ export function isPersistedCueMemory(x: unknown): x is PersistedCueMemory {
           isNum(s.count) &&
           isNum(s.firstOwedAt) &&
           isNum(s.lastCuedAt) &&
-          isNum(s.nudges)
+          isNum(s.nudges) &&
+          (s.absentSince === undefined || isNum(s.absentSince))
       )
   )
 }

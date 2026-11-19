@@ -23,26 +23,15 @@
  */
 
 import { ipcMain, type BrowserWindow } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
 import { promises as fs, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
 import type { CommandBridge } from './command-bridge'
 import { resolveClaudePath } from './claude-cli'
 import { stageSkillsForTick } from './bundled-skills'
 import { hookSettingsBlobJson } from './hook-bridge'
-import { readMcpEnabled } from './mcp/prefs'
-import { isFolderDenied } from './mcp/permission-core'
 import { atomicWriteFile } from './mcp/atomic-write'
-import {
-  STEWARD_WAKE_GAP_MS,
-  stewardBearer,
-  stewardBlockedReason,
-  stewardWorkerFor,
-  wakeDecision,
-  type WakeReason
-} from './steward-core'
 import {
   releaseCompanionSpawn,
   tickEnv,
@@ -65,6 +54,7 @@ import {
   type Run,
   type RunStatus,
   type TickContext,
+  type WakeReason,
   type Worker,
   type WorkerMode
 } from './scheduler-core'
@@ -76,6 +66,8 @@ import {
   saveWorkers,
   type NetworkLossNotice
 } from './scheduler-store'
+import { spawnChild, type SpawnedChild } from './spawn-runner'
+import type { Scope } from './mcp/scope'
 
 /** State pushed to the renderer on every change (`scheduler:changed`). */
 export interface SchedulerState {
@@ -183,7 +175,7 @@ function runForOutcome(
 
 interface LiveTick {
   worker: Worker
-  child: ChildProcess
+  child: SpawnedChild
   startedAt: number
   stdout: string
   timeoutHandle: ReturnType<typeof setTimeout>
@@ -314,7 +306,6 @@ function mcpConfigPathIfPresent(): string | undefined {
   return existsSync(p) ? p : undefined
 }
 
-/** A steward stages skills the way an observe tick does: the stricter rule (no skill with hooks). */
 function stageModeOf(mode: WorkerMode): 'observe' | 'act' {
   return mode === 'act' ? 'act' : 'observe'
 }
@@ -417,11 +408,8 @@ async function completeTick(
   await appendRun(run)
 
   const failure = nextFailureState(worker.failureStreak, run.status)
-  // Campaign ch.5a: a steward is never switched off by a failure streak — "a mission's guarantees
-  // vanishing through one unnoticed toggle" is what the category exists to prevent. It keeps its
-  // beat; the streak still counts, so the operator sees it.
   const streak = failure.streak
-  const disable = worker.category === 'steward' ? false : failure.disable
+  const disable = failure.disable
   if (streak !== worker.failureStreak || disable) {
     const updated = updateWorker(worker.id, {
       failureStreak: streak,
@@ -465,13 +453,9 @@ function finishLiveTick(id: string, exitCode: number | null): void {
  * `liveTicks` — callers (the ticker, `runNow`) are responsible for that
  * check so this function can stay a straight line.
  */
-async function startTick(worker: Worker, wakeReason?: WakeReason): Promise<void> {
-  // Campaign ch.5a: the global kill-switches stop a steward like every agent. Checked first, and a
-  // blocked beat is not a run: nothing is recorded, no failure counts, the next beat looks again.
-  if (worker.category === 'steward') {
-    const blocked = await stewardGateReason(worker.folder, worker.missionId)
-    if (blocked) return
-  }
+async function startTick(worker: Worker): Promise<void> {
+  // Missions v4 S-38: a steward that an older Harnu left behind never ticks; boot retires it.
+  if (worker.category === 'steward') return
   lastRunAt[worker.id] = Date.now()
 
   // Spec's vanished-folder rule: check BEFORE spawning, disable + notify,
@@ -516,13 +500,7 @@ async function startTick(worker: Worker, wakeReason?: WakeReason): Promise<void>
     stageModeOf(worker.mode)
   ).catch(() => ({ staged: null, rejected: [] }))
   const lastResult = worker.carryLastResult ? await lastResultFor(worker.id) : undefined
-  // A steward presents its OWN bearer (the server recognises it and enforces its allowlist); with
-  // no control server up there is nothing for it to do, so it does not tick.
-  const mcpConfigPath =
-    worker.category === 'steward'
-      ? await writeStewardMcpConfig(worker.id)
-      : mcpConfigPathIfPresent()
-  if (worker.category === 'steward' && !mcpConfigPath) return
+  const mcpConfigPath = await tickMcpConfigFor(worker)
 
   // BUG-111: a tick runs with `--setting-sources ''`, so the globally-installed
   // Harnu hooks never load. Inject them the same way the PTY path does, from the
@@ -542,10 +520,7 @@ async function startTick(worker: Worker, wakeReason?: WakeReason): Promise<void>
     ...(hookSettingsJson ? { hookSettingsJson } : {})
   }
 
-  const argv = tickArgv(
-    wakeReason ? { ...worker, prompt: `Woken by: ${wakeReason}.\n\n${worker.prompt}` } : worker,
-    ctx
-  )
+  const argv = tickArgv(worker, ctx)
   const companionOwner: SpawnOwner | undefined = companionPlan
     ? { kind: 'tick', workerId: worker.id, runId: `${worker.id}-${startedAt}` }
     : undefined
@@ -553,7 +528,7 @@ async function startTick(worker: Worker, wakeReason?: WakeReason): Promise<void>
     process.env,
     companionPlan && companionOwner ? companionPlan.mintToken(companionOwner) : null
   )
-  const child = spawn(claudePath, argv, {
+  const child = spawnChild(claudePath, argv, {
     cwd: worker.folder,
     stdio: ['ignore', 'pipe', 'pipe'],
     ...(env ? { env } : {})
@@ -815,10 +790,6 @@ export interface AgentWorkerRow {
   mode: WorkerMode
   everyMinutes: number
   enabled: boolean
-  /** Campaign ch.5a: `'steward'` for a mission's system worker; absent for a user worker. */
-  category?: 'steward'
-  /** Set with `category: 'steward'`: the mission it serves. */
-  missionId?: string
   lastRun?: { status: RunStatus; startedAt: number }
 }
 
@@ -841,8 +812,7 @@ export async function listWorkersForAgent(folder?: string): Promise<AgentWorkerR
         folder: w.folder,
         mode: w.mode,
         everyMinutes: w.everyMinutes,
-        enabled: w.enabled,
-        ...(w.category === 'steward' ? { category: w.category, missionId: w.missionId } : {})
+        enabled: w.enabled
       }
       if (last) row.lastRun = { status: last.status, startedAt: last.startedAt }
       return row
@@ -887,27 +857,6 @@ export function isWorkerNotFound(err: unknown): boolean {
  */
 export function folderForWorkerId(id: string): string | undefined {
   return workersCache.find((w) => w.id === id)?.folder
-}
-
-/**
- * Campaign ch.5a (spec §3.4): thrown when an edit or delete targets a mission's steward. A steward is
- * a system worker bound to its mission — its lifecycle is the mission's, and pausing it is a mission
- * door, so neither an agent nor the worker form can change or remove it.
- */
-export class WorkerIsStewardError extends Error {
-  readonly code = 'WORKER_IS_STEWARD'
-
-  constructor(id: string) {
-    super(
-      `WORKER_IS_STEWARD: worker "${id}" is a mission's steward — a system worker. It is created when the mission is and deleted when the operator ends the mission; it cannot be edited, disabled or deleted. Pausing it is a mission door in the UI.`
-    )
-    this.name = 'WorkerIsStewardError'
-  }
-}
-
-/** Cross-module-instance recognition, same reasoning as {@link isWorkerNotFound}. */
-export function isWorkerIsSteward(err: unknown): boolean {
-  return (err as { code?: unknown } | null)?.code === 'WORKER_IS_STEWARD'
 }
 
 /** The subset of `Worker` fields `update_worker` may change. */
@@ -969,7 +918,6 @@ export async function updateWorkerForAgent(
   assertStoreLoaded()
   const target = workersCache.find((w) => w.id === input.id)
   if (!target) throw new WorkerNotFoundError(input.id)
-  if (target.category === 'steward') throw new WorkerIsStewardError(input.id)
 
   const tickInFlight = liveTicks.has(input.id)
   // T483: `pinnedAt` is the operator's curation and `UpdateWorkerPatch` excludes it by type; strip
@@ -1030,7 +978,6 @@ export async function deleteWorkerForAgent(id: string): Promise<{ wasRunning: bo
   assertStoreLoaded()
   const target = workersCache.find((w) => w.id === id)
   if (!target) throw new WorkerNotFoundError(id)
-  if (target.category === 'steward') throw new WorkerIsStewardError(id)
 
   const live = liveTicks.get(id)
   const wasRunning = live !== undefined
@@ -1046,121 +993,65 @@ export async function deleteWorkerForAgent(id: string): Promise<{ wasRunning: bo
 }
 
 // ---------------------------------------------------------------------------
-// Campaign ch.5a (T597): the steward — a mission's system worker
+// Missions v4 S-38: the steward is gone; what is left is the way out
 // ---------------------------------------------------------------------------
 
-/** Test seam: how a woken steward actually ticks. Default: the real spawn path. */
-let tickStarter: (worker: Worker, reason: WakeReason) => Promise<void> = (w, reason) =>
-  startTick(w, reason)
+/**
+ * Missions v4 S-27 / S-38: nothing creates, wakes or ticks a steward any more. A Scheduler worker
+ * with `category: 'steward'` can still be in an older install's `schedulers.json`; it is kept in
+ * memory only so boot can name its mission, delete it and remove the hooks it left behind.
+ */
 
-export function setStewardTickStarter(
-  fn: ((worker: Worker, reason: WakeReason) => Promise<void>) | null
-): void {
-  tickStarter = fn ?? ((w, reason) => startTick(w, reason))
-}
-
-let wakeGapMs = STEWARD_WAKE_GAP_MS
-
-/** Test seam: the coalescing gap between event-driven ticks. */
-export function setStewardWakeGapMs(ms: number): void {
-  wakeGapMs = ms
-}
-
-/** One pending trailing wake per steward, so a burst of events yields one extra tick, not N. */
-const wakeTimers = new Map<string, ReturnType<typeof setTimeout>>()
+export type WakeOutcome = { woke: true } | { woke: false; reason: string; deferred?: true }
 
 /**
- * Campaign ch.5b (spec §3.4): has the operator paused the steward of `missionId`? The default reads
- * the mission file (imported lazily: the mission store imports this module). Test seam below.
+ * Kept only because `missions/observer.ts` (S-40 deletes that file) still calls it: there is no
+ * steward to wake, so the answer is always "no". Nothing starts a process.
  */
-let pauseProbe: (folder: string, missionId: string) => Promise<{ reason: string } | null> = async (
-  folder,
-  missionId
-) => (await import('./steward-pause')).readStewardPause(folder, missionId)
+export async function wakeStewardForMission(
+  _missionId: string,
+  _reason: WakeReason
+): Promise<WakeOutcome> {
+  return { woke: false, reason: 'stewards are retired' }
+}
 
-export function setStewardPauseProbe(
-  fn: ((folder: string, missionId: string) => Promise<{ reason: string } | null>) | null
+/**
+ * Missions v4 S-25: writes the `--mcp-config` of an observe tick (the observer credential for its
+ * folder). Set by the control server when it registers (this module cannot import it: it imports us).
+ */
+let observerConfigWriter: ((scope: Scope) => Promise<string | undefined>) | null = null
+
+/** Wire the observer-credential writer (called once by `mcp/server.ts`). */
+export function setObserverMcpConfigWriter(
+  fn: ((scope: Scope) => Promise<string | undefined>) | null
 ): void {
-  pauseProbe = fn ?? (async (f, m) => (await import('./steward-pause')).readStewardPause(f, m))
+  observerConfigWriter = fn
 }
 
-/** Why a steward must not tick right now (agent control off, folder blocked, paused), or `null`. */
-async function stewardGateReason(folder: string, missionId?: string): Promise<string | null> {
-  const serverEnabled = await readMcpEnabled()
-  // Imported lazily: `user-projects` drags in the git probe, which the runner's own tests (rightly)
-  // do not provide an `execFile` for, and a steward's gate is the only reader.
-  const { readUserProjects } = await import('./user-projects')
-  const denied = (await readUserProjects()).projects
-    .filter((p) => p.agentDenied === true)
-    .map((p) => p.path)
-  const paused = missionId ? await pauseProbe(folder, missionId).catch(() => null) : null
-  return stewardBlockedReason({
-    serverEnabled,
-    folderDenied: isFolderDenied(folder, denied),
-    paused
-  })
+/**
+ * The `--mcp-config` a tick presents. An observe worker has the OBSERVER credential for its folder
+ * (the observe allowlist's read verbs, bound to that folder), and when the control server cannot
+ * write one (or is not up yet) it gets NO config, never the main one; an `act` worker keeps the
+ * main config. `undefined` is "no Harnu verbs for this tick".
+ */
+export async function tickMcpConfigFor(worker: Worker): Promise<string | undefined> {
+  if (worker.category === 'steward') return undefined
+  if (worker.mode === 'observe') {
+    // No writer yet (the Scheduler registers before the control server, and a `runOnBoot` worker starts
+    // at once) is the same as no credential: the tick runs WITHOUT Harnu verbs, never on the main config.
+    return observerConfigWriter
+      ? observerConfigWriter({ role: 'observer', folder: worker.folder })
+      : undefined
+  }
+  return mcpConfigPathIfPresent()
 }
 
-function stewardConfigPath(workerId: string): string {
+/** The MCP config file a steward tick used to write; retiring a steward deletes a leftover one. */
+function legacyStewardConfigPath(workerId: string): string {
   return join(app.getPath('userData'), 'steward-mcp', `${workerId}.json`)
 }
 
-/**
- * The tick's own `--mcp-config`: the control server's URL with a bearer derived for THIS worker
- * (never the server secret itself). `undefined` when the control server is not up.
- */
-async function writeStewardMcpConfig(workerId: string): Promise<string | undefined> {
-  try {
-    const base = JSON.parse(
-      await fs.readFile(join(app.getPath('userData'), 'harnu.mcp.json'), 'utf8')
-    ) as {
-      mcpServers?: { harnu?: { url?: string; headers?: { Authorization?: string } } }
-    }
-    const entry = base.mcpServers?.harnu
-    const secret = entry?.headers?.Authorization?.replace(/^Bearer /, '')
-    if (!entry?.url || !secret) return undefined
-    const doc = {
-      mcpServers: {
-        harnu: {
-          type: 'http',
-          url: entry.url,
-          headers: { Authorization: `Bearer ${stewardBearer(secret, workerId)}` }
-        }
-      }
-    }
-    const file = stewardConfigPath(workerId)
-    await fs.mkdir(join(app.getPath('userData'), 'steward-mcp'), { recursive: true, mode: 0o700 })
-    await atomicWriteFile(file, JSON.stringify(doc, null, 2) + '\n', 0o600)
-    return file
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Create the steward of `missionId` (one per mission; a second call returns the first). Born
- * enabled, category `steward`, on the 20-minute fallback beat. Rejects with
- * {@link SchedulerNotReadyError} before the store has loaded, like every write path.
- */
-export async function createStewardForMission(input: {
-  missionId: string
-  folder: string
-  title: string
-}): Promise<Worker> {
-  await ready
-  assertStoreLoaded()
-  const existing = workersCache.find(
-    (w) => w.category === 'steward' && w.missionId === input.missionId
-  )
-  if (existing) return existing
-  const worker = stewardWorkerFor({ id: randomUUID(), ...input })
-  workersCache = [...workersCache, worker]
-  await persistWorkers()
-  emitChanged()
-  return worker
-}
-
-/** Delete every steward of `missionId` (and its runs, its tick, its MCP config). Returns how many went. */
+/** Delete every steward of `missionId` (and its runs, its tick, its leftover MCP config). Returns how many went. */
 export async function retireStewardForMission(missionId: string): Promise<number> {
   await ready
   assertStoreLoaded()
@@ -1171,10 +1062,7 @@ export async function retireStewardForMission(missionId: string): Promise<number
       live.outcome = 'stopped'
       live.child.kill('SIGTERM')
     }
-    const timer = wakeTimers.get(w.id)
-    if (timer) clearTimeout(timer)
-    wakeTimers.delete(w.id)
-    await fs.unlink(stewardConfigPath(w.id)).catch(() => {})
+    await fs.unlink(legacyStewardConfigPath(w.id)).catch(() => {})
     await deleteWorkerRuns(w.id)
   }
   if (doomed.length > 0) {
@@ -1185,20 +1073,7 @@ export async function retireStewardForMission(missionId: string): Promise<number
   return doomed.length
 }
 
-/**
- * Synchronous: the steward behind a worker id, for the control server's bearer check. `undefined`
- * once the worker is gone — which is what makes a deleted steward's bearer dead.
- */
-export function stewardForWorkerId(
-  workerId: string
-): { workerId: string; missionId: string; folder: string } | undefined {
-  const w = workersCache.find((x) => x.id === workerId)
-  return w && w.category === 'steward' && w.missionId
-    ? { workerId: w.id, missionId: w.missionId, folder: w.folder }
-    : undefined
-}
-
-/** Every steward (for boot reconciliation and the hook refcount). */
+/** Every steward an older Harnu left in the store (boot retirement and the hook refcount). */
 export function listStewards(): Array<{ workerId: string; missionId: string; folder: string }> {
   return workersCache.flatMap((w) =>
     w.category === 'steward' && w.missionId
@@ -1207,73 +1082,200 @@ export function listStewards(): Array<{ workerId: string; missionId: string; fol
   )
 }
 
-export type WakeOutcome = { woke: true } | { woke: false; reason: string; deferred?: true }
+// ── the hooks a steward left in a folder ─────────────────────────────────────
+
+type HookHandler = Record<string, unknown>
+type SettingsDoc = Record<string, unknown>
 
 /**
- * Wake the steward of `missionId` for a mission event (a ledger row, a CI change, a child going
- * idle, a blocker cleared). Idempotent and cheap to call from anywhere: no steward, a disabled or
- * blocked one, or a tick inside the coalescing gap are all answers, never errors.
+ * `curl -s -X POST --data-binary @- http://127.0.0.1:<port>/steward/<token>/<route>` followed by
+ * anything up to whitespace. Our handlers are recognised by this URL shape, not by a sentinel key
+ * (Claude Code strips unknown keys when it rewrites the file); a user hook that only mentions the
+ * path is not ours.
  */
-export async function wakeStewardForMission(
-  missionId: string,
-  reason: WakeReason
-): Promise<WakeOutcome> {
-  await ready
-  if (!storeLoaded) return { woke: false, reason: 'SCHEDULER_NOT_READY' }
-  const w = workersCache.find((x) => x.category === 'steward' && x.missionId === missionId)
-  if (!w) return { woke: false, reason: 'no steward for this mission' }
-  const decision = wakeDecision({
-    enabled: w.enabled,
-    running: liveTicks.has(w.id),
-    blockedReason: await stewardGateReason(w.folder, w.missionId),
-    now: Date.now(),
-    lastStartedAt: lastRunAt[w.id],
-    gapMs: wakeGapMs
-  })
-  if (decision.action === 'skip') return { woke: false, reason: decision.reason }
-  if (decision.action === 'defer') {
-    if (!wakeTimers.has(w.id)) {
-      wakeTimers.set(
-        w.id,
-        setTimeout(() => {
-          wakeTimers.delete(w.id)
-          void wakeStewardForMission(missionId, reason)
-        }, decision.inMs)
-      )
-    }
-    return { woke: false, deferred: true, reason: 'coalesced into the next tick' }
-  }
-  lastRunAt[w.id] = Date.now()
-  void tickStarter(w, reason)
-  return { woke: true }
+const LEGACY_STEWARD_HOOK =
+  /^curl -s -X POST --data-binary @- http:\/\/127\.0\.0\.1:\d+\/steward\/[^/\s]+\/(brief|precompact|wake)( |$)/
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function isLegacyStewardHook(handler: unknown): boolean {
+  if (!isObject(handler)) return false
+  const h: HookHandler = handler
+  return (
+    h.type === 'command' && typeof h.command === 'string' && LEGACY_STEWARD_HOOK.test(h.command)
+  )
 }
 
 /**
- * Campaign ch.5b (spec §4, Merge batch): wake the steward of `missionId` and wait for its tick to
- * end, so the operator's batch merges the next PR only after the steward rebased the stack and the
- * gates were re-read. `skipped` when there is nothing to wait for — no steward, a paused or blocked
- * one, or a wake coalesced into a later tick (the honest answer: the steward did not run NOW);
- * `timeout` when its tick was still running at `timeoutMs`.
+ * Strip our handlers from one event's entries. An entry that held ours and has nothing else left is
+ * dropped; every other entry — including a user's empty one — is kept as it was.
  */
-export async function runStewardTurn(
-  missionId: string,
-  timeoutMs: number
-): Promise<'ran' | 'skipped' | 'timeout'> {
-  const out = await wakeStewardForMission(missionId, 'ledger')
-  if (!out.woke) return 'skipped'
-  const w = workersCache.find((x) => x.category === 'steward' && x.missionId === missionId)
-  if (!w) return 'skipped'
-  const deadline = Date.now() + timeoutMs
-  // A tick registers itself a moment after the wake (it awaits the kill-switch gate first).
-  const appearBy = Date.now() + 5000
-  while (!liveTicks.has(w.id) && Date.now() < Math.min(appearBy, deadline)) {
-    await new Promise((r) => setTimeout(r, 200))
+function stripLegacyStewardHooks(entries: unknown[]): { kept: unknown[]; removed: boolean } {
+  let removed = false
+  const kept: unknown[] = []
+  for (const e of entries) {
+    if (!isObject(e) || !Array.isArray(e.hooks)) {
+      kept.push(e)
+      continue
+    }
+    const left = e.hooks.filter((h) => !isLegacyStewardHook(h))
+    if (left.length === e.hooks.length) {
+      kept.push(e)
+      continue
+    }
+    removed = true
+    if (left.length > 0) kept.push({ ...e, hooks: left })
   }
-  while (liveTicks.has(w.id)) {
-    if (Date.now() >= deadline) return 'timeout'
-    await new Promise((r) => setTimeout(r, 500))
+  return { kept, removed }
+}
+
+/** `existing` without the steward hooks, and nothing else changed. Returns a new object. */
+export function removeStewardHooks(existing: unknown): SettingsDoc {
+  const base: SettingsDoc = isObject(existing) ? structuredClone(existing) : {}
+  if (!isObject(base.hooks)) return base
+  const hooks: Record<string, unknown> = { ...base.hooks }
+  let touched = false
+  for (const [event, value] of Object.entries(hooks)) {
+    if (!Array.isArray(value)) continue
+    const { kept, removed } = stripLegacyStewardHooks(value)
+    if (!removed) continue
+    touched = true
+    if (kept.length === 0) delete hooks[event]
+    else hooks[event] = kept
   }
-  return 'ran'
+  if (!touched) return base
+  if (Object.keys(hooks).length === 0) delete base.hooks
+  else base.hooks = hooks
+  return base
+}
+
+export type HooksOutcome = 'removed' | 'unchanged' | 'skipped'
+
+type SettingsRead =
+  { kind: 'missing' } | { kind: 'ok'; value: unknown; mode: number } | { kind: 'unreadable' }
+
+async function readSettingsLocal(file: string): Promise<SettingsRead> {
+  let raw: string
+  try {
+    raw = await fs.readFile(file, 'utf8')
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT'
+      ? { kind: 'missing' }
+      : { kind: 'unreadable' }
+  }
+  try {
+    const value: unknown = JSON.parse(raw)
+    if (!isObject(value)) return { kind: 'unreadable' }
+    const mode = (await fs.stat(file).catch(() => null))?.mode ?? 0o644
+    return { kind: 'ok', value, mode: mode & 0o777 }
+  } catch {
+    return { kind: 'unreadable' }
+  }
+}
+
+/** Remove the steward hooks from `folder`'s `.claude/settings.local.json`, and nothing else. */
+async function removeStewardHooksFrom(folder: string): Promise<HooksOutcome> {
+  const file = join(folder, '.claude', 'settings.local.json')
+  const read = await readSettingsLocal(file)
+  if (read.kind === 'unreadable') return 'skipped'
+  if (read.kind === 'missing') return 'unchanged'
+  const next = removeStewardHooks(read.value)
+  if (JSON.stringify(next) === JSON.stringify(read.value)) return 'unchanged'
+  await fs.mkdir(dirname(file), { recursive: true })
+  await atomicWriteFile(file, JSON.stringify(next, null, 2) + '\n', read.mode)
+  return 'removed'
+}
+
+// ── boot retirement (AC-69) ──────────────────────────────────────────────────
+
+export interface RetiredSteward {
+  missionId: string
+  folder: string
+}
+
+/**
+ * Delete every steward's Scheduler worker, then take our hooks out of each owner folder that no
+ * steward needs any more. Never throws; a steward that could not be retired is left for the next boot
+ * and is not in the returned list.
+ */
+async function retireAllStewards(): Promise<RetiredSteward[]> {
+  const found = listStewards()
+  const retired: RetiredSteward[] = []
+  for (const s of found) {
+    try {
+      await retireStewardForMission(s.missionId)
+      retired.push({ missionId: s.missionId, folder: s.folder })
+    } catch (err) {
+      console.warn('[steward] could not retire the steward of', s.missionId, err)
+    }
+  }
+  const remaining = listStewards()
+  for (const folder of new Set(found.map((s) => resolve(s.folder)))) {
+    if (remaining.some((s) => resolve(s.folder) === folder)) continue
+    try {
+      await removeStewardHooksFrom(folder)
+    } catch (err) {
+      console.warn('[steward] could not remove the steward hooks from', folder, err)
+    }
+  }
+  return retired
+}
+
+const NOTICE_RETRY_MS = 2_000
+const NOTICE_MAX_TRIES = 30
+
+export interface RetireNoticeDeps {
+  /** The command bridge's dispatch: `notify.push` posts the Activity notice. */
+  dispatch: (command: string, payload: unknown) => Promise<unknown>
+  wait?: (ms: number) => Promise<void>
+}
+
+/** The one Activity notice: what vanished, and why nothing is lost. */
+function retirementNotice(retired: RetiredSteward[]): {
+  folderPath: string
+  title: string
+  description: string
+  kind: 'info'
+} {
+  const list = retired.map((r) => `${r.missionId} (${basename(r.folder)})`).join(', ')
+  return {
+    folderPath: retired[0].folder,
+    title: 'Mission stewards retired',
+    description:
+      `Missions no longer have a steward. Harnu removed its Scheduler worker and its hooks for ` +
+      `${retired.length === 1 ? '1 mission' : `${retired.length} missions`}: ${list}. ` +
+      `The session that leads each mission carries on; no mission file was changed.`,
+    kind: 'info'
+  }
+}
+
+/**
+ * Boot: once the Scheduler has loaded (it boots on its own clock, so reading its list earlier would
+ * find nothing), retire every steward and raise ONE Activity notice naming the missions affected.
+ * The bridge refuses to dispatch until the renderer has announced itself, so the notice is retried for
+ * a minute before it is dropped. It never reads or writes a mission file: the missions are named from
+ * the workers themselves.
+ */
+export async function retireStewardsOnBoot(
+  deps: RetireNoticeDeps
+): Promise<{ retired: RetiredSteward[] }> {
+  await whenSchedulerLoaded()
+  const retired = await retireAllStewards()
+  if (retired.length === 0) return { retired }
+  const wait = deps.wait ?? ((ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)))
+  const notice = retirementNotice(retired)
+  for (let attempt = 0; attempt < NOTICE_MAX_TRIES; attempt++) {
+    try {
+      await deps.dispatch('notify.push', notice)
+      return { retired }
+    } catch {
+      await wait(NOTICE_RETRY_MS)
+    }
+  }
+  console.warn('[steward] the retirement notice was not delivered:', notice.description)
+  return { retired }
 }
 
 /**
@@ -1309,11 +1311,7 @@ export function registerScheduler(
   ipcMain.handle('scheduler:save', async (_e, draft: Partial<Worker>): Promise<Worker[]> => {
     await ready
     const id = draft.id && draft.id.length > 0 ? draft.id : randomUUID()
-    // Campaign ch.5a: a steward is read-only to the operator's form too — and the form can never
-    // mint one (no `steward` mode, category or mission binding in a draft).
-    if (workersCache.some((w) => w.id === id && w.category === 'steward')) {
-      throw new WorkerIsStewardError(id)
-    }
+    // The form can never mint a steward (no `steward` mode, category or mission binding in a draft).
     if (draft.mode === 'steward') draft = { ...draft, mode: 'observe' }
     if ('category' in draft || 'missionId' in draft) {
       const { category: _c, missionId: _m, ...plain } = draft
@@ -1344,9 +1342,6 @@ export function registerScheduler(
 
   ipcMain.handle('scheduler:delete', async (_e, id: string): Promise<Worker[]> => {
     await ready
-    if (workersCache.some((w) => w.id === id && w.category === 'steward')) {
-      throw new WorkerIsStewardError(id)
-    }
     const live = liveTicks.get(id)
     if (live) {
       live.outcome = 'stopped'

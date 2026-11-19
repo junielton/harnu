@@ -1,0 +1,523 @@
+docs/cli-reference.rst       |  16 +++
+ docs/cli.rst                 |  41 +++++++
+ docs/python-api.rst          |  26 +++++
+ sqlite_utils/cli.py          |  62 +++++++++-
+ sqlite_utils/utils.py        |  91 ++++++++++++++-
+ tests/test_cli_bulk.py       |  36 ++++++
+ tests/test_cli_insert.py     | 262 +++++++++++++++++++++++++++++++++++++++++++
+ tests/test_cli_memory.py     | 119 ++++++++++++++++++++
+ tests/test_rows_from_file.py | 136 +++++++++++++++++++++-
+ 9 files changed, 780 insertions(+), 9 deletions(-)
+
+--- Changes ---
+
+docs/cli-reference.rst
+  @@ -188,6 +188,10 @@ See :ref:`cli_memory`.
+  +      --key TEXT                  Import the list of objects stored under this top-
+  +                                  level key
+  +      --auto-key                  Import the one top-level key that holds a list of
+  +                                  objects
+         --nl                        Output newline-delimited JSON
+         --arrays                    Output rows as arrays instead of objects
+         --csv                       Output CSV
+  @@ -305,6 +309,10 @@ See :ref:`cli_inserting_data`, :ref:`cli_insert_csv_tsv`, :ref:`cli_insert_unstr
+  +      --key TEXT                Import the list of objects stored under this top-
+  +                                level key
+  +      --auto-key                Import the one top-level key that holds a list of
+  +                                objects
+         --batch-size INTEGER      Commit every X records
+         --stop-after INTEGER      Stop after X records
+         --alter                   Alter existing table to add any missing columns
+  @@ -369,6 +377,10 @@ See :ref:`cli_upsert`.
+  +      --key TEXT                Import the list of objects stored under this top-
+  +                                level key
+  +      --auto-key                Import the one top-level key that holds a list of
+  +                                objects
+         --batch-size INTEGER      Commit every X records
+         --stop-after INTEGER      Stop after X records
+         --alter                   Alter existing table to add any missing columns
+  @@ -424,6 +436,10 @@ See :ref:`cli_bulk`.
+  +      --key TEXT             Import the list of objects stored under this top-level
+  +                             key
+  +      --auto-key             Import the one top-level key that holds a list of
+  +                             objects
+         --load-extension TEXT  Path to SQLite extension, with optional :entrypoint
+         -h, --help             Show this message and exit.
+   
+  +16 -0
+
+docs/cli.rst
+  @@ -1312,6 +1312,47 @@ With the ``--flatten`` option columns will be created using ``topkey_nextkey`` c
+  +.. _cli_inserting_data_key:
+  +
+  +Importing records held under a top-level key
+  +--------------------------------------------
+  +
+  +Some JSON files keep their records in a list stored under a key of a top-level object, next to other keys. Consider this document, in a file called ``alaska.json``:
+  +
+  +.. code-block:: json
+  +
+  +    {
+  +      "Version": "5.5.52.6",
+  +      "List": [
+  +        { "Description": "Nonpartisan", "Id": 1, "ExternalId": "" },
+  +        { "Description": "Undeclared", "Id": 2, "ExternalId": "" }
+  +      ]
+  +    }
+  +
+  +By default a top-level object is inserted as a single row - here a row with a ``Version`` column and a ``List`` column holding the array as JSON text.
+  +
+  +Use ``--key`` to name the top-level key that holds the records:
+  +
+  +.. code-block:: bash
+  +
+  +    sqlite-utils insert data.db records alaska.json --key List
+  +
+  +This inserts two rows, with the columns ``Description``, ``Id`` and ``ExternalId``. The other top-level keys, ``Version`` here, are ignored. If the value of the key is an object it is inserted as a single row, and an empty list inserts no rows. A missing key, or a key whose value is a string, number, boolean or null, is an error, as is using ``--key`` when the top level of the JSON is an array. ``--key`` looks up a top-level key by its literal name: there is no support for nested paths.
+  +
+  +Or use ``--auto-key`` to have ``sqlite-utils`` find the key for you:
+  +
+  +.. code-block:: bash
+  +
+  +    sqlite-utils insert data.db records alaska.json --auto-key
+  +
+  +``--auto-key`` uses the one top-level key whose value is a non-empty list of objects. It is an error if no top-level key holds a list of objects, and it is also an error if more than one does - the error message lists every such key, so you can pick one with ``--key``. If the top level of the JSON is already an array it is imported as usual.
+  +
+  +Both options work with ``sqlite-utils insert``, ``upsert``, ``bulk`` and ``memory``, and can be combined with ``--flatten``, which is applied to the extracted rows. They cannot be used together, and they only apply to JSON input, so they cannot be combined with ``--nl``, ``--csv``, ``--tsv``, ``--lines`` or ``--text``. With ``sqlite-utils memory`` they apply to every JSON input of the call, while CSV, TSV and newline-delimited JSON inputs are imported as usual:
+  +
+  +.. code-block:: bash
+  +
+  +    sqlite-utils memory alaska.json "select * from alaska" --key List
+  +
+   .. _cli_insert_csv_tsv:
+   
+   Inserting CSV or TSV data
+  +41 -0
+
+docs/python-api.rst
+  @@ -3389,6 +3389,32 @@ The ``sqlite_utils.utils.rows_from_file()`` helper function can read rows (a seq
+  +JSON files sometimes keep their records in a list under a top-level key, next to other keys, like this:
+  +
+  +.. code-block:: json
+  +
+  +    {
+  +      "Version": "5.5.52.6",
+  +      "List": [
+  +        {"Description": "Nonpartisan", "Id": 1, "ExternalId": ""},
+  +        {"Description": "Undeclared", "Id": 2, "ExternalId": ""}
+  +      ]
+  +    }
+  +
+  +By default a top-level object like this is returned as a single row. Pass ``key="List"`` to read the rows stored under that key, or ``auto_key=True`` to use the one top-level key whose value is a list of objects. Any other top-level keys, such as ``Version`` here, are ignored:
+  +
+  +.. code-block:: python
+  +
+  +    from sqlite_utils.utils import rows_from_file
+  +
+  +    with open("alaska.json", "rb") as fp:
+  +        rows, format = rows_from_file(fp, auto_key=True)
+  +        print(list(rows))
+  +    # [{'Description': 'Nonpartisan', 'Id': 1, 'ExternalId': ''},
+  +    #  {'Description': 'Undeclared', 'Id': 2, 'ExternalId': ''}]
+  +
+  +With ``auto_key=True`` a ``sqlite_utils.utils.RowsFromFileBadJSON`` exception is raised if no top-level key, or more than one, holds a list of objects; a top-level list is returned as usual. With ``key=`` the exception is raised if the key is missing, if its value is not a list or an object, or if the top level is not an object. Passing both ``key=`` and ``auto_key=True`` raises a ``ValueError``. Both arguments are ignored for CSV, TSV and newline-delimited JSON.
+  +
+   .. _python_api_maximize_csv_field_size_limit:
+   
+   Setting the maximum CSV field size limit
+  +26 -0
+
+sqlite_utils/cli.py
+  @@ -38,8 +38,10 @@ from sqlite_utils.utils import maximize_csv_field_size_limit
+  +    RowsFromFileBadJSON,
+       TypeTracker,
+       _compile_code,
+  +    _rows_for_json_key,
+       chunks,
+       decode_base64_values,
+       dedupe_keys,
+  @@ -967,6 +969,14 @@ _import_options = (
+  +    click.option(
+  +        "--key", help="Import the list of objects stored under this top-level key"
+  +    ),
+  +    click.option(
+  +        "--auto-key",
+  +        is_flag=True,
+  +        help="Import the one top-level key that holds a list of objects",
+  +    ),
+   )
+   
+   
+  @@ -1095,6 +1105,8 @@ def insert_upsert_implementation(
+  +    key=None,
+  +    auto_key=False,
+   ):
+       db = sqlite_utils.Database(path)
+       _register_db_for_cleanup(db)
+  @@ -1196,6 +1208,8 @@ def insert_upsert_implementation(
+  +                key is not None,
+  +                auto_key,
+               ]
+           ):
+               raise click.ClickException(
+  @@ -1211,6 +1225,12 @@ def insert_upsert_implementation(
+  +    if key is not None and auto_key:
+  +        raise click.ClickException("Use either --key or --auto-key, not both")
+  +    if (key is not None or auto_key) and (csv or tsv or nl or lines or text):
+  +        raise click.ClickException(
+  +            "--key and --auto-key can only be used with JSON input"
+  +        )
+       if (nl + csv + tsv) >= 2:
+           raise click.ClickException("Use just one of --nl, --csv or --tsv")
+       if (csv or tsv) and flatten:
+  @@ -1277,7 +1297,12 @@ def insert_upsert_implementation(
+  -                    if isinstance(docs, dict):
+  +                    if key is not None or auto_key:
+  +                        try:
+  +                            docs = _rows_for_json_key(docs, key, auto_key)
+  +                        except RowsFromFileBadJSON as ex:
+  +                            raise click.ClickException(str(ex))
+  +                    elif isinstance(docs, dict):
+                           docs = [docs]
+               except json.decoder.JSONDecodeError as ex:
+                   raise click.ClickException(
+  @@ -1386,6 +1411,8 @@ def insert(
+  +    key,
+  +    auto_key,
+   ):
+       """
+       Insert records from FILE into a table, creating the table if it
+  @@ -1481,6 +1508,8 @@ def insert(
+  +            key=key,
+  +            auto_key=auto_key,
+           )
+       except UnicodeDecodeError as ex:
+           raise click.ClickException(UNICODE_ERROR.format(ex))
+  @@ -1519,6 +1548,8 @@ def upsert(
+  +    key,
+  +    auto_key,
+   ):
+       """
+       Upsert records based on their primary key. Works like 'insert' but if
+  @@ -1571,6 +1602,8 @@ def upsert(
+  +            key=key,
+  +            auto_key=auto_key,
+           )
+       except UnicodeDecodeError as ex:
+           raise click.ClickException(UNICODE_ERROR.format(ex))
+  @@ -1608,6 +1641,8 @@ def bulk(
+  +    key,
+  +    auto_key,
+       load_extension,
+   ):
+       """
+  @@ -1654,6 +1689,8 @@ def bulk(
+  +            key=key,
+  +            auto_key=auto_key,
+           )
+       except (OperationalError, sqlite3.IntegrityError) as e:
+           raise click.ClickException(str(e))
+  @@ -2069,6 +2106,14 @@ def query(
+  +@click.option(
+  +    "--key", help="Import the list of objects stored under this top-level key"
+  +)
+  +@click.option(
+  +    "--auto-key",
+  +    is_flag=True,
+  +    help="Import the one top-level key that holds a list of objects",
+  +)
+   @output_options
+   @click.option("-r", "--raw", is_flag=True, help="Raw output, first column of first row")
+   @click.option("--raw-lines", is_flag=True, help="Raw output, first column of each row")
+  @@ -2108,6 +2153,8 @@ def memory(
+  +    key,
+  +    auto_key,
+       nl,
+       arrays,
+       csv,
+  @@ -2155,6 +2202,8 @@ def memory(
+  +    if key is not None and auto_key:
+  +        raise click.ClickException("Use either --key or --auto-key, not both")
+       db = sqlite_utils.Database(memory=True)
+       if not return_db:
+           _register_db_for_cleanup(db)
+  @@ -2187,7 +2236,16 @@ def memory(
+  -            rows, format_used = rows_from_file(fp, format=format, encoding=encoding)
+  +            try:
+  +                rows, format_used = rows_from_file(
+  +                    fp,
+  +                    format=format,
+  +                    encoding=encoding,
+  +                    key=key,
+  +                    auto_key=auto_key,
+  +                )
+  +            except RowsFromFileBadJSON as ex:
+  +                raise click.ClickException(str(ex))
+               tracker = None
+               if format_used in (Format.CSV, Format.TSV) and not no_detect_types:
+                   tracker = TypeTracker()
+  +60 -2
+
+sqlite_utils/utils.py
+  @@ -285,6 +285,74 @@ def _extra_key_strategy(
+  +def _is_list_of_objects(value: object) -> bool:
+  +    return (
+  +        isinstance(value, list)
+  +        and len(value) > 0
+  +        and all(isinstance(item, dict) for item in value)
+  +    )
+  +
+  +
+  +def _rows_for_json_key(
+  +    data: object, key: str | None = None, auto_key: bool = False
+  +) -> list:
+  +    """
+  +    Turn an already-decoded JSON value into a list of rows.
+  +
+  +    With neither ``key`` nor ``auto_key`` a top-level object becomes a single row
+  +    and a top-level list is returned unchanged. ``key`` names a top-level key whose
+  +    value holds the rows; ``auto_key=True`` uses the one top-level key whose value
+  +    is a non-empty list of objects.
+  +    """
+  +    if key is not None:
+  +        if isinstance(data, list):
+  +            raise RowsFromFileBadJSON(
+  +                "Cannot use key {!r}: the JSON top level is a list, not an object".format(
+  +                    key
+  +                )
+  +            )
+  +        if not isinstance(data, dict):
+  +            raise RowsFromFileBadJSON(
+  +                "Cannot use key {!r}: the JSON top level must be an object".format(key)
+  +            )
+  +        if key not in data:
+  +            raise RowsFromFileBadJSON(
+  +                "Key {!r} was not found in the top-level JSON object".format(key)
+  +            )
+  +        value = data[key]
+  +        if isinstance(value, list):
+  +            return value
+  +        if isinstance(value, dict):
+  +            return [value]
+  +        raise RowsFromFileBadJSON(
+  +            "Key {!r} must hold a list or an object, got {}".format(
+  +                key, json.dumps(value)
+  +            )
+  +        )
+  +    if auto_key:
+  +        if isinstance(data, list):
+  +            return data
+  +        if not isinstance(data, dict):
+  +            raise RowsFromFileBadJSON(
+  +                "auto_key requires the JSON top level to be an object or a list"
+  +            )
+  +        candidates = [k for k, v in data.items() if _is_list_of_objects(v)]
+  +        if not candidates:
+  +            raise RowsFromFileBadJSON("No top-level key holds a list of objects")
+  +        if len(candidates) > 1:
+  +            raise RowsFromFileBadJSON(
+  +                "More than one top-level key holds a list of objects: {}".format(
+  +                    ", ".join(candidates)
+  +                )
+  +            )
+  +        return data[candidates[0]]
+  +    if isinstance(data, dict):
+  +        return [data]
+  +    if not isinstance(data, list):
+  +        raise RowsFromFileBadJSON("JSON must be a list or a dictionary")
+  +    return data
+  +
+  +
+   def rows_from_file(
+       fp: BinaryIO,
+       format: Format | None = None,
+  @@ -292,6 +360,8 @@ def rows_from_file(
+  +    key: str | None = None,
+  +    auto_key: bool = False,
+   ) -> tuple[Iterable[Row], Format]:
+       """
+       Load a sequence of dictionaries from a file-like object containing one of four different formats.
+  @@ -326,22 +396,29 @@ def rows_from_file(
+  +    JSON whose top level is an object normally becomes a single row. Pass ``key="List"`` to
+  +    use the value stored under the top-level ``List`` key instead, or ``auto_key=True`` to
+  +    use the one top-level key whose value is a list of objects. Both are ignored for CSV,
+  +    TSV and newline-delimited JSON.
+  +
+       :param fp: a file-like object containing binary data
+       :param format: the format to use - omit this to detect the format
+       :param dialect: the CSV dialect to use - omit this to detect the dialect
+       :param encoding: the character encoding to use when reading CSV/TSV data
+       :param ignore_extras: ignore any extra fields on rows
+       :param extras_key: put any extra fields in a list with this key
+  +    :param key: for JSON, read the rows from the value of this top-level key: a list is used
+  +      as the rows, an object becomes a single row
+  +    :param auto_key: for JSON, read the rows from the one top-level key whose value is a
+  +      non-empty list of objects - raises ``RowsFromFileBadJSON`` if there is not exactly one
+       """
+       if ignore_extras and extras_key:
+           raise ValueError("Cannot use ignore_extras= and extras_key= together")
+  +    if key is not None and auto_key:
+  +        raise ValueError("Cannot use key= and auto_key= together")
+       if format == Format.JSON:
+           decoded = json.load(fp)
+  -        if isinstance(decoded, dict):
+  -            decoded = [decoded]
+  -        if not isinstance(decoded, list):
+  -            raise RowsFromFileBadJSON("JSON must be a list or a dictionary")
+  -        return decoded, Format.JSON
+  +        return _rows_for_json_key(decoded, key, auto_key), Format.JSON
+       elif format == Format.NL:
+           return (json.loads(line) for line in fp if line.strip()), Format.NL
+       elif format == Format.CSV:
+  @@ -387,7 +464,9 @@ def rows_from_file(
+  -                return rows_from_file(buffered, format=Format.JSON)
+  +                return rows_from_file(
+  +                    buffered, format=Format.JSON, key=key, auto_key=auto_key
+  +                )
+           else:
+               dialect = csv.Sniffer().sniff(
+                   first_bytes.decode(encoding or "utf-8-sig", "ignore")
+  +85 -6
+
+tests/test_cli_bulk.py
+  @@ -1,3 +1,4 @@
+  +import json
+   import pathlib
+   import subprocess
+   import sys
+  @@ -124,3 +125,38 @@ def test_cli_bulk_error(test_db_and_path):
+  +
+  +
+  +@pytest.mark.parametrize("option", (["--key", "List"], ["--auto-key"]))
+  +def test_cli_bulk_key(tmpdir, option):
+  +    db_path = str(pathlib.Path(tmpdir) / "data.db")
+  +    alaska_path = str(pathlib.Path(tmpdir) / "alaska.json")
+  +    pathlib.Path(alaska_path).write_text(
+  +        json.dumps(
+  +            {
+  +                "Version": "5.5.52.6",
+  +                "List": [
+  +                    {"Description": "Nonpartisan", "Id": 1, "ExternalId": ""},
+  +                    {"Description": "Undeclared", "Id": 2, "ExternalId": ""},
+  +                ],
+  +            },
+  +            indent=2,
+  +        )
+  +    )
+  +    db = Database(db_path)
+  +    db.execute("create table records (id INTEGER PRIMARY KEY, description TEXT)")
+  +    db.conn.commit()
+  +    result = CliRunner().invoke(
+  +        cli.cli,
+  +        [
+  +            "bulk",
+  +            db_path,
+  +            "insert into records (id, description) values (:Id, :Description)",
+  +            alaska_path,
+  +        ]
+  +        + option,
+  +    )
+  +    assert result.exit_code == 0, result.output
+  +    assert list(
+  +        Database(db_path).execute("select id, description from records order by id")
+  +    ) == [(1, "Nonpartisan"), (2, "Undeclared")]
+  +36 -0
+
+tests/test_cli_insert.py
+  @@ -892,3 +892,265 @@ def test_insert_code_file_not_found(tmpdir):
+  +
+  +
+  +ALASKA = {
+  +    "Version": "5.5.52.6",
+  +    "List": [
+  +        {"Description": "Nonpartisan", "Id": 1, "ExternalId": ""},
+  +        {"Description": "Undeclared", "Id": 2, "ExternalId": ""},
+  +    ],
+  +}
+  +
+  +
+  +@pytest.fixture
+  +def alaska_path(tmpdir):
+  +    path = str(tmpdir / "alaska.json")
+  +    with open(path, "w") as fp:
+  +        fp.write(json.dumps(ALASKA, indent=2))
+  +    return path
+  +
+  +
+  +def _assert_alaska_records(db_path):
+  +    db = Database(db_path)
+  +    assert list(db.query("select * from records order by rowid")) == ALASKA["List"]
+  +    columns = {column.name: column.type for column in db["records"].columns}
+  +    assert columns == {"Description": "TEXT", "Id": "INTEGER", "ExternalId": "TEXT"}
+  +    assert [
+  +        (type(row["Description"]), type(row["Id"]), type(row["ExternalId"]))
+  +        for row in db.query("select * from records")
+  +    ] == [(str, int, str), (str, int, str)]
+  +
+  +
+  +def _assert_clean_error(result, from_file=False):
+  +    assert result.exit_code == 1, result.output
+  +    # Reading from a file path shows a progress bar on stdout, which prints a
+  +    # blank label line in a non-TTY before the error reaches stderr
+  +    assert (result.stderr if from_file else result.output).startswith("Error:")
+  +    assert isinstance(result.exception, SystemExit)
+  +    assert "Traceback" not in result.output
+  +
+  +
+  +def test_insert_key(tmpdir, alaska_path):
+  +    db_path = str(tmpdir / "data.db")
+  +    result = CliRunner().invoke(
+  +        cli.cli, ["insert", db_path, "records", alaska_path, "--key", "List"]
+  +    )
+  +    assert result.exit_code == 0, result.output
+  +    _assert_alaska_records(db_path)
+  +
+  +
+  +@pytest.mark.parametrize("use_stdin", (False, True))
+  +def test_insert_auto_key(tmpdir, alaska_path, use_stdin):
+  +    db_path = str(tmpdir / "data.db")
+  +    if use_stdin:
+  +        result = CliRunner().invoke(
+  +            cli.cli,
+  +            ["insert", db_path, "records", "-", "--auto-key"],
+  +            input=json.dumps(ALASKA),
+  +        )
+  +    else:
+  +        result = CliRunner().invoke(
+  +            cli.cli, ["insert", db_path, "records", alaska_path, "--auto-key"]
+  +        )
+  +    assert result.exit_code == 0, result.output
+  +    _assert_alaska_records(db_path)
+  +
+  +
+  +@pytest.mark.parametrize("option", (["--key", "List"], ["--auto-key"]))
+  +def test_upsert_key(tmpdir, alaska_path, option):
+  +    db_path = str(tmpdir / "data.db")
+  +    db = Database(db_path)
+  +    db.execute(
+  +        "create table records (Id INTEGER PRIMARY KEY, Description TEXT, ExternalId TEXT)"
+  +    )
+  +    db.execute(
+  +        "insert into records (Id, Description, ExternalId) values (1, 'Old', '')"
+  +    )
+  +    db.conn.commit()
+  +    result = CliRunner().invoke(
+  +        cli.cli,
+  +        ["upsert", db_path, "records", alaska_path, "--pk", "Id"] + option,
+  +    )
+  +    assert result.exit_code == 0, result.output
+  +    assert list(Database(db_path).query("select * from records order by Id")) == [
+  +        {"Id": 1, "Description": "Nonpartisan", "ExternalId": ""},
+  +        {"Id": 2, "Description": "Undeclared", "ExternalId": ""},
+  +    ]
+  +
+  +
+  +def test_insert_object_unchanged_without_key(tmpdir, alaska_path):
+  +    db_path = str(tmpdir / "data.db")
+  +    result = CliRunner().invoke(cli.cli, ["insert", db_path, "records", alaska_path])
+  +    assert result.exit_code == 0, result.output
+  +    rows = list(Database(db_path).query("select * from records"))
+
+... (more changes truncated)
+  +92 -0
+[full diff: rtk git diff --no-compact]

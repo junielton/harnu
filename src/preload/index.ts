@@ -17,6 +17,8 @@ import type {
 } from '../main/claude-watcher'
 import type { UserProject, UserProjectWorktree } from '../main/user-projects'
 import type { WorktreeHelperState } from '../main/helpers-store'
+import type { LibraryEntry, WalkIpcError, WalkLoad, WalkTick } from '../main/walk/walk-ipc'
+import type { ExportResult } from '../main/walk/walk-export'
 import type { UsageSnapshot } from '../main/usage-parse'
 import type { TelemetryPayload } from '../main/statusline'
 import type { TaskState, FailureReason } from '../main/hook-state'
@@ -31,6 +33,9 @@ import type {
   BrowserRect
 } from '../main/browser/state-types'
 import type { TerminalChipState } from '../main/terminal-registry'
+import type { CardView } from '../main/your-move/core'
+import type { InspectNowResult, YourMoveExitResult, YourMovePrefsView } from '../main/your-move/ipc'
+import type { YourMovePrefs } from '../main/your-move/prefs'
 import type { CommentPaneState, CommentSubmitResult, OverlayTheme } from '../shared/browser-comment'
 import type { ReviewCorrective } from '../main/review-corrective'
 import type { ResponderMode } from '../main/responder-dispatch'
@@ -65,9 +70,17 @@ import type {
   BudgetSnapshot as GithubBudgetSnapshot
 } from '../main/github-budget-core'
 import type { QuitDialogStrings, QuitGuardPrefs } from '../main/quit-guard'
-import type { MissionDoor, MissionDoorResult, MissionListResult } from '../main/mission-ipc'
-import type { MergeBatchResult } from '../main/merge-batch-ipc'
-import type { CampaignListResult } from '../main/campaign-ipc'
+import type {
+  MissionDoor,
+  MissionDoorResult,
+  MissionHandOffReply,
+  MissionListResult,
+  MissionPathKind,
+  MissionV4Door,
+  MissionV4DoorReply,
+  MissionV4ViewReply,
+  MissionV4ViewRequest
+} from '../main/mission-ipc'
 import type {
   ReviewSnapshot,
   ReviewLoadArgs,
@@ -100,6 +113,11 @@ import type {
 import type { UsageCostSummary } from '../main/usage-cost'
 import type { UsageBiSnapshot, UsageBiRange } from '../main/usage-bi'
 import type { HeapSample, MonitorSample } from '../main/monitor/types'
+import {
+  createSpanRing,
+  type OwnerKind,
+  type StallRecord as StallReportRecord
+} from '../shared/stall-core'
 import type { Policy } from '../main/fleet-policy'
 import type { ImageEntry } from '../main/image-cache'
 import type { FolderLinkGroup, SessionLink } from '../main/session-links'
@@ -407,6 +425,17 @@ export type { RoutingTable, RoutingEntry, ResolvedRouting } from '../main/routin
 // without crossing the main-process module boundary directly.
 export type { WorktreeHelperState, HelperPane, HelperPaneType } from '../main/helpers-store'
 
+// Guided walks (S-3): what the walk pane reads from main to draw a run, re-exported type-only so the renderer's
+// view-model and store can name it without crossing the main-process boundary.
+export type {
+  WalkLoad,
+  WalkIpcError,
+  WalkTick,
+  WalkCriterion,
+  LibraryEntry,
+  RunSummary
+} from '../main/walk/walk-ipc'
+
 // Branch list for the New-worktree dialog base-ref select (T48). Re-exported so
 // the dialog can type its `<select>` options without crossing the main boundary.
 export type { BranchRef } from '../main/worktree-core'
@@ -463,7 +492,19 @@ export type {
 // System Monitor wire types (T127 S1). `monitor/types.ts` is a pure module (no
 // node deps), so the renderer imports its shapes directly; `Policy` is likewise
 // plain data from the pure `fleet-policy.ts`.
-export type { HeapSample, ProcSample, SessionSample, MonitorSample } from '../main/monitor/types'
+export type {
+  HeapSample,
+  ProcSample,
+  SessionSample,
+  MonitorSample,
+  StallsSample,
+  ThreadStalls
+} from '../main/monitor/types'
+export type {
+  Offender as StallOffender,
+  StallRecord,
+  OwnerKind as StallOwnerKind
+} from '../main/monitor/stall-core'
 export type { Policy } from '../main/fleet-policy'
 export type { SessionAnatomy, EnrichedWindow, EnrichedWindowSession } from '../main/usage-bi-core'
 // Pasted-images gallery: `image-cache.ts` keeps its type next to the pure core.
@@ -683,11 +724,14 @@ const ptyExitListeners = new Map<string, Set<(evt: PtyExitEvent) => void>>()
 // Single, lifetime-scoped dispatchers — registered once at preload boot. This
 // is the optimization called out in `findings/05` §3.2: it eliminates the
 // "N listeners per PTY" pattern of the previous `pty:data:<id>` design.
-ipcRenderer.on('pty:data', (_e, payload: PtyDataPayload) => {
-  const set = ptyDataListeners.get(payload.id)
-  if (!set) return
-  for (const cb of set) cb(payload.data, payload.seq)
-})
+ipcRenderer.on(
+  'pty:data',
+  ownedEvent('pty:data', (_e: unknown, payload: PtyDataPayload): void => {
+    const set = ptyDataListeners.get(payload.id)
+    if (!set) return
+    for (const cb of set) cb(payload.data, payload.seq)
+  })
+)
 
 ipcRenderer.on('pty:exit', (_e, payload: PtyExitPayload) => {
   const set = ptyExitListeners.get(payload.id)
@@ -1216,13 +1260,35 @@ export interface McpConfirmPending {
 }
 
 /**
+ * T697: IPC events run their callbacks on the renderer's main thread, and the browser's long-task API
+ * does not report tasks started that way. Each callback is timed here, in the preload, and the stall
+ * monitor asks (`monitorOwnerHint`) which channel overlapped a stall it caught with its heartbeat.
+ * A channel such as `pty:data:<id>` is named without its id: `event:pty:data`.
+ */
+const eventSpans = createSpanRing()
+function ownedEvent<A extends unknown[]>(
+  channel: string,
+  fn: (...a: A) => void
+): (...a: A) => void {
+  const owner = `event:${channel.split(':').slice(0, 2).join(':')}`
+  return (...args: A): void => {
+    const start = performance.now()
+    try {
+      fn(...args)
+    } finally {
+      eventSpans.record(owner, 'event', start, performance.now())
+    }
+  }
+}
+
+/**
  * Build a typed `on*` subscription helper for a single watcher channel.
  * Returns an unsubscribe function so callers can clean up in `onUnmounted`
  * (or any other lifecycle hook). Captures the wrapped handler so the same
  * function reference is passed to `ipcRenderer.off`.
  */
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
-  const handler = (_e: unknown, payload: T): void => cb(payload)
+  const handler = ownedEvent(channel, (_e: unknown, payload: T): void => cb(payload))
   ipcRenderer.on(channel, handler)
   return () => ipcRenderer.off(channel, handler)
 }
@@ -1362,6 +1428,118 @@ const api = {
     ipcRenderer.invoke('external:showItemInFolder', path),
   // T45: pull + pin the folder Harnu was launched with (`harnu .`), if any.
   cliOpenPending: (): Promise<void> => ipcRenderer.invoke('cli:openPending'),
+  /**
+   * Dev only (guided walks, S-2): open a walk from the app itself, as `walk_open` does for a session. The
+   * main side registers the handler only outside a packaged build, so in a release this rejects.
+   */
+  walkDevOpen: (args: { folder: string; script: unknown; sessionId?: string }): Promise<unknown> =>
+    ipcRenderer.invoke('walk:dev-open', args),
+  /** Dev only (S-3): the agent's `walk_report` / `walk_extend` from the app itself, for captures and smoke cases. */
+  walkDevCall: (args: {
+    folder: string
+    verb: 'report' | 'extend'
+    args: Record<string, unknown>
+  }): Promise<unknown> => ipcRenderer.invoke('walk:dev-call', args),
+  /**
+   * Guided walks (S-3): the walk pane's channels. The pane reads a run (`walkLoad`), applies the operator's
+   * outcomes (`walkOperate`), keeps its own ticks, saves a pasted screenshot inside the run's folder and opens
+   * links. None is a verb: nothing here runs a command or settles a criterion.
+   */
+  walkLoad: (a: {
+    folder: string
+    walkId: string
+    runId: string
+  }): Promise<WalkLoad | WalkIpcError> => ipcRenderer.invoke('walk:load', a),
+  walkWatch: (a: { folder: string; walkId: string; on: boolean }): Promise<boolean> =>
+    ipcRenderer.invoke('walk:watch', a),
+  walkOperate: (a: {
+    folder: string
+    walkId: string
+    runId: string
+    op: string
+    line?: string
+    shot?: string
+    checkId?: string
+    /** Dev only: the wait of D-7 the pane shows (main ignores it in a packaged build). */
+    waitMs?: number
+  }): Promise<{ ok: true; sent: string[]; load: WalkLoad | WalkIpcError } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:operate', a),
+  walkTick: (a: {
+    folder: string
+    walkId: string
+    runId: string
+    checkId: string
+    ticked?: string[]
+  }): Promise<{ ok: true; tick: WalkTick } | WalkIpcError> => ipcRenderer.invoke('walk:tick', a),
+  walkSaveShot: (a: {
+    folder: string
+    walkId: string
+    runId: string
+    data: Uint8Array
+  }): Promise<{ ok: true; path: string; name: string } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:save-shot', a),
+  walkScanLine: (text: string): Promise<boolean> => ipcRenderer.invoke('walk:scan-line', { text }),
+  walkResolvePr: (a: { folder: string; number: number }): Promise<{ ok: boolean; url?: string }> =>
+    ipcRenderer.invoke('walk:resolve-pr', a),
+  walkReplay: (a: { folder: string }): Promise<{ delivered: number; pending: number }> =>
+    ipcRenderer.invoke('walk:replay', a),
+  walkRerunSaved: (a: {
+    folder: string
+    newWalkId: string
+    newRunId: string
+    savedWalkId: string
+  }): Promise<{ ok: true; walkId: string; runId: string; n: number } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:rerun-saved', a),
+  walkDiscardReady: (a: {
+    folder: string
+    walkId: string
+    runId: string
+  }): Promise<{ ok: true } | WalkIpcError> => ipcRenderer.invoke('walk:discard-ready', a),
+  /** Guided walks S-4: the library of the repo's walks, newest run first. */
+  walkList: (a: { folder: string }): Promise<{ ok: true; walks: LibraryEntry[] } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:list', a),
+  /** Re-run a walk: a fresh run n + 1, or the live run when one is live (`kind: 'live'`). */
+  walkRerun: (a: {
+    folder: string
+    walkId: string
+  }): Promise<
+    | { ok: true; walkId: string; runId: string; n: number; kind: 'rerun' | 'reused' | 'live' }
+    | WalkIpcError
+  > => ipcRenderer.invoke('walk:rerun', a),
+  /**
+   * "Test it" in the Mission dropdown (S-7): focus the source's live run (`focus`), send the request to the
+   * mission's leader (`sent`) or start a session handed the summary and the source (`started`, D-4).
+   */
+  walkRequest: (a: {
+    folder: string
+    source:
+      | { kind: 'step'; missionId: string; stepId: string }
+      | { kind: 'milestone'; missionId: string; milestoneId: string }
+      | { kind: 'mission'; missionId: string }
+  }): Promise<
+    | { ok: true; action: 'focus'; walkId: string; runId: string }
+    | { ok: true; action: 'sent'; sessionId: string; woke: boolean }
+    | { ok: true; action: 'started'; sessionId: string }
+    | WalkIpcError
+  > => ipcRenderer.invoke('walk:request', a),
+  /** Delete a walk and its runs (the pane asked first). */
+  walkDelete: (a: {
+    folder: string
+    walkId: string
+  }): Promise<{ ok: true; wasLive: boolean; runs: number } | WalkIpcError> =>
+    ipcRenderer.invoke('walk:delete', a),
+  /** Export a walk (a run of it) as Markdown into the walk's own folder; the path comes back. */
+  walkExport: (a: { folder: string; walkId: string; runId?: string }): Promise<ExportResult> =>
+    ipcRenderer.invoke('walk:export', a),
+  /** A session opened a walk (`walk_open`): the renderer shows the pane, then answers with `walkOpened`. */
+  onWalkOpen: (
+    cb: (p: { reqId: string; folder: string; walkId: string; runId: string }) => void
+  ): (() => void) => subscribe('walk:open', cb),
+  walkOpened: (p: { reqId: string; paneId: string | null }): void =>
+    ipcRenderer.send('walk:opened', p),
+  /** A verb (`walk_report`, `walk_extend`) wrote a walk the pane may be showing. */
+  onWalkChanged: (cb: (p: { folder: string; walkId: string }) => void): (() => void) =>
+    subscribe('walk:changed', cb),
   openInEditor: (path: string): Promise<OpenInEditorResult> =>
     ipcRenderer.invoke('external:openInEditor', path),
   // The folder's `origin` as its github.com `/pulls` URL, or `null` when there
@@ -2343,6 +2521,14 @@ const api = {
     ipcRenderer.invoke('bundledSkills:setFolder', folder, name, enabled),
   bundledSkillsSetUserLevel: (name: string, install: boolean): Promise<UserLevelInstallResult> =>
     ipcRenderer.invoke('bundledSkills:setUserLevel', name, install),
+  // T2: the doc-reader threshold for one folder (`null` = the default, 350 lines).
+  bundledSkillsGetDocReaderMinLines: (folder: string): Promise<number | null> =>
+    ipcRenderer.invoke('bundledSkills:getDocReaderMinLines', folder),
+  bundledSkillsSetDocReaderMinLines: (
+    folder: string,
+    minLines: number | null
+  ): Promise<number | null> =>
+    ipcRenderer.invoke('bundledSkills:setDocReaderMinLines', folder, minLines),
 
   // ---- Mods audit (T389 P4W1) ----------------------------------------------
   // Read-only list of the mods a session in `folder` (null = global) can load, with
@@ -2885,19 +3071,34 @@ const api = {
     stepId: string
     index: number
   }): Promise<MissionDoorResult> => ipcRenderer.invoke('mission:choose', args),
+  // ---- Missions v4 (S-16a; UI-only, read by the Mission dropdown from S-17 on — nothing calls these yet) --
   /**
-   * Campaign spec §4 — Merge batch: the operator confirmed "merge #A → #B → #C in order". Resolves
-   * when the batch ends or stops (a red gate, a refused merge); `outcome.remaining` is what to ask about again.
+   * The view of one mission for the Mission dropdown: the detail, the close warnings, the staged Done when
+   * and the session history, for the mission a session is attached to or one named by id. It reads and
+   * never writes. Send the answered `missionId` back on later calls: a call that names it reads one record.
    */
-  missionMergeBatch: (args: {
-    root: string
-    missionId: string
-    prs: number[]
-  }): Promise<MergeBatchResult> => ipcRenderer.invoke('mission:mergeBatch', args),
-  // ---- Campaign progress (T596; UI-only, read-only — no campaign door exists in main yet) --
-  /** Every open campaign in the repos of `folders`, with the server's chapter progress. */
-  campaignList: (folders: string[]): Promise<CampaignListResult> =>
-    ipcRenderer.invoke('campaign:list', folders),
+  missionV4View: (args: MissionV4ViewRequest): Promise<MissionV4ViewReply> =>
+    ipcRenderer.invoke('mission:v4View', args),
+  /**
+   * The operator's doors on a v4 record (mark, clear a blocker, approve a Done when, close, allow or deny
+   * a join, attach from the picker). The only writes the Mission dropdown makes; no MCP verb reaches them.
+   */
+  missionV4Door: (door: MissionV4Door): Promise<MissionV4DoorReply> =>
+    ipcRenderer.invoke('mission:v4Door', door),
+  /**
+   * Whether the paths a step's links name still exist, and whether each is a file or a folder (the mission
+   * dropdown's Links block). Read-only: it reads metadata only. Keyed by the path asked.
+   */
+  missionPathKinds: (paths: string[]): Promise<Record<string, MissionPathKind>> =>
+    ipcRenderer.invoke('mission:pathKinds', paths),
+  /**
+   * The hand-off (S-16b): the only thing that changes who leads a mission, and the operator's. Harnu
+   * starts a normal session with the mission summary as its first prompt, waits for its real id, then
+   * writes once: the old leader becomes `worked`, the new session leads. A start that fails or times
+   * out changes nothing. Answers the outcome and the new session id, never the record.
+   */
+  missionHandOff: (args: { folder: string; missionId: string }): Promise<MissionHandOffReply> =>
+    ipcRenderer.invoke('mission:handOff', args),
 
   // ---- Review pane (T164; UI-only, never exposed to an agent) --------------
   /**
@@ -3162,6 +3363,38 @@ const api = {
   monitorPolicyGet: (): Promise<Policy> => ipcRenderer.invoke('monitor:policyGet'),
   monitorPolicySet: (patch: Partial<Policy>): Promise<Policy> =>
     ipcRenderer.invoke('monitor:policySet', patch),
+  // ---- Stall monitor (T697) ---------------------------------------------------
+  // The renderer's long-task observer reports each task over 50 ms to main, which keeps the one
+  // aggregate and the one log. `monitorInjectStall` blocks a thread on purpose (only when the app
+  // runs with HARNU_STALL_INJECT=1) so a demo or a test can prove the owner shows up.
+  monitorStallEnabled: (): Promise<boolean> => ipcRenderer.invoke('monitor:stallEnabled'),
+  monitorOwnerHint: (startMs: number, endMs: number): { owner: string; kind: OwnerKind } | null =>
+    eventSpans.best(startMs, endMs),
+  monitorStallReport: (batch: StallReportRecord[]): void =>
+    ipcRenderer.send('monitor:stallReport', batch),
+  monitorInjectStall: (thread: 'main' | 'renderer', ms: number): Promise<boolean> =>
+    ipcRenderer.invoke('monitor:injectStall', thread, ms),
+  onMonitorInjectStall: (cb: (ms: number) => void): (() => void) =>
+    subscribe('monitor:injectStall', cb),
+
+  // ---- Your move (U1) ---------------------------------------------------------
+  // The setting (Off / Observe / Live) and the debug list behind Settings → Your move.
+  // `yourMoveList` is the open cards plus the newest closed ones; `onYourMoveChanged` fires
+  // whenever the store changes, with no payload (re-list). The renderer never names a
+  // transcript path: `yourMoveInspectNow` takes a session id and main finds the file.
+  yourMovePrefsGet: (): Promise<YourMovePrefsView> => ipcRenderer.invoke('yourMove:prefs:get'),
+  yourMoveSetPrefs: (patch: Partial<YourMovePrefs>): Promise<YourMovePrefsView> =>
+    ipcRenderer.invoke('yourMove:prefs:set', patch),
+  yourMoveList: (): Promise<CardView[]> => ipcRenderer.invoke('yourMove:list'),
+  yourMoveInspectNow: (args: { sessionId: string; folder: string }): Promise<InspectNowResult> =>
+    ipcRenderer.invoke('yourMove:inspectNow', args),
+  onYourMoveChanged: (cb: () => void): (() => void) => subscribe('yourMove:changed', cb),
+  // The operator's two exits from a card (U4): close it and log the label. Nothing is sent to
+  // the session. `ok:false` means there was nothing to close (unknown, already closed, store down).
+  yourMoveExit: (args: {
+    cardId: string
+    label: 'not-for-me' | 'already-handled'
+  }): Promise<YourMoveExitResult> => ipcRenderer.invoke('yourMove:exit', args),
 
   // ---- Scheduler workers (T294 / T291 U4) -----------------------------------
   // A worker runs one prompt in one folder on a cadence, headless (`claude -p`),

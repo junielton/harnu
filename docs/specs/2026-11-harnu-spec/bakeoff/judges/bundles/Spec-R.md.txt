@@ -1,0 +1,358 @@
+# Spec R — the whole bundle a builder receives
+
+
+=== file: [tool]/features/json-list-key/spec.md ===
+
+# Load JSON Records Held Under a Top-Level Key - Specification
+
+**Approved**: 2026-11-07 - user: "Yes, approved. Looks right, go ahead."
+
+## Problem Statement
+
+Many JSON exports wrap their records in an envelope object: `{"Version": "5.5.52.6", "List": [{...}, {...}]}`. Today `sqlite-utils` treats any top-level object as one row, so this file becomes a single row with `List` stored as JSON text, and users run the file through `jq .List` first. Two opt-in options fix this: `--key KEY` reads the records from a named top-level key, and `--auto-key` finds that key by a rule of thumb. Without either option nothing changes.
+
+## Goals
+
+- [ ] `sqlite-utils insert data.db t alaska.json --key List` and `--auto-key` each insert one row per object in `List`, with no `jq` step.
+- [ ] Without `--key` or `--auto-key`, every command and `rows_from_file()` behave exactly as today: a top-level object is one row.
+
+## Out of Scope
+
+| Feature | Reason |
+| ------- | ------ |
+| Newline-delimited JSON as an envelope source | Each line is already one record; the request is about a single JSON document. |
+| Envelopes nested deeper than the top level (`{"data": {"items": [...]}}`), and JSON paths in `--key` | Operator confirmed: top level only. |
+| Automatic unwrapping with no option passed | Operator: "It must not be automatic". |
+| A new rule for non-object elements inside the `--key` list | Operator: "Those elements behave exactly as they do in a top-level list today, with no new rule". |
+| `Table.insert_all()` and other Python methods that take dicts, not JSON | They never parse JSON. |
+
+---
+
+## Assumptions & Open Questions
+
+| Assumption / decision | Chosen default | Rationale | Confirmed? |
+| --------------------- | -------------- | --------- | ---------- |
+| Q1 - Meaning of the rule of thumb | A top-level key is a candidate when its value is a non-empty list whose every element is an object; other keys may sit beside it | user: "Q1 a: one key holds a non-empty list of objects and other keys can sit beside it" | y |
+| Q2 - Two or more candidate keys under `--auto-key` | Error listing every candidate key | user: "Q2 b: it should fail with an error that lists every candidate key" | y |
+| Q3 - Automatic or opt-in | Opt-in only: `--key KEY` and `--auto-key`; Python `rows_from_file(..., key=None, auto_key=False)`; with neither, a top-level object stays one row everywhere | user: "It must not be automatic, because a top-level object has to keep importing as one row, exactly as now, in every command and in `rows_from_file()`" | y |
+| Q4 - Entry points | `insert`, `upsert`, `bulk`, `memory`, `rows_from_file()` | user: "Q4 a: all of them" | y |
+| Q5 - Candidate definition | Non-empty list, every element an object; an empty list or a list of scalars is never a candidate | user: "Q5 a" | y |
+| OQ-A - `--auto-key` with no candidate | Error | user: "No candidate means an error, and an empty list is never a candidate, so your `{"Version": "x", "List": []}` example fails too" | y |
+| OQ-B - Top-level JSON array | `--auto-key` imports it as today; `--key` is an error, `RowsFromFileBadJSON` in Python | user: "OQ-B: a" | y |
+| OQ-C - Non-JSON input | `insert`/`upsert`/`bulk`: either option with `--csv`, `--tsv`, `--nl`, `--lines` or `--text` is an error. `rows_from_file()`: explicit `format=` CSV, TSV or NL with either argument raises `ValueError`; under detection the arguments apply only to detected JSON, and detected CSV/TSV comes back unchanged. `memory`: the options apply to every JSON input of the call; CSV and TSV inputs import as today, no error | user: "OQ-C: a, with one correction for `rows_from_file()`" | y |
+| Both options together | Error; Python `ValueError` | user: "passing both options together is an error, and in Python it's `ValueError`" | y |
+| `--key` names an absent key | Error naming the key; Python `RowsFromFileBadJSON` with the key in the message | user: "The missing-key error naming the key is right" | y |
+| `--key` value is an object | That object is one row | user: "if the value is an object, that object is one row" | y |
+| `--key` value is a string, number, boolean or null | Error | user: "Only a string, number, boolean or null value is an error" | y |
+| Non-object elements inside the `--key` list | Same outcome as the same list at the top level today | user: "a non-object element inside the list is not a new error" | y |
+| `--key` value is `[]` | Zero rows, exit 0 | user: "An empty list under `--key` giving zero rows and a clean exit is right" | y |
+| Sibling keys (`Version`) after extracting | Discarded silently | user delegated: "that's your call"; matches `jq .List` | y - user delegated |
+| `--flatten`, `--convert`, `--pk` and other options | Apply to each extracted record as to records of a top-level list | user: "apply to the extracted rows normally" | y |
+| `memory` input with an explicit `:nl` suffix while `--key`/`--auto-key` is set | Imports as today, no error, like CSV/TSV inputs | Each NL line is already a record, and `memory` mixes formats in one call; it must not inherit `rows_from_file()`'s `ValueError` for explicit NL | y - user delegated: "On the `:nl` suffix in `memory`, I have no preference, so your call" |
+| Exact error texts (JSONKEY-01..04 below) | As written in the criteria | Chosen for clarity; data-shape messages are shared by Python and the CLI, which prints them after `Error: ` | y - user delegated: "The same goes for the exact error texts, as long as the messages name the key or keys where I said they should" |
+| CLI errors | Exit code 1, `Error: <message>`, through `click.ClickException` | Precedent: `--encoding must be used with --csv or --tsv` in `insert_upsert_implementation` | y - settled by code |
+| `memory`'s `--nl`, `--csv`, `--tsv` | Untouched: in `memory` they choose the output format, not the input | Read from `cli.py`: `memory` picks the input format by `path:format` suffix or detection | y - settled by code |
+
+**Open questions:** none - all resolved or logged above.
+
+---
+
+## User Stories
+
+### P1: Read records from a named key in Python ⭐ MVP
+
+**User Story**: As a Python user, I want `rows_from_file(fp, key="List")` so that I get the records of an envelope document.
+
+**Why P1**: Every CLI entry point is defined by this rule.
+
+**Acceptance Criteria** (the Alaska document is the request's example: `{"Version": "5.5.52.6", "List": [{"Description": "Nonpartisan", "Id": 1, "ExternalId": ""}, {"Description": "Undeclared", "Id": 2, "ExternalId": ""}]}`):
+
+1. WHEN `rows_from_file()` is called with `key="List"` on the Alaska document THEN the system SHALL return exactly the two objects of `List`, in file order, with `Format.JSON`.
+2. WHEN `key` names a key whose value is an object THEN the system SHALL return a list holding that one object.
+3. WHEN `key` names a key whose value is `[]` THEN the system SHALL return zero rows without raising.
+4. IF `key` names a key the top-level object does not have THEN the system SHALL raise `RowsFromFileBadJSON` with the message `Key "Missing" not found in the top-level JSON object` (the key's name in place of `Missing`).
+5. IF `key` names a key whose value is a string, number, boolean or null THEN the system SHALL raise `RowsFromFileBadJSON` with the message `Key "Version" does not hold a list or an object`.
+6. IF `key` is passed and the top-level JSON value is a list THEN the system SHALL raise `RowsFromFileBadJSON` with the message `Cannot read key "List": the top-level JSON value is not an object`.
+7. WHEN the list under `key` holds non-object elements THEN the system SHALL return the same rows, or raise the same error, as `rows_from_file()` does for that list as the top-level document.
+8. WHEN `format=None` and the input is detected as JSON THEN the system SHALL apply `key` exactly as with `format=Format.JSON`.
+
+**Independent Test**: `rows_from_file(BytesIO(alaska), key="List")` returns the two records.
+
+---
+
+### P1: Find the records key automatically in Python ⭐ MVP
+
+**User Story**: As a Python user, I want `rows_from_file(fp, auto_key=True)` so that the one key holding a list of objects becomes the rows.
+
+**Why P1**: The request's rule of thumb.
+
+**Acceptance Criteria**:
+
+1. WHEN `rows_from_file()` is called with `auto_key=True` on the Alaska document THEN the system SHALL return exactly the two objects of `List`, in file order, with `Format.JSON`.
+2. The system SHALL treat a top-level key as a candidate only when its value is a non-empty list whose every element is an object, so `[]`, a list of scalars, a list mixing objects and scalars, an object and a scalar are never candidates.
+3. IF `auto_key=True` and two or more keys are candidates THEN the system SHALL raise `RowsFromFileBadJSON` with the message `Multiple top-level keys hold a non-empty list of objects: "users", "groups"`, naming every candidate in document order.
+4. IF `auto_key=True` and no key is a candidate THEN the system SHALL raise `RowsFromFileBadJSON` with the message `No top-level key holds a non-empty list of objects`.
+5. WHEN `auto_key=True` and the top-level JSON value is a list THEN the system SHALL return the same rows as the call without `auto_key`.
+
+**Independent Test**: `rows_from_file(BytesIO(alaska), auto_key=True)` returns the two records.
+
+---
+
+### P1: Argument rules in Python ⭐ MVP
+
+**User Story**: As a Python user, I want misuse of `key=` and `auto_key=` to fail clearly so that I do not import the wrong data.
+
+**Why P1**: The operator fixed each of these rules.
+
+**Acceptance Criteria**:
+
+1. IF `rows_from_file()` gets both `key` and `auto_key=True` THEN the system SHALL raise `ValueError` with the message `Cannot use key= and auto_key= together`.
+2. IF `format=` is `Format.CSV`, `Format.TSV` or `Format.NL` and `key` or `auto_key=True` is passed THEN the system SHALL raise `ValueError` with the message `key= and auto_key= only apply to JSON`.
+3. WHEN `format=None`, `key` or `auto_key=True` is passed and the input is detected as CSV or TSV THEN the system SHALL return the same rows and format as the call without them.
+
+**Independent Test**: each misuse raises `ValueError` before any row is read.
+
+---
+
+### P1: `--key` and `--auto-key` on insert, upsert and bulk ⭐ MVP
+
+**User Story**: As a CLI user, I want `sqlite-utils insert data.db records alaska.json --key List` so that the envelope file imports without `jq`.
+
+**Why P1**: The request.
+
+**Acceptance Criteria** (`alaska.json` holds the Alaska document):
+
+1. WHEN a user runs `sqlite-utils insert data.db records alaska.json --key List` THEN the system SHALL create table `records` holding the two `List` objects as two rows with columns `Description`, `Id`, `ExternalId` and no `Version` or `List` column.
+2. WHEN a user runs `sqlite-utils insert data.db records alaska.json --auto-key` THEN the system SHALL create table `records` holding the same two rows as criterion 1.
+3. WHEN a user runs `sqlite-utils upsert data.db records alaska.json --key List --pk Id` on a table that already holds `{"Id": 1, "Description": "Old", "ExternalId": ""}` THEN the system SHALL leave two rows, with row `Id` 1 holding `Description` `Nonpartisan`.
+4. WHEN a user runs `sqlite-utils bulk data.db "insert into records (Id, Description) values (:Id, :Description)" alaska.json --key List` THEN the system SHALL execute the SQL once per `List` object, leaving two rows.
+5. WHEN a user runs `insert` with `--key List --flatten` on a document whose `List` objects hold a nested object `{"a": {"b": 1}}` THEN the system SHALL store column `a_b` with value `1`.
+6. WHEN a user reads the document from standard input (`-`) with `--key List` THEN the system SHALL insert the same two rows as criterion 1.
+7. IF `--key` names an absent key THEN the system SHALL exit with code 1 and print `Error: Key "Missing" not found in the top-level JSON object`.
+8. IF `--auto-key` finds two or more candidate keys THEN the system SHALL exit with code 1 and print `Error: Multiple top-level keys hold a non-empty list of objects: "users", "groups"`.
+9. IF `--key` or `--auto-key` raises a data-shape error THEN the system SHALL leave the database without the target table.
+10. IF a user passes both `--key` and `--auto-key` THEN the system SHALL exit with code 1 and print `Error: Cannot use --key and --auto-key together`.
+11. IF a user passes `--key` or `--auto-key` together with `--csv`, `--tsv`, `--nl`, `--lines` or `--text` THEN the system SHALL exit with code 1 and print `Error: --key and --auto-key only apply to JSON input`.
+
+**Independent Test**: run criterion 1's command on the request's example and `select * from records` returns two rows.
+
+---
+
+### P1: `--key` and `--auto-key` on memory ⭐ MVP
+
+**User Story**: As a CLI user, I want `sqlite-utils memory alaska.json "select * from alaska" --key List` so that I can query an envelope file directly.
+
+**Why P1**: Operator: "Q4 a: all of them".
+
+**Acceptance Criteria**:
+
+1. WHEN a user runs `sqlite-utils memory alaska.json "select * from alaska" --key List` THEN the system SHALL output the two `List` objects as two rows.
+2. WHEN a user runs `sqlite-utils memory alaska.json "select * from alaska" --auto-key` THEN the system SHALL output the same two rows.
+3. WHEN a user passes two JSON files to `memory` with `--key List` THEN the system SHALL load the `List` records of each file into that file's table.
+4. WHEN a user passes a CSV file and a TSV file (detected, or by `:csv` / `:tsv` suffix) to `memory` alongside a JSON file with `--key List` THEN the system SHALL load the CSV and TSV tables with the same rows as without `--key`, and exit with code 0.
+5. WHEN a user passes an input with the `:nl` suffix to `memory` with `--key List` THEN the system SHALL load that table with the same rows as without `--key`, and exit with code 0.
+6. IF `--auto-key` finds no candidate key in a JSON input to `memory` THEN the system SHALL exit with code 1 and print `Error: No top-level key holds a non-empty list of objects`.
+7. IF a user passes both `--key` and `--auto-key` to `memory` THEN the system SHALL exit with code 1 and print `Error: Cannot use --key and --auto-key together`.
+
+**Independent Test**: criterion 1's command prints two rows.
+
+---
+
+### P1: Default behaviour unchanged ⭐ MVP
+
+**User Story**: As an existing user, I want a top-level object to keep importing as one row when I pass neither option.
+
+**Why P1**: Operator: "a top-level object has to keep importing as one row, exactly as now".
+
+**Acceptance Criteria**:
+
+1. WHILE neither `key` nor `auto_key` is passed, the system SHALL return the Alaska document from `rows_from_file()` as a list holding that one object.
+2. WHILE neither `--key` nor `--auto-key` is passed, the system SHALL insert the Alaska document with `sqlite-utils insert` as one row with columns `Version` and `List`.
+3. WHILE neither `--key` nor `--auto-key` is passed, the system SHALL load the Alaska document with `sqlite-utils memory` as one row with columns `Version` and `List`.
+
+**Independent Test**: the existing test suite passes unchanged, and criteria 1-3 hold on the Alaska document.
+
+---
+
+### P2: Documentation
+
+**User Story**: As a user reading the docs, I want both options explained with the envelope example so that I find them without reading `--help`.
+
+**Why P2**: The feature works without it, but nobody discovers it.
+
+**Acceptance Criteria**:
+
+1. The system SHALL document `--key` and `--auto-key` in `docs/cli.rst` under "Inserting JSON data", with the request's envelope example.
+2. The system SHALL describe the `key` and `auto_key` parameters in the `rows_from_file()` docstring.
+3. The system SHALL keep `docs/cli-reference.rst` in sync with the new `--help` output, so `uv run cog --check README.md docs/*.rst` exits 0.
+
+---
+
+## Edge Cases
+
+Covered by the criteria above: absent key (JSONKEY-01 AC 4, JSONKEY-04 AC 7), scalar value (JSONKEY-01 AC 5), top-level array (JSONKEY-01 AC 6, JSONKEY-02 AC 5), empty list (JSONKEY-01 AC 3, JSONKEY-02 AC 2), several candidates (JSONKEY-02 AC 3), none (JSONKEY-02 AC 4), mixed formats in `memory` (JSONKEY-05 AC 4-5), error before any write (JSONKEY-04 AC 9).
+
+Implicit-requirement dimensions: input validation and failure states are covered above. Remaining dimensions N/A for this scope: the change is a pure in-process parse of one local document, with no auth, concurrency, retry, expiry, external dependency, logging or state transition.
+
+---
+
+## Requirement Traceability
+
+| Requirement ID | Story | Phase | Status |
+| -------------- | ----- | ----- | ------ |
+| JSONKEY-01 | P1: Read records from a named key in Python | Execute | Pending |
+| JSONKEY-02 | P1: Find the records key automatically in Python | Execute | Pending |
+| JSONKEY-03 | P1: Argument rules in Python | Execute | Pending |
+| JSONKEY-04 | P1: `--key` and `--auto-key` on insert, upsert and bulk | Execute | Pending |
+| JSONKEY-05 | P1: `--key` and `--auto-key` on memory | Execute | Pending |
+| JSONKEY-06 | P1: Default behaviour unchanged | Execute | Pending |
+| JSONKEY-07 | P2: Documentation | Execute | Pending |
+
+**Coverage:** 7 requirements, 40 criteria, each with one check below; 0 unmapped.
+
+---
+
+## Sources
+
+- The operator's request and answers (this conversation) - the envelope shape, the Alaska example, Q1-Q5, OQ-A to OQ-C and the corrections to the defaults.
+- `sqlite_utils/cli.py` `insert_upsert_implementation` (shared by `insert`, `upsert`, `bulk`) and `memory`; `sqlite_utils/utils.py` `rows_from_file` - today's rule: a top-level object becomes one row.
+- `docs/cli.rst` "Inserting JSON data", "Flattening nested JSON objects"; `docs/python-api.rst` - documented accepted JSON shapes.
+- `Justfile` - the project's test and lint commands.
+
+---
+
+## Success Criteria
+
+- [ ] The request's Alaska file imports as two rows with `--key List` and with `--auto-key`, in all five entry points.
+- [ ] The existing test suite passes with no test changed.
+
+---
+
+## Checks
+
+Tasks are implicit (three steps: `rows_from_file()` with its tests and docstring; `insert`/`upsert`/`bulk` options with their tests and `docs/cli.rst`; `memory` options with their tests), so the checks live here. Test names are the ones the build writes; each proof line is the line `pytest -v` prints when that test passes. No name is a prefix of another, and each is one unparametrized test function that asserts every case its check names, so a single `PASSED` line covers the whole claim.
+
+**Build**: `uv run black . --check; uv run flake8; uv run mypy sqlite_utils tests; uv run pyright sqlite_utils tests; uv run ty check sqlite_utils; uv run cog --check README.md docs/*.rst`
+**Run py**: `uv run pytest tests/test_rows_from_file.py -v`
+**Run cli**: `uv run pytest tests/test_cli_insert.py tests/test_cli_bulk.py -v`
+**Run mem**: `uv run pytest tests/test_cli_memory.py -v`
+
+**C1** - `key="List"` returns the two `List` objects in order with `Format.JSON` (JSONKEY-01, AC 1)
+Proof: run py | test_rows_from_file_key_list PASSED
+
+**C2** - `key` on an object value returns that one object (JSONKEY-01, AC 2)
+Proof: run py | test_rows_from_file_key_object_value PASSED
+
+**C3** - `key` on `[]` returns zero rows (JSONKEY-01, AC 3)
+Proof: run py | test_rows_from_file_key_empty_list PASSED
+
+**C4** - absent key raises `RowsFromFileBadJSON` `Key "Missing" not found in the top-level JSON object` (JSONKEY-01, AC 4)
+Proof: run py | test_rows_from_file_key_missing PASSED
+
+**C5** - string, number, boolean and null values raise `RowsFromFileBadJSON` `Key "Version" does not hold a list or an object` (JSONKEY-01, AC 5)
+Proof: run py | test_rows_from_file_key_scalar_value PASSED
+
+**C6** - `key` on a top-level list raises `RowsFromFileBadJSON` `Cannot read key "List": the top-level JSON value is not an object` (JSONKEY-01, AC 6)
+Proof: run py | test_rows_from_file_key_top_level_list PASSED
+
+**C7** - non-object elements under `key` give the same result as the same top-level list (JSONKEY-01, AC 7)
+Proof: run py | test_rows_from_file_key_non_object_elements PASSED
+
+**C8** - `key` applies under format detection exactly as under `Format.JSON` (JSONKEY-01, AC 8)
+Proof: run py | test_rows_from_file_key_detected_json PASSED
+
+**C9** - `auto_key=True` returns the two `List` objects in order with `Format.JSON` (JSONKEY-02, AC 1)
+Proof: run py | test_rows_from_file_auto_key_list PASSED
+
+**C10** - `[]`, scalars, mixed lists, objects and scalars are never candidates (JSONKEY-02, AC 2)
+Proof: run py | test_rows_from_file_auto_key_candidates PASSED
+
+**C11** - several candidates raise `RowsFromFileBadJSON` naming each in document order (JSONKEY-02, AC 3)
+Proof: run py | test_rows_from_file_auto_key_multiple PASSED
+
+**C12** - no candidate raises `RowsFromFileBadJSON` `No top-level key holds a non-empty list of objects` (JSONKEY-02, AC 4)
+Proof: run py | test_rows_from_file_auto_key_none PASSED
+
+**C13** - `auto_key=True` on a top-level list returns the same rows as without it (JSONKEY-02, AC 5)
+Proof: run py | test_rows_from_file_auto_key_top_level_list PASSED
+
+**C14** - `key` with `auto_key=True` raises `ValueError` `Cannot use key= and auto_key= together` (JSONKEY-03, AC 1)
+Proof: run py | test_rows_from_file_key_and_auto_key PASSED
+
+**C15** - explicit CSV, TSV or NL format with either argument raises `ValueError` `key= and auto_key= only apply to JSON` (JSONKEY-03, AC 2)
+Proof: run py | test_rows_from_file_key_explicit_non_json_format PASSED
+
+**C16** - detected CSV and TSV come back unchanged with either argument (JSONKEY-03, AC 3)
+Proof: run py | test_rows_from_file_key_detected_csv_tsv PASSED
+
+**C17** - `insert --key List` creates two rows with `Description`, `Id`, `ExternalId` and no `Version`/`List` column (JSONKEY-04, AC 1)
+Proof: run cli | test_insert_key_list PASSED
+
+**C18** - `insert --auto-key` creates the same two rows (JSONKEY-04, AC 2)
+Proof: run cli | test_insert_auto_key_list PASSED
+
+**C19** - `upsert --key List --pk Id` updates row 1 to `Nonpartisan` and leaves two rows (JSONKEY-04, AC 3)
+Proof: run cli | test_upsert_key PASSED
+
+**C20** - `bulk ... --key List` runs the SQL once per object, leaving two rows (JSONKEY-04, AC 4)
+Proof: run cli | test_cli_bulk_key PASSED
+
+**C21** - `--key List --flatten` stores `a_b` = `1` (JSONKEY-04, AC 5)
+Proof: run cli | test_insert_key_flatten PASSED
+
+**C22** - `--key List` from standard input inserts the two rows (JSONKEY-04, AC 6)
+Proof: run cli | test_insert_key_stdin PASSED
+
+**C23** - absent `--key` exits 1 with `Error: Key "Missing" not found in the top-level JSON object` (JSONKEY-04, AC 7)
+Proof: run cli | test_insert_key_missing PASSED
+
+**C24** - several candidates under `--auto-key` exit 1 with the listing message (JSONKEY-04, AC 8)
+Proof: run cli | test_insert_auto_key_multiple PASSED
+
+**C25** - a data-shape error leaves no target table (JSONKEY-04, AC 9)
+Proof: run cli | test_insert_key_error_creates_no_table PASSED
+
+**C26** - both options exit 1 with `Error: Cannot use --key and --auto-key together` (JSONKEY-04, AC 10)
+Proof: run cli | test_insert_key_and_auto_key PASSED
+
+**C27** - either option with `--csv`, `--tsv`, `--nl`, `--lines` or `--text` exits 1 with `Error: --key and --auto-key only apply to JSON input` (JSONKEY-04, AC 11)
+Proof: run cli | test_insert_key_non_json_input PASSED
+
+**C28** - `memory --key List` outputs the two rows (JSONKEY-05, AC 1)
+Proof: run mem | test_memory_key_list PASSED
+
+**C29** - `memory --auto-key` outputs the two rows (JSONKEY-05, AC 2)
+Proof: run mem | test_memory_auto_key_list PASSED
+
+**C30** - `memory --key List` with two JSON files loads each file's records (JSONKEY-05, AC 3)
+Proof: run mem | test_memory_key_two_json_files PASSED
+
+**C31** - CSV and TSV inputs, detected or suffixed, load unchanged beside a JSON input under `--key` (JSONKEY-05, AC 4)
+Proof: run mem | test_memory_key_csv_tsv_unchanged PASSED
+
+**C32** - a `:nl` input loads unchanged under `--key` (JSONKEY-05, AC 5)
+Proof: run mem | test_memory_key_nl_unchanged PASSED
+
+**C33** - `memory --auto-key` with no candidate exits 1 with `Error: No top-level key holds a non-empty list of objects` (JSONKEY-05, AC 6)
+Proof: run mem | test_memory_auto_key_none PASSED
+
+**C34** - `memory` with both options exits 1 with `Error: Cannot use --key and --auto-key together` (JSONKEY-05, AC 7)
+Proof: run mem | test_memory_key_and_auto_key PASSED
+
+**C35** - without either argument, `rows_from_file()` returns the Alaska document as one object (JSONKEY-06, AC 1)
+Proof: run py | test_rows_from_file_object_without_key PASSED
+
+**C36** - without either option, `insert` stores the Alaska document as one row with `Version` and `List` (JSONKEY-06, AC 2)
+Proof: run cli | test_insert_object_without_key PASSED
+
+**C37** - without either option, `memory` loads the Alaska document as one row with `Version` and `List` (JSONKEY-06, AC 3)
+Proof: run mem | test_memory_object_without_key PASSED
+
+**C38** - `docs/cli.rst` documents `--key` and `--auto-key` with the envelope example (JSONKEY-07, AC 1)
+Proof: `grep -q -- "--auto-key" docs/cli.rst && grep -q '"Version": "5.5.52.6"' docs/cli.rst`
+
+**C39** - the `rows_from_file()` docstring describes `key` and `auto_key` (JSONKEY-07, AC 2)
+Proof: `grep -q ":param key:" sqlite_utils/utils.py && grep -q ":param auto_key:" sqlite_utils/utils.py`
+
+**C40** - `docs/cli-reference.rst` matches the new `--help` output (JSONKEY-07, AC 3)
+Proof: `uv run cog --check README.md docs/*.rst`

@@ -1,0 +1,7 @@
+{
+  "note": "The operator's words and the agent's answers that give the sample walk a history worth reading (cases W-15 to W-18).",
+  "failLine": "The box rejects the letter m and nothing is typed",
+  "correction": "Click inside the box first, the page ignores keys until the box has focus.",
+  "evidence": "Ran grep -c data-note src/notes/list.js, expected 1 match, found 1 match",
+  "disagreeEvidence": "Ran grep -n \"No notes match\" src/notes/search.js, expected 1 line, found no matching line"
+}

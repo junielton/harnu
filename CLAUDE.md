@@ -256,6 +256,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Layout shell                                       | `src/renderer/src/App.vue`                                                       |
 | Sidebar (§6 — session rows)                        | `src/renderer/src/components/Sidebar.vue`                                        |
 | Sidebar folder row                                 | `src/renderer/src/components/SidebarFolder.vue`                                  |
+| Sidebar section shell (§6 — T702)                  | `SidebarSection.vue` + `lib/sidebar-section.ts`                                  |
 | Sidebar jump palette (§6 — T288)                   | `src/renderer/src/components/SidebarJumpPalette.vue`                             |
 | Repo group header (multi-worktree repos)           | `src/renderer/src/components/RepoGroupHeader.vue`                                |
 | Shelved section of a repo group (§6 — U2.3b)       | `SidebarShelvedSection.vue` + `lib/shelved-sidebar.ts`                           |
@@ -328,6 +329,9 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | System Monitor history + folder hue (T591)         | `lib/monitor-history.ts` + `stores/monitor.ts`; `lib/folder-hue.ts`              |
 | Heap gauge (footer, T127 S3)                       | `src/renderer/src/components/HeapGauge.vue`                                      |
 | Hibernation policy pane (Settings tab, T127 S4)    | `src/renderer/src/components/HibernationPolicyPane.vue`                          |
+| Your move pane (Settings tab, §6 — U1)             | `src/renderer/src/components/YourMovePane.vue` + `src/main/your-move/`           |
+| Your move card (Return here queue, §6 — U4)        | `src/renderer/src/components/YourMoveCard.vue` + `lib/your-move-view.ts`         |
+| Your move queue store (§6 — U4)                    | `src/renderer/src/stores/your-move.ts` + `src/main/your-move/ipc.ts`             |
 | Cleanup takeover (unified Workspace GC, T443)      | `src/renderer/src/components/CleanupView.vue`                                    |
 | Cleanup treemap (repo → bucket → block, T443)      | `src/renderer/src/components/CleanupTreemap.vue` + `lib/gc-treemap.ts`           |
 | Cleanup list fallback (T443)                       | `src/renderer/src/components/CleanupListView.vue`                                |
@@ -372,20 +376,19 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Scheduler prompt field (skill mentions, T305)      | `src/renderer/src/components/SchedulerPromptField.vue` + `scheduler-mentions.ts` |
 | Scheduler worker detail                            | `src/renderer/src/components/SchedulerWorkerDetail.vue`                          |
 | Roadmap WIP chip + limit stepper (§6 — BUG-197)    | `src/renderer/src/components/RoadmapWipChip.vue`                                 |
-| Mission progress pill (Topbar, §6 — T370)          | `src/renderer/src/components/MissionPill.vue` + `lib/mission-view.ts`            |
-| Mission progress popover (§6 — T370)               | `src/renderer/src/components/MissionPopover.vue` + `stores/missions.ts`          |
-| Mission step rail (§6 — T370)                      | `src/renderer/src/components/MissionStepRail.vue`                                |
-| Mission step glyph (§6 — T596)                     | `src/renderer/src/components/MissionStepGlyph.vue`                               |
-| Campaign popover (§6 — T596)                       | `src/renderer/src/components/CampaignPopover.vue` + `lib/campaign-view.ts`       |
-| Campaign map takeover (§6 — T607)                  | `src/renderer/src/components/CampaignMap.vue` + `lib/campaign-map.ts`            |
-| Campaign map gate dots (§6 — T607)                 | `src/renderer/src/components/CampaignGateDots.vue`                               |
-| Campaign store + IPC (§6 — T596)                   | `stores/campaigns.ts` + `src/main/campaign-ipc.ts`                               |
-| Mission close confirm (§6 — T370 AC-S9-8)          | `src/renderer/src/components/MissionCloseConfirmDialog.vue`                      |
-| Pause steward dialog (§6 — T609)                   | `src/renderer/src/components/StewardPauseDialog.vue`                             |
-| Merge batch dialog (§6 — T609)                     | `src/renderer/src/components/MergeBatchDialog.vue` + `src/main/merge-batch-*.ts` |
-| Scheduler Stewards section (§6 — T609)             | `src/renderer/src/components/SchedulerStewards.vue` + `lib/steward-view.ts`      |
-| Missions review dialog (§6 — BUG-173 S5)           | `src/renderer/src/components/MissionsReviewDialog.vue`                           |
-| Bulk close confirm (§6 — BUG-173 S5)               | `src/renderer/src/components/MissionBulkCloseConfirmDialog.vue`                  |
+| Mission pill (Topbar, §6 — T370, S-17)             | `src/renderer/src/components/MissionPill.vue` + `lib/mission-pane-view.ts`       |
+| Mission dropdown — close dialog (§6 — S-22)        | `components/MissionCloseConfirmDialog.vue` + `stores/missions.ts`                |
+| Mission dropdown — sample mission (§6 — S-22)      | `lib/mission-sample.ts` + `stores/missions.ts`                                   |
+| Mission dropdown — shell (§6 — dropdown S-1)       | `components/MissionDropdown.vue` + `lib/mission-dropdown-position.ts`            |
+| Guided walk pane (helper stack, §6 — S-3)          | `GuidedWalkPane.vue` + `Walk*.vue` + `lib/walk-view.ts` + `lib/walk-keys.ts`     |
+| Walks library (helper stack, §6 — S-4)             | `WalksPane.vue` + `WalkPast.vue` + `lib/walk-library.ts`                         |
+| Mission dropdown — head, switch (§6 — S-2)         | `components/MissionDropdownHead.vue` + `lib/mission-pane-view.ts`                |
+| Mission dropdown — next card (§6 — S-2)            | `components/MissionDropdownNext.vue` + `lib/mission-pane-view.ts`                |
+| Mission dropdown — tree and keys (§6 — S-3)        | `components/MissionDropdownTree.vue` + `lib/mission-dropdown-tree.ts`            |
+| Mission dropdown — Ask on a milestone (§6 — S-3)   | `components/MissionDropdownAsk.vue` + `lib/mission-pane-view.ts`                 |
+| Mission dropdown — an open step, links (§6 — S-4)  | `components/MissionDropdownStep.vue` + `lib/mission-dropdown-links.ts`           |
+| Mission dropdown — empty and sample (§6 — S-5)     | `components/MissionDropdownEmpty.vue` + `lib/mission-pane-view.ts`               |
+| Mission state glyph + hover label (§6 — S-3)       | `components/MissionDot.vue` + `lib/mission-dropdown-tree.ts`                     |
 | Review selection bar (Review pane, §6 — T257)      | `src/renderer/src/components/ReviewSelectionBar.vue` + `lib/review-selection.ts` |
 | Containers — Paused detail (§6 — U3.4)             | `src/renderer/src/components/ContainersPausedDetail.vue`                         |
 | Folder combobox (form control)                     | `src/renderer/src/components/ui/FolderCombobox.vue`                              |

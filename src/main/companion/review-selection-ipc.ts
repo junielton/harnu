@@ -14,8 +14,6 @@
  * back as a stable reason **code** with the next steps the operator has; `main` writes no sentence.
  */
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { ipcMain, type BrowserWindow } from 'electron'
 import { parseUnifiedDiff, type DiffRow } from '../review-core'
 import { enqueue as channelEnqueue } from './command-channel'
@@ -49,8 +47,7 @@ import {
   type SelectionTracker
 } from './review-selection-tracker'
 import type { BindingView } from './session-table'
-
-const execFileAsync = promisify(execFile)
+import { runFile as execFileAsync } from '../spawn-runner'
 
 /** One blob. A file over this is refused as unreadable rather than half-read. */
 const BLOB_MAX_BYTES = 8 * 1024 * 1024

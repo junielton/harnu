@@ -1,0 +1,27 @@
+/* Verbatim copy of the UI colour tokens of the light Harnu theme: :root[data-theme='light'] in src/renderer/src/styles/themes.css. Everything else (shape, motion, fonts) is theme-invariant and comes from tokens.css. */
+:root[data-theme='light'] {
+  --color-bg: #fafafa;
+  --color-sidebar: #ffffff;
+  --color-surface: #f4f4f5;
+  --color-surface-2: #ececef;
+  --color-border: #e4e4e7;
+  --color-border-2: #d4d4d8;
+  --color-text: #18181b;
+  --color-text-2: #3f3f46;
+  --color-text-3: #71717a;
+  --color-text-4: #a1a1aa;
+  --color-text-disabled: #d4d4d8;
+  --color-accent: #c2410c;
+  --color-accent-soft: rgba(194, 65, 12, 0.1);
+  --color-accent-line: rgba(194, 65, 12, 0.3);
+  --color-accent-ink: #fff7ed;
+  --color-green: #16a34a;
+  --color-green-soft: rgba(22, 163, 74, 0.15);
+  --color-red: #dc2626;
+  --color-red-soft: rgba(220, 38, 38, 0.1);
+  --color-warning: #ca8a04;
+  --color-green-line: rgba(22, 163, 74, 0.35);
+  --color-red-line: rgba(220, 38, 38, 0.3);
+  --color-warning-soft: rgba(202, 138, 4, 0.1);
+  --color-warning-line: rgba(202, 138, 4, 0.3);
+}

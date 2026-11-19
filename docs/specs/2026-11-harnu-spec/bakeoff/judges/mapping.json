@@ -1,0 +1,14 @@
+{
+  "mapping": {
+    "Spec P": "harnu",
+    "Spec Q": "superpowers",
+    "Spec R": "tlc"
+  },
+  "orders": {
+    "judge-1": ["Spec P", "Spec R", "Spec Q"],
+    "judge-2": ["Spec Q", "Spec R", "Spec P"],
+    "judge-3": ["Spec R", "Spec P", "Spec Q"]
+  },
+  "seed": 673,
+  "note": "judge-3 order re-drawn by hand: the seeded draw repeated judge-1 order"
+}

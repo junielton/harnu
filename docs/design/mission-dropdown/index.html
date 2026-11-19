@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — Mission dropdown</title>
+    <style>
+      :root {
+        --ix-bg: #f6f6f7;
+        --ix-fg: #1b1b1f;
+        --ix-muted: #6b6b76;
+        --ix-line: #dcdce2;
+        --ix-card: #fff;
+        --ix-accent: #2f5bea;
+        --ix-draft: #b7791f;
+        --ix-ok: #2f855a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ix-bg: #121216;
+          --ix-fg: #ececf1;
+          --ix-muted: #9a9aa6;
+          --ix-line: #2b2b33;
+          --ix-card: #1b1b21;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        color: var(--ix-fg);
+        background: var(--ix-bg);
+      }
+      header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--ix-line);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ix-draft);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status[data-status='approved'] {
+        background: var(--ix-ok);
+      }
+      nav.toc {
+        font-size: 13px;
+        color: var(--ix-muted);
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      nav.toc a {
+        color: inherit;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        margin-bottom: 48px;
+      }
+      section > h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .prose {
+        max-width: 72ch;
+        color: var(--ix-fg);
+      }
+      .prose p {
+        margin: 0 0 10px;
+      }
+      /* one card per screen */
+      .screen {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .screen .bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .screen h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .screen h3 code {
+        font-size: 12px;
+        color: var(--ix-muted);
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .screen .notes {
+        font-size: 13px;
+        color: var(--ix-muted);
+        margin: 0 0 12px;
+        max-width: 80ch;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chips button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--ix-line);
+        background: transparent;
+        color: var(--ix-fg);
+        cursor: pointer;
+      }
+      .chips button[aria-pressed='true'] {
+        background: var(--ix-accent);
+        border-color: var(--ix-accent);
+        color: #fff;
+      }
+      .open {
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .viewport {
+        overflow: hidden;
+        border: 1px solid var(--ix-line);
+        border-radius: 6px;
+        background: #fff;
+      }
+      .viewport iframe {
+        display: block;
+        border: 0;
+        transform-origin: top left;
+      }
+      .screen .approval {
+        font-size: 12px;
+        margin-top: 8px;
+        color: var(--ix-muted);
+      }
+      /* flows */
+      .flow {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .flow ol {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 0;
+        margin: 8px 0 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .flow li {
+        counter-increment: step;
+        font-size: 13px;
+      }
+      .flow li::before {
+        content: counter(step) '. ';
+        color: var(--ix-muted);
+      }
+      .flow li + li::before {
+        content: '→ ' counter(step) '. ';
+      }
+      .flow li small {
+        color: var(--ix-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Mission dropdown</h1>
+      <span class="status" data-status="approved">approved</span>
+      <nav class="toc">
+        <a href="#context">Context</a><a href="#screens">Screens</a><a href="#flows">Flows</a
+        ><a href="../../specs/2026-11-17-mission-dropdown/spec.md">Spec</a>
+      </nav>
+    </header>
+    <main>
+      <section id="context">
+        <h2>Context and decisions</h2>
+        <div class="prose">
+          <p>
+            Everything about a mission goes back into a dropdown that opens from the Mission pill in
+            the Topbar. The Mission pane in the helper stack goes away. The dropdown is built from
+            the v4 model and the v4 pane’s pieces, under one rule: every element must earn its
+            place; anything the operator owes is never hidden.
+          </p>
+          <p>
+            Folded in from the operator’s feedback: sessions removed from the user’s view (the data
+            and the backend stay); worktree links as branch names, one “Evidence” link, no absolute
+            paths, copy available (BUG-288); a hover label on every state dot (BUG-285); proper
+            spacing for Ask (BUG-287); the next-step button on the right of the text when wide and
+            under it when narrow, in the compact size; no “Ready to close” badge; only the current
+            milestone open.
+          </p>
+          <p>
+            Use the <b>Dark / Light</b> switch at the bottom right of the frame, or open a screen
+            alone with <code>?theme=light</code>. Widths: <b>1280</b> is a wide window, <b>360</b> a
+            narrow one. The table of what changed against the current pane is in
+            <a href="../../specs/2026-11-17-mission-dropdown/spec.md">Spec</a>.
+          </p>
+        </div>
+        <table
+          style="border-collapse: collapse; font-size: 13px; max-width: 1100px; margin-top: 12px"
+        >
+          <tr>
+            <td><code>mid</code></td>
+            <td>
+              Mid-way. One next step (button on the right when wide, under the text when narrow),
+              only the current milestone open, the rest folded.
+            </td>
+          </tr>
+          <tr>
+            <td><code>closed</code></td>
+            <td>The pill at rest. A caret says it opens.</td>
+          </tr>
+          <tr>
+            <td><code>multi</code></td>
+            <td>A session that leads several missions: one switch line above the title.</td>
+          </tr>
+          <tr>
+            <td><code>chooser</code></td>
+            <td>The switch open: pick the mission to show.</td>
+          </tr>
+          <tr>
+            <td><code>owed</code></td>
+            <td>
+              “2 more waiting on you” opened in place. Everything owed stays one click from the top.
+            </td>
+          </tr>
+          <tr>
+            <td><code>step-open</code></td>
+            <td>
+              A step opened inline: criteria (verified ones folded), the PR link, a branch link with
+              copy, one “Evidence” link.
+            </td>
+          </tr>
+          <tr>
+            <td><code>blocked</code></td>
+            <td>A blocked step: the blocker, “Done, continue”, criteria and links.</td>
+          </tr>
+          <tr>
+            <td><code>ask</code></td>
+            <td>
+              Ask on the current milestone. The Ask button sits on the summary line with its own
+              gap.
+            </td>
+          </tr>
+          <tr>
+            <td><code>done-when</code></td>
+            <td>
+              A staged Done when replaces the next-step box: Approve / Decline, no “Review it” hop.
+            </td>
+          </tr>
+          <tr>
+            <td><code>attach-request</code></td>
+            <td>A session asks to join: Allow / Deny in the same slot.</td>
+          </tr>
+          <tr>
+            <td><code>ready</code></td>
+            <td>
+              Ready to close: no “Ready to close” badge; the next step says it and the pill turns
+              green.
+            </td>
+          </tr>
+          <tr>
+            <td><code>close-confirm</code></td>
+            <td>The close dialog.</td>
+          </tr>
+          <tr>
+            <td><code>empty</code></td>
+            <td>
+              No mission: a muted icon-only pill; the picker with Attach and Start a new mission.
+            </td>
+          </tr>
+          <tr>
+            <td><code>dots</code></td>
+            <td>
+              Hover labels, forced open on a milestone dot and a step dot. Every dot has one on
+              hover and on focus.
+            </td>
+          </tr>
+        </table>
+      </section>
+      <section id="screens">
+        <h2>Screens</h2>
+        <article
+          class="screen"
+          data-screen="mission-dropdown"
+          data-states="mid closed multi chooser owed step-open blocked ask done-when attach-request ready close-confirm empty dots"
+        >
+          <div class="bar">
+            <h3>Mission dropdown <code>mission-dropdown</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/mission-dropdown.html" target="_blank">open alone ↗</a>
+          </div>
+          <p class="notes">
+            Open alone:
+            <a href="screens/mission-dropdown.html?state=mid&amp;theme=dark" target="_blank"
+              >dark · EN</a
+            >
+            ·
+            <a href="screens/mission-dropdown.html?state=mid&amp;theme=light" target="_blank"
+              >light · EN</a
+            >. Hover any dot for its label.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="mission-dropdown"></iframe></div>
+          <p class="approval">Approval: <strong>approved 2026-11-17</strong></p>
+        </article>
+        <article
+          class="screen"
+          data-screen="entry"
+          data-states="step-open milestone mission closed"
+        >
+          <div class="bar">
+            <h3>Entry for guided walks <code>entry</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/entry.html" target="_blank">open alone ↗</a>
+          </div>
+          <p class="notes">
+            The dropdown with a compact <b>Test it</b> on an open step, on the current milestone
+            and, at the end of a mission, on the whole mission. The controls are a stub: the walk
+            milestone replaces what they call (spec, “The Test it seam”).
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="entry"></iframe></div>
+          <p class="approval">Approval: <strong>approved 2026-11-17</strong></p>
+        </article>
+      </section>
+      <section id="flows">
+        <h2>Flows</h2>
+        <article class="flow" data-flow="open-and-look">
+          <h3>
+            Open the dropdown and look at a step —
+            <a href="screens/mission-dropdown.html?state=closed" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-dropdown.html?state=closed" target="_blank">closed</a>
+              <small>via the Topbar pill</small>
+            </li>
+            <li>
+              <a href="screens/mission-dropdown.html?state=mid" target="_blank">mid</a>
+              <small>via the step “Score the proofs each criterion names”</small>
+            </li>
+            <li>
+              <a href="screens/mission-dropdown.html?state=step-open" target="_blank">step-open</a>
+              <small>via the same step row again</small>
+            </li>
+            <li><a href="screens/mission-dropdown.html?state=mid" target="_blank">mid</a></li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="what-you-owe">
+          <h3>
+            See everything that waits on you —
+            <a href="screens/mission-dropdown.html?state=mid" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-dropdown.html?state=mid" target="_blank">mid</a>
+              <small>via “2 more waiting on you”</small>
+            </li>
+            <li>
+              <a href="screens/mission-dropdown.html?state=owed" target="_blank">owed</a>
+              <small>via “Open step” on the blocked item</small>
+            </li>
+            <li>
+              <a href="screens/mission-dropdown.html?state=blocked" target="_blank">blocked</a>
+              <small>via “Done, continue” on the blocker</small>
+            </li>
+            <li><a href="screens/mission-dropdown.html?state=mid" target="_blank">mid</a></li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="ask-a-milestone">
+          <h3>
+            Ask the session about the current milestone —
+            <a href="screens/mission-dropdown.html?state=mid" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-dropdown.html?state=mid" target="_blank">mid</a>
+              <small>via Ask</small>
+            </li>
+            <li>
+              <a href="screens/mission-dropdown.html?state=ask" target="_blank">ask</a>
+              <small>via Send</small>
+            </li>
+            <li><a href="screens/mission-dropdown.html?state=mid" target="_blank">mid</a></li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="approve-done-when">
+          <h3>
+            Answer a staged Done when —
+            <a href="screens/mission-dropdown.html?state=done-when" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-dropdown.html?state=done-when" target="_blank">done-when</a>
+              <small>via Approve</small>
+            </li>
+            <li><a href="screens/mission-dropdown.html?state=mid" target="_blank">mid</a></li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="allow-a-session">
+          <h3>
+            Let another session join —
+            <a href="screens/mission-dropdown.html?state=attach-request" target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-dropdown.html?state=attach-request" target="_blank"
+                >attach-request</a
+              >
+              <small>via Allow</small>
+            </li>
+            <li><a href="screens/mission-dropdown.html?state=mid" target="_blank">mid</a></li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="close-the-mission">
+          <h3>
+            Close a finished mission —
+            <a href="screens/mission-dropdown.html?state=ready" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-dropdown.html?state=ready" target="_blank">ready</a>
+              <small>via “Close mission…”</small>
+            </li>
+            <li>
+              <a href="screens/mission-dropdown.html?state=close-confirm" target="_blank"
+                >close-confirm</a
+              >
+              <small>via Close mission</small>
+            </li>
+            <li>
+              <a href="screens/mission-dropdown.html?state=empty" target="_blank">empty</a>
+              <small>via Attach</small>
+            </li>
+            <li><a href="screens/mission-dropdown.html?state=mid" target="_blank">mid</a></li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="switch-mission">
+          <h3>
+            Choose among several missions —
+            <a href="screens/mission-dropdown.html?state=multi" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-dropdown.html?state=multi" target="_blank">multi</a>
+              <small>via “Mission 1 of 3 · Change”</small>
+            </li>
+            <li>
+              <a href="screens/mission-dropdown.html?state=chooser" target="_blank">chooser</a>
+              <small>via a mission in the list</small>
+            </li>
+            <li><a href="screens/mission-dropdown.html?state=multi" target="_blank">multi</a></li>
+          </ol>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      /* index runtime: sizes each frame to the chosen viewport, swaps ?state=, listens for
+   mockup:size from the screens. Do not add behaviour here; screens own their behaviour. */
+      ;(() => {
+        const VIEWPORTS = [1280, 360] // MUST mirror mockup.json "viewports"
+        const frames = new Map() // iframe -> {w, h}
+        const fit = (card) => {
+          const vp = card.querySelector('.viewport'),
+            ifr = vp.querySelector('iframe'),
+            f = frames.get(ifr)
+          const s = Math.min(1, vp.parentElement.clientWidth / f.w)
+          ifr.style.width = f.w + 'px'
+          ifr.style.height = f.h + 'px'
+          ifr.style.transform = `scale(${s})`
+          vp.style.height = Math.ceil(f.h * s) + 'px'
+          vp.style.width = Math.ceil(f.w * s) + 'px'
+        }
+        const load = (card) => {
+          const ifr = card.querySelector('iframe')
+          const state =
+            card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state ||
+            card.dataset.states.split(/\s+/)[0]
+          ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`
+        }
+        document.querySelectorAll('.screen').forEach((card) => {
+          const ifr = card.querySelector('iframe')
+          frames.set(ifr, { w: VIEWPORTS[0], h: 600 })
+          const vps = card.querySelector('[data-role="viewports"]')
+          VIEWPORTS.forEach((w, i) => {
+            const b = document.createElement('button')
+            b.textContent = w + 'px'
+            b.dataset.w = w
+            b.setAttribute('aria-pressed', String(i === 0))
+            b.onclick = () => {
+              vps
+                .querySelectorAll('button')
+                .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+              frames.get(ifr).w = w
+              fit(card)
+            }
+            vps.append(b)
+          })
+          const sts = card.querySelector('[data-role="states"]')
+          card.dataset.states
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((st, i) => {
+              const b = document.createElement('button')
+              b.textContent = st
+              b.dataset.state = st
+              b.setAttribute('aria-pressed', String(i === 0))
+              b.onclick = () => {
+                sts
+                  .querySelectorAll('button')
+                  .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+                load(card)
+              }
+              sts.append(b)
+            })
+          new IntersectionObserver(
+            (es, io) =>
+              es.forEach((e) => {
+                if (e.isIntersecting) {
+                  io.disconnect()
+                  load(card)
+                }
+              }),
+            { rootMargin: '600px' }
+          ).observe(card)
+          fit(card)
+        })
+        addEventListener('message', (e) => {
+          const m = e.data
+          if (!m || m.type !== 'mockup:size') return
+          for (const [ifr, f] of frames)
+            if (ifr.contentWindow === e.source) {
+              f.h = Math.max(320, m.height)
+              fit(ifr.closest('.screen'))
+            }
+        })
+        addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit))
+      })()
+    </script>
+  </body>
+</html>

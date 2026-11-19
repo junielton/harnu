@@ -1,0 +1,42 @@
+{
+  "spec": "Spec Q",
+  "atoms": {
+    "R-1": "covered",
+    "R-2": "covered",
+    "R-3": "covered",
+    "R-4": "covered",
+    "R-5": "covered",
+    "R-6": "covered",
+    "R-7": "covered",
+    "R-8": "covered",
+    "O-1": "covered",
+    "O-2": "covered",
+    "O-3": "covered",
+    "O-4": "covered",
+    "O-5": "covered",
+    "O-6": "covered",
+    "O-7": "covered",
+    "O-8": "covered",
+    "O-9": "covered",
+    "O-10": "covered",
+    "O-11": "covered",
+    "O-12": "covered",
+    "O-13": "covered",
+    "O-14": "covered",
+    "O-15": "covered",
+    "O-16": "covered"
+  },
+  "decisions_left": [
+    "Whether --pk, --alter and --convert have their own tests with --key. The spec says they work normally and fixes the order, but the tests only cover --flatten and --stop-after.",
+    "What `memory` does when --key or --auto-key meets a top-level JSON scalar. This follows from the helper rules but is not tested."
+  ],
+  "contradictions": [],
+  "acceptance_criteria": { "total": 29, "executable": 25 },
+  "builder_guesses": [
+    "Whether `memory` table names stay the file stem. It is implied by the tests (alaska.json gives alaska, stdin gives stdin) but never stated.",
+    "Exactly where the docs prose goes. The plan names the sections, so this is minor.",
+    "Whether memory should share the helper's error wrapping when only --key/--auto-key is given. The plan settles this."
+  ],
+  "notes": "Very complete spec: the operator-decided behavior is in tables, the error texts are exact, and the failing tests are written out in full. Almost nothing is left to guess. The docs criteria are prose checks; the gate commands (just test, just lint, cog --check) are executable.",
+  "_": ""
+}

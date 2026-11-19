@@ -1,0 +1,45 @@
+{
+  "spec": "Spec R",
+  "atoms": {
+    "R-1": "covered",
+    "R-2": "covered",
+    "R-3": "covered",
+    "R-4": "covered",
+    "R-5": "covered",
+    "R-6": "covered",
+    "R-7": "covered",
+    "R-8": "covered",
+    "O-1": "covered",
+    "O-2": "covered",
+    "O-3": "covered",
+    "O-4": "covered",
+    "O-5": "covered",
+    "O-6": "covered",
+    "O-7": "covered",
+    "O-8": "covered",
+    "O-9": "covered",
+    "O-10": "covered",
+    "O-11": "covered",
+    "O-12": "covered",
+    "O-13": "partial",
+    "O-14": "covered",
+    "O-15": "partial",
+    "O-16": "covered"
+  },
+  "decisions_left": [
+    "Whether --alter and --stop-after apply to the extracted rows: only --flatten, --convert and --pk are named, the rest is 'other options'.",
+    "Whether memory table names stay the file stem: only implied by the 'alaska' example, never stated as a rule.",
+    "Whether docs/python-api.rst must be edited: it is listed in Sources but no criterion requires it.",
+    "Whether the version number and the changelog stay untouched: not stated.",
+    "Whether --auto-key accepts input from standard input: only --key from stdin is specified."
+  ],
+  "contradictions": [],
+  "acceptance_criteria": { "total": 40, "executable": 40 },
+  "builder_guesses": [
+    "Should a docs/python-api.rst update be made, or is the rows_from_file docstring enough?",
+    "Do --alter and --stop-after apply to the extracted rows?",
+    "Should memory table names stay the file stem when --key is used?",
+    "Is a version bump or changelog edit expected?"
+  ],
+  "notes": "Very complete spec: the exact error texts are fixed, each case has a named test, and all 40 checks are runnable. The only gaps are small: the file-stem table name in memory, the python-api.rst edit, and the no-changelog/no-version-bump rule. Every operator decision is carried, including the memory :nl and CSV/TSV handling."
+}

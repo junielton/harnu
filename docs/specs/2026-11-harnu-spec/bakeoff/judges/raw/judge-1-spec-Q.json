@@ -1,0 +1,40 @@
+{
+  "spec": "Spec Q",
+  "atoms": {
+    "R-1": "covered",
+    "R-2": "covered",
+    "R-3": "covered",
+    "R-4": "covered",
+    "R-5": "covered",
+    "R-6": "covered",
+    "R-7": "covered",
+    "R-8": "covered",
+    "O-1": "covered",
+    "O-2": "covered",
+    "O-3": "covered",
+    "O-4": "covered",
+    "O-5": "covered",
+    "O-6": "covered",
+    "O-7": "covered",
+    "O-8": "covered",
+    "O-9": "covered",
+    "O-10": "covered",
+    "O-11": "covered",
+    "O-12": "covered",
+    "O-13": "partial",
+    "O-14": "covered",
+    "O-15": "covered",
+    "O-16": "covered"
+  },
+  "decisions_left": [
+    "Whether memory table names stay the file stem. The tests assume it for the Alaska file and for stdin, but no rule states it.",
+    "Whether --pk and --alter on the extracted rows get their own check. The text says 'work normally' and only --flatten and --stop-after are tested."
+  ],
+  "contradictions": [],
+  "acceptance_criteria": { "total": 37, "executable": 35 },
+  "builder_guesses": [
+    "Does memory name its tables by file stem when --key is used? The tests imply it for the Alaska fixture and stdin but never say so.",
+    "Does a 'memory' input with an explicit :json suffix but non-JSON content fail through RowsFromFileBadJSON or stay untouched? The spec does not say."
+  ],
+  "notes": "Design plus a full TDD plan with exact error texts, validation order, a key=\"\" rule, a top-level scalar rule and explicit no-version-bump and no-changelog statements. It matches nearly every operator decision, including ValueError for explicit CSV, TSV and NL formats and the memory :nl choice. There is no formal AC list, so I counted the planned tests and gates (about 37, two of them prose docs checks); only small gaps remain."
+}

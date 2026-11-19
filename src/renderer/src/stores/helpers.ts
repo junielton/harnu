@@ -323,12 +323,34 @@ function toPersistShape(state: InMemoryWorktreeState): WorktreeHelperState {
   }
 }
 
+/**
+ * Pane types an older build wrote to `helpers.json` that no build draws any more. Hydration drops them: a saved
+ * file that holds one loads without it (no error, no blank cell, no warning), and the next write leaves it out.
+ * Only the renderer filters; the main-side read of `helpers.json` stays untyped. `mission` is the Mission pane,
+ * replaced by the dropdown the Topbar pill opens.
+ */
+export const RETIRED_PANE_TYPES: readonly string[] = ['mission']
+
 /** Hydrate persisted shape into in-memory shape. */
 function fromPersistShape(state: WorktreeHelperState): InMemoryWorktreeState {
+  const kept = state.panes.filter((p) => !RETIRED_PANE_TYPES.includes(p.type))
+  if (kept.length === state.panes.length) {
+    return {
+      splitVisible: state.splitVisible,
+      splitRatio: state.splitRatio,
+      panes: state.panes as AnyHelperPane[]
+    }
+  }
+  // The survivors keep their order and their shares of the stack, renormalised to sum to 1.
+  const total = kept.reduce((n, p) => n + p.ratio, 0)
+  const panes = kept.map((p) => ({
+    ...p,
+    ratio: total > 0 ? p.ratio / total : 1 / kept.length
+  }))
   return {
-    splitVisible: state.splitVisible,
+    splitVisible: state.splitVisible && panes.length > 0,
     splitRatio: state.splitRatio,
-    panes: state.panes as AnyHelperPane[]
+    panes: panes as AnyHelperPane[]
   }
 }
 
@@ -1157,6 +1179,79 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
+   * Guided walks S-3: open the walk pane for a run, in a worktree's stack. Non-PTY and reproducible from its
+   * `payload` (`walkId`, `runId`: never content), so it persists like the memory pane and a restart restores it
+   * from the walk's record. One per walk (registry `dedupKey`): opening a walk that is already open returns the
+   * pane that has it; an agent open (`walk_open`) lands in the background and never selects the worktree.
+   */
+  function addWalkHelper(
+    worktreePath: string,
+    walkId: string,
+    runId: string,
+    opts?: AddHelperOpts & { past?: boolean }
+  ): string {
+    const id = `h-${crypto.randomUUID()}`
+    const past = opts?.past === true
+    const paneId = addHelper(
+      worktreePath,
+      {
+        id,
+        type: 'walk',
+        cwd: worktreePath,
+        ratio: 0,
+        payload: { walkId, runId, ...(past ? { past: true } : {}) }
+      },
+      opts
+    )
+    // a walk already open on an earlier run (a re-run, or a past run opened from the library) shows this one
+    if (paneId !== id) setWalkRun(worktreePath, paneId, runId, undefined, { past })
+    return paneId
+  }
+
+  /**
+   * Guided walks S-4: open the Walks library (the repo's saved walks) in a worktree's stack. One per worktree: a
+   * second call reveals the pane that is already there.
+   */
+  function addWalksHelper(worktreePath: string): string {
+    const id = `h-${crypto.randomUUID()}`
+    return addHelper(worktreePath, { id, type: 'walks', cwd: worktreePath, ratio: 0 })
+  }
+
+  /** The id of the pane that shows `walkId` in a worktree, or `undefined`. */
+  function walkHelperId(worktreePath: string, walkId: string): string | undefined {
+    return byWorktree.value
+      .get(worktreePath)
+      ?.panes.find((p) => p.type === 'walk' && (p as HelperPane).payload?.walkId === walkId)?.id
+  }
+
+  /**
+   * Point a walk pane at another run of the same walk (a re-run, or the run selector), or at another walk (the
+   * re-run offer). `past` says whether an ended run opens read-only (from the library or the selector).
+   */
+  function setWalkRun(
+    worktreePath: string,
+    paneId: string,
+    runId: string,
+    walkId?: string,
+    opts?: { past?: boolean }
+  ): void {
+    mutateWorktree(worktreePath, (s) => ({
+      ...s,
+      panes: s.panes.map((p) => {
+        if (p.id !== paneId || p.type !== 'walk') return p
+        const payload: Record<string, unknown> = {
+          ...toRaw((p as HelperPane).payload ?? {}),
+          runId,
+          ...(walkId ? { walkId } : {})
+        }
+        if (opts?.past === true) payload.past = true
+        else if (opts?.past === false) delete payload.past
+        return { ...p, payload }
+      }) as AnyHelperPane[]
+    }))
+  }
+
+  /**
    * Open a root-backed project file-tree pane (Cluster D) in a worktree's stack.
    * Non-PTY like {@link addMemoryHelper} — cheap, reproducible from `root`, so it
    * never enters `liveHelpers`.
@@ -1728,6 +1823,19 @@ export const useHelpersStore = defineStore('helpers', () => {
     })
   }
 
+  // Guided walks S-3: a session opened a walk (`walk_open`). Show the pane in the background, as every agent open
+  // does (it never selects the worktree), and tell main whether it landed: that is the `opened` the verb answers.
+  if (typeof window !== 'undefined' && window.api?.onWalkOpen) {
+    window.api.onWalkOpen(({ reqId, folder, walkId, runId }) => {
+      void ensureLoaded(folder)
+        .then(() => {
+          const paneId = addWalkHelper(folder, walkId, runId, { origin: 'agent' })
+          window.api.walkOpened({ reqId, paneId })
+        })
+        .catch(() => window.api.walkOpened({ reqId, paneId: null }))
+    })
+  }
+
   return {
     byWorktree,
     currentWorktreePath,
@@ -1764,6 +1872,10 @@ export const useHelpersStore = defineStore('helpers', () => {
     patchBrowserPayload,
     addMemoryHelper,
     addExplorerHelper,
+    addWalkHelper,
+    addWalksHelper,
+    walkHelperId,
+    setWalkRun,
     addReviewCompanionHelper,
     promoteReviewCompanion,
     canPromoteReviewCompanion,

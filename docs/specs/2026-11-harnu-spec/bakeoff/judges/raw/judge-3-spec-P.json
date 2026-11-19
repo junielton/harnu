@@ -1,0 +1,45 @@
+{
+  "spec": "Spec P",
+  "atoms": {
+    "R-1": "covered",
+    "R-2": "covered",
+    "R-3": "covered",
+    "R-4": "covered",
+    "R-5": "covered",
+    "R-6": "covered",
+    "R-7": "covered",
+    "R-8": "covered",
+    "O-1": "covered",
+    "O-2": "covered",
+    "O-3": "covered",
+    "O-4": "covered",
+    "O-5": "covered",
+    "O-6": "covered",
+    "O-7": "covered",
+    "O-8": "covered",
+    "O-9": "contradicted",
+    "O-10": "covered",
+    "O-11": "partial",
+    "O-12": "covered",
+    "O-13": "partial",
+    "O-14": "covered",
+    "O-15": "covered",
+    "O-16": "covered"
+  },
+  "decisions_left": [
+    "Whether --alter, --convert and --stop-after apply to the extracted rows: only --flatten is stated, and --pk appears in the upsert test.",
+    "Whether memory table names stay the file stem: only the stdin and alaska examples show it, with no explicit rule.",
+    "Whether a version bump or changelog edit is expected: not stated.",
+    "What the CLI should do with a --key list that holds non-object elements: the spec defers this to the existing 'Rows must all be dictionaries' error."
+  ],
+  "contradictions": [
+    "R-4 says 'a single key whose value is a list of objects' vs D-1 and the candidate-key definition (one candidate key, other keys ignored). R-4 is annotated as superseded, so this is a mild tension rather than a real conflict."
+  ],
+  "acceptance_criteria": { "total": 32, "executable": 32 },
+  "builder_guesses": [
+    "Do --alter, --convert and --stop-after apply to the extracted rows?",
+    "Should memory table names stay the file stem when --key is used?",
+    "Is a version bump or changelog edit expected?"
+  ],
+  "notes": "A very detailed, well-reviewed spec, and every acceptance criterion names a test or a script. Its one real miss against the answer sheet is that rows_from_file() ignores key/auto_key for explicit CSV/TSV/NL instead of raising ValueError (NG-5, AC-8). It also omits the file-stem rule for memory table names and does not say whether the changelog or a version bump is expected."
+}

@@ -187,7 +187,7 @@ export function annotateSuperseded(
 
 // ---- Recall (AC-6.3) ---------------------------------------------------------
 
-/** What a new mission or campaign is about: the repo paths it scopes and the titles it will carry. */
+/** What a new mission is about: the repo paths it scopes and the titles it will carry. */
 export interface RecallQuery {
   /** Repo-relative paths (a file or a directory). */
   paths: readonly string[]

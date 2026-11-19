@@ -13,6 +13,7 @@ import { migrateFolderDataDirLazily } from './migrations/data-dir-boot'
 import { terminalLeases } from './terminal-lease'
 import { browserLeases } from './browser/lease-singleton'
 import { sanitizeTrustedHosts, MAX_TRUSTED_HOSTS } from '../shared/browser-trusted-hosts'
+import { clampMinLines } from './doc-reader/gate-core'
 
 /**
  * One worktree entry in a persisted project record. Vestigial under the
@@ -162,6 +163,13 @@ export interface UserProject {
    * (`resolveSkillEnabled` in `bundled-skills-core.ts`).
    */
   skills?: Record<string, boolean>
+  /**
+   * T2: the doc-reader gate's line threshold for this folder (Settings → Skills, folder scope).
+   * Absent means the default (350, `DOC_READER_DEFAULT_MIN_LINES`). Keyed by the record's own
+   * path like {@link skills}: a worktree does not inherit its repo's value. Always read through
+   * `clampMinLines`, so a hand-edited file cannot disable the gate with a huge or tiny number.
+   */
+  docReaderMinLines?: number
   /**
    * T344: "new sessions start as Orchestrator" — every plain `claude-new`
    * session an OPERATOR starts in this folder ("+ New session", the New
@@ -1139,6 +1147,59 @@ export async function getUserProjectSkills(targetPath: string): Promise<Record<s
   return own?.skills ?? {}
 }
 
+/** T2: the doc-reader threshold for `targetPath`, or `null` when the folder uses the default. */
+export async function getUserProjectDocReaderMinLines(targetPath: string): Promise<number | null> {
+  const file = await readUserProjects()
+  const normalizedPath = await normalizePath(targetPath)
+  const own = file.projects.find((p) => p.path === normalizedPath)
+  return own?.docReaderMinLines === undefined ? null : clampMinLines(own.docReaderMinLines)
+}
+
+/**
+ * T2: set (a number, clamped) or clear (`null`) the doc-reader threshold for one folder. Creates
+ * the record when there is none, like {@link setUserProjectSkill}. Idempotent.
+ */
+export async function setUserProjectDocReaderMinLines(
+  targetPath: string,
+  minLines: number | null
+): Promise<UserProjectsFile> {
+  const value = minLines === null ? undefined : clampMinLines(minLines)
+  return withFileLock(userProjectsPath(), async () => {
+    const file = await readUserProjects()
+    const normalizedPath = await normalizePath(targetPath)
+    const idx = file.projects.findIndex((p) => p.path === normalizedPath)
+    if (idx === -1) {
+      if (value === undefined) return file
+      const created: UserProject = {
+        path: normalizedPath,
+        alias: path.basename(normalizedPath),
+        addedAt: new Date().toISOString(),
+        worktrees: [],
+        docReaderMinLines: value
+      }
+      const next: UserProjectsFile = {
+        version: 1,
+        projects: [...file.projects, created],
+        hiddenPaths: (file.hiddenPaths ?? []).filter((p) => p !== normalizedPath)
+      }
+      await writeUserProjects(next)
+      return next
+    }
+    if (file.projects[idx].docReaderMinLines === value) return file
+    const next: UserProjectsFile = {
+      version: 1,
+      projects: file.projects.map((p, i) => {
+        if (i !== idx) return p
+        const { docReaderMinLines: _drop, ...rest } = p
+        return value === undefined ? rest : { ...rest, docReaderMinLines: value }
+      }),
+      hiddenPaths: file.hiddenPaths ?? []
+    }
+    await writeUserProjects(next)
+    return next
+  })
+}
+
 /**
  * Set (or CLEAR) one per-folder bundled-skill override (T217). `enabled: undefined`
  * removes the key, which restores inheritance from the global toggle — that is the
@@ -1385,6 +1446,30 @@ export interface HiddenPathsChange {
 
 const hiddenListeners = new Set<(change: HiddenPathsChange) => void>()
 
+const folderRemovedListeners = new Set<(path: string) => void>()
+
+/**
+ * Subscribe to folders that were REMOVED (not merely hidden): a project unpinned through
+ * {@link removeUserProject}, and a ghost reconciled by {@link removeGhostFolder}. Returns the
+ * unsubscribe. A listener that throws never breaks the removal.
+ */
+export function onFolderRemoved(listener: (path: string) => void): () => void {
+  folderRemovedListeners.add(listener)
+  return () => {
+    folderRemovedListeners.delete(listener)
+  }
+}
+
+function announceFolderRemoved(removedPath: string): void {
+  for (const listener of [...folderRemovedListeners]) {
+    try {
+      listener(removedPath)
+    } catch (err) {
+      console.error('[user-projects] folder-removed listener threw', err)
+    }
+  }
+}
+
 /**
  * Subscribe to hidden-list changes made through {@link transactHiddenPaths} (the `hide_folder`
  * verb). The sidebar's own `hideUserProject` / `unhideUserProject` do NOT notify: the renderer
@@ -1498,6 +1583,9 @@ export async function removeUserProject(targetPath: string): Promise<UserProject
 
   if (!removedProject) return next
 
+  announceFolderRemoved(removedProject.path)
+  for (const wt of removedProject.worktrees) announceFolderRemoved(wt.path)
+
   // T474: the folder's read opt-in went with it, and a write lease rides on that opt-in. Ending
   // the leases here means removing the folder, re-adding it and opting in again cannot revive an
   // approval the operator gave before they removed it.
@@ -1588,6 +1676,8 @@ async function reconcileGhost(
 
   if (wasPinned) await removeUserProject(normalizedPath)
   if (wasHidden) await unhideUserProject(normalizedPath)
+
+  announceFolderRemoved(normalizedPath)
 
   const win = getWindow()
   if (win && !win.isDestroyed()) {

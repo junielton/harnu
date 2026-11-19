@@ -1,0 +1,23 @@
+[
+  {
+    "id": "standard-card",
+    "entry": "Card T900 · complexity: standard · Export rows as CSV from the Folder View.",
+    "complexity": "standard",
+    "records": false,
+    "tier": "Medium"
+  },
+  {
+    "id": "standard-card-with-decision",
+    "entry": "Card T901 · complexity: standard · Cap the export size, and decide with the operator whether the cap is per folder or global.",
+    "complexity": "standard",
+    "records": true,
+    "tier": "Large"
+  },
+  {
+    "id": "complex-card",
+    "entry": "Card T902 · complexity: complex · A new Export takeover with its own screens and a new main-process service.",
+    "complexity": "complex",
+    "records": false,
+    "tier": "Complex"
+  }
+]

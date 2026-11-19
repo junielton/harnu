@@ -1,0 +1,111 @@
+{
+  "_note": "Each mutation is applied to the real text it targets (skill = SKILL.md, catalog = CATALOG.md, userDoc = docs/user/bundled-skills.md). A mutation names a literal `find` or a regex `pattern`; the test first asserts it matches, then that the named check reports at least one problem on the mutated text.",
+  "smallDoors": [
+    {
+      "target": "skill",
+      "find": "No spec file, no mission, no sub-agent, no lint run, no tool call",
+      "replace": "No spec file, no sub-agent, no lint run",
+      "why": "the Small path must rule out a mission and any tool call"
+    },
+    {
+      "target": "skill",
+      "find": "- a PR comment, a red CI → `A PR comment / red CI`",
+      "replace": "- a PR comment → `A PR comment / red CI`",
+      "why": "a red CI entry no longer has a documented door"
+    },
+    {
+      "target": "skill",
+      "find": "→ `A question`, then an ADR (`docs/adr/NNNN-<slug>.md`), never a spec",
+      "replace": "→ `A question`, then a spec",
+      "why": "an architectural question must go to an ADR"
+    },
+    {
+      "target": "skill",
+      "find": "| commit on the existing branch; no spec |",
+      "replace": "|                                        |",
+      "why": "every funnel row needs its becomes cell, verbatim"
+    }
+  ],
+  "tiers": [
+    {
+      "target": "skill",
+      "find": "- `standard` with a D-n or a non-goal to record → **Large**",
+      "replace": "- `standard` with a D-n or a non-goal to record → **Medium**",
+      "why": "D-7: a standard card with something to record is Large"
+    },
+    {
+      "target": "skill",
+      "find": "One word overrides it",
+      "replace": "The tier is final",
+      "why": "the operator overrides the tier with one word"
+    }
+  ],
+  "shape": [
+    {
+      "target": "skill",
+      "find": "\n## Triage\n",
+      "replace": "\n## Before you start\n\nRead the lessons first.\n\n## Triage\n",
+      "why": "triage must be the first section"
+    },
+    {
+      "target": "skill",
+      "find": "**Small ends here.**",
+      "replace": "**Small ends here.**\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+      "why": "the triage section is at most 40 lines"
+    },
+    {
+      "target": "skill",
+      "find": "**Small ends here.**",
+      "replace": "**Small ends here.** First call `mission_create` for the entry.",
+      "why": "the Medium-and-up procedure must not leak into triage"
+    }
+  ],
+  "description": [
+    {
+      "target": "skill",
+      "find": "most calls end Small",
+      "replace": "it writes a spec",
+      "why": "the description must say most calls end Small"
+    },
+    {
+      "target": "skill",
+      "find": "- `/harnu:spec check [--cards]`",
+      "replace": "- `/harnu:spec derive` — turn the slices into cards.\n- `/harnu:spec check [--cards]`",
+      "why": "exactly two verbs, never derive"
+    }
+  ],
+  "registered": [
+    {
+      "target": "catalog",
+      "pattern": "<!-- harnu-skills v\\d+ ",
+      "replace": "<!-- harnu-skills v13 ",
+      "why": "the catalog marker must be at least v14"
+    },
+    {
+      "target": "userDoc",
+      "find": "| `spec`",
+      "replace": "| `spec-old`",
+      "why": "the user doc must list the skill"
+    }
+  ],
+  "checkVerb": [
+    {
+      "target": "skill",
+      "find": "node <skill directory>/scripts/spec-check.mjs <spec-path> --cards\n",
+      "replace": "",
+      "why": "the --cards command line must be given exactly"
+    },
+    {
+      "target": "skill",
+      "find": "base directory",
+      "replace": "repo root",
+      "why": "the skill directory is the base directory the session is told"
+    },
+    {
+      "target": "skill",
+      "find": "**Resolving `<spec-path>`**",
+      "replace": "If the script is missing, check by hand: read the AC table and compare each card line.\n\n**Resolving `<spec-path>`**",
+      "why": "no by-hand variant of the checks"
+    }
+  ]
+}

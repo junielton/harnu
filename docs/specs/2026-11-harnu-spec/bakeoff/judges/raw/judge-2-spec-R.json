@@ -1,0 +1,51 @@
+{
+  "spec": "Spec R",
+  "atoms": {
+    "R-1": "covered",
+    "R-2": "covered",
+    "R-3": "covered",
+    "R-4": "covered",
+    "R-5": "covered",
+    "R-6": "covered",
+    "R-7": "covered",
+    "R-8": "covered",
+    "O-1": "covered",
+    "O-2": "covered",
+    "O-3": "covered",
+    "O-4": "covered",
+    "O-5": "covered",
+    "O-6": "covered",
+    "O-7": "covered",
+    "O-8": "covered",
+    "O-9": "covered",
+    "O-10": "covered",
+    "O-11": "covered",
+    "O-12": "covered",
+    "O-13": "partial",
+    "O-14": "covered",
+    "O-15": "partial",
+    "O-16": "covered"
+  },
+  "decisions_left": [
+    "Behavior of --key with a top-level JSON scalar (5, \"x\", null): the spec only settles top-level lists.",
+    "Behavior of --auto-key with a top-level JSON scalar.",
+    "Whether --key/--auto-key combined with --code is an error or ignored.",
+    "Whether docs/python-api.rst must be updated: the docs criteria name only cli.rst, the docstring and cli-reference.rst.",
+    "Whether a version bump or changelog edit is forbidden: the spec does not say.",
+    "Whether memory table names stay the file stem: implied by the examples, never stated.",
+    "In memory with several JSON inputs and --key, what happens when one file lacks the key: implied to be an error, not stated or checked.",
+    "Whether --alter, --convert and --stop-after apply to the extracted rows: covered only by the generic 'other options apply' line, with no check."
+  ],
+  "contradictions": [],
+  "acceptance_criteria": { "total": 40, "executable": 40 },
+  "builder_guesses": [
+    "What does --key do with a top-level scalar JSON document?",
+    "Does --auto-key on a top-level scalar behave as it does today?",
+    "Is --code with --key or --auto-key an error?",
+    "Is docs/python-api.rst expected to change?",
+    "Is a changelog or version change forbidden?",
+    "Do memory table names stay the file stem?",
+    "Which exit and message applies in memory when a second JSON file lacks the key?"
+  ],
+  "notes": "Strong, fully mapped spec: every criterion has a named test or command, error texts are exact, and the operator-settled rows are carried. It leaves some corners open: top-level scalars, --code, python-api.rst, and the no-version-bump rule. The test names use a placeholder-free pytest proof format, so the proof column is machine-runnable."
+}

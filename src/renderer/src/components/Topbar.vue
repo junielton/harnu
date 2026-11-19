@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
@@ -20,6 +20,8 @@ import {
   TOPBAR_BAR_ORDER,
   TOPBAR_BRANCH_MIN_PX,
   TOPBAR_MIN_TITLE_PX,
+  titleFloor,
+  regionMin,
   clusterBudget,
   planTopbarOverflow,
   type TopbarActionId,
@@ -38,6 +40,7 @@ import {
   KanbanSquare,
   GitPullRequest,
   Github,
+  Library,
   Plus,
   Columns2,
   Rows2,
@@ -339,6 +342,7 @@ const TEST_ID: Record<TopbarActionId, string> = {
   roadmap: 'topbar-roadmap',
   'pr-stack': 'topbar-pr-stack',
   review: 'topbar-review',
+  walks: 'topbar-walks',
   'open-folder': 'topbar-open-folder',
   editor: 'topbar-editor',
   'github-pulls': 'topbar-github-pulls',
@@ -400,6 +404,15 @@ const allActions = computed<TopbarActionView[]>(() => {
       state: on(reviewActive.value),
       run: onReviewClick
     }),
+    // Guided walks S-4: the Walks library (the repo's saved walks) in the helper stack. It has no chord yet; the
+    // label is its tooltip and, when the bar is narrow, its row in the `…` menu.
+    view('walks', t('topbar.walks'), {
+      icon: Library,
+      run: () => {
+        const wt = sessions.activeFolderPath
+        if (wt) helpers.addWalksHelper(wt)
+      }
+    }),
     view('open-folder', t('topbar.openFolder'), {
       icon: FolderOpen,
       run: () => folderActions.openInFileManager()
@@ -451,6 +464,8 @@ const headerEl = ref<HTMLElement | null>(null)
 const hiddenIds = ref<TopbarActionId[]>([])
 /** The title region's `min-width`: the title's floor plus the badges after it (measured by `planOverflow`). */
 const regionMinPx = ref(TOPBAR_MIN_TITLE_PX)
+/** The title's own floor: {@link TOPBAR_MIN_TITLE_PX}, less when the badges and the Mission pill need the room. */
+const titleMinPx = ref(TOPBAR_MIN_TITLE_PX)
 const barActions = computed(() => allActions.value.filter((a) => !hiddenIds.value.includes(a.id)))
 const menuActions = computed(() => allActions.value.filter((a) => hiddenIds.value.includes(a.id)))
 
@@ -474,13 +489,15 @@ function planOverflow(): void {
     const min = Number(el.dataset.topbarExtraMin)
     extrasWidth += (min > 0 ? min : el.offsetWidth) + 8
   })
-  regionMinPx.value = TOPBAR_MIN_TITLE_PX + extrasWidth
-  const available = clusterBudget({
+  const budget = {
     headerWidth: header.clientWidth,
     paddingX: (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0),
     hasCrumb: hasCrumb.value,
     extrasWidth
-  })
+  }
+  titleMinPx.value = titleFloor(budget)
+  regionMinPx.value = regionMin(budget)
+  const available = clusterBudget(budget)
   const plan = planTopbarOverflow({
     present: allActions.value.map((a) => a.id),
     available,
@@ -513,6 +530,11 @@ watch(
   planOverflow,
   { flush: 'post' }
 )
+
+/** The Mission pill came, went or changed width (it cannot shrink, so the plan reserves it): measure again. */
+function replanAfterPill(): void {
+  void nextTick(planOverflow)
+}
 
 function runHidden(id: TopbarActionId): void {
   allActions.value.find((a) => a.id === id)?.run()
@@ -589,8 +611,8 @@ function onKeydown(e: KeyboardEvent): void {
       <div class="flex flex-1 items-center gap-2" :style="{ minWidth: `${regionMinPx}px` }">
         <FolderIcon :size="12" :stroke-width="1.6" class="shrink-0 text-text-4" />
         <span
-          class="truncate text-text"
-          :style="`font-size: 13px; font-weight: 500; min-width: ${TOPBAR_MIN_TITLE_PX}px`"
+          class="shrink-[1000] truncate text-text"
+          :style="`font-size: 13px; font-weight: 500; min-width: ${titleMinPx}px`"
           data-test="topbar-title"
           >{{ activeFolderLabel }}</span
         >
@@ -631,7 +653,7 @@ function onKeydown(e: KeyboardEvent): void {
       <div class="flex flex-1 items-center gap-2" :style="{ minWidth: `${regionMinPx}px` }">
         <span
           ref="titleEl"
-          class="truncate rounded text-text outline-none transition"
+          class="shrink-[1000] truncate rounded text-text outline-none transition"
           :class="isTerminal ? 'cursor-default' : 'cursor-text'"
           :style="`
             font-size: 13px;
@@ -640,7 +662,7 @@ function onKeydown(e: KeyboardEvent): void {
             margin: -2px -5px;
             border: 1px solid transparent;
             box-sizing: border-box;
-            min-width: ${TOPBAR_MIN_TITLE_PX}px;
+            min-width: ${titleMinPx}px;
             -webkit-app-region: no-drag;
           `"
           data-test="topbar-title"
@@ -675,11 +697,12 @@ function onKeydown(e: KeyboardEvent): void {
           <Crown :size="10" :stroke-width="1.8" class="shrink-0" />
           {{ $t('topbar.orchestratorBadge') }}
         </span>
-        <!-- Mission "N of M done" pill (T370, Mission v2) — clickable, opens the progress
-             popover; renders nothing when this session owns no open mission. -->
+        <!-- Mission pill (T370; Missions v4) — clickable, toggles the Mission dropdown; renders
+             nothing when this session is in no open mission. -->
         <MissionPill
           v-if="!isTerminal && sessions.selectedSession"
           :session-id="sessions.selectedSession.sessionId"
+          @layout="replanAfterPill"
         />
       </div>
     </template>

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "one-line-bug",
+    "entry": "The Settings close button's tooltip says Save; it should say Close.",
+    "kind": "a one-line bug",
+    "door": "A bug",
+    "tier": "Small",
+    "adr": false
+  },
+  {
+    "id": "pr-comment",
+    "entry": "Reviewer on #312: please rename `rowsFor` to `rowsForFolder` in the helper.",
+    "kind": "a PR comment",
+    "door": "A PR comment / red CI",
+    "tier": "Small",
+    "adr": false
+  },
+  {
+    "id": "red-ci",
+    "entry": "CI is red on my branch: the lint job fails on an unused import.",
+    "kind": "a red CI",
+    "door": "A PR comment / red CI",
+    "tier": "Small",
+    "adr": false
+  },
+  {
+    "id": "question",
+    "entry": "Where does the staged skills stamp file live?",
+    "kind": "a question",
+    "door": "A question",
+    "tier": "Small",
+    "adr": false
+  },
+  {
+    "id": "architectural-question",
+    "entry": "Should the derive planner run in the main process or stay a script inside the skill? Whichever we pick, every later skill copies it.",
+    "kind": "a question that grows into an architectural decision",
+    "door": "A question",
+    "tier": "Small",
+    "adr": true
+  }
+]

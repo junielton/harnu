@@ -4,8 +4,6 @@
 // gc-remote-facts.ts and gc-remote-service.ts; this file only runs commands, and fails closed.
 // Nothing here runs on a gather.
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { spawnEnvOnce } from '../appimage-env'
 import { inferGhResource, runGh } from '../gh-runner'
 import type { WorktreeBundle } from './bundle-core'
@@ -17,8 +15,8 @@ import {
   type RemoteRunners
 } from './gc-remote-facts'
 import { createRemoteFactsService, type RemoteFactsService } from './gc-remote-service'
+import { runFile as run } from '../spawn-runner'
 
-const run = promisify(execFile)
 const OPTS = { windowsHide: true, timeout: 30_000, maxBuffer: 4 << 20 } as const
 
 export const realRemoteRunners: RemoteRunners = {

@@ -1,0 +1,165 @@
+# Loading JSON records nested under a top-level key — design
+
+Date: 2026-11-07
+
+## Intent
+
+A lot of real-world JSON wraps its records in an object, like this export from
+https://www.elections.alaska.gov/election-results/e/ :
+
+```json
+{
+  "Version": "5.5.52.6",
+  "List": [
+    {"Description": "Nonpartisan", "Id": 1, "ExternalId": ""},
+    {"Description": "Undeclared", "Id": 2, "ExternalId": ""}
+  ]
+}
+```
+
+Today `sqlite-utils` treats a top-level object as a single row, so this file goes in
+as one row with `List` stored as a JSON text column. Users have to run it through
+`jq .List` first. This feature lets sqlite-utils take the records out of the wrapper
+itself, either from a key the user names or by finding the one key that holds a
+list of objects.
+
+## Goals
+
+- `--key KEY`: read the rows from the named top-level key.
+- `--auto-key`: find the single top-level key that holds a non-empty list of objects
+  and read the rows from it.
+- Available on `insert`, `upsert`, `bulk` and `memory`, and in Python through
+  `sqlite_utils.utils.rows_from_file(..., key=None, auto_key=False)`.
+- Every other option (`--flatten`, `--pk`, `--alter`, `--convert`, `--stop-after`,
+  `--batch-size`, …) works normally on the extracted rows.
+
+## Non-goals and anti-goals
+
+- **No change for anyone who doesn't opt in.** Without `--key` / `--auto-key` (or
+  `key=` / `auto_key=` in Python), every command and `rows_from_file()` behaves
+  exactly as it does now. In particular `{"id": 1, "name": "Cleo"}` is still
+  inserted as one row. Breaking this would be a failure even if the feature works.
+- No automatic detection without the flag.
+- No nested paths (`--key a.b`), no JSONPath or jq syntax.
+- No version bump and no `docs/changelog.rst` edit.
+
+## Behavior (decided by the operator)
+
+### "Qualifying" key (for `--auto-key`)
+
+A top-level key **qualifies** when its value is a **non-empty list in which every
+element is an object** (a dict). An empty list does not qualify.
+
+### `--auto-key` / `auto_key=True`
+
+| Input                            | Result                                                         |
+| -------------------------------- | -------------------------------------------------------------- |
+| top-level list                   | no-op: imports exactly as today                                |
+| object, exactly one key qualifies | that list becomes the rows; sibling keys (e.g. `Version`) are ignored |
+| object, no key qualifies          | error                                                          |
+| object, more than one qualifies   | error that names **every** qualifying key                      |
+
+### `--key KEY` / `key="KEY"`
+
+| Input                                         | Result                                                     |
+| --------------------------------------------- | ---------------------------------------------------------- |
+| top-level list                                | error (there's no object to read a key from)               |
+| object without `KEY`                          | error that names the key                                   |
+| `KEY` holds an object                         | that object is one row                                     |
+| `KEY` holds a string, number, boolean or null | error                                                      |
+| `KEY` holds a list of objects                 | those are the rows                                         |
+| `KEY` holds a list containing non-objects     | handled exactly like a top-level list of non-objects today (no new rule) |
+| `KEY` holds an empty list                     | zero rows, success, exactly like an empty top-level list today |
+
+### Combinations
+
+- `--key` and `--auto-key` together: error. In Python, `key=` and `auto_key=True`
+  together raise `ValueError`.
+- `insert`, `upsert`, `bulk`: either option combined with `--csv`, `--tsv`, `--nl`,
+  `--lines` or `--text` is an error.
+- `memory`: the options apply to the inputs that are JSON. CSV/TSV inputs in the same
+  call import as today, with no error.
+- `rows_from_file()`: an explicit `format=` of `Format.CSV`, `Format.TSV` or
+  `Format.NL` together with `key=`/`auto_key=True` raises `ValueError`. With format
+  detection (`format=None`), the arguments apply only when JSON is detected, and a
+  detected CSV/TSV file reads as today.
+
+### Errors
+
+- CLI: every new error is a normal Click error, with a message, a non-zero exit code
+  and no traceback. That includes `memory`.
+- Python: a missing key, `key=` on a top-level list, a `key=` value that is a
+  scalar or null, and no or several qualifying keys under `auto_key=True` all raise
+  `sqlite_utils.utils.RowsFromFileBadJSON`. The message includes the key name or names
+  where it applies.
+
+### Docs
+
+- `docs/cli.rst`: a new subsection under "Inserting JSON data" (`cli_inserting_data`)
+  that uses the Alaska example above for both `--key List` and `--auto-key`. Mention
+  the options in the `memory` section ("Running queries directly against CSV or JSON")
+  and wherever `bulk` refers back to the insert formats.
+- `docs/python-api.rst`: the "Reading rows from a file" section
+  (`python_api_rows_from_file`) documents `key=` and `auto_key=` with an example,
+  in addition to the autodoc'd docstring.
+- The `rows_from_file()` docstring gets `:param key:` and `:param auto_key:` entries.
+- `docs/cli-reference.rst` is regenerated with cog (`just cog`), not edited by hand.
+
+## Builder's calls (made by me, the designer; not requested by the operator)
+
+1. **`memory` with an explicit `file:nl` input:** imports as today with no error and
+   the options don't apply, the same way CSV/TSV inputs are handled in `memory`.
+   The options apply to inputs with format `:json` or detected as JSON. (In
+   `memory`, `--nl` is an *output* option, so there's no input-format conflict to
+   check.)
+2. **`memory` with several JSON inputs:** the options apply to each JSON input
+   separately. With `--auto-key`, each file resolves its own qualifying key. With
+   `--key`, every JSON input must contain that key, or the call fails.
+3. **`--code` together with `--key`/`--auto-key`:** error. Add both options to the
+   existing "--code cannot be used with input format options" check in
+   `insert_upsert_implementation`, which keeps that message.
+4. **Error wording** (CLI and `RowsFromFileBadJSON` share the same text):
+   - `--key and --auto-key cannot be used together` (Python: `key= and auto_key= cannot be used together`)
+   - `--key/--auto-key can only be used with JSON input` (`insert`/`upsert`/`bulk` with `--csv`, `--tsv`, `--nl`, `--lines` or `--text`). Python's `ValueError` for an explicit CSV/TSV/NL `format=` reads `key= and auto_key= can only be used with JSON`.
+   - `Key 'List' not found in JSON object`
+   - `Key 'List' must contain a list or an object, got string`. The last word is the
+     JSON type name from a fixed mapping (`string`, `number`, `boolean`, `null`), not
+     the Python type name. Check `bool` before `int`/`float`, because `True` is an
+     `int` in Python.
+   - `Cannot use key 'List': JSON is a list, not an object`
+   - `No key in JSON object contains a list of objects`
+   - `Multiple keys contain a list of objects: 'A', 'B' - use --key to pick one` (keys listed in document order)
+5. **Where the logic lives:** one helper in `sqlite_utils/utils.py` that takes a decoded
+   JSON value plus `key`/`auto_key` and returns the decoded value to treat as rows (or
+   raises `RowsFromFileBadJSON`). The `rows_from_file()` JSON branch calls it, and so
+   does the JSON branch of `insert_upsert_implementation` in `cli.py`, which turns
+   `RowsFromFileBadJSON` into `click.ClickException`. `memory` catches
+   `RowsFromFileBadJSON` around `rows_from_file()` **only when `--key`/`--auto-key`
+   was given**, so the existing non-opt-in traceback for bad JSON there stays as it
+   is (keeping non-opt-in behavior unchanged).
+6. **Order:** key extraction happens right after `json.load`, before the existing
+   "dict → [dict]" wrapping, `--flatten`, `--convert` and `--stop-after`. A `--key`
+   value that holds an object is then wrapped as one row by the same existing code.
+7. **Top-level JSON scalar** (`5`, `"x"`, `null`): with `--auto-key` this behaves
+   exactly as today, because the option is a no-op for anything that isn't an object.
+   With `--key` it is an error, `Cannot use key 'List': JSON is a <type>, not an object`,
+   using the same JSON type names. Python raises `RowsFromFileBadJSON`.
+8. **Order of validation:** the option-conflict checks (`--key` with `--auto-key`,
+   either option with a non-JSON input flag or `--code`) run before any input is read,
+   alongside the existing conflict checks such as `Use just one of --nl, --csv or --tsv`.
+9. **`bulk`** calls `insert_upsert_implementation` with keyword arguments, so `bulk`
+   passes the two new values through explicitly.
+10. **Help text:** `--key` reads "Read rows from this top-level key of a JSON object",
+   and `--auto-key` reads "Read rows from the single top-level key of a JSON object
+   that holds a list of objects". For `insert`/`upsert`/`bulk` add the options to
+   `_import_options` (all three use them). For `memory`, add them as separate options
+   on the command.
+
+## Left to the builder
+
+- Exact test layout. Expected homes: `tests/test_cli_insert.py`, `tests/test_cli_bulk.py`,
+  `tests/test_cli_memory.py`, `tests/test_rows_from_file.py`. Every row of the two
+  behavior tables above needs a test, plus a regression test that a plain object
+  without the flags is still a single row in each command.
+- Running the repo's own gates: `just test` and `just lint` (black, flake8, mypy,
+  pyright, ty, `cog --check`, codespell).

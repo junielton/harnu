@@ -13,7 +13,6 @@
  * Harnu run the CLI on a directory it did not discover itself (P4W1-S3).
  */
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
@@ -48,6 +47,7 @@ import {
   type PolicyState,
   type RootCandidate
 } from './mods-audit-core'
+import { runFile } from './spawn-runner'
 
 export type { ModRow, ModsAuditView } from './mods-audit-core'
 
@@ -576,26 +576,25 @@ function runCli(bin: string, args: string[], opts: { timeoutMs: number }): Promi
   return new Promise((resolve) => {
     // Neutral cwd and a sanitised env, like usage.ts: a project's CLAUDE.md and hooks
     // are not loaded, and an AppImage's $APPDIR-rooted PATH does not leak into the child.
-    execFile(
-      bin,
-      args,
-      {
-        cwd: os.homedir(),
-        env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
-        timeout: opts.timeoutMs,
-        maxBuffer: MAX_BUFFER,
-        encoding: 'utf8'
-      },
-      (err, stdout, stderr) => {
-        if (!err) {
-          resolve({ stdout, stderr, code: 0, timedOut: false, spawnError: false })
-          return
+    runFile(bin, args, {
+      cwd: os.homedir(),
+      env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
+      timeout: opts.timeoutMs,
+      maxBuffer: MAX_BUFFER
+    }).then(
+      ({ stdout, stderr }) =>
+        resolve({ stdout, stderr, code: 0, timedOut: false, spawnError: false }),
+      (err: unknown) => {
+        const e = err as {
+          killed?: boolean
+          code?: number | string
+          stdout?: string
+          stderr?: string
         }
-        const e = err as unknown as { killed?: boolean; code?: number | string }
         const exited = typeof e.code === 'number'
         resolve({
-          stdout: stdout ?? '',
-          stderr: stderr ?? '',
+          stdout: e.stdout ?? '',
+          stderr: e.stderr ?? '',
           code: exited ? (e.code as number) : null,
           timedOut: e.killed === true,
           spawnError: !exited && e.killed !== true

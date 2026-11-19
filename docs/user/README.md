@@ -12,6 +12,8 @@ Harnu is a desktop app that turns the sprawl of running and idle Claude Code ses
 - [Bundled skills](bundled-skills.md) — the skills Harnu ships, the per-skill on/off panel, per-project overrides, and the opt-in install outside Harnu.
 - [Mods](mods.md) — Settings → Mods: the mods your sessions can load and what each one can do, read from its source. Read-only; it points at where each mod is switched on or off.
 - [Project memory](project-memory.md) — `.harnu/memory/`, the hot/decisions/roadmap pages, the memory pane.
+- [Missions](missions.md) — the Mission dropdown, the one place a mission lives: the pill in the top bar that opens it, your next step, the tree, and what you can do on an open step. The pane that used to hold a mission, and the popups and review lists, are gone.
+- [Guided test walk](guided-test-walk.md) — a pane that walks you through a feature, a pull request or a mission one check at a time: the roadmap, the five answers, what to do when something fails, Explain more, and the close-out.
 - [Roadmap board](roadmap-board.md) — the kanban, card kinds, dispatch, the manifest gate, substrate, model routing.
 - [Review pane](review-pane.md) — the branch diff plus its receipts, side by side
   with the card that asked for it: what changed, what is missing, Close or bounce back.

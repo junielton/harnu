@@ -5,53 +5,61 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
-  buildMissionFileContent,
-  parseMissionFile,
-  LEDGER_KINDS,
-  type Mission,
-  type MissionStep
-} from '../src/main/mission-core'
-import {
-  appendLedgerRow,
   hasLedgerRow,
   lastLedgerDetail,
-  ledgerTail,
   mergeLedger,
   pickLedgerTargets,
-  LEDGER_TAIL
+  LEDGER_KINDS,
+  LEDGER_TAIL,
+  type LedgerRow
 } from '../src/main/mission-ledger'
+import { parseV3MissionFile, type V3Mission } from '../src/main/missions/v3-read'
+import { buildV3MissionFile } from './helpers/v3-mission-file'
 
 const at = '2026-10-30T10:00:00.000Z'
 
-function step(id: string, links: MissionStep['links'] = []): MissionStep {
-  return {
-    id,
-    ordinal: Number(id.slice(4)),
-    kind: 'custom',
-    title: id,
-    verification: 'existence',
-    proof: 'unproven',
-    links,
-    blockers: []
-  }
+type Step = { id: string; links: Array<{ kind: string; ref: string }>; card?: string }
+
+function step(id: string, links: Step['links'] = []): Step {
+  return { id, links }
 }
 
-function mission(over: Partial<Mission> = {}): Mission {
-  return {
+function mission(over: Partial<{ id: string; status: string; steps: Step[] }> = {}): {
+  id: string
+  status: string
+  steps: Step[]
+} {
+  return { id: 'mnt-00000001', status: 'active', steps: [step('stp-1'), step('stp-2')], ...over }
+}
+
+/** A complete v3 file's frontmatter, with the ledger the caller gives it. */
+function v3File(ledger?: unknown[]): string {
+  return buildV3MissionFile({
     id: 'mnt-00000001',
     slug: 'm',
     folder: '/repo',
     owner: { sessionId: 'o', folder: '/repo' },
     status: 'active',
     declaredEnd: { kind: 'code', target: 't', evidence: 'e' },
-    steps: [step('stp-1'), step('stp-2')],
+    steps: [
+      {
+        id: 'stp-1',
+        ordinal: 1,
+        kind: 'custom',
+        title: 'stp-1',
+        verification: 'existence',
+        proof: 'unproven',
+        links: [],
+        blockers: []
+      }
+    ],
     blockers: [],
     openQuestions: [],
     createdAt: at,
     updatedAt: at,
     provenance: { author: 'agent', at },
-    ...over
-  }
+    ...(ledger ? { ledger } : {})
+  })
 }
 
 describe('ledger kinds', () => {
@@ -70,55 +78,45 @@ describe('ledger kinds', () => {
   })
 })
 
-describe('appendLedgerRow', () => {
-  it('appends one row with at, kind, stepId and ref and leaves the input untouched', () => {
-    const m = mission()
-    const next = appendLedgerRow(m, { kind: 'dispatched', stepId: 'stp-1', ref: 'sess-1' }, at)
-    expect(m.ledger).toBeUndefined()
-    expect(next.ledger).toEqual([{ at, kind: 'dispatched', stepId: 'stp-1', ref: 'sess-1' }])
+describe('a ledger written into an old v3 mission file', () => {
+  it('still reads: the rows come back as written, in order', () => {
+    const rows: LedgerRow[] = [
+      { at, kind: 'dispatched', stepId: 'stp-1', ref: 'sess-1' },
+      { at, kind: 'ci', ref: '#7', detail: 'passing' }
+    ]
+    const parsed = parseV3MissionFile(v3File(rows)) as V3Mission
+    expect(parsed.ledger).toEqual(rows)
   })
 
-  it('is append-only: earlier rows keep their order', () => {
-    let m = mission()
-    m = appendLedgerRow(m, { kind: 'dispatched', ref: 'a' }, at)
-    m = appendLedgerRow(m, { kind: 'worktree', ref: 'b' }, at)
-    expect(m.ledger?.map((r) => r.ref)).toEqual(['a', 'b'])
-  })
-
-  it('round-trips through the mission file and an empty ledger writes no key', () => {
-    const withRows = appendLedgerRow(mission(), { kind: 'ci', ref: '#7', detail: 'passing' }, at)
-    const parsed = parseMissionFile(buildMissionFileContent(withRows)) as Mission
-    expect(parsed.ledger).toEqual(withRows.ledger)
-    expect(buildMissionFileContent(mission())).not.toContain('ledger')
+  it('a file without events has no ledger key', () => {
+    const parsed = parseV3MissionFile(v3File()) as V3Mission
+    expect(parsed.ledger).toBeUndefined()
   })
 
   it('rejects a row whose kind is not a ledger kind', () => {
-    const bad = { ...mission(), ledger: [{ at, kind: 'merged-by-agent', ref: 'x' }] }
-    expect(() => buildMissionFileContent(bad as unknown as Mission)).toThrow(/ledger/)
+    const bad = parseV3MissionFile(v3File([{ at, kind: 'merged-by-agent', ref: 'x' }]))
+    expect('error' in bad && bad.error).toMatch(/ledger/)
   })
 })
 
 describe('ledger readers', () => {
-  it('ledgerTail returns the last 20 rows, oldest first', () => {
-    let m = mission()
-    for (let i = 0; i < 25; i++) m = appendLedgerRow(m, { kind: 'ci', ref: `#${i}` }, at)
-    const tail = ledgerTail(m)
+  it('a read returns the last 20 rows', () => {
     expect(LEDGER_TAIL).toBe(20)
-    expect(tail).toHaveLength(20)
-    expect(tail[0].ref).toBe('#5')
-    expect(tail[19].ref).toBe('#24')
-    expect(ledgerTail(mission())).toEqual([])
   })
 
   it('hasLedgerRow and lastLedgerDetail look up by kind + ref', () => {
-    let m = mission()
-    m = appendLedgerRow(m, { kind: 'ci', ref: '#7', detail: 'pending' }, at)
-    m = appendLedgerRow(m, { kind: 'ci', ref: '#7', detail: 'passing' }, at)
+    const m = {
+      ledger: [
+        { at, kind: 'ci', ref: '#7', detail: 'pending' },
+        { at, kind: 'ci', ref: '#7', detail: 'passing' }
+      ] as LedgerRow[]
+    }
     expect(hasLedgerRow(m, 'ci', '#7')).toBe(true)
     expect(hasLedgerRow(m, 'ci', '#8')).toBe(false)
     expect(hasLedgerRow(m, 'pr-opened', '#7')).toBe(false)
     expect(lastLedgerDetail(m, 'ci', '#7')).toBe('passing')
     expect(lastLedgerDetail(m, 'ci', '#8')).toBeUndefined()
+    expect(hasLedgerRow({}, 'ci', '#7')).toBe(false)
   })
 })
 
@@ -151,6 +149,16 @@ describe('pickLedgerTargets — which mission a dispatch belongs to', () => {
 
   it('with no link match and several open missions, nobody is guessed', () => {
     expect(pickLedgerTargets([a, b], { folder: '/elsewhere' })).toEqual([])
+  })
+
+  it('a v4 step that names its card receives the row, with no link needed', () => {
+    const v4 = mission({
+      id: 'mnt-0000000d',
+      steps: [{ id: 'stp-1', links: [], card: 'T9' }, step('stp-2')]
+    })
+    expect(pickLedgerTargets([v4, b], { card: 'T9' })).toEqual([
+      { missionId: v4.id, stepId: 'stp-1' }
+    ])
   })
 
   it('a closed mission never receives a row', () => {

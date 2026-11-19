@@ -1,0 +1,43 @@
+{
+  "spec": "Spec P",
+  "atoms": {
+    "R-1": "covered",
+    "R-2": "covered",
+    "R-3": "covered",
+    "R-4": "covered",
+    "R-5": "covered",
+    "R-6": "covered",
+    "R-7": "covered",
+    "R-8": "covered",
+    "O-1": "covered",
+    "O-2": "covered",
+    "O-3": "covered",
+    "O-4": "covered",
+    "O-5": "covered",
+    "O-6": "covered",
+    "O-7": "covered",
+    "O-8": "covered",
+    "O-9": "contradicted",
+    "O-10": "covered",
+    "O-11": "partial",
+    "O-12": "covered",
+    "O-13": "covered",
+    "O-14": "covered",
+    "O-15": "partial",
+    "O-16": "covered"
+  },
+  "decisions_left": [
+    "Whether a version bump or changelog edit is forbidden. The spec is silent.",
+    "Whether --alter, --convert and --stop-after apply to the extracted rows. Only --flatten and --pk are stated and tested.",
+    "Exact error wording, left free wherever an AC constrains only what a message contains. This is minor for observable behavior but is a free choice.",
+    "Whether --code with --key or --auto-key is rejected. This is settled: it is an error."
+  ],
+  "contradictions": [],
+  "acceptance_criteria": { "total": 32, "executable": 32 },
+  "builder_guesses": [
+    "Should --convert and --stop-after be applied to the extracted rows? Presumably yes, but it is not stated.",
+    "Is a changelog entry or a version bump expected, or forbidden?",
+    "Must the message for a top-level array under --key name the key? It is not constrained."
+  ],
+  "notes": "Very thorough: every AC has a named test or script, and the check order, plumbing and fixtures are exact. It contradicts the operator decision O-9 on the Python side: rows_from_file() ignores key=/auto_key= for explicit CSV/TSV/NL instead of raising ValueError (NG-5, AC-8), which would fail the hidden Python tests. It also omits the no-changelog/no-version-bump rule and does not mention --alter, --convert or --stop-after."
+}

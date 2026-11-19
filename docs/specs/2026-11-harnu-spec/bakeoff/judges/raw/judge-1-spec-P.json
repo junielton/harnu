@@ -1,0 +1,45 @@
+{
+  "spec": "Spec P",
+  "atoms": {
+    "R-1": "covered",
+    "R-2": "covered",
+    "R-3": "covered",
+    "R-4": "covered",
+    "R-5": "covered",
+    "R-6": "covered",
+    "R-7": "covered",
+    "R-8": "covered",
+    "O-1": "covered",
+    "O-2": "covered",
+    "O-3": "covered",
+    "O-4": "covered",
+    "O-5": "covered",
+    "O-6": "covered",
+    "O-7": "covered",
+    "O-8": "covered",
+    "O-9": "contradicted",
+    "O-10": "covered",
+    "O-11": "partial",
+    "O-12": "covered",
+    "O-13": "partial",
+    "O-14": "covered",
+    "O-15": "partial",
+    "O-16": "covered"
+  },
+  "decisions_left": [
+    "Whether --pk, --alter, --convert and --stop-after apply to the extracted rows. Only --flatten is stated and tested (AC-18).",
+    "Whether memory table names stay the file stem. AC-19 implies it for the Alaska file and for stdin, but the spec never states it.",
+    "Whether to bump the version or edit the changelog. Neither is mentioned, although this repo's convention may require or forbid them.",
+    "How `--key` interacts with `--convert`. The spec lists `convert` under the existing `--code` check and makes `--key` with it an error, which may conflict with the intended behaviour.",
+    "What `rows_from_file()` does in Python when key= or auto_key= is combined with an explicit CSV, TSV or NL format. The spec says it ignores them silently."
+  ],
+  "contradictions": [],
+  "acceptance_criteria": { "total": 32, "executable": 32 },
+  "builder_guesses": [
+    "Should --pk, --alter and --stop-after work on the extracted rows? Presumably yes, but the spec does not say so.",
+    "Should key=/auto_key= with an explicit CSV, TSV or NL format raise ValueError in Python instead of being ignored?",
+    "Is a changelog entry or version bump expected? The spec says nothing.",
+    "Does memory keep the file stem as the table name when --key is used? Only the Alaska fixture is covered."
+  ],
+  "notes": "Very thorough spec with an AC for nearly every case, and every AC names a test or a command. It diverges from the hidden atoms on Python behaviour for explicit non-JSON formats (it ignores the options where the atom wants ValueError) and does not state the version-bump and changelog rule. It also leaves the --pk, --alter, --convert and --stop-after interplay implicit."
+}

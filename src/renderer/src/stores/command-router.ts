@@ -158,7 +158,8 @@ export interface CommandRouterActions {
     sessionId: string | null
     folder: string
     text: string
-    source: 'page-event' | 'overlay'
+    /** `walk` (S-2): a `[harnu-walk]` turn from a guided walk. */
+    source: 'page-event' | 'overlay' | 'walk'
   }): UserTurnResult | Promise<UserTurnResult>
   /**
    * T171 `close_file`: close the non-PTY, file/folder-backed pane (markdown /
@@ -507,7 +508,8 @@ function handleSessionUserTurn(
   if (!actions.deliverUserTurn) return { ok: false, error: 'deliverUserTurn not wired' }
   if (!isRecord(payload)) return BAD_ARGS
   if (!isNonEmptyString(payload.folder) || !isNonEmptyString(payload.text)) return BAD_ARGS
-  const source = payload.source === 'overlay' ? 'overlay' : 'page-event'
+  const source =
+    payload.source === 'overlay' ? 'overlay' : payload.source === 'walk' ? 'walk' : 'page-event'
   const out = actions.deliverUserTurn({
     sessionId: isNonEmptyString(payload.sessionId) ? payload.sessionId : null,
     folder: payload.folder,

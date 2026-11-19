@@ -282,7 +282,15 @@ describe('stageSkillsForFolder — observe mode resolves a bundled name to the b
   it('the bundled skills Harnu ships never mention hooks in their frontmatter', async () => {
     const real = path.resolve(__dirname, '..', 'resources', 'skills', 'skills')
     for (const name of await fs.readdir(real)) {
-      const raw = await fs.readFile(path.join(real, name, 'SKILL.md'), 'utf8')
+      // A directory with no SKILL.md is not a skill yet (`spec/` carries only its vendored
+      // scripts until the skill body lands), so there is no frontmatter to check.
+      const raw = await fs
+        .readFile(path.join(real, name, 'SKILL.md'), 'utf8')
+        .catch((err: NodeJS.ErrnoException) => {
+          if (err.code === 'ENOENT') return null
+          throw err
+        })
+      if (raw === null) continue
       const header = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)?.[1] ?? ''
       expect({ name, mentionsHooks: /hooks/i.test(header) }).toEqual({ name, mentionsHooks: false })
     }

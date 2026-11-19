@@ -1,0 +1,46 @@
+{
+  "title": "Search work, milestone check",
+  "purpose": "check",
+  "source": {
+    "kind": "mission",
+    "missionId": "__MISSION_ID__",
+    "scope": "milestone",
+    "id": "mls-1"
+  },
+  "checks": [
+    {
+      "id": "m1",
+      "title": "The search box filters the list",
+      "why": "This is what the operator criterion of the step asks for.",
+      "where": { "text": "The Notes page" },
+      "do": [{ "text": "Type `milk` in the search box", "see": "Only the row Milk run stays" }],
+      "passes": "One row, Milk run.",
+      "fails": "More rows, or none.",
+      "nothingFromHere": "The typing happens in your browser.",
+      "criterion": "__CRITERION_OPERATOR__"
+    },
+    {
+      "id": "m2",
+      "title": "The filter code is in the list module",
+      "why": "This is the session criterion of the step.",
+      "where": { "text": "The repo" },
+      "do": [
+        { "text": "Find `drawList` in the list module", "see": "It filters by the typed word" }
+      ],
+      "passes": "`drawList` filters on the word.",
+      "fails": "No filter in the function.",
+      "check": { "how": "grep -n includes src/notes/list.js" },
+      "criterion": "__CRITERION_SESSION__"
+    },
+    {
+      "id": "m3",
+      "title": "The page reads well on a phone",
+      "why": "A check with no criterion behind it.",
+      "where": { "text": "The Notes page at 360 pixels" },
+      "do": [{ "text": "Make the window narrow", "see": "The box stays in view" }],
+      "passes": "The box is in view.",
+      "fails": "The box is cut off.",
+      "nothingFromHere": "Only a real window shows it."
+    }
+  ]
+}

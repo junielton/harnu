@@ -24,7 +24,6 @@ import RenameFolderDialog from './components/RenameFolderDialog.vue'
 import TrustedHostsDialog from './components/TrustedHostsDialog.vue'
 import RenameRepoDialog from './components/RenameRepoDialog.vue'
 import MemoryLocationDialog from './components/MemoryLocationDialog.vue'
-import MissionsReviewDialog from './components/MissionsReviewDialog.vue'
 import SessionMenu from './components/SessionMenu.vue'
 import SidebarHiddenPopover from './components/SidebarHiddenPopover.vue'
 import FolderMenu from './components/FolderMenu.vue'
@@ -38,6 +37,7 @@ import HelperStack from './components/HelperStack.vue'
 import TakeoverHost from './components/TakeoverHost.vue'
 import { useThemeStore } from './stores/theme'
 import { useSessionsStore } from './stores/sessions'
+import { useWalkStore } from './stores/walk'
 import { formatWindowTitle } from './stores/attention'
 import { useUiStore, SETTINGS_TAB_IDS } from './stores/ui'
 import {
@@ -108,6 +108,8 @@ useThemeStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const helpers = useHelpersStore()
+// Guided walks S-7: the Mission dropdown's "Test it" asks this store whether a walk can start and starts it.
+useWalkStore().installEntry()
 const layout = useLayoutStore()
 const settings = useSettingsStore()
 const claudeChangelog = useClaudeChangelogStore()
@@ -384,9 +386,6 @@ const showScheduler = computed(() => ui.activeView?.id === 'scheduler')
 // T331: the Containers takeover, opened from its footer pill. Global like
 // Cleanup (every docker stack on the machine), so no onboarding gate.
 const showContainers = computed(() => ui.activeView?.id === 'containers')
-// T607: the Campaign map takeover, opened from the Campaign popover's "Open map". Global —
-// the campaign is read by id from the campaigns store — so no onboarding gate.
-const showCampaignMap = computed(() => ui.activeView?.id === 'campaignMap')
 // T198: the PR Stack Canvas takeover, opened from the folder menu. Per-repo
 // like the roadmap board, so it takes the same onboarding gate.
 const showPrStack = computed(() => !showOnboarding.value && ui.activeView?.id === 'prStack')
@@ -419,7 +418,6 @@ const showActiveView = computed(
     showSystemMonitor.value ||
     showScheduler.value ||
     showContainers.value ||
-    showCampaignMap.value ||
     showRoadmap.value
 )
 /**
@@ -2142,7 +2140,6 @@ onUnmounted(() => {
       <TrustedHostsDialog />
       <RenameRepoDialog />
       <MemoryLocationDialog />
-      <MissionsReviewDialog />
       <CommandPalette />
       <McpConfirmOverlay />
       <ToastStack />

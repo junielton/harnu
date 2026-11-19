@@ -22,6 +22,12 @@ export type HelperPaneType =
   // T564 U1: a browser pane. Persistable since T574 (spec §10.3): it reopens DISCARDED after a restart; its
   // `payload` carries the address, zoom, emulation, network switch, scroll and pins.
   | 'browser'
+  // Guided walks S-3: the walk pane. Non-PTY; its `payload` carries `{ walkId, runId }` and never content, so a
+  // restart restores it from the walk's record under `.harnu/walks/`.
+  | 'walk'
+  // Guided walks S-4: the Walks library. Non-PTY and reproducible from nothing (the repo's walks are read from
+  // `.harnu/walks/`), so it persists like any pane that needs no payload; one per worktree.
+  | 'walks'
 
 export interface HelperPane {
   /** Stable id; format: `h-<random>`. Used as the PTY identifier too. */
