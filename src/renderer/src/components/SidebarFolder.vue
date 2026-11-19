@@ -983,19 +983,23 @@ function onSelectTeammate(session: Session): void {
               >
                 <CornerDownRight :size="11" :stroke-width="1.6" class="shrink-0 text-text-4" />
                 <Bot :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-                <span class="flex-1 truncate">{{ agentLabel(agentRow.agent) }}</span>
+                <span
+                  class="flex-1 truncate"
+                  :style="{ flex: agentRow.agent.status === 'running' ? '1 0 96px' : '1 0 112px' }"
+                  >{{ agentLabel(agentRow.agent) }}</span
+                >
                 <span
                   v-if="agentTypeChip(agentRow.agent)"
-                  class="shrink-0 truncate font-mono text-text-4"
-                  style="font-size: 10px; max-width: 96px"
+                  class="truncate font-mono text-text-4"
+                  style="font-size: 10px; max-width: 72px; min-width: 0"
                   data-dsqa="sidebar-agent-type-chip"
                   :title="agentTypeChip(agentRow.agent)"
                   >{{ agentTypeChip(agentRow.agent) }}</span
                 >
                 <span
                   v-if="agentOrigin(agentRow.agent)"
-                  class="shrink-0 truncate font-mono text-text-4"
-                  style="font-size: 10px; max-width: 120px"
+                  class="truncate font-mono text-text-4"
+                  style="font-size: 10px; max-width: 120px; min-width: 0"
                   :title="agentOrigin(agentRow.agent)"
                   >{{ agentOrigin(agentRow.agent) }}</span
                 >
@@ -1009,10 +1013,6 @@ function onSelectTeammate(session: Session): void {
                     style="width: 6px; height: 6px"
                   />
                   <span style="font-size: 10.5px">{{ $t('agent.statusRunning') }}</span>
-                </span>
-                <span v-else class="flex shrink-0 items-center text-text-4" style="gap: 4px">
-                  <Check :size="11" :stroke-width="1.8" />
-                  <span style="font-size: 10.5px">{{ $t('agent.statusDone') }}</span>
                 </span>
               </div>
             </template>
