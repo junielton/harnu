@@ -33,6 +33,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { assertInstanceIsolated, instanceEnv } from '../../eval/mission-behavior/harnu.mjs'
 import { createLedger, escalate, groupTarget } from '../../eval/mission-behavior/procs.mjs'
+import { paintOrRelaunch } from './paint-retry.mjs'
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -625,6 +626,24 @@ export async function startInstance({ repoRoot, id, fixtures, env: extraEnv = {}
     inst.cdp = await connectCdp(cdpPort)
     await inst.cdp.waitFor(`typeof window.api?.walkLoad === 'function'`, 90_000, 'window.api')
   }
+  /**
+   * Wait until the window paints; when it does not (BUG-298: its GPU process is gone), start the app again on
+   * the same user-data-dir, up to three windows. Returns how many times it relaunched.
+   */
+  inst.paintOrRelaunch = (waitMs = 30_000) =>
+    paintOrRelaunch({
+      waitPainting: () => inst.cdp.waitPainting(waitMs),
+      relaunch: async () => {
+        await inst.halt()
+        await inst.boot()
+        await inst.cdp.waitFor(
+          `document.querySelector("#app").__vue_app__.config.globalProperties.$pinia._s.get("sessions").folders.some((f) => f.path === ${JSON.stringify(repo)})`,
+          60_000,
+          'the repo in the sidebar'
+        )
+      },
+      log: (line) => console.log(line)
+    })
   /** Stop the app's own processes (no others). Returns the PIDs it ended. */
   inst.halt = async () => {
     inst.cdp?.close()

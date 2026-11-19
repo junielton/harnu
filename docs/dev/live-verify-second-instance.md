@@ -197,6 +197,19 @@ siblings, or a window under xvfb can stop painting (a screenshot hangs, a termin
 pane); and a `Done` pressed within 400 ms of a new check is ignored on purpose, so a case that is not about the
 debounce waits it out.
 
+## A window that never paints (BUG-298)
+
+An isolated instance started under `xvfb-run` sometimes ends up with **no GPU process**: the page's JavaScript and
+the control server still answer, but `requestAnimationFrame` never fires, `Page.captureScreenshot` hangs and
+`document.visibilityState` still says `visible`. Waiting does not help; only a new process on the same
+`--user-data-dir` does. It is a Chromium start-up flake that happens whatever the size of
+`docs/harnu-features.md` (BUG-298 first read it as a 121 KB cliff in that doc; measured: the doc rides a prompt
+file, so its bytes never reach argv, env, the PTY or the renderer, and a 200 KB doc paints as often as the
+120 KB one). Check it from CDP before blaming the change under test: `ps` the instance's processes for
+`--type=gpu-process`, and probe `requestAnimationFrame` with a timeout. The guided-walk smoke test relaunches a
+stalled window (`paintOrRelaunch`, three windows at most) at warm-up, before every case and after a restart; any
+other harness that drives a fresh window should do the same.
+
 ## Notes
 
 - The window **does** appear on the user's screen (needs `DISPLAY`). It's brief;

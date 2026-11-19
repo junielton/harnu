@@ -55,4 +55,26 @@ describe('E2BIG guard', () => {
     const out = await spillOversizedPromptArgs(argv, () => '/tmp/p.md')
     for (const a of out) expect(Buffer.byteLength(a, 'utf8')).toBeLessThan(MAX_ARG_STRLEN)
   })
+
+  // BUG-298: the doc has no size cliff. It rides a prompt file whatever its length, so growing it past 121 KB
+  // (the point where the guided-walk smoke test first stalled) or well past the 128 KiB argv cap changes nothing
+  // about what the spawn puts in argv: one option pair, the file path.
+  it.each([121_374, 200 * 1024, 1024 * 1024])(
+    'a %d-byte doc is delivered whole through one prompt file and never through argv',
+    async (bytes) => {
+      const doc = '<!-- harnu-features v1 -->\n' + 'x'.repeat(bytes)
+      const argv = buildClaudeArgs([], { appendSystemPrompt: 'user append' }, doc)
+      const written: string[] = []
+      const out = await spillOversizedPromptArgs(argv, (_flag, text) => {
+        written.push(text)
+        return '/tmp/p.md'
+      })
+      expect(written).toHaveLength(1)
+      expect(written[0]).toContain(doc)
+      expect(written[0]).toContain('user append')
+      expect(out).toContain('--append-system-prompt-file')
+      expect(out).not.toContain('--append-system-prompt')
+      expect(out.join('').length).toBeLessThan(1024)
+    }
+  )
 })

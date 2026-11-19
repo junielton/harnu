@@ -201,7 +201,7 @@ export function makeCtx({ inst, fixtures, evidence, faults, repoRoot, caseId }) 
     /** After a reload or a relaunch: the app is back, the folders are loaded, the owner session is on screen. */
     async afterRestart() {
       await inst.cdp.waitFor(`typeof window.api?.walkLoad === 'function'`, 60_000, 'window.api')
-      await inst.cdp.waitPainting()
+      await inst.paintOrRelaunch()
       await inst.cdp.waitFor(
         `(() => { const s = ${S('sessions')}; return s.folders.some((f) => f.path === ${JSON.stringify(inst.repo)}) })()`,
         60_000,

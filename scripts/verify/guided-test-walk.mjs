@@ -25,7 +25,15 @@
  * calls Claude, and stops only the PIDs it started (never a `pkill` pattern).
  */
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, writeFileSync, copyFileSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  copyFileSync,
+  statSync
+} from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -46,6 +54,7 @@ import {
   readSpecTables,
   rowOrder
 } from './guided-test-walk/proofs.mjs'
+import { attributeChanges } from './guided-test-walk/operator-guard.mjs'
 import { casesA } from './guided-test-walk/cases-a.mjs'
 import { casesB } from './guided-test-walk/cases-b.mjs'
 import { casesC } from './guided-test-walk/cases-c.mjs'
@@ -237,7 +246,7 @@ function pendingReason(c) {
  * the stack). Bring it to the front and wait until it paints before the first case.
  */
 async function warmUp(inst) {
-  await inst.cdp.waitPainting()
+  await inst.paintOrRelaunch(60_000)
   await inst.cdp.eval(
     `document.querySelector("#app").__vue_app__.config.globalProperties.$pinia._s.get("sessions").select(${JSON.stringify(inst.sessions.owner)})`
   )
@@ -303,22 +312,7 @@ async function main() {
         30_000,
         'the repo in the sidebar'
       )
-      for (let k = 0; ; k++) {
-        try {
-          await warmUp(inst)
-          break
-        } catch (err) {
-          if (k === 2) throw err
-          console.log(`the window does not paint (${err.message}): starting the instance again`)
-          await inst.halt()
-          await inst.boot()
-          await inst.cdp.waitFor(
-            `document.querySelector("#app").__vue_app__.config.globalProperties.$pinia._s.get("sessions").folders.some((f) => f.path === ${JSON.stringify(inst.repo)})`,
-            60_000,
-            'the repo in the sidebar'
-          )
-        }
-      }
+      await warmUp(inst)
     }
   } catch (err) {
     setupError = err
@@ -351,6 +345,8 @@ async function main() {
       })
       const t0 = Date.now()
       try {
+        // BUG-298: a window can lose its GPU process between two cases; a stalled one never recovers by waiting
+        await inst.paintOrRelaunch()
         await ctx.reset()
         await ctx.ensureOwnerLive()
         await Promise.race([
@@ -407,7 +403,21 @@ async function main() {
     const now = snapshotOperator(realHome)
     for (const [f, h] of Object.entries(was.files))
       a.eq(now.files[f], h, `operator file ${f.replace(realHome, '~')} is byte-identical`)
-    a.eq(now.walks, was.walks, 'the real .harnu/ walks and missions are byte-identical')
+    // BUG-298: other sessions write to the real `.harnu/` while this runs, so "byte-identical" is judged on what
+    // THIS run could have written (it carries the run's directory or id); what others changed is only reported
+    const { leaked, foreign } = attributeChanges(
+      was.walks,
+      now.walks,
+      (f) => readFileSync(f, 'utf8'),
+      [inst?.runDir ?? `/tmp/hv-walk-${id}`, `hv-walk-${id}`]
+    )
+    a.eq(leaked, [], 'the instance wrote nothing into the real .harnu/ walks and missions')
+    if (foreign.length)
+      console.log(
+        `        W-12 note: ${foreign.length} real .harnu file(s) changed during the run, none of them by this instance: ${foreign
+          .map((f) => path.basename(f))
+          .join(', ')}`
+      )
     for (const p of was.pids) a.ok(alive(p), `the operator's process ${p} is still running`)
     if (inst) {
       a.ok(
