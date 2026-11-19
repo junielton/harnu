@@ -447,8 +447,8 @@ describe('renderer placeholders: the pane host', () => {
     const BrowserPane = (await import('../src/renderer/src/components/BrowserPane.vue')).default
     const { useBrowserStore } = await import('../src/renderer/src/stores/browser')
     const calls: unknown[][] = []
-    ;(globalThis as any).window.api = new Proxy(
-      // eslint-disable-line @typescript-eslint/no-explicit-any
+    const g = globalThis as unknown as { window: { api: unknown }; ResizeObserver: unknown }
+    g.window.api = new Proxy(
       {},
       {
         get:
@@ -462,10 +462,13 @@ describe('renderer placeholders: the pane host', () => {
           }
       }
     )
-    ;(globalThis as any).ResizeObserver = class {
-      // eslint-disable-line @typescript-eslint/no-explicit-any
-      observe(): void {}
-      disconnect(): void {}
+    g.ResizeObserver = class {
+      observe(): void {
+        /* the fake pane never resizes */
+      }
+      disconnect(): void {
+        /* nothing to release */
+      }
     }
     const pinia = createPinia()
     setActivePinia(pinia)
