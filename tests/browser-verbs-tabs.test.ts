@@ -143,7 +143,7 @@ function rig() {
           case 'Page.getLayoutMetrics':
             return { cssVisualViewport: { clientWidth: 1280, clientHeight: 800 } }
           case 'DOM.resolveNode':
-            return { object: { objectId: 'obj-20' } }
+            return { object: { objectId: 'object-btn' } }
           case 'Accessibility.getPartialAXTree':
             return { nodes: [{ role: { value: 'button' }, name: { value: 'Save' } }] }
           case 'Runtime.callFunctionOn':
