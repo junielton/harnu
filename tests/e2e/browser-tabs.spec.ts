@@ -88,6 +88,24 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
       await expect(page.getByTestId('browser-tab-strip')).toBeVisible()
       await expect(tabs()).toHaveCount(2)
       await expect(address()).toBeFocused()
+      // Full mode: each tab is drawn at the layout's 168px (not at the width of its text), and + follows the last
+      // tab. Polled: the expanded pane is still settling for a moment.
+      await expect
+        .poll(async () => {
+          const boxes = await tabs().evaluateAll((els) =>
+            els.map((el) => {
+              const b = el.getBoundingClientRect()
+              return { left: b.left, width: b.width }
+            })
+          )
+          const plus = await page.getByTestId('browser-tab-new').boundingBox()
+          const last = boxes[boxes.length - 1]!
+          return Math.max(
+            ...boxes.map((b) => Math.abs(b.width - 168)),
+            Math.abs(plus!.x - (last.left + last.width + 4))
+          )
+        })
+        .toBeLessThanOrEqual(1)
     })
 
     await test.step('Ctrl+Tab and Ctrl+Shift+Tab move between tabs', async () => {
