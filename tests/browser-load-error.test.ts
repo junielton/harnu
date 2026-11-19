@@ -544,6 +544,11 @@ describe('reload when it is up', () => {
   }
   const target = { host: 'localhost', port: 8000 }
 
+  it('the spec numbers: a poll every 2 s, given up after 10 min', () => {
+    expect(RELOAD_WHEN_UP_POLL_MS).toBe(2000)
+    expect(RELOAD_WHEN_UP_MAX_MS).toBe(600_000)
+  })
+
   it('polls every 2 s and reloads on the first success, once', async () => {
     const p = poller([false, false, true, true])
     expect(p.w.start('t1', target, { onUp: p.up, onStop: p.stopped })).toBe(true)
