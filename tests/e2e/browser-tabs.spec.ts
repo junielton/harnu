@@ -124,9 +124,10 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
     await test.step('Ctrl+W closes the tab, not the session', async () => {
       await address().press('Control+w')
       await expect(tabs()).toHaveCount(0) // back to one tab
+      // The selection survived: the Topbar's Browser button only exists while a folder is selected, and
+      // close-session clears the selection. (The sidebar row is not a safe witness: it collapses while the pane expands.)
+      await expect(page.locator('[data-test="topbar-browser"]')).toBeVisible()
       await expect(page.getByTestId('browser-pane')).toBeVisible()
-      // The folder is still the one in view: close-session would have cleared it.
-      await expect(page.locator(`[data-folder-path="${seed.repo}"]`).first()).toBeVisible()
     })
 
     await test.step('the chords reach main before the page when the page has the focus', async () => {
