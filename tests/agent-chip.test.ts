@@ -233,3 +233,89 @@ describe('Paused and Disconnected keep their pills', () => {
     expect(w.html()).not.toMatch(/bg-red-soft|bg-warning/)
   })
 })
+
+describe('the tip stays inside the pane (S-7 delta 1)', () => {
+  const HEADER = { left: 0, width: 243 }
+  /** A jsdom has no layout: stand in for it. The tip is 190px wide unless its max-width says less. */
+  function stubLayout(iconLeft: number): void {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const box = (left: number, width: number): DOMRect =>
+        ({
+          left,
+          right: left + width,
+          width,
+          top: 0,
+          bottom: 20,
+          height: 20,
+          x: left,
+          y: 0
+        }) as DOMRect
+      const id = this.getAttribute('data-testid')
+      if (this.tagName === 'HEADER') return box(HEADER.left, HEADER.width)
+      if (id === 'agent-icon') return box(iconLeft, 18)
+      if (id === 'agent-icon-tip') {
+        const max = parseFloat(this.style.maxWidth || '')
+        const width = Number.isFinite(max) ? Math.min(190, max) : 190
+        // Right-aligned to the icon, then moved by the inline `right` the component sets.
+        const shift = -parseFloat(this.style.right || '0')
+        const right = iconLeft + 18 + shift
+        return box(right - width, width)
+      }
+      return box(0, 0)
+    })
+  }
+
+  async function mountInHeader() {
+    const header = document.createElement('header')
+    document.body.appendChild(header)
+    const w = mount(AgentConnectionChip, {
+      props: { terminalId: T, origin: 'agent', ownerSessionId: 'sess-1' },
+      global: { plugins: [i18n] },
+      attachTo: header
+    })
+    await flushPromises()
+    return w
+  }
+
+  const tipBox = (w: Awaited<ReturnType<typeof mountInHeader>>): DOMRect =>
+    w.find('[data-testid="agent-icon-tip"]').element.getBoundingClientRect()
+
+  it('a narrow header: the whole tip is inside the pane box, not cut at its left edge', async () => {
+    stubLayout(150) // icon right at 168: a 190px tip would start at -22
+    const w = await mountInHeader()
+    await w.find('[data-testid="agent-icon"]').trigger('mouseenter')
+    await flushPromises()
+    const r = tipBox(w)
+    expect(r.left).toBeGreaterThanOrEqual(HEADER.left)
+    expect(r.right).toBeLessThanOrEqual(HEADER.left + HEADER.width)
+    w.unmount()
+  })
+
+  it('a tip wider than the pane wraps inside it instead of overflowing', async () => {
+    stubLayout(150)
+    const w = await mountInHeader()
+    await w.find('[data-testid="agent-icon"]').trigger('mouseenter')
+    await flushPromises()
+    const max = parseFloat(
+      w
+        .find('[data-testid="agent-icon-tip"]')
+        .attributes('style')!
+        .match(/max-width:\s*([\d.]+)px/)![1]!
+    )
+    expect(max).toBeLessThanOrEqual(HEADER.width)
+    w.unmount()
+  })
+
+  it('a tip that already fits is not moved: right-aligned under the icon (design.md)', async () => {
+    stubLayout(220) // icon right at 238: a 190px tip starts at 48
+    const w = await mountInHeader()
+    await w.find('[data-testid="agent-icon"]').trigger('mouseenter')
+    await flushPromises()
+    const tip = w.find('[data-testid="agent-icon-tip"]')
+    expect(tip.attributes('style') ?? '').not.toMatch(/right:\s*-?[1-9]/)
+    expect(tipBox(w).right).toBe(238)
+    w.unmount()
+  })
+})
