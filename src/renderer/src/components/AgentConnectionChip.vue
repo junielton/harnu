@@ -11,13 +11,14 @@
  * for `disconnect`. All decisions live in `lib/agent-chip.ts`; this renders the answer. Clicking the icon selects
  * the owner session when one is known — an explicit operator gesture, unlike an agent, which never moves the view.
  */
-import { computed, onMounted, ref, useId } from 'vue'
+import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Bot, Unplug } from 'lucide-vue-next'
 import {
   chipView,
   iconAriaLabel,
   sentenceCase,
+  tipShift,
   type ChipOwner,
   type ChipTerminal,
   type IconModel
@@ -112,6 +113,25 @@ const hovered = ref(false)
 const focused = ref(false)
 const tipOpen = computed(() => hovered.value || focused.value)
 const tipEl = ref<HTMLElement | null>(null)
+const iconEl = ref<HTMLElement | null>(null)
+/** Inline placement of the open tip: never wider than its pane, never starting left of it. */
+const tipStyle = ref<Record<string, string>>({})
+watch(tipOpen, async (open) => {
+  if (!open) {
+    tipStyle.value = {}
+    return
+  }
+  await nextTick()
+  const header = iconEl.value?.closest('header')
+  if (!header) return
+  const box = header.getBoundingClientRect()
+  tipStyle.value = { maxWidth: `${Math.max(0, box.width - 8)}px` }
+  await nextTick()
+  const tip = tipEl.value
+  if (!tip) return
+  const shift = tipShift(box, tip.getBoundingClientRect())
+  if (shift > 0) tipStyle.value = { ...tipStyle.value, right: `${-shift}px` }
+})
 useNativeOverlay(`agent-icon-tip-${useId()}`, tipEl)
 
 function onIconClick(): void {
@@ -126,10 +146,12 @@ function onDisconnect(): void {
 </script>
 
 <template>
-  <span v-if="icon" class="flex shrink-0 items-center gap-1" data-testid="agent-connection-chip">
+  <!-- `-ml-1.5` takes back the header's own 6px gap: the group is strip, 4px, icon, Disconnect, as in the mockup. -->
+  <span v-if="icon" class="-ml-1.5 flex shrink-0 items-center" data-testid="agent-connection-chip">
     <span class="relative flex shrink-0 items-center" style="margin-left: 4px">
       <component
         :is="icon.clickSessionId ? 'button' : 'span'"
+        ref="iconEl"
         class="anim-pulse-dot anim-pulse-dot--accent grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-accent-soft text-accent"
         :class="icon.clickSessionId ? 'cursor-pointer' : 'cursor-default'"
         :style="{ '--pulse-from': '0.69' }"
@@ -150,7 +172,8 @@ function onDisconnect(): void {
         v-if="tipOpen"
         ref="tipEl"
         role="tooltip"
-        class="absolute top-full right-0 z-30 mt-[5px] border border-border-2 bg-surface text-[11px] whitespace-nowrap text-text-2"
+        class="absolute top-full right-0 z-30 mt-[5px] border border-border-2 bg-surface text-[11px] w-max text-text-2"
+        :style="tipStyle"
         style="
           padding: 6px 9px;
           box-shadow: var(--shadow-pop);

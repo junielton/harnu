@@ -313,4 +313,80 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
       }
     })
   })
+  test('agent icon spacing', async () => {
+    // S-7 delta 1: strip -> icon -> Disconnect is the mockup's group: 4px from the strip, no gap to Disconnect.
+    const sessionId = '00000000-0000-4000-8000-0000000000a7'
+    const slug = seed.repo.replace(/[^a-zA-Z0-9]/g, '-')
+    mkdirSync(join(seed.userData, '.claude', 'projects', slug), { recursive: true })
+    writeFileSync(
+      join(seed.userData, '.claude', 'projects', slug, `${sessionId}.jsonl`),
+      JSON.stringify({
+        type: 'user',
+        cwd: seed.repo,
+        sessionId,
+        gitBranch: 'main',
+        timestamp: new Date().toISOString(),
+        message: { role: 'user', content: 'hello' }
+      }) + '\n'
+    )
+    await page.evaluate(() =>
+      (
+        window as unknown as { api: { mcpSetEnabled(v: boolean): Promise<unknown> } }
+      ).api.mcpSetEnabled(true)
+    )
+    const cfg = JSON.parse(readFileSync(join(seed.userData, 'harnu.mcp.json'), 'utf8')) as {
+      mcpServers: Record<string, { url: string; headers?: Record<string, string> }>
+    }
+    const harnu = Object.values(cfg.mcpServers)[0]!
+    const client = new Client({ name: 'browser-tabs-e2e-spacing', version: '0.0.0' })
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(harnu.url), {
+        requestInit: { headers: harnu.headers ?? {} }
+      })
+    )
+    try {
+      await page.locator(`[data-folder-path="${seed.repo}"]`).first().click()
+      await expect
+        .poll(
+          async () => {
+            const res = await client.callTool({
+              name: 'browser_open',
+              arguments: { folder: seed.repo, url: `${base}/agent` }
+            })
+            return res.isError === true ? JSON.stringify(res.content) : 'opened'
+          },
+          { timeout: 15_000 }
+        )
+        .toBe('opened')
+      await expect(page.getByTestId('agent-icon')).toBeVisible()
+      await page.locator('[data-test="pane-expand"]').first().click()
+      await address().press('Control+t')
+      await expect(tabs()).toHaveCount(2)
+      const box = async (id: string) => {
+        const b = await page.getByTestId(id).boundingBox()
+        if (!b) throw new Error(`no box for ${id}`)
+        return b
+      }
+      // Polled: the expanded pane is still settling for a moment after the new tab.
+      const gaps = async (): Promise<{ stripToIcon: number; iconToDisconnect: number }> => {
+        const strip = await box('browser-tab-strip')
+        const icon = await box('agent-icon')
+        const disconnect = await box('agent-disconnect')
+        return {
+          stripToIcon: icon.x - (strip.x + strip.width),
+          iconToDisconnect: disconnect.x - (icon.x + icon.width)
+        }
+      }
+      await expect
+        .poll(async () => Math.abs((await gaps()).stripToIcon - 4), { message: 'strip to icon' })
+        .toBeLessThanOrEqual(1)
+      await expect
+        .poll(async () => Math.abs((await gaps()).iconToDisconnect), {
+          message: 'icon to Disconnect'
+        })
+        .toBeLessThanOrEqual(1)
+    } finally {
+      await client.close()
+    }
+  })
 })

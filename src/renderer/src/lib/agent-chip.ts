@@ -117,3 +117,12 @@ export function sentenceCase(word: string): string {
 export function iconAriaLabel(m: Pick<IconModel, 'head' | 'detail'>): string {
   return m.detail ? `${m.head} · ${m.detail}` : m.head
 }
+
+/**
+ * How far to move a tip to the right so it does not start left of its pane (design.md "Compact agent icon": the tip
+ * is right-aligned under the icon, and only moves when that would clip it). 0 when it already fits.
+ */
+export function tipShift(box: { left: number }, tip: { left: number }, margin = 4): number {
+  const over = box.left + margin - tip.left
+  return over > 0 ? over : 0
+}

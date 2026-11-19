@@ -11,7 +11,9 @@ import { ChevronDown, Copy, Globe, PanelRight, Plus, RotateCw, X } from 'lucide-
 import { useNativeOverlay } from '../composables/useNativeOverlay'
 import {
   TAB_MENU_ACTIONS,
+  TAB_PLUS_PX,
   layoutTabStrip,
+  moreListLeft,
   tabFaviconView,
   tabMenuState,
   type TabMenuAction,
@@ -57,9 +59,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-/** `+` and its 4px margins, which the layout's strip width leaves out. */
-const PLUS_PX = 26
-
 const rootEl = ref<HTMLElement | null>(null)
 const measured = ref(0)
 let observer: ResizeObserver | null = null
@@ -86,7 +85,7 @@ onBeforeUnmount(() => {
 
 const stripW = computed(() => {
   if (props.stripWidth !== undefined) return props.stripWidth
-  return measured.value > 0 ? Math.max(0, measured.value - PLUS_PX) : Number.POSITIVE_INFINITY
+  return measured.value > 0 ? Math.max(0, measured.value - TAB_PLUS_PX) : Number.POSITIVE_INFINITY
 })
 const layout = computed(() =>
   layoutTabStrip(
@@ -100,13 +99,6 @@ const visibleTabs = computed(() => {
   return props.tabs.filter((tab) => keep.has(tab.tabId))
 })
 const overflowCount = computed(() => layout.value.overflow.length)
-/** The +N list draws a rule where the tabs behind +N begin (the first hidden tab after a drawn one). */
-const firstHiddenIndex = computed(() => {
-  const hidden = new Set(layout.value.overflow)
-  return props.tabs.findIndex(
-    (tab, i) => i > 0 && hidden.has(tab.tabId) && !hidden.has(props.tabs[i - 1]!.tabId)
-  )
-})
 const iconOnly = (tab: BrowserTabState): boolean =>
   layout.value.mode === 'icons' && tab.tabId !== props.activeTabId
 const widthPx = (tab: BrowserTabState): number =>
@@ -157,7 +149,6 @@ const menuEl = ref<HTMLElement | null>(null)
 useNativeOverlay(`browser-tab-menu-${props.paneId}`, menuEl)
 const moreOpen = ref(false)
 const moreLeft = ref(0)
-const moreEl = ref<HTMLElement | null>(null)
 const moreListEl = ref<HTMLElement | null>(null)
 useNativeOverlay(`browser-tab-more-${props.paneId}`, moreListEl)
 
@@ -194,18 +185,11 @@ async function toggleMore(): Promise<void> {
   moreOpen.value = !moreOpen.value
   if (!moreOpen.value) return
   const root = rootEl.value
-  const more = moreEl.value
-  const edge = root && more ? more.offsetLeft + more.offsetWidth : 0
-  moreLeft.value = Math.max(4, edge - 220)
-  // Right-aligned under +N, but never past the strip's left edge or the pane's right edge.
+  moreLeft.value = root ? moreListLeft(root.clientWidth, 220) : 4
+  // Placed again with the list's real width (it grows with a long title), once it is drawn.
   await nextTick()
   const list = moreListEl.value
-  if (root && list) {
-    moreLeft.value = Math.max(
-      4,
-      Math.min(edge - list.offsetWidth, root.clientWidth - list.offsetWidth - 4)
-    )
-  }
+  if (root && list) moreLeft.value = moreListLeft(root.clientWidth, list.offsetWidth)
 }
 function pickMore(tabId: string): void {
   moreOpen.value = false
@@ -352,10 +336,8 @@ const hostBadge = (tab: BrowserTabState): string => {
     <!-- The tabs that do not fit. -->
     <button
       v-if="overflowCount > 0"
-      ref="moreEl"
       type="button"
-      class="mx-1 flex h-[18px] shrink-0 items-center gap-0.5 self-center rounded-sm px-[5px] font-mono text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
-      :class="moreOpen ? 'bg-surface-2 text-text' : ''"
+      class="flex h-[18px] shrink-0 items-center gap-0.5 self-center rounded-sm px-[5px] font-mono text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
       style="font-size: 10.5px"
       :title="$t('browserPane.tabs.more', { count: overflowCount })"
       :aria-expanded="moreOpen"
@@ -449,12 +431,7 @@ const hostBadge = (tab: BrowserTabState): string => {
       data-dsqa-part="overflow-list"
       @mousedown.stop
     >
-      <template v-for="(tab, i) in tabs" :key="tab.tabId">
-        <div
-          v-if="i === firstHiddenIndex"
-          class="mx-0.5 my-1 border-t border-border"
-          role="separator"
-        />
+      <template v-for="tab in tabs" :key="tab.tabId">
         <button
           type="button"
           role="menuitem"
