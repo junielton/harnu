@@ -77,7 +77,9 @@ function toggleLineage(motherPath: string): void {
 /**
  * Whether the folder list has a status message (loading / nothing yet / filter
  * matched nothing) to show instead of rows. The drill view mounts outside the
- * tree scroller (BUG-248), so this decides which of the two hosts renders.
+ * tree scroller (BUG-248), so on the ROOT screen this decides which of the two hosts
+ * renders; a drilled screen keeps the drill view and shows the same status under its
+ * Back row (BUG-257).
  */
 const treeStatus = computed(
   () =>
