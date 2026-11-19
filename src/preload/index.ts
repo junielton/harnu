@@ -2791,8 +2791,8 @@ const api = {
     }) => void
   ): (() => void) => subscribe('browser:activity', cb),
   /**
-   * A pane main made for the renderer to place: a popup the operator clicked open (an operator-class pane, spec §3.2)
-   * or a tab moved to a new pane, which keeps the opener's `openedBy`, owner and name.
+   * A pane main made for the renderer to place: a tab moved to a new pane, which keeps the opener's `openedBy`,
+   * owner and name. (A page's new window is a tab of its opener's pane, not a pane.)
    */
   onBrowserPopup: (
     cb: (p: {
@@ -2825,6 +2825,9 @@ const api = {
   /** "Reload when it is up" on an error tab: `on` starts the TCP poll of its local origin, `false` cancels it. */
   browserTabReloadWhenUp: (paneId: string, tabId: string, on: boolean): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('browser:tab:reload-when-up', { paneId, tabId, on }),
+  /** The operator focused this pane's header or address bar: main stamps its `lastFocusedAt` (browser-tabs S-4). */
+  browserPaneFocused: (paneId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('browser:pane:focused', paneId),
   // T31: the Sentinel auto-denied a catastrophic command — surface it prominently.
   onSentinelBlocked: (cb: (p: { reason: string; sessionId: string }) => void): (() => void) =>
     subscribe('sentinel:blocked', cb),

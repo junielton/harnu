@@ -27,6 +27,8 @@ export type BrowserNotice =
   | { kind: 'offline' }
   /** A page event or a comment pick was dropped because a session had just acted on the page (T574 F4). */
   | { kind: 'agent-input' }
+  /** A page's new window was refused: the pane already holds the most tabs it may (browser-tabs D-2). */
+  | { kind: 'tab-limit' }
 
 /** A device the pane emulates; mirrors `DeviceSpec` in `src/shared/browser-emulation.ts` (a test pins the two). */
 export interface BrowserDeviceState {

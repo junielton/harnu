@@ -6,6 +6,7 @@ import { sessionTitle } from '../lib/session-label'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useHelpersStore } from '../stores/helpers'
+import { useBrowserStore } from '../stores/browser'
 import { useLayoutStore } from '../stores/layout'
 import { useSettingsStore } from '../stores/settings'
 import { useClaudeBootStore } from '../stores/claudeBoot'
@@ -54,6 +55,7 @@ const sessions = useSessionsStore()
 const ui = useUiStore()
 const keybindings = useKeybindingsStore()
 const helpers = useHelpersStore()
+const browser = useBrowserStore()
 const layout = useLayoutStore()
 const settings = useSettingsStore()
 const boot = useClaudeBootStore()
@@ -437,7 +439,8 @@ const allActions = computed<TopbarActionView[]>(() => {
     view('terminal', t('topbar.split'), { icon: Terminal, run: () => folderActions.newTerminal() }),
     // T630: Browser sits right next to Terminal — one click, the same operator pane the old Split
     // dropdown item opened.
-    view('browser', t('topbar.browser'), { icon: Globe, run: () => folderActions.newBrowser() })
+    // browser-tabs D-1: with an operator pane open it adds a tab there (Shift+click opens a pane).
+    view('browser', t('topbar.browser'), { icon: Globe, run: () => void onBrowserClick(false) })
   )
   if (helpers.hasHelpersForCurrentWorktree) {
     // T627: split-layout toggle (design.md §6 "Split orientation"). The glyph is the layout in force;
@@ -534,6 +537,13 @@ watch(
 /** The Mission pill came, went or changed width (it cannot shrink, so the plan reserves it): measure again. */
 function replanAfterPill(): void {
   void nextTick(planOverflow)
+}
+
+/** The Browser button: a tab in the last-used operator pane, or a pane (none open, at the tab limit, Shift+click). */
+function onBrowserClick(shift: boolean): Promise<'tab' | 'pane' | void> {
+  const wt = sessions.activeFolderPath
+  if (!wt) return Promise.resolve()
+  return browser.openFromTopbar(wt, { shift }, () => folderActions.newBrowser())
 }
 
 function runHidden(id: TopbarActionId): void {
@@ -735,7 +745,7 @@ function onKeydown(e: KeyboardEvent): void {
           :aria-label="a.label"
           :aria-pressed="a.toggle ? a.state === 'on' : undefined"
           :data-test="TEST_ID[a.id]"
-          @click="a.run()"
+          @click="a.id === 'browser' ? onBrowserClick($event.shiftKey) : a.run()"
         >
           <component :is="a.icon" v-bind="a.iconProps" />
         </button>

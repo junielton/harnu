@@ -4889,6 +4889,58 @@ chrome adds three things and changes one.
   (`hostView: 'start'`) hides its native view and the host is an empty `--bg` area; the address field takes the
   focus. An agent pane never shows it.
 
+- **Tab strip** (browser-tabs spec S-4, mockup states `single`, `tabs`, `tab-menu`, `overflow`, `overflow-list`).
+  A pane holds up to 8 tabs of one partition. **One tab:** today's header (globe, title, chip, comment, ⋯,
+  maximize, close) plus a `+` icon button (18×18, `plus` 12px, `--text-3`, `--surface-2` on hover) right after the
+  title; no strip, no second row. **Two or more:** the strip takes the place of the globe and the title in the same
+  24px header (the header loses its left padding; the tabs run to its edge). A tab is a flex row, `gap 5px`,
+  `padding 0 4px 0 8px`, 1px `--border` on its right, 11px: a **favicon** 12×12 (the page's own icon, else the
+  host's first letter, 8px weight 600, `--radius-xs`, in the origin badge's colours: `local` `--green-soft` fill and
+  `--green` text, `external` `--surface-2` and `--text-2`, `page` `--accent-soft` and `--accent`; a start tab shows
+  `globe`), the **title** (truncated), and a **close** `x` 10px in a 14×14 `--radius-xs` target that shows on hover
+  and on the active tab (`--border-2` fill on its own hover). Inactive: `--text-3`; hover `--surface-2` and
+  `--text-2`. **Active:** `--bg` fill and `--text`, raised over the header's 1px bottom border by a `0 1px 0 --bg`
+  shadow so it opens into the address bar below; **no accent line, no top or bottom rule in `--accent`**. A
+  discarded tab keeps its look. `+` follows the last tab (4px side margins), adds a `start` tab right of the active
+  one and puts the cursor in its address field; at 8 tabs it is `disabled` (`text-text-disabled`) and its title says
+  "Tab limit reached (8)". A `page` pane (live panel) keeps one tab: no `+` and no strip. The tab whose activity
+  word is live shows a 6px `--accent` dot (with a 3px `--accent-soft` ring) in place of its favicon (S-7 draws it).
+- **Overflow** (the sizes are in CSS px; W is the strip's width: the header minus the right-hand buttons and `+`).
+  The strip takes the first mode that fits, n being the tab count:
+
+  | mode   | active tab         | inactive tabs      | fits when                           |
+  | ------ | ------------------ | ------------------ | ----------------------------------- |
+  | full   | 168px              | 168px              | n × 168 ≤ W                         |
+  | short  | 168px              | 112px, title kept  | W > 480 and 168 + (n − 1) × 112 ≤ W |
+  | shrink | equal width ≥ 80px | equal width ≥ 80px | n × 80 ≤ W                          |
+  | icons  | 168px              | 28px, icon only    | 168 + (n − 1) × 28 ≤ W              |
+
+  When none fits, the icons mode applies with **36px reserved for a `+N` button** (mono 10.5px, `--text-2`, 18px
+  high, `padding 0 5px`, `chevron-down` 10px, `--surface-2` on hover and while its list is open, placed before `+`):
+  the strip keeps the active tab and the first k = max(0, ⌊(W − 36 − 168) ÷ 28⌋) inactive tabs in order, and the
+  rest move behind `+N`; the active tab is never moved. An icon-only tab keeps its full title in its native
+  `title`. **`+N` list:** a standard context menu (§6 "Context menu"), `min-width 220px`, anchored under the button,
+  listing every tab in order (favicon 12px + title); the active tab is marked (`--accent-soft` row and a mono
+  "open" tag); picking one activates it and closes the list. It registers with the native-overlay composable.
+
+- **Tab menu** (right-click a tab; a standard context menu, `--shadow-pop`, anchored at the tab's lower-left, the
+  tab keeping its hover look while it is open): **New tab to the right** (`plus`), **Reload** (`rotate-cw`),
+  **Duplicate** (`copy`: a new tab right of it loading the same URL, without history or scroll), **Move to a new
+  pane** (`panel-right`: the tab becomes its own pane, placed below the current one; disabled, `text-text-disabled`,
+  on a pane's only tab and for an agent pane at the 4-agent-pane cap), a separator, **Close other tabs**, **Close
+  tab** (`x`, with the chord's label at the right edge). It registers with the native-overlay composable.
+- **Tab limit notice.** A page's new window at 8 tabs is refused and the notice strip says "Tab limit reached (8).
+  Close a tab to open more." (`--warning` tone, like the other refusals).
+- **Keys** (pane chords: caught before the page sees them, in the page and in the pane chrome; the action ids
+  `browser.tab.new`, `browser.tab.close`, `browser.tab.next`, `browser.tab.prev`, `browser` scope, so they act on the
+  focused pane's tabs and never on the app): `Ctrl+T` new tab, `Ctrl+W` close tab (`Cmd` on macOS); `Ctrl+Tab` and
+  `Ctrl+Shift+Tab` next and previous tab on every platform. While a browser pane has the focus its close-tab chord
+  wins over the app's close-session chord.
+- **Topbar Browser button.** With an operator pane of the folder open it adds a `start` tab right of the active tab
+  of the pane with the latest `lastFocusedAt` (focus in its header, address bar or page stamps it; a pane with no
+  stamp ranks by creation, below the stamped ones) and the address field takes the focus; with none, or at 8 tabs,
+  it opens a pane as before; **Shift+click** always opens a pane; an agent pane is never a target.
+
 #### Point-and-comment overlay (browser pane)
 
 T564 U6, spec `docs/specs/2026-10-21-T564-browser-pane.md` §8; approved mockup
