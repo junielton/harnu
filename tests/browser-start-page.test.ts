@@ -10,6 +10,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import BrowserStartPage from '../src/renderer/src/components/BrowserStartPage.vue'
 import { START_REFRESH_MS } from '../src/renderer/src/stores/browser'
+import { RECENT_SHOWN } from '../src/main/browser/recent-sites'
 import { i18n } from '@renderer/i18n'
 
 const FOLDER = '/home/user/org/proj/www'
@@ -60,12 +61,12 @@ afterEach(() => {
 
 describe('recent tiles', () => {
   it('shows the folder’s recent sites newest first, each with its title and host', async () => {
-    recent = recentSample(8)
+    recent = recentSample(RECENT_SHOWN)
     const w = mountPage()
     await flushPromises()
     expect(browserStartRecent).toHaveBeenCalledWith(FOLDER)
     const tiles = w.findAll('[data-testid="browser-start-tile"]')
-    expect(tiles).toHaveLength(8)
+    expect(tiles).toHaveLength(RECENT_SHOWN)
     expect(tiles.map((t) => t.find('[data-testid="browser-start-tile-title"]').text())).toEqual(
       recent.map((r) => r.title)
     )
@@ -74,11 +75,12 @@ describe('recent tiles', () => {
     )
   })
 
-  it('never draws more than 8 tiles, even if main sent more', async () => {
-    recent = recentSample(12)
+  // The page's own cap mirrors main's `RECENT_SHOWN` (it cannot import main): this pins the two together.
+  it('never draws more tiles than main shows, even if main sent more', async () => {
+    recent = recentSample(RECENT_SHOWN + 4)
     const w = mountPage()
     await flushPromises()
-    expect(w.findAll('[data-testid="browser-start-tile"]')).toHaveLength(8)
+    expect(w.findAll('[data-testid="browser-start-tile"]')).toHaveLength(RECENT_SHOWN)
   })
 
   it('a tile opens its address in the same tab (the address bar’s navigation call)', async () => {
