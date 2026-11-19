@@ -4885,9 +4885,36 @@ chrome adds three things and changes one.
   port ‹n›. Start the server, then reload."), refused or reset elsewhere, name not resolved, timed out, no internet,
   `ERR_CERT_*`, and a fallback for any other code. No spinner and no motion. The next main-frame commit, or a
   navigation, clears the page; the address field keeps the address that failed.
-- **Start placeholder** (browser-tabs spec S-3, until S-5 draws the start page). A tab with no address
-  (`hostView: 'start'`) hides its native view and the host is an empty `--bg` area; the address field takes the
-  focus. An agent pane never shows it.
+- **Start page** (browser-tabs spec S-5, mockup states `start` and `new-tab`). A tab with no address
+  (`hostView: 'start'`, set by `+`, the Topbar button, "New tab to the right" and a restored start tab) hides its
+  native view; the address field is empty and has the focus, and the host draws the start page on `--bg`, scrolling
+  when it is taller than the pane. An agent pane never shows it. It is one column at most 560px wide (no token: a
+  readable measure) with 18px top and bottom and 20px side padding and 6px gaps, and two sections, **each left out
+  when it has nothing to show** (a folder with no server running and no history shows an empty `--bg` host):
+  - A **section label**: `server` (Running in this folder) or `clock` (Recent) 12px `--text-3`, the words in 10.5px
+    uppercase with 0.04em tracking, `--text-3`; the second section starts 8px lower.
+  - **Running in this folder**: one row per server, 30px high, `padding 0 10px`, 8px gap, 1px `--border`,
+    `--radius`, `--surface` fill, `--surface-2` fill and `--border-2` on hover and `--accent-line` on keyboard focus.
+    Left to right: a 12px letter icon (the favicon fallback of the tab strip: the name's first letter, `local`
+    `--green-soft` and `--green`), the name in 12px `--text`, the address in mono 10.5px `--text-3` pushed to the right
+    (`localhost:5173`, or `<address>:<port>` for a server bound only to another address), and the source in 10px
+    `--text-4`: `docker` or the listening process's name. Names and addresses truncate with an ellipsis.
+  - **Recent**: a grid of tiles, `repeat(auto-fill, minmax(150px, 1fr))`, 6px gaps, at most 8, newest first. A tile is
+    a 12px / 1fr grid with a 7px column gap and a 2px row gap, `padding 8px 10px`, the same border, radius, fill and
+    hover as a server row: the letter icon (the title's first letter; `local` for loopback, `*.localhost` and `*.test`
+    hosts, else `--surface-2` and `--text-2`), the title in 12px `--text`, and the host (with its port) in mono 10.5px
+    `--text-3` under the title in the second column. The tile's `title` attribute is its address.
+  - Picking a row or a tile opens its address **in the same tab**, through the address bar's own navigation. The page
+    asks main for both lists when it shows and at most every 5 s while it stays shown; a failed read leaves a section
+    out. No spinner and no motion.
+  - Main builds the lists. Servers: the host ports of the folder's running Docker containers (named by compose service
+    or container name, labelled `docker`), plus the ports listened on under the folder's Harnu terminals (Linux and
+    macOS only; named by the folder's basename, labelled by process), deduped by port with Docker first, sorted by
+    port. Recent: the folder's last sites, recorded when an operator tab commits a main-frame navigation with a 2xx or
+    3xx status: origin and path only (no query or fragment), a path segment of 20 or more letters, digits, `-` or `_`
+    shown as `…`, and never a path containing `reset`, `token`, `oauth`, `callback`, `verify` or `magic`, never an
+    agent pane, `about:blank`, an error page or a `harnu-page:` page; 50 kept, 8 shown. Clearing Recent joins "Clear
+    browsing data" when that pane-menu action lands.
 
 - **Tab strip** (browser-tabs spec S-4, mockup states `single`, `tabs`, `tab-menu`, `overflow`, `overflow-list`).
   A pane holds up to 8 tabs of one partition. **One tab:** today's header (globe, title, chip, comment, ⋯,

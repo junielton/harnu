@@ -34,13 +34,22 @@ A pane holds up to **8 tabs**. With one tab the header looks as it always did, p
 - **Keyboard** — while a browser pane is focused (the page, the header or the address bar): **Ctrl+T** new tab, **Ctrl+W** close tab (**Cmd+T** and **Cmd+W** on macOS), **Ctrl+Tab** and **Ctrl+Shift+Tab** next and previous tab. They act on the pane you are in and are caught before the page sees them. **Ctrl+W** closes the tab here instead of closing the session, as it does elsewhere. These are in Settings → Keyboard Shortcuts too.
 - **A page tab you leave in the background** is paused to save memory after ten minutes, like a hidden pane, and comes back when you click it.
 
+## The start page
+
+A tab with no address (from **+**, the Topbar **Browser** button, or **New tab to the right**) shows the start page. Its address field is empty and ready for you to type in; you can also pick something from the page, which opens in the same tab.
+
+- **Running in this folder** lists the servers this folder has up. It shows the published ports of the folder's running Docker containers (named after the compose service or container, marked `docker`) and the ports that programs started in this folder's Harnu terminals are listening on (named after the folder, marked with the program, such as `vite` or `node`). A server that listens only on your network address, not on this machine, shows as `<address>:<port>`. Each port shows once, Docker first, in port order. Detecting what a terminal started works on Linux and macOS; on Windows only the Docker servers show.
+- **Recent** shows the last 8 sites you opened in this folder's browser panes, newest first, each with its title and address. Harnu keeps up to 50 per folder, in a file in its own data folder, and keeps only the address without the part after `?` or `#`. A long token-like piece of an address (20 or more letters, digits, `-` or `_`) is replaced by `…`, and pages whose address contains `reset`, `token`, `oauth`, `callback`, `verify` or `magic` are not kept, so a sign-in link never lands there. Pages a session opens in its own pane, a blank page and an error page are never kept. There is no button to clear the list yet.
+
+A section with nothing to show is left out, so a folder with nothing running and no history shows only the empty page. The lists refresh when the page shows and every few seconds while it stays open.
+
 ## When a page will not load
 
 If a page fails to load, the pane does not leave you with a blank page. It shows what went wrong: a plain title ("localhost:8000 refused to connect", "exmaple.com's address could not be found", "No internet connection"), one line about what to do, the error code (for example `ERR_CONNECTION_REFUSED`) and **Reload**. A load that was only cancelled (you clicked another link before it finished) is not an error and shows nothing. The address field keeps the address that failed, so you can fix a typo and press **Enter**.
 
 On your own machine (a green **local** address), the page also has **Reload when it is up**. Start your dev server, click it, and Harnu checks that host and port every two seconds and reloads the page by itself as soon as something answers. While it waits, the button reads **Waiting for localhost:8000…**; click it again to stop. It also stops after ten minutes, when you go to another address, and when you close the tab. It keeps checking while the pane is hidden. An **external** address has no such button.
 
-A browser tab with no address shows an empty page and the address field is ready for you to type in (the start page that lists your running servers and recent sites comes in a later change). A session's own browser pane never shows it, and a session that reads a pane showing the error is told the error code instead of getting an empty page. After a restart an error tab loads its address again, so it either comes back or shows the error again.
+A session's own browser pane never shows the start page (below), and a session that reads a pane showing the error is told the error code instead of getting an empty page. After a restart an error tab loads its address again, so it either comes back or shows the error again.
 
 ## Live panels: your own files, kept fresh by a session
 

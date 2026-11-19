@@ -70,7 +70,7 @@ function favicon(url: string, label: string): { letter: string; cls: string } {
 }
 
 const rowBase =
-  'border border-border bg-surface rounded transition-colors hover:border-border-2 hover:bg-surface-2 focus-visible:border-accent-line focus-visible:outline-none cursor-pointer text-left'
+  'border border-border text-[12px] bg-surface rounded transition-colors hover:border-border-2 hover:bg-surface-2 focus-visible:border-accent-line focus-visible:outline-none cursor-pointer text-left'
 const favBase =
   'grid size-3 shrink-0 place-items-center rounded-xs text-[8px] leading-none font-semibold'
 </script>

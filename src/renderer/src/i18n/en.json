@@ -5224,7 +5224,7 @@
     "reload": "Reload",
     "stop": "Stop",
     "address": "Address",
-    "addressPlaceholder": "Enter an address",
+    "addressPlaceholder": "Type an address and press Enter",
     "pauseAgent": "Pause agent for 10 min",
     "resumeAgent": "Resume agent",
     "devtools": "Open DevTools",

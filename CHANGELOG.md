@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-19
+
+### Added
+
+- **A new browser tab now opens on a start page instead of an empty one.** With the address field ready for you to type in, it lists **Running in this folder** (the published ports of the folder's Docker containers and the ports that programs started in its Harnu terminals are listening on, each named and marked with where it comes from; a server reachable only on your network address shows as `address:port`) and **Recent** (the last 8 sites you opened in the folder's browser panes, newest first, with their title and address). Click a row or a tile and it opens in the same tab. A section with nothing to show is left out. Recent keeps up to 50 sites per folder in a file in Harnu's data folder, without the query or fragment, with long token-like pieces of an address hidden and sign-in or password-reset style addresses never kept; a session's own pane never adds to it. Finding what a terminal started works on Linux and macOS; on Windows only Docker servers show. Documented in `docs/user/browser-pane.md`.
+
 ## 2026-11-18
 
 ### Added
