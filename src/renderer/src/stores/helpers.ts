@@ -9,6 +9,7 @@ import type { PaneRingState } from '../lib/pane-ring'
 import { persistedRef } from './persisted'
 import {
   SPLIT_RATIO_DEFAULT,
+  SPLIT_RATIO_MIN,
   clampSplitRatio,
   type SplitOrientation
 } from '../lib/split-orientation'
@@ -592,6 +593,62 @@ export const useHelpersStore = defineStore('helpers', () => {
     },
     { flush: 'sync' }
   )
+
+  /**
+   * T790: per-worktree "the session area is tucked away". Ephemeral like {@link maximizedByWorktree}:
+   * never part of the persisted shape, so it cannot reach `helpers.json`, and a restart starts with the
+   * session shown. Unlike the expanded view it is kept when the operator leaves the worktree and comes
+   * back (it is that worktree's own layout), but it is never read for any other worktree.
+   */
+  const tuckedByWorktree = ref<Set<string>>(new Set())
+
+  /** Whether `worktreePath`'s session area is tucked away. */
+  function sessionTucked(worktreePath: string): boolean {
+    return tuckedByWorktree.value.has(worktreePath)
+  }
+
+  /** The tucked flag for the visible worktree (`App.vue` still requires the stack to be on screen). */
+  const sessionTuckedForCurrentWorktree = computed<boolean>(() => {
+    const p = currentWorktreePath.value
+    return p ? tuckedByWorktree.value.has(p) : false
+  })
+
+  function setSessionTucked(worktreePath: string, tucked: boolean): void {
+    if (tuckedByWorktree.value.has(worktreePath) === tucked) return
+    const next = new Set(tuckedByWorktree.value)
+    if (tucked) next.add(worktreePath)
+    else next.delete(worktreePath)
+    tuckedByWorktree.value = next
+  }
+
+  /** Tuck the session away. A no-op without a helper pane: nothing would fill the freed area. */
+  function tuckSession(worktreePath: string): void {
+    if ((byWorktree.value.get(worktreePath)?.panes.length ?? 0) === 0) return
+    setSessionTucked(worktreePath, true)
+  }
+
+  /** Bring the session back at the ratio the worktree already holds. */
+  function showSession(worktreePath: string): void {
+    setSessionTucked(worktreePath, false)
+  }
+
+  /** `session.toggleTuck` (the chord and the palette entry). */
+  function toggleSessionTuck(worktreePath: string): void {
+    if (sessionTucked(worktreePath)) showSession(worktreePath)
+    else tuckSession(worktreePath)
+  }
+
+  /**
+   * The edge strip's restore: the session comes back at exactly the floor (0.4) of the orientation in
+   * force, and the helper stack adapts.
+   */
+  function restoreSessionAtFloor(
+    worktreePath: string,
+    orientation: SplitOrientation = 'side-by-side'
+  ): void {
+    setSplitRatio(worktreePath, SPLIT_RATIO_MIN, orientation)
+    showSession(worktreePath)
+  }
 
   /**
    * Bumped every time a pane is added to — or re-focused by a dedup hit in —
@@ -1472,6 +1529,8 @@ export const useHelpersStore = defineStore('helpers', () => {
     }
     // Same for the expanded view (T628): nothing would be left on screen.
     if (expandedByWorktree.value.get(worktreePath) === helperId) exitExpand(worktreePath)
+    // T790: closing the last pane brings a tucked session back — never leave an empty main area.
+    if ((byWorktree.value.get(worktreePath)?.panes.length ?? 0) === 0) showSession(worktreePath)
   }
 
   /**
@@ -1585,6 +1644,7 @@ export const useHelpersStore = defineStore('helpers', () => {
       maximizedByWorktree.value = nextMax
     }
     exitExpand(worktreePath)
+    showSession(worktreePath)
   }
 
   /**
@@ -1855,6 +1915,13 @@ export const useHelpersStore = defineStore('helpers', () => {
     expandedPaneIdForCurrentWorktree,
     toggleExpandPane,
     exitExpand,
+    tuckedByWorktree,
+    sessionTucked,
+    sessionTuckedForCurrentWorktree,
+    tuckSession,
+    showSession,
+    toggleSessionTuck,
+    restoreSessionAtFloor,
     unseenAgentPanes,
     unseenAgentPaneCount,
     paneRevealTick,

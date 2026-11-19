@@ -1,0 +1,120 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-11-18",
+  "project": "harnu",
+  "card": "T790",
+  "tokensFrom": "src/renderer/src/styles/themes.css (@theme block = dark) + src/renderer/src/styles/main.css (font tokens)",
+  "viewports": [1280],
+  "targets": [
+    "src/renderer/src/App.vue",
+    "src/renderer/src/stores/helpers.ts",
+    "src/renderer/src/stores/layout.ts",
+    "src/renderer/src/components/SessionTuckStrip.vue"
+  ],
+  "screens": [
+    {
+      "id": "split-side",
+      "title": "Side by side: session left, helper stack right",
+      "status": "approved",
+      "approvedAt": "2026-11-18",
+      "states": ["default", "armed", "tucked", "tucked-hover", "tucked-needs-you"],
+      "targets": ["src/renderer/src/App.vue", "src/renderer/src/components/SessionTuckStrip.vue"],
+      "notes": "Drag the divider past the 40% floor to arm, release to tuck; the vertical strip brings the session back at 40%."
+    },
+    {
+      "id": "split-stacked",
+      "title": "Stacked: session on top, helper stack below",
+      "status": "approved",
+      "approvedAt": "2026-11-18",
+      "states": ["default", "armed", "tucked", "tucked-hover"],
+      "targets": ["src/renderer/src/App.vue", "src/renderer/src/components/SessionTuckStrip.vue"],
+      "notes": "Same behavior on the Y axis; the strip is horizontal along the top edge."
+    }
+  ],
+  "parts": [
+    {
+      "id": "tuck-strip",
+      "variants": ["v-idle", "v-hover", "v-needs", "h-idle", "h-hover"]
+    },
+    {
+      "id": "helper-panes",
+      "variants": ["column", "row"]
+    },
+    {
+      "id": "session-term",
+      "variants": ["default"]
+    }
+  ],
+  "flows": [
+    {
+      "id": "tuck",
+      "title": "Tuck the session away",
+      "steps": [
+        {
+          "screen": "split-side",
+          "state": "default",
+          "via": "drag the divider past the floor"
+        },
+        {
+          "screen": "split-side",
+          "state": "armed",
+          "via": "release"
+        },
+        {
+          "screen": "split-side",
+          "state": "tucked"
+        }
+      ]
+    },
+    {
+      "id": "restore",
+      "title": "Bring the session back",
+      "steps": [
+        {
+          "screen": "split-side",
+          "state": "tucked-hover",
+          "via": "click the strip"
+        },
+        {
+          "screen": "split-side",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "attention",
+      "title": "The session needs you while tucked",
+      "steps": [
+        {
+          "screen": "split-side",
+          "state": "tucked-needs-you",
+          "via": "click the strip"
+        },
+        {
+          "screen": "split-side",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "tuck-stacked",
+      "title": "Tuck the session away (stacked)",
+      "steps": [
+        {
+          "screen": "split-stacked",
+          "state": "default",
+          "via": "drag the divider past the floor"
+        },
+        {
+          "screen": "split-stacked",
+          "state": "armed",
+          "via": "release"
+        },
+        {
+          "screen": "split-stacked",
+          "state": "tucked"
+        }
+      ]
+    }
+  ]
+}
