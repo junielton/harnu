@@ -1912,6 +1912,7 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       origin: opts.terminal.origin,
       ownerSessionId: opts.terminal.ownerSessionId ?? null,
       ...(opts.terminal.disconnected ? { disconnected: true } : {}),
+      shellPid: rec.pty.pid,
       size: { cols: opts.cols, rows: opts.rows }
     })
     // T480: an agent terminal is exact from byte 0, so its screen model is born with it. An

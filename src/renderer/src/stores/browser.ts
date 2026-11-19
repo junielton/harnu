@@ -41,6 +41,9 @@ import type {
  * `start()` is idempotent and runs once, from `App.vue`: it subscribes to main's events, starts the native
  * overlay watcher (spec §2.4) and keeps main told which chords Harnu binds (spec §2.5).
  */
+/** The start page reads its lists when it shows, then at most this often while it stays shown (browser-tabs S-5). */
+export const START_REFRESH_MS = 5000
+
 export const useBrowserStore = defineStore('browser', () => {
   const helpers = useHelpersStore()
   const keybindings = useKeybindingsStore()
@@ -203,6 +206,20 @@ export const useBrowserStore = defineStore('browser', () => {
     target: { url: string } | { action: 'back' | 'forward' | 'reload' | 'stop' }
   ): Promise<{ ok: true } | { ok: false; scheme: string }> {
     return window.api.browserNavigate({ paneId, ...target })
+  }
+
+  /* ---- The start page's lists (S-5): main builds them, the page only asks ------------------------- */
+
+  // `async` so a missing bridge (an old preload) is a rejection the page absorbs, never a throw in its timer.
+  async function startServers(
+    folder: string
+  ): Promise<Array<{ name: string; url: string; source: string }>> {
+    return window.api.browserStartServers(folder)
+  }
+  async function startRecent(
+    folder: string
+  ): Promise<Array<{ title: string; url: string; host: string }>> {
+    return window.api.browserStartRecent(folder)
   }
 
   /* ---- Tabs: main owns every tab; these relay the operator's gestures (the strip is S-4) ---------- */
@@ -505,6 +522,8 @@ export const useBrowserStore = defineStore('browser', () => {
     revive,
     forget,
     navigate,
+    startServers,
+    startRecent,
     tabNew,
     tabNewStart,
     tabClose,

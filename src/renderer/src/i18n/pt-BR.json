@@ -5301,6 +5301,10 @@
     "noticeDownloaded": "{name} salvo",
     "noticeDownloadCancelled": "Download cancelado",
     "noticeDownloadFailed": "O download falhou",
+    "start": {
+      "running": "Rodando nesta pasta",
+      "recent": "Recentes"
+    },
     "loadError": {
       "reload": "Recarregar",
       "reloadWhenUp": "Recarregar quando estiver no ar",

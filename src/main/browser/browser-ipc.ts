@@ -23,7 +23,9 @@ import {
   getPageService,
   moveTabFromOperator,
   openOperatorPane,
-  openTabFromOperator
+  openTabFromOperator,
+  startRecentFor,
+  startServersFor
 } from './browser-service'
 import { isTabId } from '../../shared/browser-tabs'
 import type { EmulateArgs } from '../../shared/browser-emulation'
@@ -152,6 +154,24 @@ export function registerBrowserIpc(getWindow: () => BrowserWindow | null): void 
     const a = tabArgs(payload)
     const on = isRecord(payload) && typeof payload.on === 'boolean' ? payload.on : null
     return { ok: a && on !== null ? host().reloadWhenUp(a.paneId, a.tabId, on) : false }
+  })
+
+  // The start page (S-5): the folder's running servers and its recent sites. A bad folder reads as empty.
+  handleApp('browser:start:servers', async (folder: unknown) => {
+    if (typeof folder !== 'string' || folder.length === 0) return []
+    try {
+      return await startServersFor(folder)
+    } catch {
+      return []
+    }
+  })
+  handleApp('browser:start:recent', async (folder: unknown) => {
+    if (typeof folder !== 'string' || folder.length === 0) return []
+    try {
+      return await startRecentFor(folder)
+    } catch {
+      return []
+    }
   })
 
   // Geometry and overlays are fire-and-forget: they ride animation frames.

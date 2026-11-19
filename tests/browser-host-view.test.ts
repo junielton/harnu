@@ -490,12 +490,13 @@ describe('renderer placeholders: the pane host', () => {
     return { w, browser, calls, flushPromises }
   }
 
-  it('a start tab draws an empty bg host and the address field has the focus', async () => {
+  it('a start tab draws the start page on the bg host and the address field has the focus', async () => {
     const { w } = await mountPane(
       baseState({ tabs: [tabRow({ hostView: 'start', url: 'about:blank' })] })
     )
     const host = w.get('[data-testid="browser-start-placeholder"]')
-    expect(host.element.textContent?.trim()).toBe('')
+    // S-3 drew an empty host here; S-5 puts the start page in it (tests/browser-start-page.test.ts).
+    expect(host.find('[data-testid="browser-start-page"]').exists()).toBe(true)
     expect(host.classes()).toContain('bg-bg')
     expect(w.find('[data-testid="browser-load-error"]').exists()).toBe(false)
     const input = document.activeElement as HTMLElement | null

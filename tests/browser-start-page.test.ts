@@ -116,10 +116,12 @@ describe('sections', () => {
     expect(browserStartServers).toHaveBeenCalledWith(FOLDER)
     expect(w.find('[data-testid="browser-start-recent"]').exists()).toBe(false)
     const rows = w.findAll('[data-testid="browser-start-server"]')
-    expect(rows.map((r) => r.text().replace(/\s+/g, ' '))).toEqual([
-      'www localhost:5173 vite',
-      'api-gateway localhost:8080 docker',
-      'www 192.168.1.20:3000 ruby'
+    const field = (r: (typeof rows)[number], part: string): string =>
+      r.get(`[data-testid="browser-start-server-${part}"]`).text()
+    expect(rows.map((r) => [field(r, 'name'), field(r, 'address'), field(r, 'source')])).toEqual([
+      ['www', 'localhost:5173', 'vite'],
+      ['api-gateway', 'localhost:8080', 'docker'],
+      ['www', '192.168.1.20:3000', 'ruby']
     ])
     await rows[1]!.trigger('click')
     expect(w.emitted('open')).toEqual([['http://localhost:8080']])

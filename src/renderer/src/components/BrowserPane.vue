@@ -55,6 +55,7 @@ import { createFrameScheduler } from '../lib/frame-scheduler'
 import { sessionTitle } from '../lib/session-label'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import BrowserLoadError from './BrowserLoadError.vue'
+import BrowserStartPage from './BrowserStartPage.vue'
 import BrowserTabStrip from './BrowserTabStrip.vue'
 import { hostPlaceholderOf } from '../../../shared/browser-tabs'
 import {
@@ -1616,13 +1617,18 @@ watch(isFrozen, async (frozen) => {
         </button>
       </div>
 
-      <!-- Start placeholder (browser-tabs S-3): a tab with no address shows an empty host until S-5 draws the start
-           page; its native view is hidden and the address field has the focus. -->
+      <!-- Start page (browser-tabs S-5): a tab with no address; its native view is hidden, the address field has the
+           focus, and a server or recent site opens in this same tab through the address bar's navigation call. -->
       <div
         v-if="placeholder === 'start'"
-        class="absolute inset-0 z-[1] bg-bg"
+        class="absolute inset-0 z-[1] overflow-auto bg-bg"
         data-testid="browser-start-placeholder"
-      />
+      >
+        <BrowserStartPage
+          :folder="worktreePath"
+          @open="(url: string) => void browser.navigate(paneId, { url })"
+        />
+      </div>
 
       <!-- Load-error page (browser-tabs S-3): the tab's main-frame load failed, so main hid its view. -->
       <BrowserLoadError
