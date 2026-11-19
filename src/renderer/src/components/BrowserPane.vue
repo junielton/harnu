@@ -212,8 +212,11 @@ const onReviveClick = (): void => void browser.revive(paneId)
 
 /* ---- Header ---------------------------------------------------------------------------------- */
 
-const title = computed(
-  () => headerTitle(state.value) || payload.value.name || t('browserPane.newTab')
+// A tab with no address holds `about:blank`, which is not a title: its header reads "New tab" (mockup state `start`).
+const title = computed(() =>
+  placeholder.value === 'start'
+    ? t('browserPane.newTab')
+    : headerTitle(state.value) || payload.value.name || t('browserPane.newTab')
 )
 
 const isMaximized = computed(() => helpers.maximizedPaneId(props.worktreePath) === paneId)
