@@ -65,21 +65,6 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 
     seed = seedDialogWorld({ worktrees: 1 })
-    // One transcript in the folder, so the control server tracks it (its fleet scan reads `~/.claude/projects`).
-    const slug = seed.repo.replace(/[^a-zA-Z0-9]/g, '-')
-    const sessionId = '00000000-0000-4000-8000-0000000000a7'
-    mkdirSync(join(seed.userData, '.claude', 'projects', slug), { recursive: true })
-    writeFileSync(
-      join(seed.userData, '.claude', 'projects', slug, `${sessionId}.jsonl`),
-      JSON.stringify({
-        type: 'user',
-        cwd: seed.repo,
-        sessionId,
-        gitBranch: 'main',
-        timestamp: new Date().toISOString(),
-        message: { role: 'user', content: 'hello' }
-      }) + '\n'
-    )
     app = await launchApp({ userData: seed.userData, env: seedLaunchEnv(seed) })
     page = await app.firstWindow()
     await expect(page.locator('body')).toBeVisible()
@@ -275,6 +260,21 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
 
     await test.step('agent', async () => {
       await closePanes()
+      // One transcript in the folder so the control server tracks it (its fleet scan reads `~/.claude/projects`). Written here, not in `beforeAll`: a listed session changes the sidebar the other tests click through.
+      const slug = seed.repo.replace(/[^a-zA-Z0-9]/g, '-')
+      const sessionId = '00000000-0000-4000-8000-0000000000a7'
+      mkdirSync(join(seed.userData, '.claude', 'projects', slug), { recursive: true })
+      writeFileSync(
+        join(seed.userData, '.claude', 'projects', slug, `${sessionId}.jsonl`),
+        JSON.stringify({
+          type: 'user',
+          cwd: seed.repo,
+          sessionId,
+          gitBranch: 'main',
+          timestamp: new Date().toISOString(),
+          message: { role: 'user', content: 'hello' }
+        }) + '\n'
+      )
       // Enable the control server and let an "agent" open a pane in the folder: its header carries the icon.
       await page.evaluate(() =>
         (

@@ -4734,7 +4734,7 @@ terminal pane header, see "Agent connection chip"). Connected states no longer d
 round icon**, `--accent-soft` fill, `bot` 10px `--accent`, 4px left margin, with the `pulse-ring` halo of §7
 (`.anim-pulse-dot.anim-pulse-dot--accent`, `--pulse-from: 0.69` = 18 ÷ 26), always on while the icon shows; no
 halo under `prefers-reduced-motion`. **Tip** on hover and on keyboard focus (the icon is focusable), a `--surface`
-card, 1px `--border-2`, `--radius`, `--shadow-pop`, `padding 6px 9px`, 11px, one line each: the head in `--accent`
+card, 1px `--border-2`, `--radius`, `--shadow-pop`, `padding 6px 9px`, 11px, `line-height: normal`, one line each: the head in `--accent`
 with a `bot` 10px glyph, "Connected to ‹session›"; below it, in `--text-3`, what the agent is doing when a word is
 live: "Driving this tab · ‹host›", "Reading" or "Typing" (the chip's existing words, capitalised). It opens 5px under
 the icon, right-aligned to it, and registers with the native-overlay composable while it shows. The icon's

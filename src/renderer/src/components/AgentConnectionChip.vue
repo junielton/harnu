@@ -135,6 +135,7 @@ function onDisconnect(): void {
         :style="{ '--pulse-from': '0.69' }"
         :aria-label="aria"
         data-testid="agent-icon"
+        data-dsqa-part="connection-chip"
         v-bind="icon.clickSessionId ? { type: 'button' } : { tabindex: 0, role: 'img' }"
         @mousedown.stop
         @mouseenter="hovered = true"
@@ -150,8 +151,14 @@ function onDisconnect(): void {
         ref="tipEl"
         role="tooltip"
         class="absolute top-full right-0 z-30 mt-[5px] border border-border-2 bg-surface text-[11px] whitespace-nowrap text-text-2"
-        style="padding: 6px 9px; box-shadow: var(--shadow-pop); border-radius: var(--radius)"
+        style="
+          padding: 6px 9px;
+          box-shadow: var(--shadow-pop);
+          border-radius: var(--radius);
+          line-height: normal;
+        "
         data-testid="agent-icon-tip"
+        data-dsqa-part="connection-tip"
       >
         <span class="flex items-center gap-[5px] text-accent" data-testid="agent-icon-tip-head">
           <Bot :size="10" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />{{ icon.head }}
