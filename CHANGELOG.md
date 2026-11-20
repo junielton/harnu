@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-20
+
+### Fixed
+
+- **Clicking a link Claude prints in a session opens it again.** Recent Claude Code versions print links as terminal hyperlinks, and clicking one showed a "Do you want to navigate to…? WARNING: This link could potentially be dangerous" prompt that opened nothing, even after OK. Those links now open straight in your browser, like any other link in the terminal, and Option+click on a pull request link still shows it on the PR Stack when that setting is on.
+
 ## 2026-11-19
 
 ### Changed

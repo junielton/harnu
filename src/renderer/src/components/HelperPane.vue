@@ -413,6 +413,11 @@ async function createLiveHelper(
     // (`terminal-file-links.ts`). xterm's default would ALSO emit cursor-move
     // escape sequences on that click, landing arrow keys in Claude's composer.
     altClickMovesCursor: false,
+    // OSC 8 hyperlinks (Claude Code prints its links this way) bypass
+    // WebLinksAddon: xterm handles them itself, and its default handler is a
+    // `confirm()` + `window.open()` that `setWindowOpenHandler` denies, so the
+    // click asked "Do you want to navigate…" and then opened nothing.
+    linkHandler: { activate: openTerminalLink },
     scrollback: 10000,
     theme: themeFromCss()
   })
