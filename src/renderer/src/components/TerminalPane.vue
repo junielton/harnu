@@ -537,6 +537,11 @@ async function createLiveTerminal(
     // of ours (or of the PR Stack routing). Forcing selection on Option keeps
     // Option+click inside Harnu.
     macOptionClickForcesSelection: true,
+    // OSC 8 hyperlinks (Claude Code prints its links this way) bypass
+    // WebLinksAddon: xterm handles them itself, and its default handler is a
+    // `confirm()` + `window.open()` that `setWindowOpenHandler` denies, so the
+    // click asked "Do you want to navigate…" and then opened nothing.
+    linkHandler: { activate: openTerminalLink },
     scrollback: 10000,
     theme: themeFromCss()
     // NB: xterm.js has no `handleFlowControl` option (that lives on node-pty's
@@ -844,6 +849,11 @@ async function adoptLiveTerminal(livePty: {
     // of ours (or of the PR Stack routing). Forcing selection on Option keeps
     // Option+click inside Harnu.
     macOptionClickForcesSelection: true,
+    // OSC 8 hyperlinks (Claude Code prints its links this way) bypass
+    // WebLinksAddon: xterm handles them itself, and its default handler is a
+    // `confirm()` + `window.open()` that `setWindowOpenHandler` denies, so the
+    // click asked "Do you want to navigate…" and then opened nothing.
+    linkHandler: { activate: openTerminalLink },
     scrollback: 10000,
     theme: themeFromCss()
   })
