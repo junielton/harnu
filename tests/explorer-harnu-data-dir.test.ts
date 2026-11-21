@@ -87,14 +87,16 @@ afterAll(async () => {
 
 const names = (r: { entries: Array<{ name: string }> }): string[] => r.entries.map((e) => e.name)
 
-describe('listDir — .harnu/** shows up despite .gitignore', () => {
-  it('lists .harnu at the root, and still hides every other ignored entry', async () => {
-    const got = names(await listDir(root, root))
-    expect(got).toContain('.harnu')
-    expect(got).toContain('src')
-    for (const hidden of ['.capy', 'node_modules', 'dist', 'random-ignored', '.env', '.git']) {
-      expect(got).not.toContain(hidden)
+describe('listDir — .harnu/** is never flagged ignored', () => {
+  it('lists .harnu at the root as NOT ignored, every other ignored entry flagged', async () => {
+    const res = await listDir(root, root)
+    const byName = new Map(res.entries.map((e) => [e.name, e]))
+    expect(byName.get('.harnu')?.ignored).toBeUndefined()
+    expect(byName.get('src')?.ignored).toBeUndefined()
+    for (const ign of ['.capy', 'node_modules', 'dist', 'random-ignored', '.env']) {
+      expect(byName.get(ign)?.ignored).toBe(true)
     }
+    expect(byName.has('.git')).toBe(false)
   })
 
   it('lists every child of .harnu, siblings of out included', async () => {
@@ -109,7 +111,8 @@ describe('listDir — .harnu/** shows up despite .gitignore', () => {
   })
 
   it('does not exempt a .harnu that is not at the root', async () => {
-    expect(names(await listDir(root, path.join(root, 'sub')))).not.toContain('.harnu')
+    const res = await listDir(root, path.join(root, 'sub'))
+    expect(res.entries.find((e) => e.name === '.harnu')?.ignored).toBe(true)
   })
 })
 
@@ -160,26 +163,21 @@ describe('resolvePaths — .harnu/** resolves, relative exactly as an agent prin
     expect(viaCwd.map((r) => r.path)).toEqual([abs])
   })
 
-  it('still drops every other gitignored path', async () => {
-    const out = await resolvePaths(root, root, [
+  it('resolves other gitignored paths too (the tree lists them dimmed)', async () => {
+    const cands = [
       'node_modules/dep/index.js',
       'dist/bundle.js',
       'random-ignored/notes.md',
       '.capy/out/legacy-roteiro.md',
       'sub/.harnu/out/nested-roteiro.md',
       '.env'
-    ])
-    expect(out).toEqual([])
+    ]
+    const out = await resolvePaths(root, root, cands)
+    expect(out.map((r) => r.text)).toEqual(cands)
   })
 
   it('keeps .git unreachable and confinement unchanged', async () => {
     expect(await resolvePaths(root, root, ['.git/config'])).toEqual([])
-    expect(
-      await resolvePaths(root, root, [
-        '../.harnu/out/x.md',
-        '.harnu/../node_modules/dep/index.js',
-        '/etc/hosts'
-      ])
-    ).toEqual([])
+    expect(await resolvePaths(root, root, ['../.harnu/out/x.md', '/etc/hosts'])).toEqual([])
   })
 })

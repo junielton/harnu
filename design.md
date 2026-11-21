@@ -1,3 +1,15 @@
+**Gitignored entries are shown, dimmed.** `explorerListDir` lists every child
+except `.git`; an entry `.gitignore` matches (directly or through an ignored
+ancestor) carries `ignored: true` and its row body — chevron, icon and name — renders
+at `opacity-50`. Hover, the `eye` / `plus` buttons and the reveal selection are
+unchanged, so a dimmed row behaves exactly like any other. The root-level `.harnu/`
+data dir is never flagged (it reads as a first-class folder because agents put
+deliverables there). The transcript resolve gate accepts gitignored paths, since the
+tree can reveal them. The **finder** (search box) still prunes gitignored
+directories during its walk — `node_modules` would otherwise blow the visit cap —
+and keeps the `.harnu/` exemption. `.git` stays excluded everywhere, and root
+confinement is unchanged.
+
 # Harnu — Design Guide
 
 > Visual language and usage rules for the session-management app
@@ -6111,7 +6123,7 @@ header, `MarkdownRenderer`'s prose, the existing dots/chips, and colors.
 #### Explorer pane (project file browser, non-PTY)
 
 A helper-stack pane that **browses the project's file tree** — the `<repo>` of the
-selected worktree — **confined to the root**, respecting `.gitignore`, expanding
+selected worktree — **confined to the root**, dimming gitignored entries, expanding
 folders **lazily**, and letting the operator **inject any path (file OR folder) into
 the chat** via a per-row button. It's the in-app answer to "I want to browse the
 project's files and drop a plan/PRD into the chat without leaving Harnu": the OS-native
@@ -6167,7 +6179,7 @@ save picker. A write refusal (outside the roots / too large) becomes a `danger` 
 (same family as T74's `markdownPane.error.*`).
 
 **Body (lazy tree, vertical scroll `.scrollable`).** On mount, `explorerListDir(root,
-root)` (Cluster C — confined, gitignore-aware, cap of 1000). Each row (24px tall):
+root)` (Cluster C — confined, gitignored entries flagged, cap of 1000). Each row (24px tall):
 
 - **indentation by depth** (`depth * 12px + 4px` of padding-left);
 - for a **folder**, a `chevron-right` **chevron** (`--text-4`, rotates 90° when open —
@@ -6197,7 +6209,7 @@ absolute path (via `injectPathIntoSession` on the selected session — Cluster A
 in flight — a loading subdir only appears once ready, the local disk IPC is fast),
 `error` (`listing.error` on the root → `explorerPane.error`, centered `--text-3`; the
 IPC returns `entries: []` on any failure — check `error` before rendering), `empty`
-(root with no visible children after gitignore → `explorerPane.empty`), and the
+(root with no children besides `.git` → `explorerPane.empty`), and the
 **`…and more`** hint (`explorerPane.truncated`, `--text-4` 11px) at the end when the
 cap of 1000 (`truncated: true`) was hit.
 
