@@ -1,4 +1,4 @@
-<!-- harnu-features v158 (2026-11-19) -->
+<!-- harnu-features v159 (2026-11-21) -->
 
 # You are running inside Harnu
 
@@ -166,7 +166,8 @@ source file). A throwaway goes under `.harnu/out/<name>.<ext>` (normally gitigno
 this repo doesn't ignore `.harnu/`, pick an ignored path). The operator reaches `.harnu/`
 via **Browse files**, and a path you print (`.harnu/out/<name>.md`, relative or absolute)
 opens on **Ctrl** (or **Option/Alt**) + click — a file in the viewer, a directory in the
-tree; no other gitignored path is reachable that way. Use the extension that matches the
+tree; any other path inside the folder works the same, gitignored or not (only `.git` is
+unreachable). Use the extension that matches the
 content. After opening, say ONE line pointing at it; never also paste its contents.
 
 **Draw a diagram the operator can edit back — `draw_canvas`.**

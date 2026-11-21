@@ -10,6 +10,16 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-21
+
+### Changed
+
+- **Browse files now shows gitignored files.** Files and folders matched by
+  `.gitignore` (`node_modules`, build output, `.env` and the like) are now listed in the
+  tree, drawn faded so they stand apart from the files git tracks. Only `.git`
+  stays hidden. Option/Alt+clicking a gitignored path in a transcript now reveals it
+  too. The search box still skips gitignored folders, so a search stays fast.
+
 ## 2026-11-20
 
 ### Fixed
