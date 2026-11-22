@@ -186,7 +186,7 @@ Some answers are a picture, not a paragraph. A session can draw one directly: an
 
 By default a session draws on that folder's own board, stored inside the folder at `.harnu/out/canvas/board.harnucanvas.json`. That file is gitignored and lives in the worktree, so each branch gets its own scratch board and nothing lands in a commit by accident. A session can also name a different canvas — but only under `.harnu/out/canvas/` or `docs/canvas/`; anywhere else is refused rather than quietly redirected. `docs/canvas/` is the one to ask for when the diagram is a deliverable you want committed with the branch.
 
-**It opens itself.** A session's drawing call opens the pane for you in the background — it doesn't steal focus, and if you're looking at another folder you get the same sidebar pill and native notification any pane gets. That matters here more than usual: the default board lives under `.harnu/`, which the file browser hides along with everything else gitignored, so the pane the session opens is normally how you see it at all. If you closed the pane and want it back, ask the session to open it again.
+**It opens itself.** A session's drawing call opens the pane for you in the background — it doesn't steal focus, and if you're looking at another folder you get the same sidebar pill and native notification any pane gets. You can also find the board in Browse files under `.harnu/out/canvas/`. If you closed the pane and want it back, ask the session to open it again.
 
 **The board has two authors, and it remembers which is which.** Every box and every arrow records who first drew it — the session or you. Three things follow from that:
 

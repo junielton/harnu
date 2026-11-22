@@ -111,13 +111,10 @@ session. (On a Mac, Ctrl+click is the system right-click, so use Option there.)
 
 Nothing underlines until you hold the modifier, so it stays out of your way while
 you read. A path is only clickable when it actually exists inside the project
-folder and isn't ignored by `.gitignore` — the file tree can't show those
-either, so Harnu doesn't pretend they're reachable. The one exception is
-Harnu's own **`.harnu/`** folder: even though it's usually gitignored, it shows
-up in Browse files and its paths are clickable, because that's where agents put
-the reports and diagrams they hand you (for example
-`.harnu/out/roadmap-notes.md`). Everything else that's gitignored — `node_modules`,
-build output — stays hidden. Links to web addresses behave as before. A bare filename with no folder in it
+folder (anything under `.git` excluded). Gitignored paths count: Browse files
+lists gitignored files and folders too, drawn faded so you can tell them from
+the files git tracks, so a link to `node_modules/...` or a build output still
+lands on its row. Links to web addresses behave as before. A bare filename with no folder in it
 (just `pty.ts`) isn't clickable, because there's no way to tell which one it
 means.
 
