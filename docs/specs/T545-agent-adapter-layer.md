@@ -328,6 +328,88 @@ A keystroke and its echo cross two JavaScript threads: the renderer thread and t
 
 When a task does exceed the budget, the stall monitor (T697) names the responsible adapter, so the cost is found in minutes and not in an investigation ([§9](#9-risks)).
 
+### 5.13 Settings parity
+
+> **A setting that exists for Claude Code exists, in the same shape, for every adapter that can honour it, and is absent for the ones that cannot.** One generic renderer, one descriptor per adapter.
+
+Both settings screens are already data-driven, but the data is Claude-only. The Startup dialog is the `SECTIONS` list in `ClaudeBootForm.vue`. The Claude config tab is `claude-config-catalog.ts` (`SETTINGS_CATALOG`): typed rows, a raw block that preserves keys the catalog does not know, and Harnu-owned keys such as hooks and the status line shown read-only. Neither screen needs a second implementation. The work is to move their data behind the adapter and render it generically.
+
+**Normalized launch fields.** Every adapter maps these to its own flags.
+
+| Field               | How it is filled                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model               | The list comes from the adapter (a catalog or a probe), never hard-coded in the renderer.                                                                                                                     |
+| Effort              | Shown only when the adapter declares it.                                                                                                                                                                      |
+| Permission posture  | A small Harnu set: ask, accept edits, auto, read-only or plan, bypass. The adapter declares the subset it supports and the rest is hidden. A posture is never silently mapped to the nearest one the CLI has. |
+| Instructions        | Follows `instructionInjection` ([§5.4](#54-the-capability-manifest)).                                                                                                                                         |
+| MCP                 | Follows `registerMcpServer` ([§5.3](#53-commands-out)).                                                                                                                                                       |
+| Tool allow and deny | Follows `toolRestriction`, and is hidden when it is `none`.                                                                                                                                                   |
+| Extra arguments     | Appended verbatim after Harnu's own. Harnu does not parse them.                                                                                                                                               |
+
+A field the adapter does not declare is hidden, not shown disabled. A control that suggests it will work later is a small lie.
+
+**Provider-specific launch options.** Options only one client has (Claude's Chrome and IDE integrations are the example) come from a per-adapter launch catalog, in the same typed-row form as today's sections, and render generically under "<client> options". Nothing outside the catalog needs to know they exist.
+
+**Per-adapter config descriptor.** Each adapter ships a descriptor for its own config: file path or paths, format (JSON, TOML or YAML), a catalog of known keys, and the Harnu-owned keys. The same generic renderer shows it. Unknown keys are preserved byte for byte, under the owned-writes rule of [§5.11](#511-provider-drift). The known-keys catalog is also the "declared usage" the drift watcher checks, so one artifact does two jobs and cannot drift from itself.
+
+**Telemetry must not depend on a status line.** Claude's status line is one source (`statusline-parse.ts`), not the model. Each adapter feeds telemetry from what it has (hooks, protocol events, session files), and `usage: none` hides the panels. Whether the other CLIs expose anything like a status line is **unverified**; this RFC assumes they do not, and the Copilot adapter and the spike will check.
+
+**A capability matrix in the app.** Settings → Clients shows, per provider, what the user gains and loses: approvals in the Inbox, fork, usage, scheduled workers, messaging, the orchestrator guard. It is generated from the manifest, so it cannot disagree with the behaviour, and it is the same data as the published matrix ([§9](#9-risks)).
+
+**Cost ([§5.12](#512-runtime-cost)).** Catalogs and descriptors are static data, read once. A model-list probe runs once per CLI version and is cached. A provider's config file is read and written asynchronously, and only while its pane is open. Nothing watches a provider's config in the background.
+
+### 5.14 UX: starting a session with a chosen client
+
+> **Choosing a client is one extra row in a dialog people already know, shown only when there is a choice.**
+
+**Today.** The sidebar folder "+", the topbar "+" and Folder View "New session" all open the New session dialog (`openNewSession` in the UI store). `Ctrl+N` (`session.new`) starts a session directly in the current context, with no dialog.
+
+**The picker.** The dialog gains a row labelled "Run with" (not "agent", which already names agent control): `[Claude Code] [Copilot CLI] [+]`. It appears only when two or more clients are enabled. With one, the dialog is unchanged. It is preselected with the folder's last-used client, or its default.
+
+**Keyboard.** `Ctrl+N` keeps starting a session immediately, now with the folder's default client. `Ctrl+Shift+N` opens the dialog with the picker. Both are ordinary keybinding actions and can be rebound. The per-folder default client lives in the folder's Startup dialog.
+
+**The "+" menu.** It lists three groups:
+
+1. **Installed and supported.** One action: Add.
+2. **Supported but not installed.** A copyable install command. Harnu never runs a global install itself.
+3. **Detected but unsupported.** Listed as **Unmanaged**, the terminal-only tier ([§7c](#c-a-terminal-only-tier-for-the-long-tail)).
+
+The same management lives in Settings → Clients.
+
+**Badges.** Each client chip carries "experimental" or "Unmanaged". Hovering lists what is missing (no Approval Inbox, no usage), read from the manifest.
+
+**Launch options.** "Advanced — launch options" follows the chosen client's launch catalog ([§5.13](#513-settings-parity)).
+
+**Sidebar.** Only non-Claude sessions get a client icon. Claude rows look as they do today.
+
+**Several clients in one folder** are allowed. The risk is the one two Claude sessions in one worktree already carry; no new guard is added.
+
+**From an agent.** MCP `create_session` and card dispatch gain a `provider` parameter, defaulting to `claude`, so a session of one client can start a session of another, provided the caller has Harnu's MCP registered. A disabled or unsupported provider is refused, never substituted. This changes the agent-facing surface, so the PR that lands it also updates the verb catalog and the agent features doc.
+
+**Cost ([§5.12](#512-runtime-cost)).** "Installed" comes from the cached per-version probe ([§5.11](#511-provider-drift)), refreshed on demand through the shared spawn runner. Opening the dialog runs no process and no synchronous I/O.
+
+### 5.15 Messaging across clients
+
+> **A message to a session is delivered by the session's own adapter, and what travels is a bounded envelope, never free text.**
+
+**Today.** `message_session` writes into Claude Code's own cross-session socket, and Claude's native `SendMessage` is Claude-only. A non-Claude session can receive neither.
+
+**The command.** `deliverMessage` joins the adapter vocabulary ([§5.3](#53-commands-out)). It takes a recipient row id and an envelope, and answers `delivered`, `queued` or `refused` with a reason. Each shape delivers in its own way:
+
+| Shape                   | Delivery                                                                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code             | The cross-session socket, as today.                                                                                                            |
+| Server-shaped provider  | Its own protocol (a message or prompt call on the shared server). Unverified for OpenCode 2; the spike may test it.                            |
+| Terminal-only or no API | A guarded paste into the PTY, only while the session is idle at its prompt. A busy or `unknown` session queues the message instead of pasting. |
+
+The manifest gains `receivesMessages` ([§5.4](#54-the-capability-manifest)). It is false unless the adapter has a delivery path _and_ the recipient can read the body through Harnu's MCP (below). `message_session` refuses a recipient whose manifest says false, with a reason that names why. Its existing reach rules (sessions Harnu spawned for an agent, in an unblocked folder, never the operator's own) are unchanged.
+
+**Security.** The envelope rule of the AI forum design ([§5](2026-08-01-ai-forum-design.md#5-security-constraint-drives-7-and-8) there) applies as written. What is injected into another session is a bounded envelope: a kind, a single-line title, an origin alias and an id, plus an instruction to read the body with a tool call. The body is served only as a tool result, the channel where a model already treats text as data. Across vendors this matters more, not less: the receiving model has different injection resistance, and the receiving session may hold wider permissions than the sender. So an adapter accepts the validated fields and builds the line itself. It never accepts a pre-formatted string.
+
+**Follow-up, out of scope.** The agent forum itself is not part of T545. It builds on `deliverMessage` and on the parts of its design that survived the earlier review, collision claims and the envelope. The board card is T197.
+
+**Cost ([§5.12](#512-runtime-cost)).** An envelope is a few hundred bytes of plain serializable data. Delivery is event-driven and polls nothing. A queued message is held in memory with a cap and an expiry.
+
 ---
 
 ## 6. What we found in our own code
