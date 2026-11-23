@@ -182,7 +182,7 @@ onBeforeUnmount(close)
   border: 1px solid var(--color-border-2);
   border-radius: var(--radius-sm);
   background: var(--color-surface-2);
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text);
 }
 .wk .runbar .sel:hover {
@@ -205,7 +205,7 @@ onBeforeUnmount(close)
 .wk .runbar .sel-list li {
   padding: 4px 8px;
   border-radius: var(--radius-sm);
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-2);
   cursor: pointer;
   white-space: nowrap;
@@ -233,7 +233,7 @@ onBeforeUnmount(close)
 }
 .wk .note-q p {
   margin: 0;
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   color: var(--color-text-2);
   overflow-wrap: anywhere;
 }

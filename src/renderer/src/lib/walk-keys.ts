@@ -119,6 +119,21 @@ const SHORTCUTS: Record<string, { action: WalkKeyAction; outcome: string | null 
   l: { action: 'roadmap', outcome: null }
 }
 
+/**
+ * Ctrl/Cmd + `=` (or `+`) / `-` / `0` with the pane focused: the walk text size (T807). Independent of the pane's
+ * mode and of where focus is (a field included), so it is separate from {@link mapWalkKey}, which hands every
+ * modifier chord back to the app. A held key repeats on purpose: it walks the steps.
+ */
+export function textScaleKey(
+  ev: Pick<KeyLike, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>
+): 'bigger' | 'smaller' | 'reset' | null {
+  if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return null
+  if (ev.key === '=' || ev.key === '+') return 'bigger'
+  if (ev.key === '-' || ev.key === '_') return 'smaller'
+  if (ev.key === '0') return 'reset'
+  return null
+}
+
 /** The action a key means in this context, or `null` when it is not the pane's. */
 export function mapWalkKey(ev: KeyLike, ctx: KeyContext): { action: WalkKeyAction } | null {
   const kind = classifyTarget(ev.target)

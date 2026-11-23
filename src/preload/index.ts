@@ -1114,6 +1114,8 @@ export interface SettingsData {
   floatingPanels?: boolean
   /** T628: what expanding a helper pane to the window hides — `everything` (default) or `session-only`. */
   expandHides?: 'everything' | 'session-only'
+  /** T807: the guided walk pane's text size step (0.9 / 1 / 1.15 / 1.3). Absent means 1. */
+  walkTextScale?: number
 }
 
 // ---- Harnu MCP control server wire types (2026-06-25 design) ---------------

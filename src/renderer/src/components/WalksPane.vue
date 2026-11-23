@@ -26,9 +26,12 @@ import {
 } from '../lib/walk-library'
 import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useKeybindingsStore } from '../stores/keybindings'
+import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import { useWalkStore } from '../stores/walk'
+import { textScaleKey } from '../lib/walk-keys'
 import WalkCode from './WalkCode.vue'
+import WalkTextSize from './WalkTextSize.vue'
 
 /**
  * The Walks library (design.md §6 "Walks library", spec S-4, AC-20): the repo's saved walks as a list, not a
@@ -50,6 +53,7 @@ const { t, locale } = useI18n()
 const helpers = useHelpersStore()
 const keybindings = useKeybindingsStore()
 const ui = useUiStore()
+const settings = useSettingsStore()
 const walk = useWalkStore()
 
 const folder = computed(() => props.worktreePath || (props.pane as { cwd: string }).cwd)
@@ -174,6 +178,14 @@ async function confirmDelete(row: LibraryRowView): Promise<void> {
   }
 }
 function onKeydown(ev: KeyboardEvent): void {
+  // Ctrl/Cmd + = / - / 0: the same text size as the walk pane (T807)
+  const size = textScaleKey(ev)
+  if (size) {
+    ev.preventDefault()
+    ev.stopPropagation()
+    settings.stepWalkTextScale(size)
+    return
+  }
   if (ev.key !== 'Escape') return
   if (menuFor.value || confirmFor.value) {
     ev.preventDefault()
@@ -189,6 +201,7 @@ function onKeydown(ev: KeyboardEvent): void {
     ref="rootEl"
     class="wk walks relative flex h-full w-full flex-col overflow-hidden bg-bg group/pane no-default-ring"
     style="container: wk / inline-size"
+    :style="{ '--walk-text-scale': settings.walkTextScale }"
     tabindex="0"
     :data-focus-region="pane.id"
     :data-state="view.mode"
@@ -208,6 +221,7 @@ function onKeydown(ev: KeyboardEvent): void {
       <span class="min-w-0 flex-1 truncate">
         <b class="font-medium text-text">{{ $t('walksLibrary.title') }}</b>
       </span>
+      <WalkTextSize />
       <button
         class="flex shrink-0 items-center justify-center rounded transition hover:bg-surface-2 hover:text-text"
         :class="isExpanded ? 'text-accent' : 'text-text-3'"
@@ -399,7 +413,7 @@ function onKeydown(ev: KeyboardEvent): void {
   display: inline-flex;
 }
 .wk .lib-t {
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   color: var(--color-text);
   overflow-wrap: anywhere;
 }
@@ -408,7 +422,7 @@ function onKeydown(ev: KeyboardEvent): void {
   flex-wrap: wrap;
   align-items: center;
   gap: 2px 6px;
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
   margin-top: 2px;
 }
@@ -448,7 +462,7 @@ function onKeydown(ev: KeyboardEvent): void {
   width: 100%;
   padding: 4px 8px;
   border-radius: var(--radius-sm);
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-red);
   white-space: nowrap;
 }
@@ -467,7 +481,7 @@ function onKeydown(ev: KeyboardEvent): void {
   gap: 6px 12px;
 }
 .wk .lib-confirm .ask {
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   color: var(--color-text-2);
   flex: 1 1 220px;
   min-width: 0;
