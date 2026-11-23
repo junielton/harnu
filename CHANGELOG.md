@@ -28,6 +28,23 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - A Markdown pane that opened straight in edit mode (a new note, a new file from Browse files, a scaffolded `WORKTREE.md`, the keybindings file) now comes back in view mode after a restart, instead of opening in edit and taking focus from the session terminal.
 
+## 2026-11-23
+
+### Changed
+
+- **The guided walk pane and the Walks library are easier to read.** The body text (the
+  check's steps, where to look, what you should see) is now 14px instead of 12.5px, the
+  quieter lines 13px, and the small uppercase labels are no longer under 11.5px. The
+  order of importance on screen is unchanged.
+
+### Added
+
+- **A- / A+ text size for guided walks.** The header of the walk pane and of the Walks
+  library has two buttons that step the text through four sizes. With the pane focused,
+  Ctrl/Cmd `=` makes it larger, Ctrl/Cmd `-` smaller and Ctrl/Cmd `0` goes back to the
+  default. The choice is remembered across restarts, is shared by both panes, and
+  combines with the Interface scale in Settings.
+
 ## 2026-11-21
 
 ### Changed

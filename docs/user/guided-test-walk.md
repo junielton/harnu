@@ -100,6 +100,14 @@ You cannot start a second run while one is in progress: Re-run opens the run tha
 
 **Export markdown** writes the walk as a Markdown file and opens it in the viewer: the title, where it comes from, every check in order (where, what to do with what you should see, what you should not see, what the session checks), links as links, and a **Last run** table with your notes. Files go in the walk's own folder, `.harnu/walks/<walk>/exports/<name>/`, together with the walk's images and your screenshots, so the folder can be copied as it is. An export never overwrites another: the next one gets a `-2`, then `-3`. Harnu commits nothing; to share a walk, copy that folder.
 
+## Making the text bigger or smaller
+
+A walk is meant to be read, so its text is larger than the rest of the app: 14px for the steps, where to look and what you should see. If that is still too small, or too big for a narrow pane, use the **A-** and **A+** buttons in the pane header. They step the text through four sizes (90%, 100%, 115% and 130%), and a button greys out at the end of its range.
+
+With the walk pane focused you can also press **Ctrl** (or **Cmd**) with `=` for larger, `-` for smaller, and `0` to go back to the default. These work from anywhere in the pane, even while you are typing in the failure box.
+
+The size is remembered after you restart Harnu. The Walks library has the same two buttons and uses the same size. It multiplies with **Interface scale** in Settings, so at the largest size and a large Interface scale the answer buttons wrap onto a second row instead of being cut off. Only text changes size; icons and buttons keep theirs.
+
 ## If the session is gone
 
 If a message for the session has waited for about 45 seconds and no session took it (it ended, or it is not running), the pane shows **The session is gone** with a note that your progress is saved. **Resume the session** brings the walk's session back, and the waiting messages are sent again. The error text next to it copies with one click.
