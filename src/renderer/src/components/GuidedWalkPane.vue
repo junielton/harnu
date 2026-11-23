@@ -1117,6 +1117,11 @@ const hasFoot = computed(
   margin-top: 4px;
   overflow-wrap: anywhere;
 }
+.wk .card .why.waiting {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
 .wk .card .acts {
   display: flex;
   gap: 6px;

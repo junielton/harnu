@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Eye, Sparkles, Terminal, ZoomIn } from 'lucide-vue-next'
+import { Eye, Loader2, Sparkles, Terminal, ZoomIn } from 'lucide-vue-next'
 import type { CheckView, LinkChip } from '../lib/walk-view'
 import WalkCode from './WalkCode.vue'
 import WalkLink from './WalkLink.vue'
@@ -84,7 +84,11 @@ const retry = computed(() => props.check.phase === 'failed')
   >
     <div class="eb">{{ $t('testWalk.retry.eyebrow') }}</div>
     <p v-if="check.correction" class="ask">{{ check.correction.text }}</p>
-    <p v-else class="why">{{ $t('testWalk.retry.waiting') }}</p>
+    <p v-else class="why waiting" role="status" data-test="walk-correction-waiting">
+      <Loader2 :size="12" :stroke-width="1.7" class="anim-spin" aria-hidden="true" />{{
+        $t('testWalk.retry.waiting')
+      }}
+    </p>
   </section>
 
   <!-- the agent disagreed after a Done: ran, expected, found -->

@@ -28,6 +28,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - A Markdown pane that opened straight in edit mode (a new note, a new file from Browse files, a scaffolded `WORKTREE.md`, the keybindings file) now comes back in view mode after a restart, instead of opening in edit and taking focus from the session terminal.
 
+## 2026-11-23
+
+### Changed
+
+- **Guided walk: a spinner while the session works on your correction.** After you mark a check Failed, the "Waiting for my correction" line now leads with a spinning loader until the session sends its one correction, so you can tell it is working rather than stuck.
+
 ## 2026-11-21
 
 ### Changed
