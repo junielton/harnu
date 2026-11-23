@@ -259,7 +259,7 @@ describe('walk text scale: the A- / A+ control (AC-2)', () => {
   })
 
   it('has i18n keys in both locales', () => {
-    for (const locale of [en, ptBR] as Array<Record<string, any>>) {
+    for (const locale of [en, ptBR]) {
       expect(typeof locale.testWalk.textSize.smaller).toBe('string')
       expect(typeof locale.testWalk.textSize.bigger).toBe('string')
     }
