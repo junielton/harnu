@@ -281,7 +281,9 @@ documented exception in the component's own §6 section.
 
 ### Rules
 
-- **Minimum size:** 10.5px (only for uppercase eyebrows with letter-spacing)
+- **Minimum size:** 10.5px (only for uppercase eyebrows with letter-spacing). The guided walk pane and the Walks
+  library are the exception: they are read for minutes, so nothing in them is below 11.5px (see "Walk text scale"
+  below).
 - **Negative letter-spacing** on anything above 18px to feel tighter
 - **Tabular numerics** (`font-variant-numeric: tabular-nums`) on timestamps and metrics
 - **Tokenized eyebrow:** the Eyebrow scale is implemented by the `.eyebrow` utility
@@ -290,6 +292,29 @@ documented exception in the component's own §6 section.
   headers (sidebar zones, Fleet status board sections) **use `.eyebrow`** +
   a token color, never a raw `style=` with px/tracking. Default `--text-4`; the
   Fleet status board tints each header by its state color (see §6).
+
+### Walk text scale (T807)
+
+The guided walk pane (`GuidedWalkPane.vue`) and the Walks library (`WalksPane.vue`) are read, not glanced at, so
+their text sits above the app scale and the operator can change it. Their sizes are **not** `px` literals: every
+`font-size` in those files is `calc(<base>px * var(--walk-text-scale))`, so ONE variable moves every size and no
+size has its own rule per step.
+
+| Walk role                                                              | Base (step 1) | Was       |
+| ---------------------------------------------------------------------- | ------------- | --------- |
+| Check title (`.wk-title`)                                              | 15px / 600    | 13.5px    |
+| Body: Do steps, Where, You should see, progress count, reported line   | 14px          | 12.5px    |
+| Body, quieter: card text, run rows, library titles                     | 13.5px        | 12px      |
+| Secondary: the `✗ Not:` line, "I'll check", hints, sub-lines, captions | 13px          | 11.5px    |
+| Small secondary: counts, kbd hints, `Blocks:` lines                    | 12.5px        | 11px      |
+| Eyebrows and card labels (uppercase, `+0.07em`)                        | 11.5px–12px   | 10–10.5px |
+
+The map from old to new is monotonic (10→11.5, 10.5→12, 11→12.5, 11.5→13, 12→13.5, 12.5→14, 13→14.5, 13.5→15), so
+the hierarchy of the pane is unchanged; the one deliberate lift beyond it is `Where`, which goes 12→14 to read as
+body text. `--walk-text-scale` is set inline on the root of each of the two panes from the `walkTextScale`
+setting and defaults to `1`. The steps are **0.9 · 1 · 1.15 · 1.3**; it is separate from, and multiplies with, the
+whole-UI zoom (`uiZoom`, the Interface scale setting). Icons, the 24px header and the 28px action buttons keep their
+size; only text scales.
 
 ---
 
@@ -7559,12 +7584,12 @@ accent): it is an offer, not something the operator owes.
 
 | Part           | Spec                                                                                                                                                                                                                                                                                                                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pane header    | The 24px title bar of §6 "Pane header": `list-checks` icon, `Walk · <walk title>`, a library icon button, expand / maximize / close                                                                                                                                                                                                                                    |
-| Progress strip | `0 16px`, `10px` top. Text `Check N of M` (12.5px / 600, `--text`), a list icon button 18×18 at the right (opens the roadmap), under it one 4px cell per check (`--radius-xs`, 3px gap): closed `--green`, current `--accent`, rest `--surface-2` + `--border`. `role="progressbar"`. Nothing else is written about progress                                           |
-| Body           | Scrolls; padding `12px 16px 14px`; sections gap 14px. Title 13.5px / 600; eyebrows `.eyebrow` in `--text-4`                                                                                                                                                                                                                                                            |
-| Do             | Numbered, 12.5px / 1.45, 1 to 5 lines. A command is a code block: `--surface`, 1px `--border-2`, `--radius`, `--font-mono` 12px, `Copy` button top right                                                                                                                                                                                                               |
+| Pane header    | The 24px title bar of §6 "Pane header": `list-checks` icon, `Walk · <walk title>`, the text-size control (`A-` `A+`, below), a library icon button, expand / maximize / close                                                                                                                                                                                          |
+| Progress strip | `0 16px`, `10px` top. Text `Check N of M` (14px / 600, `--text`), a list icon button 18×18 at the right (opens the roadmap), under it one 4px cell per check (`--radius-xs`, 3px gap): closed `--green`, current `--accent`, rest `--surface-2` + `--border`. `role="progressbar"`. Nothing else is written about progress                                             |
+| Body           | Scrolls; padding `12px 16px 14px`; sections gap 14px. Title 15px / 600; eyebrows `.eyebrow` (11.5px) in `--text-4`                                                                                                                                                                                                                                                     |
+| Do             | Numbered, 14px / 1.45, 1 to 5 lines. A command is a code block: `--surface`, 1px `--border-2`, `--radius`, `--font-mono` 13.5px, `Copy` button top right                                                                                                                                                                                                               |
 | Where          | Link chips: accent text, underlined, trailing `arrow-up-right`, `--accent-soft` fill, `--accent-line` border; a split copy button when the value has a full form (path, URL, branch). Every link opens the real thing (PR, file in the viewer at its line, URL in a browser pane, a Settings screen). An approximate path carries a `--warning` tag `path approximate` |
-| You should see | Expected text 12.5px `--text`; one muted line `✗ Not: …`; an image when one exists: thumbnail 300×132 (clip), or large (full width) on click; caption row `Expected · …` + `Enlarge`                                                                                                                                                                                   |
+| You should see | Expected text 14px `--text`; one muted line (13px) `✗ Not: …`; an image when one exists: thumbnail 300×132 (clip), or large (full width) on click; caption row `Expected · …` + `Enlarge`                                                                                                                                                                              |
 | I'll check     | One line: `terminal` icon, `I'll check`, the command and the expected value as copyable values; or `eye` icon + `Nothing from here: <why>`                                                                                                                                                                                                                             |
 | Action bar     | Pinned under the body: `--surface`, 1px top `--border`, padding `10px 16px`, gap 8px, wraps in the narrow pane. `✓ Done` (28px, accent, `Enter` chip) · `✗ Failed` (28px, neutral) · then compact ghost `Back` · `- Skip` · `+ Explain more`. Glyph colours: `✓` `--green`, `✗` `--red`, `!` `--warning`, `-` `--text-4`, `⚑` `--accent`                               |
 
@@ -7590,6 +7615,17 @@ a code block with the summary and its Copy) · `empty` · `error` (session gone,
 
 **Keyboard.** `Enter` = Done (also **Start with 1** on the roadmap and **Try again** on a retry), unless focus
 is in a field or on another button. `Esc` closes the lightbox. Focus starts on the primary action.
+
+**Text size (T807).** Every size in this pane and in the Walks library multiplies `--walk-text-scale` (§3 "Walk
+text scale"). The header carries two compact icon-style buttons, **`A-`** and **`A+`** (18×18 like the other header
+buttons, `--text-3` to `--text` on hover, `--font-sans` 600; both glyphs are 11px: they are chrome and do not scale), placed right before the library button. Each press moves one step of **0.9 · 1 ·
+1.15 · 1.3**; a button is disabled at its end of the range; `title` / `aria-label` say `Smaller text` / `Larger text`
+with the chord. With the pane focused, **Ctrl/Cmd `=`** (or `+`) is `A+`, **Ctrl/Cmd `-`** is `A-` and **Ctrl/Cmd
+`0`** goes back to step 1; they work from anywhere in the pane, a field included, and the browser's own zoom does not
+see them. The step is saved in `settings.json` (`walkTextScale`, the way `uiZoom` is), so it survives a restart, and
+the Walks library header carries the same control and reads the same setting. It combines with the whole-UI zoom by
+multiplying; at the largest step and a UI zoom of 1.3 the action bar wraps onto a second row (it already wraps in
+the narrow pane) and nothing clips.
 
 **Selecting text.** A walk is mostly instructions the operator copies and runs elsewhere, so the content of the
 walk pane and of the Walks library (`.wk-body`: titles, `do` steps, "You should see", the failure hint, the undo
@@ -7646,7 +7682,7 @@ copy-button padding in a code block 76px, centred empty/error measure 340px.
 **Built in S-3 (what the first build draws beyond, or differently from, the frames).** `walk-view.ts` is the one
 view-model; the component draws what it says and decides nothing.
 
-- **Where.** `where.text` is a quiet 12px `--text-2` line above the chips; `where.path` is a copy value with the
+- **Where.** `where.text` is a quiet 14px `--text-2` line above the chips; `where.path` is a copy value with the
   `path approximate` tag when `approximate` is true; a `url` link the agent could not open carries a quiet
   `behind a login, not opened` / `not checked` note beside it.
 - **Do.** A Do step's `see` is validated for the script but not drawn: the frames draw only the check's `passes`
