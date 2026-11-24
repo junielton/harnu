@@ -375,4 +375,21 @@ describe('cardsPage (BUG-277 AC-6: the Settings pane never takes the whole histo
     expect(cardsPage(s, 0, 10_000).cards.length).toBeLessThanOrEqual(HISTORY_PAGE_SIZE)
     expect(cardsPage(s, Number.NaN, Number.NaN).cards).toHaveLength(2)
   })
+
+  it('never returns more than one page, however large a limit is asked for (delta 1)', () => {
+    // More cards than the maximum page, so a missing clamp has something to over-return.
+    const many = stateOf(
+      ...Array.from({ length: HISTORY_PAGE_SIZE * 3 }, (_, i) =>
+        mkCard(`m${i}`, { openedAt: 1000 + i })
+      )
+    )
+    const page = cardsPage(many, 0, 10_000)
+    expect(page.total).toBe(HISTORY_PAGE_SIZE * 3)
+    expect(page.cards).toHaveLength(HISTORY_PAGE_SIZE)
+    expect(cardsPage(many, 0, Number.POSITIVE_INFINITY).cards).toHaveLength(HISTORY_PAGE_SIZE)
+    // a page in the middle is also capped, and starts where asked
+    const mid = cardsPage(many, HISTORY_PAGE_SIZE, 10_000)
+    expect(mid.cards).toHaveLength(HISTORY_PAGE_SIZE)
+    expect(mid.cards[0].id).toBe(`m${HISTORY_PAGE_SIZE * 3 - 1 - HISTORY_PAGE_SIZE}`)
+  })
 })
