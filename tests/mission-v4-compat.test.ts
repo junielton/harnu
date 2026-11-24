@@ -1282,8 +1282,10 @@ describe('v4 modules import v3 code only through v3-read', () => {
     expect(relative('record-store.ts')).toContain('./v3-read')
     expect(relative('record-store.ts')).toContain('./compat')
     expect(relative('record-store.ts')).toContain('./model')
+    // file-cache.ts (BUG-278, the parse cache) is app-neutral: it imports only node built-ins.
+    expect(relative('file-cache.ts')).toEqual([])
     for (const spec of relative('record-store.ts')) {
-      expect(['./v3-read', './compat', './model', '../data-dir']).toContain(spec)
+      expect(['./v3-read', './compat', './model', './file-cache', '../data-dir']).toContain(spec)
     }
   })
 })
