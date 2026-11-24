@@ -77,6 +77,8 @@ describe('Quick notes shortcuts', () => {
     const all = KEYBINDINGS.find((d) => d.id === 'notes.open')!
     expect(today).toMatchObject({ defaultKeys: 'Cmd+Shift+N', group: 'folders' })
     expect(all).toMatchObject({ defaultKeys: 'Cmd+Alt+N', group: 'folders' })
+    expect(today.menu).toBe(true)
+    expect(all.menu).toBe(true)
     expect(today.paletteFeatured).toBe(true)
     expect(all.paletteFeatured).toBe(false)
     expect(today.palette).not.toBe(false)

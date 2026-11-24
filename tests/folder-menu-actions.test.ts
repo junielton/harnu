@@ -239,6 +239,20 @@ describe('Quick notes folder actions', () => {
     expect(notesOpen).not.toHaveBeenCalled()
   })
 
+  it('does not reselect the folder that is already active (that would swap the session terminal for the Folder View)', () => {
+    const sessions = useSessionsStore()
+    sessions.selectFolder('/repos/alpha-wt')
+    const select = vi.spyOn(sessions, 'selectFolder')
+    const ui = useUiStore()
+    const open = vi.spyOn(ui, 'openNotesPicker')
+    const actions = withSetup(() => useFolderMenuActions())
+    actions.run.notesAll('/repos/alpha-wt')
+    actions.run.notesToday('/repos/alpha-wt')
+    expect(select).not.toHaveBeenCalled()
+    expect(open).toHaveBeenCalledWith('/repos/alpha-wt')
+    expect(notesOpen).toHaveBeenCalledWith('/repos/alpha-wt', undefined)
+  })
+
   it('both are shown for every folder, git or not', () => {
     for (const a of ['notesToday', 'notesAll'] as const) {
       expect(

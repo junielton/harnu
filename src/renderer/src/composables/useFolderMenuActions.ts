@@ -241,6 +241,14 @@ export function useFolderMenuActions(): FolderMenuActions {
     else sessions.toggleRevealArchived(folderPath)
   }
 
+  /**
+   * Reselecting the folder you are already in would swap its session terminal for the Folder
+   * View, so the Quick notes actions only select a folder that is not the active one.
+   */
+  function selectUnlessActive(folderPath: string): void {
+    if (folderPath !== sessions.activeFolderPath) sessions.selectFolder(folderPath)
+  }
+
   const run: Record<FolderAction, (folderPath: string) => void> = {
     rename: (p) => ui.openRenameFolder(p),
     newFolderTerminal: (p) => void sessions.createFolderTerminal(p),
@@ -252,11 +260,11 @@ export function useFolderMenuActions(): FolderMenuActions {
     // Quick notes act on the right-clicked folder, not the selected one: select it first, so the
     // pane lands in that folder's helper stack and the picker lists that repo's notes.
     notesToday: (p) => {
-      sessions.selectFolder(p)
+      selectUnlessActive(p)
       void openNoteInStack(p)
     },
     notesAll: (p) => {
-      sessions.selectFolder(p)
+      selectUnlessActive(p)
       ui.openNotesPicker(p)
     },
     newSubfolder: (p) => ui.openNewFolder(p),
