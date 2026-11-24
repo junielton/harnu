@@ -10715,8 +10715,12 @@ what was persisted. U1 ships with **Off**.
 result beside it (the outcome word, `--text-3`). Disabled, with its reason in the hint, while no
 session is selected. It is the manual trigger the debug list is verified with.
 
-**Block 3 — the debug list.** An uppercase sub-eyebrow with the count ("Stored cards · N"), then
-one row per card, open first then the newest closed, newest first inside each group. A row is
+**Block 3 — the debug list.** An uppercase sub-eyebrow with the count ("Stored cards · N", every
+stored card), then one row per card of the current page, open first then the newest closed, newest
+first inside each group. The list is **paged, 25 cards at a time, loaded from main on demand**
+(`yourMovePage`): the pane is never handed, and never renders, the whole store. When more than one
+page exists a pager row sits under the list: ghost `Previous page` and `Next page` buttons (disabled
+at the ends) around a `--text-3` 11.5px range ("26–50 of 7,432"). A row is
 `bg-surface`, `border-border`, `--radius`, `padding: 8px 10px`, `gap: 6px` between rows:
 
 - first line: a kind chip (`bg-accent-soft text-accent`, mono, 10.5px, the localized kind name:
@@ -10729,8 +10733,9 @@ one row per card, open first then the newest closed, newest first inside each gr
 With nothing stored the list shows one muted line, never an empty box. The list is a debug view:
 it has no buttons that act on a card, because no card is answerable in U1.
 
-**States.** Loading: the blocks render without the list until `yourMoveList` answers. The list
-refreshes on the `yourMove:changed` event.
+**States.** Loading: the blocks render without the list until `yourMovePage` answers. The current
+page refreshes on the `yourMove:changed` event; if cards left the list and the page now lies past
+the end, the pane steps back to the last page.
 
 ### Cleanup takeover (CleanupView.vue, Reaper PR3)
 

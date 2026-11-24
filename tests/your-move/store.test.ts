@@ -134,7 +134,7 @@ describe('your move store', () => {
     expect(cb).not.toHaveBeenCalled()
   })
 
-  it('state() is a deep copy and a throwing listener does not block the write', async () => {
+  it('state() is a frozen shared snapshot and a throwing listener does not block the write', async () => {
     const s = await openYourMoveStore(path.join(dir, 'your-move.json'))
     s.onChange(() => {
       throw new Error('boom')
@@ -143,7 +143,9 @@ describe('your move store', () => {
     s.onChange(seen)
     await s.transact((st) => ({ next: { ...st, cards: [card] }, result: null }))
     expect(seen).toHaveBeenCalledTimes(1)
-    s.state().cards.push({ ...card, id: 'x' })
+    // BUG-277: reads share one immutable snapshot instead of copying the store; a caller that
+    // tries to change it fails loudly, and the store (and the file) keep what was committed.
+    expect(() => s.state().cards.push({ ...card, id: 'x' })).toThrow()
     expect(s.state().cards).toHaveLength(1)
   })
 

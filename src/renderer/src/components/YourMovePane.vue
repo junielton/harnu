@@ -23,7 +23,10 @@ type Mode = YourMovePrefsView['mode']
 
 const mode = ref<Mode>('off')
 const loaded = ref(false)
+/** One page of the stored list: main hands over at most HISTORY_PAGE_SIZE cards at a time. */
 const cards = ref<CardView[]>([])
+const total = ref(0)
+const offset = ref(0)
 const running = ref(false)
 const result = ref<InspectNowResult | null>(null)
 
@@ -35,9 +38,33 @@ const modeOptions = computed(() => [
 
 const selected = computed(() => sessions.selectedSession)
 
+const PAGE_SIZE = 25
+
 async function refreshCards(): Promise<void> {
-  cards.value = await window.api.yourMoveList()
+  let page = await window.api.yourMovePage({ offset: offset.value })
+  // Cards closed or dropped meanwhile can leave the current page past the end: step back.
+  if (page.cards.length === 0 && page.total > 0 && offset.value > 0) {
+    offset.value = Math.floor((page.total - 1) / PAGE_SIZE) * PAGE_SIZE
+    page = await window.api.yourMovePage({ offset: offset.value })
+  }
+  cards.value = page.cards
+  total.value = page.total
 }
+
+async function goTo(next: number): Promise<void> {
+  offset.value = Math.max(0, next)
+  await refreshCards()
+}
+
+const hasPrev = computed(() => offset.value > 0)
+const hasNext = computed(() => offset.value + PAGE_SIZE < total.value)
+const rangeText = computed(() =>
+  t('yourMove.list.range', {
+    from: offset.value + 1,
+    to: offset.value + cards.value.length,
+    total: total.value
+  })
+)
 
 async function onMode(next: unknown): Promise<void> {
   if (next !== 'off' && next !== 'observe' && next !== 'live') return
@@ -66,15 +93,6 @@ const outcomeText = computed(() => {
   const r = result.value
   if (!r) return ''
   return t(`yourMove.inspect.outcome.${r.outcome}`, { reason: r.reason ?? '' })
-})
-
-const ordered = computed(() => {
-  const open = cards.value.filter((c) => c.closedAt === undefined)
-  const closed = cards.value.filter((c) => c.closedAt !== undefined)
-  return [
-    ...open.sort((a, b) => b.openedAt - a.openedAt),
-    ...closed.sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
-  ]
 })
 
 const folderAlias = (folder: string): string => folder.split('/').filter(Boolean).pop() ?? folder
@@ -160,10 +178,10 @@ onBeforeUnmount(() => off?.())
           margin-bottom: 8px;
         "
       >
-        {{ t('yourMove.list.eyebrow', { count: ordered.length }) }}
+        {{ t('yourMove.list.eyebrow', { count: total }) }}
       </div>
       <p
-        v-if="ordered.length === 0"
+        v-if="total === 0"
         class="text-text-4"
         style="font-size: 11.5px"
         data-testid="your-move-empty"
@@ -172,7 +190,7 @@ onBeforeUnmount(() => off?.())
       </p>
       <div v-else class="flex flex-col" style="gap: 6px">
         <div
-          v-for="c in ordered"
+          v-for="c in cards"
           :key="c.id"
           class="bg-surface border border-border"
           :class="c.closedAt !== undefined ? 'text-text-4' : 'text-text-2'"
@@ -199,6 +217,32 @@ onBeforeUnmount(() => off?.())
             </span>
           </div>
           <div style="font-size: 12px; margin-top: 4px; white-space: pre-wrap">{{ c.ask }}</div>
+        </div>
+        <div
+          v-if="hasPrev || hasNext"
+          class="flex items-center"
+          style="gap: 10px; margin-top: 2px"
+          data-testid="your-move-pager"
+        >
+          <Button
+            variant="ghost"
+            data-testid="your-move-prev"
+            :disabled="!hasPrev"
+            @click="goTo(offset - PAGE_SIZE)"
+          >
+            {{ t('yourMove.list.prev') }}
+          </Button>
+          <span class="text-text-3" style="font-size: 11.5px" data-testid="your-move-range">
+            {{ rangeText }}
+          </span>
+          <Button
+            variant="ghost"
+            data-testid="your-move-next"
+            :disabled="!hasNext"
+            @click="goTo(offset + PAGE_SIZE)"
+          >
+            {{ t('yourMove.list.next') }}
+          </Button>
         </div>
       </div>
     </section>

@@ -3469,6 +3469,10 @@ const api = {
   yourMoveSetPrefs: (patch: Partial<YourMovePrefs>): Promise<YourMovePrefsView> =>
     ipcRenderer.invoke('yourMove:prefs:set', patch),
   yourMoveList: (): Promise<CardView[]> => ipcRenderer.invoke('yourMove:list'),
+  // The Settings pane's list, 25 cards at a time (BUG-277): `total` is every stored card, `cards`
+  // the page from `offset`. The pane never asks for the whole list.
+  yourMovePage: (args: { offset: number }): Promise<{ total: number; cards: CardView[] }> =>
+    ipcRenderer.invoke('yourMove:page', args),
   yourMoveInspectNow: (args: { sessionId: string; folder: string }): Promise<InspectNowResult> =>
     ipcRenderer.invoke('yourMove:inspectNow', args),
   onYourMoveChanged: (cb: () => void): (() => void) => subscribe('yourMove:changed', cb),

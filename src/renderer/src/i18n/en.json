@@ -3009,7 +3009,10 @@
       "eyebrow": "Stored cards · {count}",
       "empty": "No cards yet. Choose Observe, then let a session stop, or use Inspect now.",
       "session": "session {id}",
-      "closed": "closed · {reason}"
+      "closed": "closed · {reason}",
+      "range": "{from}–{to} of {total}",
+      "prev": "Previous page",
+      "next": "Next page"
     },
     "kind": {
       "decide": "Decide",
