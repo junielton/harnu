@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { CornerDownLeft, Search } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useUiStore } from '../stores/ui'
@@ -57,9 +57,10 @@ async function load(): Promise<void> {
   }
 }
 
+// Reload when the dialog opens AND when it is re-pointed at another folder while already open.
 watch(
-  isOpen,
-  (open) => {
+  [isOpen, folder],
+  ([open]) => {
     if (!open) {
       loadToken++
       return
@@ -74,6 +75,15 @@ watch(
 
 watch(query, () => {
   selectedIndex.value = 0
+})
+
+// Keep the keyboard selection visible inside the capped, scrolling list.
+watch(selectedIndex, () => {
+  void nextTick(() => {
+    document.body
+      .querySelector<HTMLElement>('[data-notes-picker-row][aria-selected="true"]')
+      ?.scrollIntoView({ block: 'nearest' })
+  })
 })
 
 /** Day-of-week 0-6 as a localized long name; the reference week starts on a Sunday. */

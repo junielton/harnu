@@ -16,6 +16,8 @@ const note = (date: string): { date: string; filePath: string } => ({
 const notesList = vi.fn()
 const notesOpen = vi.fn()
 let wrapper: VueWrapper | null = null
+// jsdom has no scrollIntoView; every test gets a spy so the selection watcher can run.
+const scrollIntoView = vi.fn()
 
 const q = <T extends HTMLElement = HTMLElement>(sel: string): T | null =>
   document.body.querySelector<T>(sel)
@@ -44,6 +46,9 @@ async function open(
 }
 
 beforeEach(() => {
+  scrollIntoView.mockReset()
+  Element.prototype.scrollIntoView =
+    scrollIntoView as unknown as typeof Element.prototype.scrollIntoView
   setActivePinia(createPinia())
   notesList.mockReset()
   notesOpen.mockReset()
@@ -173,5 +178,33 @@ describe('NotesPickerDialog', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
     expect(ui.dialog).toBeNull()
+  })
+
+  it('scrolls the newly selected row into view on ArrowDown', async () => {
+    await open()
+    key('ArrowDown')
+    await flushPromises()
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(rows()[1])
+  })
+
+  it('reloads for the new folder when re-pointed while open, ignoring a stale reply', async () => {
+    const OTHER = '/home/dev/org/proj/api'
+    const ui = await open()
+    let resolveSlow!: (v: unknown) => void
+    notesList.mockReset()
+    notesList.mockImplementationOnce(() => new Promise((r) => (resolveSlow = r)))
+    notesList.mockImplementationOnce(() =>
+      Promise.resolve({ ok: true, notesDir: 'n', today: '2026-11-24', notes: [note('2026-11-01')] })
+    )
+    ui.openNotesPicker(FOLDER)
+    ui.folderActionPath = '/home/dev/org/proj/slow'
+    await flushPromises()
+    ui.openNotesPicker(OTHER)
+    await flushPromises()
+    expect(notesList).toHaveBeenLastCalledWith(OTHER)
+    resolveSlow({ ok: true, notesDir: 'n', today: '2026-11-24', notes: [note('2026-01-01')] })
+    await flushPromises()
+    expect(rows().map((r) => r.getAttribute('data-date'))).toEqual(['2026-11-24', '2026-11-01'])
   })
 })
