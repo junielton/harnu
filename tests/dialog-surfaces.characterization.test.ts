@@ -116,6 +116,7 @@ const TABLE: Record<string, Row> = {
   'NewFolderDialog.vue': ui(STORE, 'input'),
   'NewSessionDialog.vue': ui(STORE, 'start'),
   'NewWorktreeDialog.vue': ui(STORE, 'input'),
+  'NotesPickerDialog.vue': ui(STORE, 'search'),
   'OpenSubfolderDialog.vue': ui(STORE, 'search'),
   'RemoveWorktreeDialog.vue': ui(STORE, 'cancel'),
   'RenameFolderDialog.vue': ui(STORE, 'input'),
@@ -196,7 +197,7 @@ describe('characterization table — coverage (AC-2)', () => {
       .sort()
     // `ui/` primitives live in a subfolder and are not listed by this top-level read.
     expect(Object.keys(TABLE).sort()).toEqual(onDisk)
-    expect(Object.keys(TABLE)).toHaveLength(28)
+    expect(Object.keys(TABLE)).toHaveLength(29)
   })
 
   it('lists the two inline overlays with a reason instead of mounting them', () => {

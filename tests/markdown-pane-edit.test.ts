@@ -92,6 +92,24 @@ describe('MarkdownPane — view/edit toggle', () => {
     expect((ta.element as HTMLTextAreaElement).value).toBe('hello')
   })
 
+  it('puts the caret at the end of the file when entering edit mode', async () => {
+    const w = mount(MarkdownPane, {
+      props: { pane: { ...PANE }, worktreePath: '/wt' },
+      attachTo: document.body,
+      global: { plugins: [i18n] }
+    })
+    await settle()
+    // jsdom already parks the caret at the end after a value set, so assert the explicit call.
+    const spy = vi.spyOn(HTMLTextAreaElement.prototype, 'setSelectionRange')
+    await w.get('button[aria-label="Edit"]').trigger('click')
+    await settle()
+    const ta = w.get('textarea').element as HTMLTextAreaElement
+    expect(document.activeElement).toBe(ta)
+    expect(spy).toHaveBeenCalledWith('hello'.length, 'hello'.length)
+    spy.mockRestore()
+    w.unmount()
+  })
+
   it('editing marks the pane dirty and enables Save', async () => {
     const w = mountPane()
     await settle()

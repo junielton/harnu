@@ -9281,6 +9281,34 @@ Same anatomy/tokens as `RenameFolderDialog`. **Existing tokens only.**
 Persisted in `localStorage` (`om2tab.repoAliases`, per-repoId) — **renderer-only**, no
 `projects.json`. **UI-only** channel.
 
+### Notes picker
+
+`NotesPickerDialog.vue` — **non-destructive** `Dialog` (`size="md"`, peer via `ui.dialog === 'notesPicker'` +
+`ui.folderActionPath` = the repo folder). It lists every daily note of that repo — one `.md` file per day under the repo's
+`.harnu/notes/` — so the operator can jump to any of them. Shell, width, radius, scrim, layer, Esc and focus come from §6
+"Dialog"; the search row and result rows copy the [Sidebar jump palette](#sidebar-jump-palette). **Existing tokens only.**
+
+- **Trigger:** the Quick notes shortcut and menu items. A picker is the "any day" door; today's note has its own one-step
+  door that skips the picker.
+- **Header:** title `Notes` + the folder basename (mono `--text-4`), `X` button (the shared `Dialog` header).
+- **Search row:** a `search` icon (14px, `--text-3`), a borderless input (Inter 12.5px `--text`, placeholder `--text-4`),
+  and a trailing `esc` kbd chip, `border-b border-border`. **Focused on open.** Typing filters the list by a
+  case-insensitive substring of the date (`2026-11-2`, `11-24`).
+- **Rows:** 28px, `padding: 0 10px`, `gap: 8px`, `--text-2`. Left: the date `YYYY-MM-DD` (mono 12.5px). Right: a dim
+  relative hint (11px `--text-4`): `Today`, `Yesterday`, or the localized weekday name for any other day. **Today is always
+  the first row**, even when its file does not exist yet (opening it creates it). The rest follow newest first.
+- **Selected row** (keyboard cursor or hover): `--surface-2` background, `--text`, the 2px `--accent` bar on the left
+  (`border-radius: 0 2px 2px 0`, an absolutely positioned span, never a `border-left`), and a trailing `corner-down-left`
+  glyph (12px, `--text-4`).
+- **Keyboard:** `↑`/`↓` move the selection (clamped at both ends, no wrap; it resets to the first row when the query
+  changes), `↵` opens the selected row, `Esc` closes. Clicking a row opens it.
+- **States:** a filter with no matches shows one muted line (`--text-3`, 11.5px) and nothing selectable. If the list
+  cannot be read, one muted line says so; the dialog stays open and Esc still closes it.
+- **Footer hints:** the same `kbd` chips as the jump palette (`↑↓` move, `↵` open), in a 26px row below the list.
+
+Choosing a row opens the note as a markdown pane in the helper stack, in **edit** mode with the caret at the end, then closes
+the dialog. If the note cannot be opened, a `warning` toast says so and the dialog still closes. **UI-only** channel.
+
 ### Unsaved changes dialog
 
 `UnsavedChangesDialog.vue` — the question a **markdown pane** asks when the operator closes it while
@@ -9482,6 +9510,7 @@ the surface:
 | Dialog (modal)       | `NewFolderDialog.vue`      | 60                | Creates + pins a subfolder **non-destructively**. Peer via `ui.dialog === 'newFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `New folder…` item                                                                                                                                                                                                                                                                        |
 | Dialog (modal)       | `OpenSubfolderDialog.vue`  | 60                | Searchable subfolder picker (recursive, depth-capped) → pins the chosen one. Peer via `ui.dialog === 'openSubfolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Open subfolder…` item                                                                                                                                                                                                                                     |
 | Dialog (modal)       | `RenameFolderDialog.vue`   | `--z-dialog` (60) | Renames a folder's alias. Peer via `ui.dialog === 'renameFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Rename…` item                                                                                                                                                                                                                                                                                                 |
+| Dialog (modal)       | `NotesPickerDialog.vue`    | `--z-dialog` (60) | Lists a repo's daily notes (search + ↑/↓/↵). Peer via `ui.dialog === 'notesPicker'` (+ `ui.folderActionPath`)                                                                                                                                                                                                                                                                                                                              |
 | Image lightbox       | `ImageLightbox.vue`        | 60                | Full-viewport viewer for one pasted screenshot. Its index lives in the `ui` store (`ui.imageLightboxIndex`, T486 U4a) beside the anchored popovers' flags, but **outside the mutex** — a single entry point: a tile in the footer's images popover. While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it, and closing that popover ends it                                                       |
 | Dialog (modal)       | `RenameRepoDialog.vue`     | `--z-dialog` (60) | Renames a repo-group's alias. Peer via `ui.dialog === 'renameRepo'` (+ `ui.renameRepoTarget`); opened from the `RepoGroupHeader`'s context-menu `Rename repo` item                                                                                                                                                                                                                                                                         |
 | Agent-action confirm | `McpConfirmOverlay.vue`    | 65                | **Fail-CLOSED** confirm for a mutation requested by an MCP agent (`onMcpConfirmPending`). **Auto-shows** from its own local state (doesn't enter the `ui` mutex — it's a security gate, can't be suppressed by another surface) and **doesn't close** on Esc / click-outside: the verdict-producing exits are Allow, Deny, or the timeout (denies) — **Dismiss** is a non-verdict exit, "not now". Reuses the Inbox rail's visual language |

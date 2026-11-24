@@ -504,7 +504,12 @@ function toggleMode(): void {
 
 async function focusEditor(): Promise<void> {
   await nextTick()
-  editorEl.value?.focus()
+  const el = editorEl.value
+  if (!el) return
+  el.focus()
+  // Caret at the end, so a note (or any file) opens ready to type after its last line.
+  const end = el.value.length
+  el.setSelectionRange(end, end)
 }
 
 /**

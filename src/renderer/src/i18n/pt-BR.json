@@ -1379,6 +1379,21 @@
     "save": "Salvar",
     "failed": "Não foi possível renomear a pasta"
   },
+  "notes": {
+    "openFailed": "Não foi possível abrir a nota",
+    "picker": {
+      "title": "Notas",
+      "searchPlaceholder": "Buscar notas por data",
+      "empty": "Nenhuma nota encontrada.",
+      "today": "Hoje",
+      "yesterday": "Ontem",
+      "loadFailed": "Não foi possível carregar as notas.",
+      "hints": {
+        "move": "mover",
+        "open": "abrir"
+      }
+    }
+  },
   "renameRepo": {
     "title": "Renomear grupo",
     "close": "Fechar",

@@ -1379,6 +1379,21 @@
     "save": "Save",
     "failed": "Couldn't rename folder"
   },
+  "notes": {
+    "openFailed": "Couldn't open the note",
+    "picker": {
+      "title": "Notes",
+      "searchPlaceholder": "Search notes by date",
+      "empty": "No notes match.",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "loadFailed": "Couldn't load notes.",
+      "hints": {
+        "move": "move",
+        "open": "open"
+      }
+    }
+  },
   "renameRepo": {
     "title": "Rename group",
     "close": "Close",
