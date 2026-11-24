@@ -211,14 +211,19 @@ export type HelperPaneAgentTerminal = HelperPane & {
   exited?: { code: number | null; snapshot?: string }
 }
 
-/** The keys a {@link HelperPaneAgentTerminal} carries beyond the persisted pane shape. */
+/**
+ * Pane keys that never reach `helpers.json`: the keys a {@link HelperPaneAgentTerminal} carries
+ * beyond the persisted pane shape, plus a markdown pane's one-shot `initialMode` (open in edit on
+ * the FIRST mount only). A restored pane opens in view mode and never steals focus on boot.
+ */
 export const TRANSIENT_PANE_FIELDS = [
   'origin',
   'terminalId',
   'ptyId',
   'ownerSessionId',
   'spawnedAt',
-  'exited'
+  'exited',
+  'initialMode'
 ] as const
 
 /** Narrow a pane to an agent terminal. */
@@ -340,12 +345,15 @@ export const RETIRED_PANE_TYPES: readonly string[] = ['mission']
 
 /** Hydrate persisted shape into in-memory shape. */
 function fromPersistShape(state: WorktreeHelperState): InMemoryWorktreeState {
-  const kept = state.panes.filter((p) => !RETIRED_PANE_TYPES.includes(p.type))
+  // A file written before `initialMode` became transient may still carry it: drop it on the way in.
+  const kept = state.panes
+    .filter((p) => !RETIRED_PANE_TYPES.includes(p.type))
+    .map((p) => stripTransientFields({ ...p }))
   if (kept.length === state.panes.length) {
     return {
       splitVisible: state.splitVisible,
       splitRatio: state.splitRatio,
-      panes: state.panes as AnyHelperPane[]
+      panes: kept as AnyHelperPane[]
     }
   }
   // The survivors keep their order and their shares of the stack, renormalised to sum to 1.

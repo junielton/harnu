@@ -24,6 +24,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - Quitting Harnu while any Markdown pane has unsaved edits now asks first and names the files, even when confirm-on-quit is off. Choose **Cancel** to go back or **Quit without saving**; there is no "Don't ask again" for this one.
 - A session can no longer close a Markdown pane that has unsaved edits, and opening a fifth Markdown pane recycles the oldest pane without unsaved edits instead of dropping a draft.
 
+### Fixed
+
+- A Markdown pane that opened straight in edit mode (a new note, a new file from Browse files, a scaffolded `WORKTREE.md`, the keybindings file) now comes back in view mode after a restart, instead of opening in edit and taking focus from the session terminal.
+
 ## 2026-11-21
 
 ### Changed
