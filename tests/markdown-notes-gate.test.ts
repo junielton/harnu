@@ -28,7 +28,7 @@ vi.mock('../src/main/claude-reader', () => ({
   scanFolders: async (): Promise<unknown[]> => []
 }))
 
-import { isNotesFilePath } from '../src/main/notes-core'
+import { isNotesFilePath, notesDirFor } from '../src/main/notes-core'
 import { markdownGate, readMarkdownFile } from '../src/main/markdown-read'
 import { writeMarkdownFile } from '../src/main/markdown-write'
 import { clearRootCache } from '../src/main/data-dir'
@@ -84,6 +84,12 @@ describe('notes gate rule', () => {
       expect(isNotesFilePath(join(tmp, 'x', '.harnu', 'notes', `${day}.md`), [wt])).toBe(false)
     })
 
+    it('computes the same directory as notesDirFor for a worktree root', () => {
+      expect(notesDirFor(wt)).toBe(join(main, '.harnu', 'notes'))
+      expect(isNotesFilePath(join(notesDirFor(wt), `${day}.md`), [wt])).toBe(true)
+      expect(isNotesFilePath(join(notesDirFor(main), `${day}.md`), [main])).toBe(true)
+    })
+
     it('does not resolve roots for a name that cannot be a note', () => {
       expect(isNotesFilePath(join(tmp, 'anything', 'README.md'), [wt])).toBe(false)
     })
@@ -114,6 +120,17 @@ describe('notes gate rule', () => {
   })
 
   describe('read / write channels', () => {
+    it('refuses a note when the .harnu dir is a symlink', async () => {
+      await rm(join(main, '.harnu'), { recursive: true })
+      await mkdir(join(tmp, 'real-data', 'notes'), { recursive: true })
+      await writeFile(join(tmp, 'real-data', 'notes', `${day}.md`), 'outside')
+      await symlink(join(tmp, 'real-data'), join(main, '.harnu'))
+      expect(await markdownGate(note)).toEqual({ ok: false, code: 'symlink' })
+      expect(await readMarkdownFile(note)).toMatchObject({ ok: false, code: 'symlink' })
+      expect(await writeMarkdownFile(note, 'x')).toMatchObject({ ok: false, code: 'symlink' })
+      expect(await readFile(join(tmp, 'real-data', 'notes', `${day}.md`), 'utf8')).toBe('outside')
+    })
+
     it('reads and writes a note through a worktree-only root', async () => {
       const r = await readMarkdownFile(note)
       expect(r).toMatchObject({ ok: true, kind: 'text', content: '# note\n' })

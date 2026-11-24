@@ -8,7 +8,7 @@
 
 import { lstat, open, readdir } from 'node:fs/promises'
 import * as path from 'node:path'
-import { mkdirDataDir, repoDataDir } from './data-dir'
+import { DATA_DIR, mkdirDataDir, repoDataDir, repoRoot } from './data-dir'
 
 export const NOTE_FILE_RE = /^(\d{4}-\d{2}-\d{2})\.md$/
 
@@ -58,12 +58,15 @@ export function isNotesFilePath(resolved: string, roots: readonly string[]): boo
   const m = NOTE_FILE_RE.exec(path.basename(resolved))
   if (!m || !isValidNoteDate(m[1])) return false
   const dir = path.dirname(resolved)
-  return roots.some((r) => notesDirFor(r) === dir)
+  // Same directory `notesDirFor` yields, built without `repoDataDir`/`dataDirAt`: those
+  // kick off the data-dir migration, and a containment check must have no side effects.
+  return roots.some((r) => path.join(repoRoot(r), DATA_DIR, 'notes') === dir)
 }
 
-/** True when the note file (if it exists) or its parent directory is a symlink. */
+/** True when the note file (if it exists), its notes dir or the `.harnu` dir above is a symlink. */
 export async function isNotesSymlink(resolved: string): Promise<boolean> {
-  for (const p of [resolved, path.dirname(resolved)]) {
+  const notesDir = path.dirname(resolved)
+  for (const p of [resolved, notesDir, path.dirname(notesDir)]) {
     try {
       if ((await lstat(p)).isSymbolicLink()) return true
     } catch {
