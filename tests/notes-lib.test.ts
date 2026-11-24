@@ -1,15 +1,20 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import {
   filterPickerRows,
+  openAllNotes,
   openNoteInStack,
+  openTodayNote,
   pickerRows,
   relativeHint
 } from '../src/renderer/src/lib/notes'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import { useHelpersStore } from '../src/renderer/src/stores/helpers'
 import { useUiStore } from '../src/renderer/src/stores/ui'
+import { i18n } from '@renderer/i18n'
 
 const note = (date: string): { date: string; filePath: string } => ({
   date,
@@ -142,5 +147,76 @@ describe('openNoteInStack', () => {
     const toast = vi.spyOn(ui, 'pushToast')
     await expect(openNoteInStack('/repo')).resolves.toBe(false)
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning' }))
+  })
+})
+
+describe('the shortcut and palette handlers', () => {
+  const notesOpen = vi.fn()
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    notesOpen.mockReset()
+    notesOpen.mockResolvedValue({ ok: true, filePath: '/repo/.harnu/notes/x.md', created: false })
+    ;(window as unknown as { api: unknown }).api = { notesOpen }
+  })
+
+  function selectFolder(path: string | null): void {
+    vi.spyOn(useSessionsStore(), 'activeFolderPath', 'get').mockReturnValue(path)
+  }
+
+  it("openTodayNote opens today's note for the active folder", async () => {
+    selectFolder('/repo')
+    const add = vi.spyOn(useHelpersStore(), 'addMarkdownHelper').mockReturnValue('h-1')
+    await openTodayNote()
+    expect(notesOpen).toHaveBeenCalledWith('/repo', undefined)
+    expect(add).toHaveBeenCalledTimes(1)
+  })
+
+  it('openAllNotes opens the picker for the active folder', () => {
+    selectFolder('/repo')
+    const ui = useUiStore()
+    const open = vi.spyOn(ui, 'openNotesPicker')
+    openAllNotes()
+    expect(open).toHaveBeenCalledWith('/repo')
+  })
+
+  it('with no folder selected both steer the operator to pick one, and open nothing', async () => {
+    selectFolder(null)
+    const ui = useUiStore()
+    const toast = vi.spyOn(ui, 'pushToast')
+    const open = vi.spyOn(ui, 'openNotesPicker')
+    const add = vi.spyOn(useHelpersStore(), 'addMarkdownHelper')
+
+    await openTodayNote()
+    openAllNotes()
+
+    expect(toast).toHaveBeenCalledTimes(2)
+    for (const call of toast.mock.calls) {
+      expect(call[0]).toMatchObject({ kind: 'warning', title: i18n.global.t('notes.noFolder') })
+    }
+    expect(i18n.global.t('notes.noFolder')).not.toBe('notes.noFolder')
+    expect(notesOpen).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+    expect(add).not.toHaveBeenCalled()
+  })
+})
+
+describe('App.vue registrations', () => {
+  const src = readFileSync(resolve(__dirname, '../src/renderer/src/App.vue'), 'utf8')
+  const block = (id: string): string => {
+    const start = src.indexOf(`id: '${id}'`)
+    expect(start, `${id} is registered`).toBeGreaterThan(-1)
+    return src.slice(start, src.indexOf("id: '", start + 5))
+  }
+
+  it('route both commands through the shared handlers, with no enabled() gate (spec §6.3: no folder → toast)', () => {
+    const today = block('notes.openToday')
+    const all = block('notes.open')
+    expect(today).toContain("keys: kb('notes.openToday')")
+    expect(today).toContain('openTodayNote()')
+    expect(today).not.toContain('enabled:')
+    expect(all).toContain("keys: kb('notes.open')")
+    expect(all).toContain('openAllNotes()')
+    expect(all).not.toContain('enabled:')
   })
 })

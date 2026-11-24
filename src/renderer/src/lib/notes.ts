@@ -75,3 +75,31 @@ export async function openNoteInStack(folder: string, date?: string): Promise<bo
   ui.pushToast({ kind: 'warning', title: i18n.global.t('notes.openFailed') })
   return false
 }
+
+/** The warning both entry points show when no folder is selected: say what to do about it. */
+function toastNoFolder(): void {
+  useUiStore().pushToast({ kind: 'warning', title: i18n.global.t('notes.noFolder') })
+}
+
+/**
+ * `notes.openToday`, the shortcut / palette handler: today's note for the SELECTED folder. With no
+ * folder selected it steers the operator to pick one instead of failing silently.
+ */
+export async function openTodayNote(): Promise<boolean> {
+  const folder = useSessionsStore().activeFolderPath
+  if (!folder) {
+    toastNoFolder()
+    return false
+  }
+  return openNoteInStack(folder)
+}
+
+/** `notes.open`, the shortcut / palette handler: the notes picker for the SELECTED folder. */
+export function openAllNotes(): void {
+  const folder = useSessionsStore().activeFolderPath
+  if (!folder) {
+    toastNoFolder()
+    return
+  }
+  useUiStore().openNotesPicker(folder)
+}

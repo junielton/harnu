@@ -148,6 +148,8 @@
     "openInEditorVSCodeHint": "Couldn't launch the VS Code CLI (`code`). In VS Code, open the Command Palette and run \"Shell Command: Install 'code' command in PATH\", then try again.",
     "openInEditorBadCommand": "The custom editor command is empty or malformed. Check Settings → General → Editor.",
     "openExplorer": "Browse files",
+    "notes": "New note for today",
+    "notesAll": "Right-click: all notes…",
     "githubPulls": "Pull requests on GitHub",
     "roadmapBoard": "Roadmap board",
     "prStack": "PR Stack",
@@ -763,6 +765,11 @@
     "setParentFolder": "Set parent folder",
     "clearParentFolder": "Clear parent folder",
     "setParentFolderFailed": "Couldn't update the parent folder",
+    "notes": {
+      "label": "Notes",
+      "today": "New note for today",
+      "all": "All notes…"
+    },
     "modes": {
       "label": "Modes",
       "learning": "Learning",
@@ -1381,6 +1388,7 @@
   },
   "notes": {
     "openFailed": "Couldn't open the note",
+    "noFolder": "Select a folder first to write a note.",
     "picker": {
       "title": "Notes",
       "searchPlaceholder": "Search notes by date",
@@ -1741,6 +1749,8 @@
       "view_toggleHelper": "Toggle the right split panel",
       "project_switch": "Switch project",
       "folder_add": "Add folder",
+      "notes_openToday": "New note for today",
+      "notes_open": "All notes…",
       "view_review": "Review the active folder's branch",
       "view_roadmap": "Toggle the roadmap board",
       "view_prStack": "Toggle the PR Stack",

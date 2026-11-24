@@ -11,6 +11,7 @@ import FolderView from './components/FolderView.vue'
 import CloudSessionPanel from './components/CloudSessionPanel.vue'
 import { isCloudStub } from './lib/cloud-session'
 import { sessionTitle } from './lib/session-label'
+import { openAllNotes, openTodayNote } from './lib/notes'
 import { dotFor } from './components/session-dot'
 import { resolveDividerDrag, SESSION_TUCK_ARM_PX } from './lib/session-tuck'
 import { SPLIT_RATIO_MIN, SPLIT_RATIO_MAX } from './lib/split-orientation'
@@ -1225,6 +1226,20 @@ useShortcuts(
       scope: 'global',
       keys: kb('folder.add'),
       handler: () => ui.openDialog('addFolder')
+    },
+    {
+      // Quick notes. No `enabled` gate on purpose: with no folder selected the handler shows a toast
+      // steering the operator to pick one (spec §6.3), and the palette row runs the same handler.
+      id: 'notes.openToday',
+      scope: 'global',
+      keys: kb('notes.openToday'),
+      handler: () => void openTodayNote()
+    },
+    {
+      id: 'notes.open',
+      scope: 'global',
+      keys: kb('notes.open'),
+      handler: () => openAllNotes()
     },
     {
       // T164 — review the active folder's branch. PRD §9 Q3 (where the "review

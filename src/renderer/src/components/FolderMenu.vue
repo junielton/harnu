@@ -15,6 +15,7 @@ import {
   GraduationCap,
   LayoutList,
   Library,
+  NotebookPen,
   NotebookText,
   KanbanSquare,
   PencilLine,
@@ -170,6 +171,8 @@ const SHORTCUT_OF: Record<string, ShortcutActionId> = {
   'alias-from-branch': 'folder.toggleBranchAlias',
   boot: 'folder.bootOptions',
   'project-memory': 'folder.projectMemory',
+  'notes-today': 'notes.openToday',
+  'notes-all': 'notes.open',
   'memory-location': 'folder.memoryLocation',
   'new-folder': 'folder.newSubfolder',
   'open-subfolder': 'folder.openSubfolder',
@@ -407,6 +410,27 @@ const entries = computed<MenuItem[]>(() => [
     label: t('folderMenu.memoryLocation'),
     icon: FolderCog,
     onSelect: folderActions.run.memoryLocation
+  },
+  // Quick notes: a daily scratch note per repo. Both act on THIS menu's folder (it is selected
+  // first), and each row shows the CURRENT binding of its command.
+  {
+    id: 'notes',
+    label: t('folderMenu.notes.label'),
+    icon: NotebookPen,
+    children: [
+      {
+        id: 'notes-today',
+        label: t('folderMenu.notes.today'),
+        icon: NotebookPen,
+        onSelect: folderActions.run.notesToday
+      },
+      {
+        id: 'notes-all',
+        label: t('folderMenu.notes.all'),
+        icon: LayoutList,
+        onSelect: folderActions.run.notesAll
+      }
+    ]
   },
   // T80 S1: open the per-repo Roadmap Kanban board (a wide main-pane view over
   // `.harnu/memory/roadmap/`). Its own block; available for any folder (the memory
@@ -923,6 +947,13 @@ onBeforeUnmount(() => {
               >
                 <component :is="child.badge.icon" :size="9" :stroke-width="2" class="text-text-3" />
               </span>
+              <span
+                v-if="shortcutFor(child.id)"
+                data-menu-shortcut
+                class="font-mono text-text-4 tabular-nums"
+                style="font-size: 10.5px; letter-spacing: 0.02em"
+                >{{ shortcutFor(child.id) }}</span
+              >
             </button>
           </div>
         </div>

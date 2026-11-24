@@ -148,6 +148,8 @@
     "openInEditorVSCodeHint": "Não foi possível iniciar a CLI do VS Code (`code`). No VS Code, abra a Paleta de Comandos e execute \"Shell Command: Install 'code' command in PATH\", depois tente de novo.",
     "openInEditorBadCommand": "O comando do editor personalizado está vazio ou malformado. Confira Configurações → Geral → Editor.",
     "openExplorer": "Navegar arquivos",
+    "notes": "Nova nota de hoje",
+    "notesAll": "Clique direito: todas as notas…",
     "githubPulls": "Pull requests no GitHub",
     "roadmapBoard": "Board do roadmap",
     "prStack": "PR Stack",
@@ -763,6 +765,11 @@
     "setParentFolder": "Definir pasta-mãe",
     "clearParentFolder": "Remover pasta-mãe",
     "setParentFolderFailed": "Não foi possível atualizar a pasta-mãe",
+    "notes": {
+      "label": "Notas",
+      "today": "Nova nota de hoje",
+      "all": "Todas as notas…"
+    },
     "modes": {
       "label": "Modos",
       "learning": "Aprendizado",
@@ -1381,6 +1388,7 @@
   },
   "notes": {
     "openFailed": "Não foi possível abrir a nota",
+    "noFolder": "Selecione uma pasta primeiro para escrever uma nota.",
     "picker": {
       "title": "Notas",
       "searchPlaceholder": "Buscar notas por data",
@@ -1741,6 +1749,8 @@
       "view_toggleHelper": "Alternar o painel dividido à direita",
       "project_switch": "Trocar de projeto",
       "folder_add": "Adicionar pasta",
+      "notes_openToday": "Nova nota de hoje",
+      "notes_open": "Todas as notas…",
       "view_review": "Revisar o branch da pasta ativa",
       "view_roadmap": "Alternar o quadro de roadmap",
       "view_prStack": "Alternar o PR Stack",

@@ -15,6 +15,7 @@ export type TopbarActionId =
   | 'editor'
   | 'github-pulls'
   | 'explorer'
+  | 'notes'
   | 'terminal'
   | 'browser'
   | 'split-layout'
@@ -31,6 +32,7 @@ export const TOPBAR_BAR_ORDER: readonly TopbarActionId[] = [
   'editor',
   'github-pulls',
   'explorer',
+  'notes',
   'terminal',
   'browser',
   'split-layout',
@@ -44,6 +46,7 @@ export const TOPBAR_OVERFLOW_ORDER: readonly TopbarActionId[] = [
   'editor',
   'explorer',
   'split-layout',
+  'notes',
   'browser',
   'terminal',
   'walks',
@@ -193,4 +196,6 @@ export interface TopbarActionView {
   toggle: boolean
   disabled?: boolean
   run: () => void
+  /** A right-click on the bar button runs this (the notes button's "All notes…"). Not offered in the `…` menu. */
+  secondary?: () => void
 }
