@@ -56,6 +56,7 @@ import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useSessionsStore } from '../stores/sessions'
+import { forgetDraft, setDraftDirty } from '../lib/unsaved-drafts'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import QuizBlock from './QuizBlock.vue'
 import { livePtyIdFor } from './TerminalPane.vue'
@@ -294,6 +295,19 @@ const savedContent = ref<string>(cachedDraft?.savedContent ?? '')
 const dirty = computed<boolean>(() => draft.value !== savedContent.value)
 const editorEl = ref<HTMLTextAreaElement | null>(null)
 
+// Report unsaved edits to the shared registry so the helper stack (cap-recycle), the
+// command router (agent closes) and main (quit guard) never drop this draft silently.
+// Immediate: a pane restored from the draft cache can mount already dirty. A relative-
+// link browse re-targets `activeFilePath` only while clean, so it just re-labels a clean
+// pane; the entry stays correct either way.
+watch(
+  [dirty, activeFilePath],
+  ([isDirty, filePath]) => {
+    setDraftDirty({ paneId, filePath, worktreePath: props.worktreePath }, isDirty)
+  },
+  { immediate: true }
+)
+
 /**
  * Live-reload (T171): the backing file changed on disk while the pane had
  * unsaved edits. A clean pane just silently re-reads instead — see
@@ -496,18 +510,29 @@ async function focusEditor(): Promise<void> {
  * Persist the draft through the confined `markdown:write` IPC (same known-folder
  * containment + extension + size cap as the reader). On success the baseline
  * moves to the draft (dirty clears); on refusal a localized toast names the
- * reason by code. No-op when clean or not ready.
+ * reason by code. Resolves `true` when the draft is on disk (written now, or already
+ * clean so there is nothing to lose) and `false` when it is not (not ready, or the write
+ * was refused or threw), so a caller that must not lose edits can await it.
  */
-async function save(): Promise<void> {
-  if (state.value.status !== 'ready' || !dirty.value) return
-  const res = await window.api.markdownWrite(activeFilePath.value, draft.value)
+async function save(): Promise<boolean> {
+  if (state.value.status !== 'ready') return false
+  if (!dirty.value) return true
+  const written = draft.value
+  let res: Awaited<ReturnType<typeof window.api.markdownWrite>>
+  try {
+    res = await window.api.markdownWrite(activeFilePath.value, written)
+  } catch {
+    ui.pushToast({ kind: 'danger', title: t(errorKey('write-failed')) })
+    return false
+  }
   if (res.ok) {
-    savedContent.value = draft.value
+    savedContent.value = written
     staleOnDisk.value = false
     ui.pushToast({ kind: 'success', title: t('markdownPane.saved'), timeoutMs: 2500 })
-  } else {
-    ui.pushToast({ kind: 'danger', title: t(errorKey(res.code)) })
+    return true
   }
+  ui.pushToast({ kind: 'danger', title: t(errorKey(res.code)) })
+  return false
 }
 
 /** ⌘/Ctrl-S saves from within the editor (preventing the browser Save dialog). */
@@ -553,6 +578,7 @@ onUnmounted(() => clearTimeout(fileCopiedTimer))
 function onClose(): void {
   withDiscardGuard(() => {
     draftCache.delete(paneId)
+    forgetDraft(paneId)
     helpers.removeHelper(props.worktreePath, props.pane.id)
   })
 }

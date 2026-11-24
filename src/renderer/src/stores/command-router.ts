@@ -173,6 +173,13 @@ export interface CommandRouterActions {
    */
   closeHelperById(worktreePath: string, paneId: string): boolean
   /**
+   * Does the pane matching `ref` (a file `path` or a `paneId`) in the TARGET worktree's
+   * stack hold unsaved edits? `pane.closeFile` / `pane.closePane` refuse such a pane
+   * with `UNSAVED_CHANGES` instead of dropping the draft; the operator closes it
+   * through the pane's own guarded close.
+   */
+  isPaneUnsaved(worktreePath: string, ref: { path?: string; paneId?: string }): boolean
+  /**
    * T113 (background drain): mint a board-dispatch synthetic in `folderPath`
    * WITHOUT selecting it, and queue its background boot — the drain must never
    * steal the operator's focus. Returns the synthetic id, or `null` when the
@@ -535,6 +542,9 @@ function handlePaneCloseFile(actions: CommandRouterActions, payload: unknown): D
   if (!isRecord(payload)) return BAD_ARGS
   if (!isNonEmptyString(payload.worktreePath)) return BAD_ARGS
   if (!isNonEmptyString(payload.path)) return BAD_ARGS
+  if (actions.isPaneUnsaved(payload.worktreePath, { path: payload.path })) {
+    return { error: 'UNSAVED_CHANGES' }
+  }
   const paneId = actions.closeHelperByPath(payload.worktreePath, payload.path)
   return paneId ? { paneId } : { closed: false }
 }
@@ -546,6 +556,9 @@ function handlePaneClosePane(actions: CommandRouterActions, payload: unknown): D
   if (!isRecord(payload)) return BAD_ARGS
   if (!isNonEmptyString(payload.worktreePath)) return BAD_ARGS
   if (!isNonEmptyString(payload.paneId)) return BAD_ARGS
+  if (actions.isPaneUnsaved(payload.worktreePath, { paneId: payload.paneId })) {
+    return { error: 'UNSAVED_CHANGES' }
+  }
   return { closed: actions.closeHelperById(payload.worktreePath, payload.paneId) }
 }
 

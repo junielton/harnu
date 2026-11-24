@@ -25,6 +25,7 @@ import type { PersistedPayloadFields } from '../lib/browser-persist'
 import type { BrowserTabPayloadFields } from '../../../shared/browser-tabs'
 import { scrubUrl } from '../../../shared/browser-comment'
 import type { AgentTerminalSplit } from './command-router'
+import { forgetDraft, isDraftDirty } from '../lib/unsaved-drafts'
 import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-corrective'
 
 /** An exit sooner than this after spawn means the helper never really started (stale session). */
@@ -420,6 +421,9 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   function notifyPaneRemoved(paneId: string): void {
+    // A removed pane can never hold a draft: drop its unsaved-registry entry so
+    // main's quit guard never names a pane that is gone (cascades land here too).
+    forgetDraft(paneId)
     for (const fn of removeHandlers) {
       try {
         fn(paneId)
@@ -999,7 +1003,8 @@ export const useHelpersStore = defineStore('helpers', () => {
    * functions this replaced): a registered `dedupKey` that returns a match
    * on an existing same-type pane short-circuits with that pane's id instead
    * of appending; otherwise, if the type is at its `maxInstances` cap, the
-   * OLDEST same-type pane is recycled (dropped) to make room. Forces
+   * OLDEST same-type pane WITHOUT unsaved edits is recycled (dropped) to make
+   * room (all dirty ⇒ none is recycled and the stack grows). Forces
    * `splitVisible` true and equalizes vertical ratios like every original
    * did. Returns the new (or deduped) pane's id.
    */
@@ -1021,7 +1026,12 @@ export const useHelpersStore = defineStore('helpers', () => {
     let recycleId: string | null = null
     if (entry?.maxInstances !== undefined) {
       const sameType = (existing?.panes ?? []).filter((p) => p.type === pane.type)
-      if (sameType.length >= entry.maxInstances) recycleId = sameType[0].id
+      // Recycle the oldest pane that holds no unsaved edits. If every same-type
+      // pane is dirty, recycle none: the stack grows past the cap rather than
+      // silently dropping a draft.
+      if (sameType.length >= entry.maxInstances) {
+        recycleId = sameType.find((p) => !isDraftDirty(p.id))?.id ?? null
+      }
     }
 
     mutateWorktree(worktreePath, (s) => {
@@ -1572,6 +1582,23 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
+   * Does the pane identified by `ref` (a file `path`, as `closeHelperByPath` matches
+   * it, or a `paneId`) hold unsaved edits? The router refuses agent closes of such a
+   * pane (`UNSAVED_CHANGES`); an unknown ref is simply not unsaved.
+   */
+  function isPaneUnsaved(worktreePath: string, ref: { path?: string; paneId?: string }): boolean {
+    const panes = byWorktree.value.get(worktreePath)?.panes ?? []
+    const match = ref.paneId
+      ? panes.find((p) => p.id === ref.paneId)
+      : panes.find(
+          (p) =>
+            (p.type === 'markdown' || p.type === 'canvas') &&
+            (p as HelperPane).filePath === ref.path
+        )
+    return match ? isDraftDirty(match.id) : false
+  }
+
+  /**
    * T171 `close_pane`: close ANY pane by id, including PTY-backed ones — the
    * higher-blast-radius sibling of {@link closeHelperByPath}, gated separately
    * at the MCP layer (always confirms). Returns whether a pane was actually
@@ -1960,6 +1987,7 @@ export const useHelpersStore = defineStore('helpers', () => {
     removeHelper,
     closeHelperByPath,
     closeHelperById,
+    isPaneUnsaved,
     setSplitRatio,
     setPaneRatios,
     flushNow,

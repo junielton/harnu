@@ -1789,6 +1789,9 @@ const api = {
   ): Promise<
     { ok: true; filePath: string; created: boolean } | { ok: false; code: NotesErrorCode }
   > => ipcRenderer.invoke('notes:open', { folder, date }),
+  // Quick notes: the renderer's labels of markdown panes holding unsaved edits, pushed on
+  // every change so main's quit guard can name what a quit would lose.
+  unsavedDraftsSet: (files: string[]): void => ipcRenderer.send('unsavedDrafts:set', files),
   // T171: register/unregister a MarkdownPane's live-reload watch for its backing
   // file. Ref-counted in main (multiple panes on the same path share one watcher).
   markdownWatchStart: (path: string): Promise<void> =>

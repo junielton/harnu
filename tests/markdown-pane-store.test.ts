@@ -3,6 +3,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useHelpersStore } from '../src/renderer/src/stores/helpers'
 import type { WorktreeHelperState } from '../src/main/helpers-store'
+import {
+  __resetUnsavedDraftsForTests,
+  isDraftDirty,
+  setDraftDirty
+} from '../src/renderer/src/lib/unsaved-drafts'
 
 /**
  * Store contract for the T74 markdown pane: dedup by filePath, a per-worktree
@@ -13,6 +18,7 @@ import type { WorktreeHelperState } from '../src/main/helpers-store'
 const helpersSet = vi.fn(async () => {})
 
 beforeEach(() => {
+  __resetUnsavedDraftsForTests()
   helpersSet.mockClear()
   const api = {
     helpersGet: vi.fn(async () => null),
@@ -148,5 +154,70 @@ describe('closeHelperById', () => {
   it('returns false when the pane id does not exist', () => {
     const helpers = useHelpersStore()
     expect(helpers.closeHelperById(WT, 'h-does-not-exist')).toBe(false)
+  })
+})
+
+/** Mark a markdown pane dirty the way a mounted `MarkdownPane` does. */
+function markDirty(paneId: string, filePath: string): void {
+  setDraftDirty({ paneId, filePath, worktreePath: WT }, true)
+}
+
+describe('unsaved drafts — silent-close protection', () => {
+  const files = (helpers: ReturnType<typeof useHelpersStore>): (string | undefined)[] =>
+    (helpers.byWorktree.get(WT)?.panes ?? []).map((p) => (p as { filePath?: string }).filePath)
+
+  it('recycles the oldest CLEAN markdown pane when the oldest is dirty', () => {
+    const helpers = useHelpersStore()
+    const ids = ['a', 'b', 'c', 'd'].map((f) => helpers.addMarkdownHelper(WT, `${WT}/${f}.md`, WT))
+    markDirty(ids[0], `${WT}/a.md`)
+
+    helpers.addMarkdownHelper(WT, `${WT}/e.md`, WT)
+
+    expect(files(helpers)).toEqual([`${WT}/a.md`, `${WT}/c.md`, `${WT}/d.md`, `${WT}/e.md`])
+  })
+
+  it('recycles nothing when every markdown pane is dirty (the stack grows)', () => {
+    const helpers = useHelpersStore()
+    for (const f of ['a', 'b', 'c', 'd']) {
+      markDirty(helpers.addMarkdownHelper(WT, `${WT}/${f}.md`, WT), `${WT}/${f}.md`)
+    }
+
+    helpers.addMarkdownHelper(WT, `${WT}/e.md`, WT)
+
+    expect(helpers.byWorktree.get(WT)?.panes).toHaveLength(5)
+    expect(files(helpers)).toContain(`${WT}/a.md`)
+  })
+
+  it('removeHelper of a dirty pane clears its registry entry', () => {
+    const helpers = useHelpersStore()
+    const id = helpers.addMarkdownHelper(WT, `${WT}/a.md`, WT)
+    markDirty(id, `${WT}/a.md`)
+    expect(isDraftDirty(id)).toBe(true)
+
+    helpers.removeHelper(WT, id)
+
+    expect(isDraftDirty(id)).toBe(false)
+  })
+
+  it('a worktree-removal cascade discards dirty panes and clears the registry', () => {
+    const helpers = useHelpersStore()
+    const id = helpers.addMarkdownHelper(WT, `${WT}/a.md`, WT)
+    markDirty(id, `${WT}/a.md`)
+
+    helpers.dropWorktreeFromMemory(WT)
+
+    expect(isDraftDirty(id)).toBe(false)
+    expect(helpers.byWorktree.get(WT)).toBeUndefined()
+  })
+
+  it('isPaneUnsaved resolves a pane by id or by file path', () => {
+    const helpers = useHelpersStore()
+    const id = helpers.addMarkdownHelper(WT, `${WT}/a.md`, WT)
+    expect(helpers.isPaneUnsaved(WT, { paneId: id })).toBe(false)
+    markDirty(id, `${WT}/a.md`)
+    expect(helpers.isPaneUnsaved(WT, { paneId: id })).toBe(true)
+    expect(helpers.isPaneUnsaved(WT, { path: `${WT}/a.md` })).toBe(true)
+    expect(helpers.isPaneUnsaved(WT, { path: `${WT}/other.md` })).toBe(false)
+    expect(helpers.isPaneUnsaved(WT, { paneId: 'h-gone' })).toBe(false)
   })
 })

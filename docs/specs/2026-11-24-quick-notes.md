@@ -81,8 +81,8 @@ always asks first.
 - The quit guard (`src/main/quit-confirm.ts`, T579) decides synchronously in `before-quit` /
   window `close`. A quit with nothing dirty and no agent mid-turn must stay instant.
 - New keys go to both `en.json` and `pt-BR.json`; any new token/size goes to `design.md`
-  first; a CHANGELOG entry and a `docs/user/` page are required. The agent-facing ACK change
-  in §6.6 requires a `docs/harnu-features.md` update and marker bump.
+  first; a CHANGELOG entry and a `docs/user/` page are required. The §6.5 router refusal is
+  internal (no MCP verb reaches it), so `docs/harnu-features.md` does not change.
 
 ## 6. Design
 
@@ -163,9 +163,11 @@ Registered from `index.ts`, exposed in preload.
 
 ### 6.5 Closes the operator did not start (decided)
 
-- **Agent close** (`close_file` / `closeHelperByPath` / `closeHelperById` on a dirty markdown
-  pane): refused with a new error code `UNSAVED_CHANGES` (pane stays, no modal). This is an
-  ACK change: update `docs/harnu-features.md` and bump the marker.
+- **Router close** (`pane.closeFile` / `pane.closePane`, i.e. `closeHelperByPath` /
+  `closeHelperById`, on a dirty markdown pane): refused with the error code
+  `UNSAVED_CHANGES` (pane stays, no modal). `close_file` is a dormant router op with no MCP
+  verb in `src/main/mcp/tool-catalog.ts`, so this refusal is internal: no agent-facing ACK
+  changes and `docs/harnu-features.md` does not change.
 - **Cascades** (worktree removal via `dropWorktreeFromMemory`, `remove_folder` of a folder
   already gone from disk): discard silently. The folder is gone, so the operator has no stack
   to return to; a note's file itself lives in the main checkout and keeps its last save.

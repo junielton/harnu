@@ -7,6 +7,7 @@ import MarkdownPane, {
   __resetMarkdownDraftCacheForTests
 } from '../src/renderer/src/components/MarkdownPane.vue'
 import { i18n } from '@renderer/i18n'
+import { __resetUnsavedDraftsForTests, isDraftDirty } from '../src/renderer/src/lib/unsaved-drafts'
 
 /**
  * Edit-mode contract for the T74 markdown pane (phase 2): the pane toggles
@@ -29,6 +30,7 @@ beforeEach(() => {
   // pane id. These tests all reuse `h-md`, so clear it between cases to isolate
   // (production never reuses a pane id).
   __resetMarkdownDraftCacheForTests()
+  __resetUnsavedDraftsForTests()
   markdownRead.mockClear()
   markdownWrite.mockClear()
   clipboardWriteText.mockClear()
@@ -126,6 +128,69 @@ describe('MarkdownPane — view/edit toggle', () => {
     await w.get('button[aria-label="Save (⌘S)"]').trigger('click')
     await flushPromises()
     expect(markdownWrite).not.toHaveBeenCalled()
+  })
+})
+
+describe('MarkdownPane — unsaved-draft registry and save() result', () => {
+  type PaneVm = { save: () => Promise<boolean> }
+
+  it('registers the pane as dirty while it has unsaved edits and clears it on save', async () => {
+    const w = mountPane()
+    await settle()
+    expect(isDraftDirty('h-md')).toBe(false)
+    await w.get('button[aria-label="Edit"]').trigger('click')
+    await w.get('textarea').setValue('edited body')
+    await nextTick()
+    expect(isDraftDirty('h-md')).toBe(true)
+
+    await w.get('button[aria-label="Save (⌘S)"]').trigger('click')
+    await flushPromises()
+    expect(isDraftDirty('h-md')).toBe(false)
+  })
+
+  it('save() resolves true when the draft was written', async () => {
+    const w = mountPane()
+    await settle()
+    await w.get('button[aria-label="Edit"]').trigger('click')
+    await w.get('textarea').setValue('edited body')
+    await nextTick()
+    await expect((w.vm as unknown as PaneVm).save()).resolves.toBe(true)
+  })
+
+  it('save() resolves false and the pane stays dirty when the write is refused', async () => {
+    markdownWrite.mockResolvedValueOnce({
+      ok: false,
+      code: 'write-failed',
+      error: 'nope'
+    } as never)
+    const w = mountPane()
+    await settle()
+    await w.get('button[aria-label="Edit"]').trigger('click')
+    await w.get('textarea').setValue('edited body')
+    await nextTick()
+    await expect((w.vm as unknown as PaneVm).save()).resolves.toBe(false)
+    expect(isDraftDirty('h-md')).toBe(true)
+  })
+
+  it('save() resolves false when the write throws', async () => {
+    markdownWrite.mockRejectedValueOnce(new Error('ipc down'))
+    const w = mountPane()
+    await settle()
+    await w.get('button[aria-label="Edit"]').trigger('click')
+    await w.get('textarea').setValue('edited body')
+    await nextTick()
+    await expect((w.vm as unknown as PaneVm).save()).resolves.toBe(false)
+    expect(isDraftDirty('h-md')).toBe(true)
+  })
+
+  it('stays registered across an unmount (the draft cache survives) until the pane closes', async () => {
+    const w = mountPane()
+    await settle()
+    await w.get('button[aria-label="Edit"]').trigger('click')
+    await w.get('textarea').setValue('edited body')
+    await nextTick()
+    w.unmount()
+    expect(isDraftDirty('h-md')).toBe(true)
   })
 })
 
