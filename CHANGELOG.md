@@ -29,6 +29,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - A Markdown pane that opened straight in edit mode (a new note, a new file from Browse files, a scaffolded `WORKTREE.md`, the keybindings file) now comes back in view mode after a restart, instead of opening in edit and taking focus from the session terminal.
 - **Your move no longer fills with questions from sessions you never typed in.** The queue is now judged only for sessions where you wrote at least one message. Sessions Claude or Harnu started to do work (dispatched executors, verifiers, scheduler and steward runs) get no judge card until you type in them, and the first message you type makes them count from then on. Stopped-session, mission and human-gate cards are unchanged. On the next start, Harnu also closes the open judge cards of sessions you never typed in, so the queue drops to your own sessions.
 
+## 2026-11-23
+
+### Changed
+
+- **Guided walk: a spinner while the session works on your correction.** After you mark a check Failed, the "Waiting for my correction" line now leads with a spinning loader until the session sends its one correction, so you can tell it is working rather than stuck.
+
 ## 2026-11-21
 
 ### Changed

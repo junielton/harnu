@@ -7578,7 +7578,8 @@ clipboard; absolute paths are never shown raw, only a short name.
 
 **States.** `roadmap` · `step` · `step-image` · `lightbox` (over the pane, `--color-scrim-strong`, Esc) · `failed`
 (one line + a paste area; the screenshot is a 40×28 chip) · `failed-retry` (the reported line, **one** correction
-card in the accent family, the same step again, and from the second failure a quiet door to whoever should
+card in the accent family — while it is still owed, its `Waiting for my correction` line leads with a 12px `loader-2`
+`.anim-spin` — the same step again, and from the second failure a quiet door to whoever should
 fix it) · `check-failed` (warning card with ran / expected / found, then `Try again` primary and
 `! Follow anyway (unverified)`) · `explain-more` (the same step, then a `Why this matters` paragraph and
 `Extra checks · N` as tickable rows that never block Done, appended under it) · `did-not-understand` (an accent
