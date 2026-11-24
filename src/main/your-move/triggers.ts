@@ -188,6 +188,8 @@ export interface MidTurnDeps {
     transcriptPath: string
   ): Promise<string | null>
   read: typeof readFrom
+  /** A session the operator never typed in is not looked at: not even read (BUG-300). */
+  hasOperator(sessionId: string, transcriptPath: string): Promise<boolean>
   /** The folded task state of every live session. */
   states(): ReadonlyMap<string, TaskState>
   now(): number
@@ -225,6 +227,7 @@ export function createMidTurnSweep(deps: MidTurnDeps): { tick(): Promise<void>; 
       where.set(sessionId, spot)
     }
     if (!(await deps.eligible(sessionId, spot.folder)) || disposed) return
+    if (!(await deps.hasOperator(sessionId, spot.path)) || disposed) return
     const from = cursor?.shadowOffset ?? cursor?.offset
     if (from !== undefined) {
       // Tool-only progress is not worth a judge call, and moving the shadow cursor over it

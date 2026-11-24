@@ -79,6 +79,7 @@ function sweepHarness(over: Partial<MidTurnDeps> = {}) {
     locate: async () => file,
     resolveFolder: async () => '/work/acme',
     read: reads,
+    hasOperator: async () => true,
     states: () => new Map<string, TaskState>([['sess-0001', 'working']]),
     now: () => T0,
     ...over
@@ -235,7 +236,8 @@ describe('mid-turn cards and the live cursor', () => {
       isFolderOff: () => false,
       mode: () => mode,
       midTurnLive: () => false,
-      classify: () => 'interactive'
+      classify: () => 'interactive',
+      hasOperator: async () => true
     })
     return { inspector, detect }
   }
@@ -375,7 +377,8 @@ describe('mid-turn cursor discipline (delta 1)', () => {
       isFolderOff: () => false,
       mode: () => 'observe',
       midTurnLive: () => false,
-      classify: () => 'interactive'
+      classify: () => 'interactive',
+      hasOperator: async () => true
     })
     const h = sweepHarness({ inspector, now: () => clock.now })
     const stop = () =>

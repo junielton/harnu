@@ -17,9 +17,19 @@ export interface LocatorFs {
   readdir(dir: string): Promise<string[]>
 }
 
+/**
+ * What a lookup knows. `missing` means the whole projects tree was listed and holds no
+ * transcript for the id; `unknown` means a listing failed, so nothing is known: a caller that
+ * would act on absence (close a card) must treat it as present.
+ */
+export type TranscriptLookup =
+  { state: 'found'; path: string } | { state: 'missing' } | { state: 'unknown' }
+
 export interface TranscriptLocator {
-  /** The transcript of a session, or null when none is on disk. */
+  /** The transcript of a session, or null when none is on disk (or none could be found). */
   locate(sessionId: string): Promise<string | null>
+  /** Like `locate`, but tells a transcript that is not there from a listing that failed. */
+  lookup(sessionId: string): Promise<TranscriptLookup>
   /** A path a hook payload carried: remembered, so no directory is touched for this session. */
   note(sessionId: string, transcriptPath: string | undefined): void
 }
@@ -54,10 +64,13 @@ export function createTranscriptLocator(deps: LocatorDeps): TranscriptLocator {
   /** id → the slug that holds its transcript, as of `indexedAt`. */
   let index = new Map<string, string>()
   let indexedAt = -Infinity
+  /** Whether every listing of the last build succeeded: only then is an absent id really absent. */
+  let indexComplete = false
   let building: Promise<void> | null = null
 
   async function build(): Promise<void> {
     const next = new Map<string, string>()
+    let complete = true
     try {
       const slugs = await deps.fs.readdir(deps.root)
       for (let i = 0; i < slugs.length; i += LIST_BATCH) {
@@ -69,16 +82,21 @@ export function createTranscriptLocator(deps: LocatorDeps): TranscriptLocator {
                   next.set(name.slice(0, -TRANSCRIPT_EXT.length), slug)
                 }
               }
-            } catch {
-              /* not a directory, or gone since the listing */
+            } catch (e) {
+              // Not a directory, or gone since the listing, is fine: any other error means this
+              // slug may hold transcripts the index does not know about.
+              const code = (e as NodeJS.ErrnoException)?.code
+              if (code !== 'ENOTDIR' && code !== 'ENOENT') complete = false
             }
           })
         )
       }
     } catch {
-      /* no projects directory: an empty index */
+      /* no projects directory: an empty index, and nothing is known to be absent */
+      complete = false
     }
     index = next
+    indexComplete = complete
     indexedAt = deps.now()
     // A transcript that appeared since a miss is no longer missing.
     for (const id of [...missing.keys()]) if (next.has(id)) missing.delete(id)
@@ -94,25 +112,33 @@ export function createTranscriptLocator(deps: LocatorDeps): TranscriptLocator {
     return building
   }
 
+  async function lookup(sessionId: string): Promise<TranscriptLookup> {
+    const known = found.get(sessionId)
+    if (known !== undefined) return { state: 'found', path: known }
+    const missedAt = missing.get(sessionId)
+    if (missedAt !== undefined) {
+      if (deps.now() - missedAt < MISSING_TTL_MS) return { state: 'missing' }
+      missing.delete(sessionId)
+    }
+    await refresh()
+    const slug = index.get(sessionId)
+    if (slug === undefined) {
+      // Remembered as missing only when the whole tree was read: an unknown is asked again.
+      if (!indexComplete) return { state: 'unknown' }
+      remember(missing, sessionId, deps.now())
+      return { state: 'missing' }
+    }
+    const file = path.join(deps.root, slug, `${sessionId}${TRANSCRIPT_EXT}`)
+    remember(found, sessionId, file)
+    return { state: 'found', path: file }
+  }
+
   return {
     async locate(sessionId) {
-      const known = found.get(sessionId)
-      if (known !== undefined) return known
-      const missedAt = missing.get(sessionId)
-      if (missedAt !== undefined) {
-        if (deps.now() - missedAt < MISSING_TTL_MS) return null
-        missing.delete(sessionId)
-      }
-      await refresh()
-      const slug = index.get(sessionId)
-      if (slug === undefined) {
-        remember(missing, sessionId, deps.now())
-        return null
-      }
-      const file = path.join(deps.root, slug, `${sessionId}${TRANSCRIPT_EXT}`)
-      remember(found, sessionId, file)
-      return file
+      const r = await lookup(sessionId)
+      return r.state === 'found' ? r.path : null
     },
+    lookup,
     note(sessionId, transcriptPath) {
       if (!transcriptPath || !path.isAbsolute(transcriptPath)) return
       if (!transcriptPath.endsWith(TRANSCRIPT_EXT)) return
