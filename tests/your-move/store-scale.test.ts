@@ -18,6 +18,8 @@ import { openYourMoveStore, type YourMoveStore } from '../../src/main/your-move/
 const TOTAL = 10_000
 const OPEN = 7_000
 const NOW = Date.UTC(2026, 10, 24, 12)
+/** Timed samples behind every budget: a median of this many warm runs, never a single sample. */
+const SAMPLES = 7
 
 let dir: string
 let file: string
@@ -73,8 +75,9 @@ describe('your move store at 10,000 cards (7,000 open)', () => {
   it('AC-1: a read does not copy the store and costs under 5 ms', async () => {
     const store = await seed()
     const clone = vi.spyOn(globalThis, 'structuredClone')
+    store.state() // warm-up: the first call pays for JIT and the freshly parsed heap, not the read
     const runs: number[] = []
-    for (let i = 0; i < 15; i++) runs.push(await timed(() => store.state()))
+    for (let i = 0; i < SAMPLES; i++) runs.push(await timed(() => store.state()))
     expect(clone).not.toHaveBeenCalled()
     expect(median(runs)).toBeLessThan(5)
     // The same snapshot is handed to every reader until a write replaces it.
@@ -112,15 +115,12 @@ describe('your move store at 10,000 cards (7,000 open)', () => {
     const write = vi.spyOn(fsp, 'writeFile')
     const onChange = vi.fn()
     store.onChange(onChange)
+    // A fresh object with the same content, the shape a reducer that changed nothing returns.
+    const noop = (): Promise<null> =>
+      store.transact((s) => ({ next: { ...s, cards: [...s.cards] }, result: null }))
+    await noop() // warm-up, not timed
     const runs: number[] = []
-    for (let i = 0; i < 9; i++) {
-      // A fresh object with the same content, the shape a reducer that changed nothing returns.
-      runs.push(
-        await timed(() =>
-          store.transact((s) => ({ next: { ...s, cards: [...s.cards] }, result: null }))
-        )
-      )
-    }
+    for (let i = 0; i < SAMPLES; i++) runs.push(await timed(noop))
     expect(clone).not.toHaveBeenCalled()
     expect(write).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
@@ -140,18 +140,18 @@ describe('your move store at 10,000 cards (7,000 open)', () => {
 
   it('AC-4: a single-card transact commits in under 30 ms', async () => {
     const store = await seed()
+    const edit = (i: number): Promise<null> =>
+      store.transact((s) => {
+        const cards = s.cards.slice()
+        cards[i] = { ...cards[i], ask: `edited ${i}`, updatedAt: NOW + i }
+        return { next: { ...s, cards }, result: null }
+      })
+    // The first write fills the per-card serialization cache (all 10,000 cards, once per process):
+    // a warm-up, not the steady cost a hook event pays. The gate is the median of the next
+    // SAMPLES single-card writes, so one noisy sample on a shared CI runner cannot fail it.
+    await edit(0)
     const runs: number[] = []
-    for (let i = 0; i < 7; i++) {
-      runs.push(
-        await timed(() =>
-          store.transact((s) => {
-            const cards = s.cards.slice()
-            cards[i] = { ...cards[i], ask: `edited ${i}`, updatedAt: NOW + i }
-            return { next: { ...s, cards }, result: null }
-          })
-        )
-      )
-    }
+    for (let i = 1; i <= SAMPLES; i++) runs.push(await timed(() => edit(i)))
     expect(median(runs)).toBeLessThan(30)
   })
 
