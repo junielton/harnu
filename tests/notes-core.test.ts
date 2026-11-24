@@ -82,6 +82,9 @@ describe('notes-core fs', () => {
     ])
     expect(a.ok).toBe(true)
     expect(b.ok).toBe(true)
+    // Exactly one of the racing opens created the file; the other reopened it.
+    const created = [a, b].filter((r) => r.ok && r.created)
+    expect(created).toHaveLength(1)
     const file = join(notesDirFor(main), `${localDateStamp()}.md`)
     expect(await readFile(file, 'utf8')).toBe(noteHeader(localDateStamp()))
   })
@@ -165,6 +168,18 @@ describe('notes-core fs', () => {
     await symlink(real, join(main, '.harnu', 'notes'))
     expect(await openNote(main, undefined, [main])).toEqual({ ok: false, code: 'symlink' })
     expect(await listNotes(main, [main])).toEqual({ ok: false, code: 'symlink' })
+  })
+
+  it('refuses a symlinked .harnu dir, like the markdown gate, and creates nothing behind it', async () => {
+    const real = join(tmp, 'elsewhere-harnu')
+    await mkdir(join(real, 'notes'), { recursive: true })
+    await writeFile(join(real, 'notes', '2020-01-01.md'), 'x')
+    await symlink(real, join(main, '.harnu'))
+    expect(await openNote(main, undefined, [main])).toEqual({ ok: false, code: 'symlink' })
+    expect(await openNote(main, '2020-01-01', [main])).toEqual({ ok: false, code: 'symlink' })
+    expect(await listNotes(main, [main])).toEqual({ ok: false, code: 'symlink' })
+    // Today's note was not created through the link.
+    await expect(readFile(join(real, 'notes', `${localDateStamp()}.md`), 'utf8')).rejects.toThrow()
   })
 
   it('refuses a symlinked note file', async () => {

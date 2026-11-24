@@ -63,10 +63,8 @@ export function isNotesFilePath(resolved: string, roots: readonly string[]): boo
   return roots.some((r) => path.join(repoRoot(r), DATA_DIR, 'notes') === dir)
 }
 
-/** True when the note file (if it exists), its notes dir or the `.harnu` dir above is a symlink. */
-export async function isNotesSymlink(resolved: string): Promise<boolean> {
-  const notesDir = path.dirname(resolved)
-  for (const p of [resolved, notesDir, path.dirname(notesDir)]) {
+async function anySymlink(paths: readonly string[]): Promise<boolean> {
+  for (const p of paths) {
     try {
       if ((await lstat(p)).isSymbolicLink()) return true
     } catch {
@@ -74,6 +72,17 @@ export async function isNotesSymlink(resolved: string): Promise<boolean> {
     }
   }
   return false
+}
+
+/** True when the note file (if it exists), its notes dir or the `.harnu` dir above is a symlink. */
+export async function isNotesSymlink(resolved: string): Promise<boolean> {
+  const notesDir = path.dirname(resolved)
+  return anySymlink([resolved, notesDir, path.dirname(notesDir)])
+}
+
+/** {@link isNotesSymlink} for the directory alone: the notes dir or the `.harnu` dir above it. */
+async function isNotesDirSymlink(notesDir: string): Promise<boolean> {
+  return anySymlink([notesDir, path.dirname(notesDir)])
 }
 
 /** Validate `folder` and confine it to the known roots (`roots` is a test seam). */
@@ -109,6 +118,8 @@ export async function listNotes(
   const notesDir = notesDirFor(folder)
   const today = localDateStamp()
   try {
+    // Same refusal as the markdown gate (`isNotesSymlink`): the notes dir or `.harnu` as a link.
+    if (await isNotesDirSymlink(notesDir)) return { ok: false, code: 'symlink' }
     const dirState = await probe(notesDir)
     if (dirState === 'symlink') return { ok: false, code: 'symlink' }
     if (dirState === 'missing') return { ok: true, notesDir, today, notes: [] }
@@ -131,7 +142,7 @@ export async function listNotes(
 /**
  * Resolve a note file. With no `date`, today's note (created with its header when
  * missing); with a `date`, that existing note only. Never follows a symlink at the
- * notes dir or the note file.
+ * `.harnu` dir, the notes dir or the note file.
  */
 export async function openNote(
   folder: string,
@@ -145,6 +156,9 @@ export async function openNote(
   const day = date ?? localDateStamp()
   const filePath = path.join(notesDir, `${day}.md`)
   try {
+    // Same refusal as the markdown gate, checked before anything is created: a link at the note
+    // file, the notes dir or `.harnu` (the pane's read would refuse it anyway).
+    if (await isNotesSymlink(filePath)) return { ok: false, code: 'symlink' }
     const dirState = await probe(notesDir)
     if (dirState === 'symlink') return { ok: false, code: 'symlink' }
     if (date !== undefined && dirState === 'missing') return { ok: false, code: 'not-found' }
