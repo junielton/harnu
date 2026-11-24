@@ -274,4 +274,34 @@ describe('one-time cleanup (AC-4)', () => {
     expect(byId['c-agent-closed']).toMatchObject({ closedAt: 5, closedBy: 'answered' })
     for (const id of ['c-death', 'c-gate', 'c-mission']) expect(byId[id].closedAt).toBeUndefined()
   })
+
+  it('never mutates the state it is handed: it runs against a deep-frozen store', async () => {
+    const agentFile = await transcript('agent', [dispatch('go'), asst('q?')])
+    const real = await openYourMoveStore(path.join(dir, 'your-move.json'))
+    await real.transact((s) => ({
+      next: { ...s, cards: [card('c1', 'agent'), card('c2', 'ghost')] },
+      result: null
+    }))
+    const deepFreeze = <T>(v: T): T => {
+      if (typeof v === 'object' && v !== null && !Object.isFrozen(v)) {
+        Object.freeze(v)
+        for (const k of Object.values(v)) deepFreeze(k)
+      }
+      return v
+    }
+    // the shape of the BUG-277 store: the draft a reducer sees is frozen all the way down
+    const frozen: typeof real = {
+      ...real,
+      state: () => deepFreeze(real.state()),
+      transact: (decide) => real.transact((s) => decide(deepFreeze(s)))
+    }
+    const closed = await closeIneligibleCards({
+      store: frozen,
+      gate: createOperatorGate(),
+      locate: async (id) => (id === 'agent' ? agentFile : null),
+      now: () => 7
+    })
+    expect(closed).toBe(2)
+    expect(real.state().cards.every((c) => c.closedAt === 7)).toBe(true)
+  })
 })
