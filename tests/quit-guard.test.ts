@@ -75,19 +75,30 @@ describe('decideQuitConfirm', () => {
 })
 
 describe('decideQuitConfirm with unsaved files', () => {
-  it('asks about unsaved files even when the preference is off', () => {
+  it('asks about unsaved files even when the preference is off, and names the working agents too', () => {
+    // "Quit without saving" kills the working agents as well, so the prompt must say so.
     const d = decideQuitConfirm({
-      taskStates: states(['a', 'working']),
+      taskStates: states(['a', 'working'], ['b', 'idle']),
       confirmEnabled: false,
       reason: 'user',
       unsavedFiles: ['note.md (wt)']
     })
     expect(d).toEqual({
       confirm: true,
-      sessionIds: [],
+      sessionIds: ['a'],
       unsavedFiles: ['note.md (wt)'],
       allowDontAsk: false
     })
+  })
+
+  it('with the preference off and no unsaved files, working agents still do not ask', () => {
+    const d = decideQuitConfirm({
+      taskStates: states(['a', 'working']),
+      confirmEnabled: false,
+      reason: 'user',
+      unsavedFiles: []
+    })
+    expect(d).toEqual({ confirm: false, sessionIds: [], unsavedFiles: [], allowDontAsk: true })
   })
 
   it('lists both when the preference is on', () => {

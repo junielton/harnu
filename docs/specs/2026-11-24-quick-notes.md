@@ -181,7 +181,8 @@ Registered from `index.ts`, exposed in preload.
 - With dirty panes the guard always prompts, **even when `confirmOnQuit` is off** (that
   preference is about agents, not data loss), and the "don't ask again" checkbox is hidden
   for this case.
-- One combined native dialog naming the unsaved files (and the working agents, if any).
+- One combined native dialog naming the unsaved files (and the working agents, if any, even
+  when `confirmOnQuit` is off: "Quit without saving" interrupts them too).
   Buttons: **Cancel** (default) and **Quit without saving**.
 - A renderer that died before pushing means an empty list: the guard falls back to today's
   agent-only behavior, so a quit is never stuck.

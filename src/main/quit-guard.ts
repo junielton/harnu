@@ -22,7 +22,10 @@ export interface QuitGuardInput {
 
 export interface QuitGuardDecision {
   confirm: boolean
-  /** The `working` sessions, in task-state order. Empty unless the preference is on. */
+  /**
+   * The `working` sessions, in task-state order. Empty unless the preference is on or there are
+   * unsaved files (the unsaved-files prompt names the agents a quit would interrupt too).
+   */
   sessionIds: string[]
   /** The unsaved files, whatever the preference says. Empty for a non-user quit. */
   unsavedFiles: string[]
@@ -34,19 +37,22 @@ export interface QuitGuardDecision {
  * Should this quit attempt ask first? Only `taskState === 'working'` counts — idle, parked
  * (hibernated), done and errored sessions never do — and an updater restart or an OS
  * shutdown is never blocked, whatever the preference says. Unsaved markdown files always
- * ask on a user quit, even with the preference off.
+ * ask on a user quit, even with the preference off, and that prompt also names the working
+ * sessions, since quitting interrupts them too.
  */
 export function decideQuitConfirm(input: QuitGuardInput): QuitGuardDecision {
   if (input.reason !== 'user') {
     return { confirm: false, sessionIds: [], unsavedFiles: [], allowDontAsk: true }
   }
+  const unsavedFiles = [...(input.unsavedFiles ?? [])]
+  // The working agents are named when the preference is on, AND whenever the prompt shows for
+  // unsaved files: "Quit without saving" interrupts them too, so the operator must see them.
   const sessionIds: string[] = []
-  if (input.confirmEnabled) {
+  if (input.confirmEnabled || unsavedFiles.length > 0) {
     for (const [sessionId, state] of input.taskStates) {
       if (state === 'working') sessionIds.push(sessionId)
     }
   }
-  const unsavedFiles = [...(input.unsavedFiles ?? [])]
   return {
     confirm: sessionIds.length > 0 || unsavedFiles.length > 0,
     sessionIds,

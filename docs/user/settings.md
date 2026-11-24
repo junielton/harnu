@@ -110,7 +110,7 @@ The **General** tab has a SIDEBAR section that controls how the folder/session l
 
 ## Quitting
 
-The **General** tab has a QUITTING section with one switch, **Confirm before quitting while agents are working** (on by default). While it is on, closing the window or quitting (Ctrl+Q, the app menu) shows a native prompt if any session is actively working at that moment, so you don't kill a turn by accident. See [Quitting Harnu](sessions.md#quitting-harnu) for what the prompt shows. The prompt's own **Don't ask again** checkbox turns this switch off; come back here to turn it on again. The choice survives restarts.
+The **General** tab has a QUITTING section with one switch, **Confirm before quitting while agents are working** (on by default). While it is on, closing the window or quitting (Ctrl+Q, the app menu) shows a native prompt if any session is actively working at that moment, so you don't kill a turn by accident. See [Quitting Harnu](sessions.md#quitting-harnu) for what the prompt shows. The prompt's own **Don't ask again** checkbox turns this switch off; come back here to turn it on again. Unsaved Markdown files always prompt before quitting, whatever this switch says, and that prompt lists any working agents too. The choice survives restarts.
 
 ## Daily budget
 

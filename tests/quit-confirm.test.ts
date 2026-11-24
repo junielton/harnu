@@ -204,6 +204,23 @@ describe('quit guard shell', () => {
     expect(h.writeFile).not.toHaveBeenCalled() // never persists "don't ask" over unsaved work
   })
 
+  it('unsaved files with the preference off still name the working agents', async () => {
+    await h.handlers.get('quit-guard:setPrefs')!({}, { version: 1, confirmOnQuit: false })
+    h.unsaved = ['note.md (wt)']
+    h.states.set('11111111-aaaa', 'working')
+    h.states.set('22222222-bbbb', 'idle')
+    h.showMessageBox.mockResolvedValue({ response: 1, checkboxChecked: false })
+    m.guardQuit(evt(), noWindow)
+    await flush()
+    const opts = h.showMessageBox.mock.calls[0][0]
+    expect(opts.message).toBe('1 file has unsaved changes')
+    expect(opts.detail).toContain('• note.md (wt)')
+    expect(opts.detail).toContain('1 agent is still working')
+    expect(opts.detail).toContain('• 11111111')
+    expect(opts.detail).not.toContain('22222222')
+    expect('checkboxLabel' in opts).toBe(false)
+  })
+
   it('unsaved files with Cancel keep the app alive', async () => {
     h.unsaved = ['note.md (wt)']
     h.showMessageBox.mockResolvedValue({ response: 1, checkboxChecked: false })

@@ -55,7 +55,7 @@ Both actions appear in **Settings → Keyboard Shortcuts** as **New note for tod
 Saving is explicit: `Cmd/Ctrl+S`. There is no autosave. To make sure nothing is lost:
 
 - **Closing a Markdown pane with unsaved edits** asks first. This applies to every Markdown pane, not only notes. The dialog offers **Save**, **Don't save** and **Cancel**. If the save fails, the pane stays open with your text. Reloading the file or following a link inside it keeps its existing non-blocking toast instead of a dialog.
-- **Quitting Harnu** while any Markdown pane in any folder has unsaved edits shows a native prompt that names the files. Its buttons are **Cancel** and **Quit without saving**. It appears even if you turned off the confirm-on-quit setting, and it has no "Don't ask again" checkbox, because losing work is not a preference. If agents are also working, the same prompt lists them below the files. See [Quitting Harnu](sessions.md#quitting-harnu).
+- **Quitting Harnu** while any Markdown pane in any folder has unsaved edits shows a native prompt that names the files. Its buttons are **Cancel** and **Quit without saving**. It appears even if you turned off the confirm-on-quit setting, and it has no "Don't ask again" checkbox, because losing work is not a preference. If agents are also working, the same prompt lists them below the files, even with confirm-on-quit off, because quitting interrupts them too. See [Quitting Harnu](sessions.md#quitting-harnu).
 - **Opening a fifth Markdown pane** recycles the oldest pane that has no unsaved edits. A pane with unsaved edits is never recycled; the stack grows instead.
 - A session cannot close a pane that has unsaved edits; the request is refused and the pane stays open.
 
