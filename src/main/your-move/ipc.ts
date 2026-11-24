@@ -294,7 +294,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       void closeIneligibleCards({
         store,
         gate: operatorGate,
-        locate: locateTranscript,
+        lookup: (id) => transcripts.lookup(id),
         now: () => Date.now()
       })
         .then((n) => {

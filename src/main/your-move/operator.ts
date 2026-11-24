@@ -15,12 +15,15 @@
  */
 
 import { createReadStream, promises as fs } from 'node:fs'
+import type { TranscriptLookup } from './locate'
 import { buildSegment, hasOperatorEntry } from './segment'
 import type { YourMoveStore } from './store'
 
 export interface OperatorGate {
-  /** Does the transcript at `path` hold at least one operator entry? */
+  /** Does the transcript at `path` hold at least one operator entry? Unreadable counts as no. */
   has(sessionId: string, path: string): Promise<boolean>
+  /** Like `has`, but tells a transcript read to the end with none (`no`) from one that could not be read. */
+  status(sessionId: string, path: string): Promise<'yes' | 'no' | 'unknown'>
 }
 
 /** Remembered sessions (yes and no, each): the oldest go first. */
@@ -28,6 +31,8 @@ const MAX_REMEMBERED = 5_000
 const NEWLINE = 0x0a
 
 interface Scan {
+  /** False when the file could not be opened or read: nothing is known. */
+  ok: boolean
   found: boolean
   /** Byte offset just past the last whole line looked at. */
   scannedTo: number
@@ -54,7 +59,7 @@ async function scanFrom(path: string, from: number): Promise<Scan> {
   try {
     size = (await fs.stat(path)).size
   } catch {
-    return { found: false, scannedTo: 0, size: 0 }
+    return { ok: false, found: false, scannedTo: 0, size: 0 }
   }
   let offset = from
   let carry: Buffer = Buffer.alloc(0)
@@ -65,7 +70,7 @@ async function scanFrom(path: string, from: number): Promise<Scan> {
       let start = 0
       for (let nl = buf.indexOf(NEWLINE, start); nl !== -1; nl = buf.indexOf(NEWLINE, start)) {
         if (isOperatorLine(buf.subarray(start, nl))) {
-          return { found: true, scannedTo: offset + (nl + 1 - start), size }
+          return { ok: true, found: true, scannedTo: offset + (nl + 1 - start), size }
         }
         offset += nl + 1 - start
         start = nl + 1
@@ -75,7 +80,7 @@ async function scanFrom(path: string, from: number): Promise<Scan> {
   } finally {
     stream.destroy()
   }
-  return { found: false, scannedTo: offset, size }
+  return { ok: true, found: false, scannedTo: offset, size }
 }
 
 export function createOperatorGate(): OperatorGate {
@@ -84,7 +89,7 @@ export function createOperatorGate(): OperatorGate {
   /** id → how far the transcript was scanned without finding one. */
   const no = new Map<string, number>()
   /** One scan per session at a time: a burst of hooks shares it. */
-  const running = new Map<string, Promise<boolean>>()
+  const running = new Map<string, Promise<'yes' | 'no' | 'unknown'>>()
 
   const remember = <V>(map: Map<string, V>, id: string, value: V): void => {
     map.delete(id)
@@ -92,54 +97,58 @@ export function createOperatorGate(): OperatorGate {
     if (map.size > MAX_REMEMBERED) map.delete(map.keys().next().value as string)
   }
 
-  async function check(sessionId: string, path: string): Promise<boolean> {
+  async function check(sessionId: string, path: string): Promise<'yes' | 'no' | 'unknown'> {
     const from = no.get(sessionId) ?? 0
     let scan: Scan
     try {
       scan = await scanFrom(path, from)
-      if (scan.size < from) {
+      if (scan.ok && scan.size < from) {
         // a rewritten file: what was said before is not there any more
         scan = await scanFrom(path, 0)
       }
     } catch (e) {
-      // Unreadable now: not eligible now, nothing remembered, asked again at the next trigger.
       console.error(`[your-move] operator check failed for ${sessionId}: ${(e as Error).message}`)
-      return false
+      return 'unknown'
     }
+    // Unreadable now: nothing remembered, asked again at the next trigger.
+    if (!scan.ok) return 'unknown'
     if (scan.found) {
       no.delete(sessionId)
       yes.add(sessionId)
       if (yes.size > MAX_REMEMBERED) yes.delete(yes.values().next().value as string)
-      return true
+      return 'yes'
     }
     remember(no, sessionId, scan.scannedTo)
-    return false
+    return 'no'
   }
 
-  return {
-    has(sessionId, path) {
-      if (yes.has(sessionId)) return Promise.resolve(true)
-      const live = running.get(sessionId)
-      if (live) return live
-      const run = check(sessionId, path).finally(() => running.delete(sessionId))
-      running.set(sessionId, run)
-      return run
-    }
+  const status = (sessionId: string, path: string): Promise<'yes' | 'no' | 'unknown'> => {
+    if (yes.has(sessionId)) return Promise.resolve('yes')
+    const live = running.get(sessionId)
+    if (live) return live
+    const run = check(sessionId, path).finally(() => running.delete(sessionId))
+    running.set(sessionId, run)
+    return run
   }
+
+  return { status, has: async (sessionId, path) => (await status(sessionId, path)) === 'yes' }
 }
 
 export interface CleanupDeps {
   store: YourMoveStore
   gate: OperatorGate
-  locate(sessionId: string): Promise<string | null>
+  lookup(sessionId: string): Promise<TranscriptLookup>
   now(): number
 }
 
 /**
  * Closes the open judge cards of sessions the operator never typed in, through the store's own
- * `transact`: the queue drops to operator sessions only. A session with no transcript on disk
- * has no operator entry. Death, mission and human-gate cards point at items the operator owns
- * and are left alone; a verb card is an agent handing the ball over on purpose.
+ * `transact`: the queue drops to operator sessions only. A card closes only when the session's
+ * transcript is known to be absent (the whole projects tree was listed) or was read to the end
+ * with no operator entry. A lookup that failed, threw or could not read the file keeps the
+ * card: a false alarm beats a lost question. Death, mission and human-gate cards point at
+ * items the operator owns and are left alone; a verb card is an agent handing the ball over
+ * on purpose.
  */
 export async function closeIneligibleCards(deps: CleanupDeps): Promise<number> {
   const ids = new Set<string>()
@@ -151,8 +160,11 @@ export async function closeIneligibleCards(deps: CleanupDeps): Promise<number> {
   const ineligible: string[] = []
   for (const id of ids) {
     try {
-      const path = await deps.locate(id)
-      if (path === null || !(await deps.gate.has(id, path))) ineligible.push(id)
+      const found = await deps.lookup(id)
+      if (found.state === 'missing') ineligible.push(id)
+      else if (found.state === 'found' && (await deps.gate.status(id, found.path)) === 'no') {
+        ineligible.push(id)
+      }
     } catch {
       /* could not tell: the card stays (a false alarm beats a lost question) */
     }
