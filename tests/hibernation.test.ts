@@ -20,7 +20,8 @@ import {
 import {
   missionOwnersWithLiveChildren,
   openMissionLeaders,
-  refreshOpenMissionLeaders
+  refreshOpenMissionLeaders,
+  coldMissionRoots
 } from '../src/main/hibernation'
 import { mainCheckoutRoot } from '../src/main/data-dir'
 import {
@@ -441,12 +442,12 @@ describe('hibernation — mission owners with live children (T363)', () => {
     expect(openMissionLeaders([])).toEqual(new Set())
   })
 
-  it('AC-3e: the first sweep over an unpinned repo with a legacy data dir misses its missions, and the next sweep self-heals', async () => {
-    // The sweep answers from a snapshot, and a repo the boot pass never saw has its
-    // legacy `.capy/` copied lazily and asynchronously. So the very first read can see no
-    // missions — which at worst parks an owner (parking is not death: the transcript is intact
-    // and selecting the row resumes it). It must heal as soon as the copy lands, with no
-    // restart and no extra wiring.
+  it('AC-3e: while the mission snapshot of a repo is still cold, the sweep parks nobody there; once it is loaded, the exemption is exact again', async () => {
+    // The sweep answers from a snapshot, and a repo the boot pass never saw has its legacy `.capy/`
+    // copied lazily and asynchronously, so the very first read of it has no snapshot to answer from.
+    // "A leader is never parked while its mission is open" must hold for that sweep too: until the
+    // first load of the repo has finished, every session of it is treated as a possible leader and is
+    // parked for no mission reason. It must end by itself once the copy has landed and the load ran.
     setLazyDataDirMigration(true)
     try {
       const m = mission({}, [{ kind: 'session', ref: CHILD }])
@@ -454,15 +455,28 @@ describe('hibernation — mission owners with live children (T363)', () => {
       await mkdir(dirname(legacyFile), { recursive: true })
       await writeFile(legacyFile, buildMissionFileContent(m))
 
-      const fleet = [cold(OWNER, 600, repo), cold(CHILD, 1, repo)]
-      expect(missionOwnersWithLiveChildren(fleet).has(OWNER)).toBe(false) // first sweep: not copied yet
+      const sessions = [cold(OWNER, 600, repo), cold(CHILD, 1, repo)]
+      const first = missionOwnersWithLiveChildren(sessions) // first sweep: not copied, not loaded
+      expect(first.has(OWNER)).toBe(true) // the leader is never parked on a cold snapshot
+      const stamped = sessions.map((s) => ({ ...s, ownsLiveMission: first.has(s.sessionKey) }))
+      expect(evaluateFleet(stamped, NOW, POLICY, 'sweep')).toEqual([])
+      expect(evaluateFleet(stamped, NOW, POLICY, 'cap')).toEqual([])
 
       await dataDirReady(repo)
       await refreshOpenMissionLeaders([repo]) // what the first sweep started, finished
-      expect(missionOwnersWithLiveChildren(fleet).has(OWNER)).toBe(true) // next sweep: healed
+      const next = missionOwnersWithLiveChildren(sessions) // next sweep: loaded, exact
+      expect(next.has(OWNER)).toBe(true)
+      expect(next.has(CHILD)).toBe(false) // the cold exemption is over: only the leader is pinned
     } finally {
       setLazyDataDirMigration(false)
     }
+  })
+
+  it('a repo whose load failed is not cold forever: it reads as having no missions, as before', async () => {
+    const gone = join(repo, 'does', 'not', 'exist')
+    expect(coldMissionRoots([gone])).toEqual([gone])
+    await refreshOpenMissionLeaders([gone])
+    expect(coldMissionRoots([gone])).toEqual([])
   })
 })
 
