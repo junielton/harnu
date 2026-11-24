@@ -6,6 +6,7 @@ import type { YourMoveCard } from '../../src/main/your-move/core'
 import { createInspector, type InspectRequest } from '../../src/main/your-move/inspector'
 import type { EnrichOutcome, JudgeOutcome } from '../../src/main/your-move/judge'
 import { createMidTurnSweep } from '../../src/main/your-move/triggers'
+import type { TranscriptLookup } from '../../src/main/your-move/locate'
 import { closeIneligibleCards, createOperatorGate } from '../../src/main/your-move/operator'
 import { openYourMoveStore } from '../../src/main/your-move/store'
 import { readFrom } from '../../src/main/your-move/transcript'
@@ -224,6 +225,9 @@ describe('mid-turn sweep eligibility', () => {
   })
 })
 
+const found = (p: string | undefined): TranscriptLookup =>
+  p === undefined ? { state: 'missing' } : { state: 'found', path: p }
+
 describe('one-time cleanup (AC-4)', () => {
   const card = (id: string, sessionId: string, over: Partial<YourMoveCard> = {}): YourMoveCard => ({
     id,
@@ -262,7 +266,7 @@ describe('one-time cleanup (AC-4)', () => {
     const closed = await closeIneligibleCards({
       store,
       gate: createOperatorGate(),
-      locate: async (id) => files[id] ?? null,
+      lookup: async (id) => found(files[id]),
       now: () => 99
     })
 
@@ -298,10 +302,70 @@ describe('one-time cleanup (AC-4)', () => {
     const closed = await closeIneligibleCards({
       store: frozen,
       gate: createOperatorGate(),
-      locate: async (id) => (id === 'agent' ? agentFile : null),
+      lookup: async (id) => (id === 'agent' ? found(agentFile) : { state: 'missing' }),
       now: () => 7
     })
     expect(closed).toBe(2)
     expect(real.state().cards.every((c) => c.closedAt === 7)).toBe(true)
+  })
+
+  describe('unknown is not ineligible (delta 2)', () => {
+    const open = async (store: Awaited<ReturnType<typeof openYourMoveStore>>) =>
+      store
+        .state()
+        .cards.filter((c) => c.closedAt === undefined)
+        .map((c) => c.id)
+        .sort()
+
+    async function seeded() {
+      const store = await openYourMoveStore(path.join(dir, 'your-move.json'))
+      await store.transact((s) => ({
+        next: {
+          ...s,
+          cards: [
+            card('c-missing', 'missing'),
+            card('c-unknown', 'unknown'),
+            card('c-throws', 'throws')
+          ]
+        },
+        result: null
+      }))
+      return store
+    }
+
+    it('keeps the card of a session whose lookup threw or answered unknown, closes a known-missing one', async () => {
+      const store = await seeded()
+      const closed = await closeIneligibleCards({
+        store,
+        gate: createOperatorGate(),
+        lookup: async (id) => {
+          if (id === 'throws') throw new Error('readdir failed')
+          return id === 'unknown' ? { state: 'unknown' } : { state: 'missing' }
+        },
+        now: () => 5
+      })
+      expect(closed).toBe(1)
+      expect(await open(store)).toEqual(['c-throws', 'c-unknown'])
+    })
+
+    it('keeps the card when the transcript was located but could not be read', async () => {
+      const store = await seeded()
+      const closed = await closeIneligibleCards({
+        store,
+        gate: createOperatorGate(),
+        lookup: async () => ({ state: 'found', path: path.join(dir, 'vanished.jsonl') }),
+        now: () => 5
+      })
+      expect(closed).toBe(0)
+      expect(await open(store)).toEqual(['c-missing', 'c-throws', 'c-unknown'])
+    })
+  })
+
+  it('the gate says unknown for a file it could not read, not no', async () => {
+    const gate = createOperatorGate()
+    expect(await gate.status('x', path.join(dir, 'vanished.jsonl'))).toBe('unknown')
+    expect(await gate.has('x', path.join(dir, 'vanished.jsonl'))).toBe(false)
+    const file = await transcript('a', [dispatch('go')])
+    expect(await gate.status('a', file)).toBe('no')
   })
 })

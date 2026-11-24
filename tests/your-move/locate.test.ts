@@ -94,3 +94,61 @@ describe('transcript locator', () => {
     expect(await locator().locate(idOf(0))).toBeNull()
   })
 })
+
+describe('transcript locator: lookup tells missing from unknown (BUG-300 delta 2)', () => {
+  const eacces = (): Error => Object.assign(new Error('EACCES'), { code: 'EACCES' })
+
+  it('answers found with the path', async () => {
+    expect(await locator().lookup(idOf(3))).toEqual({
+      state: 'found',
+      path: path.join(slugDir(3), `${idOf(3)}.jsonl`)
+    })
+  })
+
+  it('answers missing only when the whole index was read and the id is not in it', async () => {
+    expect(await locator().lookup('ghost-0000')).toEqual({ state: 'missing' })
+  })
+
+  it('answers unknown when the root cannot be listed, and finds the session once it can', async () => {
+    let broken = true
+    const flaky: LocatorFs = {
+      readdir: async (dir) => {
+        if (broken && dir === root) throw eacces()
+        return readdir(dir)
+      }
+    }
+    const loc = createTranscriptLocator({ root, fs: flaky, now: () => clock })
+    expect(await loc.lookup(idOf(0))).toEqual({ state: 'unknown' })
+    broken = false
+    clock += 20_000
+    expect(await loc.lookup(idOf(0))).toMatchObject({ state: 'found' })
+  })
+
+  it('answers unknown for an id not found while one slug directory could not be listed', async () => {
+    const flaky: LocatorFs = {
+      readdir: async (dir) => {
+        if (dir === slugDir(5)) throw eacces()
+        return readdir(dir)
+      }
+    }
+    const loc = createTranscriptLocator({ root, fs: flaky, now: () => clock })
+    expect(await loc.lookup('ghost-0000')).toEqual({ state: 'unknown' })
+    // what the readable slugs hold is still found
+    expect(await loc.lookup(idOf(3))).toMatchObject({ state: 'found' })
+  })
+
+  it('does not remember an unknown as a miss: the next ask after the index ages out looks again', async () => {
+    let broken = true
+    const flaky: LocatorFs = {
+      readdir: async (dir) => {
+        if (broken && dir === root) throw eacces()
+        return readdir(dir)
+      }
+    }
+    const loc = createTranscriptLocator({ root, fs: flaky, now: () => clock })
+    expect(await loc.lookup('ghost-0000')).toEqual({ state: 'unknown' })
+    broken = false
+    clock += 20_000
+    expect(await loc.lookup('ghost-0000')).toEqual({ state: 'missing' })
+  })
+})
