@@ -16,26 +16,43 @@ export interface QuitGuardInput {
   /** The persisted preference (Settings → General → "Confirm before quitting"). */
   confirmEnabled: boolean
   reason: QuitReason
+  /** Labels of markdown panes with unsaved edits (`unsaved-drafts.ts`). Default none. */
+  unsavedFiles?: readonly string[]
 }
 
 export interface QuitGuardDecision {
   confirm: boolean
-  /** The `working` sessions, in task-state order. Empty when `confirm` is false. */
+  /** The `working` sessions, in task-state order. Empty unless the preference is on. */
   sessionIds: string[]
+  /** The unsaved files, whatever the preference says. Empty for a non-user quit. */
+  unsavedFiles: string[]
+  /** Offer "Don't ask again". Never with unsaved files: losing work is not a preference. */
+  allowDontAsk: boolean
 }
 
 /**
  * Should this quit attempt ask first? Only `taskState === 'working'` counts — idle, parked
  * (hibernated), done and errored sessions never do — and an updater restart or an OS
- * shutdown is never blocked, whatever the preference says.
+ * shutdown is never blocked, whatever the preference says. Unsaved markdown files always
+ * ask on a user quit, even with the preference off.
  */
 export function decideQuitConfirm(input: QuitGuardInput): QuitGuardDecision {
-  if (input.reason !== 'user' || !input.confirmEnabled) return { confirm: false, sessionIds: [] }
-  const sessionIds: string[] = []
-  for (const [sessionId, state] of input.taskStates) {
-    if (state === 'working') sessionIds.push(sessionId)
+  if (input.reason !== 'user') {
+    return { confirm: false, sessionIds: [], unsavedFiles: [], allowDontAsk: true }
   }
-  return { confirm: sessionIds.length > 0, sessionIds }
+  const sessionIds: string[] = []
+  if (input.confirmEnabled) {
+    for (const [sessionId, state] of input.taskStates) {
+      if (state === 'working') sessionIds.push(sessionId)
+    }
+  }
+  const unsavedFiles = [...(input.unsavedFiles ?? [])]
+  return {
+    confirm: sessionIds.length > 0 || unsavedFiles.length > 0,
+    sessionIds,
+    unsavedFiles,
+    allowDontAsk: unsavedFiles.length === 0
+  }
 }
 
 // ---- Preference -----------------------------------------------------------
@@ -84,6 +101,13 @@ export interface QuitDialogStrings {
   quitAnyway: string
   cancel: string
   dontAskAgain: string
+  /** One file with unsaved changes. */
+  unsavedOne: string
+  /** Several files with unsaved changes. */
+  unsavedMany: string
+  /** Appended below the file names. */
+  unsavedDetail: string
+  quitWithoutSaving: string
 }
 
 export const DEFAULT_QUIT_STRINGS: QuitDialogStrings = {
@@ -93,7 +117,11 @@ export const DEFAULT_QUIT_STRINGS: QuitDialogStrings = {
   andMore: 'and {n} more',
   quitAnyway: 'Quit anyway',
   cancel: 'Cancel',
-  dontAskAgain: "Don't ask again"
+  dontAskAgain: "Don't ask again",
+  unsavedOne: '1 file has unsaved changes',
+  unsavedMany: '{count} files have unsaved changes',
+  unsavedDetail: 'Quitting {app} now discards them.',
+  quitWithoutSaving: 'Quit without saving'
 }
 
 /** First 8 characters of a session id — the label of last resort. */
@@ -131,28 +159,65 @@ export interface QuitDialogContent {
   checkboxLabel: string
 }
 
-/** Compose the native-dialog content. Names are capped at {@link QUIT_DIALOG_MAX_NAMES}. */
+function bulletLines(names: readonly string[], strings: QuitDialogStrings): string[] {
+  const shown = names.slice(0, QUIT_DIALOG_MAX_NAMES)
+  const lines = shown.map((n) => `• ${n}`)
+  if (names.length > shown.length) {
+    lines.push(`• ${fill(strings.andMore, { n: names.length - shown.length })}`)
+  }
+  return lines
+}
+
+/**
+ * Compose the native-dialog content. Names are capped at {@link QUIT_DIALOG_MAX_NAMES}. With
+ * unsaved files the dialog leads with them (what a quit loses for good), then adds the working
+ * agents, and drops the "Don't ask again" checkbox (`checkboxLabel: ''`).
+ */
 export function buildQuitDialogContent(args: {
   appName: string
   names: readonly string[]
+  unsavedNames?: readonly string[]
   strings: QuitDialogStrings
 }): QuitDialogContent {
   const { appName, names, strings } = args
+  const unsavedNames = args.unsavedNames ?? []
   const count = names.length
-  const shown = names.slice(0, QUIT_DIALOG_MAX_NAMES)
-  const lines = shown.map((n) => `• ${n}`)
-  if (count > shown.length) lines.push(`• ${fill(strings.andMore, { n: count - shown.length })}`)
   const sentence = fill(strings.detail, { app: appName })
-  return {
-    message: fill(count === 1 ? strings.messageOne : strings.messageMany, {
+  const agentLines = bulletLines(names, strings)
+  if (unsavedNames.length === 0) {
+    return {
+      message: fill(count === 1 ? strings.messageOne : strings.messageMany, {
+        app: appName,
+        count
+      }),
+      detail: agentLines.length > 0 ? `${agentLines.join('\n')}\n\n${sentence}` : sentence,
+      buttons: [strings.quitAnyway, strings.cancel],
+      defaultId: 1,
+      cancelId: 1,
+      checkboxLabel: strings.dontAskAgain
+    }
+  }
+  const unsavedCount = unsavedNames.length
+  const blocks = [
+    `${bulletLines(unsavedNames, strings).join('\n')}\n\n${fill(strings.unsavedDetail, { app: appName })}`
+  ]
+  if (count > 0) {
+    const agentsMessage = fill(count === 1 ? strings.messageOne : strings.messageMany, {
       app: appName,
       count
+    })
+    blocks.push(`${agentsMessage}\n${agentLines.join('\n')}\n\n${sentence}`)
+  }
+  return {
+    message: fill(unsavedCount === 1 ? strings.unsavedOne : strings.unsavedMany, {
+      app: appName,
+      count: unsavedCount
     }),
-    detail: lines.length > 0 ? `${lines.join('\n')}\n\n${sentence}` : sentence,
-    buttons: [strings.quitAnyway, strings.cancel],
+    detail: blocks.join('\n\n'),
+    buttons: [strings.quitWithoutSaving, strings.cancel],
     defaultId: 1,
     cancelId: 1,
-    checkboxLabel: strings.dontAskAgain
+    checkboxLabel: ''
   }
 }
 

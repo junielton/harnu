@@ -11,10 +11,13 @@ import {
   setDraftDirty,
   unsavedDraftLabels
 } from '../src/renderer/src/lib/unsaved-drafts'
+import { EventEmitter } from 'node:events'
 import {
+  clearUnsavedFiles,
   getUnsavedFiles,
   registerUnsavedDraftsIpc,
-  setUnsavedFiles
+  setUnsavedFiles,
+  watchRendererReset
 } from '../src/main/unsaved-drafts'
 
 /**
@@ -115,5 +118,36 @@ describe('main holder', () => {
     expect(getUnsavedFiles()).toEqual(['ok', 'x'.repeat(200)])
     setUnsavedFiles(Array.from({ length: 150 }, (_, i) => `f${i}`))
     expect(getUnsavedFiles()).toHaveLength(100)
+  })
+})
+
+describe('stale list after a renderer reload or crash', () => {
+  beforeEach(() => setUnsavedFiles(['a.md (wt)']))
+
+  it('clearUnsavedFiles empties the held list', () => {
+    clearUnsavedFiles()
+    expect(getUnsavedFiles()).toEqual([])
+  })
+
+  it('clears when the renderer process is gone', () => {
+    const wc = new EventEmitter()
+    watchRendererReset(wc)
+    wc.emit('render-process-gone', {}, { reason: 'crashed' })
+    expect(getUnsavedFiles()).toEqual([])
+  })
+
+  it('clears when the main frame starts a new document load (reload)', () => {
+    const wc = new EventEmitter()
+    watchRendererReset(wc)
+    wc.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    expect(getUnsavedFiles()).toEqual([])
+  })
+
+  it('keeps the list across in-page and sub-frame navigations', () => {
+    const wc = new EventEmitter()
+    watchRendererReset(wc)
+    wc.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true })
+    wc.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false })
+    expect(getUnsavedFiles()).toEqual(['a.md (wt)'])
   })
 })

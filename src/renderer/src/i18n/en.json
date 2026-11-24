@@ -1464,7 +1464,11 @@
     "andMore": "and {n} more",
     "quitAnyway": "Quit anyway",
     "cancel": "Cancel",
-    "dontAskAgain": "Don't ask again"
+    "dontAskAgain": "Don't ask again",
+    "unsavedOne": "1 file has unsaved changes",
+    "unsavedMany": "{count} files have unsaved changes",
+    "unsavedDetail": "Quitting {app} now discards them.",
+    "quitWithoutSaving": "Quit without saving"
   },
   "settings": {
     "title": "Settings",

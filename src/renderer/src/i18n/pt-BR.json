@@ -1464,7 +1464,11 @@
     "andMore": "e mais {n}",
     "quitAnyway": "Sair mesmo assim",
     "cancel": "Cancelar",
-    "dontAskAgain": "Não perguntar novamente"
+    "dontAskAgain": "Não perguntar novamente",
+    "unsavedOne": "1 arquivo tem alterações não salvas",
+    "unsavedMany": "{count} arquivos têm alterações não salvas",
+    "unsavedDetail": "Sair do {app} agora descarta essas alterações.",
+    "quitWithoutSaving": "Sair sem salvar"
   },
   "settings": {
     "title": "Configurações",

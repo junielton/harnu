@@ -28,6 +28,36 @@ export function getUnsavedFiles(): string[] {
   return [...unsaved]
 }
 
+/**
+ * Forget the held list. A reloaded or crashed renderer starts with an empty registry and
+ * pushes nothing until something changes, so without this the quit dialog could name files
+ * that no longer exist (and a dead renderer would leave a quit that asks about nothing).
+ */
+export function clearUnsavedFiles(): void {
+  unsaved = []
+}
+
+/** The slice of `WebContents` {@link watchRendererReset} listens on. */
+interface RendererEvents {
+  on(event: 'render-process-gone', listener: () => void): unknown
+  on(
+    event: 'did-start-navigation',
+    listener: (details: { isMainFrame: boolean; isSameDocument: boolean }) => void
+  ): unknown
+}
+
+/**
+ * Drop the held list whenever the window's renderer dies or starts loading a new document.
+ * `did-start-navigation` filtered to main-frame, cross-document navigations fires on a reload
+ * but not on an in-page (hash / pushState) navigation or a sub-frame load.
+ */
+export function watchRendererReset(webContents: RendererEvents): void {
+  webContents.on('render-process-gone', clearUnsavedFiles)
+  webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) clearUnsavedFiles()
+  })
+}
+
 export function registerUnsavedDraftsIpc(): void {
   ipcMain.on('unsavedDrafts:set', (_e, payload: unknown) => {
     setUnsavedFiles(payload)

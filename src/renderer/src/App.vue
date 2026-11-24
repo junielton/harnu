@@ -2075,7 +2075,11 @@ onMounted(() => {
         andMore: t('quitGuard.andMore', literal),
         quitAnyway: t('quitGuard.quitAnyway'),
         cancel: t('quitGuard.cancel'),
-        dontAskAgain: t('quitGuard.dontAskAgain')
+        dontAskAgain: t('quitGuard.dontAskAgain'),
+        unsavedOne: t('quitGuard.unsavedOne', literal),
+        unsavedMany: t('quitGuard.unsavedMany', literal),
+        unsavedDetail: t('quitGuard.unsavedDetail', literal),
+        quitWithoutSaving: t('quitGuard.quitWithoutSaving')
       }
     })
   })

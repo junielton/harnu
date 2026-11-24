@@ -135,7 +135,7 @@ import { registerSessionOpHandlers } from './session-ops'
 import { registerMarkdownReadHandlers } from './markdown-read'
 import { registerMarkdownWriteHandlers } from './markdown-write'
 import { registerNotesHandlers } from './notes'
-import { registerUnsavedDraftsIpc } from './unsaved-drafts'
+import { registerUnsavedDraftsIpc, watchRendererReset } from './unsaved-drafts'
 import { registerMarkdownWatchHandlers, closeAllMarkdownWatchers } from './markdown-watch'
 import { registerCanvasAssetHandlers } from './canvas-assets'
 import { registerCanvasReadHandlers } from './canvas-read'
@@ -402,6 +402,8 @@ function createWindow(): void {
   // T579: the X button. `before-quit` carries the same guard for Ctrl+Q / the app menu; once
   // the operator picks "Quit anyway" both pass, so a quit attempt asks once.
   mainWindow.on('close', (event) => guardQuit(event, () => mainWindow))
+  // A reloaded / crashed renderer lost its unsaved-drafts registry; drop main's stale copy.
+  watchRendererReset(mainWindow.webContents)
   // Windows logoff / shutdown: never hold the session hostage.
   mainWindow.on('session-end', () => bypassQuitConfirm('system-shutdown'))
 
