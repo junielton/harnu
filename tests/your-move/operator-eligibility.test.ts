@@ -117,17 +117,16 @@ async function fleet(): Promise<Fleet> {
   const store = await openYourMoveStore(path.join(dir, 'your-move.json'))
   const reads: string[] = []
   const gate = createOperatorGate()
-  const detect = vi.fn(
-    async (_input: string): Promise<JudgeOutcome> => ({
-      ok: true,
-      costUsd: 0,
-      durationMs: 1,
-      verdict: { new: [{ kind: 'decide', ask: 'Pick A or B' }], update: [], close: [] }
-    })
-  )
-  const enrich = vi.fn(
-    async (_input: string): Promise<EnrichOutcome> => ({ ok: false, reason: 'off' })
-  )
+  const detect = vi.fn(async (_input: string): Promise<JudgeOutcome> => ({
+    ok: true,
+    costUsd: 0,
+    durationMs: 1,
+    verdict: { new: [{ kind: 'decide', ask: 'Pick A or B' }], update: [], close: [] }
+  }))
+  const enrich = vi.fn(async (_input: string): Promise<EnrichOutcome> => ({
+    ok: false,
+    reason: 'off'
+  }))
   let n = 0
   const inspector = createInspector({
     store,
