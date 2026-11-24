@@ -22,7 +22,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - Closing a Markdown pane with unsaved edits now asks **Save**, **Don't save** or **Cancel** instead of just showing a toast, for every Markdown pane and not only notes. If a save fails, the pane stays open. Reload and link navigation keep their toast.
 - Quitting Harnu while any Markdown pane has unsaved edits now asks first and names the files, even when confirm-on-quit is off. If agents are working, the same prompt lists them too. Choose **Cancel** to go back or **Quit without saving**; there is no "Don't ask again" for this one.
-- A session can no longer close a Markdown pane that has unsaved edits, and opening a fifth Markdown pane recycles the oldest pane without unsaved edits instead of dropping a draft.
+- Opening a fifth Markdown pane now recycles the oldest pane without unsaved edits instead of dropping a draft.
 
 ### Fixed
 

@@ -111,11 +111,13 @@ cannot resolve the main checkout and the write would hit the root gate).
 
 Registered from `index.ts`, exposed in preload.
 
-- `notes:list({ folder })` → `{ ok, notesDir, notes: [{ date, filePath }] }`, every
+- `notes:list({ folder })` → `{ ok, notesDir, today, notes: [{ date, filePath }] }`, every
   `YYYY-MM-DD.md` in the notes dir (other files ignored), newest first. Missing dir = empty
   list.
-- `notes:open({ folder, date })` → `{ ok, filePath, created }`. `date` is `YYYY-MM-DD`,
-  validated strictly (the renderer supplies today's local date). Creates the dir
+- `notes:open({ folder, date? })` → `{ ok, filePath, created }`. `date` is `YYYY-MM-DD`,
+  validated strictly. When `date` is omitted, main computes today's LOCAL date itself
+  (`localDateStamp()`); the renderer never supplies it, and `notes:list` returns that same
+  `today` so the picker's today row agrees with it. Creates the dir
   (`mkdir -p`) and, when absent, the file with `# <date> Notes\n\n` via exclusive create.
   Opening a past date that has no file is refused (`not-found`); only today is created.
 - Root: `mainCheckoutRoot(folder) ?? folder`, notes dir `dataDirAt(root)/notes`.

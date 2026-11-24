@@ -10,7 +10,7 @@ Press `Cmd+Shift+N` (`Ctrl+Shift+N` on Linux and Windows) to open today's note f
 
 - click the **notebook** button in the Topbar, next to **Browse files**;
 - right-click a folder in the sidebar and choose **Notes → New note for today**;
-- pick **New note for today** from the command palette, or from the **Folder** menu.
+- pick **New note for today** from the command palette, or **New Note for Today** from the **Folder** menu.
 
 The shortcut works even while a terminal has focus.
 
@@ -19,6 +19,7 @@ What happens:
 - There is **one file per day**, named for your **local** date: `YYYY-MM-DD.md`.
 - The first time you open a day, Harnu creates the file with the header `# YYYY-MM-DD Notes` and a blank line, and puts the cursor under it.
 - Opening it again later the same day reopens the same file. Nothing you wrote is touched.
+- If the note is already open, the shortcut switches its pane to edit mode and puts the cursor back in it, at the end, so you can type even if you had clicked into the terminal. Unsaved edits stay as they are. A pane maximized over it is restored first.
 - With no folder selected, you get a warning toast asking you to select one first.
 
 ## Where notes live
@@ -35,12 +36,12 @@ Harnu adds its data folder to the repo's `.git/info/exclude`, so notes do not sh
 
 ## All notes
 
-Press `Cmd+Alt+N` (`Ctrl+Alt+N`) to open the notes picker. It is also on the Topbar notebook button (**right-click** it), in the folder right-click menu as **Notes → All notes…**, in the **Folder** menu and in the command palette.
+Press `Cmd+Alt+N` (`Ctrl+Alt+N`) to open the notes picker. It is also on the Topbar notebook button (**right-click** it), in the folder right-click menu as **Notes → All notes…**, in the **Folder** menu as **All Notes…** and in the command palette as **All notes…**.
 
 - The list shows every note of the repo, newest first. **Today** is always the first row, even before its file exists; choosing it creates it, exactly like the shortcut above.
 - The search box is focused when the picker opens. Typing filters by date: `11-2`, `2026-11` and `24` all work. It does not search inside notes.
 - `Up` and `Down` move the selection, `Enter` or a click opens the note, and `Esc` closes the picker.
-- Opening a note puts it in the current folder's split stack, in edit mode.
+- Opening a note puts it in the current folder's split stack, in edit mode. Picking a note that is already open switches it to edit mode and focuses it instead of opening a second copy.
 
 ## Changing the shortcuts
 
@@ -57,7 +58,6 @@ Saving is explicit: `Cmd/Ctrl+S`. There is no autosave. To make sure nothing is 
 - **Closing a Markdown pane with unsaved edits** asks first. This applies to every Markdown pane, not only notes. The dialog offers **Save**, **Don't save** and **Cancel**. If the save fails, the pane stays open with your text. Reloading the file or following a link inside it keeps its existing non-blocking toast instead of a dialog.
 - **Quitting Harnu** while any Markdown pane in any folder has unsaved edits shows a native prompt that names the files. Its buttons are **Cancel** and **Quit without saving**. It appears even if you turned off the confirm-on-quit setting, and it has no "Don't ask again" checkbox, because losing work is not a preference. If agents are also working, the same prompt lists them below the files, even with confirm-on-quit off, because quitting interrupts them too. See [Quitting Harnu](sessions.md#quitting-harnu).
 - **Opening a fifth Markdown pane** recycles the oldest pane that has no unsaved edits. A pane with unsaved edits is never recycled; the stack grows instead.
-- A session cannot close a pane that has unsaved edits; the request is refused and the pane stays open.
 
 ## What is not there yet
 
