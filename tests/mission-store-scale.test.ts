@@ -9,7 +9,7 @@
  *   listed once per read, not once per file.
  * - AC-2: concurrent `listMissionViews` calls for the same roots share one read.
  * - AC-3: hibernation does no synchronous file I/O for missions.
- * - AC-4: scale: 300 files of ~100 KB, a second read with no change is < 50 ms and reads no file.
+ * - AC-4: scale: 300 files of ~100 KB, a second read with no change is < 10 ms and reads no file.
  * - AC-5: a change to a file shows on the next read.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -102,14 +102,14 @@ const spy = <T extends { mockRestore: () => void }>(s: T): T => {
 }
 
 describe('readAllMissions cache (AC-1, AC-4, AC-5)', () => {
-  it('AC-4: a second read of 300 files of ~100 KB, with no change, is < 50 ms (median of 7 warm runs) and reads no file', async () => {
+  it('AC-4: a second read of 300 files of ~100 KB, with no change, is < 10 ms (median of 7 warm runs) and reads no file', async () => {
     seed(300, 100_000)
     const { readAllMissions } = await import('../src/main/missions/store')
     const first = await readAllMissions(root)
     expect(first.missions).toHaveLength(300)
 
     const readFile = spy(vi.spyOn(fs, 'readFile'))
-    // The bound is 50 ms: a CI runner measured 12.5 ms for 300 stats, and the uncached path (300 YAML parses) is far above it. One run on a loaded box can hit a GC pause or a busy thread pool, so the
+    // The bound stays 10 ms. One run on a loaded box can hit a GC pause or a busy thread pool, so the
     // gate is the median of 7 warm runs; the zero-readFile assertion over all of them is the primary one.
     const runs: number[] = []
     let second = first
@@ -122,7 +122,7 @@ describe('readAllMissions cache (AC-1, AC-4, AC-5)', () => {
 
     expect(second.missions).toHaveLength(300)
     expect(readFile).toHaveBeenCalledTimes(0)
-    expect(median).toBeLessThan(50)
+    expect(median).toBeLessThan(10)
   })
 
   it('AC-1: lists the directory once per read, and re-reads only the file that changed', async () => {
