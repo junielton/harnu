@@ -43,6 +43,12 @@ vi.mock('../../src/main/detect/task-state-hub', () => ({
     return () => undefined
   }
 }))
+// The startup cleanup (BUG-300) closes judge cards of sessions with no operator entry; these
+// fixtures use transcript-less sessions, and the cleanup has its own tests.
+vi.mock('../../src/main/your-move/operator', async (orig) => ({
+  ...(await orig<typeof import('../../src/main/your-move/operator')>()),
+  closeIneligibleCards: async (): Promise<number> => 0
+}))
 vi.mock('../../src/main/claude-watcher', () => ({ classifyTranscriptLines: () => null }))
 vi.mock('../../src/main/claude-cli', () => ({ resolveClaudePath: async () => null }))
 vi.mock('../../src/main/user-projects', () => ({
