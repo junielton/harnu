@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { promises as fs } from 'node:fs'
 import { resolve } from 'node:path'
 import { MAX_MARKDOWN_BYTES, type MarkdownDenyCode } from './markdown-core'
-import { checkMarkdownReadAllowed, isExactPathSymlink, markdownKnownRoots } from './markdown-read'
+import { markdownGate } from './markdown-read'
 import { keybindingsFilePath } from './keybindings'
 import { suppressNextChange } from './markdown-watch'
 
@@ -78,9 +78,8 @@ export async function writeMarkdownFile(
   if (typeof content !== 'string') return deny('invalid-path')
   const resolved = resolve(rawPath)
 
-  const gate = checkMarkdownReadAllowed(resolved, await markdownKnownRoots(), allowExact)
+  const gate = await markdownGate(resolved, allowExact)
   if (!gate.ok) return deny(gate.code)
-  if (await isExactPathSymlink(resolved, allowExact)) return deny('symlink')
 
   const bytes = Buffer.byteLength(content, 'utf8')
   if (bytes > MAX_MARKDOWN_BYTES) return deny('too-large')

@@ -47,6 +47,32 @@ export function notesDirFor(folder: string): string {
   return path.join(repoDataDir(folder), 'notes')
 }
 
+/**
+ * True iff `resolved` is a dated note file (`YYYY-MM-DD.md`, a real calendar date)
+ * directly inside the notes directory of some root in `roots` — i.e. the MAIN
+ * checkout's `.harnu/notes/`, even when only a worktree of that repo is a root.
+ * The cheap basename checks run first; roots are resolved (which may probe the
+ * disk) only for a name that could be a note.
+ */
+export function isNotesFilePath(resolved: string, roots: readonly string[]): boolean {
+  const m = NOTE_FILE_RE.exec(path.basename(resolved))
+  if (!m || !isValidNoteDate(m[1])) return false
+  const dir = path.dirname(resolved)
+  return roots.some((r) => notesDirFor(r) === dir)
+}
+
+/** True when the note file (if it exists) or its parent directory is a symlink. */
+export async function isNotesSymlink(resolved: string): Promise<boolean> {
+  for (const p of [resolved, path.dirname(resolved)]) {
+    try {
+      if ((await lstat(p)).isSymbolicLink()) return true
+    } catch {
+      // Absent / unreadable: the normal open path reports that.
+    }
+  }
+  return false
+}
+
 /** Validate `folder` and confine it to the known roots (`roots` is a test seam). */
 async function gate(folder: unknown, roots?: readonly string[]): Promise<NotesErr | null> {
   if (typeof folder !== 'string' || folder.length === 0) return { ok: false, code: 'invalid-args' }
