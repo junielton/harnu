@@ -106,7 +106,7 @@ describe('transcript locator: lookup tells missing from unknown (BUG-300 delta 2
   })
 
   it('answers missing only when the whole index was read and the id is not in it', async () => {
-    expect(await locator().lookup('ghost-0000')).toEqual({ state: 'missing' })
+    expect(await locator().lookup('ghostsession')).toEqual({ state: 'missing' })
   })
 
   it('answers unknown when the root cannot be listed, and finds the session once it can', async () => {
@@ -132,7 +132,7 @@ describe('transcript locator: lookup tells missing from unknown (BUG-300 delta 2
       }
     }
     const loc = createTranscriptLocator({ root, fs: flaky, now: () => clock })
-    expect(await loc.lookup('ghost-0000')).toEqual({ state: 'unknown' })
+    expect(await loc.lookup('ghostsession')).toEqual({ state: 'unknown' })
     // what the readable slugs hold is still found
     expect(await loc.lookup(idOf(3))).toMatchObject({ state: 'found' })
   })
@@ -146,9 +146,9 @@ describe('transcript locator: lookup tells missing from unknown (BUG-300 delta 2
       }
     }
     const loc = createTranscriptLocator({ root, fs: flaky, now: () => clock })
-    expect(await loc.lookup('ghost-0000')).toEqual({ state: 'unknown' })
+    expect(await loc.lookup('ghostsession')).toEqual({ state: 'unknown' })
     broken = false
     clock += 20_000
-    expect(await loc.lookup('ghost-0000')).toEqual({ state: 'missing' })
+    expect(await loc.lookup('ghostsession')).toEqual({ state: 'missing' })
   })
 })
