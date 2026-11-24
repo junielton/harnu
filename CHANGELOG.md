@@ -31,6 +31,11 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **Typing no longer freezes after days of uptime because of Your move.** The store behind Your move copied and re-serialized every card on each read and each write, so with several thousand cards a single hook event could block the app for half a second. Reads now share one read-only snapshot, a write that changes nothing does no work, and a one-card change rewrites the file in about a tenth of the old time (10,000 cards: read 12.6 → 0 ms, one-card write 71 → 10 ms, no-op 30 → 0.2 ms).
 - **Closed Your move cards are now kept for 7 days, not 30.** After that they are dropped, now also while the app stays open (hourly), so the stored list is bounded by the cards still open plus the last week's closed ones. Cards older than that are removed the first time you start this version.
 - **Settings → Your move no longer freezes while it renders every card.** The list now loads 25 cards at a time from the app, with Previous page / Next page and a range ("26–50 of 7,432"), instead of drawing the whole history at once.
+- **Missions no longer re-read every mission file on each poll.** The mission feed, the mission
+  list and the hibernation sweep used to read and parse every mission file of every repo (closed
+  ones too) each time they ran, which took about a fifth of the app's main thread. A mission file
+  is now parsed once and reused until it changes on disk, concurrent mission lists share one read,
+  and hibernation no longer reads mission files on the main thread at all (BUG-278).
 
 ## 2026-11-23
 

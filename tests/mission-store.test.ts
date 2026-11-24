@@ -200,7 +200,8 @@ describe('one reader for every caller', () => {
     const store = await import('../src/main/missions/store')
     const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
     const { listMissionViews } = await import('../src/main/mission-ipc')
-    const { missionOwnersWithLiveChildren } = await import('../src/main/hibernation')
+    const { missionOwnersWithLiveChildren, refreshOpenMissionLeaders } =
+      await import('../src/main/hibernation')
     const verbs: Record<string, Handler> = {}
     for (const t of WIRED_TOOLS) verbs[t.op] = t.handler as unknown as Handler
 
@@ -264,6 +265,7 @@ describe('one reader for every caller', () => {
       sessionKey,
       cwd
     })
+    await refreshOpenMissionLeaders([cloneA, cloneB]) // the sweep answers from the last refresh's snapshot
     const owners = missionOwnersWithLiveChildren([
       cold(STALE_LEADER, cloneA),
       cold(STALE_CHILD, cloneA),
@@ -277,11 +279,11 @@ describe('one reader for every caller', () => {
 })
 
 describe('the store', () => {
-  it('the synchronous read gives the same missions as the asynchronous one', async () => {
+  it('the snapshot read gives the same missions as the asynchronous one', async () => {
     vi.resetModules()
     const store = await import('../src/main/missions/store')
     const a = await store.readMissionsDeduped([cloneA, cloneB], { includeClosed: true })
-    const s = store.readMissionsDedupedSync([cloneA, cloneB], { includeClosed: true })
+    const s = store.readMissionsDedupedSnapshot([cloneA, cloneB], { includeClosed: true })
     const key = (r: typeof a): unknown =>
       r.missions.map((m) => [m.mission.id, m.root, m.file]).sort()
     expect(key(s)).toEqual(key(a))
@@ -300,7 +302,7 @@ describe('the store', () => {
     expect(read.missions.map((m) => m.mission.id).sort()).toEqual(
       [M_SHADOW, M_CLOSED, M_LONE].sort()
     )
-    expect(store.readMissionsDedupedSync([cloneA], { includeClosed: true }).unreadable).toEqual(
+    expect(store.readMissionsDedupedSnapshot([cloneA], { includeClosed: true }).unreadable).toEqual(
       read.unreadable
     )
   })

@@ -8,11 +8,18 @@
  * all read here now, so one repo gives the same answer to every caller.
  *
  * Nothing here writes. A file that cannot be read or parsed is reported (`unreadable`), never
- * thrown, and a repeated read is cheap: this module keeps no cache of its own.
+ * thrown.
+ *
+ * A repeated read is cheap (BUG-278): a mission file is parsed once and served from `file-cache.ts`
+ * until its stamp (mtime, size, inode) moves, so a poll lists the directory once and `stat`s each
+ * file, and reads nothing that did not change. The last result of every root is also kept as a
+ * snapshot, which the synchronous fleet snapshot of hibernation reads instead of touching the disk:
+ * see {@link readMissionsDedupedSnapshot}.
  */
-import { promises as fs, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { dataDirAt, dataDirReady, repoRoot } from '../data-dir'
+import { pruneMissionDir, readParsedCached, singleFlight } from './file-cache'
 import {
   V3_MISSION_ID_RE as MISSION_ID_RE,
   parseV3MissionFile as parseMissionFile,
@@ -53,23 +60,15 @@ function entriesOf(names: readonly string[]): MissionFileEntry[] {
 export async function listMissionEntries(root: string): Promise<MissionFileEntry[]> {
   await dataDirReady(root)
   try {
-    return entriesOf(await fs.readdir(missionsDir(root)))
+    const names = await fs.readdir(missionsDir(root))
+    pruneMissionDir(missionsDir(root), new Set(names))
+    return entriesOf(names)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      pruneMissionDir(missionsDir(root), new Set())
+      return []
+    }
     throw err
-  }
-}
-
-/**
- * The synchronous twin of {@link listMissionEntries}, for the fleet snapshot hibernation feeds,
- * which is synchronous. It does not wait for a legacy data dir to be copied (see the note on
- * {@link readMissionsDedupedSync}) and fails open: an unreadable directory lists nothing.
- */
-export function listMissionEntriesSync(root: string): MissionFileEntry[] {
-  try {
-    return entriesOf(readdirSync(missionsDir(root)))
-  } catch {
-    return []
   }
 }
 
@@ -117,39 +116,53 @@ export interface MissionRead {
   file: string
 }
 
-/** Every readable mission under `root`, with its Log; corrupt files are reported, not thrown. */
-export async function readAllMissions(root: string): Promise<{
-  missions: MissionRead[]
-  unreadable: string[]
-}> {
+type ReadResult = { missions: MissionRead[]; unreadable: string[] }
+
+/** What one mission file parses to, as the list reader keeps it: the record, or why it is unreadable. */
+type ParsedMission = { ok: true; read: MissionRead } | { ok: false }
+
+/** The last result of {@link readAllMissions} per root: what the synchronous readers serve. */
+const snapshots = new Map<string, ReadResult>()
+/** `root` → its `realpath`, as the last async read resolved it. */
+const canonMemo = new Map<string, string>()
+/** Reads of one root already under way: a second caller waits for the first. */
+const sharedRead = singleFlight<ReadResult>()
+
+async function readRoot(root: string): Promise<ReadResult> {
+  const dir = missionsDir(root)
+  const entries = await listMissionEntries(root)
+  const parsed = await Promise.all(
+    entries.map(async (entry): Promise<ParsedMission> => {
+      const file = path.join(dir, entry.name)
+      try {
+        return await readParsedCached('v3-list', file, (raw): ParsedMission => {
+          const mission = parseMissionFile(raw)
+          if ('error' in mission) return { ok: false }
+          return { ok: true, read: { mission, log: readMissionLog(raw), file } }
+        })
+      } catch {
+        return { ok: false }
+      }
+    })
+  )
   const missions: MissionRead[] = []
   const unreadable: string[] = []
-  for (const entry of await listMissionEntries(root)) {
-    const loaded = await loadMission(root, entry.id)
-    if (loaded.ok) missions.push({ mission: loaded.mission, log: loaded.log, file: loaded.file })
-    else unreadable.push(entry.name)
-  }
-  return { missions, unreadable }
+  parsed.forEach((p, i) => {
+    if (p.ok) missions.push(p.read)
+    else unreadable.push(entries[i].name)
+  })
+  const result = { missions, unreadable }
+  snapshots.set(root, result)
+  return result
 }
 
-/** The synchronous twin of {@link readAllMissions}; a file it cannot read counts as unreadable. */
-function readAllMissionsSync(root: string): { missions: MissionRead[]; unreadable: string[] } {
-  const missions: MissionRead[] = []
-  const unreadable: string[] = []
-  for (const entry of listMissionEntriesSync(root)) {
-    try {
-      const loaded = parseLoaded(
-        root,
-        entry,
-        readFileSync(path.join(missionsDir(root), entry.name), 'utf8')
-      )
-      if (loaded.ok) missions.push({ mission: loaded.mission, log: loaded.log, file: loaded.file })
-      else unreadable.push(entry.name)
-    } catch {
-      unreadable.push(entry.name)
-    }
-  }
-  return { missions, unreadable }
+/**
+ * Every readable mission under `root`, with its Log; corrupt files are reported, not thrown. One
+ * `readdir`, then a `stat` per file: a file whose stamp is unchanged is served from the cache (never
+ * re-read or re-parsed). Concurrent reads of one root share one run.
+ */
+export function readAllMissions(root: string): Promise<ReadResult> {
+  return sharedRead(root, () => readRoot(root))
 }
 
 /** One readable mission copy with the repo root it was read from. */
@@ -169,12 +182,12 @@ const warnedShadowed = new Set<string>()
 interface RootRead {
   canon: string
   root: string
-  read: { missions: MissionRead[]; unreadable: string[] }
+  read: ReadResult
 }
 
 /**
- * Pick, per mission id, the copy that counts (BUG-173 S1). Shared by the async and the sync read,
- * so both give the same answer.
+ * Pick, per mission id, the copy that counts (BUG-173 S1). Shared by the async read and the snapshot
+ * read, so both give the same answer.
  *
  * - The winner of an id is the copy with the newest `updatedAt`; a tie goes to the root that
  *   sorts first by path, so the answer never depends on poll order.
@@ -239,6 +252,7 @@ export async function readMissionsDeduped(
   const canonOf = new Map<string, string>() // canonical path → first spelling given
   for (const root of roots) {
     const canon = await fs.realpath(root).catch(() => path.resolve(root))
+    canonMemo.set(root, canon)
     if (!canonOf.has(canon)) canonOf.set(canon, root)
   }
   const reads = await Promise.all(
@@ -248,33 +262,61 @@ export async function readMissionsDeduped(
 }
 
 /**
- * The synchronous twin of {@link readMissionsDeduped}, for hibernation: the fleet snapshot it
- * feeds is synchronous. Same files, same winner. A repo the boot pass never saw has its legacy
- * `.capy/` copied lazily, so the FIRST sweep over it can read no missions and park an owner
- * whose child is live. That self-heals on the next sweep, once the copy has landed — and a
- * parked session is intact on disk (selecting the row resumes it), so the miss costs a resume,
- * never work. Pinned by the AC-3e test in `tests/hibernation.test.ts`.
+ * The same answer as {@link readMissionsDeduped}, from the snapshots the async reads left, with no
+ * I/O at all: the synchronous fleet snapshot of hibernation reads through here. A root nobody has
+ * read yet reads as empty (it is listed in `unread`); a caller that parks sessions on the answer must
+ * treat such a root as cold (hibernation does: it never parks a possible leader of a cold repo). The
+ * caller starts {@link warmMissionSnapshots} for it, and the next read sees the missions.
  */
-export function readMissionsDedupedSync(
+export function readMissionsDedupedSnapshot(
   roots: readonly string[],
   { includeClosed }: { includeClosed: boolean }
-): DedupedMissions {
+): DedupedMissions & { unread: string[] } {
   const canonOf = new Map<string, string>()
   for (const root of roots) {
-    let canon: string
-    try {
-      canon = realpathSync(root)
-    } catch {
-      canon = path.resolve(root)
-    }
+    const canon = canonMemo.get(root) ?? path.resolve(root)
     if (!canonOf.has(canon)) canonOf.set(canon, root)
   }
-  const reads = [...canonOf].map(([canon, root]) => ({
-    canon,
-    root,
-    read: readAllMissionsSync(root)
-  }))
-  return dedupe(reads, includeClosed)
+  const unread: string[] = []
+  const reads = [...canonOf].map(([canon, root]) => {
+    const read = snapshots.get(root)
+    if (!read) unread.push(root)
+    return { canon, root, read: read ?? { missions: [], unreadable: [] } }
+  })
+  return { ...dedupe(reads, includeClosed), unread }
+}
+
+interface WarmState {
+  running: Promise<void>
+  trailing: Promise<void> | null
+}
+const warming = new Map<string, WarmState>()
+
+function startWarm(key: string, roots: readonly string[]): Promise<void> {
+  const state: WarmState = { running: Promise.resolve(), trailing: null }
+  warming.set(key, state)
+  state.running = readMissionsDeduped(roots, { includeClosed: true })
+    .then(() => undefined)
+    .catch(() => undefined)
+    .finally(() => {
+      if (warming.get(key) === state) warming.delete(key)
+    })
+  return state.running
+}
+
+/**
+ * Refresh the snapshots of `roots`, through the same cached read as everyone else: a poll with nothing
+ * changed costs a `readdir` and a `stat` per file. Never rejects. The promise settles once a run that
+ * STARTED after this call has finished: a call that arrives while a run is under way waits for one
+ * follow-up run (all callers of that moment share it), never for the older run, whose view of the
+ * files may pre-date what the caller knows changed.
+ */
+export function warmMissionSnapshots(roots: readonly string[]): Promise<void> {
+  const key = [...new Set(roots)].sort().join('\u0000')
+  const state = warming.get(key)
+  if (!state) return startWarm(key, roots)
+  state.trailing ??= state.running.then(() => startWarm(key, roots))
+  return state.trailing
 }
 
 /**
