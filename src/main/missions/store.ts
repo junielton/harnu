@@ -264,10 +264,9 @@ export async function readMissionsDeduped(
 /**
  * The same answer as {@link readMissionsDeduped}, from the snapshots the async reads left, with no
  * I/O at all: the synchronous fleet snapshot of hibernation reads through here. A root nobody has
- * read yet reads as empty (it is listed in `unread`), so the FIRST sweep over a repo can find no
- * missions and park an owner whose child is live. The caller starts {@link warmMissionSnapshots} for
- * that, and the next sweep sees the missions. A parked session is intact on disk (selecting the row
- * resumes it), so the miss costs a resume, never work.
+ * read yet reads as empty (it is listed in `unread`); a caller that parks sessions on the answer must
+ * treat such a root as cold (hibernation does: it never parks a possible leader of a cold repo). The
+ * caller starts {@link warmMissionSnapshots} for it, and the next read sees the missions.
  */
 export function readMissionsDedupedSnapshot(
   roots: readonly string[],

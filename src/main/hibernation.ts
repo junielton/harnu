@@ -233,6 +233,21 @@ export async function refreshOpenMissionLeaders(roots: readonly string[]): Promi
     warmMissionSnapshots(roots),
     ...roots.map((r) => readV4Leaders(r).catch(() => null))
   ])
+  // A load that ended, even one that read nothing, is a first load: the repo is no longer cold.
+  for (const root of roots) loadedRoots.add(root)
+}
+
+/** The repos whose first load has finished (successfully or not). */
+const loadedRoots = new Set<string>()
+
+/**
+ * The `roots` whose first load has not finished: the sweep has no snapshot to answer from for them.
+ * "A leader is never parked while its mission is open" has to hold on that sweep too, so a session of a
+ * cold repo is treated as a possible leader ({@link missionOwnersWithLiveChildren}). A load that fails
+ * still ends the cold state, so a repo that cannot be read reads as having no missions, as before.
+ */
+export function coldMissionRoots(roots: readonly string[]): string[] {
+  return roots.filter((r) => !loadedRoots.has(r))
 }
 
 // A mission file written (any root): refresh the roots the sweep has been asking about, now.
@@ -247,8 +262,8 @@ onMissionFileWritten(() => {
  *
  * It does NO file I/O (BUG-278): the sweep is synchronous and ran on the main thread, reading and
  * parsing every mission file each time. It answers from the snapshots the last refresh left, and starts
- * the next refresh. A repo nobody refreshed yet reads as having no missions: the first sweep can park a
- * leader, which is intact on disk (selecting the row resumes it), and the next sweep knows.
+ * the next refresh. A repo nobody has loaded yet reads as having no missions here, so callers that
+ * park sessions must also ask {@link coldMissionRoots} ({@link missionOwnersWithLiveChildren} does).
  */
 export function openMissionLeaders(roots: readonly string[]): Set<string> {
   const out = new Set<string>()
@@ -282,16 +297,29 @@ export { mainCheckoutRoot }
 /**
  * The keys of every live session that leads an open mission (see {@link openMissionLeaders}). `sessions`
  * is the whole live fleet; `cwd` locates each session's repo, and each distinct repo's missions are
- * read once. The name is the one the callers know: before S-23 it asked for a live child too.
+ * read once. The name is the one the callers know: before S-23 it asked for a live child too. Every session
+ * of a repo whose first load has not finished is included (see {@link coldMissionRoots}), so the sweep
+ * never parks a leader it could not yet know about.
  */
 export function missionOwnersWithLiveChildren(
   sessions: readonly { sessionKey: string; cwd?: string }[]
 ): Set<string> {
   const roots = new Set<string>()
+  const rootOf = new Map<string, string>()
   for (const s of sessions) {
     const root = s.cwd ? mainCheckoutRoot(s.cwd) : null
-    if (root) roots.add(root)
+    if (root) {
+      roots.add(root)
+      rootOf.set(s.sessionKey, root)
+    }
   }
   const leaders = openMissionLeaders([...roots])
-  return new Set(sessions.map((s) => s.sessionKey).filter((key) => leaders.has(key)))
+  // A repo the snapshot has not loaded yet: its leaders are unknown, so every session of it counts as one
+  // (and is parked for no mission reason) until the load the call above started has finished.
+  const cold = new Set(coldMissionRoots([...roots]))
+  return new Set(
+    sessions
+      .map((s) => s.sessionKey)
+      .filter((key) => leaders.has(key) || cold.has(rootOf.get(key) ?? ''))
+  )
 }
