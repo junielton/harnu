@@ -10,6 +10,8 @@ let wrapper: VueWrapper | null = null
 let setPrefs: ReturnType<typeof vi.fn>
 let inspectNow: ReturnType<typeof vi.fn>
 let prefsNow: Record<string, unknown>
+let pageCall: ReturnType<typeof vi.fn>
+let listCall: ReturnType<typeof vi.fn>
 
 const card = (over: Record<string, unknown> = {}) => ({
   id: 'c1',
@@ -33,10 +35,17 @@ async function mountPane(cards: unknown[] = []): Promise<VueWrapper> {
     return prefsNow
   })
   inspectNow = vi.fn(async () => ({ outcome: 'judged' }))
+  // Main answers a page at a time; the pane must never ask for the whole list.
+  pageCall = vi.fn(async ({ offset }: { offset: number }) => ({
+    total: cards.length,
+    cards: cards.slice(offset, offset + 25)
+  }))
+  listCall = vi.fn(async () => cards)
   ;(window as unknown as { api: unknown }).api = {
     yourMovePrefsGet: vi.fn(async () => prefsNow),
     yourMoveSetPrefs: setPrefs,
-    yourMoveList: vi.fn(async () => cards),
+    yourMoveList: listCall,
+    yourMovePage: pageCall,
     yourMoveInspectNow: inspectNow,
     onYourMoveChanged: vi.fn(() => () => undefined)
   }
@@ -76,6 +85,41 @@ describe('YourMovePane', () => {
     expect(w.find('img').exists()).toBe(false)
     expect(w.text()).toContain('Closed one')
     expect(w.findAll('[data-testid="your-move-card"]')).toHaveLength(2)
+  })
+
+  it('BUG-277 AC-6: renders one page of 25 out of 7,000 cards and never asks for the whole list', async () => {
+    const many = Array.from({ length: 7_000 }, (_, i) =>
+      card({ id: `c${i}`, ask: `Card ${i}`, openedAt: 10_000 - i })
+    )
+    const w = await mountPane(many)
+    expect(w.findAll('[data-testid="your-move-card"]')).toHaveLength(25)
+    expect(w.get('[data-testid="your-move-range"]').text()).toBe('1–25 of 7000')
+    expect(w.text()).toContain('Stored cards · 7000')
+    expect(listCall).not.toHaveBeenCalled()
+    expect(pageCall).toHaveBeenCalledWith({ offset: 0 })
+  })
+
+  it('BUG-277 AC-6: Next and Previous move one page at a time, loaded on demand', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => card({ id: `c${i}`, ask: `Card ${i}` }))
+    const w = await mountPane(many)
+    expect(w.get('[data-testid="your-move-prev"]').attributes('disabled')).toBeDefined()
+    await w.get('[data-testid="your-move-next"]').trigger('click')
+    await flushPromises()
+    expect(pageCall).toHaveBeenLastCalledWith({ offset: 25 })
+    expect(w.findAll('[data-testid="your-move-card"]')[0].text()).toContain('Card 25')
+    expect(w.get('[data-testid="your-move-range"]').text()).toBe('26–50 of 60')
+    await w.get('[data-testid="your-move-next"]').trigger('click')
+    await flushPromises()
+    expect(w.findAll('[data-testid="your-move-card"]')).toHaveLength(10)
+    expect(w.get('[data-testid="your-move-next"]').attributes('disabled')).toBeDefined()
+    await w.get('[data-testid="your-move-prev"]').trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="your-move-range"]').text()).toBe('26–50 of 60')
+  })
+
+  it('a single page shows no pager', async () => {
+    const w = await mountPane([card()])
+    expect(w.find('[data-testid="your-move-pager"]').exists()).toBe(false)
   })
 
   it('shows an empty state when nothing is stored', async () => {

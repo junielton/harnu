@@ -92,6 +92,7 @@ describe('registerYourMove with a store that cannot open', () => {
 
     // every channel still answers, and the feature reads as inactive
     expect(await call('yourMove:list')).toEqual([])
+    expect(await call('yourMove:page', { offset: 0 })).toEqual({ total: 0, cards: [] })
     expect(await call('yourMove:prefs:get')).toMatchObject({ mode: 'off' })
     expect(await call('yourMove:prefs:set', { mode: 'observe' })).toMatchObject({ mode: 'off' })
     expect(

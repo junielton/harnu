@@ -28,6 +28,9 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - A Markdown pane that opened straight in edit mode (a new note, a new file from Browse files, a scaffolded `WORKTREE.md`, the keybindings file) now comes back in view mode after a restart, instead of opening in edit and taking focus from the session terminal.
 - **Your move no longer fills with questions from sessions you never typed in.** The queue is now judged only for sessions where you wrote at least one message. Sessions Claude or Harnu started to do work (dispatched executors, verifiers, scheduler and steward runs) get no judge card until you type in them, and the first message you type makes them count from then on. Stopped-session, mission and human-gate cards are unchanged. On the next start, Harnu also closes the open judge cards of sessions you never typed in, so the queue drops to your own sessions.
+- **Typing no longer freezes after days of uptime because of Your move.** The store behind Your move copied and re-serialized every card on each read and each write, so with several thousand cards a single hook event could block the app for half a second. Reads now share one read-only snapshot, a write that changes nothing does no work, and a one-card change rewrites the file in about a tenth of the old time (10,000 cards: read 12.6 → 0 ms, one-card write 71 → 10 ms, no-op 30 → 0.2 ms).
+- **Closed Your move cards are now kept for 7 days, not 30.** After that they are dropped, now also while the app stays open (hourly), so the stored list is bounded by the cards still open plus the last week's closed ones. Cards older than that are removed the first time you start this version.
+- **Settings → Your move no longer freezes while it renders every card.** The list now loads 25 cards at a time from the app, with Previous page / Next page and a range ("26–50 of 7,432"), instead of drawing the whole history at once.
 
 ## 2026-11-23
 

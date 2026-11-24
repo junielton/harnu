@@ -216,7 +216,7 @@ Each check uses your own Claude quota: about US$ 0.002 and several seconds acros
 
 **Inspect selected session** runs one check on the session you have selected, so you can see a card appear without waiting for a stop. The result sits beside the button: checked, nothing new, skipped (the mode is Off, the folder is blocked for agents, or the session is archived) or failed, with the reason.
 
-The list shows every card Harnu stored, open ones first and then the newest closed ones. A card carries a kind (Decide, Go / no-go, Provide, Do or Check), the folder and session it came from, and the one-line ask, shown exactly as the model wrote it. The list is read-only: no card can be answered or dismissed yet.
+The list shows the cards Harnu stored, 25 at a time: open ones first and then the newest closed ones, with **Previous page** and **Next page** under it and the range you are looking at ("26–50 of 7,432"). Closed cards are kept for 7 days and then dropped, so the list never holds more than the cards still open plus the last week's closed ones. A card carries a kind (Decide, Go / no-go, Provide, Do or Check), the folder and session it came from, and the one-line ask, shown exactly as the model wrote it. The list is read-only: no card can be answered or dismissed yet.
 
 ### What files a card
 

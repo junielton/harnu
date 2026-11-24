@@ -21,7 +21,15 @@ import { setMissionListObserver } from '../mission-ipc'
 import { setPtyExitObserver } from '../pty'
 import { getSessionArchive } from '../session-archive-core'
 import { onFolderRemoved, readUserProjects } from '../user-projects'
-import { closeCard, pruneClosed, resetCursors, type CardView, type YourMoveCard } from './core'
+import {
+  cardsPage,
+  closeCard,
+  HISTORY_PAGE_SIZE,
+  pruneClosed,
+  resetCursors,
+  type CardView,
+  type YourMoveCard
+} from './core'
 import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
 import { createTranscriptLocator } from './locate'
@@ -54,6 +62,8 @@ const INSPECTIONS_FILE = 'your-move-inspections.jsonl'
 const LABELS_FILE = 'your-move-labels.jsonl'
 const EMPTY_DIR = path.join('your-move', 'empty')
 const NEWEST_CLOSED = 200
+/** Closed cards past their window are dropped at most this often while the app stays open. */
+const PRUNE_EVERY_MS = 60 * 60 * 1000
 /** The inspection log is a debug aid: past this size it keeps only its newest half. */
 const INSPECTIONS_MAX_BYTES = 2 * 1024 * 1024
 const DENY_TTL_MS = 5_000
@@ -320,9 +330,18 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         mintId: () => randomUUID(),
         now: () => Date.now()
       })
+      let lastPrune = Date.now()
       const sweepTimer = setInterval(() => {
         void sweep.tick()
         void gate.tick()
+        // The store keeps closed cards only for their window (BUG-277): a long uptime must not
+        // let them pile up between launches. Riding this timer keeps it one timer, not two.
+        if (Date.now() - lastPrune >= PRUNE_EVERY_MS) {
+          lastPrune = Date.now()
+          store
+            .transact((s) => ({ next: pruneClosed(s, Date.now()), result: null }))
+            .catch((e) => console.error(`[your-move] prune failed: ${(e as Error).message}`))
+        }
       }, SWEEP_MS)
       sweepTimer.unref()
       const unobserve = addTaskEventObserver((ev) => {
@@ -438,6 +457,28 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       optionDeliverable: (c.options ?? []).map(() => true)
     }))
   })
+
+  // The Settings pane's list, one page at a time (BUG-277): the store can hold thousands of cards
+  // and the pane must never be handed, or render, all of them. `limit` is not the caller's to
+  // raise: a page is HISTORY_PAGE_SIZE cards at most, whatever is asked.
+  ipcMain.handle(
+    'yourMove:page',
+    async (_e, args: unknown): Promise<{ total: number; cards: CardView[] }> => {
+      const a = (args ?? {}) as { offset?: unknown }
+      const store = await ready
+      if (!store) return { total: 0, cards: [] }
+      const offset = typeof a.offset === 'number' ? a.offset : 0
+      const page = cardsPage(store.state(), offset, HISTORY_PAGE_SIZE)
+      return {
+        total: page.total,
+        cards: page.cards.map((c): CardView => ({
+          ...c,
+          answerable: c.source === 'judge' || c.source === 'verb',
+          optionDeliverable: (c.options ?? []).map(() => true)
+        }))
+      }
+    }
+  )
 
   // Not for me / Already handled. Neither tells the session anything. The card closes with that
   // reason, then the card as the operator saw it is appended to the labelled examples.

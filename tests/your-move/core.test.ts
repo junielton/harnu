@@ -3,6 +3,8 @@ import {
   advanceCursor,
   followLive,
   applyVerdict,
+  cardsPage,
+  HISTORY_PAGE_SIZE,
   closeCard,
   closeForFolder,
   closeForSessions,
@@ -328,5 +330,66 @@ describe('closing and housekeeping', () => {
     expect(next.cards.filter((c) => c.closedAt).length).toBe(1000)
     expect(next.cards.find((c) => c.id === 'c0')).toBeUndefined()
     expect(next.cards.find((c) => c.id === 'c1004')).toBeDefined()
+  })
+})
+
+describe('cardsPage (BUG-277 AC-6: the Settings pane never takes the whole history)', () => {
+  const mkCard = (id: string, over: Partial<YourMoveCard> = {}): YourMoveCard =>
+    card({ id, ...over })
+
+  it('lists open cards newest first, then closed cards by closing time, 25 at a time', () => {
+    const open = Array.from({ length: 30 }, (_, i) => mkCard(`o${i}`, { openedAt: 1000 + i }))
+    const closed = Array.from({ length: 10 }, (_, i) =>
+      mkCard(`c${i}`, { openedAt: 1, closedAt: 5000 + i, closedBy: 'judge' })
+    )
+    const s = stateOf(...closed, ...open)
+    const first = cardsPage(s, 0, 25)
+    expect(first.total).toBe(40)
+    expect(first.cards).toHaveLength(25)
+    expect(first.cards[0].id).toBe('o29')
+    expect(first.cards[24].id).toBe('o5')
+    const second = cardsPage(s, 25, 25)
+    expect(second.cards.map((c) => c.id)).toEqual([
+      'o4',
+      'o3',
+      'o2',
+      'o1',
+      'o0',
+      'c9',
+      'c8',
+      'c7',
+      'c6',
+      'c5',
+      'c4',
+      'c3',
+      'c2',
+      'c1',
+      'c0'
+    ])
+  })
+
+  it('clamps a hostile offset and limit', () => {
+    const s = stateOf(mkCard('a'), mkCard('b'))
+    expect(cardsPage(s, -5, 25).cards).toHaveLength(2)
+    expect(cardsPage(s, 99, 25).cards).toEqual([])
+    expect(cardsPage(s, 0, 10_000).cards.length).toBeLessThanOrEqual(HISTORY_PAGE_SIZE)
+    expect(cardsPage(s, Number.NaN, Number.NaN).cards).toHaveLength(2)
+  })
+
+  it('never returns more than one page, however large a limit is asked for (delta 1)', () => {
+    // More cards than the maximum page, so a missing clamp has something to over-return.
+    const many = stateOf(
+      ...Array.from({ length: HISTORY_PAGE_SIZE * 3 }, (_, i) =>
+        mkCard(`m${i}`, { openedAt: 1000 + i })
+      )
+    )
+    const page = cardsPage(many, 0, 10_000)
+    expect(page.total).toBe(HISTORY_PAGE_SIZE * 3)
+    expect(page.cards).toHaveLength(HISTORY_PAGE_SIZE)
+    expect(cardsPage(many, 0, Number.POSITIVE_INFINITY).cards).toHaveLength(HISTORY_PAGE_SIZE)
+    // a page in the middle is also capped, and starts where asked
+    const mid = cardsPage(many, HISTORY_PAGE_SIZE, 10_000)
+    expect(mid.cards).toHaveLength(HISTORY_PAGE_SIZE)
+    expect(mid.cards[0].id).toBe(`m${HISTORY_PAGE_SIZE * 3 - 1 - HISTORY_PAGE_SIZE}`)
   })
 })

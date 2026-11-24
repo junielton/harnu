@@ -3009,7 +3009,10 @@
       "eyebrow": "Cards guardados · {count}",
       "empty": "Nenhum card ainda. Escolha Observar, deixe uma sessão parar ou use Inspecionar agora.",
       "session": "sessão {id}",
-      "closed": "fechado · {reason}"
+      "closed": "fechado · {reason}",
+      "range": "{from}–{to} de {total}",
+      "prev": "Página anterior",
+      "next": "Próxima página"
     },
     "kind": {
       "decide": "Decidir",

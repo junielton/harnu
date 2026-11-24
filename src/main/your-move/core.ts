@@ -115,7 +115,9 @@ export interface StructuredDraft extends Omit<JudgeNew, 'confidence' | 'evidence
 }
 
 const DAY_MS = 86_400_000
-const PRUNE_AFTER_MS = 30 * DAY_MS
+/** How long a closed card is kept for undo and audit; the store never grows past open + this. */
+export const CLOSED_WINDOW_DAYS = 7
+const PRUNE_AFTER_MS = CLOSED_WINDOW_DAYS * DAY_MS
 const MAX_CLOSED = 1000
 
 export function emptyState(): YourMoveState {
@@ -449,7 +451,7 @@ export function resetCursors(s: YourMoveState): YourMoveState {
   return { ...s, cursors: {} }
 }
 
-/** Closed cards older than 30 days go, and at most 1000 closed cards stay. Open cards never go. */
+/** Closed cards older than the 7-day window go, and at most 1000 closed cards stay. Open cards never go. */
 export function pruneClosed(s: YourMoveState, now: number): YourMoveState {
   const keep = s.cards.filter((c) => isOpen(c) || now - (c.closedAt ?? 0) <= PRUNE_AFTER_MS)
   const closed = keep.filter((c) => !isOpen(c))
@@ -462,4 +464,32 @@ export function pruneClosed(s: YourMoveState, now: number): YourMoveState {
       .map((c) => c.id)
   )
   return { ...s, cards: keep.filter((c) => !drop.has(c.id)) }
+}
+
+/** The Settings pane shows the card list this many at a time. */
+export const HISTORY_PAGE_SIZE = 25
+
+/**
+ * One page of the list the Settings pane shows: open cards newest first, then closed cards by
+ * closing time. Main hands over a page, never the whole list, so opening the pane costs O(page)
+ * over IPC and in the renderer however many cards the store holds. A negative or non-numeric
+ * `offset` reads as 0 and `limit` never exceeds {@link HISTORY_PAGE_SIZE}.
+ */
+export function cardsPage(
+  s: YourMoveState,
+  offset: number,
+  limit: number
+): { total: number; cards: YourMoveCard[] } {
+  const from = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0
+  const size = Number.isFinite(limit)
+    ? Math.min(HISTORY_PAGE_SIZE, Math.max(0, Math.floor(limit)))
+    : HISTORY_PAGE_SIZE
+  const open: YourMoveCard[] = []
+  const closed: YourMoveCard[] = []
+  for (const c of s.cards) (isOpen(c) ? open : closed).push(c)
+  open.sort((a, b) => b.openedAt - a.openedAt)
+  // The closed tail is only sorted when the page reaches into it.
+  if (open.length < from + size) closed.sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
+  const all = open.length >= from + size ? open : [...open, ...closed]
+  return { total: s.cards.length, cards: all.slice(from, from + size) }
 }
