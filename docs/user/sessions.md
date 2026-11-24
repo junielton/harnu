@@ -34,7 +34,9 @@ Quitting stops every terminal, so a session that is mid-turn loses that turn. Wh
 - **Quit anyway** quits normally.
 - **Don't ask again** (a checkbox) stops the prompt from appearing on later quits. Turn it back on in [Settings → General → Quitting](settings.md#quitting).
 
-Only sessions that are actively working count. Idle, parked (hibernated), finished and errored sessions never trigger the prompt, so quitting with nothing running is instant. The prompt also stays out of the way of an update restart ("Restart now") and of a system shutdown or logout. It is a native dialog, so it appears even if Harnu's window has stopped responding.
+Only sessions that are actively working count. Idle, parked (hibernated), finished and errored sessions never trigger the prompt, so quitting with nothing running is instant.
+
+**Unsaved files.** If any Markdown pane (a [quick note](notes.md) or any other Markdown file) has unsaved edits, Harnu always asks before quitting, even if you turned confirm-on-quit off. The prompt names the files, then lists any working agents below them, since quitting interrupts those too. Its buttons are **Cancel** (the default) and **Quit without saving**, and it has no **Don't ask again** checkbox: losing work is not a preference. See [Quick notes](notes.md) for how unsaved edits are protected. The prompt also stays out of the way of an update restart ("Restart now") and of a system shutdown or logout. It is a native dialog, so it appears even if Harnu's window has stopped responding.
 
 ### Pasted screenshots
 

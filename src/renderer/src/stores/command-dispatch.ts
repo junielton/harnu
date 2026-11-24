@@ -231,6 +231,7 @@ export function buildDispatchActions(): CommandRouterActions {
     },
     closeHelperByPath: (worktreePath, path) => helpers.closeHelperByPath(worktreePath, path),
     closeHelperById: (worktreePath, paneId) => helpers.closeHelperById(worktreePath, paneId),
+    isPaneUnsaved: (worktreePath, ref) => helpers.isPaneUnsaved(worktreePath, ref),
     // T113 (background drain): the board-dispatch spawn WITHOUT selection — the
     // synthetic boots via the BUG-23 background runner, so the drain never yanks
     // the operator's focus; the reaper still surfaces a boot that never PTYs.

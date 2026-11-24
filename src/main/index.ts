@@ -134,6 +134,8 @@ import { setInterceptFolders } from './responder-registry'
 import { registerSessionOpHandlers } from './session-ops'
 import { registerMarkdownReadHandlers } from './markdown-read'
 import { registerMarkdownWriteHandlers } from './markdown-write'
+import { registerNotesHandlers } from './notes'
+import { registerUnsavedDraftsIpc, watchRendererReset } from './unsaved-drafts'
 import { registerMarkdownWatchHandlers, closeAllMarkdownWatchers } from './markdown-watch'
 import { registerCanvasAssetHandlers } from './canvas-assets'
 import { registerCanvasReadHandlers } from './canvas-read'
@@ -400,6 +402,8 @@ function createWindow(): void {
   // T579: the X button. `before-quit` carries the same guard for Ctrl+Q / the app menu; once
   // the operator picks "Quit anyway" both pass, so a quit attempt asks once.
   mainWindow.on('close', (event) => guardQuit(event, () => mainWindow))
+  // A reloaded / crashed renderer lost its unsaved-drafts registry; drop main's stale copy.
+  watchRendererReset(mainWindow.webContents)
   // Windows logoff / shutdown: never hold the session hostage.
   mainWindow.on('session-end', () => bypassQuitConfirm('system-shutdown'))
 
@@ -644,6 +648,11 @@ app.whenReady().then(async () => {
   // Same known-folder containment + extension allowlist + size cap as the reader
   // (atomic tmp+rename); never writes outside the known roots.
   registerMarkdownWriteHandlers()
+  // Quick notes: one scratch markdown note per repo per day, resolved (and created on
+  // first open) in the repo's main checkout; the renderer opens the file as a markdown pane.
+  registerNotesHandlers()
+  // Unsaved markdown drafts the renderer reports, so a quit guard can name them.
+  registerUnsavedDraftsIpc()
   // T171: ref-counted live-reload watcher for markdown panes. Only watches
   // files a mounted MarkdownPane has registered; broadcasts a path-only
   // `markdown:changed` signal the renderer re-reads via `markdown:read`.

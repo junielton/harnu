@@ -25,6 +25,7 @@ import type { PersistedPayloadFields } from '../lib/browser-persist'
 import type { BrowserTabPayloadFields } from '../../../shared/browser-tabs'
 import { scrubUrl } from '../../../shared/browser-comment'
 import type { AgentTerminalSplit } from './command-router'
+import { forgetDraft, isDraftDirty } from '../lib/unsaved-drafts'
 import { UNKNOWN_CORRECTIVE, type ReviewCorrective } from '../../../main/review-corrective'
 
 /** An exit sooner than this after spawn means the helper never really started (stale session). */
@@ -210,14 +211,19 @@ export type HelperPaneAgentTerminal = HelperPane & {
   exited?: { code: number | null; snapshot?: string }
 }
 
-/** The keys a {@link HelperPaneAgentTerminal} carries beyond the persisted pane shape. */
+/**
+ * Pane keys that never reach `helpers.json`: the keys a {@link HelperPaneAgentTerminal} carries
+ * beyond the persisted pane shape, plus a markdown pane's one-shot `initialMode` (open in edit on
+ * the FIRST mount only). A restored pane opens in view mode and never steals focus on boot.
+ */
 export const TRANSIENT_PANE_FIELDS = [
   'origin',
   'terminalId',
   'ptyId',
   'ownerSessionId',
   'spawnedAt',
-  'exited'
+  'exited',
+  'initialMode'
 ] as const
 
 /** Narrow a pane to an agent terminal. */
@@ -339,12 +345,15 @@ export const RETIRED_PANE_TYPES: readonly string[] = ['mission']
 
 /** Hydrate persisted shape into in-memory shape. */
 function fromPersistShape(state: WorktreeHelperState): InMemoryWorktreeState {
-  const kept = state.panes.filter((p) => !RETIRED_PANE_TYPES.includes(p.type))
+  // A file written before `initialMode` became transient may still carry it: drop it on the way in.
+  const kept = state.panes
+    .filter((p) => !RETIRED_PANE_TYPES.includes(p.type))
+    .map((p) => stripTransientFields({ ...p }))
   if (kept.length === state.panes.length) {
     return {
       splitVisible: state.splitVisible,
       splitRatio: state.splitRatio,
-      panes: state.panes as AnyHelperPane[]
+      panes: kept as AnyHelperPane[]
     }
   }
   // The survivors keep their order and their shares of the stack, renormalised to sum to 1.
@@ -420,6 +429,9 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   function notifyPaneRemoved(paneId: string): void {
+    // A removed pane can never hold a draft: drop its unsaved-registry entry so
+    // main's quit guard never names a pane that is gone (cascades land here too).
+    forgetDraft(paneId)
     for (const fn of removeHandlers) {
       try {
         fn(paneId)
@@ -683,6 +695,33 @@ export const useHelpersStore = defineStore('helpers', () => {
   /** Clear a pending focus request once `paneId`'s search field has taken it. */
   function consumeExplorerFocus(paneId: string): void {
     if (explorerFocusRequest.value === paneId) explorerFocusRequest.value = null
+  }
+
+  /**
+   * Id of the markdown pane that should switch to edit mode and take focus, or `null`. Same shape
+   * as {@link explorerFocusRequest}: set by {@link requestMarkdownEdit} (a note shortcut or picker
+   * pick that lands on an already-open pane), cleared by `MarkdownPane` through
+   * {@link consumeMarkdownEdit} once it has acted. Transient: never in the pane shape, so a boot
+   * restore never replays it.
+   */
+  const markdownEditRequest = ref<string | null>(null)
+
+  /**
+   * Ask markdown pane `paneId` in `worktreePath` to enter edit mode and focus its editor. A pane
+   * hidden behind another maximized or expanded pane is brought back into the normal layout first,
+   * so the focus lands on something the operator can see.
+   */
+  function requestMarkdownEdit(worktreePath: string, paneId: string): void {
+    const max = maximizedByWorktree.value.get(worktreePath)
+    if (max && max !== paneId) toggleMaximizePane(worktreePath, max)
+    const exp = expandedByWorktree.value.get(worktreePath)
+    if (exp && exp !== paneId) exitExpand(worktreePath)
+    markdownEditRequest.value = paneId
+  }
+
+  /** Clear a pending edit request once `paneId` has entered edit mode and focused. */
+  function consumeMarkdownEdit(paneId: string): void {
+    if (markdownEditRequest.value === paneId) markdownEditRequest.value = null
   }
 
   /**
@@ -999,7 +1038,8 @@ export const useHelpersStore = defineStore('helpers', () => {
    * functions this replaced): a registered `dedupKey` that returns a match
    * on an existing same-type pane short-circuits with that pane's id instead
    * of appending; otherwise, if the type is at its `maxInstances` cap, the
-   * OLDEST same-type pane is recycled (dropped) to make room. Forces
+   * OLDEST same-type pane WITHOUT unsaved edits is recycled (dropped) to make
+   * room (all dirty ⇒ none is recycled and the stack grows). Forces
    * `splitVisible` true and equalizes vertical ratios like every original
    * did. Returns the new (or deduped) pane's id.
    */
@@ -1021,7 +1061,12 @@ export const useHelpersStore = defineStore('helpers', () => {
     let recycleId: string | null = null
     if (entry?.maxInstances !== undefined) {
       const sameType = (existing?.panes ?? []).filter((p) => p.type === pane.type)
-      if (sameType.length >= entry.maxInstances) recycleId = sameType[0].id
+      // Recycle the oldest pane that holds no unsaved edits. If every same-type
+      // pane is dirty, recycle none: the stack grows past the cap rather than
+      // silently dropping a draft.
+      if (sameType.length >= entry.maxInstances) {
+        recycleId = sameType.find((p) => !isDraftDirty(p.id))?.id ?? null
+      }
     }
 
     mutateWorktree(worktreePath, (s) => {
@@ -1033,6 +1078,9 @@ export const useHelpersStore = defineStore('helpers', () => {
         panes: updated
       }
     })
+    // The recycled pane is gone for good: run the same hooks every other removal does so
+    // remove handlers fire and its unsaved-registry entry is dropped.
+    if (recycleId) notifyPaneRemoved(recycleId)
     // 2026-07-13 agent-pane-routing design §Badge/§Alert: a genuine append
     // (fresh or cap-recycled — never the dedup short-circuit above, which
     // means nothing NEW landed) from the agent path bumps the unseen counter
@@ -1572,6 +1620,23 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
+   * Does the pane identified by `ref` (a file `path`, as `closeHelperByPath` matches
+   * it, or a `paneId`) hold unsaved edits? The router refuses agent closes of such a
+   * pane (`UNSAVED_CHANGES`); an unknown ref is simply not unsaved.
+   */
+  function isPaneUnsaved(worktreePath: string, ref: { path?: string; paneId?: string }): boolean {
+    const panes = byWorktree.value.get(worktreePath)?.panes ?? []
+    const match = ref.paneId
+      ? panes.find((p) => p.id === ref.paneId)
+      : panes.find(
+          (p) =>
+            (p.type === 'markdown' || p.type === 'canvas') &&
+            (p as HelperPane).filePath === ref.path
+        )
+    return match ? isDraftDirty(match.id) : false
+  }
+
+  /**
    * T171 `close_pane`: close ANY pane by id, including PTY-backed ones — the
    * higher-blast-radius sibling of {@link closeHelperByPath}, gated separately
    * at the MCP layer (always confirms). Returns whether a pane was actually
@@ -1934,6 +1999,9 @@ export const useHelpersStore = defineStore('helpers', () => {
     unseenAgentPaneCount,
     paneRevealTick,
     explorerFocusRequest,
+    markdownEditRequest,
+    requestMarkdownEdit,
+    consumeMarkdownEdit,
     consumeExplorerFocus,
     explorerRevealRequest,
     consumeExplorerReveal,
@@ -1960,6 +2028,7 @@ export const useHelpersStore = defineStore('helpers', () => {
     removeHelper,
     closeHelperByPath,
     closeHelperById,
+    isPaneUnsaved,
     setSplitRatio,
     setPaneRatios,
     flushNow,

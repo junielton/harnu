@@ -148,6 +148,8 @@
     "openInEditorVSCodeHint": "Não foi possível iniciar a CLI do VS Code (`code`). No VS Code, abra a Paleta de Comandos e execute \"Shell Command: Install 'code' command in PATH\", depois tente de novo.",
     "openInEditorBadCommand": "O comando do editor personalizado está vazio ou malformado. Confira Configurações → Geral → Editor.",
     "openExplorer": "Navegar arquivos",
+    "notes": "Nova nota de hoje",
+    "notesAll": "Clique direito: todas as notas…",
     "githubPulls": "Pull requests no GitHub",
     "roadmapBoard": "Board do roadmap",
     "prStack": "PR Stack",
@@ -230,6 +232,13 @@
     "unsaved": {
       "title": "Alterações não salvas",
       "discard": "Descartar e continuar"
+    },
+    "unsavedDialog": {
+      "title": "Alterações não salvas",
+      "body": "{name} tem alterações que não foram salvas.",
+      "save": "Salvar",
+      "discard": "Não salvar",
+      "cancel": "Cancelar"
     },
     "changedOnDisk": {
       "title": "Este arquivo mudou no disco",
@@ -756,6 +765,11 @@
     "setParentFolder": "Definir pasta-mãe",
     "clearParentFolder": "Remover pasta-mãe",
     "setParentFolderFailed": "Não foi possível atualizar a pasta-mãe",
+    "notes": {
+      "label": "Notas",
+      "today": "Nova nota de hoje",
+      "all": "Todas as notas…"
+    },
     "modes": {
       "label": "Modos",
       "learning": "Aprendizado",
@@ -1372,6 +1386,22 @@
     "save": "Salvar",
     "failed": "Não foi possível renomear a pasta"
   },
+  "notes": {
+    "openFailed": "Não foi possível abrir a nota",
+    "noFolder": "Selecione uma pasta primeiro para escrever uma nota.",
+    "picker": {
+      "title": "Notas",
+      "searchPlaceholder": "Buscar notas por data",
+      "empty": "Nenhuma nota encontrada.",
+      "today": "Hoje",
+      "yesterday": "Ontem",
+      "loadFailed": "Não foi possível carregar as notas.",
+      "hints": {
+        "move": "mover",
+        "open": "abrir"
+      }
+    }
+  },
   "renameRepo": {
     "title": "Renomear grupo",
     "close": "Fechar",
@@ -1457,7 +1487,11 @@
     "andMore": "e mais {n}",
     "quitAnyway": "Sair mesmo assim",
     "cancel": "Cancelar",
-    "dontAskAgain": "Não perguntar novamente"
+    "dontAskAgain": "Não perguntar novamente",
+    "unsavedOne": "1 arquivo tem alterações não salvas",
+    "unsavedMany": "{count} arquivos têm alterações não salvas",
+    "unsavedDetail": "Sair do {app} agora descarta essas alterações.",
+    "quitWithoutSaving": "Sair sem salvar"
   },
   "settings": {
     "title": "Configurações",
@@ -1715,6 +1749,8 @@
       "view_toggleHelper": "Alternar o painel dividido à direita",
       "project_switch": "Trocar de projeto",
       "folder_add": "Adicionar pasta",
+      "notes_openToday": "Nova nota de hoje",
+      "notes_open": "Todas as notas…",
       "view_review": "Revisar o branch da pasta ativa",
       "view_roadmap": "Alternar o quadro de roadmap",
       "view_prStack": "Alternar o PR Stack",

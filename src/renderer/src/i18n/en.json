@@ -148,6 +148,8 @@
     "openInEditorVSCodeHint": "Couldn't launch the VS Code CLI (`code`). In VS Code, open the Command Palette and run \"Shell Command: Install 'code' command in PATH\", then try again.",
     "openInEditorBadCommand": "The custom editor command is empty or malformed. Check Settings → General → Editor.",
     "openExplorer": "Browse files",
+    "notes": "New note for today",
+    "notesAll": "Right-click: all notes…",
     "githubPulls": "Pull requests on GitHub",
     "roadmapBoard": "Roadmap board",
     "prStack": "PR Stack",
@@ -230,6 +232,13 @@
     "unsaved": {
       "title": "Unsaved changes",
       "discard": "Discard & continue"
+    },
+    "unsavedDialog": {
+      "title": "Unsaved changes",
+      "body": "{name} has changes that are not saved.",
+      "save": "Save",
+      "discard": "Don't save",
+      "cancel": "Cancel"
     },
     "changedOnDisk": {
       "title": "This file changed on disk",
@@ -756,6 +765,11 @@
     "setParentFolder": "Set parent folder",
     "clearParentFolder": "Clear parent folder",
     "setParentFolderFailed": "Couldn't update the parent folder",
+    "notes": {
+      "label": "Notes",
+      "today": "New note for today",
+      "all": "All notes…"
+    },
     "modes": {
       "label": "Modes",
       "learning": "Learning",
@@ -1372,6 +1386,22 @@
     "save": "Save",
     "failed": "Couldn't rename folder"
   },
+  "notes": {
+    "openFailed": "Couldn't open the note",
+    "noFolder": "Select a folder first to write a note.",
+    "picker": {
+      "title": "Notes",
+      "searchPlaceholder": "Search notes by date",
+      "empty": "No notes match.",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "loadFailed": "Couldn't load notes.",
+      "hints": {
+        "move": "move",
+        "open": "open"
+      }
+    }
+  },
   "renameRepo": {
     "title": "Rename group",
     "close": "Close",
@@ -1457,7 +1487,11 @@
     "andMore": "and {n} more",
     "quitAnyway": "Quit anyway",
     "cancel": "Cancel",
-    "dontAskAgain": "Don't ask again"
+    "dontAskAgain": "Don't ask again",
+    "unsavedOne": "1 file has unsaved changes",
+    "unsavedMany": "{count} files have unsaved changes",
+    "unsavedDetail": "Quitting {app} now discards them.",
+    "quitWithoutSaving": "Quit without saving"
   },
   "settings": {
     "title": "Settings",
@@ -1715,6 +1749,8 @@
       "view_toggleHelper": "Toggle the right split panel",
       "project_switch": "Switch project",
       "folder_add": "Add folder",
+      "notes_openToday": "New note for today",
+      "notes_open": "All notes…",
       "view_review": "Review the active folder's branch",
       "view_roadmap": "Toggle the roadmap board",
       "view_prStack": "Toggle the PR Stack",

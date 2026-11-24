@@ -440,6 +440,7 @@ _another_ folder.
 | `external-link`                          | Open in new tab                                                                                                                                                                                                                        |
 | `file-text`                              | Markdown pane header / file row in the Explorer pane / "Copy transcript path" (§6)                                                                                                                                                     |
 | `notebook-text`                          | Memory pane header / "Project memory" item (FolderMenu)                                                                                                                                                                                |
+| `notebook-pen`                           | Topbar notes button · "New note for today" and the Notes ▸ flyout (FolderMenu) (Quick notes, §6 "Topbar notes button")                                                                                                                 |
 | `arrow-up-right`                         | Open the source session of a digest (Memory pane timeline, T79)                                                                                                                                                                        |
 | `file-plus`                              | New markdown file (Explorer pane header — Cluster E, creates + opens in edit mode)                                                                                                                                                     |
 | `pencil`                                 | Markdown pane → enter edit mode (view→edit toggle)                                                                                                                                                                                     |
@@ -666,6 +667,8 @@ Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P`
 | `⌥→` / `⌘]`        | Forward through the session history after a Back (also mouse button 4 — forward)                                                                                                                                                                                          | global   | Same scheme (`nav.forward`). Skips closed sessions; silent at the ends; 50 entries, in memory only. The bound chord no longer reaches the terminal                                                                                                                                                                                                                                                               |
 | `↑ / ↓ / ← / →`    | Sidebar navigation                                                                                                                                                                                                                                                        | sidebar  | Only when the sidebar has focus                                                                                                                                                                                                                                                                                                                                                                                  |
 | `⌘⇧F`              | Jump to a folder or session (the sidebar jump palette)                                                                                                                                                                                                                    | global   | Renderer-only, but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter). Expands a collapsed sidebar first. Not text-entry gated: a second press closes the palette even while its own input has focus                                                                                                                                                                                    |
+| `⌘⇧N`              | New note for today: opens today's Quick note for the selected folder in its helper stack, in edit mode (`notes.openToday`)                                                                                                                                                | global   | Same scheme (`F&older` menu + fallback), so it fires over a focused terminal. With no folder selected it shows a warning toast asking for one. Rebindable                                                                                                                                                                                                                                                        |
+| `⌘⌥N`              | All notes…: the notes picker for the selected folder's repo (`notes.open`)                                                                                                                                                                                                | global   | Same scheme (`F&older` menu + fallback): off macOS xterm would turn `Ctrl+Alt+N` into terminal input, so the OS-level accelerator owns it. Same no-folder toast. Rebindable                                                                                                                                                                                                                                      |
 | `⌘↩`               | Open the cursor session (else the selected one) to the side, as a resume pane                                                                                                                                                                                             | global   | Renderer-only; a key press in a text field leaves it alone. Inside a terminal the program gets CR                                                                                                                                                                                                                                                                                                                |
 | `⇧F10`             | Open the Session menu or Folder menu for the cursor row (else the selected session, else the active folder), anchored at the row                                                                                                                                          | global   | Renderer-only; the menu opens with its first item focused. A repo-group cursor row is a no-op. Inside a terminal the program gets F10. On a Mac keyboard, `Fn+⇧F10` unless F-keys are standard                                                                                                                                                                                                                   |
 | `F2`               | Rename the cursor folder row (else the active folder) — opens the Rename folder dialog                                                                                                                                                                                    | global   | Renderer-only; a key press in a text field leaves it alone. A session or repo-group cursor row is a no-op (a session renames with `⌘R`). Inside a terminal the program gets F2. On a Mac keyboard, `Fn+F2` unless F-keys are standard                                                                                                                                                                            |
@@ -5943,10 +5946,21 @@ already looking at that repo's session.
   `aria-pressed` — the button is a toggle (see "Takeover dismissal" above), and a
   pressed-looking button is what makes the second click discoverable.
 - **Order:** `[bell] [board] [pr-stack] │ [folder] [editor] [github-pulls] [explorer]
-[terminal] [browser] [split-layout] [panel-right]` (the split-layout toggle is T627, §6 "Split
+[notes] [terminal] [browser] [split-layout] [panel-right]` (the split-layout toggle is T627, §6 "Split
   orientation"). The two view buttons sit **before** the external-tool openers:
   they act _inside_ Harnu, the ones after them leave for the OS or another app.
 - **GitHub pull requests** (`github` — lucide's brand glyph, so it reads as "leaves for GitHub" and not as the PR Stack Canvas button; deprecated upstream as a brand icon, so a future lucide major may drop it and break the import at build time; `topbar.githubPulls`): opens
+- **Notes** (Quick notes, `notebook-pen`, `topbar.notes`, `data-test="topbar-notes"`): sits right after Browse files.
+  A plain 26×26 button with the standard anatomy and no active state (it opens a pane). **Click** = today's note
+  (`notes.openToday`): the day's `.harnu/notes/YYYY-MM-DD.md` of the folder's repo, in the helper stack, in edit mode.
+  **Right-click** = "All notes…" (`notes.open`): it opens the Notes picker straight away, with no extra menu, and
+  suppresses the native context menu. That is the whole secondary affordance: no split chevron, because the bar is
+  already tight and a second hit target would add one more slot to the overflow budget. The same picker is also one
+  keystroke away (`notes.open`), in the palette and in the folder menu, so nothing depends on the right-click. The
+  `title` is two lines, each ending in the CURRENT chord from the keybindings table (never the default):
+  `New note for today (Ctrl+Shift+N)` and `Right-click: all notes… (Ctrl+Alt+N)`; a command with no chord shows
+  its label alone. The `aria-label` is the plain `topbar.notes`. In the `…` overflow menu the row runs today's
+  note (the right-click is a bar-only gesture; the picker stays in the palette and the folder menu).
 - **Terminal and Browser** (T630): the two panes you split off the session sit side by side, Terminal
   first. **Terminal** (`terminal`, `topbar.split`, `data-test="topbar-split"`) opens a shell in one click; **Browser**
   (`globe`, `topbar.browser`, `data-test="topbar-browser"`) opens an operator browser pane at `about:blank` and
@@ -5982,7 +5996,7 @@ what it does: the menu runs the same handler as the button.
 
 - **What can overflow.** Every action button of the right cluster: `new-session` (folder view only),
   `roadmap`, `pr-stack`, `review`, `walks`, `open-folder`, `editor`, `github-pulls`, `explorer`,
-  `terminal`, `browser`, `split-layout`, `panel-right`. These never overflow: the left sidebar toggle (the
+  `notes`, `terminal`, `browser`, `split-layout`, `panel-right`. These never overflow: the left sidebar toggle (the
   collapsed sidebar must always be reopenable) and the Activity bell (a badge and a popover of its
   own, and it is reachable with nothing selected).
 - **Priority, declared once.** The order is one list in code (`TOPBAR_OVERFLOW_ORDER` in
@@ -5995,21 +6009,22 @@ what it does: the menu runs the same handler as the button.
   | 3rd         | `editor`       | Leaves Harnu for an editor (or a shell pane)                           |
   | 4th         | `explorer`     | Opens a pane; the file tree is also reachable with its shortcut        |
   | 5th         | `split-layout` | A rare preference toggle; also reachable from Settings and its command |
-  | 6th         | `browser`      | Opens a pane, right next to Terminal                                   |
-  | 7th         | `terminal`     | Opens a pane; reachable with its shortcut                              |
-  | 8th         | `walks`        | Opens a pane: the repo's saved walks (also in the folder menu)         |
-  | 9th         | `review`       | A per-repo takeover that acts inside Harnu                             |
-  | 10th        | `pr-stack`     | A per-repo takeover that acts inside Harnu                             |
-  | 11th        | `roadmap`      | The per-repo board: the view operators open most                       |
-  | 12th        | `panel-right`  | The only way to reopen a collapsed helper panel without the keyboard   |
-  | 13th (last) | `new-session`  | The primary action of a folder with no session                         |
+  | 6th         | `notes`        | Opens a pane; also its two shortcuts, the folder menu and the palette  |
+  | 7th         | `browser`      | Opens a pane, right next to Terminal                                   |
+  | 8th         | `terminal`     | Opens a pane; reachable with its shortcut                              |
+  | 9th         | `walks`        | Opens a pane: the repo's saved walks (also in the folder menu)         |
+  | 10th        | `review`       | A per-repo takeover that acts inside Harnu                             |
+  | 11th        | `pr-stack`     | A per-repo takeover that acts inside Harnu                             |
+  | 12th        | `roadmap`      | The per-repo board: the view operators open most                       |
+  | 13th        | `panel-right`  | The only way to reopen a collapsed helper panel without the keyboard   |
+  | 14th (last) | `new-session`  | The primary action of a folder with no session                         |
 
   An action that is not present right now (no `origin`, no helper panes, a session instead of a
   folder) is not in the list that frame, so it neither takes room nor leaves a gap.
 
 - **Order in the bar and in the menu.** Both keep the cluster order `[new-session] [roadmap]
-[pr-stack] [review] [walks] [open-folder] [editor] [github-pulls] [explorer] [terminal] [browser]
-[split-layout] [panel-right] […]`, whatever the priority order is. The `…` button is last; it is
+[pr-stack] [review] [walks] [open-folder] [editor] [github-pulls] [explorer] [notes] [terminal]
+[browser] [split-layout] [panel-right] […]`, whatever the priority order is. The `…` button is last; it is
   drawn only while at least one action is hidden.
 - **Minimum title width: 96px.** The title (the session name, or the folder name in the folder
   view) is a truncating span with `min-width: 96px` (its border box, padding and border included, so the room it takes in the bar is 10px less and the budget errs on the safe side): it ends in an ellipsis as the bar narrows, and
@@ -6821,8 +6836,9 @@ Restart / Remote Control / Archive / Delete / copies.
 #### Submenu (flyout)
 
 **What it is:** a `MenuItem` with `children` opens a **flyout** to its right instead
-of running an action directly. Only use today: **Modes ▸** in the folder menu (see
-"#### Folder context menu" below).
+of running an action directly. Used today by **Modes ▸** and **Notes ▸** in the folder menu (see
+"#### Folder context menu" below). A child row whose action has a chord shows it at the right edge, in the
+same mono `--text-4` 10.5px hint as a parent-menu row, and only while the action has one.
 
 **Affordance:** a `chevron-right` (12px, `--text-3`) at the row's right edge signals
 that it opens a flyout. Without it the row lies, looking like any other action.
@@ -6859,6 +6875,11 @@ Right-click menu on a project row (`FolderMenu.vue`). Items:
   (`graduation-cap`). Selecting a mode calls
   `createNewSession(folderPath, undefined, modeId)`: boots directly, no
   intermediate dialog.
+- **Notes ▸** (icon `notebook-pen`, Quick notes) → opens the **Submenu** flyout, placed after **Store memory in…**.
+  Two rows: **New note for today** (`notebook-pen`, `notes.openToday`) and **All notes…** (`layout-list`, `notes.open`),
+  each with its CURRENT chord at the right edge. Both act on **this menu's folder**, not the selected one: the folder
+  is selected first, then today's note opens in its helper stack (or the picker lists its repo's notes). Shown for every
+  folder, git or not (a folder outside a git repo keeps its own `.harnu/notes/`). Non-destructive.
 - **Rename…** (icon `pencil-line`, with ellipsis → opens a dialog) → renames the
   folder's sidebar **alias**. Opens `RenameFolderDialog` (see "### Rename
   folder"), right after `New terminal`. Always visible — every folder can have an
@@ -9281,6 +9302,64 @@ Same anatomy/tokens as `RenameFolderDialog`. **Existing tokens only.**
 Persisted in `localStorage` (`om2tab.repoAliases`, per-repoId) — **renderer-only**, no
 `projects.json`. **UI-only** channel.
 
+### Notes picker
+
+`NotesPickerDialog.vue` — **non-destructive** `Dialog` (`size="md"`, peer via `ui.dialog === 'notesPicker'` +
+`ui.folderActionPath` = the repo folder). It lists every daily note of that repo — one `.md` file per day under the repo's
+`.harnu/notes/` — so the operator can jump to any of them. Shell, width, radius, scrim, layer, Esc and focus come from §6
+"Dialog"; the search row and result rows copy the [Sidebar jump palette](#sidebar-jump-palette). **Existing tokens only.**
+
+- **Trigger:** the Quick notes shortcut and menu items. A picker is the "any day" door; today's note has its own one-step
+  door that skips the picker.
+- **Header:** title `Notes` + the folder basename (mono `--text-4`), `X` button (the shared `Dialog` header).
+- **Search row:** a `search` icon (14px, `--text-3`), a borderless input (Inter 12.5px `--text`, placeholder `--text-4`),
+  and a trailing `esc` kbd chip, `border-b border-border`. **Focused on open.** Typing filters the list by a
+  case-insensitive substring of the date (`2026-11-2`, `11-24`).
+- **Rows:** 28px, `padding: 0 10px`, `gap: 8px`, `--text-2`. Left: the date `YYYY-MM-DD` (mono 12.5px). Right: a dim
+  relative hint (11px `--text-4`): `Today`, `Yesterday`, or the localized weekday name for any other day. **Today is always
+  the first row**, even when its file does not exist yet (opening it creates it). The rest follow newest first.
+- **Selected row** (keyboard cursor or hover): `--surface-2` background, `--text`, the 2px `--accent` bar on the left
+  (`border-radius: 0 2px 2px 0`, an absolutely positioned span, never a `border-left`), and a trailing `corner-down-left`
+  glyph (12px, `--text-4`).
+- **Keyboard:** `↑`/`↓` move the selection (clamped at both ends, no wrap; it resets to the first row when the query
+  changes), `↵` opens the selected row, `Esc` closes. Clicking a row opens it.
+- **States:** a filter with no matches shows one muted line (`--text-3`, 11.5px) and nothing selectable. If the list
+  cannot be read, one muted line says so; the dialog stays open and Esc still closes it.
+- **Footer hints:** the same `kbd` chips as the jump palette (`↑↓` move, `↵` open), in a 26px row below the list.
+
+Choosing a row opens the note as a markdown pane in the helper stack, in **edit** mode with the caret at the end, then closes
+the dialog. If the note cannot be opened, a `warning` toast says so and the dialog still closes. **UI-only** channel.
+
+### Unsaved changes dialog
+
+`UnsavedChangesDialog.vue` — the question a **markdown pane** asks when the operator closes it while
+it holds unsaved edits (the header ✕ or the `pane.close` chord). A **Confirm** variant of the shared
+`Dialog` shell (`size="sm"`, `layer="dialog"`); it replaces the non-blocking "Unsaved changes" toast
+on the **close** path only. Reload and relative-link navigation keep that toast. **Existing tokens
+only.**
+
+- **Props / events:** `open`, `fileName`; emits `save`, `discard`, `cancel`. It never closes
+  itself and never touches the draft: the owning `MarkdownPane` runs the save and the close.
+- **Title:** "Unsaved changes" (short label, no trailing period). No subtitle.
+- **Body:** one sentence naming the file in `--color-text` semibold (the file's basename): "<file> has changes that are not saved." The sentence is `--color-text-2`, 12.5px / 19px.
+- **Footer**, dismiss left of commit, the destructive action on the left in the `meta` slot:
+  - **Don't save** (`meta` slot, left) — ghost, `--color-red` text, `--color-border` border. The
+    changes are discarded and the pane closes. **Never the default.**
+  - **Cancel** — ghost (`--color-text-2`, `--color-border` border). The pane stays open with its
+    draft untouched.
+  - **Save** — primary (`--color-accent` / `--color-accent-ink`). **Initial focus and the Enter
+    action.** Writes the draft, then closes the pane.
+    All three keep the 28px dialog footer box (`7px 14px`, 12.5 / 500, `--radius-sm`).
+- **Esc, the scrim and the ✕ are all Cancel.** Esc routes through `useDialogStack` like every
+  dialog.
+- **Save failure:** the pane stays open and dirty, the dialog closes and the normal error toast
+  names the reason; nothing is dropped. **Save that lands while the operator keeps typing:** the
+  pane stays open (it is dirty again); only a save that leaves the pane clean closes it.
+- **Accessibility:** `role="dialog"`, `aria-modal`, `aria-labelledby` → the title, `aria-describedby`
+  → the body sentence.
+- **Copy:** `markdownPane.unsavedDialog.{title,body,save,discard,cancel}` in `en.json` and
+  `pt-BR.json`; the file name is an interpolated parameter, never concatenated.
+
 ### Hover preview — interactive card (§3.9)
 
 `SessionPreview.vue` and `FolderPreview.vue` are the SAME card contract: floating
@@ -9452,6 +9531,7 @@ the surface:
 | Dialog (modal)       | `NewFolderDialog.vue`      | 60                | Creates + pins a subfolder **non-destructively**. Peer via `ui.dialog === 'newFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `New folder…` item                                                                                                                                                                                                                                                                        |
 | Dialog (modal)       | `OpenSubfolderDialog.vue`  | 60                | Searchable subfolder picker (recursive, depth-capped) → pins the chosen one. Peer via `ui.dialog === 'openSubfolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Open subfolder…` item                                                                                                                                                                                                                                     |
 | Dialog (modal)       | `RenameFolderDialog.vue`   | `--z-dialog` (60) | Renames a folder's alias. Peer via `ui.dialog === 'renameFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Rename…` item                                                                                                                                                                                                                                                                                                 |
+| Dialog (modal)       | `NotesPickerDialog.vue`    | `--z-dialog` (60) | Lists a repo's daily notes (search + ↑/↓/↵). Peer via `ui.dialog === 'notesPicker'` (+ `ui.folderActionPath`)                                                                                                                                                                                                                                                                                                                              |
 | Image lightbox       | `ImageLightbox.vue`        | 60                | Full-viewport viewer for one pasted screenshot. Its index lives in the `ui` store (`ui.imageLightboxIndex`, T486 U4a) beside the anchored popovers' flags, but **outside the mutex** — a single entry point: a tile in the footer's images popover. While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it, and closing that popover ends it                                                       |
 | Dialog (modal)       | `RenameRepoDialog.vue`     | `--z-dialog` (60) | Renames a repo-group's alias. Peer via `ui.dialog === 'renameRepo'` (+ `ui.renameRepoTarget`); opened from the `RepoGroupHeader`'s context-menu `Rename repo` item                                                                                                                                                                                                                                                                         |
 | Agent-action confirm | `McpConfirmOverlay.vue`    | 65                | **Fail-CLOSED** confirm for a mutation requested by an MCP agent (`onMcpConfirmPending`). **Auto-shows** from its own local state (doesn't enter the `ui` mutex — it's a security gate, can't be suppressed by another surface) and **doesn't close** on Esc / click-outside: the verdict-producing exits are Allow, Deny, or the timeout (denies) — **Dismiss** is a non-verdict exit, "not now". Reuses the Inbox rail's visual language |

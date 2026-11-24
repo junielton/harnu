@@ -550,6 +550,8 @@ describe('T298 AC-1: the exported open* view functions match the canonical regis
     'openRenameFolder',
     'openRenameRepo',
     'openTrustedHosts',
+    // Quick notes: the notes picker dialog.
+    'openNotesPicker',
     'openMemoryLocation',
     'openMenu',
     'openFolderMenu',

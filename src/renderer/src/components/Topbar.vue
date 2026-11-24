@@ -14,6 +14,7 @@ import { useFolderActions } from '../composables/useFolderActions'
 import { useEditorButton } from '../composables/useEditorButton'
 import EditorIcon from './EditorIcon.vue'
 import { macWindowControlsInset } from '../lib/platform'
+import { openAllNotes, openTodayNote } from '../lib/notes'
 import ActivityBell from './ActivityBell.vue'
 import MissionPill from './MissionPill.vue'
 import TopbarOverflowMenu from './TopbarOverflowMenu.vue'
@@ -34,6 +35,7 @@ import {
   Folder as FolderIcon,
   FolderOpen,
   FolderTree,
+  NotebookPen,
   CheckSquare,
   Crown,
   Server,
@@ -324,6 +326,12 @@ const CHORDS: Partial<
     title: (l) => keybindings.withChord(l, 'folder.browseFiles'),
     hint: () => keybindings.chordLabel('folder.browseFiles')
   },
+  // Two lines: today's note (the click), then All notes… (the right-click), each with its CURRENT chord.
+  notes: {
+    title: (l) =>
+      `${keybindings.withChord(l, 'notes.openToday')}\n${keybindings.withChord(t('topbar.notesAll'), 'notes.open')}`,
+    hint: () => keybindings.chordLabel('notes.openToday')
+  },
   terminal: {
     title: (l) => keybindings.withChord(l, 'folder.newTerminal'),
     hint: () => keybindings.chordLabel('folder.newTerminal')
@@ -349,6 +357,7 @@ const TEST_ID: Record<TopbarActionId, string> = {
   editor: 'topbar-editor',
   'github-pulls': 'topbar-github-pulls',
   explorer: 'topbar-explorer',
+  notes: 'topbar-notes',
   terminal: 'topbar-split',
   browser: 'topbar-browser',
   'split-layout': 'topbar-split-layout',
@@ -364,7 +373,7 @@ const allActions = computed<TopbarActionView[]>(() => {
     id: TopbarActionId,
     label: string,
     rest: Pick<TopbarActionView, 'icon' | 'run'> &
-      Partial<Pick<TopbarActionView, 'iconProps' | 'state' | 'toggle'>>
+      Partial<Pick<TopbarActionView, 'iconProps' | 'state' | 'toggle' | 'secondary'>>
   ): TopbarActionView => {
     const chord = CHORDS[id]
     return {
@@ -435,6 +444,12 @@ const allActions = computed<TopbarActionView[]>(() => {
     view('explorer', t('topbar.openExplorer'), {
       icon: FolderTree,
       run: () => folderActions.browseFiles()
+    }),
+    // Quick notes: click = today's note, right-click = "All notes…" (design.md §6 "Topbar notes button").
+    view('notes', t('topbar.notes'), {
+      icon: NotebookPen,
+      run: () => void openTodayNote(),
+      secondary: () => openAllNotes()
     }),
     view('terminal', t('topbar.split'), { icon: Terminal, run: () => folderActions.newTerminal() }),
     // T630: Browser sits right next to Terminal — one click, the same operator pane the old Split
@@ -544,6 +559,13 @@ function onBrowserClick(shift: boolean): Promise<'tab' | 'pane' | void> {
   const wt = sessions.activeFolderPath
   if (!wt) return Promise.resolve()
   return browser.openFromTopbar(wt, { shift }, () => folderActions.newBrowser())
+}
+
+/** Right-click on a bar button: the action's secondary door when it has one (else the native menu is left alone). */
+function onActionContextMenu(a: TopbarActionView, e: MouseEvent): void {
+  if (!a.secondary) return
+  e.preventDefault()
+  a.secondary()
 }
 
 function runHidden(id: TopbarActionId): void {
@@ -746,6 +768,7 @@ function onKeydown(e: KeyboardEvent): void {
           :aria-pressed="a.toggle ? a.state === 'on' : undefined"
           :data-test="TEST_ID[a.id]"
           @click="a.id === 'browser' ? onBrowserClick($event.shiftKey) : a.run()"
+          @contextmenu="onActionContextMenu(a, $event)"
         >
           <component :is="a.icon" v-bind="a.iconProps" />
         </button>

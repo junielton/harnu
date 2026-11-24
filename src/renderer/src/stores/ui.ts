@@ -20,6 +20,7 @@ export type DialogId =
   | 'newFolder'
   | 'openSubfolder'
   | 'renameFolder'
+  | 'notesPicker'
   | 'trustedHosts'
   | 'renameRepo'
   | 'memoryLocation'
@@ -721,6 +722,12 @@ export const useUiStore = defineStore('ui', () => {
     openDialog('renameFolder')
   }
 
+  /** Open the Quick notes picker for the repo folder `path` (lists its daily notes). */
+  function openNotesPicker(path: string): void {
+    folderActionPath.value = path
+    openDialog('notesPicker')
+  }
+
   /** Open the "Trusted dev hosts" dialog for `path` (T571, spec §7.2). */
   function openTrustedHosts(path: string): void {
     folderActionPath.value = path
@@ -1203,6 +1210,7 @@ export const useUiStore = defineStore('ui', () => {
     openNewFolder,
     openOpenSubfolder,
     openRenameFolder,
+    openNotesPicker,
     openTrustedHosts,
     openRenameRepo,
     openMemoryLocation,

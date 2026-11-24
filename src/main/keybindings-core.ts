@@ -40,6 +40,8 @@ export type ShortcutActionId =
   | 'view.toggleHelper'
   | 'project.switch'
   | 'folder.add'
+  | 'notes.openToday'
+  | 'notes.open'
   | 'view.review'
   | 'view.roadmap'
   | 'view.prStack'
@@ -320,6 +322,12 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.toggleHelper', 'views', 'Cmd+Alt+B', MENU),
   def('project.switch', 'app', 'Cmd+Shift+P', { ...MENU, palette: false }),
   def('folder.add', 'folders', 'Cmd+O', { ...MENU, paletteFeatured: true }),
+  // Quick notes: today's note, and the picker of every note of the repo. Both act on the
+  // selected folder and have a no-folder toast in the renderer, so neither is gated on one.
+  // Menu-backed (`&Folder` menu in `menu.ts`) so they fire over a focused terminal: off macOS
+  // xterm turns Ctrl+Alt+N into ESC ^N and cancels the event before the renderer sees it.
+  def('notes.openToday', 'folders', 'Cmd+Shift+N', { ...MENU, paletteFeatured: true }),
+  def('notes.open', 'folders', 'Cmd+Alt+N', MENU),
   def('view.review', 'takeovers', 'Cmd+Shift+D'),
   // The Topbar's per-folder actions. No default chord — they ship unbound and
   // are listed so the user can give them one. `menu: true` (the `&Folder` menu

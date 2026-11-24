@@ -48,7 +48,9 @@ export interface HelperPane {
   /**
    * Optional for `type === 'markdown'`. Open straight in EDIT mode on first mount
    * instead of view (T87 — a scaffolded WORKTREE.md proposal opens ready to
-   * review-and-save; today a non-blank file would default to view).
+   * review-and-save; today a non-blank file would default to view). In-memory only:
+   * the renderer strips it before writing (`TRANSIENT_PANE_FIELDS`), so a pane restored
+   * after a restart opens in view mode.
    */
   initialMode?: 'edit'
   /** Present iff `type === 'memory'`. Folder whose repo `.harnu/memory/` to show (T79). */

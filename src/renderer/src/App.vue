@@ -11,6 +11,7 @@ import FolderView from './components/FolderView.vue'
 import CloudSessionPanel from './components/CloudSessionPanel.vue'
 import { isCloudStub } from './lib/cloud-session'
 import { sessionTitle } from './lib/session-label'
+import { openAllNotes, openTodayNote } from './lib/notes'
 import { dotFor } from './components/session-dot'
 import { resolveDividerDrag, SESSION_TUCK_ARM_PX } from './lib/session-tuck'
 import { SPLIT_RATIO_MIN, SPLIT_RATIO_MAX } from './lib/split-orientation'
@@ -24,6 +25,7 @@ import NewWorktreeDialog from './components/NewWorktreeDialog.vue'
 import NewFolderDialog from './components/NewFolderDialog.vue'
 import OpenSubfolderDialog from './components/OpenSubfolderDialog.vue'
 import RenameFolderDialog from './components/RenameFolderDialog.vue'
+import NotesPickerDialog from './components/NotesPickerDialog.vue'
 import TrustedHostsDialog from './components/TrustedHostsDialog.vue'
 import RenameRepoDialog from './components/RenameRepoDialog.vue'
 import MemoryLocationDialog from './components/MemoryLocationDialog.vue'
@@ -1226,6 +1228,20 @@ useShortcuts(
       handler: () => ui.openDialog('addFolder')
     },
     {
+      // Quick notes. No `enabled` gate on purpose: with no folder selected the handler shows a toast
+      // steering the operator to pick one (spec §6.3), and the palette row runs the same handler.
+      id: 'notes.openToday',
+      scope: 'global',
+      keys: kb('notes.openToday'),
+      handler: () => void openTodayNote()
+    },
+    {
+      id: 'notes.open',
+      scope: 'global',
+      keys: kb('notes.open'),
+      handler: () => openAllNotes()
+    },
+    {
       // T164 — review the active folder's branch. PRD §9 Q3 (where the "review
       // this branch" affordance lives) was answered at the screen and NOT with
       // the row/folder menus: the pane is reached from the Topbar's per-repo
@@ -2075,7 +2091,11 @@ onMounted(() => {
         andMore: t('quitGuard.andMore', literal),
         quitAnyway: t('quitGuard.quitAnyway'),
         cancel: t('quitGuard.cancel'),
-        dontAskAgain: t('quitGuard.dontAskAgain')
+        dontAskAgain: t('quitGuard.dontAskAgain'),
+        unsavedOne: t('quitGuard.unsavedOne', literal),
+        unsavedMany: t('quitGuard.unsavedMany', literal),
+        unsavedDetail: t('quitGuard.unsavedDetail', literal),
+        quitWithoutSaving: t('quitGuard.quitWithoutSaving')
       }
     })
   })
@@ -2446,6 +2466,7 @@ onUnmounted(() => {
       <NewFolderDialog />
       <OpenSubfolderDialog />
       <RenameFolderDialog />
+      <NotesPickerDialog />
       <TrustedHostsDialog />
       <RenameRepoDialog />
       <MemoryLocationDialog />

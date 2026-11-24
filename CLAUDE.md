@@ -274,6 +274,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | New folder dialog (§6 — New folder)                | `src/renderer/src/components/NewFolderDialog.vue`                                |
 | Open subfolder picker (§6 — Open subfolder)        | `src/renderer/src/components/OpenSubfolderDialog.vue`                            |
 | Rename folder dialog (§6 — Rename folder)          | `src/renderer/src/components/RenameFolderDialog.vue`                             |
+| Notes picker dialog (§6 — Notes picker)            | `src/renderer/src/components/NotesPickerDialog.vue` + `lib/notes.ts`             |
 | Context menu (§6 — Context menu)                   | `src/renderer/src/components/SessionMenu.vue`                                    |
 | Hover preview (session)                            | `src/renderer/src/components/SessionPreview.vue`                                 |
 | Hover preview (folder) (§6 — Folder preview)       | `src/renderer/src/components/FolderPreview.vue`                                  |
@@ -285,6 +286,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Links pill + popover (footer, §6 — T617)           | `src/renderer/src/components/FooterLinksPopover.vue`                             |
 | Markdown pane (file-backed viewer, §6 — T74)       | `src/renderer/src/components/MarkdownPane.vue`                                   |
 | Markdown renderer (string→prose, reusable)         | `src/renderer/src/components/MarkdownRenderer.vue` + `lib/markdown.ts` seam      |
+| Unsaved changes dialog (markdown pane close, §6)   | `src/renderer/src/components/UnsavedChangesDialog.vue`                           |
 | Memory pane (project memory viewer, §6 — T79)      | `src/renderer/src/components/MemoryPane.vue` + `stores/memory.ts`                |
 | Fleet rail — approvals + fleet state (§6, T151)    | `src/renderer/src/components/InboxRail.vue`                                      |
 | Approval Inbox row (§6)                            | `src/renderer/src/components/ApprovalRow.vue`                                    |
