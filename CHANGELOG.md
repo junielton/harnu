@@ -10,6 +10,20 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-24
+
+### Added
+
+- **Quick notes.** Press `Cmd/Ctrl+Shift+N` to open today's scratch note for the selected folder, ready to type in the Markdown editor with the cursor at the end. Each day gets its own file, `.harnu/notes/YYYY-MM-DD.md`, in the repo's main checkout, so every worktree of a repo shares the same notes. The first note of a day starts with a `# YYYY-MM-DD Notes` header; opening it again reopens the same file untouched. A folder that is not a git repo keeps its notes in its own `.harnu/notes/`. Also in the Topbar (the notebook button next to Browse files), the folder right-click menu (**Notes → New note for today**), the Folder menu and the command palette. See [Quick notes](docs/user/notes.md).
+- **All notes picker.** `Cmd/Ctrl+Alt+N` (or right-click the Topbar notebook button, or **Notes → All notes…** on a folder) lists every note of the repo, newest first, with today always on top. Type to filter by date, use the arrow keys and `Enter` or a click to open a note, `Esc` to close.
+- Both note shortcuts show up in **Settings → Keyboard Shortcuts** and can be rebound there.
+
+### Changed
+
+- Closing a Markdown pane with unsaved edits now asks **Save**, **Don't save** or **Cancel** instead of just showing a toast, for every Markdown pane and not only notes. If a save fails, the pane stays open. Reload and link navigation keep their toast.
+- Quitting Harnu while any Markdown pane has unsaved edits now asks first and names the files, even when confirm-on-quit is off. Choose **Cancel** to go back or **Quit without saving**; there is no "Don't ask again" for this one.
+- A session can no longer close a Markdown pane that has unsaved edits, and opening a fifth Markdown pane recycles the oldest pane without unsaved edits instead of dropping a draft.
+
 ## 2026-11-21
 
 ### Changed
