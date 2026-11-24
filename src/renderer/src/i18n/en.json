@@ -5586,6 +5586,10 @@
     }
   },
   "testWalk": {
+    "textSize": {
+      "smaller": "Smaller text (Ctrl/Cmd -)",
+      "bigger": "Larger text (Ctrl/Cmd +)"
+    },
     "label": "Guided walk",
     "title": "Walk",
     "progress": "Check {n} of {total}",

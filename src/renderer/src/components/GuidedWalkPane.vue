@@ -26,6 +26,7 @@ import {
   keepPaneFocusOnPointer,
   isDoneDebounced,
   mapWalkKey,
+  textScaleKey,
   type WalkKeyAction
 } from '../lib/walk-keys'
 import { createClickGuard, paneHasSelection } from '../lib/walk-selection'
@@ -42,6 +43,7 @@ import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useMissionsStore } from '../stores/missions'
 import { useSessionsStore } from '../stores/sessions'
+import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import { useWalkStore } from '../stores/walk'
 import WalkCheck from './WalkCheck.vue'
@@ -51,6 +53,7 @@ import WalkFailure from './WalkFailure.vue'
 import WalkPast from './WalkPast.vue'
 import WalkRoadmap from './WalkRoadmap.vue'
 import WalkStatus from './WalkStatus.vue'
+import WalkTextSize from './WalkTextSize.vue'
 
 /**
  * The guided walk pane (design.md §6 "Guided test walk (helper-stack pane, non-PTY)", spec S-3): a fixed template
@@ -77,6 +80,7 @@ const helpers = useHelpersStore()
 const keybindings = useKeybindingsStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const settings = useSettingsStore()
 const walk = useWalkStore()
 
 const payload = computed(
@@ -499,6 +503,14 @@ function onClickCapture(ev: MouseEvent): void {
 }
 
 async function onKeydown(ev: KeyboardEvent): Promise<void> {
+  // Ctrl/Cmd + = / - / 0: the text size (T807). It is the pane's in every mode and in a field, so it comes first.
+  const size = textScaleKey(ev)
+  if (size) {
+    ev.preventDefault()
+    ev.stopPropagation()
+    settings.stepWalkTextScale(size)
+    return
+  }
   const s = state.value
   if (!s || endAsk.value) return
   // the content is selectable (BUG-292): a letter typed over a selection is not an outcome, Esc clears it first
@@ -611,6 +623,7 @@ const hasFoot = computed(
     ref="rootEl"
     class="wk relative flex h-full w-full flex-col overflow-hidden bg-bg group/pane no-default-ring"
     style="container: wk / inline-size"
+    :style="{ '--walk-text-scale': settings.walkTextScale }"
     tabindex="0"
     :data-focus-region="pane.id"
     :data-state="view.mode"
@@ -634,6 +647,7 @@ const hasFoot = computed(
         <b class="font-medium text-text">{{ $t('testWalk.title') }}</b>
         <template v-if="view.title"> · {{ view.title }}</template>
       </span>
+      <WalkTextSize />
       <button
         class="flex shrink-0 items-center justify-center rounded text-text-3 transition hover:bg-surface-2 hover:text-text"
         style="width: 18px; height: 18px"
@@ -952,7 +966,7 @@ const hasFoot = computed(
    340 px measure) are documented in design.md §6 "Guided test walk" as §4 allows. Every rule is under `.wk`. */
 .wk {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   color: var(--color-text);
 }
 .wk button {
@@ -1004,7 +1018,7 @@ const hasFoot = computed(
   font-variant-numeric: tabular-nums;
 }
 .wk .eyebrow {
-  font-size: 10px;
+  font-size: calc(11.5px * var(--walk-text-scale, 1));
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -1024,7 +1038,7 @@ const hasFoot = computed(
   height: 20px;
   padding: 0 7px;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   line-height: 1;
   font-weight: 500;
   white-space: nowrap;
@@ -1061,7 +1075,7 @@ const hasFoot = computed(
 .wk .btn.lg {
   height: 26px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   gap: 6px;
 }
 .wk .btn.danger {
@@ -1090,7 +1104,7 @@ const hasFoot = computed(
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: calc(11.5px * var(--walk-text-scale, 1));
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -1106,13 +1120,13 @@ const hasFoot = computed(
   color: var(--color-accent);
 }
 .wk .card .ask {
-  font-size: 13px;
+  font-size: calc(14.5px * var(--walk-text-scale, 1));
   line-height: 1.4;
   color: var(--color-text);
   overflow-wrap: anywhere;
 }
 .wk .card .why {
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
   margin-top: 4px;
   overflow-wrap: anywhere;
@@ -1129,12 +1143,12 @@ const hasFoot = computed(
   align-items: flex-start;
 }
 .wk .card .hint {
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
   margin-top: 4px;
 }
 .wk .linkbtn {
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
   display: inline-flex;
   gap: 4px;
@@ -1145,7 +1159,7 @@ const hasFoot = computed(
   color: var(--color-text);
 }
 .wk .card .ask.sm {
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
 }
 .wk .chev {
   color: var(--color-text-4);
@@ -1162,7 +1176,7 @@ const hasFoot = computed(
   border: 1px solid var(--color-border-2);
   border-radius: var(--radius-sm);
   padding: 1px 6px;
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   color: var(--color-accent);
   max-width: 100%;
 }
@@ -1233,7 +1247,7 @@ const hasFoot = computed(
   gap: 8px;
 }
 .wk .wk-count {
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   font-weight: 600;
   color: var(--color-text);
 }
@@ -1279,18 +1293,18 @@ const hasFoot = computed(
 }
 .wk .wk-title {
   margin: 0;
-  font-size: 13.5px;
+  font-size: calc(15px * var(--walk-text-scale, 1));
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 .wk .wk-head .sub {
   margin-top: 3px;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
 }
 .wk .blocks {
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
   margin-top: -8px;
 }
@@ -1318,13 +1332,13 @@ const hasFoot = computed(
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr);
   gap: 6px;
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   line-height: 1.45;
   color: var(--color-text);
 }
 .wk ol.do .n {
   color: var(--color-text-4);
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   text-align: right;
   padding-top: 1px;
 }
@@ -1346,7 +1360,7 @@ const hasFoot = computed(
 .wk .code pre {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1366,7 +1380,7 @@ const hasFoot = computed(
 }
 .wk .val code {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text);
   background: var(--color-surface);
   border: 1px solid var(--color-border-2);
@@ -1385,7 +1399,7 @@ const hasFoot = computed(
   padding: 0 3px;
   border-radius: var(--radius-sm);
   color: var(--color-text-4);
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   flex-shrink: 0;
   transition:
     color var(--dur) var(--ease),
@@ -1433,7 +1447,7 @@ const hasFoot = computed(
   background: var(--color-surface-2);
   border: 1px solid var(--color-green-line);
   color: var(--color-green);
-  font-size: 10.5px;
+  font-size: calc(12px * var(--walk-text-scale, 1));
   white-space: nowrap;
   box-shadow: var(--shadow-pop);
 }
@@ -1455,7 +1469,7 @@ const hasFoot = computed(
   gap: 6px;
 }
 .wk .lk.wl {
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   min-height: 22px;
   border-color: var(--color-accent-line);
   background: var(--color-accent-soft);
@@ -1486,19 +1500,19 @@ const hasFoot = computed(
 }
 .wk .lk.wl .x.mono {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
 }
 .wk .approx {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin-left: 8px;
-  font-size: 10.5px;
+  font-size: calc(12px * var(--walk-text-scale, 1));
   color: var(--color-warning);
 }
 .wk .see p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   line-height: 1.5;
   color: var(--color-text);
 }
@@ -1508,7 +1522,7 @@ const hasFoot = computed(
 .wk .see p.not {
   display: flex;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
 }
 .wk .see.tight p {
@@ -1547,7 +1561,7 @@ const hasFoot = computed(
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   color: var(--color-accent);
   pointer-events: none;
 }
@@ -1557,7 +1571,7 @@ const hasFoot = computed(
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  font-size: 10.5px;
+  font-size: calc(12px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -1567,7 +1581,7 @@ const hasFoot = computed(
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 6px;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
 }
 .wk .chk .k {
@@ -1582,7 +1596,7 @@ const hasFoot = computed(
 }
 .wk .lost {
   align-self: flex-start;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
   text-decoration: underline;
   text-decoration-color: var(--color-border-2);
@@ -1613,17 +1627,17 @@ const hasFoot = computed(
 }
 .wk .wk-foot.idle {
   color: var(--color-text-4);
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
 }
 .wk .btn.md {
   height: 28px;
   padding: 0 12px;
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   gap: 6px;
 }
 .wk .btn kbd {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(11.5px * var(--walk-text-scale, 1));
   line-height: 14px;
   padding: 0 4px;
   border: 1px solid currentColor;
@@ -1633,7 +1647,7 @@ const hasFoot = computed(
 }
 .wk .kbd2 {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: calc(12px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
   border: 1px solid var(--color-border-2);
   border-radius: var(--radius-xs);
@@ -1682,7 +1696,7 @@ const hasFoot = computed(
   row-gap: 2px;
   padding: 8px 0;
   border-top: 1px solid var(--color-border);
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   align-items: baseline;
 }
 .wk .rm-row:first-child {
@@ -1690,7 +1704,7 @@ const hasFoot = computed(
 }
 .wk .rm-row .n {
   color: var(--color-text-4);
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   text-align: right;
 }
 .wk .rm-row .t {
@@ -1702,7 +1716,7 @@ const hasFoot = computed(
   flex-wrap: wrap;
   align-items: center;
   gap: 2px 6px;
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
 }
 .wk .rm-row .m .m-k {
@@ -1715,7 +1729,7 @@ const hasFoot = computed(
   justify-content: space-between;
 }
 .wk details.left {
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
 }
 .wk details.left summary {
@@ -1762,7 +1776,7 @@ const hasFoot = computed(
   grid-template-columns: auto minmax(0, 1fr);
   gap: 6px 12px;
   margin: 8px 0 0;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   align-items: baseline;
 }
 .wk .card.evid dt {
@@ -1788,12 +1802,12 @@ const hasFoot = computed(
 }
 .wk .reported p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   color: var(--color-text-2);
 }
 .wk input.line {
   font: inherit;
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   height: 28px;
   width: 100%;
   padding: 0 8px;
@@ -1816,7 +1830,7 @@ const hasFoot = computed(
   border-radius: var(--radius);
   padding: 10px 12px;
   color: var(--color-text-3);
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
 }
 .wk .paste .pt {
   display: flex;
@@ -1837,7 +1851,7 @@ const hasFoot = computed(
   border: 1px solid var(--color-border-2);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-2);
   min-width: 0;
 }
@@ -1860,7 +1874,7 @@ const hasFoot = computed(
 }
 .wk .why-box p {
   margin: 6px 0 0;
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   line-height: 1.5;
   color: var(--color-text-2);
 }
@@ -1894,17 +1908,17 @@ const hasFoot = computed(
   color: var(--color-bg);
 }
 .wk .ex .et {
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   color: var(--color-text);
 }
 .wk .ex .ed {
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
   margin-top: 1px;
 }
 .wk .extra .hint {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
 }
 .wk .quietbox {
@@ -1917,7 +1931,7 @@ const hasFoot = computed(
   display: flex;
   gap: 8px;
   align-items: center;
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
 }
 .wk .busy {
@@ -1925,19 +1939,19 @@ const hasFoot = computed(
   grid-template-columns: 10px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
 }
 .wk .busy b {
   font-weight: 500;
 }
 .wk .busy .why {
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
   margin-top: 6px;
 }
 .wk .busy .vrow {
   margin-top: 6px;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
   display: flex;
   gap: 6px;
@@ -1981,13 +1995,13 @@ const hasFoot = computed(
   padding: 24px 0;
 }
 .wk .center b {
-  font-size: 13px;
+  font-size: calc(14.5px * var(--walk-text-scale, 1));
   font-weight: 500;
   color: var(--color-text);
 }
 .wk .center p {
   margin: 0;
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   line-height: 1.5;
   color: var(--color-text-3);
 }
@@ -2037,12 +2051,12 @@ const hasFoot = computed(
   display: flex;
   gap: 8px;
   align-items: center;
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   color: var(--color-text-2);
 }
 .wk .lb-cap kbd {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(11.5px * var(--walk-text-scale, 1));
   border: 1px solid var(--color-border-2);
   border-radius: var(--radius-xs);
   padding: 0 4px;
@@ -2059,7 +2073,7 @@ const hasFoot = computed(
   min-height: 26px;
   padding: 0 16px;
   border-bottom: 1px solid var(--color-border);
-  font-size: 11px;
+  font-size: calc(12.5px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
 }
 .wk .src > svg.i {
@@ -2096,25 +2110,25 @@ const hasFoot = computed(
   border-radius: var(--radius-sm);
   padding: 0 6px;
   line-height: 16px;
-  font-size: 10.5px;
+  font-size: calc(12px * var(--walk-text-scale, 1));
 }
 .wk .src + .wk-top {
   padding-top: 8px;
 }
 .wk .lt {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: calc(12px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
   white-space: nowrap;
 }
 .wk .lt-hint {
   margin-top: -8px;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
 }
 .wk .waking {
   margin: 0;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
 }
 .wk .lt.failed,
@@ -2137,7 +2151,7 @@ const hasFoot = computed(
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: calc(11.5px * var(--walk-text-scale, 1));
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -2151,7 +2165,7 @@ const hasFoot = computed(
 }
 .wk .teach .tc p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   line-height: 1.5;
   color: var(--color-text);
   overflow-wrap: anywhere;
@@ -2162,7 +2176,7 @@ const hasFoot = computed(
 .wk details.extra-fold ul.xl {
   margin: 6px 0 0 14px;
   padding: 0 0 0 14px;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
   display: flex;
   flex-direction: column;
@@ -2176,7 +2190,7 @@ const hasFoot = computed(
   margin-bottom: -6px;
 }
 .wk .chipro {
-  font-size: 10.5px;
+  font-size: calc(12px * var(--walk-text-scale, 1));
   line-height: 16px;
   padding: 0 6px;
   border-radius: var(--radius-sm);
@@ -2195,7 +2209,7 @@ const hasFoot = computed(
   margin-top: 4px;
 }
 .wk .center .hint {
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
 }
 
@@ -2224,7 +2238,7 @@ const hasFoot = computed(
   background: var(--color-surface-2);
 }
 .wk .where-text {
-  font-size: 12px;
+  font-size: calc(14px * var(--walk-text-scale, 1));
   color: var(--color-text-2);
 }
 .wk .link-row,
@@ -2241,7 +2255,7 @@ const hasFoot = computed(
 .wk .exp-table {
   border-collapse: collapse;
   width: 100%;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
 }
 .wk .exp-table th {
   text-align: left;
@@ -2283,7 +2297,7 @@ const hasFoot = computed(
   align-items: center;
   gap: 6px;
   margin-top: 6px;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-warning);
 }
 .wk .rerun-offer {
@@ -2295,16 +2309,16 @@ const hasFoot = computed(
   border: 1px solid var(--color-accent-line);
   background: var(--color-accent-soft);
   border-radius: var(--radius);
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text);
 }
 .wk .rm-row .added {
   margin-left: 8px;
-  font-size: 10.5px;
+  font-size: calc(12px * var(--walk-text-scale, 1));
   color: var(--color-accent);
 }
 .wk .end-ask {
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   color: var(--color-text);
 }
 .wk .crit-list {
@@ -2322,7 +2336,7 @@ const hasFoot = computed(
 }
 .wk .quiet-owed {
   margin: 0;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-4);
 }
 .wk ul.xl.plain {
@@ -2332,21 +2346,21 @@ const hasFoot = computed(
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
   color: var(--color-text-2);
 }
 .wk .xl .xl {
   margin: 2px 0 0 14px;
   padding-left: 12px;
   list-style: disc;
-  font-size: 11.5px;
+  font-size: calc(13px * var(--walk-text-scale, 1));
   color: var(--color-text-3);
 }
 .wk .lost:disabled {
   text-decoration: none;
 }
 .wk .card.you.owed .crit-list .ask {
-  font-size: 12px;
+  font-size: calc(13.5px * var(--walk-text-scale, 1));
 }
 .wk .secret-flag + .paste {
   margin-top: 8px;

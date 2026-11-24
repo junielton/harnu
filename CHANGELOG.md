@@ -35,6 +35,23 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **Guided walk: a spinner while the session works on your correction.** After you mark a check Failed, the "Waiting for my correction" line now leads with a spinning loader until the session sends its one correction, so you can tell it is working rather than stuck.
 
+## 2026-11-23
+
+### Changed
+
+- **The guided walk pane and the Walks library are easier to read.** The body text (the
+  check's steps, where to look, what you should see) is now 14px instead of 12.5px, the
+  quieter lines 13px, and the small uppercase labels are no longer under 11.5px. The
+  order of importance on screen is unchanged.
+
+### Added
+
+- **A- / A+ text size for guided walks.** The header of the walk pane and of the Walks
+  library has two buttons that step the text through four sizes. With the pane focused,
+  Ctrl/Cmd `=` makes it larger, Ctrl/Cmd `-` smaller and Ctrl/Cmd `0` goes back to the
+  default. The choice is remembered across restarts, is shared by both panes, and
+  combines with the Interface scale in Settings.
+
 ## 2026-11-21
 
 ### Changed

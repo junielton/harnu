@@ -127,6 +127,30 @@ export const freshUi = (): WalkUi => ({
 /** What the close-out's Saved in Walks card offers: Open Walks (the library) and Export markdown (S-4). */
 export const WALK_CAPS = { library: true, export: true } as const
 
+/**
+ * The walk text scale (T807, design.md §3 "Walk text scale"): the steps the A- / A+ control walks through. Every
+ * `font-size` of the walk pane and the Walks library multiplies `--walk-text-scale`, so this list is the only place a
+ * step exists.
+ */
+export const WALK_TEXT_SCALES = [0.9, 1, 1.15, 1.3] as const
+export const DEFAULT_WALK_TEXT_SCALE = 1
+
+/** The nearest step to `n`; the default when `n` is not a finite number. */
+export function snapWalkTextScale(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_WALK_TEXT_SCALE
+  return WALK_TEXT_SCALES.reduce((best, s) => (Math.abs(s - n) < Math.abs(best - n) ? s : best))
+}
+
+/** One step bigger or smaller (stopping at both ends), or back to the default. */
+export function stepWalkTextScale(current: number, dir: 'bigger' | 'smaller' | 'reset'): number {
+  if (dir === 'reset') return DEFAULT_WALK_TEXT_SCALE
+  const at = WALK_TEXT_SCALES.indexOf(
+    snapWalkTextScale(current) as (typeof WALK_TEXT_SCALES)[number]
+  )
+  const next = Math.min(WALK_TEXT_SCALES.length - 1, Math.max(0, at + (dir === 'bigger' ? 1 : -1)))
+  return WALK_TEXT_SCALES[next]
+}
+
 // ---- Small shared pieces ------------------------------------------------------------------------
 
 export type Glyph = '✓' | '✗' | '!' | '-' | '⚑' | '?'

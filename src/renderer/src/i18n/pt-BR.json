@@ -5586,6 +5586,10 @@
     }
   },
   "testWalk": {
+    "textSize": {
+      "smaller": "Texto menor (Ctrl/Cmd -)",
+      "bigger": "Texto maior (Ctrl/Cmd +)"
+    },
     "label": "Caminhada guiada",
     "title": "Caminhada",
     "progress": "Verificação {n} de {total}",

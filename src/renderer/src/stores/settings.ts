@@ -11,6 +11,11 @@ import {
   sanitizeSplitLayout,
   type SplitLayoutSetting
 } from '../lib/split-orientation'
+import {
+  DEFAULT_WALK_TEXT_SCALE,
+  snapWalkTextScale,
+  stepWalkTextScale as nextWalkTextScale
+} from '../lib/walk-view'
 
 /**
  * Terminal-font-size settings store (terminal-font-settings spec §6).
@@ -83,6 +88,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const floatingPanels = ref<boolean>(false)
   // T628: what expanding a helper pane to the window hides (Settings → Appearance).
   const expandHides = ref<ExpandHides>(DEFAULT_EXPAND_HIDES)
+  // T807: the guided walk pane's and the Walks library's text size, one of `WALK_TEXT_SCALES`.
+  const walkTextScale = ref<number>(DEFAULT_WALK_TEXT_SCALE)
   const path = ref<string>('')
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -98,6 +105,7 @@ export const useSettingsStore = defineStore('settings', () => {
   let splitLayoutSaveTimer: ReturnType<typeof setTimeout> | null = null
   let floatingSaveTimer: ReturnType<typeof setTimeout> | null = null
   let expandHidesSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let walkTextScaleSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   /** Reflect the switch on <html>. Off removes the attribute, so the default layout is untouched. */
   function applyFloatingAttribute(on: boolean): void {
@@ -136,6 +144,7 @@ export const useSettingsStore = defineStore('settings', () => {
     floatingPanels.value = data.floatingPanels === true
     applyFloatingAttribute(floatingPanels.value)
     expandHides.value = sanitizeExpandHides(data.expandHides)
+    walkTextScale.value = snapWalkTextScale(data.walkTextScale ?? DEFAULT_WALK_TEXT_SCALE)
 
     unsubscribe = window.api.onSettingsChanged(({ data: incoming, error }) => {
       if (error) {
@@ -175,6 +184,11 @@ export const useSettingsStore = defineStore('settings', () => {
       if (!expandHidesSaveTimer) {
         const nextExpand = sanitizeExpandHides(incoming.expandHides)
         if (nextExpand !== expandHides.value) expandHides.value = nextExpand
+      }
+      // A walk text size change from outside; skip our own echo and anything still waiting to save.
+      if (!walkTextScaleSaveTimer) {
+        const nextScale = snapWalkTextScale(incoming.walkTextScale ?? DEFAULT_WALK_TEXT_SCALE)
+        if (nextScale !== walkTextScale.value) walkTextScale.value = nextScale
       }
       // An editor change from outside (a hand edit of settings.json). Skip our own echo
       // and anything that lands while a local edit is still waiting to be saved.
@@ -278,6 +292,20 @@ export const useSettingsStore = defineStore('settings', () => {
     }, SAVE_DEBOUNCE_MS)
   }
 
+  /**
+   * Step the guided walk text size (T807): one step bigger or smaller, or back to the default. Applies at once
+   * (the walk panes bind it to `--walk-text-scale`) and debounced-persists to `settings.json` like `uiZoom`.
+   */
+  function stepWalkTextScale(dir: 'bigger' | 'smaller' | 'reset'): void {
+    walkTextScale.value = nextWalkTextScale(walkTextScale.value, dir)
+    if (walkTextScaleSaveTimer) clearTimeout(walkTextScaleSaveTimer)
+    walkTextScaleSaveTimer = setTimeout(() => {
+      walkTextScaleSaveTimer = null
+      if (!path.value) return
+      void window.api.settingsSave(path.value, { walkTextScale: walkTextScale.value })
+    }, SAVE_DEBOUNCE_MS)
+  }
+
   /** The Topbar button and `layout.cycleSplitOrientation`: auto → side-by-side → stacked → auto. */
   function cycleSplitLayout(): void {
     setSplitLayout(nextSplitLayout(splitLayout.value))
@@ -291,7 +319,8 @@ export const useSettingsStore = defineStore('settings', () => {
       editor: effectiveEditorSetting(editor.value),
       splitLayout: splitLayout.value,
       floatingPanels: floatingPanels.value,
-      expandHides: expandHides.value
+      expandHides: expandHides.value,
+      walkTextScale: walkTextScale.value
     }
     const res = await window.api.settingsChangeLocation(data)
     if (!res) return
@@ -345,6 +374,10 @@ export const useSettingsStore = defineStore('settings', () => {
       clearTimeout(expandHidesSaveTimer)
       expandHidesSaveTimer = null
     }
+    if (walkTextScaleSaveTimer) {
+      clearTimeout(walkTextScaleSaveTimer)
+      walkTextScaleSaveTimer = null
+    }
     unsubscribe?.()
     unsubscribe = null
     started = false
@@ -357,6 +390,7 @@ export const useSettingsStore = defineStore('settings', () => {
     splitLayout,
     floatingPanels,
     expandHides,
+    walkTextScale,
     path,
     init,
     setFontSize,
@@ -366,6 +400,7 @@ export const useSettingsStore = defineStore('settings', () => {
     cycleSplitLayout,
     setFloatingPanels,
     setExpandHides,
+    stepWalkTextScale,
     changeLocation,
     reveal,
     openInEditor,
