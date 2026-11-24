@@ -25,6 +25,7 @@ import { closeCard, pruneClosed, resetCursors, type CardView, type YourMoveCard 
 import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
 import { createTranscriptLocator } from './locate'
+import { closeIneligibleCards, createOperatorGate } from './operator'
 import {
   effectiveMode,
   isFolderDisabled,
@@ -117,6 +118,9 @@ async function transcriptHasReply(file: string, text: string): Promise<boolean> 
   const res = await readFrom(file, { tail: 128 * 1024 })
   return buildSegment(res.lines).some((e) => e.tag === 'ASSISTANT' && e.text.includes(wanted))
 }
+
+/** Whether a session's transcript holds an operator entry, remembered across asks (BUG-300). */
+const operatorGate = createOperatorGate()
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
@@ -236,6 +240,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         mode,
         midTurnLive: () => prefs?.midTurnLive ?? false,
         classify: classifyTranscriptLines,
+        hasOperator: (id, file) => operatorGate.has(id, file),
         onFailure: (req, reason) => {
           lastFailure = reason
           system?.onInspectFailure(req, reason)
@@ -280,9 +285,22 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         locate: locateTranscript,
         resolveFolder,
         read: readFrom,
+        hasOperator: (id, file) => operatorGate.has(id, file),
         states: getTaskStates,
         now: () => Date.now()
       })
+      // One pass at start: judge cards filed before the rule existed, for sessions the operator
+      // never typed in, are closed. Idempotent, and later cards of those sessions are never filed.
+      void closeIneligibleCards({
+        store,
+        gate: operatorGate,
+        locate: locateTranscript,
+        now: () => Date.now()
+      })
+        .then((n) => {
+          if (n > 0) console.log(`[your-move] closed ${n} cards of sessions with no operator entry`)
+        })
+        .catch((e) => console.error(`[your-move] cleanup failed: ${(e as Error).message}`))
       const gate = createGateWatch({
         store,
         mode,

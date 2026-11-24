@@ -94,6 +94,7 @@ async function harness(
     mode: () => mode.value,
     midTurnLive: () => false,
     classify: () => 'interactive',
+    hasOperator: async () => true,
     onFailure,
     appendInspection: (r) => rows.push(r),
     ...over

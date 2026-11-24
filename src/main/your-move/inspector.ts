@@ -61,6 +61,11 @@ export interface InspectorDeps {
   mode(): YourMoveMode
   midTurnLive(): boolean
   classify(lines: readonly unknown[]): 'interactive' | 'programmatic' | null
+  /**
+   * Does the transcript hold an operator entry? A session the operator never typed in is never
+   * judged (BUG-300): its transcript is not read past this check and no judge is spawned.
+   */
+  hasOperator(sessionId: string, transcriptPath: string): Promise<boolean>
   onFailure?(req: InspectRequest, reason: string): void
   onSuccess?(req: InspectRequest): void
   appendInspection?(row: Record<string, unknown>): void
@@ -144,6 +149,14 @@ export function createInspector(deps: InspectorDeps): {
       deps.isFolderOff(req.folder)
     ) {
       return 'skipped'
+    }
+    try {
+      if (!(await deps.hasOperator(req.sessionId, req.transcriptPath))) {
+        log(req, 'skipped', { reason: 'no-operator' })
+        return 'skipped'
+      }
+    } catch (e) {
+      return fail(req, `eligibility unreadable: ${(e as Error).message}`)
     }
     const field = req.trigger === 'mid-turn' ? 'shadowOffset' : 'offset'
     const cursor = deps.store.state().cursors[req.sessionId]

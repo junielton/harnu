@@ -500,6 +500,7 @@ describe('a failure wave', () => {
       mode: () => 'observe',
       midTurnLive: () => false,
       classify: () => 'interactive',
+      hasOperator: async () => true,
       onFailure: (r, why) => sys.onInspectFailure(r, why),
       onSuccess: (r) => sys.onInspectSuccess(r)
     })

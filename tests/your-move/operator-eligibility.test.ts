@@ -40,6 +40,27 @@ async function transcript(id: string, rows: unknown[]): Promise<string> {
   return file
 }
 
+describe('operator gate: edge cases', () => {
+  it('skips a malformed line and still finds a later operator entry', async () => {
+    const file = path.join(dir, 'bad.jsonl')
+    await writeFile(file, `not json "human"\n${jsonl([operator('hello')])}`)
+    expect(await createOperatorGate().has('bad', file)).toBe(true)
+  })
+
+  it('forgets a no when the file is rewritten shorter', async () => {
+    const gate = createOperatorGate()
+    const file = await transcript('rew', [dispatch('go'), asst('x'.repeat(2000))])
+    expect(await gate.has('rew', file)).toBe(false)
+    await writeFile(file, jsonl([operator('hi')]))
+    expect(await gate.has('rew', file)).toBe(true)
+  })
+
+  it('reads a line split across chunks whole', async () => {
+    const file = await transcript('big', [dispatch('go'), operator('y'.repeat(300_000))])
+    expect(await createOperatorGate().has('big', file)).toBe(true)
+  })
+})
+
 describe('operator gate', () => {
   it('is false for a transcript with no operator entry, whatever else it holds', async () => {
     const gate = createOperatorGate()
