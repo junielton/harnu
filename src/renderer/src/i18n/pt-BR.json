@@ -231,6 +231,13 @@
       "title": "Alterações não salvas",
       "discard": "Descartar e continuar"
     },
+    "unsavedDialog": {
+      "title": "Alterações não salvas",
+      "body": "{name} tem alterações que não foram salvas.",
+      "save": "Salvar",
+      "discard": "Não salvar",
+      "cancel": "Cancelar"
+    },
     "changedOnDisk": {
       "title": "Este arquivo mudou no disco",
       "reload": "Recarregar"

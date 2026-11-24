@@ -188,6 +188,18 @@ describe('unsaved drafts — silent-close protection', () => {
     expect(files(helpers)).toContain(`${WT}/a.md`)
   })
 
+  it('a cap recycle runs the remove handlers for the recycled pane', () => {
+    const helpers = useHelpersStore()
+    const removed: string[] = []
+    const off = helpers.registerRemoveHandler((id) => removed.push(id))
+    const ids = ['a', 'b', 'c', 'd'].map((f) => helpers.addMarkdownHelper(WT, `${WT}/${f}.md`, WT))
+
+    helpers.addMarkdownHelper(WT, `${WT}/e.md`, WT) // 5th → recycles the oldest (a.md)
+
+    expect(removed).toEqual([ids[0]])
+    off()
+  })
+
   it('removeHelper of a dirty pane clears its registry entry', () => {
     const helpers = useHelpersStore()
     const id = helpers.addMarkdownHelper(WT, `${WT}/a.md`, WT)

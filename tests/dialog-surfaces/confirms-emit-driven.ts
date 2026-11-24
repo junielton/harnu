@@ -24,6 +24,7 @@ import ContainersRemoveDialog from '../../src/renderer/src/components/Containers
 import DehydrateConfirmDialog from '../../src/renderer/src/components/DehydrateConfirmDialog.vue'
 import SweepConfirmDialog from '../../src/renderer/src/components/SweepConfirmDialog.vue'
 import MissionCloseConfirmDialog from '../../src/renderer/src/components/MissionCloseConfirmDialog.vue'
+import UnsavedChangesDialog from '../../src/renderer/src/components/UnsavedChangesDialog.vue'
 import HarnuModExternal from '../../src/renderer/src/components/HarnuModExternal.vue'
 import { useReaperStore } from '../../src/renderer/src/stores/reaper'
 import type { DialogRow } from '../../src/renderer/src/lib/gc-model'
@@ -349,6 +350,25 @@ const missionClose: SurfaceSpec = {
   }
 }
 
+// ---- UnsavedChangesDialog (markdown pane close) -------------------------------------------------------------
+
+const unsavedChanges: SurfaceSpec = {
+  file: 'UnsavedChangesDialog.vue',
+  async open(): Promise<OpenedSurface> {
+    const w = mount(UnsavedChangesDialog, {
+      props: { open: true, fileName: 'notes.md' },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    // Save is the initial focus (the primary action; "Don't save" is never the default).
+    return emitSurface(w, ['cancel'], {
+      cancel: () => q('[data-test="unsaved-cancel"]'),
+      confirm: () => q('[data-test="unsaved-save"]'),
+      close: () => q('[role="dialog"] header button')
+    })
+  }
+}
+
 // ---- HarnuModExternal (confirm part; local `confirming` ref) ------------------------------------------------
 
 const harnuModExternal: SurfaceSpec = {
@@ -403,5 +423,6 @@ export const SURFACES_B: SurfaceSpec[] = [
   dehydrateConfirm,
   harnuModExternal,
   missionClose,
-  sweepConfirm
+  sweepConfirm,
+  unsavedChanges
 ]

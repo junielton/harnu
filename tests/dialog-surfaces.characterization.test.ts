@@ -122,7 +122,9 @@ const TABLE: Record<string, Row> = {
   'RenameRepoDialog.vue': ui(STORE, 'input'),
   'SettingsDialog.vue': ui(STORE, 'close'),
   'SweepConfirmDialog.vue': ui('close[false]', 'cancel'),
-  'TrustedHostsDialog.vue': ui(STORE, 'input')
+  'TrustedHostsDialog.vue': ui(STORE, 'input'),
+  // Save (the primary, non-destructive action) takes the initial focus, so no deviation.
+  'UnsavedChangesDialog.vue': ui('cancel[]', 'confirm')
 }
 
 // KNOWN_DEVIATIONS:BEGIN — one entry per line, keyed by component filename, sorted.
@@ -194,7 +196,7 @@ describe('characterization table — coverage (AC-2)', () => {
       .sort()
     // `ui/` primitives live in a subfolder and are not listed by this top-level read.
     expect(Object.keys(TABLE).sort()).toEqual(onDisk)
-    expect(Object.keys(TABLE)).toHaveLength(27)
+    expect(Object.keys(TABLE)).toHaveLength(28)
   })
 
   it('lists the two inline overlays with a reason instead of mounting them', () => {

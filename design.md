@@ -9281,6 +9281,36 @@ Same anatomy/tokens as `RenameFolderDialog`. **Existing tokens only.**
 Persisted in `localStorage` (`om2tab.repoAliases`, per-repoId) — **renderer-only**, no
 `projects.json`. **UI-only** channel.
 
+### Unsaved changes dialog
+
+`UnsavedChangesDialog.vue` — the question a **markdown pane** asks when the operator closes it while
+it holds unsaved edits (the header ✕ or the `pane.close` chord). A **Confirm** variant of the shared
+`Dialog` shell (`size="sm"`, `layer="dialog"`); it replaces the non-blocking "Unsaved changes" toast
+on the **close** path only. Reload and relative-link navigation keep that toast. **Existing tokens
+only.**
+
+- **Props / events:** `open`, `fileName`; emits `save`, `discard`, `cancel`. It never closes
+  itself and never touches the draft: the owning `MarkdownPane` runs the save and the close.
+- **Title:** "Unsaved changes" (short label, no trailing period). No subtitle.
+- **Body:** one sentence naming the file in `--color-text` semibold (the file's basename): "<file> has changes that are not saved." The sentence is `--color-text-2`, 12.5px / 19px.
+- **Footer**, dismiss left of commit, the destructive action on the left in the `meta` slot:
+  - **Don't save** (`meta` slot, left) — ghost, `--color-red` text, `--color-border` border. The
+    changes are discarded and the pane closes. **Never the default.**
+  - **Cancel** — ghost (`--color-text-2`, `--color-border` border). The pane stays open with its
+    draft untouched.
+  - **Save** — primary (`--color-accent` / `--color-accent-ink`). **Initial focus and the Enter
+    action.** Writes the draft, then closes the pane.
+    All three keep the 28px dialog footer box (`7px 14px`, 12.5 / 500, `--radius-sm`).
+- **Esc, the scrim and the ✕ are all Cancel.** Esc routes through `useDialogStack` like every
+  dialog.
+- **Save failure:** the pane stays open and dirty, the dialog closes and the normal error toast
+  names the reason; nothing is dropped. **Save that lands while the operator keeps typing:** the
+  pane stays open (it is dirty again); only a save that leaves the pane clean closes it.
+- **Accessibility:** `role="dialog"`, `aria-modal`, `aria-labelledby` → the title, `aria-describedby`
+  → the body sentence.
+- **Copy:** `markdownPane.unsavedDialog.{title,body,save,discard,cancel}` in `en.json` and
+  `pt-BR.json`; the file name is an interpolated parameter, never concatenated.
+
 ### Hover preview — interactive card (§3.9)
 
 `SessionPreview.vue` and `FolderPreview.vue` are the SAME card contract: floating

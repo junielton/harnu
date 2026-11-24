@@ -58,6 +58,7 @@ import { useKeybindingsStore } from '../stores/keybindings'
 import { useSessionsStore } from '../stores/sessions'
 import { forgetDraft, setDraftDirty } from '../lib/unsaved-drafts'
 import MarkdownRenderer from './MarkdownRenderer.vue'
+import UnsavedChangesDialog from './UnsavedChangesDialog.vue'
 import QuizBlock from './QuizBlock.vue'
 import { livePtyIdFor } from './TerminalPane.vue'
 import { pasteAndSubmit } from './prompt-inject'
@@ -569,18 +570,63 @@ async function copyFileContents(): Promise<void> {
 
 onUnmounted(() => clearTimeout(fileCopiedTimer))
 
+/** Drop the cached draft and registry entry, then remove the pane from the stack. */
+function closePane(): void {
+  draftCache.delete(paneId)
+  forgetDraft(paneId)
+  helpers.removeHelper(props.worktreePath, props.pane.id)
+}
+
+/** The "Unsaved changes" dialog is up (the operator closed a dirty pane). */
+const closeDialogOpen = ref(false)
+/** A Save-then-close is in flight: ignore a second Save/Don't save until it settles. */
+const closeSaving = ref(false)
+
 /**
- * Close the pane, guarding unsaved edits (BUG-22). A dirty draft surfaces the same
- * non-blocking "unsaved changes" toast as reload/browse — closing is deferred until
- * the operator confirms discard (no blocking `window.confirm`, which would freeze
- * the extension). On an actual close the cached draft is dropped so it can't leak.
+ * Close the pane on the operator's behalf (the header X and the `pane.close` chord both
+ * land here). A clean pane closes at once. A pane with unsaved edits asks first through a
+ * blocking Save / Don't save / Cancel dialog (design.md §6 "Unsaved changes dialog"),
+ * replacing the non-blocking toast this path used before. Reload and relative-link
+ * navigation still use that toast (`withDiscardGuard`). On an actual close the cached
+ * draft is dropped so it can't leak (BUG-22).
  */
 function onClose(): void {
-  withDiscardGuard(() => {
-    draftCache.delete(paneId)
-    forgetDraft(paneId)
-    helpers.removeHelper(props.worktreePath, props.pane.id)
-  })
+  if (!dirty.value) {
+    closePane()
+    return
+  }
+  closeDialogOpen.value = true
+}
+
+function onCloseCancel(): void {
+  // Cancel is the whole of what a mid-save Esc may do: the write is already in flight.
+  if (closeSaving.value) return
+  closeDialogOpen.value = false
+}
+
+function onCloseDiscard(): void {
+  if (closeSaving.value) return
+  closeDialogOpen.value = false
+  closePane()
+}
+
+/**
+ * Save, then close, but only when nothing is left to lose: `save()` must have written
+ * the draft AND the pane must be clean again. A save can succeed while keystrokes typed
+ * during the write keep the pane dirty; closing then would drop them, so the pane stays
+ * open. A failed save (a toast is already up) also leaves the pane open and dirty.
+ */
+async function onCloseSave(): Promise<void> {
+  if (closeSaving.value) return
+  closeSaving.value = true
+  let saved = false
+  try {
+    saved = await save()
+  } finally {
+    closeSaving.value = false
+  }
+  closeDialogOpen.value = false
+  if (saved && !dirty.value) closePane()
 }
 
 /** Begin an inter-pane resize drag when the header (not a button) is pressed. */
@@ -603,7 +649,7 @@ function onToggleExpand(): void {
 // T486 U5b — a region of the pane focus ring: F6 focuses the editor in edit mode,
 // else the scroll body (focusing the overflow-hidden root would leave PageDown /
 // arrows with no scroller to drive), and `pane.close` runs the header X's close (the
-// discard guard holds). The root brightens the header text (design.md §6 "Pane focus") while
+// unsaved-changes dialog guards it). The root brightens the header text (design.md §6 "Pane focus") while
 // focus is inside.
 const rootEl = ref<HTMLDivElement | null>(null)
 const bodyEl = ref<HTMLDivElement | null>(null)
@@ -847,6 +893,14 @@ useFocusRegion(props.pane.id, rootEl, {
       />
       <pre v-else class="plain-text-view">{{ draft }}</pre>
     </div>
+    <!-- Closing a pane with unsaved edits (design.md §6 "Unsaved changes dialog"). -->
+    <UnsavedChangesDialog
+      :open="closeDialogOpen"
+      :file-name="fileName"
+      @save="onCloseSave"
+      @discard="onCloseDiscard"
+      @cancel="onCloseCancel"
+    />
   </div>
 </template>
 

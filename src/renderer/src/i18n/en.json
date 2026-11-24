@@ -231,6 +231,13 @@
       "title": "Unsaved changes",
       "discard": "Discard & continue"
     },
+    "unsavedDialog": {
+      "title": "Unsaved changes",
+      "body": "{name} has changes that are not saved.",
+      "save": "Save",
+      "discard": "Don't save",
+      "cancel": "Cancel"
+    },
     "changedOnDisk": {
       "title": "This file changed on disk",
       "reload": "Reload"

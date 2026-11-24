@@ -1043,6 +1043,9 @@ export const useHelpersStore = defineStore('helpers', () => {
         panes: updated
       }
     })
+    // The recycled pane is gone for good: run the same hooks every other removal does so
+    // remove handlers fire and its unsaved-registry entry is dropped.
+    if (recycleId) notifyPaneRemoved(recycleId)
     // 2026-07-13 agent-pane-routing design §Badge/§Alert: a genuine append
     // (fresh or cap-recycled — never the dedup short-circuit above, which
     // means nothing NEW landed) from the agent path bumps the unseen counter

@@ -8,6 +8,12 @@ import MarkdownPane, {
 } from '../src/renderer/src/components/MarkdownPane.vue'
 import { i18n } from '@renderer/i18n'
 import { __resetUnsavedDraftsForTests, isDraftDirty } from '../src/renderer/src/lib/unsaved-drafts'
+import { useHelpersStore } from '../src/renderer/src/stores/helpers'
+import { useUiStore } from '../src/renderer/src/stores/ui'
+import {
+  closeRegion,
+  resetFocusRegionsForTests
+} from '../src/renderer/src/composables/useTerminalFocus'
 
 /**
  * Edit-mode contract for the T74 markdown pane (phase 2): the pane toggles
@@ -191,6 +197,170 @@ describe('MarkdownPane — unsaved-draft registry and save() result', () => {
     await nextTick()
     w.unmount()
     expect(isDraftDirty('h-md')).toBe(true)
+  })
+})
+
+describe('MarkdownPane — unsaved-changes dialog on operator close', () => {
+  const dialog = (): HTMLElement | null => document.body.querySelector('[role="dialog"]')
+  const dialogButton = (label: string): HTMLButtonElement => {
+    const btn = [...(dialog()?.querySelectorAll('button') ?? [])].find(
+      (b) => b.textContent?.trim() === label
+    )
+    if (!btn) throw new Error(`no dialog button "${label}"`)
+    return btn as HTMLButtonElement
+  }
+  let wrapper: ReturnType<typeof mountPane> | undefined
+
+  async function dirtyPane(): Promise<ReturnType<typeof mountPane>> {
+    wrapper = mountPane()
+    await settle()
+    await wrapper.get('button[aria-label="Edit"]').trigger('click')
+    await wrapper.get('textarea').setValue('edited body')
+    await nextTick()
+    return wrapper
+  }
+
+  beforeEach(() => resetFocusRegionsForTests())
+  afterEach(() => {
+    wrapper?.unmount()
+    wrapper = undefined
+    document.body.innerHTML = ''
+  })
+
+  it('a clean pane closes immediately, with no dialog', async () => {
+    wrapper = mountPane()
+    await settle()
+    const remove = vi.spyOn(useHelpersStore(), 'removeHelper')
+    await wrapper.get('button[aria-label="Close helper"]').trigger('click')
+    expect(dialog()).toBeNull()
+    expect(remove).toHaveBeenCalledWith('/wt', 'h-md')
+  })
+
+  it('a dirty pane asks first, naming the file, and Cancel keeps the pane and its draft', async () => {
+    const w = await dirtyPane()
+    const remove = vi.spyOn(useHelpersStore(), 'removeHelper')
+    await w.get('button[aria-label="Close helper"]').trigger('click')
+    await nextTick()
+
+    expect(dialog()).not.toBeNull()
+    expect(dialog()?.textContent).toContain('doc.md')
+    expect(remove).not.toHaveBeenCalled()
+
+    dialogButton('Cancel').click()
+    await settle()
+    expect(dialog()).toBeNull()
+    expect(remove).not.toHaveBeenCalled()
+    expect(isDraftDirty('h-md')).toBe(true)
+    expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('edited body')
+  })
+
+  it('Esc is Cancel', async () => {
+    const w = await dirtyPane()
+    const remove = vi.spyOn(useHelpersStore(), 'removeHelper')
+    await w.get('button[aria-label="Close helper"]').trigger('click')
+    await nextTick()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await settle()
+    expect(dialog()).toBeNull()
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it("Don't save drops the draft and closes the pane without writing", async () => {
+    const w = await dirtyPane()
+    const remove = vi.spyOn(useHelpersStore(), 'removeHelper')
+    await w.get('button[aria-label="Close helper"]').trigger('click')
+    await nextTick()
+
+    dialogButton("Don't save").click()
+    await settle()
+
+    expect(markdownWrite).not.toHaveBeenCalled()
+    expect(remove).toHaveBeenCalledWith('/wt', 'h-md')
+    expect(isDraftDirty('h-md')).toBe(false)
+  })
+
+  it('Save writes the draft, then closes the pane', async () => {
+    const w = await dirtyPane()
+    const remove = vi.spyOn(useHelpersStore(), 'removeHelper')
+    await w.get('button[aria-label="Close helper"]').trigger('click')
+    await nextTick()
+
+    dialogButton('Save').click()
+    await settle()
+
+    expect(markdownWrite).toHaveBeenCalledWith('/wt/doc.md', 'edited body')
+    expect(remove).toHaveBeenCalledWith('/wt', 'h-md')
+    expect(isDraftDirty('h-md')).toBe(false)
+    expect(dialog()).toBeNull()
+  })
+
+  it('Save that fails keeps the pane and the draft, and surfaces the error toast', async () => {
+    markdownWrite.mockResolvedValueOnce({ ok: false, code: 'write-failed', error: 'nope' } as never)
+    const w = await dirtyPane()
+    const remove = vi.spyOn(useHelpersStore(), 'removeHelper')
+    const ui = useUiStore()
+    await w.get('button[aria-label="Close helper"]').trigger('click')
+    await nextTick()
+
+    dialogButton('Save').click()
+    await settle()
+
+    expect(remove).not.toHaveBeenCalled()
+    expect(isDraftDirty('h-md')).toBe(true)
+    expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('edited body')
+    expect(ui.toasts.some((t) => t.kind === 'danger')).toBe(true)
+    expect(dialog()).toBeNull()
+  })
+
+  it('a save that lands while the operator kept typing keeps the pane open', async () => {
+    let release: (v: { ok: true; path: string; bytes: number }) => void = () => {}
+    markdownWrite.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve as typeof release
+        }) as never
+    )
+    const w = await dirtyPane()
+    const remove = vi.spyOn(useHelpersStore(), 'removeHelper')
+    await w.get('button[aria-label="Close helper"]').trigger('click')
+    await nextTick()
+
+    dialogButton('Save').click()
+    await nextTick()
+    // The write is in flight; a keystroke lands before it resolves.
+    ;(w.get('textarea').element as HTMLTextAreaElement).value = 'edited body!'
+    await w.get('textarea').trigger('input')
+    release({ ok: true, path: '/wt/doc.md', bytes: 11 })
+    await settle()
+
+    expect(remove).not.toHaveBeenCalled()
+    expect(isDraftDirty('h-md')).toBe(true)
+    expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('edited body!')
+  })
+
+  it('the pane.close focus-region path shows the same dialog', async () => {
+    const w = await dirtyPane()
+    const remove = vi.spyOn(useHelpersStore(), 'removeHelper')
+    w.unmount()
+    wrapper = mount(MarkdownPane, {
+      props: { pane: { ...PANE }, worktreePath: '/wt' },
+      global: { plugins: [i18n] },
+      attachTo: document.body
+    })
+    await settle()
+    expect(closeRegion('h-md')).toBe(true)
+    await nextTick()
+    expect(dialog()).not.toBeNull()
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('reload on a dirty pane keeps the non-blocking toast, not the dialog', async () => {
+    const w = await dirtyPane()
+    const ui = useUiStore()
+    await w.get('button[aria-label="Reload file"]').trigger('click')
+    await nextTick()
+    expect(dialog()).toBeNull()
+    expect(ui.toasts.some((t) => t.kind === 'warning')).toBe(true)
   })
 })
 
