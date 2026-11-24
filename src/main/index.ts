@@ -134,6 +134,7 @@ import { setInterceptFolders } from './responder-registry'
 import { registerSessionOpHandlers } from './session-ops'
 import { registerMarkdownReadHandlers } from './markdown-read'
 import { registerMarkdownWriteHandlers } from './markdown-write'
+import { registerNotesHandlers } from './notes'
 import { registerMarkdownWatchHandlers, closeAllMarkdownWatchers } from './markdown-watch'
 import { registerCanvasAssetHandlers } from './canvas-assets'
 import { registerCanvasReadHandlers } from './canvas-read'
@@ -644,6 +645,9 @@ app.whenReady().then(async () => {
   // Same known-folder containment + extension allowlist + size cap as the reader
   // (atomic tmp+rename); never writes outside the known roots.
   registerMarkdownWriteHandlers()
+  // Quick notes: one scratch markdown note per repo per day, resolved (and created on
+  // first open) in the repo's main checkout; the renderer opens the file as a markdown pane.
+  registerNotesHandlers()
   // T171: ref-counted live-reload watcher for markdown panes. Only watches
   // files a mounted MarkdownPane has registered; broadcasts a path-only
   // `markdown:changed` signal the renderer re-reads via `markdown:read`.

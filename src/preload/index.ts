@@ -137,6 +137,7 @@ import type { FolderGitStatus } from '../main/folder-git-status'
 import type { ExplorerListing, ExplorerSearchResult, ResolvedPath } from '../main/explorer-ipc'
 import type { MarkdownReadResult } from '../main/markdown-read'
 import type { MarkdownWriteResult } from '../main/markdown-write'
+import type { NoteEntry, NotesErrorCode } from '../main/notes-core'
 import type { CanvasAttachInput, CanvasAttachResult } from '../main/canvas-assets'
 import type { CanvasReadResult } from '../main/canvas-read'
 import type { CanvasWriteResult } from '../main/canvas-write'
@@ -330,6 +331,8 @@ export type { WorktreeMdProbeResult, WorktreeMdCreateResult } from '../main/work
 // Confined markdown-WRITE result (T74 phase 2 — editor / New markdown). Same
 // type-only re-export so the renderer never crosses the node boundary directly.
 export type { MarkdownWriteResult } from '../main/markdown-write'
+// Quick notes wire shapes (type-only; `notes-core.ts` is a node module).
+export type { NoteEntry, NotesErrorCode } from '../main/notes-core'
 // Confined canvas read/write envelopes (T218 U1). `canvas-{read,write}.ts` are
 // node modules (fs), so the renderer imports the wire shapes type-only. The
 // document type itself comes from the PURE `canvas-core.ts`, which the renderer
@@ -1772,6 +1775,20 @@ const api = {
   // (or `{ ok:false, code, error }`); a path outside the roots is refused here.
   markdownWrite: (path: string, content: string): Promise<MarkdownWriteResult> =>
     ipcRenderer.invoke('markdown:write', { path, content }),
+  // Quick notes: list a repo's daily notes (newest first), and resolve one — today's
+  // (created with its header on first open) when `date` is omitted, else an existing day.
+  notesList: (
+    folder: string
+  ): Promise<
+    | { ok: true; notesDir: string; today: string; notes: NoteEntry[] }
+    | { ok: false; code: NotesErrorCode }
+  > => ipcRenderer.invoke('notes:list', { folder }),
+  notesOpen: (
+    folder: string,
+    date?: string
+  ): Promise<
+    { ok: true; filePath: string; created: boolean } | { ok: false; code: NotesErrorCode }
+  > => ipcRenderer.invoke('notes:open', { folder, date }),
   // T171: register/unregister a MarkdownPane's live-reload watch for its backing
   // file. Ref-counted in main (multiple panes on the same path share one watcher).
   markdownWatchStart: (path: string): Promise<void> =>
