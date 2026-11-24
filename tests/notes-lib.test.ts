@@ -141,6 +141,45 @@ describe('openNoteInStack', () => {
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning' }))
   })
 
+  it('a second open of an already-open note asks that same pane to enter edit and take focus', async () => {
+    notesOpen.mockResolvedValue({ ok: true, filePath: '/repo/.harnu/notes/x.md', created: false })
+    const helpers = useHelpersStore()
+    // Real store, real dedup: the second open lands on the first pane's id.
+    await openNoteInStack('/repo')
+    const first = helpers.byWorktree.get('/repo')!.panes[0].id
+    helpers.consumeMarkdownEdit(first) // the pane acted on the first request
+    expect(helpers.markdownEditRequest).toBeNull()
+
+    await openNoteInStack('/repo')
+    expect(helpers.byWorktree.get('/repo')!.panes).toHaveLength(1)
+    expect(helpers.markdownEditRequest).toBe(first)
+  })
+
+  it('un-maximizes and leaves the expanded view of another pane that hides the note', async () => {
+    notesOpen.mockResolvedValue({ ok: true, filePath: '/repo/.harnu/notes/x.md', created: false })
+    const helpers = useHelpersStore()
+    await openNoteInStack('/repo')
+    const note = helpers.byWorktree.get('/repo')!.panes[0].id
+    helpers.toggleMaximizePane('/repo', 'h-other')
+    helpers.toggleExpandPane('/repo', 'h-other')
+
+    await openNoteInStack('/repo')
+    expect(helpers.maximizedPaneId('/repo')).toBeNull()
+    expect(helpers.expandedPaneId('/repo')).toBeNull()
+    expect(helpers.markdownEditRequest).toBe(note)
+  })
+
+  it('leaves the note maximized when it is the maximized pane itself', async () => {
+    notesOpen.mockResolvedValue({ ok: true, filePath: '/repo/.harnu/notes/x.md', created: false })
+    const helpers = useHelpersStore()
+    await openNoteInStack('/repo')
+    const note = helpers.byWorktree.get('/repo')!.panes[0].id
+    helpers.toggleMaximizePane('/repo', note)
+
+    await openNoteInStack('/repo')
+    expect(helpers.maximizedPaneId('/repo')).toBe(note)
+  })
+
   it('treats a rejected IPC call as a failure too', async () => {
     notesOpen.mockRejectedValue(new Error('boom'))
     const ui = useUiStore()

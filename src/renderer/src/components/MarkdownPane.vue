@@ -662,6 +662,26 @@ useFocusRegion(props.pane.id, rootEl, {
   focus: () => (editorEl.value ?? bodyEl.value)?.focus(),
   close: onClose
 })
+
+// A note shortcut or picker pick that lands on THIS already-open pane (a dedup hit never
+// remounts) asks it, through the store, to enter edit mode and take focus. Acted on once the file
+// is loaded, so a pane still reading its file does not have its mode overwritten by the load. The
+// draft is untouched: a dirty pane keeps its edits and only gains focus. An image stays in view.
+watch(
+  [() => helpers.markdownEditRequest, () => state.value.status],
+  ([id, status]) => {
+    if (id !== props.pane.id || status !== 'ready') return
+    helpers.consumeMarkdownEdit(props.pane.id)
+    if (isImageFile.value) {
+      bodyEl.value?.focus()
+      return
+    }
+    mode.value = 'edit'
+    void focusEditor()
+  },
+  // Immediate so a request made before this pane mounted (its stack was hidden) is still honored.
+  { immediate: true }
+)
 </script>
 
 <template>

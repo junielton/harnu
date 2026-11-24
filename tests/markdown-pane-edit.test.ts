@@ -540,3 +540,68 @@ describe('MarkdownPane — stale-on-disk banner (T171)', () => {
     expect(api.markdownWatchStop).toHaveBeenCalledWith('/wt/doc.md')
   })
 })
+
+describe('MarkdownPane — edit request from a repeated note open (dedup hit)', () => {
+  it('an already-open pane in VIEW mode switches to edit, focuses the editor, caret at the end', async () => {
+    const w = mount(MarkdownPane, {
+      props: { pane: { ...PANE }, worktreePath: '/wt' },
+      attachTo: document.body,
+      global: { plugins: [i18n] }
+    })
+    await settle()
+    expect(w.find('textarea').exists()).toBe(false)
+    const spy = vi.spyOn(HTMLTextAreaElement.prototype, 'setSelectionRange')
+
+    const helpers = useHelpersStore()
+    helpers.requestMarkdownEdit('/wt', PANE.id)
+    await settle()
+
+    const ta = w.get('textarea').element as HTMLTextAreaElement
+    expect(document.activeElement).toBe(ta)
+    expect(spy).toHaveBeenCalledWith('hello'.length, 'hello'.length)
+    expect(helpers.markdownEditRequest).toBeNull()
+    spy.mockRestore()
+    w.unmount()
+  })
+
+  it('keeps a dirty draft untouched while re-focusing it', async () => {
+    const w = mount(MarkdownPane, {
+      props: { pane: { ...PANE }, worktreePath: '/wt' },
+      attachTo: document.body,
+      global: { plugins: [i18n] }
+    })
+    await settle()
+    await w.get('button[aria-label="Edit"]').trigger('click')
+    await w.get('textarea').setValue('hello, unsaved')
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(isDraftDirty(PANE.id)).toBe(true)
+
+    useHelpersStore().requestMarkdownEdit('/wt', PANE.id)
+    await settle()
+
+    const ta = w.get('textarea').element as HTMLTextAreaElement
+    expect(ta.value).toBe('hello, unsaved')
+    expect(document.activeElement).toBe(ta)
+    expect(isDraftDirty(PANE.id)).toBe(true)
+    expect(markdownRead).toHaveBeenCalledTimes(1)
+    w.unmount()
+  })
+
+  it('ignores a request for another pane', async () => {
+    const w = mountPane()
+    await settle()
+    const helpers = useHelpersStore()
+    helpers.requestMarkdownEdit('/wt', 'h-other')
+    await settle()
+    expect(w.find('textarea').exists()).toBe(false)
+    expect(helpers.markdownEditRequest).toBe('h-other')
+  })
+
+  it('honors a request made before the pane mounted, once its file has loaded', async () => {
+    useHelpersStore().requestMarkdownEdit('/wt', PANE.id)
+    const w = mountPane()
+    await settle()
+    expect(w.find('textarea').exists()).toBe(true)
+    expect(useHelpersStore().markdownEditRequest).toBeNull()
+  })
+})

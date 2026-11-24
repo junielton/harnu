@@ -690,6 +690,33 @@ export const useHelpersStore = defineStore('helpers', () => {
   }
 
   /**
+   * Id of the markdown pane that should switch to edit mode and take focus, or `null`. Same shape
+   * as {@link explorerFocusRequest}: set by {@link requestMarkdownEdit} (a note shortcut or picker
+   * pick that lands on an already-open pane), cleared by `MarkdownPane` through
+   * {@link consumeMarkdownEdit} once it has acted. Transient: never in the pane shape, so a boot
+   * restore never replays it.
+   */
+  const markdownEditRequest = ref<string | null>(null)
+
+  /**
+   * Ask markdown pane `paneId` in `worktreePath` to enter edit mode and focus its editor. A pane
+   * hidden behind another maximized or expanded pane is brought back into the normal layout first,
+   * so the focus lands on something the operator can see.
+   */
+  function requestMarkdownEdit(worktreePath: string, paneId: string): void {
+    const max = maximizedByWorktree.value.get(worktreePath)
+    if (max && max !== paneId) toggleMaximizePane(worktreePath, max)
+    const exp = expandedByWorktree.value.get(worktreePath)
+    if (exp && exp !== paneId) exitExpand(worktreePath)
+    markdownEditRequest.value = paneId
+  }
+
+  /** Clear a pending edit request once `paneId` has entered edit mode and focused. */
+  function consumeMarkdownEdit(paneId: string): void {
+    if (markdownEditRequest.value === paneId) markdownEditRequest.value = null
+  }
+
+  /**
    * A pending "reveal this path in the Explorer pane" request (option+click on
    * a path in a transcript). `paneId` names the pane that should act; `nonce`
    * makes a repeat reveal of the SAME path re-fire the pane's watcher, which a
@@ -1964,6 +1991,9 @@ export const useHelpersStore = defineStore('helpers', () => {
     unseenAgentPaneCount,
     paneRevealTick,
     explorerFocusRequest,
+    markdownEditRequest,
+    requestMarkdownEdit,
+    consumeMarkdownEdit,
     consumeExplorerFocus,
     explorerRevealRequest,
     consumeExplorerReveal,

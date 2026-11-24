@@ -54,8 +54,9 @@ export function relativeHint(
 }
 
 /**
- * Open a note (today's when `date` is omitted) as an edit-mode markdown pane in the helper stack.
- * The worktree rule matches `useFolderMenuActions.projectMemory`. Resolves `false`, after a warning
+ * Open a note (today's when `date` is omitted) as an edit-mode markdown pane in the helper stack,
+ * focused with the caret at the end. A note that is already open is switched to edit mode and
+ * focused (un-maximizing whatever pane hides it); its unsaved draft is kept. The worktree rule matches `useFolderMenuActions.projectMemory`. Resolves `false`, after a warning
  * toast, when the note could not be resolved.
  */
 export async function openNoteInStack(folder: string, date?: string): Promise<boolean> {
@@ -66,7 +67,12 @@ export async function openNoteInStack(folder: string, date?: string): Promise<bo
     const res = await window.api.notesOpen(folder, date)
     if (res.ok) {
       const worktree = sessions.selectedSession?.projectPath || folder
-      helpers.addMarkdownHelper(worktree, res.filePath, folder, { initialMode: 'edit' })
+      const paneId = helpers.addMarkdownHelper(worktree, res.filePath, folder, {
+        initialMode: 'edit'
+      })
+      // A note already open in this stack is a dedup hit that only reveals the panel: ask the pane
+      // to switch to edit and take focus too, so typing goes into the note, not the terminal.
+      helpers.requestMarkdownEdit(worktree, paneId)
       return true
     }
   } catch {
