@@ -1,10 +1,16 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { mainCheckoutRoot } from './data-dir'
+import { onMissionFileWritten, readParsedCached } from './missions/file-cache'
 import { leaderOf as leaderOfRecord } from './missions/guard'
 import { parseMissionRecordFile } from './missions/model'
 import { migratedDir, v4RecordsDir } from './missions/record-store'
-import { leaderOf, readMissionsDedupedSync, reportUnreadableMissionFiles } from './missions/store'
+import {
+  leaderOf,
+  readMissionsDedupedSnapshot,
+  reportUnreadableMissionFiles,
+  warmMissionSnapshots
+} from './missions/store'
 
 /**
  * The set of session keys currently PARKED — process killed to reclaim memory, conversation
@@ -161,22 +167,32 @@ export function resetHibernation(): void {
  * the same file stays unreadable. A mission whose file nobody can read is a mission whose leader may be parked.
  */
 
-/** The leaders of the open v4 records under `root`, and every mission id a v4 record or sidecar covers. */
-function readV4Leaders(root: string): {
+interface V4Leaders {
   leaders: Map<string, string | null>
   covered: Set<string>
   unreadable: string[]
-} {
+}
+
+/** The last {@link readV4Leaders} of each root: what the synchronous sweep reads. */
+const v4Snapshots = new Map<string, V4Leaders>()
+
+/**
+ * The leaders of the open v4 records under `root`, and every mission id a v4 record or sidecar covers.
+ * Asynchronous and served from the parse cache (BUG-278): a record whose file did not change is not read
+ * or parsed again. The result is kept as the root's snapshot.
+ */
+async function readV4Leaders(root: string): Promise<V4Leaders> {
   const leaders = new Map<string, string | null>()
   const covered = new Set<string>()
   const unreadable: string[] = []
   try {
-    for (const name of readdirSync(v4RecordsDir(root))) {
+    const dir = v4RecordsDir(root)
+    for (const name of await fs.readdir(dir)) {
       const m = /^(mnt-[0-9a-f]{8})-.+\.md$/.exec(name)
       if (!m) continue
       try {
-        const record = parseMissionRecordFile(
-          readFileSync(path.join(v4RecordsDir(root), name), 'utf8')
+        const record = await readParsedCached('v4-parse', path.join(dir, name), (raw) =>
+          parseMissionRecordFile(raw)
         )
         if ('error' in record) {
           unreadable.push(name)
@@ -195,32 +211,59 @@ function readV4Leaders(root: string): {
   try {
     // A campaign converted to v4 supersedes its own id and every chapter mission's: the v3 files stay
     // beside the record as snapshots and read as nothing.
-    for (const name of readdirSync(migratedDir(root))) {
+    for (const name of await fs.readdir(migratedDir(root))) {
       if (name.endsWith('.json')) covered.add(name.slice(0, -5))
     }
   } catch {
     /* no sidecars */
   }
-  return { leaders, covered, unreadable }
+  const result = { leaders, covered, unreadable }
+  v4Snapshots.set(root, result)
+  return result
 }
+
+/**
+ * Refresh what {@link openMissionLeaders} reads, for `roots`: the v3 snapshots of the store and the v4
+ * leaders of each repo. Reads through the parse cache, so it is cheap when nothing changed, and never
+ * rejects. The sweep starts one on every pass (the answer lands for the next); a mission write starts
+ * one too, so a mission created a moment ago is known before the next sweep.
+ */
+export async function refreshOpenMissionLeaders(roots: readonly string[]): Promise<void> {
+  await Promise.all([
+    warmMissionSnapshots(roots),
+    ...roots.map((r) => readV4Leaders(r).catch(() => null))
+  ])
+}
+
+// A mission file written (any root): refresh the roots the sweep has been asking about, now.
+onMissionFileWritten(() => {
+  const roots = [...v4Snapshots.keys()]
+  if (roots.length > 0) void refreshOpenMissionLeaders(roots)
+})
 
 /**
  * The keys of the sessions that lead an open mission in the repos of `roots`: v4 records first, then
  * the v3 missions no v4 record covers. Pure of the fleet: it names leaders, the caller keeps the live ones.
+ *
+ * It does NO file I/O (BUG-278): the sweep is synchronous and ran on the main thread, reading and
+ * parsing every mission file each time. It answers from the snapshots the last refresh left, and starts
+ * the next refresh. A repo nobody refreshed yet reads as having no missions: the first sweep can park a
+ * leader, which is intact on disk (selecting the row resumes it), and the next sweep knows.
  */
 export function openMissionLeaders(roots: readonly string[]): Set<string> {
   const out = new Set<string>()
   const covered = new Set<string>()
   const unreadable: string[] = []
   for (const root of roots) {
-    const v4 = readV4Leaders(root)
+    const v4 = v4Snapshots.get(root)
+    if (!v4) continue
     for (const id of v4.covered) covered.add(id)
     for (const leader of v4.leaders.values()) if (leader) out.add(leader)
     unreadable.push(...v4.unreadable)
   }
   // The store's one v3 read: the newest copy of each mission across the clones, so a stale twin in
   // another clone pins nobody. `includeClosed: false` leaves the closed ones out.
-  const v3 = readMissionsDedupedSync([...roots], { includeClosed: false })
+  const v3 = readMissionsDedupedSnapshot([...roots], { includeClosed: false })
   for (const { mission } of v3.missions) {
     if (covered.has(mission.id)) continue
     const leader = leaderOf(mission)
@@ -229,6 +272,7 @@ export function openMissionLeaders(roots: readonly string[]): Set<string> {
   unreadable.push(...v3.unreadable.map((u) => u.name))
   // Every pass reports its whole set: a file that reads again leaves the list, and a later failure of it is news.
   reportUnreadableMissionFiles('hibernation', unreadable)
+  if (roots.length > 0) void refreshOpenMissionLeaders(roots)
   return out
 }
 

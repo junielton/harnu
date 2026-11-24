@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { missionOwnersWithLiveChildren } from '../src/main/hibernation'
+import { missionOwnersWithLiveChildren, refreshOpenMissionLeaders } from '../src/main/hibernation'
 import { readViewsFromRecords } from '../src/main/companion/mission-state'
 import { projectMissions } from '../src/main/companion/mission-state-core'
 import { missionGet } from '../src/main/missions/verbs-read'
@@ -134,27 +134,30 @@ const v3Blocker = (reason: string): Record<string, unknown> => ({
 })
 
 /** What `pty.ts#fleetSnapshot` asks: which of these live sessions the exemption keeps from being parked. */
-const exempt = (...keys: string[]): string[] =>
-  [...missionOwnersWithLiveChildren(keys.map((sessionKey) => ({ sessionKey, cwd: repo })))].sort()
+const exempt = async (...keys: string[]): Promise<string[]> => {
+  const fleet = keys.map((sessionKey) => ({ sessionKey, cwd: repo }))
+  await refreshOpenMissionLeaders([repo]) // the sweep answers from the snapshot the last refresh left
+  return [...missionOwnersWithLiveChildren(fleet)].sort()
+}
 
 describe('readers use the v4 view', () => {
   describe('hibernation: the leader of an open mission is never parked', () => {
-    it('a v4 record that is open pins its leader, with no session of its own running under it', () => {
+    it('a v4 record that is open pins its leader, with no session of its own running under it', async () => {
       seedV4(v4Record())
-      expect(exempt(LEADER, BYSTANDER)).toEqual([LEADER])
+      expect(await exempt(LEADER, BYSTANDER)).toEqual([LEADER])
     })
 
-    it('a v4 record that is ready to close (every criterion settled) still pins its leader', () => {
+    it('a v4 record that is ready to close (every criterion settled) still pins its leader', async () => {
       seedV4(v4Record({}, true))
-      expect(exempt(LEADER, BYSTANDER)).toEqual([LEADER])
+      expect(await exempt(LEADER, BYSTANDER)).toEqual([LEADER])
     })
 
-    it('a v4 record whose agent asked to close pins its leader', () => {
+    it('a v4 record whose agent asked to close pins its leader', async () => {
       seedV4(v4Record({ closeRequested: { at: NOW } }, true))
-      expect(exempt(LEADER)).toEqual([LEADER])
+      expect(await exempt(LEADER)).toEqual([LEADER])
     })
 
-    it('only the leader is pinned: a worker session on the mission stays eligible', () => {
+    it('only the leader is pinned: a worker session on the mission stays eligible', async () => {
       seedV4(
         v4Record({
           sessions: [
@@ -163,10 +166,10 @@ describe('readers use the v4 view', () => {
           ]
         })
       )
-      expect(exempt(LEADER, WORKER)).toEqual([LEADER])
+      expect(await exempt(LEADER, WORKER)).toEqual([LEADER])
     })
 
-    it('a leader that handed off is free; the new leader is pinned', () => {
+    it('a leader that handed off is free; the new leader is pinned', async () => {
       seedV4(
         v4Record({
           sessions: [
@@ -175,33 +178,33 @@ describe('readers use the v4 view', () => {
           ]
         })
       )
-      expect(exempt(LEADER, WORKER)).toEqual([WORKER])
+      expect(await exempt(LEADER, WORKER)).toEqual([WORKER])
     })
 
-    it('a closed mission frees its leader', () => {
+    it('a closed mission frees its leader', async () => {
       seedV4(v4Record({ status: 'closed', closedAs: 'delivered' }, true))
-      expect(exempt(LEADER)).toEqual([])
+      expect(await exempt(LEADER)).toEqual([])
     })
 
-    it('a v3 mission that is active pins its leader; one the operator closed does not', () => {
+    it('a v3 mission that is active pins its leader; one the operator closed does not', async () => {
       seedV3(v3Mission())
-      expect(exempt(LEADER)).toEqual([LEADER])
+      expect(await exempt(LEADER)).toEqual([LEADER])
       rmSync(v3MissionsDir(repo), { recursive: true, force: true })
       seedV3(v3Mission({ status: 'closed', closedAs: 'delivered' } as Partial<Mission>))
-      expect(exempt(LEADER)).toEqual([])
+      expect(await exempt(LEADER)).toEqual([])
     })
 
-    it('a v3 mission waiting for the operator to close it (delivered) is ready to close: its leader is pinned', () => {
+    it('a v3 mission waiting for the operator to close it (delivered) is ready to close: its leader is pinned', async () => {
       seedV3(
         v3Mission({
           status: 'delivered',
           pendingClose: { at: NOW, requestedBy: LEADER }
         } as Partial<Mission>)
       )
-      expect(exempt(LEADER)).toEqual([LEADER])
+      expect(await exempt(LEADER)).toEqual([LEADER])
     })
 
-    it('one format at a time: a v3 mission already copied to v4 is read as the v4 record', () => {
+    it('one format at a time: a v3 mission already copied to v4 is read as the v4 record', async () => {
       seedV3(v3Mission())
       // The v4 copy was closed: the v3 file left beside it is a snapshot and pins nobody.
       seedV4(
@@ -211,14 +214,14 @@ describe('readers use the v4 view', () => {
           closedAs: 'delivered'
         })
       )
-      expect(exempt(LEADER)).toEqual([])
+      expect(await exempt(LEADER)).toEqual([])
     })
 
-    it('fails open: an unreadable v4 file exempts nobody and never throws', () => {
+    it('fails open: an unreadable v4 file exempts nobody and never throws', async () => {
       const dir = path.join(repo, '.harnu', 'missions-v4')
       mkdirSync(dir, { recursive: true })
       writeFileSync(path.join(dir, 'mnt-a7230001-bad.md'), 'not a record')
-      expect(exempt(LEADER)).toEqual([])
+      expect(await exempt(LEADER)).toEqual([])
     })
   })
 

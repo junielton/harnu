@@ -29,6 +29,7 @@ import type { Mission, MissionDerived, MissionProgress } from './missions/derive
 import type { WaitingItem } from './missions/waiting'
 import { approveDoneWhen, declineDoneWhen, doorReply, runDoor } from './missions/doors'
 import { createMissionObserver, type MissionObserver } from './missions/observer'
+import { singleFlight } from './missions/file-cache'
 import { ensureLinkCacheLoaded, rememberResolved } from './mission-link-cache'
 import { hydrateMissionLedger, observedRows } from './missions/ledger-store'
 import { repoRoot } from './data-dir'
@@ -166,9 +167,17 @@ export type MissionDoorResult =
  * mission, so the app raises one notice that names it (the renderer's store does), and Your move closes
  * nothing by absence while one exists.
  */
-export async function listMissionViews(folders: readonly string[]): Promise<MissionListResult> {
+export function listMissionViews(folders: readonly string[]): Promise<MissionListResult> {
   const roots = [...new Set(folders.filter((f) => typeof f === 'string').map(missionRoot))]
-  if (roots.length === 0) return { views: [], unreadable: [], shadowed: [] }
+  if (roots.length === 0) return Promise.resolve({ views: [], unreadable: [], shadowed: [] })
+  // BUG-278: the feed, the IPC and the hooks ask for the same roots at once; they share one read.
+  return sharedList([...roots].sort().join('\u0000'), () => readMissionList(roots))
+}
+
+/** `mission:list` reads under way, by their roots: a second caller for the same roots waits for the first. */
+const sharedList = singleFlight<MissionListResult>()
+
+async function readMissionList(roots: readonly string[]): Promise<MissionListResult> {
   const read = await readMissionsDeduped(roots, { includeClosed: false })
   const v4Unreadable = (await Promise.all(roots.map((r) => unreadableRecordFiles(r)))).flat()
   // The files the other readers (hibernation, the companion, Your move) could not read are named too.

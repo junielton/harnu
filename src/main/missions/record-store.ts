@@ -42,6 +42,7 @@ import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { dataDirAt, dataDirReady, mkdirDataDir } from '../data-dir'
 import { campaignMissionId, convertV3Campaign, convertV3Mission } from './compat'
+import { invalidateMissionFile, pruneMissionDir, readParsedCached } from './file-cache'
 import {
   buildMissionRecordContent,
   parseMissionRecordFile,
@@ -86,9 +87,13 @@ async function entriesOf(dir: string, re: RegExp): Promise<FileEntry[]> {
   try {
     names = await fs.readdir(dir)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      pruneMissionDir(dir, new Set())
+      return []
+    }
     throw err
   }
+  pruneMissionDir(dir, new Set(names))
   const out: FileEntry[] = []
   for (const name of names.sort()) {
     const m = re.exec(name) // a dot-name never matches: ids start with `mnt-` or `cmp-`
@@ -152,9 +157,8 @@ const fingerprintOf = (raw: string): string => createHash('sha256').update(raw).
 
 // ---- Reading v4 ----------------------------------------------------------------
 
-async function readV4(root: string, entry: FileEntry): Promise<MissionRecordRead> {
-  const file = path.join(v4RecordsDir(root), entry.name)
-  const raw = await fs.readFile(file, 'utf8')
+/** The view a v4 record file's text makes: the record and its Log, or why the file cannot be read. */
+function v4ViewOf(entry: FileEntry, file: string, raw: string): MissionRecordRead {
   const parsed = parseMissionRecordFile(raw)
   if (!('schemaVersion' in parsed)) return unreadable(entry.name, parsed.error, file)
   return {
@@ -167,6 +171,17 @@ async function readV4(root: string, entry: FileEntry): Promise<MissionRecordRead
     sourceIds: [],
     fingerprint: fingerprintOf(raw)
   }
+}
+
+/**
+ * Read one v4 record file. `cached` (BUG-278) serves a file whose stamp is unchanged from the parse
+ * cache, frozen and shared: only the read-only listings ask for it. A writer reads fresh, because it
+ * is handed the record to change.
+ */
+async function readV4(root: string, entry: FileEntry, cached = false): Promise<MissionRecordRead> {
+  const file = path.join(v4RecordsDir(root), entry.name)
+  if (cached) return readParsedCached('v4-view', file, (raw) => v4ViewOf(entry, file, raw))
+  return v4ViewOf(entry, file, await fs.readFile(file, 'utf8'))
 }
 
 async function findV4(root: string, id: string): Promise<MissionRecordRead | null> {
@@ -354,6 +369,23 @@ async function viewOrMoved(root: string, read: V3CampaignRead): Promise<MissionR
 // ---- Reading: the list ---------------------------------------------------------
 
 /**
+ * The view of one v3 mission file for a listing, from the parse cache (BUG-278): the parse and the
+ * conversion run once per change of the file. `null` when the file cannot be read or parsed.
+ */
+async function v3ListView(root: string, entry: FileEntry): Promise<MissionRecordRead | null> {
+  const file = path.join(v3MissionsDir(root), entry.name)
+  try {
+    return await readParsedCached('v3-view', file, (raw): MissionRecordRead => {
+      const mission = parseV3MissionFile(raw)
+      if ('error' in mission) return unreadable(entry.name, String(mission.error))
+      return missionView({ mission, log: readV3MissionLog(raw), file, slug: entry.slug })
+    })
+  } catch {
+    return null
+  }
+}
+
+/**
  * Every mission of the repo as v4: the v4 records, then each v3 mission and campaign that has not been
  * converted yet. A chapter mission is not listed on its own (it is a milestone of its campaign), and
  * nothing is listed twice. Never writes. A file that cannot be read is reported in `unreadable`.
@@ -370,7 +402,7 @@ export async function listMissionRecords(
   }
 
   const v4 = await entriesOf(v4RecordsDir(root), MISSION_FILE_RE)
-  for (const entry of v4) take(await readV4(root, entry), entry.name)
+  for (const entry of v4) take(await readV4(root, entry, true), entry.name)
   const v4Ids = new Set(v4.map((e) => e.id))
 
   // A v3 id is superseded only when the record its sidecar names exists: a sidecar left by a write that
@@ -401,8 +433,8 @@ export async function listMissionRecords(
 
   for (const entry of await entriesOf(v3MissionsDir(root), MISSION_FILE_RE)) {
     if (v4Ids.has(entry.id) || migrated.has(entry.id) || chapterMissions.has(entry.id)) continue
-    const m = await readV3Mission(root, entry.id)
-    if (m && !('error' in m)) records.push(missionView(m) as MissionRecordView & { ok: true })
+    const m = await v3ListView(root, entry)
+    if (m && m.ok) records.push(m)
     else bad.push(entry.name)
   }
   for (const c of campaigns) {
@@ -430,7 +462,7 @@ export async function unreadableRecordFiles(root: string): Promise<string[]> {
   }
   const bad: string[] = []
   for (const entry of entries) {
-    const read = await readV4(root, entry).catch(() => null)
+    const read = await readV4(root, entry, true).catch(() => null)
     if (!read || !read.ok) bad.push(entry.name)
   }
   return bad
@@ -541,6 +573,7 @@ async function writeAtomic(file: string, content: string): Promise<void> {
     await fs.unlink(tmp).catch(() => undefined)
     throw err
   }
+  invalidateMissionFile(file)
   await syncDir(path.dirname(file))
 }
 
@@ -555,6 +588,7 @@ async function createExclusive(file: string, content: string): Promise<boolean> 
   } finally {
     await fs.unlink(tmp).catch(() => undefined)
   }
+  invalidateMissionFile(file)
   await syncDir(path.dirname(file))
   return true
 }

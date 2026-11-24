@@ -17,7 +17,12 @@ import {
   recordWake,
   parkHistory
 } from '../src/main/hibernation'
-import { missionOwnersWithLiveChildren, openMissionLeaders } from '../src/main/hibernation'
+import {
+  missionOwnersWithLiveChildren,
+  openMissionLeaders,
+  refreshOpenMissionLeaders
+} from '../src/main/hibernation'
+import { mainCheckoutRoot } from '../src/main/data-dir'
 import {
   evaluateFleet,
   explainFleet,
@@ -304,8 +309,13 @@ describe('hibernation — mission owners with live children (T363)', () => {
     }
   }
 
-  /** What `pty.ts#fleetSnapshot` does: read the missions, stamp the owners. */
-  function stamp(fleet: (LiveSession & { cwd: string })[]): LiveSession[] {
+  /**
+   * What `pty.ts#fleetSnapshot` does: read the missions, stamp the owners. The sweep answers from the
+   * snapshot the last refresh left (BUG-278: it does no file I/O), so the refresh the previous sweep
+   * started runs first, awaited here.
+   */
+  async function stamp(fleet: (LiveSession & { cwd: string })[]): Promise<LiveSession[]> {
+    await refreshOpenMissionLeaders(fleet.map((s) => mainCheckoutRoot(s.cwd)))
     const owners = missionOwnersWithLiveChildren(fleet)
     return fleet.map((s) => ({ ...s, ownsLiveMission: owners.has(s.sessionKey) }))
   }
@@ -314,7 +324,7 @@ describe('hibernation — mission owners with live children (T363)', () => {
     await writeMission(mission({}, [{ kind: 'session', ref: CHILD }]))
     // The owner is the coldest session by far — past `hardIdleMs` — and the fleet is at
     // the cap, so without the exemption it is the first victim of BOTH triggers.
-    const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
+    const fleet = await stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
 
     expect(evaluateFleet(fleet, NOW, POLICY, 'cap')).toEqual([])
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
@@ -327,7 +337,7 @@ describe('hibernation — mission owners with live children (T363)', () => {
     // A bystander that claims `working` but has been silent past `hardIdleMs` is still
     // swept exactly as before; only the owner is pinned.
     const bystander = { ...cold(BYSTANDER, 90, repo), taskState: 'working' as const }
-    const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo), bystander])
+    const fleet = await stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo), bystander])
 
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([BYSTANDER])
   })
@@ -336,7 +346,7 @@ describe('hibernation — mission owners with live children (T363)', () => {
   // its own still runs under it. These three used to say "eligible"; the rule is no longer "has a live child".
   it('a leader whose linked children all finished (no live PTY) is still never parked', async () => {
     await writeMission(mission({}, [{ kind: 'session', ref: CHILD }]))
-    const fleet = stamp([cold(OWNER, 600, repo), cold(BYSTANDER, 1, repo)])
+    const fleet = await stamp([cold(OWNER, 600, repo), cold(BYSTANDER, 1, repo)])
 
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
     expect(evaluateFleet(fleet, NOW, POLICY, 'cap')).toEqual([])
@@ -350,21 +360,21 @@ describe('hibernation — mission owners with live children (T363)', () => {
         { kind: 'pr', ref: 'owner/repo#1' }
       ])
     )
-    const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
+    const fleet = await stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
 
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
   })
 
   it('a leader that links only ITSELF is never parked either', async () => {
     await writeMission(mission({}, [{ kind: 'session', ref: OWNER }]))
-    const fleet = stamp([cold(OWNER, 600, repo)])
+    const fleet = await stamp([cold(OWNER, 600, repo)])
 
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
   })
 
   it('Mission v3 §3.4: a legacy draft mission reads active, so it pins its owner like one', async () => {
     await writeMission(mission({ status: 'draft' }, [{ kind: 'session', ref: CHILD }]))
-    const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
+    const fleet = await stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
 
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
   })
@@ -374,7 +384,7 @@ describe('hibernation — mission owners with live children (T363)', () => {
   // the v3 rule, and AC-62 supersedes it, "ready to close included".)
   it('a closed mission does not pin its owner, even with a live child', async () => {
     await writeMission(mission({ status: 'closed' }, [{ kind: 'session', ref: CHILD }]))
-    const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
+    const fleet = await stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
 
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([OWNER])
   })
@@ -383,7 +393,7 @@ describe('hibernation — mission owners with live children (T363)', () => {
     'a %s mission pins its leader (open in v4)',
     async (status) => {
       await writeMission(mission({ status }, [{ kind: 'session', ref: CHILD }]))
-      const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
+      const fleet = await stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
 
       expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
     }
@@ -391,7 +401,7 @@ describe('hibernation — mission owners with live children (T363)', () => {
 
   it('only the OWNER is pinned — the live child itself stays eligible', async () => {
     await writeMission(mission({}, [{ kind: 'session', ref: CHILD }]))
-    const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 120, repo)])
+    const fleet = await stamp([cold(OWNER, 600, repo), cold(CHILD, 120, repo)])
 
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([CHILD])
   })
@@ -406,7 +416,7 @@ describe('hibernation — mission owners with live children (T363)', () => {
     const wt = await mkdtemp(join(tmpdir(), 'harnu-t363-wt-'))
     try {
       await writeFile(join(wt, '.git'), `gitdir: ${wtGitDir}\n`)
-      const fleet = stamp([cold(OWNER, 600, wt), cold(CHILD, 1, join(wt, 'src'))])
+      const fleet = await stamp([cold(OWNER, 600, wt), cold(CHILD, 1, join(wt, 'src'))])
 
       expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([])
     } finally {
@@ -415,23 +425,24 @@ describe('hibernation — mission owners with live children (T363)', () => {
   })
 
   it('fails open: a malformed mission file, or no missions dir at all, exempts nobody', async () => {
-    const fleetWithoutMissions = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
+    const fleetWithoutMissions = await stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
     expect(evaluateFleet(fleetWithoutMissions, NOW, POLICY, 'sweep')).toEqual([OWNER])
 
     await mkdir(missionsDir(repo), { recursive: true })
     await writeFile(join(missionsDir(repo), 'mnt-deadbeef-broken.md'), '---\nstatus: [\n---\n')
-    const fleet = stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
+    const fleet = await stamp([cold(OWNER, 600, repo), cold(CHILD, 1, repo)])
     expect(evaluateFleet(fleet, NOW, POLICY, 'sweep')).toEqual([OWNER])
   })
 
   it('openMissionLeaders names the leaders of the repo, and nobody else', async () => {
     await writeMission(mission({}, [{ kind: 'session', ref: CHILD }]))
+    await refreshOpenMissionLeaders([repo])
     expect(openMissionLeaders([repo])).toEqual(new Set([OWNER]))
     expect(openMissionLeaders([])).toEqual(new Set())
   })
 
   it('AC-3e: the first sweep over an unpinned repo with a legacy data dir misses its missions, and the next sweep self-heals', async () => {
-    // The sweep reads missions synchronously, but a repo the boot pass never saw has its
+    // The sweep answers from a snapshot, and a repo the boot pass never saw has its
     // legacy `.capy/` copied lazily and asynchronously. So the very first read can see no
     // missions — which at worst parks an owner (parking is not death: the transcript is intact
     // and selecting the row resumes it). It must heal as soon as the copy lands, with no
@@ -447,6 +458,7 @@ describe('hibernation — mission owners with live children (T363)', () => {
       expect(missionOwnersWithLiveChildren(fleet).has(OWNER)).toBe(false) // first sweep: not copied yet
 
       await dataDirReady(repo)
+      await refreshOpenMissionLeaders([repo]) // what the first sweep started, finished
       expect(missionOwnersWithLiveChildren(fleet).has(OWNER)).toBe(true) // next sweep: healed
     } finally {
       setLazyDataDirMigration(false)
@@ -470,26 +482,32 @@ describe('hibernation — an unreadable mission file is named to the app (S-40)'
     await rm(repo, { recursive: true, force: true })
   })
 
+  /** One sweep: the refresh the last sweep started runs first, then the sweep answers from it. */
+  const sweep = async (): Promise<Set<string>> => {
+    await refreshOpenMissionLeaders([repo])
+    return openMissionLeaders([repo])
+  }
+
   it('fails open as before (nobody is exempted by a file it cannot read) but names the file, once', async () => {
     await writeFile(join(repo, '.harnu', 'missions-v4', BAD_V4), '{ this is not a mission record')
-    expect(openMissionLeaders([repo]).size).toBe(0)
+    expect((await sweep()).size).toBe(0)
     expect(reportedUnreadableMissionFiles()).toEqual([BAD_V4])
     // Every sweep reports its whole set: the same file is still one name, not one per sweep.
-    openMissionLeaders([repo])
-    openMissionLeaders([repo])
+    await sweep()
+    await sweep()
     expect(reportedUnreadableMissionFiles()).toEqual([BAD_V4])
   })
 
   it('stops naming the file once it reads again, so a later failure is news again', async () => {
     const file = join(repo, '.harnu', 'missions-v4', BAD_V4)
     await writeFile(file, '{ this is not a mission record')
-    openMissionLeaders([repo])
+    await sweep()
     expect(reportedUnreadableMissionFiles()).toEqual([BAD_V4])
     await rm(file)
-    openMissionLeaders([repo])
+    await sweep()
     expect(reportedUnreadableMissionFiles()).toEqual([])
     await writeFile(file, '{ broken again')
-    openMissionLeaders([repo])
+    await sweep()
     expect(reportedUnreadableMissionFiles()).toEqual([BAD_V4])
   })
 
@@ -499,7 +517,7 @@ describe('hibernation — an unreadable mission file is named to the app (S-40)'
       join(repo, '.harnu', 'missions', 'mnt-0badc0df-old-and-broken.md'),
       'no frontmatter'
     )
-    openMissionLeaders([repo])
+    await sweep()
     expect(reportedUnreadableMissionFiles()).toContain('mnt-0badc0df-old-and-broken.md')
   })
 })
