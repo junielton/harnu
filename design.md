@@ -2304,9 +2304,15 @@ and never reserve a column.
 
 **Mission chip (compact).** On the row: `triangle-alert` 11px (`--warning`) + the number of things
 the mission owes the operator, 10.5px `tabular-nums`. With nothing owed the chip draws nothing at
-rest. On row hover or keyboard focus the chip's **full text** (the pill's own text and tone) fades in
-**over the tail of the title** (`position: absolute`, anchored right, `--sidebar` background, 8px
-left padding): no width change, no shift. `title`/`aria-label` spell the full text out.
+rest. On row hover or keyboard focus the chip's **hover text** fades in **over the tail of the title**
+(`position: absolute`, anchored right, `--sidebar` background, 8px left padding): no width change, no
+shift. It reads **progress, then the owed count with the alert icon** — `2/5 · ⚠ 7`, the same
+`triangle-alert` 11px and 3px gap as at rest, so the `⚠ 7` does not move — in the pill's tone, and
+**without words**: "7 for you" lives only in the `title` and the accessible name. With nothing owed it
+is the pill's own text (`2/5`), as it is when the mission is ready to close (`5/5 · ready to close`).
+Where the row's trailing chips sit between the overlay and the chip (subagent or teammate count,
+StopFailure badge), the chip's `⚠ 7` is already in view at the end of the row, so the overlay shows
+the progress alone, with 8px of right padding to keep clear of the first of them.
 
 #### Folder ring
 
@@ -7299,7 +7305,9 @@ record** it shows the **pill's own text and tone** ("4/21 · 3 for you",
 `lib/mission-pane-view.ts`) on the session that **leads** the mission. For a
 **v3 file** the view channel reads as v4 (since the cut-over) it shows the same
 text and tone, so one mission never carries two different counts on one screen;
-`chipFor` in `stores/missions.ts` picks by the record's source. The paragraph
+`chipFor` in `stores/missions.ts` picks by the record's source. That text is what
+the chip's `title` and accessible name carry; what the row **draws** on hover
+drops its words (§6 "Sidebar tree → Session rows → Mission chip (compact)"). The paragraph
 below describes the v3 headline (it also serves a build without the v4
 channel). The compact headline (`{n}/{m}`, `{n}–{to}/{m}`, `{m}/{m} ✓`),
 `10.5px`, `tabular-nums`, `gap: 3px`, colored with the **pill's tone** (the

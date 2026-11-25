@@ -408,7 +408,7 @@ function onSelectTeammate(session: Session): void {
               <span class="tabular-nums">{{ teammatesOf(s.sessionId).length }}</span>
             </span>
 
-            <SidebarMissionDetail v-if="mission" :chip="mission" class="right-full" />
+            <SidebarMissionDetail v-if="mission" :chip="mission" beside class="right-full" />
           </span>
         </span>
 

@@ -19,7 +19,7 @@ A session whose own turn has ended but whose background **subagent** is still ru
 A session row in the sidebar reads, left to right: its status dot, its title, then at the right edge anything that needs saying.
 
 - **No age, context or branch** on the row: hover it and the preview shows them.
-- **Mission chip.** The session leading a mission shows **⚠ n**, the number of things that mission is waiting on you for. Hover the row for the full text, drawn over the end of the title.
+- **Mission chip.** The session leading a mission shows **⚠ n**, the number of things that mission is waiting on you for. Hover the row to read the mission's progress and that count, for example **2/5 · ⚠ 7**, drawn over the end of the title; the tooltip says it in words.
 - **Orchestrator crown**, in its own place at the far right.
 - **Subagents and teammates.** A count chip appears on hover; click it to list or hide them under the session.
 
