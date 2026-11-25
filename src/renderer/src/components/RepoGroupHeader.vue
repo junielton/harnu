@@ -89,6 +89,13 @@ function select(): void {
   sessions.selectFolder(props.tree.primary.path)
 }
 
+/** The list is about to move under the pointer: the header's hover card goes with the click. */
+function focusFolder(): void {
+  hoverPreview.leave()
+  ui.closePreview()
+  sessions.enterFocus(props.tree.primary.path)
+}
+
 function openMenu(event: MouseEvent): void {
   ui.openFolderMenu({
     projectPath: props.tree.primary.path,
@@ -182,7 +189,7 @@ function preview(event: MouseEvent): void {
       class="pointer-events-none grid size-4 shrink-0 cursor-pointer place-items-center rounded-[var(--float-radius)] text-text-3 opacity-0 transition-[opacity,color] duration-(--dur-fast) ease-(--ease) group-hover:pointer-events-auto group-hover:opacity-100 hover:text-text focus-visible:pointer-events-auto focus-visible:text-text focus-visible:opacity-100"
       :title="$t('sidebar.focus.enter')"
       :aria-label="$t('sidebar.focus.enterNamed', { name: tree.label })"
-      @click.stop="sessions.enterFocus(tree.primary.path)"
+      @click.stop="focusFolder"
       @keydown.enter.stop
       @keydown.space.stop
     >
