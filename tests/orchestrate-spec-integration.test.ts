@@ -496,6 +496,8 @@ function decisionProblems(skill: string): string[] {
   if (!/`mission_log \{ kind: 'decision', stepId \}`/.test(f))
     problems.push('the choice is not recorded as a decision log entry')
   if (!/`submit_manifest`/.test(f)) problems.push('the held slices are not dispatched once chosen')
+  if (!/voids its stamp/.test(f) || !/fresh `submit_manifest`/.test(f))
+    problems.push('editing a stamped ready card must void its stamp and require a fresh manifest')
   return problems
 }
 
@@ -520,6 +522,16 @@ it('open decisions become operator blockers that hold only their slices', () => 
       find: 'no open D-n gates are dispatched',
       replace: 'no open D-n gates wait as well',
       why: 'un-gated slices are dispatched'
+    },
+    {
+      find: 'voids its stamp',
+      replace: 'leaves its stamp valid',
+      why: 'editing a stamped ready card voids its manifest stamp'
+    },
+    {
+      find: 'fresh `submit_manifest`',
+      replace: 'previous manifest',
+      why: 'a card whose stamp was voided needs a fresh manifest'
     },
     {
       find: 'so is clearing an operator-owned blocker',
