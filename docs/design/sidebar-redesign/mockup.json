@@ -1,0 +1,200 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-11-25",
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css (@theme block = default dark) + src/renderer/src/styles/main.css (@theme font and radius-xs tokens)",
+  "viewports": [1280],
+  "targets": [
+    "src/renderer/src/components/Sidebar.vue",
+    "src/renderer/src/components/SidebarFolder.vue",
+    "src/renderer/src/components/SidebarDrillView.vue",
+    "src/renderer/src/components/RepoGroupHeader.vue",
+    "src/renderer/src/components/SidebarReturnZone.vue",
+    "src/renderer/src/components/SidebarSection.vue",
+    "src/renderer/src/components/StatusFooter.vue",
+    "src/renderer/src/components/SessionPreview.vue",
+    "src/renderer/src/composables/useHoverPreview.ts",
+    "src/renderer/src/stores/ui.ts",
+    "src/renderer/src/App.vue",
+    "src/renderer/src/components/FolderView.vue",
+    "src/renderer/src/components/FolderViewRoadmap.vue",
+    "src/renderer/src/components/FolderViewWorktrees.vue",
+    "src/renderer/src/components/FolderViewSessions.vue",
+    "src/renderer/src/components/FolderViewFanout.vue",
+    "src/renderer/src/components/FolderViewOwnedCard.vue"
+  ],
+  "screens": [
+    {
+      "id": "sidebar",
+      "title": "Sidebar",
+      "status": "approved",
+      "approvedAt": "2026-11-25",
+      "states": [
+        "default",
+        "checkout-folded",
+        "idle-open",
+        "sessions-folded",
+        "folders-folded",
+        "focus",
+        "preview",
+        "dock-open",
+        "floating"
+      ],
+      "targets": [
+        "src/renderer/src/components/Sidebar.vue",
+        "src/renderer/src/components/SidebarFolder.vue",
+        "src/renderer/src/components/SidebarDrillView.vue",
+        "src/renderer/src/components/RepoGroupHeader.vue",
+        "src/renderer/src/components/SidebarReturnZone.vue",
+        "src/renderer/src/components/SidebarSection.vue",
+        "src/renderer/src/components/StatusFooter.vue",
+        "src/renderer/src/components/SessionPreview.vue",
+        "src/renderer/src/composables/useHoverPreview.ts",
+        "src/renderer/src/stores/ui.ts",
+        "src/renderer/src/App.vue"
+      ],
+      "notes": "Eight folders in export order, harnu main selected, 3 attention rows, 46 hidden, 3 idle harnu worktrees, dock counts 1 and 2, and fixed Opus 5.5 preview and footer figures."
+    },
+    {
+      "id": "group-rail",
+      "title": "Group rail",
+      "status": "approved",
+      "approvedAt": "2026-11-25",
+      "states": [
+        "separate-rails",
+        "selected-in-active",
+        "priority",
+        "folded-folder",
+        "folded-checkout",
+        "focus",
+        "motion",
+        "all-idle",
+        "floating",
+        "sticky-scrolled"
+      ],
+      "targets": [
+        "src/renderer/src/components/Sidebar.vue",
+        "src/renderer/src/components/SidebarFolder.vue",
+        "src/renderer/src/components/SidebarDrillView.vue",
+        "src/renderer/src/components/RepoGroupHeader.vue"
+      ],
+      "notes": "Portal demonstrates adjacent and folded working checkouts, harnu shows selection and sticky scrolling, and api-gateway shows needs-you, failed and done groups."
+    },
+    {
+      "id": "row-states",
+      "title": "Row states",
+      "status": "approved",
+      "approvedAt": "2026-11-25",
+      "states": ["default", "interactive"],
+      "targets": [
+        "src/renderer/src/components/Sidebar.vue",
+        "src/renderer/src/components/SidebarFolder.vue",
+        "src/renderer/src/components/SidebarDrillView.vue",
+        "src/renderer/src/components/RepoGroupHeader.vue"
+      ],
+      "notes": "Forced strips use the Redis migration and its 2/5 · 1 for you chip, idle PROJ-232 and active api-gateway main checkout groups, and the harnu folder header."
+    },
+    {
+      "id": "folder-view",
+      "title": "Folder View",
+      "status": "approved",
+      "approvedAt": "2026-11-25",
+      "states": ["default", "clean", "no-roadmap"],
+      "targets": [
+        "src/renderer/src/components/Sidebar.vue",
+        "src/renderer/src/components/SidebarFolder.vue",
+        "src/renderer/src/components/SidebarDrillView.vue",
+        "src/renderer/src/components/RepoGroupHeader.vue",
+        "src/renderer/src/components/SidebarReturnZone.vue",
+        "src/renderer/src/components/SidebarSection.vue",
+        "src/renderer/src/components/StatusFooter.vue",
+        "src/renderer/src/components/FolderView.vue",
+        "src/renderer/src/components/FolderViewRoadmap.vue",
+        "src/renderer/src/components/FolderViewWorktrees.vue",
+        "src/renderer/src/components/FolderViewSessions.vue",
+        "src/renderer/src/components/FolderViewFanout.vue",
+        "src/renderer/src/components/FolderViewOwnedCard.vue",
+        "src/renderer/src/App.vue"
+      ],
+      "notes": "harnu has 2 changes · ↓2 and roadmap counts 10/9/488, portal is clean with 1/3/0, and example-web is clean with no roadmap."
+    }
+  ],
+  "parts": [
+    {
+      "id": "toolbar",
+      "variants": ["level-2", "level-1", "level-0"]
+    },
+    {
+      "id": "attention",
+      "variants": ["open", "folded"]
+    },
+    {
+      "id": "tree",
+      "variants": [
+        "app",
+        "strips",
+        "separate-rails",
+        "selected-in-active",
+        "priority",
+        "folded-folder",
+        "folded-checkout",
+        "focus",
+        "motion",
+        "all-idle",
+        "floating",
+        "sticky-scrolled"
+      ]
+    },
+    {
+      "id": "dock",
+      "variants": ["folded", "open"]
+    },
+    {
+      "id": "app-window",
+      "variants": ["sidebar", "folder-view"]
+    }
+  ],
+  "flows": [
+    {
+      "id": "focus-folder",
+      "title": "Focus a folder",
+      "steps": [
+        {
+          "screen": "sidebar",
+          "state": "default",
+          "via": "Harnu’s Focus button"
+        },
+        {
+          "screen": "sidebar",
+          "state": "focus",
+          "via": "All folders"
+        },
+        {
+          "screen": "sidebar",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "open-folder-view",
+      "title": "Open a folder and return to a session",
+      "steps": [
+        {
+          "screen": "sidebar",
+          "state": "default",
+          "via": "The harnu folder header"
+        },
+        {
+          "screen": "folder-view",
+          "state": "default",
+          "via": "The Sidebar fleet merge mockup session row"
+        },
+        {
+          "screen": "sidebar",
+          "state": "default"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Row states · Harnu</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <script defer src="../parts/icons.js"></script>
+    <script defer src="../parts/tree.js"></script>
+  </head>
+  <body data-states="default interactive">
+    <div data-dsqa="row-states">
+      <div class="fixture" data-strip-frame><mk-tree></mk-tree></div>
+    </div>
+    <script src="../mockup.js"></script>
+    <script>
+      const root = document.querySelector('[data-dsqa="row-states"]')
+      const strips = root.dataset.state === 'default'
+      root.querySelector('mk-tree').setAttribute('variant', strips ? 'strips' : 'app')
+      root.querySelector('[data-strip-frame]').classList.toggle('fixture-tree', !strips)
+    </script>
+  </body>
+</html>
