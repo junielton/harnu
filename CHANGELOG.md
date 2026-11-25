@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-25
+
+### Fixed
+
+- Opening the Usage Dashboard no longer freezes Harnu when the turn ledger is large. The ledger, which corrects the estimated cost with the totals Claude Code measured, is now read off the main process, so typing and terminal output keep flowing while the dashboard loads. In tests with a large ledger and measured costs in use, the app could previously stop responding for more than a minute. The numbers are the same as before.
+
 ## 2026-11-24
 
 ### Added
