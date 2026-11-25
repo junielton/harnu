@@ -2452,8 +2452,8 @@ Focus replaces drill-in. It narrows the list to **one folder**; the tree anatomy
   is `--warning` and `failed` is `--red`, the colours of the group rail and Needs attention.
   `others` is not owed, so it is not amber.
 - **One line, always.** No wrap and no ellipsis anywhere in the row, and one shared baseline. The
-  row's `title` and `aria-label` always carry the full string (`All folders, 7 others, 1 needs you,
-1 failed`).
+  row's `title` and `aria-label` always carry the full string, comma-joined, for example
+  `All folders, 7 others, 1 needs you, 1 failed`.
 - **Width levels.** As the row narrows it drops **whole parts**, never characters. `needs you` and
   `failed` are never cut or hidden; the label comes next, then `others`. The level is read from the
   parts' natural widths against the row's content width (a `ResizeObserver`); changing level is a
