@@ -15,6 +15,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - **The bake-off author sandbox keeps skill references out of its working copy.** The mission v4 mockup files and tests that name the skill are excluded from the sandbox archive.
+- Opening the Usage Dashboard no longer freezes Harnu when the turn ledger is large. The ledger, which corrects the estimated cost with the totals Claude Code measured, is now read off the main process, so typing and terminal output keep flowing while the dashboard loads. In tests with a large ledger and measured costs in use, the app could previously stop responding for more than a minute. The numbers are the same as before.
 
 ## 2026-11-24
 
@@ -33,6 +34,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **A session dispatched for a mission step now joins the mission by itself.** Cards started by `submit_manifest` or the board's Dispatch button were never attached: the step stayed "to do", the session was refused with `NOT_ATTACHED`, and the card kept a `synthetic-…` session id that nothing could open. Now the session can use its mission tools from its first turn, the step shows it, the card carries the real session id, two cards drained into one folder no longer swap steps, and a board dispatch into a new worktree holds the tools of its step like the other paths. If a session cannot be attached, you get one Activity notice and one "surprise" line in the mission Log that name the card. The card's "dispatched with" note and its session id can no longer overwrite each other. Neither can editing the card's body, or moving it to Review, while its session boots.
+- **A verifier can no longer be dispatched as the builder by mistake.** `submit_manifest` accepted a `verifier` role and quietly started a builder. The manifest and the board's Dispatch now refuse it and point at `create_session`.
 - Reopening the Usage Dashboard is much faster while sessions are running. A transcript that grew since the last look is now read from where Harnu stopped, not from the beginning; the totals are the same as a full re-read. The first load after this update still reads everything once, to rebuild the saved cost cache.
 - Opening the full Usage Dashboard no longer freezes Harnu. Your session transcripts are now read in a background thread, so typing and terminal output keep working while the dashboard loads. The first load still takes as long as before.
 - Half-written copies of the usage cost cache, left behind when Harnu quit while saving it, are now deleted.
@@ -380,8 +383,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **Small gaps in the spec skill's guards and in `orchestrate-delivery`, found while verifying it.** The test that keeps the triage section free of delivery steps now rejects every memory verb except `memory_query` (it only caught `memory_append`), and the check that the changelog introduces the skill exactly once now counts a duplicate however it is worded. `orchestrate-delivery` now warns that editing a card that was already approved for dispatch voids that approval, so it needs a fresh manifest.
+
 - **A cold start now reads as "loading", not "empty", even on a remembered drill-in screen.** With drill-in on and a remembered folder or repo screen, the sidebar used to show only the Back row over a blank list while your folders were still loading, and the main pane showed "Welcome to Harnu" as if you had no folders. Now the "Loading folders…" spinner appears right under the Back row, so you keep your place, and the main pane stays on its ready screen until folders load; then your remembered screen comes back exactly as before. The "nothing yet" and "no matches" messages show under the Back row too, instead of a blank body. The welcome screen still appears when loading finishes with no folders.
 - **Session cards in the Fleet rail now sit centred.** The gap between a card and the rail's right border was wider than the gap on the left, because room for the scrollbar was always reserved on the right even when nothing scrolled. The same room is now reserved on the left too, so both gaps match with or without a visible scrollbar, and cards still don't change width when the scrollbar appears.
+
+- **The spec skill now works in a repo that has no spec template.** The skill used to expect `docs/specs/TEMPLATE.md` to exist in the repo, so writing a spec outside Harnu's own repo meant copying the template in by hand. The template now travels with the skill, and the skill uses the repo's own template when there is one and its own copy otherwise.
 
 ## 2026-11-06
 

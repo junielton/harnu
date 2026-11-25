@@ -286,6 +286,8 @@ blocker on exactly the steps of the slices whose `gated-by:` names it:
 - The choice is the operator's, and so is clearing an operator-owned blocker (they say "Done, continue" in the Mission
   dropdown). When they have, record the choice with `mission_log { kind: 'decision', stepId }`, run the planner again if
   it changed an AC, and send the held slices out with `submit_manifest`.
+  An `update_card` on a card already stamped by a manifest (a `ready` card the drain has not
+  picked up yet) voids its stamp. After the edit, use a fresh `submit_manifest` for that card.
 
 ### Dispatching
 
