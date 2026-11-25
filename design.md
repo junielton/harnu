@@ -2470,9 +2470,11 @@ Focus replaces drill-in. It narrows the list to **one folder**; the tree anatomy
   focus to the Focus button of that folder. A mouse click moves no focus.
 - Needs attention and the dock stay **global**. Selecting a session of another folder (from
   anywhere) leaves Focus. `Esc` does **not** leave it: it is a view of the list, not an overlay.
+- A selection the operator did not make does **not** leave it: an agent-spawned session taking an
+  empty selection, or a new session taking its real id.
 - The collapse cycle's level 0 leaves Focus.
 - The focused folder persists (`om2tab.sidebarFocus`); a folder that is no longer known, or is
-  dismissed, clears it on load.
+  dismissed, clears it on load. A load that fails clears nothing.
 
 ### Return here (bottom dock section)
 
