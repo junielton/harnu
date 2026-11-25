@@ -405,11 +405,24 @@ describe('AC-21 the folder menu is the other way in', () => {
     await flushPromises()
   }
 
+  /** What the menu holds, printed when the item is missing. */
+  const menuReport = (store: Store): string =>
+    JSON.stringify({
+      menu: useUiStore().folderMenu,
+      focus: store.sidebarFocus,
+      hidden: [...store.manuallyHiddenPaths],
+      folders: store.folders.map((f) => f.path),
+      items: [...document.body.querySelectorAll('[role="menuitem"]')].map((el) =>
+        el.textContent?.trim()
+      )
+    })
+
   it('offers Focus for another folder and not for the focused one', async () => {
     const store = await boot()
     const menu = mount(FolderMenu, { global: { plugins: [i18n] }, attachTo: document.body })
 
     await openMenu(WT)
+    expect(item(), menuReport(store)).toBeDefined()
     item()!.click()
     await flushPromises()
     // A checkout's menu focuses its whole folder.
