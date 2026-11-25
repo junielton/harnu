@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   configureTurnLedger,
   createTurnLedger,
+  readMeasuredLedger,
   recordAuxSpend,
   turnLedgerDir,
   turnLedgerFile
@@ -142,7 +143,7 @@ describe('turn ledger shell (spec P1W6 §7.5)', () => {
     l.usage('shadowed', T, { costUsd: 0, projectPath: '/tmp/shadow-project' })
     l.usage('shadowed', T + 5, { costUsd: 0.9, projectPath: '/tmp/shadow-project' })
     await l.flush()
-    const totals = await l.calibrationTotals((p) => p === '/tmp/active-project')
+    const totals = await l.calibrationTotals((p) => p === '/tmp/active-project', readMeasuredLedger)
     const day = new Date(T + 5)
     const key = `${SID} ${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
     expect([...totals.keys()]).toEqual([key])
