@@ -279,6 +279,25 @@ describe('sidebar row states (S-2)', () => {
     expect(forced).toContain('[data-row-bar]:has([tabindex]:focus-visible)')
   })
 
+  it('the header chevron lights up on its own keyboard focus', async () => {
+    const { w } = await boot()
+
+    // The header has two focus stops, its name and its chevron, and both draw the same bar.
+    const chevron = w.get('[data-folder-head] [data-folder-chevron]')
+    expect(chevron.element.tagName).toBe('BUTTON')
+
+    // So the focused button says which one it is by colour, in forced colors by an outline.
+    const button = "[data-row-bar='header'] button:focus-visible"
+    expect(
+      rules.some(
+        (r) => r.selectors.includes(button) && r.declarations.color === 'var(--color-text)'
+      ),
+      'the focused header button lights up'
+    ).toBe(true)
+    const forced = css.slice(css.indexOf('@media (forced-colors: active)'))
+    expect(forced.slice(0, forced.indexOf('{', forced.indexOf('{') + 1))).toContain(button)
+  })
+
   it('the value slot chevron has no hover fill', async () => {
     const { w } = await boot()
     const chevrons = w.findAll('[data-value-chevron]')

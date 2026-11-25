@@ -1156,6 +1156,9 @@ textarea,
 
 .sidebar-disclosure {
   display: grid;
+  /* Without this the implicit column grows to its content's min width, and one long row
+     widens the whole list. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 0fr;
   transition: grid-template-rows var(--dur) var(--ease);
 }
@@ -1346,7 +1349,8 @@ textarea,
 }
 
 /* With no box, the focused element itself says which one it is by colour. */
-[data-row-bar] [tabindex]:focus-visible {
+[data-row-bar] [tabindex]:focus-visible,
+[data-row-bar='header'] button:focus-visible {
   color: var(--color-text);
 }
 
@@ -1358,6 +1362,7 @@ textarea,
   [data-row-bar]:focus-visible,
   [data-row-bar]:has([tabindex]:focus-visible),
   [data-row-bar] [tabindex]:focus-visible,
+  [data-row-bar='header'] button:focus-visible,
   [data-row-bar][data-focused='true'],
   [data-row-bar='header']:has(button:focus-visible) {
     outline: 2px solid Highlight;
