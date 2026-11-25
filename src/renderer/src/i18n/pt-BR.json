@@ -63,11 +63,12 @@
       "enterHint": "reexibir"
     },
     "focus": {
-      "allFolders": "Todas as pastas",
+      "allFolders": "Pastas",
       "enter": "Focar nesta pasta",
       "enterNamed": "Focar em {name}",
       "others": "{n} outra | {n} outras",
       "needsYou": "{n} precisa de você | {n} precisam de você",
+      "needsYouShort": "{n} precisa | {n} precisam",
       "failed": "{n} falhou | {n} falharam"
     },
     "filter": {

@@ -267,6 +267,8 @@ for (const [locale, width, needs, failed, level, text, full] of CASES) {
     await ensureFocused()
     await setCounts(needs, failed)
     await setWidthAndLocale(width, locale)
+    // Away from the row, so its colours are the resting ones.
+    await page.mouse.move(900, 700)
 
     await expect.poll(async () => (await drawn()).level).toBe(level)
     const row = await drawn()

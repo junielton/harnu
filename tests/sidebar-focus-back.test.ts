@@ -62,7 +62,8 @@ describe('back row width levels', () => {
     expect(backRowLevel(AT_200, noCounts)).toBe(0)
     // Too narrow for both: "others" is the first to go.
     expect(backRowLevel(100, noCounts)).toBe(1)
-    expect(backRowLevel(AT_200, { ...EN, needs: 0, needsShort: 0 })).toBe(0)
+    // With one count instead of two, 268px has room for "others" again.
+    expect(backRowLevel(AT_268, { ...EN, needs: 0, needsShort: 0 })).toBe(0)
   })
 
   it('never offers a short form where there is none', () => {
