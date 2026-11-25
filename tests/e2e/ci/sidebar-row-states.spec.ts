@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { launchApp } from './ci/fixtures/launch-app'
+import { launchApp } from './fixtures/launch-app'
 
 /**
  * Sidebar redesign S-2 (design.md §6 "Row states", spec AC-10 and AC-11): a row
@@ -12,12 +12,15 @@ import { launchApp } from './ci/fixtures/launch-app'
  * on a seeded world and measures real boxes in Chromium.
  *
  * Self-contained and subscription-free (a stub `claude` that only sleeps), so it
- * needs `npm run build` and nothing else:
+ * needs `npm run build` and nothing else. CI runs it with the `ci` project:
  *
- *   xvfb-run -a npx playwright test --project=smoke tests/e2e/sidebar-row-states.spec.ts
+ *   xvfb-run -a npx playwright test --project=ci tests/e2e/ci/sidebar-row-states.spec.ts
  *
  * Neutral vocabulary only.
  */
+
+/** The folder header's name button; the header's other button is Focus. */
+const NAME_BUTTON = '[data-folder-select]'
 
 const SESSION_IDS = {
   main: '00000000-0000-4000-8000-0000000000a1',
@@ -227,8 +230,12 @@ async function measure(): Promise<Record<string, unknown>> {
 /** Focus a row the way Tab would: a key press first, so `:focus-visible` matches. */
 async function keyboardFocus(row: Locator): Promise<void> {
   await page.keyboard.press('Shift')
-  const inner = row.locator(':scope > button').first()
-  const target = (await row.evaluate((el) => el.tagName)) === 'BUTTON' ? row : inner
+  const { tag, header } = await row.evaluate((el) => ({
+    tag: el.tagName,
+    header: el.hasAttribute('data-folder-head')
+  }))
+  const inner = header ? row.locator(NAME_BUTTON) : row.locator(':scope > button')
+  const target = tag === 'BUTTON' ? row : inner
   await target.evaluate((el) => (el as HTMLElement).focus({ focusVisible: true } as FocusOptions))
   expect(await target.evaluate((el) => el.matches(':focus-visible'))).toBe(true)
 }
@@ -254,7 +261,7 @@ async function moveCursorTo(row: Locator): Promise<void> {
 async function paint(row: Locator): Promise<Record<string, string>> {
   // The bar's colour transitions over --dur-fast; read it once it has landed.
   await page.waitForTimeout(200)
-  return row.evaluate((el) => {
+  return row.evaluate((el, nameButton) => {
     const probe = (token: string): string => {
       const span = document.createElement('span')
       span.style.color = `var(${token})`
@@ -273,7 +280,10 @@ async function paint(row: Locator): Promise<Record<string, string>> {
       ].find((token) => probe(token) === color) ?? color
     const bar = getComputedStyle(el, '::before')
     const own = getComputedStyle(el)
-    const button = el.tagName === 'BUTTON' ? el : (el.querySelector(':scope > button') ?? el)
+    const button =
+      el.tagName === 'BUTTON'
+        ? el
+        : (el.querySelector(`:scope > ${nameButton}`) ?? el.querySelector(':scope > button') ?? el)
     const painted = bar.content !== 'none' && bar.backgroundColor !== 'rgba(0, 0, 0, 0)'
     return {
       bar: painted ? `${bar.width} ${name(bar.backgroundColor)} x=${bar.left}` : 'none',
@@ -281,7 +291,7 @@ async function paint(row: Locator): Promise<Record<string, string>> {
       background: own.backgroundImage === 'none' ? own.backgroundColor : own.backgroundImage,
       label: name(getComputedStyle(button).color)
     }
-  })
+  }, NAME_BUTTON)
 }
 
 // Paint runs first, while nothing is selected; the geometry test selects rows.
@@ -360,7 +370,7 @@ test('no row moves between states', async () => {
 
   // Current folder header, then focus on top of current.
   const header = targets()['folder header (repo)']
-  await header.locator(':scope > button').click()
+  await header.locator(NAME_BUTTON).click()
   await expect(header).toHaveAttribute('data-current', 'true')
   await blur()
   expect(await measure(), 'current header').toEqual(rest)
@@ -389,7 +399,7 @@ test('the selected session and the current header paint the accent bar and no fi
     [
       'folder header',
       targets()['folder header (repo)'],
-      () => targets()['folder header (repo)'].locator(':scope > button').click(),
+      () => targets()['folder header (repo)'].locator(NAME_BUTTON).click(),
       'data-current',
       '0'
     ]
@@ -427,7 +437,7 @@ test('the selected session and the current header paint the accent bar and no fi
 
 test('keyboard focus on a chip inside a row lights the row bar and draws no box', async () => {
   // Nothing selected on this row: the header holds the selection.
-  await targets()['folder header (repo)'].locator(':scope > button').click()
+  await targets()['folder header (repo)'].locator(NAME_BUTTON).click()
   const row = targets()['session row']
   const chip = row.locator('[role="button"][tabindex="0"]').first()
   await blur()
@@ -448,10 +458,7 @@ test('keyboard focus tells the header chevron apart from the header name', async
   const chevron = header.locator('[data-folder-chevron]')
   const colour = (): Promise<string> => chevron.evaluate((el) => getComputedStyle(el).color)
   // The name button always reads in --text.
-  const lit = await header
-    .locator(':scope > button')
-    .first()
-    .evaluate((el) => getComputedStyle(el).color)
+  const lit = await header.locator(NAME_BUTTON).evaluate((el) => getComputedStyle(el).color)
 
   await blur()
   await keyboardFocus(header)

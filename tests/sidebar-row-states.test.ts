@@ -14,7 +14,7 @@ import type { FolderEntry } from '../src/preload'
  * states", spec AC-10 and AC-12). jsdom has no box model and paints no
  * pseudo-element, so this file pins the DOM contract each row carries
  * (`data-row-bar`) and the rules main.css pairs with it. The painted result is
- * measured in Chromium by tests/e2e/sidebar-row-states.spec.ts. Neutral
+ * measured in Chromium by tests/e2e/ci/sidebar-row-states.spec.ts. Neutral
  * vocabulary only.
  */
 
