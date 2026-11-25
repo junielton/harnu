@@ -78,10 +78,10 @@ survive interruptions. The three pieces and why each exists:
 - **`harnu:mission`** — `set <objective>` declares a structured Harnu Mission
   through the `mission_*` verbs; every tick reads it with one `mission_get`, acts
   on what's unblocked, records what changed. The Mission is the thread that
-  survives compaction and restarts. It is born **active**: the end the operator
-  agreed in chat is the agreement, with no approval step after it. Only the
-  operator ends it (close or discard) from Harnu's Topbar, and once ended every
-  `mission_*` write refuses `MISSION_CLOSED` — stop the loop there.
+  survives compaction and restarts. The session that creates it leads it, and
+  the end the operator agreed in chat is its Done when, with no approval step
+  after it. Only the operator ends it, from the Mission dropdown, and once ended
+  every `mission_*` write refuses `MISSION_CLOSED` — stop the loop there.
 - **loop skill** — self-paced re-invocation drives the ticks. Without it the
   mission stalls the moment the turn ends.
 
@@ -92,11 +92,11 @@ Execution harness — set this up before any dispatching:
 1. Invoke the harnu:orchestrate-delivery skill and stay inside its contract for
    the whole mission: you coordinate and verify; executors implement.
 2. Invoke the harnu:mission skill with: set [one-sentence mission objective, the
-   executors you'll dispatch, the declared end — kind, target, and the evidence
-   that proves it — and the gates where the operator must decide].
-3. Invoke the loop skill (self-paced) to drive mission ticks until the declared
-   end is verified, then run mission done (it asks the operator to close) and
-   stop the loop.
+   executors you'll dispatch, the Done when — what is true when it is done, and
+   the criteria that prove it — and the gates where the operator must decide].
+3. Invoke the loop skill (self-paced) to drive mission ticks until every
+   criterion is settled, then run mission done (it asks the operator to close)
+   and stop the loop.
 Pin executor/subagent models explicitly when you dispatch: [e.g. workers on
 sonnet, file sweeps on haiku]. Escalate a single subagent to a bigger model only
 when its specific task demonstrably needs it.

@@ -11,6 +11,7 @@ import { gateBrowserOpDetailed, type BrowserGateInput } from '../src/main/browse
 import { lexicalPageTarget } from '../src/main/browser/page-content-rules'
 import { resolveGateInput } from '../src/main/browser/gate-resolve'
 import { MAX_AGENT_PANES_PER_FOLDER, createBrowserRegistry } from '../src/main/browser/registry'
+import { MAX_AGENT_PANES } from '../src/renderer/src/lib/browser-tabs-view'
 
 const FOLDER = '/work/app'
 const policy = (ask: boolean): Parameters<typeof planToolCall>[0]['policy'] => ({
@@ -37,6 +38,10 @@ const input = (agentPaneIds?: string[]): BrowserGateInput => ({
 describe('the cap is 4', () => {
   it('is one named constant', () => {
     expect(MAX_AGENT_PANES_PER_FOLDER).toBe(4)
+  })
+
+  it('is the same number the renderer greys "Move to a new pane" at', () => {
+    expect(MAX_AGENT_PANES).toBe(MAX_AGENT_PANES_PER_FOLDER)
   })
 })
 

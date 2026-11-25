@@ -1,5 +1,10 @@
 # Mission cue noise — one entry, real rows, quiet re-nudges, bulk close
 
+> **Superseded (2026-11-16).** This spec describes the mission model before Missions v4, kept as history.
+> The model that replaces it, with one Mission → Milestone → Step record and no Campaign, steward or
+> merge batch, is in [the Missions v4 spec](../2026-11-14-missions-v4/spec.md) and
+> [ADR-0025](../../adr/0025-missions-v4-one-model-supersedes-campaigns-and-stewards.md). Where they disagree, v4 wins.
+
 - **Date:** 2026-10-09 · **Revision:** 1
 - **Status:** draft for review. Spec only: no product code changes with this document. Implementation is the follow-up card (slices in §7).
 - **Card:** BUG-173 (unit U0).

@@ -386,6 +386,19 @@ const translateHideFolder: Translator = (args) => {
   return input
 }
 
+// Your move (U3): the gate folder IS the catalog `folder` arg (like notify). Every field passes
+// through untouched so the validator does the structural check, `options` included.
+const translateYourMove: Translator = (args, gateFolder) => {
+  const input: Record<string, unknown> = {}
+  if (gateFolder) input.folder = gateFolder
+  for (const key of ['sessionId', 'kind', 'ask', 'blocks', 'recommended', 'cardId'] as const) {
+    const v = strField(args, key)
+    if (v !== undefined) input[key] = v
+  }
+  if (args.options !== undefined) input.options = args.options
+  return input
+}
+
 // T329: the Containers actions address stacks by id, never a folder, so there
 // is no gate folder to carry; a blocked folder's stack is refused per stack by
 // the handler. Fields pass through untouched so the validator does the
@@ -514,6 +527,11 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   browser_download: translateBrowserPane,
   browser_set_data: translateBrowserPane,
   browser_patch: translateBrowserPane,
+  // Guided walks (S-2): the gate folder IS the catalog `folder`; every other field rides through untouched.
+  walk_open: translateMission,
+  walk_extend: translateMission,
+  walk_report: translateMission,
+  walk_get: translateMission,
   adopt_folder: translateAdoptFolder,
   // BUG-56: same shape as adopt_folder — `folder` only.
   remove_folder: translateAdoptFolder,
@@ -540,6 +558,7 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   release_worktree: translateReleaseWorktree,
   archive_session: translateArchiveSession,
   hide_folder: translateHideFolder,
+  your_move: translateYourMove,
   stop_containers: translateStopContainers,
   start_containers: translateStartContainers,
   remove_containers: translateRemoveContainers,
@@ -553,25 +572,17 @@ const TRANSLATORS: { [K in McpOp]: Translator } = {
   mission_list: translateMission,
   mission_add_step: translateMission,
   mission_update_step: translateMission,
-  mission_link_child: translateMission,
   mission_log: translateMission,
   mission_set_blocker: translateMission,
   mission_clear_blocker: translateMission,
-  mission_set_end: translateMission,
-  mission_verify_step: translateMission,
   mission_request_close: translateMission,
-  mission_import_legacy: translateMission,
-  mission_add_check: translateMission,
-  // Campaign ch.3a: same shape as the mission verbs — the gate folder IS the catalog `folder`.
-  campaign_create: translateMission,
-  campaign_add_chapter: translateMission,
-  campaign_get: translateMission,
-  campaign_list: translateMission,
-  campaign_request_close: translateMission,
-  // T654: the gate folder IS the catalog `folder`.
-  mission_transfer_owner: translateMission,
-  campaign_transfer_owner: translateMission,
-  // Campaign ch.5a: the gate folder IS the catalog `folder`.
+  mission_add_milestone: translateMission,
+  mission_add_ac: translateMission,
+  mission_link: translateMission,
+  mission_set_done_when: translateMission,
+  mission_settle_ac: translateMission,
+  mission_attach: translateMission,
+  // The gate folder of every mission verb IS the catalog `folder`.
   rebase_stack: translateMission
 }
 

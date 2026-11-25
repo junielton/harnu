@@ -5,6 +5,7 @@ import { isPathAllowed } from './settings'
 import { keybindingsFilePath } from './keybindings'
 import { readUserProjects } from './user-projects'
 import { scanFolders } from './claude-reader'
+import { isNotesFilePath, isNotesSymlink } from './notes-core'
 import {
   MAX_MARKDOWN_BYTES,
   BINARY_SNIFF_BYTES,
@@ -120,6 +121,30 @@ export async function isExactPathSymlink(
   }
 }
 
+/**
+ * The full gate the renderer-facing read / write / watch channels share: known-roots
+ * containment (plus the `allowExact` exception), widened to admit Quick-notes files
+ * (`<main checkout>/.harnu/notes/YYYY-MM-DD.md`) when only a worktree of that repo
+ * is a known root. Symlinks are refused (`allowExact` file; a note file or its
+ * notes dir). Computed per call, nothing stored. The MCP `open_file` validator does
+ * NOT use this — it keeps calling `checkMarkdownReadAllowed` directly.
+ */
+export async function markdownGate(
+  resolved: string,
+  allowExact?: string | null
+): Promise<
+  { ok: true } | { ok: false; code: Extract<MarkdownDenyCode, 'outside-roots' | 'symlink'> }
+> {
+  const roots = await markdownKnownRoots()
+  const notes = isNotesFilePath(resolved, roots)
+  if (!checkMarkdownReadAllowed(resolved, roots, allowExact).ok && !notes) {
+    return { ok: false, code: 'outside-roots' }
+  }
+  if (await isExactPathSymlink(resolved, allowExact)) return { ok: false, code: 'symlink' }
+  if (notes && (await isNotesSymlink(resolved))) return { ok: false, code: 'symlink' }
+  return { ok: true }
+}
+
 /** English fallbacks — the renderer keys its own localized copy off `code`. */
 const DENY_MESSAGE: Record<MarkdownDenyCode, string> = {
   'invalid-path': 'invalid path',
@@ -169,9 +194,8 @@ export async function readMarkdownFile(
   const resolved =
     typeof base === 'string' && base.length > 0 ? resolve(base, rawPath) : resolve(rawPath)
 
-  const gate = checkMarkdownReadAllowed(resolved, await markdownKnownRoots(), allowExact)
+  const gate = await markdownGate(resolved, allowExact)
   if (!gate.ok) return deny(gate.code)
-  if (await isExactPathSymlink(resolved, allowExact)) return deny('symlink')
 
   let size: number
   try {

@@ -177,8 +177,9 @@ export function buildDispatchActions(): CommandRouterActions {
       const target = owner ?? (selectedHere ? selected : null)
       if (!target) {
         // Neither the owner nor a selected session of the folder: the event is held on the pane. A comment
-        // has its own answer (main copies it to the clipboard and the composer says so), so no toast here.
-        if (source !== 'overlay') {
+        // has its own answer (main copies it to the clipboard and the composer says so), so no toast here;
+        // a walk turn waits in the run's outbox and the walk pane says so (S-3), so none here either.
+        if (source === 'page-event') {
           useUiStore().pushToast({
             kind: 'warning',
             title: i18n.global.t('browserPane.pageEvent.heldTitle'),
@@ -218,9 +219,10 @@ export function buildDispatchActions(): CommandRouterActions {
           title:
             source === 'page-event'
               ? i18n.global.t('browserPane.pageEvent.sent')
-              : i18n.global.t('browserPane.pageEvent.sentComment', {
-                  session: title || target.slice(0, 8)
-                }),
+              : i18n.global.t(
+                  source === 'walk' ? 'testWalk.turn.sent' : 'browserPane.pageEvent.sentComment',
+                  { session: title || target.slice(0, 8) }
+                ),
           sessionId: target,
           folderPath: folder
         })
@@ -229,6 +231,7 @@ export function buildDispatchActions(): CommandRouterActions {
     },
     closeHelperByPath: (worktreePath, path) => helpers.closeHelperByPath(worktreePath, path),
     closeHelperById: (worktreePath, paneId) => helpers.closeHelperById(worktreePath, paneId),
+    isPaneUnsaved: (worktreePath, ref) => helpers.isPaneUnsaved(worktreePath, ref),
     // T113 (background drain): the board-dispatch spawn WITHOUT selection — the
     // synthetic boots via the BUG-23 background runner, so the drain never yanks
     // the operator's focus; the reaper still surfaces a boot that never PTYs.

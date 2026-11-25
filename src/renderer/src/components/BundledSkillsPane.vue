@@ -18,11 +18,16 @@
  * operator's own terminal sessions see it too. Default OFF, disclosed, and it
  * REFUSES to overwrite a directory Harnu did not itself write.
  *
+ * T2: a catalog entry of `kind: 'feature'` (the doc-reader) is switched exactly like a
+ * skill. Under a folder scope the doc-reader row adds the folder's line threshold (that
+ * field is the doc-reader's own, not every feature's), and a feature never
+ * appears in Advanced: a feature is an agent plus a hook, not a `SKILL.md` to install.
+ *
  * Reuses existing components only (design §6): `ToggleSwitch` for booleans,
  * `SegmentedControl` for the scope picker and the folder tri-state,
  * `SettingHint` for every help line. No new token, no new component.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronRight, TriangleAlert } from 'lucide-vue-next'
 import { useUiStore } from '../stores/ui'
@@ -45,6 +50,19 @@ const userLevel = ref<Record<string, boolean>>({})
 const collisions = ref<string[]>([])
 /** Per-folder overrides for the currently selected folder. Missing key = inherit. */
 const folderFlags = ref<Record<string, boolean>>({})
+
+/** T2: the doc-reader default, mirrored from `DOC_READER_DEFAULT_MIN_LINES` for the hints. */
+const DOC_READER_DEFAULT = 350
+/** The selected folder's own doc-reader threshold, as typed (`''` = the default). */
+const thresholdText = ref('')
+/**
+ * The debounced save waiting to run, bound to the folder the value was TYPED for. Capturing the
+ * path at input time is what keeps a fast folder switch from writing A's value into B.
+ */
+let pendingThreshold: { timer: ReturnType<typeof setTimeout>; run: () => void } | null = null
+
+/** Skills only: a feature has no `SKILL.md` to install outside Harnu. */
+const installable = computed(() => catalog.value.filter((s) => s.kind !== 'feature'))
 
 const scope = ref<'global' | 'project'>('global')
 const advancedOpen = ref(false)
@@ -109,6 +127,43 @@ async function loadFolder(): Promise<void> {
   } catch {
     folderFlags.value = {}
   }
+  try {
+    const n = await window.api.bundledSkillsGetDocReaderMinLines(folder.path)
+    thresholdText.value = n === null ? '' : String(n)
+  } catch {
+    thresholdText.value = ''
+  }
+}
+
+/** Debounced like Cleanup's number inputs; the stored value is clamped and echoed back. */
+function onThresholdInput(raw: string): void {
+  thresholdText.value = raw
+  const folder = selectedFolder.value
+  if (!folder) return
+  const folderPath = folder.path
+  const run = (): void => {
+    pendingThreshold = null
+    const trimmed = raw.trim()
+    const n = trimmed === '' ? null : Number(trimmed)
+    if (n !== null && !Number.isFinite(n)) return
+    void window.api
+      .bundledSkillsSetDocReaderMinLines(folderPath, n)
+      .then((stored) => {
+        // Echo the clamped value only while that folder is still the one on screen.
+        if (selectedFolder.value?.path === folderPath)
+          thresholdText.value = stored === null ? '' : String(stored)
+      })
+      .catch(() => {})
+  }
+  if (pendingThreshold) clearTimeout(pendingThreshold.timer)
+  pendingThreshold = { timer: setTimeout(run, 400), run }
+}
+
+/** Run a pending save now (folder switch, pane closing) instead of dropping what was typed. */
+function flushThreshold(): void {
+  if (!pendingThreshold) return
+  clearTimeout(pendingThreshold.timer)
+  pendingThreshold.run()
 }
 
 async function toggleGlobal(name: string, enabled: boolean): Promise<void> {
@@ -160,6 +215,7 @@ async function toggleUserLevel(name: string, install: boolean): Promise<void> {
 // while the pane is open, fall back to Global rather than leaving rows that look
 // editable but write nowhere.
 watch(selectedFolder, (folder) => {
+  flushThreshold() // a value typed for the previous folder belongs to that folder
   if (!folder) {
     scope.value = 'global'
     folderFlags.value = {}
@@ -171,6 +227,11 @@ watch(selectedFolder, (folder) => {
 onMounted(() => {
   void load()
 })
+
+onBeforeUnmount(flushThreshold)
+
+const INPUT_STYLE =
+  'border: 1px solid var(--color-border); border-radius: 5px; padding: 5px 8px; font-size: 12px; font-family: var(--font-mono); width: 72px'
 
 const eyebrowStyle =
   'font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px'
@@ -216,6 +277,38 @@ const eyebrowStyle =
               {{ s.name }}
             </div>
             <SettingHint>{{ s.description }}</SettingHint>
+            <template v-if="s.name === 'doc-reader'">
+              <div
+                v-if="scope === 'project'"
+                class="flex items-center"
+                style="gap: 6px; margin-top: 6px"
+              >
+                <span class="text-text-2" style="font-size: 12px">
+                  {{ $t('bundledSkills.feature.threshold') }}
+                </span>
+                <input
+                  type="number"
+                  min="50"
+                  step="50"
+                  class="bg-surface text-text"
+                  :style="INPUT_STYLE"
+                  data-testid="doc-reader-threshold"
+                  :value="thresholdText"
+                  :placeholder="String(DOC_READER_DEFAULT)"
+                  :aria-label="$t('bundledSkills.feature.threshold')"
+                  @input="onThresholdInput(($event.target as HTMLInputElement).value)"
+                />
+                <span class="text-text-3" style="font-size: 11.5px">
+                  {{ $t('bundledSkills.feature.linesSuffix') }}
+                </span>
+              </div>
+              <SettingHint v-if="scope === 'project'" style="margin-top: 4px">
+                {{ $t('bundledSkills.feature.thresholdHint', { n: DOC_READER_DEFAULT }) }}
+              </SettingHint>
+              <SettingHint v-else style="margin-top: 4px">
+                {{ $t('bundledSkills.feature.globalThresholdHint', { n: DOC_READER_DEFAULT }) }}
+              </SettingHint>
+            </template>
             <div
               v-if="hasCollision(s.name)"
               class="flex items-start text-text-3"
@@ -256,7 +349,7 @@ const eyebrowStyle =
 
     <!-- Advanced: the opt-in machine-level install. Global scope only — it writes a
          file under ~/.claude, which has nothing to do with a single project. -->
-    <section v-if="scope === 'global' && catalog.length > 0">
+    <section v-if="scope === 'global' && installable.length > 0">
       <button
         type="button"
         class="flex items-center text-text-3 transition hover:text-text-2"
@@ -274,7 +367,7 @@ const eyebrowStyle =
         </SettingHint>
         <div class="flex flex-col" style="gap: 4px">
           <div
-            v-for="s in catalog"
+            v-for="s in installable"
             :key="s.name"
             class="flex items-center justify-between border border-border bg-surface"
             style="gap: 12px; padding: 8px 10px; border-radius: 6px"

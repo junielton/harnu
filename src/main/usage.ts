@@ -1,10 +1,10 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { execFile, type ChildProcess } from 'node:child_process'
 import { homedir } from 'node:os'
 import { buildSnapshot, type UsageSnapshot, type UsageRunOutcome } from './usage-parse'
 import { resolveClaudePath } from './claude-cli'
 import { sanitizeSpawnEnv } from './appimage-env'
 import { planUsagePollAllowed, reportPlanUsagePoll } from './companion/ingest/plan-usage-gate'
+import { runFile, type RunFilePromise } from './spawn-runner'
 
 /**
  * Plan-usage poller (plan-usage-widget spec). Spawns the official Claude Code
@@ -24,7 +24,7 @@ const SPAWN_TIMEOUT_MS = 20_000
 let lastSnapshot: UsageSnapshot | null = null
 let inFlight: Promise<UsageSnapshot> | null = null
 let pollTimer: NodeJS.Timeout | null = null
-let inFlightChild: ChildProcess | null = null
+let inFlightChild: RunFilePromise | null = null
 let onFocus: (() => void) | null = null
 let onBlur: (() => void) | null = null
 
@@ -42,19 +42,21 @@ async function runUsageOnce(): Promise<UsageRunOutcome> {
   // LD_LIBRARY_PATH/PATH into the child unless scrubbed.
   const bin = (await resolveClaudePath()) ?? 'claude'
   return new Promise((resolve) => {
-    inFlightChild = execFile(
-      bin,
-      ['-p', '/usage', '--model', 'haiku'],
-      {
-        cwd: homedir(),
-        env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
-        timeout: SPAWN_TIMEOUT_MS,
-        maxBuffer: 1 << 20,
-        encoding: 'utf8'
+    const run = runFile(bin, ['-p', '/usage', '--model', 'haiku'], {
+      cwd: homedir(),
+      env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
+      timeout: SPAWN_TIMEOUT_MS,
+      maxBuffer: 1 << 20
+    })
+    inFlightChild = run
+    run.then(
+      ({ stdout }) => {
+        if (inFlightChild === run) inFlightChild = null
+        resolve({ ok: true, stdout })
       },
-      (err, stdout) => {
-        inFlightChild = null
-        resolve(err ? { ok: false } : { ok: true, stdout })
+      () => {
+        if (inFlightChild === run) inFlightChild = null
+        resolve({ ok: false })
       }
     )
   })

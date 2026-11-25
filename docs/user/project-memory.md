@@ -76,7 +76,7 @@ The pane itself doesn't have edit or save controls — it's a viewer. Writing ha
 
 ## Decisions that replace each other
 
-A decision a session records in `decisions.md` gets an id (`e-1a2b3c4d`) and a start date, shown on a small `> entry:` line above its provenance. When a later decision overrides it, the session names the old one, and Harnu marks the old entry `superseded_by` the new one. Nothing is deleted: searching memory for a phrase from the old decision shows the match together with the decision that replaced it, so nobody acts on the stale line. A decision can also say which files or topics it is about (`watches`); when a new mission or campaign is started on those files or with those words, the live decisions come back to the session in its reply. Entries written before this existed have no id and are simply never recalled.
+A decision a session records in `decisions.md` gets an id (`e-1a2b3c4d`) and a start date, shown on a small `> entry:` line above its provenance. When a later decision overrides it, the session names the old one, and Harnu marks the old entry `superseded_by` the new one. Nothing is deleted: searching memory for a phrase from the old decision shows the match together with the decision that replaced it, so nobody acts on the stale line. A decision can also say which files or topics it is about (`watches`); when a new mission is started on those files or with those words, the live decisions come back to the session in its reply. Entries written before this existed have no id and are simply never recalled.
 
 ## Memory is context, not instructions
 

@@ -1,0 +1,63 @@
+{
+  "title": "How the notes search works",
+  "purpose": "learn",
+  "source": { "kind": "feature", "text": "The search box on the notes list of example-web" },
+  "checks": [
+    {
+      "id": "l1",
+      "title": "Find where the list is drawn",
+      "why": "The search box filters what this function draws.",
+      "where": { "text": "The notes list module" },
+      "do": [
+        {
+          "text": "Open the list module and find `drawList`",
+          "see": "A function that returns one row per note"
+        }
+      ],
+      "passes": "You can point at the line that builds each row.",
+      "nothingFromHere": "Reading code is yours to do.",
+      "more": "Every filter ends up calling this one function, so it is the best place to start reading.",
+      "teach": {
+        "what": "drawList takes the typed word and returns the rows whose text contains it.",
+        "where": [{ "label": "list.js", "kind": "file", "target": "src/notes/list.js" }],
+        "idea": { "text": "A filter is a loop that keeps what matches." },
+        "why": "Knowing this makes the search box easy to change later."
+      },
+      "edge": [
+        { "text": "Call it with an empty word", "see": "All four rows come back" },
+        { "text": "Call it with spaces only", "see": "All four rows come back" }
+      ]
+    },
+    {
+      "id": "l2",
+      "title": "See how typing reaches the filter",
+      "why": "The box calls the filter on every keystroke.",
+      "where": { "text": "The search module" },
+      "do": [
+        {
+          "text": "Find `onInput` in the search module",
+          "see": "It rewrites the list from the box value"
+        }
+      ],
+      "passes": "You can say what happens when a letter is typed.",
+      "nothingFromHere": "Reading code is yours to do.",
+      "teach": {
+        "what": "onInput reads the box value and redraws the list through drawList.",
+        "idea": { "text": "An input handler is a small function wired to a key press." }
+      },
+      "edge": [{ "text": "Type fast", "see": "The list always matches the box" }]
+    },
+    {
+      "id": "l3",
+      "title": "Know what Escape does",
+      "why": "Escape is the shortcut that undoes a search.",
+      "where": { "text": "The search module" },
+      "do": [
+        { "text": "Find `onKey` in the search module", "see": "Escape empties the box and redraws" }
+      ],
+      "passes": "You can say what Escape does to the box.",
+      "nothingFromHere": "Reading code is yours to do.",
+      "teach": { "what": "onKey clears the box on Escape, then runs onInput again." }
+    }
+  ]
+}

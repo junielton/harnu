@@ -1,7 +1,16 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { mainCheckoutRoot } from './data-dir'
-import { missionsDir, parseMissionFile, type Mission } from './mission-core'
+import { onMissionFileWritten, readParsedCached } from './missions/file-cache'
+import { leaderOf as leaderOfRecord } from './missions/guard'
+import { parseMissionRecordFile } from './missions/model'
+import { migratedDir, v4RecordsDir } from './missions/record-store'
+import {
+  leaderOf,
+  readMissionsDedupedSnapshot,
+  reportUnreadableMissionFiles,
+  warmMissionSnapshots
+} from './missions/store'
 
 /**
  * The set of session keys currently PARKED — process killed to reclaim memory, conversation
@@ -18,8 +27,17 @@ import { missionsDir, parseMissionFile, type Mission } from './mission-core'
  */
 const hibernated = new Set<string>()
 
-export function markHibernated(sessionKey: string): void {
+/** T616: the folder each parked session was staged for, so the skills prune can keep its dir. */
+const hibernatedFolderOf = new Map<string, string>()
+
+export function markHibernated(sessionKey: string, folder?: string): void {
   hibernated.add(sessionKey)
+  if (folder !== undefined) hibernatedFolderOf.set(sessionKey, folder)
+}
+
+/** Folders of the sessions currently parked (T616). Sessions parked without a folder are absent. */
+export function hibernatedFolders(): string[] {
+  return [...hibernatedFolderOf.values()]
 }
 
 /**
@@ -28,6 +46,7 @@ export function markHibernated(sessionKey: string): void {
  */
 export function clearHibernated(sessionKey: string): void {
   hibernated.delete(sessionKey)
+  hibernatedFolderOf.delete(sessionKey)
 }
 
 export function isHibernated(sessionKey: string): boolean {
@@ -121,97 +140,186 @@ export function parkHistory(): readonly ParkEvent[] {
 /** Test-only: drop all state between cases. */
 export function resetHibernation(): void {
   hibernated.clear()
+  hibernatedFolderOf.clear()
   parkingPtyIds.clear()
   parkLedger.length = 0
 }
 
 /**
- * The mission-owner exemption (T363 — plan Slice S2, design.md §8 / §13 Resolved B).
+ * The leader exemption (T363, Missions v4 S-23 · AC-62).
  *
- * An orchestrator that owns an `active` Mission is usually IDLE by design: it dispatched its
- * children and is waiting for their reports. Parking it is exactly wrong — a child's
- * report lands on a dead process (smoke test T360 Q2, then observed live on T356). So a
- * session that owns an active mission with at least one `session` step link naming a
- * currently-live session is never a hibernation victim, whatever its own idle state.
+ * The leader of an OPEN mission is never a hibernation victim, ready to close included: it is usually
+ * idle by design (it dispatched its work and waits for the reports), and a report, an answer to a
+ * request to join or the operator's hand-off would land on a dead process. This used to hold only
+ * while a live child session was linked under the mission; the v4 pane made the leader the one session
+ * the mission stands on (R-9), so it holds for as long as the mission is open. A closed mission frees
+ * its leader.
  *
- * Scoped to a LIVE child, not to "owns an active mission": an idle mission with nothing
- * running under it must not pin its owner's hundreds of MB indefinitely. The pin also
- * self-releases — once every child is parked or closed, the owner is eligible again.
- *
- * Missions are read straight from disk with S1's `parseMissionFile` (no `mission_*` verb
- * exists at this point in the stack). Fails OPEN: an unreadable directory or a malformed
- * file exempts nobody, which is exactly the behavior before this exemption existed.
+ * The missions are read through the record store's own files and rules, for v3 and v4 alike: a v4
+ * record under `.harnu/missions-v4/` is the mission (one format at a time, and the record's own
+ * `leaderOf` names the leader), and a v3 mission nobody copied yet is read with the v3 reader, its
+ * leader being the owner while it is not closed (a delivered one, waiting for the operator to close
+ * it, is ready to close). The record store reads asynchronously and this runs inside the synchronous
+ * fleet snapshot, so the same files are read here with the same parser. Fails OPEN: an unreadable
+ * directory or a malformed file exempts nobody, which is what happened before this exemption existed. It
+ * never fails SILENT (Missions v4 S-40, Decision 12): a malformed file is reported by name to the store's
+ * unreadable list, and the app's Activity notice (raised from `mission:list`) names it once, for as long as
+ * the same file stays unreadable. A mission whose file nobody can read is a mission whose leader may be parked.
  */
-export function ownsMissionWithLiveChild(
-  sessionKey: string,
-  missions: readonly Mission[],
-  liveKeys: ReadonlySet<string>
-): boolean {
-  return missions.some(
-    (m) =>
-      m.status === 'active' &&
-      m.owner.sessionId === sessionKey &&
-      m.steps.some((step) =>
-        step.links.some(
-          // A self-link is not a child: an owner naming itself would otherwise pin itself.
-          (l) => l.kind === 'session' && l.ref !== sessionKey && liveKeys.has(l.ref)
+
+interface V4Leaders {
+  leaders: Map<string, string | null>
+  covered: Set<string>
+  unreadable: string[]
+}
+
+/** The last {@link readV4Leaders} of each root: what the synchronous sweep reads. */
+const v4Snapshots = new Map<string, V4Leaders>()
+
+/**
+ * The leaders of the open v4 records under `root`, and every mission id a v4 record or sidecar covers.
+ * Asynchronous and served from the parse cache (BUG-278): a record whose file did not change is not read
+ * or parsed again. The result is kept as the root's snapshot.
+ */
+async function readV4Leaders(root: string): Promise<V4Leaders> {
+  const leaders = new Map<string, string | null>()
+  const covered = new Set<string>()
+  const unreadable: string[] = []
+  try {
+    const dir = v4RecordsDir(root)
+    for (const name of await fs.readdir(dir)) {
+      const m = /^(mnt-[0-9a-f]{8})-.+\.md$/.exec(name)
+      if (!m) continue
+      try {
+        const record = await readParsedCached('v4-parse', path.join(dir, name), (raw) =>
+          parseMissionRecordFile(raw)
         )
-      )
-  )
+        if ('error' in record) {
+          unreadable.push(name)
+          continue
+        }
+        covered.add(record.id)
+        leaders.set(record.id, record.status === 'open' ? leaderOfRecord(record) : null)
+      } catch {
+        /* one unreadable file exempts nobody: it is reported by name, below */
+        unreadable.push(name)
+      }
+    }
+  } catch {
+    /* no v4 directory yet */
+  }
+  try {
+    // A campaign converted to v4 supersedes its own id and every chapter mission's: the v3 files stay
+    // beside the record as snapshots and read as nothing.
+    for (const name of await fs.readdir(migratedDir(root))) {
+      if (name.endsWith('.json')) covered.add(name.slice(0, -5))
+    }
+  } catch {
+    /* no sidecars */
+  }
+  const result = { leaders, covered, unreadable }
+  v4Snapshots.set(root, result)
+  return result
+}
+
+/**
+ * Refresh what {@link openMissionLeaders} reads, for `roots`: the v3 snapshots of the store and the v4
+ * leaders of each repo. Reads through the parse cache, so it is cheap when nothing changed, and never
+ * rejects. The sweep starts one on every pass (the answer lands for the next); a mission write starts
+ * one too, so a mission created a moment ago is known before the next sweep.
+ */
+export async function refreshOpenMissionLeaders(roots: readonly string[]): Promise<void> {
+  await Promise.all([
+    warmMissionSnapshots(roots),
+    ...roots.map((r) => readV4Leaders(r).catch(() => null))
+  ])
+  // A load that ended, even one that read nothing, is a first load: the repo is no longer cold.
+  for (const root of roots) loadedRoots.add(root)
+}
+
+/** The repos whose first load has finished (successfully or not). */
+const loadedRoots = new Set<string>()
+
+/**
+ * The `roots` whose first load has not finished: the sweep has no snapshot to answer from for them.
+ * "A leader is never parked while its mission is open" has to hold on that sweep too, so a session of a
+ * cold repo is treated as a possible leader ({@link missionOwnersWithLiveChildren}). A load that fails
+ * still ends the cold state, so a repo that cannot be read reads as having no missions, as before.
+ */
+export function coldMissionRoots(roots: readonly string[]): string[] {
+  return roots.filter((r) => !loadedRoots.has(r))
+}
+
+// A mission file written (any root): refresh the roots the sweep has been asking about, now.
+onMissionFileWritten(() => {
+  const roots = [...v4Snapshots.keys()]
+  if (roots.length > 0) void refreshOpenMissionLeaders(roots)
+})
+
+/**
+ * The keys of the sessions that lead an open mission in the repos of `roots`: v4 records first, then
+ * the v3 missions no v4 record covers. Pure of the fleet: it names leaders, the caller keeps the live ones.
+ *
+ * It does NO file I/O (BUG-278): the sweep is synchronous and ran on the main thread, reading and
+ * parsing every mission file each time. It answers from the snapshots the last refresh left, and starts
+ * the next refresh. A repo nobody has loaded yet reads as having no missions here, so callers that
+ * park sessions must also ask {@link coldMissionRoots} ({@link missionOwnersWithLiveChildren} does).
+ */
+export function openMissionLeaders(roots: readonly string[]): Set<string> {
+  const out = new Set<string>()
+  const covered = new Set<string>()
+  const unreadable: string[] = []
+  for (const root of roots) {
+    const v4 = v4Snapshots.get(root)
+    if (!v4) continue
+    for (const id of v4.covered) covered.add(id)
+    for (const leader of v4.leaders.values()) if (leader) out.add(leader)
+    unreadable.push(...v4.unreadable)
+  }
+  // The store's one v3 read: the newest copy of each mission across the clones, so a stale twin in
+  // another clone pins nobody. `includeClosed: false` leaves the closed ones out.
+  const v3 = readMissionsDedupedSnapshot([...roots], { includeClosed: false })
+  for (const { mission } of v3.missions) {
+    if (covered.has(mission.id)) continue
+    const leader = leaderOf(mission)
+    if (leader) out.add(leader)
+  }
+  unreadable.push(...v3.unreadable.map((u) => u.name))
+  // Every pass reports its whole set: a file that reads again leaves the list, and a later failure of it is news.
+  reportUnreadableMissionFiles('hibernation', unreadable)
+  if (roots.length > 0) void refreshOpenMissionLeaders(roots)
+  return out
 }
 
 // `mainCheckoutRoot` lives in `./data-dir` (the one resolver); re-exported for existing callers.
 export { mainCheckoutRoot }
 
 /**
- * Every well-formed `active` mission under `root`; `[]` when there is no missions dir.
- *
- * Synchronous on purpose (the fleet snapshot it feeds is). A repo the boot pass never saw
- * has its legacy `.capy/` copied lazily, so the FIRST sweep over it can read no missions and
- * park an owner whose child is live. That self-heals on the next sweep, once the copy has
- * landed — and a parked session is intact on disk (selecting the row resumes it), so the
- * miss costs a resume, never work. Pinned by the AC-3e test in `tests/hibernation.test.ts`.
- */
-function readActiveMissions(root: string): Mission[] {
-  const dir = missionsDir(root)
-  let names: string[]
-  try {
-    names = readdirSync(dir)
-  } catch {
-    return []
-  }
-  const out: Mission[] = []
-  for (const name of names) {
-    if (!name.endsWith('.md')) continue
-    try {
-      const parsed = parseMissionFile(readFileSync(path.join(dir, name), 'utf8'))
-      if (!('error' in parsed) && parsed.status === 'active') out.push(parsed)
-    } catch {
-      // Unreadable file — fail open, skip it.
-    }
-  }
-  return out
-}
-
-/**
- * The keys of every live session that {@link ownsMissionWithLiveChild} exempts. `sessions`
- * is the whole live fleet (it doubles as the liveness set); `cwd` locates each session's
- * repo, and each distinct repo's missions are read once.
+ * The keys of every live session that leads an open mission (see {@link openMissionLeaders}). `sessions`
+ * is the whole live fleet; `cwd` locates each session's repo, and each distinct repo's missions are
+ * read once. The name is the one the callers know: before S-23 it asked for a live child too. Every session
+ * of a repo whose first load has not finished is included (see {@link coldMissionRoots}), so the sweep
+ * never parks a leader it could not yet know about.
  */
 export function missionOwnersWithLiveChildren(
   sessions: readonly { sessionKey: string; cwd?: string }[]
 ): Set<string> {
-  const liveKeys = new Set(sessions.map((s) => s.sessionKey))
   const roots = new Set<string>()
+  const rootOf = new Map<string, string>()
   for (const s of sessions) {
     const root = s.cwd ? mainCheckoutRoot(s.cwd) : null
-    if (root) roots.add(root)
+    if (root) {
+      roots.add(root)
+      rootOf.set(s.sessionKey, root)
+    }
   }
-  const missions = [...roots].flatMap(readActiveMissions)
-  const owners = new Set<string>()
-  if (missions.length === 0) return owners
-  for (const key of liveKeys) {
-    if (ownsMissionWithLiveChild(key, missions, liveKeys)) owners.add(key)
-  }
-  return owners
+  const leaders = openMissionLeaders([...roots])
+  // A repo the snapshot has not loaded yet: its leaders are unknown, so every session of it counts as one
+  // (and is parked for no mission reason) until the load the call above started has finished.
+  const cold = new Set(coldMissionRoots([...roots]))
+  return new Set(
+    sessions
+      .map((s) => s.sessionKey)
+      .filter((key) => leaders.has(key) || cold.has(rootOf.get(key) ?? ''))
+  )
 }

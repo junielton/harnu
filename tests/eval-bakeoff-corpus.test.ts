@@ -271,6 +271,30 @@ it('loader validates a problem and names every defect', async () => {
   })
 })
 
+it('hidden.dest must stay inside the checkout', async () => {
+  const { loadCorpus } = await import('../scripts/eval/bakeoff/corpus.mjs')
+  const load = (dest: string, rootName: string): Record<string, unknown> => {
+    const { root } = problemCopy((p) => void (p.hidden.dest = dest), { rootName })
+    return loadCorpus(root, { split: 'dev' })
+  }
+
+  for (const [i, dest] of [
+    '../outside/',
+    '..',
+    'tests/../../outside/',
+    '/tmp/outside/'
+  ].entries()) {
+    expect(load(dest, `escape-${i}`), dest).toMatchObject({
+      problems: [],
+      errors: [{ code: 'FILE_MISSING', file: JSON_FILE, field: 'hidden.dest' }]
+    })
+  }
+
+  for (const [i, dest] of ['tests/', './tests/unit/', '.', 'a/../tests/', '..tests/'].entries()) {
+    expect(load(dest, `inside-${i}`), dest).toMatchObject({ errors: [] })
+  }
+})
+
 it('content hash ignores provenance and follows every other byte', async () => {
   const { contentHash } = await import('../scripts/eval/bakeoff/corpus.mjs')
   const base = problemCopy(undefined, { rootName: 'a' })
@@ -592,18 +616,38 @@ it('a problem command reports its exit and is killed with its children at the ti
   })
   expect(capped.stdout).toBe('1')
 
+  // Long enough for a niced shell to start and write the pid on a loaded machine.
   const killed = await runProblemCommand('sleep 60 & echo $! > child.pid; wait', tmp, {
-    timeoutMs: 300
+    timeoutMs: 1_000
   })
   expect(killed.timedOut).toBe(true)
   expect(killed.exitCode).not.toBe(0)
   const pid = Number(readFileSync(join(tmp, 'child.pid'), 'utf8'))
-  expect(() => process.kill(pid, 0)).toThrow()
+  // Polled: the pipes close while the child is still exiting, and `kill(pid, 0)` succeeds
+  // until it is reaped (measured: gone within 10 ms). A real survivor sleeps past this bound.
+  await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), {
+    timeout: 5_000,
+    interval: 20
+  })
 
   const noCwd = await runProblemCommand('true', join(tmp, 'absent'), {})
   expect(noCwd.exitCode).not.toBe(0)
   expect(noCwd.timedOut).toBe(false)
 }, 30_000)
+
+it('a problem command is not told where the holdout, work or cache roots are', async () => {
+  const { runProblemCommand } = await import('../scripts/eval/bakeoff/checkout.mjs')
+  const names = ['HARNU_BAKEOFF_HOLDOUT', 'HARNU_BAKEOFF_WORK', 'HARNU_BAKEOFF_CACHE']
+  for (const name of names) vi.stubEnv(name, `/secret/${name}`)
+  const printAll = names.map((name) => `echo "${name}=\${${name}-unset}"`).join('; ')
+  const expected = names.map((name) => `${name}=unset\n`).join('')
+
+  expect((await runProblemCommand(printAll, tmp, {})).stdout).toBe(expected)
+
+  // Not even when a caller passes them in.
+  const env = Object.fromEntries(names.map((name) => [name, `/secret/${name}`]))
+  expect((await runProblemCommand(printAll, tmp, { env })).stdout).toBe(expected)
+})
 
 it.skipIf(process.platform !== 'linux')(
   'a daemon that left the process group cannot hold a timed-out command open',

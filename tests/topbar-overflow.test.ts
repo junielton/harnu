@@ -60,10 +60,12 @@ const TEST_ID: Record<TopbarActionId, string> = {
   roadmap: 'topbar-roadmap',
   'pr-stack': 'topbar-pr-stack',
   review: 'topbar-review',
+  walks: 'topbar-walks',
   'open-folder': 'topbar-open-folder',
   editor: 'topbar-editor',
   'github-pulls': 'topbar-github-pulls',
   explorer: 'topbar-explorer',
+  notes: 'topbar-notes',
   terminal: 'topbar-split',
   browser: 'topbar-browser',
   'split-layout': 'topbar-split-layout',
@@ -133,21 +135,24 @@ describe('topbar overflow menu', () => {
 
   it('AC-2: moves the lowest-priority actions into `…`, one at a time, as the bar narrows', async () => {
     const wrapper = await mountFull()
-    // 12 actions need 12 slots. 11 slots: one action has to leave and the `…` button takes a slot, so two go.
-    await resizeTo(widthFor(11))
+    // 14 actions need 14 slots. 13 slots: one action has to leave and the `…` button takes a slot, so two go.
+    await resizeTo(widthFor(13))
     expect(barIds(wrapper)).toEqual(
       TOPBAR_BAR_ORDER.filter((id) => id !== 'github-pulls' && id !== 'open-folder')
     )
     expect(wrapper.find('[data-test="topbar-more"]').exists()).toBe(true)
 
-    await resizeTo(widthFor(10)) // one more slot short: one more action goes, in priority order
+    await resizeTo(widthFor(12)) // one more slot short: one more action goes, in priority order
     expect(inBar(wrapper, 'editor')).toBe(false)
     expect(inBar(wrapper, 'explorer')).toBe(true)
 
-    await resizeTo(widthFor(8))
+    await resizeTo(widthFor(9))
     expect(barIds(wrapper)).toEqual(
       TOPBAR_BAR_ORDER.filter(
-        (id) => !['github-pulls', 'open-folder', 'editor', 'explorer', 'split-layout'].includes(id)
+        (id) =>
+          !['github-pulls', 'open-folder', 'editor', 'explorer', 'split-layout', 'notes'].includes(
+            id
+          )
       )
     )
     // The `…` button is the last thing in the cluster.
@@ -159,21 +164,21 @@ describe('topbar overflow menu', () => {
     const wrapper = await mountFull()
     await resizeTo(widthFor(5))
     expect(barIds(wrapper).length).toBe(4)
-    await resizeTo(widthFor(14))
+    await resizeTo(widthFor(15))
     expect(barIds(wrapper)).toEqual([...TOPBAR_BAR_ORDER])
     expect(wrapper.find('[data-test="topbar-more"]').exists()).toBe(false)
   })
 
   it('AC-2: does not oscillate when the width jitters on the boundary', async () => {
     const wrapper = await mountFull()
-    await resizeTo(widthFor(11)) // two hidden
+    await resizeTo(widthFor(13)) // two hidden
     const settled = barIds(wrapper)
-    // 12 slots would show everything; coming back needs 8px to spare, so jitter below that changes nothing.
-    for (const w of [widthFor(12), widthFor(12) + 3, widthFor(12) - 2, widthFor(12) + 7]) {
+    // 14 slots would show everything; coming back needs 8px to spare, so jitter below that changes nothing.
+    for (const w of [widthFor(14), widthFor(14) + 3, widthFor(14) - 2, widthFor(14) + 7]) {
       await resizeTo(w)
       expect(barIds(wrapper)).toEqual(settled)
     }
-    await resizeTo(widthFor(12) + 8)
+    await resizeTo(widthFor(14) + 8)
     expect(barIds(wrapper)).toEqual([...TOPBAR_BAR_ORDER])
   })
 
@@ -185,9 +190,16 @@ describe('topbar overflow menu', () => {
         wrapper.get(`[data-test="${TEST_ID[id]}"]`).attributes('aria-label')!
       ])
     )
-    await resizeTo(widthFor(8))
+    await resizeTo(widthFor(9))
     const hidden = TOPBAR_BAR_ORDER.filter((id) => !inBar(wrapper, id))
-    expect(hidden).toEqual(['open-folder', 'editor', 'github-pulls', 'explorer', 'split-layout'])
+    expect(hidden).toEqual([
+      'open-folder',
+      'editor',
+      'github-pulls',
+      'explorer',
+      'notes',
+      'split-layout'
+    ])
 
     await wrapper.get('[data-test="topbar-more"]').trigger('click')
     expect(menuIds(wrapper)).toEqual(hidden)
@@ -214,7 +226,7 @@ describe('topbar overflow menu', () => {
 
   it('AC-3: an action in the menu runs the same handler as its button, then the menu closes', async () => {
     const wrapper = await mountFull()
-    await resizeTo(widthFor(8))
+    await resizeTo(widthFor(9))
     await wrapper.get('[data-test="topbar-more"]').trigger('click')
     await wrapper.get('[data-test="topbar-overflow-item-open-folder"]').trigger('click')
     expect(openPath).toHaveBeenCalledWith('/repo/alpha')
@@ -237,7 +249,7 @@ describe('topbar overflow menu', () => {
 
   it('AC-3: opens from the keyboard, arrows move, Enter activates, Esc closes and returns focus', async () => {
     const wrapper = await mountFull()
-    await resizeTo(widthFor(8))
+    await resizeTo(widthFor(9))
     const more = wrapper.get('[data-test="topbar-more"]')
     expect(more.attributes('aria-haspopup')).toBe('menu')
     expect(more.attributes('aria-expanded')).toBe('false')
@@ -285,10 +297,10 @@ describe('topbar overflow menu', () => {
     folder.gitBranch = 'fix/BUG-252-topbar-overflow-with-a-very-long-name'
     const wrapper = await mountFull()
     // 200 = padding, toggle, bell, gaps and the 96px title; +11 the branch icon, +8 its gap.
-    await resizeTo(widthFor(12) + 19)
+    await resizeTo(widthFor(14) + 19)
     expect(barIds(wrapper)).toEqual([...TOPBAR_BAR_ORDER])
-    await resizeTo(widthFor(12) + 18)
-    expect(barIds(wrapper)).toHaveLength(10)
+    await resizeTo(widthFor(14) + 18)
+    expect(barIds(wrapper)).toHaveLength(12)
   })
 
   it('keeps the 42px band and the island markers with Floating panels off and on', async () => {

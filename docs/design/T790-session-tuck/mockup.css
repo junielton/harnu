@@ -1,0 +1,655 @@
+/* T790 — shared anatomy. var(--token) only; plain numbers carry a "no token" note. */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: 13px/1.45 var(--font-sans);
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------- app chrome ---------- */
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 800px; /* no token: fixed 1280x800 sample window */
+  overflow: hidden;
+  background: var(--color-bg);
+}
+.topbar {
+  height: 40px; /* no token: Topbar height */
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+.brand {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  flex: none;
+}
+.crumb {
+  color: var(--color-text-3);
+  font-size: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.crumb b {
+  color: var(--color-text);
+  font-weight: 500;
+}
+.crumb .sep {
+  color: var(--color-text-disabled);
+}
+.topbar .spacer {
+  flex: 1;
+}
+.pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px; /* no token: pill */
+  border: 1px solid var(--color-border-2);
+  color: var(--color-text-2);
+}
+.footer {
+  height: 24px; /* no token: footer height */
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-4);
+  font-size: 11px;
+  background: var(--color-bg);
+}
+.rail {
+  width: 40px; /* no token: minimized Inbox rail */
+  flex: none;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-sidebar);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 10px;
+}
+.rail i {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  display: block;
+}
+
+/* ---------- main row ---------- */
+.main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+.split {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  position: relative;
+}
+.split.is-stacked {
+  flex-direction: column;
+}
+
+/* session area (main terminal) */
+.session {
+  position: relative;
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-bg);
+  transition: opacity var(--dur-slow) var(--ease);
+}
+.term {
+  padding: 12px 14px;
+  font: 12px/1.6 var(--font-mono);
+  color: var(--color-text-2);
+  white-space: pre;
+}
+.term .u {
+  color: var(--color-text);
+}
+.term .a {
+  color: var(--color-accent);
+}
+.term .g {
+  color: var(--color-green);
+}
+.term .m {
+  color: var(--color-text-4);
+}
+
+/* divider: 6px hit area, 1px stripe */
+.divider {
+  flex: none;
+  position: relative;
+  width: 6px;
+  cursor: col-resize;
+}
+.divider::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: var(--color-border);
+}
+.is-stacked .divider {
+  width: auto;
+  height: 6px;
+  cursor: row-resize;
+}
+.is-stacked .divider::after {
+  top: 2px;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 1px;
+}
+
+/* armed: divider turns accent, session dims, a hint says what release does */
+.divider.armed::after {
+  background: var(--color-accent);
+  width: 2px;
+  left: 2px;
+}
+.is-stacked .divider.armed::after {
+  width: auto;
+  height: 2px;
+  top: 2px;
+}
+.divider.armed::before {
+  content: '';
+  position: absolute;
+  inset: 0 -6px;
+  background: var(--color-accent-soft);
+}
+.is-stacked .divider.armed::before {
+  inset: -6px 0;
+}
+.dim {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: var(--color-scrim);
+  align-items: center;
+  justify-content: center;
+}
+.dim .hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-accent-line);
+  color: var(--color-text);
+  box-shadow: var(--shadow-pop);
+  font-size: 12px;
+}
+.dim .hint svg {
+  color: var(--color-accent);
+}
+.floor {
+  display: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed var(--color-accent-line);
+}
+.floor span {
+  position: absolute;
+  bottom: 12px;
+  left: 6px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-accent-line);
+  font-size: 10px;
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+.is-stacked .floor {
+  top: auto;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 0;
+  border-left: 0;
+  border-top: 1px dashed var(--color-accent-line);
+}
+.is-stacked .floor span {
+  top: 6px;
+  bottom: auto;
+  left: auto;
+  right: 8px;
+}
+
+/* helper column */
+.helpers {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--color-bg);
+}
+.helpers.row {
+  flex-direction: row;
+}
+.pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.pane + .pane {
+  border-top: 0;
+}
+.helpers.row .pane + .pane {
+  border-top: 1px solid var(--color-border);
+  border-left: 0;
+}
+.pane-head {
+  height: 28px; /* no token: pane header */
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-2);
+  font-size: 12px;
+  background: var(--color-sidebar);
+}
+.pane-head .t {
+  color: var(--color-text);
+  font-weight: 500;
+}
+.pane-head .sp {
+  flex: 1;
+}
+.pane-head svg {
+  color: var(--color-text-4);
+}
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* walk pane sample */
+.walk {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.walk .count {
+  font-size: 11px;
+  color: var(--color-text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.walk h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.walk p {
+  margin: 0;
+  color: var(--color-text-2);
+}
+.walk ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--color-text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.walk .acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.btn {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-2);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-size: 12px;
+}
+.btn.primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+/* browser pane sample (a CMS editor) */
+.addr {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+.addr .bar {
+  flex: 1;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-3);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+.cms {
+  display: flex;
+  height: 100%;
+}
+.cms .nav {
+  width: 150px;
+  flex: none;
+  border-right: 1px solid var(--color-border);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cms .nav i {
+  display: block;
+  height: 10px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-2);
+}
+.cms .nav i.on {
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-accent-line);
+}
+.cms .doc {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cms .doc .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cms .doc label {
+  font-size: 11px;
+  color: var(--color-text-4);
+}
+.cms .doc .in {
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-2);
+  background: var(--color-bg);
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-2);
+  font-size: 12px;
+}
+.cms .doc .area {
+  height: 120px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-2);
+  background: var(--color-bg);
+}
+.cms .doc .area.tall {
+  height: 220px;
+}
+.cms .doc .in.focus {
+  border-color: var(--color-accent);
+}
+
+/* ---------- tuck strip (the part this mockup is about) ---------- */
+.tuck {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  width: 14px; /* no token: strip at rest */
+  background: var(--color-sidebar);
+  border-right: 1px solid var(--color-border);
+  cursor: col-resize;
+  transition:
+    width var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.tuck .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--color-text-4);
+}
+.tuck .grip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: auto;
+  margin-bottom: auto;
+}
+.tuck .grip i {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--color-text-disabled);
+  display: block;
+}
+.tuck .chev {
+  display: none;
+  color: var(--color-text-2);
+}
+.tuck .tag {
+  display: none;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-warning);
+}
+
+/* hover: the strip widens, the chevron says "this opens", a chip names the session */
+.tuck:hover,
+.tuck.hover {
+  width: 20px; /* no token: strip on hover */
+  background: var(--color-surface-2);
+  border-right-color: var(--color-accent-line);
+}
+.tuck:hover .grip,
+.tuck.hover .grip {
+  display: none;
+}
+.tuck:hover .chev,
+.tuck.hover .chev {
+  display: block;
+  margin-top: auto;
+  margin-bottom: auto;
+}
+.tuck .chip {
+  display: none;
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 10px;
+  z-index: 5;
+  width: max-content;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+  box-shadow: var(--shadow-pop);
+  cursor: default;
+}
+.tuck:hover .chip,
+.tuck.hover .chip {
+  display: block;
+}
+.chip .n {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text);
+  font-weight: 500;
+  font-size: 12px;
+}
+.chip .n .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-4);
+}
+.chip .s {
+  color: var(--color-text-3);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.chip .h {
+  color: var(--color-text-2);
+  font-size: 11px;
+  margin-top: 6px;
+}
+.chip .k {
+  color: var(--color-text-4);
+  font-size: 11px;
+  margin-top: 4px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+kbd {
+  font: 10px/1 var(--font-mono);
+  padding: 2px 4px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--color-border-2);
+  background: var(--color-bg);
+  color: var(--color-text-2);
+}
+
+/* needs you: amber, blinking dot, a vertical "Needs you" tag so it reads from across the room */
+.tuck.needs {
+  background: var(--color-warning-soft);
+  border-right-color: var(--color-warning-line);
+  width: 20px;
+}
+.tuck.needs .dot {
+  background: var(--color-warning);
+  animation: attention-blink 1.2s ease-in-out infinite;
+}
+.tuck.needs .grip {
+  display: none;
+}
+.tuck.needs .tag {
+  display: block;
+}
+.tuck.needs .chip .n .dot {
+  background: var(--color-warning);
+}
+@keyframes attention-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tuck.needs .dot {
+    animation: none;
+  }
+}
+
+/* horizontal strip (stacked orientation: session on top) */
+.tuck.h {
+  flex-direction: row;
+  width: auto;
+  height: 14px;
+  padding: 0 12px;
+  border-right: 0;
+  border-bottom: 1px solid var(--color-border);
+  cursor: row-resize;
+}
+.tuck.h .grip {
+  flex-direction: row;
+  margin: 0 auto;
+}
+.tuck.h .chev {
+  transform: rotate(90deg);
+  margin: 0 auto;
+}
+.tuck.h:hover,
+.tuck.h.hover {
+  width: auto;
+  height: 20px;
+  border-bottom-color: var(--color-accent-line);
+}
+.tuck.h:hover .chev,
+.tuck.h.hover .chev {
+  margin: 0 auto;
+}
+.tuck.h .chip {
+  left: 10px;
+  top: calc(100% + 8px);
+}
+.tuck.h .tag {
+  writing-mode: horizontal-tb;
+  transform: none;
+}
+.tuck.h.needs {
+  height: 20px;
+  border-bottom-color: var(--color-warning-line);
+}
+
+/* custom-element hosts never box their part */
+mk-tuck-strip,
+mk-session-term {
+  display: contents;
+}
