@@ -1,16 +1,19 @@
 import { join } from 'node:path'
-import { readFile, writeFile, readdir, stat, rename, unlink, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, readdir, stat, rename, unlink, mkdir, open } from 'node:fs/promises'
+import type { FileHandle } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { isMainThread, parentPort, workerData } from 'node:worker_threads'
 import {
-  buildFileCostBuckets,
   extractFirstCwd,
+  foldCostBuckets,
   mergeCostBuckets,
+  priceFileLines,
   type CostBucket
 } from './usage-cost-core'
 import {
-  buildFileAnatomySignals,
   buildSessionAnatomy,
+  foldFileAnatomySignals,
   type FileAnatomySignals,
   type SessionAnatomy,
   type SessionHourlyPoint
@@ -25,9 +28,10 @@ import {
  * `~/.claude/projects` can be gigabytes, so the scan is incremental. A per-file cache, keyed by
  * `(path, size, mtimeMs)`, stores each file's ALREADY-DEDUPED-AND-PRICED `CostBucket[]` (a handful of
  * day x model rows, not the raw request list), persisted to
- * `~/.claude/om2tab/usage-history/cost-cache.json`. A request only re-parses files whose size or mtime
- * moved since the last scan; everything else is a cheap `stat()` + cache hit. Fail-safe throughout: any
- * I/O error degrades to "no engine data".
+ * `~/.claude/om2tab/usage-history/cost-cache.json`. A request only looks inside files whose size or mtime
+ * moved since the last scan; everything else is a cheap `stat()` + cache hit. Transcripts are append-only,
+ * so a file that grew is read from where the last scan stopped and its folds are continued; any other
+ * change re-reads it whole. Fail-safe throughout: any I/O error degrades to "no engine data".
  */
 
 export interface UsageScanRoots {
@@ -169,6 +173,22 @@ interface CachedFileEntry {
   /** Real project path: the JSONL's own `cwd` when the file carries one,
    *  else the lossy slug decode (v5). */
   projectPath: string
+  resume: ResumeState
+}
+
+/** What it takes to continue a file's folds once it has grown (v6). No transcript text. */
+interface ResumeState {
+  /** Bytes consumed: just past the last newline. */
+  offset: number
+  /** Hash of the first and the last few KB before `offset`: are they still the same bytes? */
+  fingerprint: string
+  /** Request ids already counted, so a later block of the same response isn't counted again. */
+  requestIds: string[]
+  /** The first `cwd` found before `offset`. */
+  cwd: string | null
+  /** The folds up to `offset`. Present only when the entry's own folds also count a last
+   *  line that has no newline yet, which will be read again. */
+  beforeTail?: Pick<CachedFileEntry, 'buckets' | 'anatomy'>
 }
 
 interface CostCacheFile {
@@ -187,7 +207,8 @@ interface CostCacheFile {
 // lossy slug decode (dash/underscore project names were mangled, e.g.
 // `my-cool_project` → `my/cool/project`); cached buckets bake the path in,
 // so a v4 cache would keep serving the mangled names for unchanged files.
-const CACHE_VERSION = 5
+// v6: every entry carries `resume`, without which a grown file can't be continued.
+const CACHE_VERSION = 6
 
 /**
  * Hourly cost detail (used only by the BI window-enrichment join) is capped to
@@ -219,6 +240,132 @@ async function removeLeftoverTmps(cacheDir: string): Promise<void> {
       .filter((n) => n.startsWith(`${CACHE_NAME}.`) && n.endsWith('.tmp'))
       .map((n) => unlink(join(cacheDir, n)).catch(() => {}))
   )
+}
+
+// ---- Parsing one file ---------------------------------------------------------
+
+const HOUR_MS = 3_600_000
+
+/** How much of the start, and of the end, of the consumed bytes the fingerprint covers. */
+const FINGERPRINT_BYTES = 4096
+
+async function readRange(file: FileHandle, start: number, end: number): Promise<Buffer> {
+  const buffer = Buffer.allocUnsafe(end - start)
+  let got = 0
+  while (got < buffer.length) {
+    const { bytesRead } = await file.read(buffer, got, buffer.length - got, start + got)
+    if (bytesRead === 0) break
+    got += bytesRead
+  }
+  return buffer.subarray(0, got)
+}
+
+async function fingerprint(file: FileHandle, offset: number): Promise<string> {
+  const length = Math.min(offset, FINGERPRINT_BYTES)
+  return createHash('sha1')
+    .update(await readRange(file, 0, length))
+    .update(await readRange(file, offset - length, offset))
+    .digest('base64')
+}
+
+interface Folds {
+  buckets: CostBucket[]
+  anatomy: FileAnatomySignals | null
+  requestIds: ReadonlySet<string>
+  cwd: string | null
+}
+
+/** Continue `prev` with the lines that follow it. `prev` is not mutated. */
+function foldLines(
+  prev: Folds,
+  lines: readonly string[],
+  task: FileTask,
+  hourlyCutoffMs: number
+): Folds & { anatomy: FileAnatomySignals } {
+  // Prefer the file's own `cwd` — the slug-decoded task.projectPath is
+  // lossy for project names containing `-`/`_` (see decodeSlugToPath).
+  const cwd = prev.cwd ?? extractFirstCwd(lines)
+  const { sessionId, isSubagent } = task
+  const requestIds = new Set(prev.requestIds)
+  const priced = priceFileLines(lines, requestIds)
+  return {
+    cwd,
+    requestIds,
+    buckets: foldCostBuckets(prev.buckets, priced, {
+      sessionId,
+      projectPath: cwd ?? task.projectPath,
+      isSubagent
+    }),
+    anatomy: foldFileAnatomySignals(
+      prev.anatomy,
+      lines,
+      priced,
+      { sessionId, isSubagent },
+      hourlyCutoffMs
+    )
+  }
+}
+
+/** Everything folded so far, or nothing when `prev` can't be continued for the file as it is now. */
+async function resumeFrom(
+  file: FileHandle,
+  size: number,
+  prev: CachedFileEntry | undefined,
+  hourlyCutoffMs: number
+): Promise<{ offset: number; folds: Folds }> {
+  const nothing = {
+    offset: 0,
+    folds: { buckets: [], anatomy: null, requestIds: new Set<string>(), cwd: null }
+  }
+  // Only growth is an append: a smaller file, or a new mtime on the same size, was rewritten.
+  if (!prev || size <= prev.size) return nothing
+  // An hour the retention cutoff now falls inside can only be recomputed from its requests.
+  const split = prev.anatomy.hourly.some(
+    (h) => h.hourStartMs < hourlyCutoffMs && h.hourStartMs + HOUR_MS > hourlyCutoffMs
+  )
+  const { offset, requestIds, cwd, beforeTail } = prev.resume
+  if (split || (await fingerprint(file, offset)) !== prev.resume.fingerprint) return nothing
+  const { buckets, anatomy } = beforeTail ?? prev
+  return { offset, folds: { buckets, anatomy, requestIds: new Set(requestIds), cwd } }
+}
+
+/** The cache entry for a new or changed file, reading no more of it than necessary. */
+async function parseFile(
+  task: FileTask,
+  st: { size: number; mtimeMs: number },
+  prev: CachedFileEntry | undefined
+): Promise<CachedFileEntry> {
+  const hourlyCutoffMs = Date.now() - HOURLY_RETENTION_DAYS * 24 * HOUR_MS
+  const file = await open(task.path, 'r')
+  try {
+    const from = await resumeFrom(file, st.size, prev, hourlyCutoffMs)
+    // Never past the stat'ed size, so the entry describes the file at that size.
+    const bytes = await readRange(file, from.offset, st.size)
+    // A newline byte is never part of a multi-byte character, so both halves decode cleanly.
+    const complete = bytes.lastIndexOf(0x0a) + 1
+    const lines = bytes.toString('utf8', 0, complete).split('\n')
+    const base = foldLines(from.folds, lines, task, hourlyCutoffMs)
+    // A last line with no newline counts now, but stays unconsumed: it may still be growing.
+    const tail = bytes.toString('utf8', complete)
+    const whole = tail.trim() ? foldLines(base, [tail], task, hourlyCutoffMs) : base
+    const offset = from.offset + complete
+    return {
+      size: st.size,
+      mtimeMs: st.mtimeMs,
+      buckets: whole.buckets,
+      anatomy: whole.anatomy,
+      projectPath: whole.cwd ?? task.projectPath,
+      resume: {
+        offset,
+        fingerprint: await fingerprint(file, offset),
+        requestIds: [...base.requestIds],
+        cwd: base.cwd,
+        ...(whole !== base && { beforeTail: { buckets: base.buckets, anatomy: base.anatomy } })
+      }
+    }
+  } finally {
+    await file.close()
+  }
 }
 
 /** One scanner owns the per-file cache, in memory and on disk, for the roots it was given. */
@@ -274,8 +421,9 @@ export function createUsageScanner({ projectsRoot, cacheDir }: UsageScanRoots): 
 
   /**
    * (Re)scan every discovered file, reusing the cache for anything whose
-   * `(size, mtimeMs)` didn't change. Returns whether the cache was mutated (so
-   * the caller only persists when there's something new to save).
+   * `(size, mtimeMs)` didn't change, and the folds of whatever only grew.
+   * Returns whether the cache was mutated (so the caller only persists when
+   * there's something new to save).
    */
   async function refreshCache(tasks: readonly FileTask[]): Promise<boolean> {
     const currentPaths = new Set(tasks.map((t) => t.path))
@@ -302,33 +450,11 @@ export function createUsageScanner({ projectsRoot, cacheDir }: UsageScanRoots): 
         const cached = fileCache.get(task.path)
         if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) continue
 
-        let raw: string
         try {
-          raw = await readFile(task.path, 'utf8')
+          fileCache.set(task.path, await parseFile(task, st, cached))
         } catch {
           continue
         }
-        const lines = raw.split('\n')
-        // Prefer the file's own `cwd` — the slug-decoded task.projectPath is
-        // lossy for project names containing `-`/`_` (see decodeSlugToPath).
-        const projectPath = extractFirstCwd(lines) ?? task.projectPath
-        const buckets = buildFileCostBuckets(lines, {
-          sessionId: task.sessionId,
-          projectPath,
-          isSubagent: task.isSubagent
-        })
-        const anatomy = buildFileAnatomySignals(
-          lines,
-          { sessionId: task.sessionId, isSubagent: task.isSubagent },
-          Date.now() - HOURLY_RETENTION_DAYS * 24 * 3600_000
-        )
-        fileCache.set(task.path, {
-          size: st.size,
-          mtimeMs: st.mtimeMs,
-          buckets,
-          anatomy,
-          projectPath
-        })
         mutated = true
       }
     }
