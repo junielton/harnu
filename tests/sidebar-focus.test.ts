@@ -300,6 +300,23 @@ describe('AC-21 Focus on one folder', () => {
     expect(trees()).not.toContain(NOTES)
   })
 
+  it('keeps Enter and Space on its two buttons away from the global shortcuts', async () => {
+    await boot()
+    const reached: string[] = []
+    const spy = (e: KeyboardEvent): void => void reached.push(e.key)
+    window.addEventListener('keydown', spy)
+    const press = (el: Element): void => {
+      for (const key of ['Enter', ' ']) {
+        el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      }
+    }
+    press(header(APP).querySelector('[data-focus-button]')!)
+    await focusFolder(APP)
+    press(back()!)
+    window.removeEventListener('keydown', spy)
+    expect(reached).toEqual([])
+  })
+
   it('offers no drill-depth button in the toolbar', async () => {
     await boot()
     expect(find('[data-drill-toggle]')).toBeNull()
