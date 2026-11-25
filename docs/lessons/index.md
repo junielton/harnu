@@ -97,6 +97,7 @@ every lesson in the tree should skip them.
 - [`framework/006-electron-builder-skips-publish-when-release-type-mismatches.md`](./framework/006-electron-builder-skips-publish-when-release-type-mismatches.md) — v0.3.3/v0.3.5 shipped with zero assets; electron-builder silently skips upload when `releaseType` doesn't match an already-published release
 - [`testing/006-eval-harness-grades-state-through-the-real-transport.md`](./testing/006-eval-harness-grades-state-through-the-real-transport.md) — "eval harness" is a house term: grade `.harnu/missions/*.md` state through Harnu's real MCP transport, never a model verdict, and prove every grader fails on a deliberately broken copy
 - [`testing/007-bumping-the-harnu-features-marker-grep-every-test.md`](./testing/007-bumping-the-harnu-features-marker-grep-every-test.md) — a marker bump leaves red CI when a test pins the bare `'vN'`; grep the prefixed and the bare form, then run the pinned tests
+- [`code-patterns/007-a-folder-is-gone-check-must-read-the-shelved-worktree-list-first.md`](./code-patterns/007-a-folder-is-gone-check-must-read-the-shelved-worktree-list-first.md) — Your move closed the cards of shelved worktrees as "folder removed"; a shelved folder is not a gone one
 
 ## How to add a lesson
 
