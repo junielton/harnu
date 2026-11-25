@@ -22,6 +22,12 @@ export type HelperPaneType =
   // T564 U1: a browser pane. Persistable since T574 (spec §10.3): it reopens DISCARDED after a restart; its
   // `payload` carries the address, zoom, emulation, network switch, scroll and pins.
   | 'browser'
+  // Guided walks S-3: the walk pane. Non-PTY; its `payload` carries `{ walkId, runId }` and never content, so a
+  // restart restores it from the walk's record under `.harnu/walks/`.
+  | 'walk'
+  // Guided walks S-4: the Walks library. Non-PTY and reproducible from nothing (the repo's walks are read from
+  // `.harnu/walks/`), so it persists like any pane that needs no payload; one per worktree.
+  | 'walks'
 
 export interface HelperPane {
   /** Stable id; format: `h-<random>`. Used as the PTY identifier too. */
@@ -42,7 +48,9 @@ export interface HelperPane {
   /**
    * Optional for `type === 'markdown'`. Open straight in EDIT mode on first mount
    * instead of view (T87 — a scaffolded WORKTREE.md proposal opens ready to
-   * review-and-save; today a non-blank file would default to view).
+   * review-and-save; today a non-blank file would default to view). In-memory only:
+   * the renderer strips it before writing (`TRANSIENT_PANE_FIELDS`), so a pane restored
+   * after a restart opens in view mode.
    */
   initialMode?: 'edit'
   /** Present iff `type === 'memory'`. Folder whose repo `.harnu/memory/` to show (T79). */

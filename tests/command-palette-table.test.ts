@@ -146,6 +146,23 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+describe('Quick notes — both commands are palette actions', () => {
+  it('lists notes.openToday and notes.open, today featured in the empty view', async () => {
+    expect(ELIGIBLE).toContain('notes.openToday')
+    expect(ELIGIBLE).toContain('notes.open')
+    expect(FEATURED).toContain('notes.openToday')
+    expect(FEATURED).not.toContain('notes.open')
+    mountPalette()
+    await openPalette()
+    expect(rowIds()).toContain('notes.openToday')
+    expect(rowIds()).not.toContain('notes.open')
+    await type(label('notes.open'))
+    expect(rowIds()[0]).toBe('notes.open')
+    await pressEnter()
+    expect(handlers.get('notes.open')).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('AC-38 — actions come from the table', () => {
   it('lists every eligible action when its label is typed, bound or unbound', async () => {
     mountPalette()

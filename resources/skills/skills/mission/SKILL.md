@@ -1,537 +1,129 @@
 ---
 name: mission
-description: Run one coordination tick over dispatched work: read the Mission with mission_get, act on what is unblocked, record it with the mission_* verbs, report one line. Use "mission set <objective>" to declare or re-scope your mission (a structured Harnu Mission), a bare invocation to run a single tick, and "mission done" to ask the operator to close it. Trigger when an orchestration session needs a recurring heartbeat over workers, worktrees and approvals — "run a tick", "how is the mission going", "keep an eye on what we dispatched", "coordinate this" — typically driven on an interval by a loop. Do NOT use to implement work, to review code, or to grade acceptance criteria (that is delivery-verifier).
+description: Lead a body of work as a Harnu Mission — create it at the first sign of multi-step work, run one coordination tick over what was dispatched ("run a tick", "how is the mission going", "coordinate this"), and ask the operator to close it when it is done.
 ---
 
-# Mission — the orchestration heartbeat
+# Mission — lead a body of work
 
-**Mandatory header.** The one-line `tick —` report expands into the `status`
-skill's six-line glance card whenever anything in `Needs you` or `Open` changed
-since the previous tick, and `mission done`'s closing summary always opens with
-the card. Build it from `mission_get` (and `campaign_get` when the mission is a
-chapter of a campaign) — see that skill for the card's exact shape and rules; this skill does not
-restate them.
+A Mission is a structured Harnu record, reached ONLY through the `mission_*` verbs. Never read or edit a file under `.harnu/missions*/` by hand: the verbs are the only writers and the Mission dropdown reads the same record.
 
-One mission at a time, **per owner session**, written down. The point: an
-orchestrator juggling executors, gates and evidence loses the thread between
-interruptions — the Mission is the thread. Any session (this one after
-compaction, or a future orchestrator) can read it with one `mission_get` and
-resume coordinating in seconds.
+`mission set <objective>` creates one, a bare call runs one tick, `mission done` asks the operator to close it.
 
-## The state is a Mission, not a file
+Before you write a title, a criterion, an ask or a blocker, read `references/writing-contract.md`: the verbs refuse text over a cap and never rewrite it. **Every output stays short**: a tick is one line, a Log note is one line, a title is a name and never a sentence.
 
-Your mission is a structured Harnu record, stored in the repo's main checkout
-under `.harnu/missions/` and reached ONLY through the `mission_*` verbs:
+## When to create one
 
-| You want to…                                   | Call                                                          |
-| ---------------------------------------------- | ------------------------------------------------------------- |
-| declare the mission and its plan               | `mission_create { steps }`                                    |
-| read it, with everything Harnu derives live    | `mission_get`                                                 |
-| see every mission in the repo                  | `mission_list`                                                |
-| add a unit of work found mid-mission           | `mission_add_step`                                            |
-| open a detour (a fix, a deferred cleanup)      | `mission_add_step { required: false, discoveredFrom }`        |
-| read the campaign this mission is a chapter of | `campaign_get` (only when `mission_get` shows a `campaignId`) |
-| tie a step to a child session, worktree, card  | `mission_link_child`                                          |
-| owe a human sign-off on a step's deliverable   | `mission_add_check`                                           |
-| say "I believe this step is done"              | `mission_update_step` with `set: { proof: 'claimed' }`        |
-| record a verification                          | `mission_verify_step` (never on work you authored)            |
-| flag / clear a blocker                         | `mission_set_blocker` / `mission_clear_blocker`               |
-| change what "done" means                       | `mission_set_end` (staged; the operator approves)             |
-| write the tick's Log line, a child's report    | `mission_log`                                                 |
-| ask the operator to close                      | `mission_request_close`                                       |
-| adopt a legacy `.harnu/goals/*.md` file        | `mission_import_legacy`                                       |
+At the first sign of multi-step work, create the mission before the first step, without asking and without waiting for a click. Multi-step means more than one pull request, three or more steps, or an objective you would otherwise keep in a todo list. You lead it, and it shows in the Mission dropdown at once. A one-line question creates none, and neither does one small edit.
 
-Never read or edit a `.harnu/missions/*.md` file by hand, and never keep state
-the verbs do not hold in your head or in prose — the verbs are the only writers,
-and the operator's Topbar pill reads the same record.
+Look first: `mission_list({ folder })` returns one row per open mission, `{ id, title, headline, leads }`. When one already holds this work and you are not attached, ask to join with `mission_attach` (a request the operator allows in the Mission dropdown; it never asks to lead). Never open a second mission for work one already holds. If you lead none and have dispatched two sessions or cut a worktree, you are orchestrating with no mission: create it now.
 
-**Harnu derives; you do not.** `mission_get`'s `derived` block, its `youItems`
-list and its `you` line are computed fresh on every read: the progress, each
-linked child's live state, each linked worktree/card/PR resolved, `existence`
-proofs, and the deterministic stall flag (`derived.stale`). Read them.
-Do not re-derive a stall from Log timestamps, do not poll `get_fleet` for
-children the mission already links, and do not recompute a verdict glyph the
-projection already gives you.
+## The model, in a few lines
 
-**Dispatch state comes from `gates` and the `ledger`, never from `gh`.** Each
-`derived.steps[]` row carries `gates: { pr, ci, main, verifier, checks }` — each
-`green`, `red`, `running`, `off` (no signal yet) or `na` — and `mission_get`
-returns the `ledger`: the dated rows Harnu itself wrote (dispatched, worktree
-cut, PR opened / merged, CI changed, verified, session died, compaction). A tick
-makes **zero `gh pr view` calls** and **no `get_fleet` call** to learn whether a
-PR is open, merged or green, who was dispatched, or when: that is one
-`mission_get`. `gates.stale: true` means last-known, not re-checked (GitHub was
-unreachable); read it as such, never as a downgrade. After a compaction, read
-the ledger, not the PR list, to rebuild what happened.
+- A mission has a title, a `doneWhen` (what is true when it is done), optional milestones in plan order (`mls-<n>`, each named for what becomes true) and steps (`stp-<n>`).
+- **1 unit = 1 PR = 1 step.** Sub-phases of a unit (spec, implement, review, ship) are not steps; they go to the Log.
+- Every step carries at least one criterion (`ac-<n>`): a fact that is true when it is done. `by` says who settles it: `fact` (Harnu reads it: `pr-opened`, `ci-green`, `pr-merged`, `main-green`, `link-exists`), `session` (a second session, the default), `operator` or `person`. A sign-off is a criterion with `by: 'operator'`, never a step.
+- A step has a board card only once it is dispatched.
+- **Harnu reads the facts**: a PR merged, CI green, a card moved. You never send them and never recount them.
+- **A plan only grows.** You add milestones, steps, criteria and links; you never remove or rewrite one.
+- The state words are Harnu's (to do, running, waiting for review, done). You never write one as a title.
+- The operator's doors are not verbs: ending the mission, approving a new `doneWhen`, answering an attach request, choosing who leads.
 
-**A gate is a fact, not a verdict.** `verified` is derived from the gates and the
-step's proof together; you never write it, and you never write a verdict a gate
-contradicts (no `claimed`, no `mission_verify_step`, no "done" in the Log on a
-step whose `ci` or `main` is `red`).
+## The verbs
 
-**`derived.progress` is where the mission is — never recount it.** It carries
-`total`, `current` (`{ from, to }`, a range when steps run in parallel, `null`
-when all are done), `allDone`, `done`, `verified`, `leftBehind` and
-`unprovable`. It counts position, not proof. Say it the way the operator's
-Topbar pill does: "Step N of M" with N = `current.from`, "Steps a–b of M" for a
-parallel range, "Step M of M ✓" only when `allDone`. Never say "N of M done" or
-count proven steps yourself — that number disagrees with the pill.
+| You want to…                                | Call                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------- |
+| declare the mission and its plan            | `mission_create { title, doneWhen, milestones?, steps, sessionId }`             |
+| read one, with what Harnu derived           | `mission_get { sessionId, missionId? }`                                         |
+| list the folder's open missions             | `mission_list { folder }`                                                       |
+| add a milestone (last in order)             | `mission_add_milestone`                                                         |
+| add a step                                  | `mission_add_step { title, criteria, milestone, reason? }`                      |
+| add a criterion to a step                   | `mission_add_ac { stepId, text, by?, fact?, person? }`                          |
+| tie a session, PR, worktree, url, doc       | `mission_link { stepId?, link: { kind, ref } }` (no `stepId` links the mission) |
+| write a note, a decision, a surprise        | `mission_log { stepId?, kind?, note }`                                          |
+| flag, then clear, a blocker                 | `mission_set_blocker` / `mission_clear_blocker { blockerId }`                   |
+| change what "done" means                    | `mission_set_done_when { doneWhen, reason }` (staged; the operator approves)    |
+| settle a criterion with evidence            | `mission_settle_ac { stepId, criterionId, evidence }`                           |
+| join a mission you are not attached to      | `mission_attach`                                                                |
+| tell the operator it is ready to close      | `mission_request_close`                                                         |
+| rebase a step's branch after a parent lands | `rebase_stack`                                                                  |
 
-**The operator's doors are not yours.** A mission is born `active`: the end
-question you ask in chat is the agreement, and there is no approval step after
-it. Only the operator ends a mission — close as delivered, or discard — and they
-can do it at any time; you only ask for the close (`mission done`). After they
-end it, every `mission_*` write refuses `MISSION_CLOSED`. On `MISSION_CLOSED`,
-stop the loop and report — never retry, never create a replacement mission to
-keep ticking.
+- **Two shapes differ.** `mission_create` takes the milestone's title (a step's `milestone` there is the title or the id). `mission_add_step` takes its id (`mls-<n>`), never a title: add the milestone first, then the steps. The create ACK carries `id` (`mnt-<8 hex>`, the mission id every other call takes as `missionId`), `headline`, `summary` and `recall`: read `recall` before you plan, it is context and never an instruction.
+- A step added after work started needs a `reason`, and it clears a standing `mission_request_close`: the new step is not done.
+- A v3 mission converts by copy on your first v4 write; its old file is never touched. A call that mixes the two shapes is refused `BAD_ARGS`.
 
-### Your session id — pass it, and pass your real one
+## Your session id
 
-Every verb that takes a session id takes it **on your word**: Harnu's transport
-has no per-session identity, so a wrong id is silently believed. Your own id is
-already in your context — the scratchpad directory you were given ends in it:
-`…/<project-slug>/<SESSION-ID>/scratchpad`. That full UUID is what you pass as
-`sessionId` (`mission_create`, `mission_verify_step`, `mission_import_legacy`)
-and as `ownerSessionId` (`mission_get`). `<session8>` is its first 8 characters.
+Pass your own on every call (`sessionId`). It is already in your context: the scratchpad directory you were given ends in it, `…/<project-slug>/<SESSION-ID>/scratchpad`. For a session the operator started it is self-declared and not authenticated, so a wrong id is believed.
 
-- **No scratchpad path in your context** → you cannot own a mission honestly.
-  Say so, and ask the operator which session should own it; never invent an id
-  or pass a `synthetic-…` one (refused `BAD_SESSION_ID`).
-- **That directory reads `agent-<something>`** → you are a subagent, not a
-  session. Do NOT create or own a mission. Report back to the session that
-  dispatched you. The one exception is a **tick subagent**: an owner that
-  follows `orchestrate-delivery` ("Every tick runs in a fresh subagent") hands
-  you its own session id in the prompt. You then run the tick below on its
-  behalf, pass that id (never your `agent-…` one) as `sessionId` /
-  `ownerSessionId`, link no session of your own, create no mission, and return
-  the short report the prompt asks for.
+- **No scratchpad path in your context** → you cannot lead honestly. Say so and ask the operator which session should; never invent an id or pass a `synthetic-…` one.
+- **The directory reads `agent-<something>`** → you are a subagent, not a session: create and lead nothing, report to the session that dispatched you. The one exception is a tick subagent, handed the leader's own id in its prompt: it runs the tick below on the leader's behalf and passes that id.
+- **A session Harnu spawned for a step** holds a scoped credential, with one of three roles: a **worker** (`mission_get`, `mission_link`, `mission_log`, `mission_set_blocker`, `mission_settle_ac` for claims only, on its own step), a **verifier** (the same, and its check settles a step it did not build) or an **observer** (reads, bound to a folder). If you are one, never pass a `sessionId`: your id is the credential's and one you pass is ignored. None of them can lead, plan, attach itself or touch another mission; to ask the leader or the operator for something, `mission_log` or `mission_set_blocker` on your step.
 
-## `mission set <objective>`
+## Task intake
 
-1. **Look for yours first:** `mission_get({ folder, ownerSessionId: <your id> })`.
-   One exists for this objective → you are updating it (steps 4–5), not creating
-   a second. One exists for an unrelated objective → it must be finished or
-   handed back first; say so, do not stack two missions on one owner.
-2. **Agree the end — before the first dispatch.** `declaredEnd` is required and
-   complete — `kind` (`code`/`ui`/`research`/`decision`/`other`), a concrete
-   `target` ("PR merging the 4 slices into main"), and the `evidence` that proves
-   it ("green CI + delivery-verifier report, every AC met"). Propose your best
-   concrete reading of the objective and confirm it with the operator in ONE
-   AskUserQuestion — the proposal is the recommended option. The end question in
-   chat is the agreement: the mission is born `active`, and nothing waits on a
-   click afterwards.
-3. **Create it with the plan in one call — `mission_create { steps }`:**
-   `mission_create({ folder, title, declaredEnd, sessionId: <your id>, steps,
-scope?, linkedCard? })`. Shape the plan by these rules:
-   - **1 unit = 1 PR = 1 step.** One step per deliverable that moves where the
-     work is. Sub-phases of a unit (spec, implement, review, ship) are not steps.
-     Sub-phases go to the Log (`mission_log`). One executor split across five
-     steps makes the pill crawl while nothing moved.
-   - **Declare each step's `verification`:** `verifier` for work a child
-     delivers, `existence` for an artifact that simply has to exist (a spec, a
-     merged PR), `human` only for a stage of its own that gates what comes next
-     (an operator decision before the next wave).
-   - **Sign-offs become checks, not steps.** "The designer signs off", "DSQA
-     done", "validated visually" is a human confirmation of a step's
-     deliverable: add it to that step with `mission_add_check({ folder,
-missionId, stepId, label })`. Only the operator ticks it. Never add a step
-     for it.
-   - `scope` takes the repo-relative paths of the spec / PRD / ADR. It is an
-     attachment shown next to the progress, never a step. `linkedCard` is the
-     epic card slug when there is one.
-4. **Link what builds each step:** `mission_link_child` with `{ kind: 'session' |
-'worktree' | 'card' | 'pr', ref }` — every child session you dispatch for a
-   step, its worktree, its card, its PR once opened. Links are what Harnu derives
-   from; an unlinked child is invisible to the mission, and a linked child keeps
-   you from being parked while it runs. **Never link a session to a step only to
-   change its proof label; link the sessions that built it.** A link is a claim
-   about who built the step, and the operator reads it as one.
-5. **New work found later** → `mission_add_step` (pass `links` when you already
-   know what will prove it). Once the mission has started — any step has a link
-   or a proof — `reason` is required: a grown total is always explained.
+Intake is a door any skill can use: when the work comes from a tracker task (a ClickUp, Jira or GitHub task, or a board card), build the step from the task instead of retyping it. `mission_create` and `mission_add_step` take a step with its criteria and links in one call, and `mission_add_ac` adds one to a step that exists.
 
-**Changing an active mission's objective is a re-scope, not a new mission:**
-`mission_set_end({ folder, missionId, declaredEnd, reason })` stages the new end
-and asks the operator on the `you` line. When they approve, the fixed end's proof
-resets to `unproven` — re-verify it.
+- The task's title is the step, rewritten as a verb phrase of at most 50 characters (no ticket id at either edge).
+- The QA criteria become the build step's criteria: one checkbox of the group the tester checks, one criterion, a sentence of at least 3 words. One only a person can confirm is `by: 'person'` with that `person`; one only the operator can is `by: 'operator'`.
+- A line that says what is not expected becomes a note, not a criterion: `mission_log` on that step ("out of scope", "not expected", "won't change").
+- An empty group pulls nothing and is flagged: invent no criterion for it. Say which group was empty in your reply and in the Log. A step needs one criterion, so with none left write the one fact the task title promises and say that you did.
+- The task's links become mission links: its own address and its design or document links go on the mission with `mission_link` (kinds `url` and `doc`, no `stepId`); a pull request it names goes on its step.
 
-**A changed rule is a re-scope too, in the same turn.** When the operator changes
-how the delivery ends (merge policy, target branch, what counts as done), call
-`mission_set_end` in the same turn with the new end; the operator approves the
-re-scope in the Topbar. Do not wait for the next tick, and do not leave the old
-end standing because the units themselves did not change.
+## One tick
 
-### Adopting a legacy goal file
+When you lead a long mission, run each tick in a fresh general-purpose subagent, never a fork, so your own context stays flat. The prompt hands it your session id and the mission id; it runs steps 1 to 5 and returns a report of at most 15 lines; you do step 6 from that report.
 
-Missions declared before the `mission_*` verbs live as free markdown in
-`<repo>/.harnu/goals/*.md` (or a single `<repo>/.harnu/GOAL.md`). Adopt one ONLY
-when it is actually yours:
-
-- Its `session:` frontmatter, or failing that its `<session8>-` filename prefix,
-  names YOUR session → yours.
-- It names a DIFFERENT session → check that session with `get_session`. Alive or
-  merely parked (`hibernated: true`) means the mission is another orchestrator's
-  and is not yours to take. Only a session that genuinely no longer exists frees
-  it.
-- It names no session at all → it is yours only if nothing live is coordinating
-  it; when in doubt, ask the operator.
-
-Import it with `mission_import_legacy({ folder, legacyPath, sessionId: <your own
-id> })` — **always pass your own `sessionId` explicitly**: most legacy files
-carry no session UUID, and without one the call is refused `BAD_SESSION_ID`. Then
-`mission_log` whose file it was ("adopted from `<file>`, orchestrated by
-`<session8>` / unattributed"). If the ACK's `needsReview` lists `declaredEnd`, the
-file stated no usable target: stage a real one with `mission_set_end` at once.
-Until the operator approves that re-scope, "review the imported end" sits on
-their `you` list.
-
-The import never modifies the source file, and `legacyRaw` keeps it byte for byte
-inside the mission. From then on the Mission is the state; leave the source file
-where it is. Never write to, archive, or overwrite a goal file whose prefix is
-not yours — another orchestrator may be coordinating live behind it.
-
-## `mission` — one tick
-
-**An owner does not run this tick in its own context.** Its context would grow with
-every `mission_get` dump, tick after tick. The owner keeps the loop and its push
-subscriptions (`SendMessage { notify_when_idle: true }`) and, on each firing or idle
-notice, spawns a fresh general-purpose subagent — never a fork — that runs steps 1–5
-below and returns a short report; the owner then does step 6 from that report. The
-prompt template and the report shape are in `orchestrate-delivery` ("Every tick
-runs in a fresh subagent"). An unattended run never depends on a human pasting a
-prompt.
-
-1. **Read the mission — one call:** `mission_get({ folder, ownerSessionId: <your
-id> })`. It replaces the old hand-assembly of `get_fleet` + `get_approval` +
-   board reads: the linked children's live state, the linked worktrees, cards and
-   PRs, the proofs, the stall flag and the `you` line all arrive together.
-
-   - Not found → look for a goal file of yours in `.harnu/goals/` and adopt it
-     (above); otherwise say "no active mission" and suggest `mission set`.
-   - `delivered` → the `you` line asks the operator to close; report that and
-     stop the loop.
-   - `closed`, or any verb this tick refuses `MISSION_CLOSED` → the operator
-     ended it (closed as delivered, or discarded; the Log's last
-     `operator` line says which). Stop the loop and report; do not retry.
-
-2. **Read what Harnu derived** — never re-derive it:
-
-   - `derived.progress` — where the mission is: "Step N of M" (N =
-     `current.from`), `done`, `verified`, `leftBehind`. Report it as-is.
-   - `derived.progress.unprovable` — `existence` steps that are reached or
-     current but have no path, card or PR link. Say it in the tick line: "step
-     `<title>` can never be proven — link its PR or path", and link it
-     (`mission_link_child`) when you know what proves it.
-   - `derived.progress.leftBehind` — steps still `todo` behind the current one.
-     Each is either work you forgot to dispatch (dispatch it) or a step that no
-     longer applies (say so in the Log; the operator sees it at the close).
-   - `derived.steps[].children[]` — per linked session: `known` (false = no
-     such session: a typo or a vanished child), `taskState`, `hibernated`
-     (parked, not dead), `peer`, `pendingApprovals`.
-   - `derived.steps[].links[]` — a worktree's `exists`/`branch`/`head` and its
-     PRs, a card's board `status`, a PR's `state`.
-   - `derived.steps[].gates` — the five facts above, per step. A `red` is work
-     for you (below); a `running` is a wait, not a stall.
-   - `ledger` / `ledgerCount` — the last rows Harnu wrote, oldest first, each
-     with its own timestamp: the age of a PR or of a red CI is `now` minus the
-     row's `at`.
-   - `derived.steps[].existence` — the live proof of an `existence` step.
-   - `derived.stale` — `true` means an `active` mission with no evidence for over
-     an hour and no linked session working. It is a flag to investigate (a stuck
-     child, a lost report), never a reason to respawn.
-   - `youItems` / `you` — what the operator owes right now, a list and its
-     one-line summary (due checks included). It always prints.
-
-3. **Act only on what is unblocked, respecting the doors:**
-
-   - **Child looks VANISHED → do not re-dispatch on this tick.** Two live
-     sessions in one worktree corrupt each other's edits. Prove death first:
-     - `known: false` or a missing child can still be a spawn in flight:
-       `get_session` reporting `status: "spawning"` or `inflight: true` means it
-       is on its way — materialization can land many minutes late. Never retry
-       `create_session` into the same folder while it is unresolved; it refuses
-       with `SESSION_ALREADY_IN_FLIGHT`, by design.
-     - A frozen parent transcript is not death while any file under
-       `<transcriptDir>/<sessionId>/subagents/` is recent — a background agent
-       may still be pending. Check those mtimes before the verdict.
-     - `taskState` lies in both directions. Transcript + worktree +
-       subagents-dir is the ground truth.
-     - `hibernated: true` is a parked session, not a dead one: the conversation
-       is intact and selecting it resumes. It reports no `taskState`; that
-       absence is not a stall.
-
-     Re-dispatch only after **two consecutive** checks ~10 minutes apart show
-     nothing alive, and prefer a fresh worktree — re-entering the same one needs
-     the old session actually STOPPED (an operator click; there is no kill verb).
-     Link the replacement with `mission_link_child`. If a retry lands and BOTH
-     materialize, escalate at once, naming which one to stop.
-
-   - **A `[Cross-session idle notice]` for one of your children is a tick
-     trigger, not noise.** Run this tick's checks against it immediately. If you
-     never subscribed at dispatch (`SendMessage { notify_when_idle: true }`), you
-     are discovering finished work by polling.
-
-   - **Child FINISHED, pushed, but no PR → dispatch the shipper, this tick.** A
-     linked worktree with commits, a clean tree, and no PR for its branch means
-     the unit is waiting on YOU: a session dispatched by an agent is spawned
-     `agentControlled` and holds no `mcp__harnu__*` verbs, so it never could have
-     opened that PR itself. Call `create_session` into that worktree with the PR
-     pipeline as `prePrompt`, link the shipper and its PR to the step, and log it.
-     Never send the implementer back to review its own diff.
-
-   - **Child FINISHED** → persist its report with `mission_log` (step-scoped),
-     mark the step `claimed` with `mission_update_step`, then read the actual
-     evidence (diff, gate output, files), never the self-report alone. Verify per
-     acceptance criterion with the **delivery-verifier** skill — one AC per call,
-     grader blind to the child's report, verdicts `met | unmet | blocked |
-needs-human` — and record the result with `mission_verify_step({ folder,
-missionId, stepId, verdict, evidence, sessionId })`. **The verifying session
-     must not be the step's author**: link the child session to the step first,
-     and have a session that is not one of its linked sessions call the verb —
-     you, when a child did the work; a separately dispatched verifier, when you
-     did it yourself. A self-verification lands `self-verified`, which the
-     operator never sees as proven. `unmet` goes back to the SAME child as a
-     delta; twice-unmet is an operator decision, not a third attempt.
-     `needs-human` passes `checkLabel` naming what the human must confirm: the
-     step reads `done` and carries that check for the operator to tick — it
-     also goes on the Delivery Report's check-by-hand list.
-
-   - **The operator or the packet asks for a sign-off** ("the designer must sign
-     off", "DSQA before it counts") → `mission_add_check` on the step whose
-     deliverable it confirms. Sign-offs become checks, not steps: no
-     `mission_add_step`, no `human` step. The check lands on the operator's
-     `you` list once the step is reached.
-
-   - **Something blocks a step or the mission** → `mission_set_blocker` with the
-     reason, what would unblock it, and whose move it is (`agent`/`operator`; an
-     operator-owned blocker lands on the `you` line). Cleared →
-     `mission_clear_blocker`. A blocker is a flag; it never changes the status.
-
-   - **A turn that ends waiting on the operator raises a blocker.** Before you
-     end a turn whose next move is the operator's — a merge, a key, a
-     credential, a decision — call
-     `mission_set_blocker { owner: 'operator', reason: '<what exactly>', unblocks: '<the observable event>' }`.
-     Harnu then chimes, asks for their attention and reminds them every 30
-     minutes. Clear it with `mission_clear_blocker` on the turn you see it done.
-     Text in the transcript is not a signal: nobody reads it until they come
-     back.
-
-   - **The operator changed how the delivery ends** (merge policy, target
-     branch, what counts as done) → `mission_set_end` in the same turn, with the
-     new end and the operator's words as the `reason`.
-
-   - **An open decision (`D-n`) in the spec was resolved** → one structured line to
-     `memory_append` (`decisions`) and nothing else:
-     `D-n · <question> · chosen: <option> · <date>`. The reasoning, the discussion
-     and the rejected options stay in the spec's decisions table; the memory line is
-     the index entry that makes the choice findable by `memory_query`. Choosing a
-     mission decision node stays the operator's door — you record the line after
-     they have chosen, you never choose for them.
-
-   - **New work discovered mid-mission** (a split from verification, a deferred
-     fix) → `mission_add_step` with its `reason`, then dispatch and link it like
-     any planned unit.
-
-   - **A gate is red → open a side step, this tick.** `ci` red on a step's PR,
-     `main` red after its merge, a `verifier` verdict `unmet`, a `pr` closed
-     unmerged: record the detour as
-     `mission_add_step { title: 'Fix <gate> on <step title>', verification:
-'verifier', required: false, discoveredFrom: <the red step's id>, reason:
-'<the gate and the PR number>' }`, log the fact (`mission_log`), and send the
-     delta to the step's SAME child if one is linked (below). The side step never
-     moves the "Step N of M" headline and keeps its origin visible. Do not open a
-     second side step for a gate that already has one: read the steps first. Do
-     not touch the red step's proof — it reads `verified` again by itself when
-     the gates turn green.
-   - **Escalate to the You lane only what is the operator's to do** — a merge, a
-     decision, a credential, a red `main` nobody can fix without them. Raise
-     `mission_set_blocker { owner: 'operator', reason, unblocks }` with **the age
-     and the risk in the reason** ("`#7` CI red for 3 h; the stack behind it
-     cannot merge"), age from the ledger. A red gate an executor can fix is a side
-     step, not a You item.
-
-   - **Wrong result** → send the specific delta back to the SAME child, not a
-     redo.
-
-4. **Never cross the doors:** no card to `done`, no product-code writes, no
-   self-granted execution, no mission ended by you, no check ticked by you. Ping
-   the operator only at doors (re-scope approval, a due check, UI approvals,
-   Review→Done, the close) or when blocked for more than one full tick — and
-   batch the pings.
-
-   **A total stall on the operator is a LOUD event, not a quiet tick.** When the
-   ONLY thing blocking all forward motion is a human gesture, raise the
-   operator-owned blocker (above) naming the exact action ("merge #68 and #69 —
-   both green, the whole train is waiting") — that is what makes Harnu chime and
-   re-nudge — then go quiet until the state changes.
-
-5. **Persist the tick:** one `mission_log` line (`<date time> — <state> →
-<action taken>`).
-
-6. **Report ONE line** to the user: `tick — Step N of M · <essential state> |
-next: <next check>`, the headline taken from `derived.progress` (for a chapter of a campaign, the
-   `status` skill's campaign headline, `Ch. N/M · Step a/b`). Silence about healthy in-flight work is the feature; detail lives in
-   the mission. The line expands into the `status` glance card when `Needs you`
-   or `Open` changed since the last tick.
+1. **Read the mission, one call:** `mission_get({ folder, missionId, sessionId })`. `closed`, or any verb refusing `MISSION_CLOSED`, means the operator ended it: stop the loop and report; never retry, never create a replacement.
+2. **Read what Harnu gave you, never re-derive it.** `progress.headline` is where the mission is ("4 of 21 steps done"): print it as it is. `waiting` is what the operator owes, ranked (`main-failing`, `unblock`, `settle`, `review`, `close`, `attach`) and `next` is its first item. Also `steps` (state, criteria and who settles each, links, blockers) and `sessions`. Make no `gh pr view` call and no `get_fleet` call to learn whether a PR is open, merged or green: that is already in the read.
+3. **Act on what is unblocked, and respect the doors.**
+   - **A child looks vanished** → do not re-dispatch on this tick: two live sessions in one worktree corrupt each other. A spawn can be in flight (`get_session` says `spawning`, or `inflight: true`; materialization lands minutes late), a parked session (`hibernated: true`) is not dead, and a frozen transcript is not death while its `subagents/` files are recent. Re-dispatch only after two checks about 10 minutes apart show nothing alive, and link the replacement.
+   - **A child finished, pushed, no PR** → dispatch the shipper now: `create_session` into that worktree with the PR pipeline as `prePrompt`. Never send the builder back to review its own diff.
+   - **A child finished** → read its report and the evidence, not the self-report alone, and log one line. A second session settles each criterion (`mission_settle_ac`, through the `delivery-verifier` skill); a session that built the step only self-checks, and that is never proof. `unmet` goes back to the SAME child as a delta; twice unmet is the operator's decision.
+   - **A dispatch** (`create_session`, `submit_manifest`, the board's Dispatch button) binds the step's card and attaches the new session as its worker: the ACK carries `card` and `worker`. A verifier is attached with no card and no link to the step.
+   - **Something blocks a step or the mission** → `mission_set_blocker { stepId?, reason, ask, unblocks, owner, clearsWhen? }`. `reason` names the exact thing needed, `ask` is what the operator does, `clearsWhen` (`pr-merged`, `ci-green`, `main-green`) ends a step blocker by itself. When it is cleared, `mission_clear_blocker { blockerId }`; the operator clears their own.
+   - **A turn that ends waiting on the operator** (a merge, a key, a decision) raises a blocker with `owner: 'operator'` first. A line in the transcript reaches nobody who is away.
+   - **A red gate** (CI red on a step's PR, main red after a merge) → add an optional step for the fix with `mission_add_step`, a `reason` and a criterion, and send the delta to the step's SAME child. Do not open a second one for a gate that has one.
+   - **New work found** → `mission_add_step` with its `reason`. **The operator changed what done means** → `mission_set_done_when` in the same turn, with their words as the `reason`.
+   - **A parent landed** → `rebase_stack` for the step's own worktree. There is no steward: you, the leader, coordinate this. It never pushes (publishing the rewritten branch is yours), never touches another branch or the main checkout, and on a conflict aborts and writes nothing, so raise the blocker yourself and do not retry.
+4. **Never cross the doors:** no card to done, no product-code write, no mission ended by you, no criterion settled by an operator's or a person's hand.
+5. **Log the tick** in one line: `<time> — <state> → <action>`.
+6. **Report ONE line:** `tick — <progress.headline> · <essential state> | next: <next check>`. Silence about healthy work is the feature. It expands into the `status` skill's six-line card only when `waiting` changed since the last tick.
 
 ### The tick prompt's first line
 
-Every tick prompt you arm — the text you hand to `/loop` or `ScheduleWakeup`, and
-the same text each time you re-arm — starts with ONE fixed line naming the
-mission, exactly:
+Every tick prompt you arm (the text you hand to `/loop` or `ScheduleWakeup`, the same text each time you re-arm) starts with ONE fixed line naming the mission, exactly:
 
 ```
 /harnu:mission tick · <missionId>
 ```
 
-That is the skill invocation, one space, `tick`, `·` (a space, the middle dot
-U+00B7, a space), then the mission id (`mnt-` and eight hex characters). Nothing
-else on that line; any free text goes on the lines below it. For example:
+That is the skill call, one space, `tick`, `·` (a space, the middle dot U+00B7, a space), then the mission id (`mnt-` and eight hex characters). Nothing else on that line; free text goes below it. For example:
 
 ```
 /harnu:mission tick · mnt-7be1529e
-Watch the two executors; ping the operator only at the merge door.
+Watch the two builders; ping the operator only at the merge.
 ```
 
-Why: the Harnu mod draws each tick as a live card from the mission's current
-state, keyed by that id — it finds the id on this first line rather than guessing
-from prose. A tick whose first line is missing or reshaped falls back to the raw
-prompt text. The id is the one `mission_create` returned.
+The Harnu mod draws each tick as a live card from the mission's current state, keyed by that id. A first line that is missing or reshaped falls back to the raw prompt.
 
-### Pacing
+Pace the loop to what changes: sessions the operator is watching about 300s, builders on real code 1200 to 1800s, everything blocked on an absent operator 1800 to 3600s. Prefer `run_in_background` to a long blocking call. When the mission is `closed` or a verb says `MISSION_CLOSED`, stop the loop.
 
-When the loop paces itself, match the interval to what actually changes:
+## Child reporting
 
-- Babysitting dispatched Harnu sessions the operator is watching → ~300s, and say so.
-- Workers grinding on real code change state every 20–40 minutes → 1200–1800s.
-- A gate about to resolve (operator active, approval pending) → 240–270s.
-- Everything blocked on an absent operator → 1800–3600s.
+Children report to their leader through Claude Code's `SendMessage`. A name is not an identity: it can change when Harnu parks and resumes a session. Put these in every dispatch packet; they are rules, not advice.
 
-Prefer `run_in_background` over long blocking calls while children are live: a
-child's message reaches you only between your tool calls.
+- **The child:** your leader is a session id, not a name; the packet gives both. Call `ListAgents` right before every send and send only to a name you just saw listed. Open every report with `Report for session <owner uuid> · mission <missionId> · step <stepId>`. If the leader is unreachable, write `.harnu/REPORT.md` first, then `mission_log` it on your step, and stop. Never send the report to any other session.
+- **The leader:** give the child your session id and your current name (the first line of `ListAgents`). When your name changes, send the new one to each live child with `message_session`. A report that names your session id is yours, even under an old name; one that names another id is not yours: say so in one line and do not act on it.
+- **Done conditions in a packet are checkable by the worker alone**, from its own worktree: "commits pushed, tree clean, `.harnu/REPORT.md` written" for a builder, "PR open, CI green, `.harnu/REPORT-ship.md` written" for a shipper. Never write "a message was delivered to another session": the worker cannot make it true, and a Stop hook re-prompts a turn that can never end.
 
-**A loop you cannot keep alive needs a backstop.** Your ticks live inside a
-session that Harnu may park, the operator may close, or a compaction may
-interrupt. When the work will outlive a single sitting, have the orchestrator
-stand up a `delivery-watchdog` worker on the Scheduler alongside the loop: it is
-read-only, reads the same mission through `mission_get`, and notifies the
-operator when a unit is parked. See the `orchestrate-delivery` skill.
+## Hand-off
 
-Honor your own stop condition: when the mission is `delivered` or closed — or
-a verb refuses `MISSION_CLOSED` — STOP the loop. A loop that keeps firing after its stop condition burns tokens on
-nothing.
-
-## Child reporting — hard rules
-
-Children report to their owner through Claude Code's native `SendMessage` (a
-child an agent dispatched holds no `mcp__harnu__*` verbs). A native address is a
-**name**, and a name is not an identity: a session's name can change when Harnu
-parks and resumes it, so a name captured at dispatch can later point at nobody —
-or at somebody else. These rules are not advice; put them in every dispatch
-packet, verbatim where they concern the child.
-
-**For the child — must hold, every send:**
-
-1. **Your owner is a session id, not a name.** The packet names it: `owner
-session <uuid>`. The name it also gives you is only where that session could
-   be reached at dispatch time.
-2. **Resolve the name at send time, every time.** Call `ListAgents` immediately
-   before sending, and send only to a name you just saw listed that is your
-   owner's latest address — the packet's, or a newer one your owner sent you
-   since. Never reuse a name from an earlier turn without listing again. If you
-   hold Harnu verbs, `get_session({ sessionId: <owner uuid> })` tells you whether
-   that id is live or parked before you try.
-3. **Name the owner's id in the report itself.** Open every report with `Report
-for session <owner uuid> · mission <missionId> · step <stepId>`, so the
-   recipient confirms by id, not by the name it arrived under.
-4. **Owner unreachable → stop, do not spread.** No name resolves, the send fails,
-   or the recipient answers that it is not that session: your report stays in
-   `.harnu/REPORT.md` in your worktree (write that file first, always), and if you
-   hold Harnu verbs you also record it on your own step with `mission_log({
-folder, missionId, stepId, note })`. Then stop.
-5. **Never broadcast.** Never send the report — or a summary of it, or a "can
-   you relay this" — to any session other than your owner: not a sibling, not
-   another orchestrator, not whoever looks nearest. An unreachable owner is a
-   wait, not a reason to widen the audience. (What happens after the wait —
-   queue, retry, drop with a note — is undecided; the file and the step are the
-   fallback until it is.)
-
-**For the owner — must hold:**
-
-- **At dispatch, give the child both halves:** your session id and your current
-  native name (the first line of `ListAgents`: "This session is `<name> [<ref>]`"),
-  plus the rules above.
-- **Re-announce when your name changes.** On every tick, the owner reads its own
-  name from `ListAgents`' first line (a tick subagent is handed it in its prompt)
-  and compares it with the last address recorded
-  (`mission_log`: "owner address: `<name> [<ref>]`"). Changed → log the new one
-  and send it to each live linked child with `message_session({ sessionId:
-<child uuid> })`, which addresses a Harnu-spawned child by its stable id and
-  wakes it if parked. A child that is still unreachable falls back to its file,
-  which your ticks read anyway.
-- **A report is yours when it names your session id** — even when it arrived
-  under a name you no longer hold. A report naming a different session id is not
-  yours: tell the sender so in one line, and do not act on it or pass it on.
-
-### Done conditions in dispatch packets
-
-Every done condition you put in a dispatch packet or a `/goal` must be checkable
-by the worker alone, from its own worktree: "commits pushed + tree clean +
-`.harnu/REPORT.md` written" for an executor, "PR open + CI green +
-`.harnu/REPORT-ship.md` written" for a shipper. **Never write "a message was
-delivered to another session" as a done condition.** The worker cannot verify it
-and cannot make it true when the recipient is parked, renamed or gone, so a Stop
-hook keeps re-prompting a turn that can never end — one worker was re-prompted 578
-times, roughly $130. The report message is best-effort; the file is the
-deliverable (rule 4 above says the same from the child's side). The
-`orchestrate-delivery` skill carries the per-role templates.
-
-### Wave boundary — the owner stays the owner
-
-A mission is owned by one session for its whole life. A wave that ends at a human
-pause (a merge and a build the operator must do) is a blocker, not a stand-down:
-raise `mission_set_blocker { owner: 'operator', … }` naming the action, leave the
-loop and subscriptions armed at a slow cadence, and carry on when it clears. There
-is no context threshold at which you stop owning the mission — ticks run in
-subagents, so the owner's context stays flat — and this skill never writes a resume
-prompt for the operator to paste. Replacing a lost owner is recovery, handled by
-Harnu's owner transfer (see `orchestrate-delivery`, "Wave boundary"), not a routine
-handoff.
+Only the operator starts a hand-off. The leader never switches itself, whatever its context says. A session near its context limit asks the operator for a hand-off: one line in its reply and one `mission_log` note, nothing else. The app has no hand-off button for now, so nothing starts one on its own; if the operator decides on one, Harnu starts a fresh session whose first prompt is the mission summary: it reads `mission_get` and carries on, and the old session is released, not killed. A fresh session starts from the summary; no resume prompt is ever pasted, by you or by the operator. Another session that only wants to help uses `mission_attach` and joins as a worker, never as the leader.
 
 ## `mission done`
 
-Verify against evidence, not memory. When every unit is verified and the end's
-evidence exists, verify the fixed end (`Delivered and verified`) yourself with
-`mission_verify_step({ folder, missionId, stepId: <the fixed end>, verdict: 'met',
-evidence, sessionId: <your id> })`. The fixed end's builders are every session
-linked to any step; you built none of the steps, so it lands `verified`. Then read
-`closeReadiness` on `mission_get` — `null` means the close will land — and call
-`mission_request_close({ folder, missionId, sessionId })`. The operator closes.
-
-`closeReadiness` (and the verb) name what is in the way:
-
-- `END_NOT_VERIFIED` → the end is `unproven`, `claimed` or only `self-verified`.
-  `self-verified` means no step links a child session, or you linked your own
-  session somewhere: link each unit's child session to its step, then verify
-  the end again.
-- `OPEN_BLOCKERS` → clear or resolve them first.
-- `RESCOPE_PENDING` → a re-scope is staged; the operator approves it (which
-  resets the end's proof), then verify the end again.
-- `MISSION_CLOSED` → the operator already ended it; stop the loop and report.
-
-Due checks, left-behind steps and an unverified end never block the request or
-the close: the operator sees them as warnings in the end dialog and decides.
-Say which ones remain in your closing summary.
-
-On success the mission is `delivered` and the `you` line asks the operator to
-close it — **the close itself is theirs.** Write the final `mission_log` line,
-drop a dated summary into project memory (`memory_append`, `decisions` or a
-session digest), report the closing summary (opening with the `status` card),
-and stop the loop if one is driving the ticks.
+Verify against evidence, not memory. Every step's criteria are settled (by a second session, through `delivery-verifier`), and read `waiting`: an item of kind `settle` or `review` is still open. Then `mission_request_close({ missionId, sessionId })`. It is refused `STEPS_OPEN` while a required step is not done, it never closes, and adding a step afterwards clears it. The close is the operator's. Write the last `mission_log` line, drop a dated summary into project memory (`memory_append`), report one line that opens with the `status` card, and stop the loop.
 
 ## Boundaries
 
-This skill coordinates; it never executes product work — the same contract as the
-orchestrator role: delegate, read evidence, gate at the doors. If a tick discovers
-work that needs a NEW mission, card it on the board and mention it; do not silently
-grow the current mission beyond a logged `mission_add_step`.
+This skill coordinates; it never does product work. Work that needs a NEW mission goes on the board as a card and is mentioned; do not grow this one beyond a logged `mission_add_step`.

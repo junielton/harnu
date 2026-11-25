@@ -14,6 +14,17 @@ import { isHibernated } from '../hibernation'
 import { TaskStateRegistry } from './task-state-registry'
 import { noteSubagentActivity } from '../subagent-activity'
 
+/**
+ * Fields of the hook body that in-main observers may need (Your move). They never reach the
+ * renderer's `claude:hook`: a prompt or a reply is session text, and the renderer has no use for it.
+ */
+export interface HookPayload {
+  transcriptPath?: string
+  cwd?: string
+  prompt?: string
+  lastAssistantMessage?: string
+}
+
 export interface BridgeEvent {
   sessionId: string
   event: string
@@ -25,6 +36,8 @@ export interface BridgeEvent {
   resetsAt?: number
   /** Claude Code's `agent_id`: set only for a hook fired by a subagent's own tool call. */
   agentId?: string
+  /** Observer-only body fields; stripped from the renderer forward. */
+  payload?: HookPayload
   /** Which writer produced the event. */
   source: 'hook' | 'companion'
 }
@@ -113,6 +126,10 @@ export interface HookTaskEvent {
   resetsAt?: number
   /** Which writer produced the event (additive). */
   source?: 'hook' | 'companion'
+  /** Observer-only body fields (transcript path, prompt, last reply); never sent to the renderer. */
+  payload?: HookPayload
+  /** Claude Code's `agent_id`: set when a subagent's own hook fired. */
+  agentId?: string
 }
 
 /** In-main observers of the folded task-state edge (T79 S2 digest engine, …). */
@@ -222,7 +239,9 @@ export function ingest(ev: BridgeEvent, getWindow: () => BrowserWindow | null): 
       event: ev.event,
       ts: ev.ts,
       ...failure,
-      source: ev.source
+      source: ev.source,
+      ...(ev.payload !== undefined ? { payload: ev.payload } : {}),
+      ...(ev.agentId !== undefined ? { agentId: ev.agentId } : {})
     }
     for (const obs of taskEventObservers) {
       try {

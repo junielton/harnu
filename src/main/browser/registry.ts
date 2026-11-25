@@ -10,6 +10,7 @@ import type { BrowserPartition } from './guest-prefs'
 import type { BrowserOpenedBy } from './access'
 import type { EmulationRecord } from '../../shared/browser-emulation'
 import type { DiscardState } from './lifecycle'
+import { ensureTabs, type TabRecord } from './tabs'
 
 /** Agent-opened panes per folder (spec §10.1, decision 28). Enforced in the verb, not here. */
 export const MAX_AGENT_PANES_PER_FOLDER = 4
@@ -36,8 +37,18 @@ export interface BrowserPaneRecord {
    */
   emulation?: EmulationRecord
   /**
-   * Set while the pane is DISCARDED (T574, spec §10.1): the page and its view are gone, this is what comes back.
-   * `null`/absent = live.
+   * The pane's tabs, in order (browser-tabs S-2, ADR-0026): each owns one view, kept by the view host. Optional on
+   * the record a caller builds, so the code that opens a pane need not know about tabs: `add` gives a record without
+   * any one tab, and the registry only ever hands back a {@link TabbedPaneRecord}.
+   */
+  tabs?: TabRecord[]
+  /** The tab the pane shows (its view is the only one attached). */
+  activeTabId?: string
+  /** Epoch ms the operator last focused the pane's header, address bar or page; `null`/absent = never. */
+  lastFocusedAt?: number | null
+  /**
+   * Set while the ACTIVE tab is DISCARDED (T574, spec §10.1): its page and view are gone, this is what comes back.
+   * `null`/absent = live. Mirrors `tabs[activeTabId].discarded` (see `tabs.ts`); a tab keeps its own state.
    */
   discarded?: DiscardState | null
   /**
@@ -48,6 +59,9 @@ export interface BrowserPaneRecord {
   /** The operator's per-pane "Allow network" switch (spec §4.3). Off by default; NO verb sets it. */
   allowNetwork?: boolean
 }
+
+/** A pane record as the registry keeps it: it always has its tabs and an active one. */
+export type TabbedPaneRecord = BrowserPaneRecord & { tabs: TabRecord[]; activeTabId: string }
 
 /** A write in flight: what the ACK needs to say about concurrent activity. */
 export interface WriteToken {
@@ -64,30 +78,36 @@ export interface WriteReport {
 }
 
 export interface BrowserRegistry {
+  /** The agent-pane cap per folder ({@link MAX_AGENT_PANES_PER_FOLDER}), for callers that must not import this module's value. */
+  readonly maxAgentPanes: number
   add(rec: BrowserPaneRecord): void
-  get(paneId: string): BrowserPaneRecord | undefined
+  get(paneId: string): TabbedPaneRecord | undefined
   remove(paneId: string): boolean
-  list(): BrowserPaneRecord[]
+  list(): TabbedPaneRecord[]
   /**
    * Agent-opened panes in `folder`, oldest first (the `PANE_LIMIT` nextActions list them). A pane the operator
    * DISCONNECTED the agent from is not counted and not offered for reuse: the agent can neither use nor close it, so
    * four of them would otherwise cap the folder for good.
    */
-  agentPanesIn(folder: string): BrowserPaneRecord[]
+  agentPanesIn(folder: string): TabbedPaneRecord[]
   /** Tell the registry which panes are disconnected (the access state owns that). */
   setDisconnectedProbe(probe: (paneId: string) => boolean): void
   touch(paneId: string): void
   /** The operator did something in the pane. */
   noteOperatorInteraction(paneId: string): void
-  /** A verb (read or write) is running on the pane, so it must not be discarded under it (spec §10.1). */
-  beginVerb(paneId: string): () => void
-  verbsInFlight(paneId: string): number
+  /**
+   * A verb (read or write) is running on a tab of the pane, so that tab must not be discarded under it (spec §10.1).
+   * Counted per tab; a call that names none counts on the pane's active tab.
+   */
+  beginVerb(paneId: string, tabId?: string): () => void
+  /** Verbs running on `tabId`, or on the whole pane without one. */
+  verbsInFlight(paneId: string, tabId?: string): number
   /** When the operator last used the pane, or `null`. */
   operatorInteractionAt(paneId: string): number | null
   beginWrite(paneId: string): WriteToken
   endWrite(token: WriteToken): WriteReport
   /** A page pane in `folder` showing `relPath`, for `browser_open({ path })` dedupe (spec §6.2). */
-  findPagePane(folder: string, relPath: string): BrowserPaneRecord | undefined
+  findPagePane(folder: string, relPath: string): TabbedPaneRecord | undefined
   /**
    * An agent INPUT verb (`click`, `type`, `fill`, `press`, `upload`, an `eval` that dispatches input) is running
    * on the pane (spec §5.4 condition 2). U4 calls these around its input verbs; the emit gate reads them.
@@ -118,7 +138,7 @@ export const AGENT_INPUT_WINDOW_MS = 5000
 const MAX_INPUT_INTERVALS = 64
 
 export function createBrowserRegistry(now: () => number): BrowserRegistry {
-  const panes = new Map<string, BrowserPaneRecord>()
+  const panes = new Map<string, TabbedPaneRecord>()
   const operatorAt = new Map<string, number>()
   /** Per pane: the ids of writes currently in flight, and a monotonically growing counter. */
   const inflight = new Map<string, Set<number>>()
@@ -126,7 +146,8 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
   const overlapped = new Map<string, Set<number>>()
   let nextId = 1
   let isDisconnected: (paneId: string) => boolean = () => false
-  const verbs = new Map<string, number>()
+  /** Per pane, per tab: verbs running now. */
+  const verbs = new Map<string, Map<string, number>>()
   /** Per pane: agent input verbs running now, and when the last one finished. */
   const agentInputs = new Map<
     string,
@@ -141,7 +162,11 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
   >()
 
   return {
-    add: (rec) => void panes.set(rec.paneId, rec),
+    maxAgentPanes: MAX_AGENT_PANES_PER_FOLDER,
+    add(rec) {
+      ensureTabs(rec)
+      panes.set(rec.paneId, rec as TabbedPaneRecord)
+    },
     get: (id) => panes.get(id),
     remove(id) {
       verbs.delete(id)
@@ -194,18 +219,31 @@ export function createBrowserRegistry(now: () => number): BrowserRegistry {
       if (cur.open.some((start) => start <= toMs)) return true
       return cur.done.some((iv) => iv.start <= toMs && iv.end >= fromMs)
     },
-    beginVerb(id) {
-      verbs.set(id, (verbs.get(id) ?? 0) + 1)
+    beginVerb(id, tabId) {
+      const key = tabId ?? panes.get(id)?.activeTabId ?? ''
+      const perTab = verbs.get(id) ?? new Map<string, number>()
+      perTab.set(key, (perTab.get(key) ?? 0) + 1)
+      verbs.set(id, perTab)
       let ended = false
       return () => {
         if (ended) return
         ended = true
-        const left = (verbs.get(id) ?? 1) - 1
-        if (left <= 0) verbs.delete(id)
-        else verbs.set(id, left)
+        const live = verbs.get(id)
+        if (!live) return
+        const left = (live.get(key) ?? 1) - 1
+        if (left <= 0) live.delete(key)
+        else live.set(key, left)
+        if (live.size === 0) verbs.delete(id)
       }
     },
-    verbsInFlight: (id) => verbs.get(id) ?? 0,
+    verbsInFlight(id, tabId) {
+      const perTab = verbs.get(id)
+      if (!perTab) return 0
+      if (tabId !== undefined) return perTab.get(tabId) ?? 0
+      let total = 0
+      for (const n of perTab.values()) total += n
+      return total
+    },
     operatorInteractionAt: (id) => operatorAt.get(id) ?? null,
     touch(id) {
       const rec = panes.get(id)

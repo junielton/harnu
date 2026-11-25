@@ -14,6 +14,8 @@ import {
   GitFork,
   GraduationCap,
   LayoutList,
+  Library,
+  NotebookPen,
   NotebookText,
   KanbanSquare,
   PencilLine,
@@ -31,6 +33,7 @@ import {
 import { useI18n } from 'vue-i18n'
 import { useUiStore } from '../stores/ui'
 import { useSessionsStore } from '../stores/sessions'
+import { useHelpersStore } from '../stores/helpers'
 import { useModesStore } from '../stores/modes'
 import { useKeybindingsStore } from '../stores/keybindings'
 import type { ShortcutActionId } from '../../../main/keybindings-core'
@@ -68,6 +71,7 @@ const MODE_ICONS: Record<string, typeof EyeOff> = {
 const ui = useUiStore()
 const keybindings = useKeybindingsStore()
 const sessions = useSessionsStore()
+const helpers = useHelpersStore()
 const modes = useModesStore()
 const { t } = useI18n()
 // T486 §3.4: the items' functions, shared with their keybindings (AC-37).
@@ -167,6 +171,8 @@ const SHORTCUT_OF: Record<string, ShortcutActionId> = {
   'alias-from-branch': 'folder.toggleBranchAlias',
   boot: 'folder.bootOptions',
   'project-memory': 'folder.projectMemory',
+  'notes-today': 'notes.openToday',
+  'notes-all': 'notes.open',
   'memory-location': 'folder.memoryLocation',
   'new-folder': 'folder.newSubfolder',
   'open-subfolder': 'folder.openSubfolder',
@@ -405,6 +411,27 @@ const entries = computed<MenuItem[]>(() => [
     icon: FolderCog,
     onSelect: folderActions.run.memoryLocation
   },
+  // Quick notes: a daily scratch note per repo. Both act on THIS menu's folder (it is selected
+  // first), and each row shows the CURRENT binding of its command.
+  {
+    id: 'notes',
+    label: t('folderMenu.notes.label'),
+    icon: NotebookPen,
+    children: [
+      {
+        id: 'notes-today',
+        label: t('folderMenu.notes.today'),
+        icon: NotebookPen,
+        onSelect: folderActions.run.notesToday
+      },
+      {
+        id: 'notes-all',
+        label: t('folderMenu.notes.all'),
+        icon: LayoutList,
+        onSelect: folderActions.run.notesAll
+      }
+    ]
+  },
   // T80 S1: open the per-repo Roadmap Kanban board (a wide main-pane view over
   // `.harnu/memory/roadmap/`). Its own block; available for any folder (the memory
   // resolves to the repo's main checkout, or folder-local outside a repo).
@@ -424,6 +451,15 @@ const entries = computed<MenuItem[]>(() => [
     label: t('folderMenu.prStack'),
     icon: GitPullRequest,
     onSelect: (projectPath: string): void => ui.openPrStack(projectPath, folderLabel(projectPath))
+  },
+  // Guided walks S-4: the Walks library, a pane in the split (like Project memory: it attaches to the selected
+  // worktree's stack, else to this folder's own). The walks are the repo's, whichever worktree opens it.
+  {
+    id: 'walks',
+    label: t('folderMenu.walks'),
+    icon: Library,
+    onSelect: (projectPath: string): void =>
+      void helpers.addWalksHelper(sessions.selectedSession?.projectPath || projectPath)
   },
   // T69: create-or-open a subfolder + pin it, replacing the "leave Harnu and run
   // `harnu .`" round-trip. Their own block (separator above), always available
@@ -911,6 +947,13 @@ onBeforeUnmount(() => {
               >
                 <component :is="child.badge.icon" :size="9" :stroke-width="2" class="text-text-3" />
               </span>
+              <span
+                v-if="shortcutFor(child.id)"
+                data-menu-shortcut
+                class="font-mono text-text-4 tabular-nums"
+                style="font-size: 10.5px; letter-spacing: 0.02em"
+                >{{ shortcutFor(child.id) }}</span
+              >
             </button>
           </div>
         </div>

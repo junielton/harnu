@@ -38,7 +38,7 @@ function fixture(over: Partial<ConsolidatorInput> = {}): ConsolidatorInput {
     title: 'Recall at create',
     declaredEnd: { kind: 'code', target: 'Recall rides the create ACK', evidence: 'test green' },
     createdAt: '2026-11-01T08:00:00.000Z',
-    scopePaths: ['src/main/steward-hooks.ts'],
+    scopePaths: ['src/main/scheduler-store.ts'],
     steps: [
       { id: 'stp-1', title: 'Entry schema', kind: 'custom', proof: 'verified', required: true },
       {
@@ -72,7 +72,7 @@ function fixture(over: Partial<ConsolidatorInput> = {}): ConsolidatorInput {
 
 describe('AC-6.1 — the allowlist reads no transcript', () => {
   it('allows only the structured-record reads, none of which discloses a transcript', () => {
-    expect([...CONSOLIDATOR_ALLOW_VERBS].sort()).toEqual(['campaign_get', 'mission_get'])
+    expect([...CONSOLIDATOR_ALLOW_VERBS].sort()).toEqual(['mission_get'])
     const byName = new Map(MCP_TOOLS.map((t) => [t.name, t]))
     for (const verb of CONSOLIDATOR_ALLOW_VERBS) {
       expect(byName.get(verb), verb).toBeDefined()
@@ -97,7 +97,11 @@ describe('AC-6.1 — the allowlist reads no transcript', () => {
       /transcript/
     )
     expect(consolidatorReadRefusal('/repo/.harnu/missions/mnt-4ba02726-x.md')).toBeNull()
-    expect(consolidatorReadRefusal('/repo/.harnu/campaigns/cmp-1-x.md')).toBeNull()
+    expect(consolidatorReadRefusal('/repo/.harnu/missions-v4/mnt-4ba02726-x.md')).toBeNull()
+    // The campaign records are gone with the campaigns (S-39): their folder is no record any more.
+    expect(consolidatorReadRefusal('/repo/.harnu/campaigns/cmp-1-x.md')).toMatch(
+      /structured record/
+    )
     expect(consolidatorReadRefusal('/repo/src/main/a.ts')).toMatch(/structured record/)
   })
 })
@@ -138,7 +142,7 @@ describe('AC-6.1 — the drafts', () => {
     expect(d.page).toBe('decisions')
     expect(d.mission).toBe('mnt-4ba02726')
     expect(d.validFrom).toBe('2026-11-02')
-    expect(d.watches).toEqual(['src/main/steward-hooks.ts'])
+    expect(d.watches).toEqual(['src/main/scheduler-store.ts'])
     expect(d.entry).toContain('Watch paths')
     expect(d.cites).toEqual(
       expect.arrayContaining([

@@ -9,7 +9,7 @@ import { isPathWithinRoot } from './settings'
  * Confined directory lister (Cluster C). Backs the Explorer tree pane, which
  * calls it once per folder as the user expands a node — a lazy, one-level
  * listing of a directory's immediate children (files + folders), CONFINED to a
- * single project root and respecting the repo's `.gitignore`.
+ * single project root. Gitignored entries are listed but flagged `ignored`.
  *
  * Shape precedent: `markdown-read.ts` (resolve → confine → cap → `ipcMain.handle`)
  * for the security envelope, and `folder-ops.ts`'s `listChildFolders` for the
@@ -41,8 +41,8 @@ export const MAX_SEARCH_VISITS = 50_000
 export const MIN_SEARCH_QUERY = 2
 
 /** Always hidden regardless of `.gitignore` (git never lists `.git` itself, but
- *  it is also never in `.gitignore`). Other dotfiles are shown unless gitignored
- *  — a user's plans may live in `.docs/` etc. */
+ *  it is also never in `.gitignore`). Every other entry is shown — gitignored
+ *  ones flagged `ignored` in the tree listing. */
 const ALWAYS_EXCLUDE = new Set(['.git'])
 
 /** The agent's data dir, relative to the Explorer root. Deliverables land in
@@ -86,6 +86,9 @@ export interface ExplorerEntry {
   path: string
   /** True for a directory (drives the expand chevron in the tree). */
   isDir: boolean
+  /** True when `.gitignore` matches the entry (or an ancestor). The tree still
+   *  lists it and renders it dimmed; absent means tracked/untracked-but-visible. */
+  ignored?: true
 }
 
 /**
@@ -189,8 +192,9 @@ async function readIgnoreChain(root: string, dir: string): Promise<IgnoreLayer[]
 }
 
 /**
- * List the immediate children of `dir`, confined to `root`, respecting
- * `.gitignore`. See {@link ExplorerListing}. Read-only; never throws.
+ * List the immediate children of `dir`, confined to `root`. Gitignored entries
+ * are kept and flagged `ignored: true` (the tree renders them dimmed); only
+ * `.git` is dropped. See {@link ExplorerListing}. Read-only; never throws.
  */
 export async function listDir(root: string, dir: string): Promise<ExplorerListing> {
   if (typeof root !== 'string' || typeof dir !== 'string' || !root || !dir) {
@@ -228,8 +232,9 @@ export async function listDir(root: string, dir: string): Promise<ExplorerListin
     const isDir =
       d.isDirectory() || (d.isSymbolicLink() && (await isDirSymlink(resolvedDir, d.name)))
     const abs = join(resolvedDir, d.name)
-    if (isHiddenByGitignore(layers, resolvedRoot, abs, isDir)) continue
-    kept.push({ name: d.name, path: abs, isDir })
+    // Gitignored entries are listed, not dropped — the tree dims them.
+    const ignored = isHiddenByGitignore(layers, resolvedRoot, abs, isDir)
+    kept.push({ name: d.name, path: abs, isDir, ...(ignored ? { ignored: true as const } : {}) })
   }
 
   sortExplorerEntries(kept)
@@ -397,11 +402,9 @@ export const MAX_RESOLVE_CANDIDATES = 32
  * Resolve transcript path tokens to real entries (T-file-links).
  *
  * This is the gate that decides whether an option+click target becomes a link
- * at all. A candidate survives only if it EXISTS, sits INSIDE `root`, and is
- * NOT gitignored — the last rule matters because the Explorer tree prunes
- * gitignored entries, so a link to one could be clicked but never revealed.
- * The one exception is the `.harnu/` data dir ({@link isHarnuDataPath}), which
- * the tree shows even though it is gitignored.
+ * at all. A candidate survives only if it EXISTS, sits INSIDE `root`, and has
+ * no `.git` segment. Gitignored paths qualify: the tree lists them (dimmed), so
+ * a link to one can always be revealed.
  *
  * Confinement reuses the same pure `isPathWithinRoot` that guards `listDir`,
  * so `..` traversal and absolute re-roots are rejected without a bespoke check.
@@ -429,15 +432,6 @@ export async function resolvePaths(
     if (unique.length >= MAX_RESOLVE_CANDIDATES) break
   }
 
-  // Per-call memo of the gitignore chain by parent directory. A transcript
-  // line commonly lists several siblings (same dir) or a deep common prefix,
-  // so without this `readIgnoreChain` re-reads the same root→parent
-  // `.gitignore` files from disk once per candidate (up to
-  // `MAX_RESOLVE_CANDIDATES` times per hover). Scoped to this single call —
-  // never module-level — so it can't outlive a hover and serve stale
-  // `.gitignore` content on the next one.
-  const ignoreChainCache = new Map<string, IgnoreLayer[]>()
-
   const out: ResolvedPath[] = []
   for (const text of unique) {
     const expanded = text === '~' || text.startsWith(`~/`) ? join(home, text.slice(1)) : text
@@ -459,15 +453,6 @@ export async function resolvePaths(
     } catch {
       continue
     }
-
-    // Match the tree's visibility rules — a gitignored entry is unreachable.
-    const parentDir = resolve(abs, '..')
-    let layers = ignoreChainCache.get(parentDir)
-    if (!layers) {
-      layers = await readIgnoreChain(resolvedRoot, parentDir)
-      ignoreChainCache.set(parentDir, layers)
-    }
-    if (isHiddenByGitignore(layers, resolvedRoot, abs, isDir)) continue
 
     out.push({ text, path: abs, isDir })
   }

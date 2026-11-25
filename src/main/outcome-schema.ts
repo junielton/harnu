@@ -1,6 +1,6 @@
 /**
  * Campaign ch.6 (T598, spec §3.6) — the zod shapes of the `outcome` and the memory `drafts` a
- * mission or campaign file stores at close. One module so `mission-core.ts` and `campaign-core.ts`
+ * mission file stores at close. One module so every reader and writer of a mission file
  * validate the same bytes; the TypeScript types live in `consolidator-core.ts`.
  *
  * Both are `.passthrough()` like every record object (a key a later Harnu adds survives a

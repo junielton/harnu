@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>parts: T790 session tuck</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        display: grid;
+        gap: 32px;
+      }
+      h2 {
+        font: 600 13px/1 var(--font-sans);
+        color: var(--color-text-3);
+        margin: 0 0 8px;
+      }
+      .cell {
+        height: 220px;
+        display: flex;
+        position: relative;
+      }
+      .cell.h {
+        height: 120px;
+        flex-direction: column;
+        width: 640px;
+      }
+      .wide {
+        height: 420px;
+        width: 900px;
+        display: flex;
+      }
+    </style>
+  </head>
+  <body>
+    <section>
+      <h2>tuck-strip · v · idle</h2>
+      <div class="cell" data-dsqa="part--tuck-strip--v-idle">
+        <mk-tuck-strip orient="v" state="idle"></mk-tuck-strip>
+      </div>
+    </section>
+    <section>
+      <h2>tuck-strip · v · hover</h2>
+      <div class="cell" data-dsqa="part--tuck-strip--v-hover">
+        <mk-tuck-strip orient="v" state="hover"></mk-tuck-strip>
+      </div>
+    </section>
+    <section>
+      <h2>tuck-strip · v · needs</h2>
+      <div class="cell" data-dsqa="part--tuck-strip--v-needs">
+        <mk-tuck-strip orient="v" state="needs"></mk-tuck-strip>
+      </div>
+    </section>
+    <section>
+      <h2>tuck-strip · h · idle</h2>
+      <div class="cell h" data-dsqa="part--tuck-strip--h-idle">
+        <mk-tuck-strip orient="h" state="idle"></mk-tuck-strip>
+      </div>
+    </section>
+    <section>
+      <h2>tuck-strip · h · hover</h2>
+      <div class="cell h" data-dsqa="part--tuck-strip--h-hover">
+        <mk-tuck-strip orient="h" state="hover"></mk-tuck-strip>
+      </div>
+    </section>
+    <section>
+      <h2>helper-panes · column</h2>
+      <div class="wide" data-dsqa="part--helper-panes--column">
+        <mk-helper-panes layout="column"></mk-helper-panes>
+      </div>
+    </section>
+    <section>
+      <h2>helper-panes · row</h2>
+      <div class="wide" data-dsqa="part--helper-panes--row">
+        <mk-helper-panes layout="row"></mk-helper-panes>
+      </div>
+    </section>
+    <section>
+      <h2>session-term · default</h2>
+      <div class="wide" data-dsqa="part--session-term--default">
+        <mk-session-term></mk-session-term>
+      </div>
+    </section>
+    <script src="tuck-strip.js"></script>
+    <script src="helper-panes.js"></script>
+    <script src="session-term.js"></script>
+  </body>
+</html>

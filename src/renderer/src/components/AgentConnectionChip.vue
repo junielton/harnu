@@ -1,41 +1,61 @@
 <script setup lang="ts">
 /**
- * Agent connection chip (T474 U1, design.md §6 — "Agent connection chip"): in a terminal pane's
- * header, who is connected to this terminal, a live `reading` / `typing` word, and a Disconnect
- * button that ends the agent's access for good (no confirm — revoking is the safe direction).
+ * Agent connection chip (T474 U1, design.md §6 — "Agent connection chip"): the compact agent icon the browser and
+ * terminal pane headers share (browser-tabs S-7, decision D-4). One 18px round accent icon with the `pulse-ring`
+ * halo; hover or keyboard focus shows a tip naming the session and what the agent is doing ("Typing", "Reading",
+ * "Driving this tab · host"); Disconnect is an `unplug` button beside it and ends the agent's access for good (no
+ * confirm — revoking is the safe direction).
  *
- * All decisions live in `lib/agent-chip.ts`; this renders the answer. Clicking the chip selects
- * the owner session — an explicit operator gesture, unlike an agent, which never moves the view.
+ * Two ways to feed it. In a terminal header it derives everything from `terminalId` (the agent-terminals store,
+ * `lib/agent-chip.ts`). In the browser header the pane builds an `IconModel` and passes it as `model`, and listens
+ * for `disconnect`. All decisions live in `lib/agent-chip.ts`; this renders the answer. Clicking the icon selects
+ * the owner session when one is known — an explicit operator gesture, unlike an agent, which never moves the view.
  */
-import { computed, onMounted } from 'vue'
+import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Bot, Unplug } from 'lucide-vue-next'
-import { chipView, type ChipOwner, type ChipTerminal } from '../lib/agent-chip'
+import {
+  chipView,
+  iconAriaLabel,
+  sentenceCase,
+  tipShift,
+  type ChipOwner,
+  type ChipTerminal,
+  type IconModel
+} from '../lib/agent-chip'
 import { sessionTitle } from '../lib/session-label'
+import { useNativeOverlay } from '../composables/useNativeOverlay'
 import { useAgentTerminalsStore } from '../stores/agent-terminals'
 import { useSessionsStore } from '../stores/sessions'
 
 interface Props {
-  /** The pane id — the terminal's identity (spec §3.1). */
-  terminalId: string
+  /** The pane id — the terminal's identity (spec §3.1). Unused when `model` is given. */
+  terminalId?: string
   /** `'agent'` for a pane main spawned for an agent; anything else is operator-opened. */
   origin?: 'agent'
   /** The pane's own owner id (kept current across a synthetic→real migration by the store). */
   ownerSessionId?: string | null
   /** The shell already ended (an early exit keeps the pane). */
   exited?: boolean
+  /** The browser header's own words for the icon; replaces the terminal derivation. */
+  model?: IconModel | null
 }
 const props = withDefaults(defineProps<Props>(), {
+  terminalId: '',
   origin: undefined,
   ownerSessionId: null,
-  exited: false
+  exited: false,
+  model: undefined
 })
+const emit = defineEmits<{ disconnect: [] }>()
 
 const { t } = useI18n()
 const sessions = useSessionsStore()
 const agentTerminals = useAgentTerminalsStore()
+const external = computed(() => props.model !== undefined)
 
 onMounted(() => {
+  if (external.value) return
   agentTerminals.start()
   void agentTerminals.refreshChip(props.terminalId)
 })
@@ -66,86 +86,123 @@ const owner = computed<ChipOwner | null>(() => {
   return { title, parked: s.hibernated === true }
 })
 
-const view = computed(() => chipView(terminal.value, owner.value, word.value))
+const terminalView = computed(() => chipView(terminal.value, owner.value, word.value))
 
-const label = computed(() =>
-  view.value ? t(`agentTerminal.${view.value.labelKey}`, view.value.params ?? {}) : ''
-)
-// Hover recovers what truncation hides: the full label (parked included), plus what a click does.
-const fullLabel = computed(() =>
-  view.value?.parked ? `${label.value} (${t('agentTerminal.parked')})` : label.value
-)
-const chipTitle = computed(() =>
-  view.value?.clickSessionId
-    ? `${fullLabel.value} — ${t('agentTerminal.goToSession')}`
-    : fullLabel.value
-)
-// "An agent is reading" already says it: a second `· reading` would only repeat the label.
-const wordText = computed(() =>
-  word.value && view.value?.labelKey !== 'readingAnon' ? t(`agentTerminal.${word.value}`) : ''
-)
+/** What the icon says, whichever header feeds it. */
+const icon = computed<IconModel | null>(() => {
+  if (props.model !== undefined) return props.model
+  const v = terminalView.value
+  if (!v) return null
+  const label = t(`agentTerminal.${v.labelKey}`, v.params ?? {})
+  // "An agent is reading" already says it: a second "Reading" under it would only repeat the head.
+  const live = word.value && v.labelKey !== 'readingAnon' ? t(`agentTerminal.${word.value}`) : ''
+  return {
+    head: v.parked ? `${label} (${t('agentTerminal.parked')})` : label,
+    detail: sentenceCase(live),
+    live,
+    clickSessionId: v.clickSessionId,
+    disconnectable: v.disconnectable
+  }
+})
 
-function onChipClick(): void {
-  const id = view.value?.clickSessionId
+const aria = computed(() => (icon.value ? iconAriaLabel(icon.value) : ''))
+
+/* The tip: hover or keyboard focus. It is an in-app layer over a browser pane, so it registers with the
+   native-overlay freeze while it shows (design.md "Compact agent icon"). */
+const hovered = ref(false)
+const focused = ref(false)
+const tipOpen = computed(() => hovered.value || focused.value)
+const tipEl = ref<HTMLElement | null>(null)
+const iconEl = ref<HTMLElement | null>(null)
+/** Inline placement of the open tip: never wider than its pane, never starting left of it. */
+const tipStyle = ref<Record<string, string>>({})
+watch(tipOpen, async (open) => {
+  if (!open) {
+    tipStyle.value = {}
+    return
+  }
+  await nextTick()
+  const header = iconEl.value?.closest('header')
+  if (!header) return
+  const box = header.getBoundingClientRect()
+  tipStyle.value = { maxWidth: `${Math.max(0, box.width - 8)}px` }
+  await nextTick()
+  const tip = tipEl.value
+  if (!tip) return
+  const shift = tipShift(box, tip.getBoundingClientRect())
+  if (shift > 0) tipStyle.value = { ...tipStyle.value, right: `${-shift}px` }
+})
+useNativeOverlay(`agent-icon-tip-${useId()}`, tipEl)
+
+function onIconClick(): void {
+  const id = icon.value?.clickSessionId
   if (id) sessions.select(id)
 }
 
 function onDisconnect(): void {
-  void agentTerminals.disconnect(props.terminalId)
+  if (external.value) emit('disconnect')
+  else void agentTerminals.disconnect(props.terminalId)
 }
 </script>
 
 <template>
-  <span
-    v-if="view"
-    class="flex min-w-0 shrink items-center gap-1"
-    data-testid="agent-connection-chip"
-  >
-    <!-- `overflow-hidden` + the container-query hides below: at the narrowest stack the chip gives
-         way (label, then the whole pill) before the buttons do, and never leaves half a glyph. -->
-    <component
-      :is="view.clickSessionId ? 'button' : 'span'"
-      class="flex min-w-0 shrink items-center gap-1 overflow-hidden rounded-full border border-accent-line bg-accent-soft text-accent"
-      :class="view.clickSessionId ? 'cursor-pointer transition-colors hover:border-accent' : ''"
-      style="padding: 1px 7px; font-size: 10px"
-      :title="chipTitle"
-      data-testid="agent-chip"
-      v-bind="view.clickSessionId ? { type: 'button' } : {}"
-      @mousedown.stop
-      @click="onChipClick"
-    >
-      <span
-        class="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-        :class="word ? 'anim-pulse-dot anim-pulse-dot--accent' : ''"
-        data-testid="agent-chip-dot"
-        aria-hidden="true"
-      />
-      <Bot :size="10" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
-      <span class="min-w-0 truncate @max-[180px]:hidden" data-testid="agent-chip-label">{{
-        label
-      }}</span>
-      <span
-        v-if="view.parked"
-        class="shrink-0 text-text-3 @max-[180px]:hidden"
-        data-testid="agent-chip-parked"
-        >({{ t('agentTerminal.parked') }})</span
+  <!-- `-ml-1.5` takes back the header's own 6px gap: the group is strip, 4px, icon, Disconnect, as in the mockup. -->
+  <span v-if="icon" class="-ml-1.5 flex shrink-0 items-center" data-testid="agent-connection-chip">
+    <span class="relative flex shrink-0 items-center" style="margin-left: 4px">
+      <component
+        :is="icon.clickSessionId ? 'button' : 'span'"
+        ref="iconEl"
+        class="anim-pulse-dot anim-pulse-dot--accent grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-accent-soft text-accent"
+        :class="icon.clickSessionId ? 'cursor-pointer' : 'cursor-default'"
+        :style="{ '--pulse-from': '0.69' }"
+        :aria-label="aria"
+        data-testid="agent-icon"
+        data-dsqa-part="connection-chip"
+        v-bind="icon.clickSessionId ? { type: 'button' } : { tabindex: 0, role: 'img' }"
+        @mousedown.stop
+        @mouseenter="hovered = true"
+        @mouseleave="hovered = false"
+        @focus="focused = true"
+        @blur="focused = false"
+        @click="onIconClick"
       >
+        <Bot :size="10" :stroke-width="1.6" aria-hidden="true" />
+      </component>
       <span
-        v-if="wordText"
-        class="shrink-0 text-text-3 @max-[180px]:hidden"
-        data-testid="agent-chip-word"
-        >· {{ wordText }}</span
+        v-if="tipOpen"
+        ref="tipEl"
+        role="tooltip"
+        class="absolute top-full right-0 z-30 mt-[5px] border border-border-2 bg-surface text-[11px] w-max text-text-2"
+        :style="tipStyle"
+        style="
+          padding: 6px 9px;
+          box-shadow: var(--shadow-pop);
+          border-radius: var(--radius);
+          line-height: normal;
+        "
+        data-testid="agent-icon-tip"
+        data-dsqa-part="connection-tip"
       >
-    </component>
+        <span class="flex items-center gap-[5px] text-accent" data-testid="agent-icon-tip-head">
+          <Bot :size="10" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />{{ icon.head }}
+        </span>
+        <span
+          v-if="icon.detail"
+          class="mt-0.5 block text-text-3"
+          data-testid="agent-icon-tip-detail"
+          >{{ icon.detail }}</span
+        >
+      </span>
+    </span>
     <!-- Outside the button on purpose: inside it the word would join the button's accessible name
          and be read twice ("… typing typing"). -->
-    <span class="sr-only" aria-live="polite" data-testid="agent-chip-live">{{ wordText }}</span>
+    <span class="sr-only" aria-live="polite" data-testid="agent-chip-live">{{ icon.live }}</span>
     <button
-      v-if="view.disconnectable"
+      v-if="icon.disconnectable"
       type="button"
-      class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded text-text-3 transition-colors hover:bg-surface-2 hover:text-text"
-      :title="t('agentTerminal.disconnectHint')"
-      :aria-label="t('agentTerminal.disconnect')"
+      class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-sm text-text-3 transition-colors hover:bg-surface-2 hover:text-text"
+      :title="external ? $t('browserPane.chip.disconnectHint') : t('agentTerminal.disconnectHint')"
+      :aria-label="external ? $t('browserPane.chip.disconnect') : t('agentTerminal.disconnect')"
       data-testid="agent-disconnect"
       @mousedown.stop
       @click="onDisconnect"

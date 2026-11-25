@@ -1,6 +1,6 @@
 import type { NotifyChannel } from './session-notify'
 import { useUiStore } from './ui'
-import { playNotificationSound } from '../lib/notification-sound'
+import { playNotificationSound, type SoundFamily } from '../lib/notification-sound'
 
 /**
  * Everything one fired notification needs, independent of what raised it
@@ -10,8 +10,10 @@ export interface NotifyDispatchOptions {
   title: string
   body: string
   channel: NotifyChannel
-  /** Play the packaged chime? */
+  /** Play the notification sound? (The caller already applied the Sound switch and the family mute.) */
   sound: boolean
+  /** Which family to play (T154); `info` — the bundled chime — when omitted. */
+  family?: SoundFamily
   /**
    * Correlates an OS-notification click back to a session (`notify:activate`).
    * Pass '' for a notification with no owning session — the click still
@@ -53,7 +55,7 @@ export function dispatchNotification(opts: NotifyDispatchOptions): boolean {
         notificationType: opts.notificationType
       })
     }
-    if (opts.sound) playNotificationSound()
+    if (opts.sound) playNotificationSound(opts.family ?? 'info')
     return true
   } catch {
     // A transient IPC failure (bridge torn down mid-reload) must never

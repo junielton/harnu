@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { promises as fs } from 'node:fs'
 import { resolve } from 'node:path'
 import { MAX_MARKDOWN_BYTES, type MarkdownDenyCode } from './markdown-core'
-import { checkMarkdownReadAllowed, isExactPathSymlink, markdownKnownRoots } from './markdown-read'
+import { markdownGate } from './markdown-read'
 import { keybindingsFilePath } from './keybindings'
 import { suppressNextChange } from './markdown-watch'
 
@@ -10,13 +10,16 @@ import { suppressNextChange } from './markdown-watch'
  * Confined file WRITER (T74 phase 2 — edit/create files in the app; broadened
  * by Cluster G to any text file, not just markdown). Writing is the most
  * sensitive surface of this feature, so it MIRRORS the read containment
- * exactly (same known-folder roots, same size cap) and adds nothing looser:
+ * exactly (same known-folder roots, same size cap) and adds nothing looser
+ * beyond the notes rule below:
  *
- *  - **Containment** reuses `checkMarkdownReadAllowed` + `markdownKnownRoots`
- *    from the reader — a single source of truth. `..` traversal, absolute
- *    re-roots, and false-positive prefixes (`harnu-secrets/`) are rejected before
- *    a single byte is written; a path outside the known folders can NEVER be
- *    created or overwritten.
+ *  - **Containment** goes through `markdownGate` from the reader — a single source
+ *    of truth: `checkMarkdownReadAllowed` + `markdownKnownRoots`, plus one narrow
+ *    exception, a Quick-notes file (`<main checkout>/.harnu/notes/YYYY-MM-DD.md`)
+ *    of a repo whose worktree is a known root, refused if symlinked. `..` traversal,
+ *    absolute re-roots, and false-positive prefixes (`harnu-secrets/`) are rejected
+ *    before a single byte is written; any other path outside the known folders can
+ *    NEVER be created or overwritten.
  *  - **Extension** is NO LONGER gated (Cluster G) — the writer always persists a
  *    UTF-8 string from the editor, so there's no binary content to refuse here
  *    (the binary sniff only applies to READS of pre-existing files).
@@ -78,9 +81,8 @@ export async function writeMarkdownFile(
   if (typeof content !== 'string') return deny('invalid-path')
   const resolved = resolve(rawPath)
 
-  const gate = checkMarkdownReadAllowed(resolved, await markdownKnownRoots(), allowExact)
+  const gate = await markdownGate(resolved, allowExact)
   if (!gate.ok) return deny(gate.code)
-  if (await isExactPathSymlink(resolved, allowExact)) return deny('symlink')
 
   const bytes = Buffer.byteLength(content, 'utf8')
   if (bytes > MAX_MARKDOWN_BYTES) return deny('too-large')

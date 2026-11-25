@@ -12,7 +12,7 @@
  * main pane; helper cells are the separate HelperPane with its own cache).
  */
 import { Terminal } from '@xterm/xterm'
-import { registerLivePtyResolver } from '../lib/live-pty-resolver'
+import { liveTerminalPtyId, registerLivePtyResolver } from '../lib/live-pty-resolver'
 import { operatorInput } from '../lib/operator-input'
 
 /**
@@ -80,6 +80,12 @@ interface LiveTerminal {
    * contract for terminals nobody has asked to reuse yet.
    */
   dead: boolean
+  /**
+   * WebGL renderer slot (BUG-267). Non-null only while attached and GPU-rendering:
+   * acquired in `wireLiveTerminal` / `attachLiveTerminal`, released in
+   * `detachLiveTerminal`, so a cached fleet never holds more than one context.
+   */
+  gpu: GpuRendererState['gpu']
 }
 
 /**
@@ -134,12 +140,13 @@ const wakeIds = new Set<string>()
 
 /**
  * The PTY id of a session's live terminal, or null when it has none (never opened,
- * or already closed). Exported so a NON-PTY pane can address a session's terminal
+ * already closed, or its process exited on its own: the dead entry stays cached
+ * but takes no text). Exported so a NON-PTY pane can address a session's terminal
  * without reaching into the cache itself — the markdown pane delivering a lesson
  * result to the teacher session (T120) is the only caller today.
  */
 export function livePtyIdFor(sessionKey: string): string | null {
-  return liveTerminals.get(sessionKey)?.ptyId ?? null
+  return liveTerminalPtyId(liveTerminals.get(sessionKey))
 }
 // Stores that deliver text to a session ask for the PTY through this registration, not by importing this file.
 registerLivePtyResolver(livePtyIdFor)
@@ -161,6 +168,11 @@ import { ref, watch, onBeforeUnmount, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { ImageAddon } from '@xterm/addon-image'
+import {
+  acquireGpuRenderer,
+  releaseGpuRenderer,
+  type GpuRendererState
+} from '../lib/terminal-gpu-renderer'
 import { useSessionsStore } from '../stores/sessions'
 import { getMcpApi } from '../stores/command-dispatch'
 import { resolveSpawnSpec } from './spawn-spec'
@@ -176,7 +188,12 @@ import {
   useFocusRegion,
   MAIN_PANE_ID
 } from '../composables/useTerminalFocus'
-import { ensureTerminalFontLoaded, measureCells, measureXtermCells } from '../lib/terminalMetrics'
+import {
+  ensureTerminalFontLoaded,
+  measureCells,
+  measureXtermCells,
+  type CellDims
+} from '../lib/terminalMetrics'
 import { themeFromCss } from '../lib/terminalTheme'
 import { dedupeAfterSeq } from '../lib/adoptDedupe'
 import { installTerminalKeymap } from '../lib/terminalKeymap'
@@ -479,7 +496,7 @@ function attachResizeObserver(live: LiveTerminal, host: HTMLElement): void {
       const liveEl = termEl.value
       if (!liveEl) return
       const fs = settings.terminalFontSize
-      const next = measureXtermCells(liveEl, fs) ?? measureCells(liveEl, undefined, fs)
+      const next = measureLive(live, liveEl, fs)
       if (next.cols === live.term.cols && next.rows === live.term.rows) return
       live.term.resize(next.cols, next.rows)
       window.api.ptyResize(live.ptyId, next.cols, next.rows)
@@ -520,6 +537,11 @@ async function createLiveTerminal(
     // of ours (or of the PR Stack routing). Forcing selection on Option keeps
     // Option+click inside Harnu.
     macOptionClickForcesSelection: true,
+    // OSC 8 hyperlinks (Claude Code prints its links this way) bypass
+    // WebLinksAddon: xterm handles them itself, and its default handler is a
+    // `confirm()` + `window.open()` that `setWindowOpenHandler` denies, so the
+    // click asked "Do you want to navigate…" and then opened nothing.
+    linkHandler: { activate: openTerminalLink },
     scrollback: 10000,
     theme: themeFromCss()
     // NB: xterm.js has no `handleFlowControl` option (that lives on node-pty's
@@ -688,7 +710,8 @@ function wireLiveTerminal(
     screenMode,
     lastTitle: null,
     snapshotTimer: null,
-    dead: false
+    dead: false,
+    gpu: null
   }
 
   // Track the OSC title for the screen-detection classifier ("is this pane
@@ -786,6 +809,9 @@ function wireLiveTerminal(
   armInjectionWatchdog(sessionId)
   attachResizeObserver(live, host)
   live.focusCleanup = installFocusListeners(live)
+  // BUG-267: paint through WebGL instead of the DOM renderer (falls back itself).
+  acquireGpuRenderer(live.term, live, undefined, () => refitToRenderer(live, host))
+  refitToRenderer(live, host)
   return live
 }
 
@@ -823,6 +849,11 @@ async function adoptLiveTerminal(livePty: {
     // of ours (or of the PR Stack routing). Forcing selection on Option keeps
     // Option+click inside Harnu.
     macOptionClickForcesSelection: true,
+    // OSC 8 hyperlinks (Claude Code prints its links this way) bypass
+    // WebLinksAddon: xterm handles them itself, and its default handler is a
+    // `confirm()` + `window.open()` that `setWindowOpenHandler` denies, so the
+    // click asked "Do you want to navigate…" and then opened nothing.
+    linkHandler: { activate: openTerminalLink },
     scrollback: 10000,
     theme: themeFromCss()
   })
@@ -924,6 +955,26 @@ async function doReadopt(): Promise<void> {
 }
 
 /**
+ * Grid size for `live` in `host`: from the WebGL renderer's real cell size when
+ * it is active (BUG-267 — there is no `.xterm-rows` DOM to measure, and WebGL
+ * snaps cells to whole device pixels), else from the DOM rows / span estimate.
+ */
+function measureLive(live: LiveTerminal, host: HTMLElement, fs: number): CellDims {
+  return (
+    measureXtermCells(host, fs, undefined, live.gpu ? live.term : undefined) ??
+    measureCells(host, undefined, fs)
+  )
+}
+
+/** Resize xterm + PTY when the grid no longer matches `host` at the current renderer. */
+function refitToRenderer(live: LiveTerminal, host: HTMLElement): void {
+  const next = measureLive(live, host, settings.terminalFontSize)
+  if (next.cols === live.term.cols && next.rows === live.term.rows) return
+  live.term.resize(next.cols, next.rows)
+  window.api.ptyResize(live.ptyId, next.cols, next.rows)
+}
+
+/**
  * Re-attach an existing `LiveTerminal` to the host. Pulls its xterm-managed
  * DOM node and appends it inside `termEl`, then resizes-on-attach to pick up
  * any host dimension changes that happened while detached (window resize
@@ -945,12 +996,11 @@ function attachLiveTerminal(live: LiveTerminal): void {
   // while this terminal was detached. Re-measure (using the current font size)
   // and forward to xterm + PTY so the redraw and SIGWINCH happen exactly once
   // on becoming visible.
-  const fs = settings.terminalFontSize
-  const next = measureXtermCells(host, fs) ?? measureCells(host, undefined, fs)
-  if (next.cols !== live.term.cols || next.rows !== live.term.rows) {
-    live.term.resize(next.cols, next.rows)
-    window.api.ptyResize(live.ptyId, next.cols, next.rows)
-  }
+  // BUG-267: the WebGL context is released on detach, so re-acquire it now that
+  // the element is back in the document (falls back to the DOM renderer itself).
+  // Done BEFORE measuring: the grid must be sized from the renderer that paints it.
+  acquireGpuRenderer(live.term, live, undefined, () => refitToRenderer(live, host))
+  refitToRenderer(live, host)
 
   attachResizeObserver(live, host)
   // Re-bind focus listeners on every attach: while detached we tear them
@@ -1012,6 +1062,10 @@ function detachLiveTerminal(live: LiveTerminal): void {
     live.focusCleanup = null
   }
   unregisterFocusedPane(MAIN_PANE_ID)
+  // BUG-267: free the WebGL context while backgrounded (xterm reverts to the DOM
+  // renderer, whose state is kept in the buffer) so 15+ sessions never hit the
+  // browser's context limit.
+  releaseGpuRenderer(live)
   if (live.term.element && live.term.element.parentNode) {
     live.term.element.parentNode.removeChild(live.term.element)
   }
@@ -1766,7 +1820,7 @@ watch(
         // render frame, so a Vue tick isn't enough to read the new
         // `.xterm-rows` height — one rAF gives the renderer a frame to flush.
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-        const next = measureXtermCells(host, size) ?? measureCells(host, undefined, size)
+        const next = measureLive(live, host, size)
         if (next.cols !== live.term.cols || next.rows !== live.term.rows) {
           live.term.resize(next.cols, next.rows)
           window.api.ptyResize(live.ptyId, next.cols, next.rows)

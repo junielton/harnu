@@ -736,6 +736,9 @@ export interface ManifestCardArgs {
   substrate?: CardSubstrate
   model?: string
   effort?: string
+  /** Missions v4 S-26: the card is the work of this step of this mission (both, or neither). */
+  missionId?: string
+  stepId?: string
 }
 
 /** Validated args for the `submit_manifest` mutation tool (T104 §2.1). */
@@ -748,12 +751,18 @@ export interface SubmitManifestArgs {
 /** Bound on how many cards one manifest may declare (a lot, but not unbounded — no wildcard). */
 export const MAX_MANIFEST_CARDS = 50
 
-const ManifestCardSchema = z.object({
-  slug: z.string().min(1),
-  substrate: z.enum(CARD_SUBSTRATES).optional(),
-  model: z.string().min(1).max(64).optional(),
-  effort: z.string().min(1).max(32).optional()
-})
+const ManifestCardSchema = z
+  .object({
+    slug: z.string().min(1),
+    substrate: z.enum(CARD_SUBSTRATES).optional(),
+    model: z.string().min(1).max(64).optional(),
+    effort: z.string().min(1).max(32).optional(),
+    missionId: z.string().min(1).optional(),
+    stepId: z.string().min(1).optional()
+  })
+  .refine((c) => (c.missionId === undefined) === (c.stepId === undefined), {
+    message: 'pass missionId and stepId together: a card is the work of one step of one mission'
+  })
 
 const SubmitManifestSchema = z.object({
   folder: absolutePathSchema,
@@ -1123,6 +1132,45 @@ export function parseHideFolder(input: unknown): ParseResult<HideFolderArgs> {
   if (!parsed.success) return fromZod(parsed.error)
   const value: HideFolderArgs = { folders: parsed.data.folders }
   if (parsed.data.unhide !== undefined) value.unhide = parsed.data.unhide
+  return { ok: true, value }
+}
+
+/** Validated args for the `your_move` mutation tool (Your move, U3). */
+export interface YourMoveArgs {
+  folder: string
+  sessionId: string
+  kind: 'decide' | 'go_no_go' | 'provide' | 'do' | 'check'
+  ask: string
+  blocks?: string
+  options?: string[]
+  recommended?: string
+  cardId?: string
+}
+
+const YourMoveSchema = z.object({
+  folder: absolutePathSchema,
+  sessionId: z.string().min(1),
+  kind: z.enum(['decide', 'go_no_go', 'provide', 'do', 'check']),
+  ask: z
+    .string()
+    .max(500)
+    .refine((v) => v.trim().length > 0, 'ask must not be blank'),
+  blocks: z.string().max(500).optional(),
+  options: z.array(z.string().min(1).max(120)).max(6).optional(),
+  recommended: z.string().max(120).optional(),
+  cardId: z.string().min(1).optional()
+})
+
+/** Validate `your_move` args. There is no close field: unknown keys are dropped. */
+export function parseYourMove(input: unknown): ParseResult<YourMoveArgs> {
+  const parsed = YourMoveSchema.safeParse(input)
+  if (!parsed.success) return fromZod(parsed.error)
+  const { folder, sessionId, kind, ask, blocks, options, recommended, cardId } = parsed.data
+  const value: YourMoveArgs = { folder, sessionId, kind, ask }
+  if (blocks !== undefined) value.blocks = blocks
+  if (options !== undefined) value.options = options
+  if (recommended !== undefined) value.recommended = recommended
+  if (cardId !== undefined) value.cardId = cardId
   return { ok: true, value }
 }
 
@@ -1947,6 +1995,12 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   browser_download: parseBrowserDownload,
   browser_set_data: parseBrowserSetData,
   browser_patch: parseBrowserPatch,
+  // Guided walks (S-2): validated against their own catalog schema, like the mission verbs; the verbs'
+  // semantic refusals (a script that breaks a rule, a stale rev) are the service's, so they name the rule.
+  walk_open: parseMissionVerb('walk_open'),
+  walk_extend: parseMissionVerb('walk_extend'),
+  walk_report: parseMissionVerb('walk_report'),
+  walk_get: parseMissionVerb('walk_get'),
   adopt_folder: parseAdoptFolder,
   // BUG-56: same `{ folder }` shape as adopt_folder.
   remove_folder: parseAdoptFolder,
@@ -1975,6 +2029,8 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   archive_session: parseArchiveSession,
   // T661: folders are named by absolute path; the handler refuses a blocked one per path.
   hide_folder: parseHideFolder,
+  // Your move (U3): anchored on `folder`; the verb has no close operation.
+  your_move: parseYourMove,
   stop_containers: parseStopContainers,
   start_containers: parseStartContainers,
   remove_containers: parseRemoveContainers,
@@ -1987,24 +2043,16 @@ const PARSERS: { [K in McpOp]: (input: unknown) => ParseResult<unknown> } = {
   mission_list: parseMissionVerb('mission_list'),
   mission_add_step: parseMissionVerb('mission_add_step'),
   mission_update_step: parseMissionVerb('mission_update_step'),
-  mission_link_child: parseMissionVerb('mission_link_child'),
   mission_log: parseMissionVerb('mission_log'),
   mission_set_blocker: parseMissionVerb('mission_set_blocker'),
   mission_clear_blocker: parseMissionVerb('mission_clear_blocker'),
-  mission_set_end: parseMissionVerb('mission_set_end'),
-  mission_verify_step: parseMissionVerb('mission_verify_step'),
   mission_request_close: parseMissionVerb('mission_request_close'),
-  mission_import_legacy: parseMissionVerb('mission_import_legacy'),
-  mission_add_check: parseMissionVerb('mission_add_check'),
-  // Campaign ch.3a: validated against their own catalog schema, like the mission verbs.
-  campaign_create: parseMissionVerb('campaign_create'),
-  campaign_add_chapter: parseMissionVerb('campaign_add_chapter'),
-  campaign_get: parseMissionVerb('campaign_get'),
-  campaign_list: parseMissionVerb('campaign_list'),
-  campaign_request_close: parseMissionVerb('campaign_request_close'),
-  // T654: validated against their own catalog schema, like the other mission/campaign verbs.
-  mission_transfer_owner: parseMissionVerb('mission_transfer_owner'),
-  campaign_transfer_owner: parseMissionVerb('campaign_transfer_owner'),
+  mission_add_milestone: parseMissionVerb('mission_add_milestone'),
+  mission_add_ac: parseMissionVerb('mission_add_ac'),
+  mission_link: parseMissionVerb('mission_link'),
+  mission_set_done_when: parseMissionVerb('mission_set_done_when'),
+  mission_settle_ac: parseMissionVerb('mission_settle_ac'),
+  mission_attach: parseMissionVerb('mission_attach'),
   // Campaign ch.5a: validated against its own catalog schema, like the mission verbs.
   rebase_stack: parseMissionVerb('rebase_stack')
 }

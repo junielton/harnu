@@ -260,6 +260,17 @@ export function buildAppMenu(
         },
         { type: 'separator' },
         {
+          label: 'New Note for Today',
+          accelerator: a('notes.openToday'),
+          click: (): void => emit('notes.openToday')
+        },
+        {
+          label: 'All Notes…',
+          accelerator: a('notes.open'),
+          click: (): void => emit('notes.open')
+        },
+        { type: 'separator' },
+        {
           label: 'Open in File Manager',
           accelerator: a('folder.openInFileManager'),
           click: (): void => emit('folder.openInFileManager')

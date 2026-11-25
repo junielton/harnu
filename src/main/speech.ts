@@ -1,5 +1,4 @@
 import { app, ipcMain } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import * as path from 'node:path'
@@ -16,6 +15,7 @@ import {
   type AgentSpeechPrefs
 } from './speech-gate-core'
 import { normalizePath } from './mcp/permission-core'
+import { spawnChild, type SpawnedChild } from './spawn-runner'
 
 /**
  * Main-process shell for the system-command speech backend (T237).
@@ -61,7 +61,7 @@ export interface SpeechSayResult {
 }
 
 /** In-flight utterances, so `speech:cancel` can kill the right process. */
-const live = new Map<string, ChildProcess>()
+const live = new Map<string, SpawnedChild>()
 
 /** The main-owned half of the voice settings, as `voice-prefs.json` holds it. */
 interface VoiceStore {
@@ -213,9 +213,9 @@ export function registerSpeechHandlers(): void {
     }
 
     return new Promise<SpeechSayResult>((resolve) => {
-      let child: ChildProcess
+      let child: SpawnedChild
       try {
-        child = spawn(spec.file, spec.args, {
+        child = spawnChild(spec.file, spec.args, {
           stdio: 'ignore',
           windowsHide: true,
           env: {

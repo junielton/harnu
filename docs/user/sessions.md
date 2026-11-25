@@ -34,7 +34,9 @@ Quitting stops every terminal, so a session that is mid-turn loses that turn. Wh
 - **Quit anyway** quits normally.
 - **Don't ask again** (a checkbox) stops the prompt from appearing on later quits. Turn it back on in [Settings → General → Quitting](settings.md#quitting).
 
-Only sessions that are actively working count. Idle, parked (hibernated), finished and errored sessions never trigger the prompt, so quitting with nothing running is instant. The prompt also stays out of the way of an update restart ("Restart now") and of a system shutdown or logout. It is a native dialog, so it appears even if Harnu's window has stopped responding.
+Only sessions that are actively working count. Idle, parked (hibernated), finished and errored sessions never trigger the prompt, so quitting with nothing running is instant.
+
+**Unsaved files.** If any Markdown pane (a [quick note](notes.md) or any other Markdown file) has unsaved edits, Harnu always asks before quitting, even if you turned confirm-on-quit off. The prompt names the files, then lists any working agents below them, since quitting interrupts those too. Its buttons are **Cancel** (the default) and **Quit without saving**, and it has no **Don't ask again** checkbox: losing work is not a preference. See [Quick notes](notes.md) for how unsaved edits are protected. The prompt also stays out of the way of an update restart ("Restart now") and of a system shutdown or logout. It is a native dialog, so it appears even if Harnu's window has stopped responding.
 
 ### Pasted screenshots
 
@@ -70,6 +72,35 @@ Harnu only shows that panel when it is sure: the transcript must hold no convers
 
 If the panel ever shows for a session you want to open, press **Resume anyway**. The terminal opens and runs `claude --resume` regardless, so you see exactly what Claude Code says — including its error, if there is one. The choice lasts until you quit Harnu. If the transcript later gains a conversation, the panel gives way to the terminal on its own.
 
+## Return here: sessions waiting on you
+
+The **Return here** box sits at the bottom of the sidebar, above the dock. It is global: it stays put whichever project the sidebar is drilled into, so a question from one project is never hidden while you are working in another. It works the same with Floating panels on or off.
+
+With [Your move](settings.md#your-move) set to **Off** or **Observe**, it lists the sessions you probably forgot: waiting for input and not looked at for about ten minutes. With **Live**, it lists **cards** instead, one for each thing only you can unblock, oldest first. The heading shows how many there are and how long the oldest has been waiting, for example `RETURN HERE · 3 · 2h 14m`. The box grows to about 380 pixels (or 45% of the window height, whichever is smaller) and the cards scroll inside it; the heading stays in place.
+
+The box shows the first 25 cards. When more are waiting, a **Show 25 more · 1,569 not shown** button at the end of the list adds the next 25, in the same order, and the heading still counts every open card. A card's clock counts seconds during its first minute and minutes after that (`02m`, `1h 02m`, `2d 03h 04m`).
+
+Each card shows its kind (Decide, Go / no-go, Provide, Do or Check), the project and session it comes from, a clock that counts up from the moment it was filed, and what is being asked. Click the card to expand it: you then see the context, what it blocks, and its buttons.
+
+- **Decide** cards have one button per option, the one the session recommended first and marked. **Go / no-go** has Go and No-go. **Do** has Done, and Open link when the card carries a web link. **Check** has Looks right and Something's wrong. **Provide** has only Open session: Harnu never takes a secret through a card.
+- **Open session** is on every card and takes you to the session. Opening the session does not close the card.
+- Cards that come from a mission also have **Open mission**. A card for a session that stopped on an error, or that Harnu could not check, has only Open session.
+- For now the answer buttons take you to the session instead of answering for you. Answering from the card comes in a later release.
+- Every card also has two exits that tell the session nothing: **Not for me** (a false alarm) and **Already handled** (it was real, but someone else dealt with it or it no longer matters). Harnu keeps them as separate labels.
+
+There is no × on a card. A card leaves the box when you use one of the exits, or when the thing it was about is resolved: you answered in the session, a mission stopped owing it, or you archived the session or removed its folder. For now the answer buttons only open the session and never close the card; answering from a card comes in a later release.
+
+Everything a card says was written by a model, so Harnu shows it as plain text and only follows a link that starts with `http://` or `https://`.
+
+### Resize or collapse the box
+
+The Return here box is a sidebar _section_, so you can make room either way:
+
+- **Resize.** Drag the top edge of the box (the boundary with the folder list) up to give it more room, or down to give the folder list more. Double-click the edge to put the box back to its default size. The box never gets smaller than its heading plus one row, the folder list always keeps at least about 160 pixels, and the dock at the bottom never moves.
+- **Collapse.** Click the small chevron at the right end of the heading to fold the box down to the heading alone: the title, the count and the oldest clock stay visible, so you can still see something is waiting. Click it again to open the box. The chevron works with the keyboard too.
+
+Harnu remembers the size and whether the box is collapsed, including across restarts and across the box disappearing when nothing is waiting.
+
 ## Jump from the transcript to a file
 
 When Claude mentions a file — `src/main/pty.ts`, or `src/main/pty.ts:42` — you
@@ -82,13 +113,10 @@ session. (On a Mac, Ctrl+click is the system right-click, so use Option there.)
 
 Nothing underlines until you hold the modifier, so it stays out of your way while
 you read. A path is only clickable when it actually exists inside the project
-folder and isn't ignored by `.gitignore` — the file tree can't show those
-either, so Harnu doesn't pretend they're reachable. The one exception is
-Harnu's own **`.harnu/`** folder: even though it's usually gitignored, it shows
-up in Browse files and its paths are clickable, because that's where agents put
-the reports and diagrams they hand you (for example
-`.harnu/out/roadmap-notes.md`). Everything else that's gitignored — `node_modules`,
-build output — stays hidden. Links to web addresses behave as before. A bare filename with no folder in it
+folder (anything under `.git` excluded). Gitignored paths count: Browse files
+lists gitignored files and folders too, drawn faded so you can tell them from
+the files git tracks, so a link to `node_modules/...` or a build output still
+lands on its row. Links to web addresses behave as before. A bare filename with no folder in it
 (just `pty.ts`) isn't clickable, because there's no way to tell which one it
 means.
 
@@ -140,6 +168,17 @@ Maximize works inside the split. **Expand to window** goes one step further: the
 - **It is not remembered.** Expanded is per folder, and switching to another folder or restarting puts the layout back to normal. Closing the expanded pane also leaves the expanded view. `F6` visits only the expanded pane.
 - **The shortcut.** Bind **Expand the focused pane to the window** in Settings → Keyboard Shortcuts to toggle it from the keyboard for any focused pane; it has no default key, because `Cmd/Ctrl+Shift+M` stays maximize (and exits the expanded view).
 - **Motion.** Maximize, expand, minimizing or restoring the Fleet rail, collapsing the sidebar and switching the split layout now animate for about a fifth of a second instead of snapping; dragging a divider never does. A browser pane shows a still picture of its page while the layout moves and goes live again right after. With **Reduce motion** on in your operating system, everything snaps as before.
+
+### Tucking the session away
+
+Want the whole window for the split, say a guided walk next to a browser pane on a CMS? Drag the divider between the session and the split **past its 40% limit** and the session tucks away.
+
+- **Pull, and it resists.** The divider stops at the 40% limit. Keep pulling about 80 pixels further and it **arms**: the divider turns accent-coloured, the session dims, and a hint says **Release to tuck the session away**, with a dashed line marking where the limit is. Let go while it is armed and the session tucks away; let go earlier and it springs back to the limit. It works the same side by side (you drag left) and stacked (you drag up).
+- **The split takes the whole area.** The session keeps running underneath, its terminal is not resized or redrawn, and its scrollback is intact when you bring it back. While the session is tucked the panes of the split sit **side by side**, whichever layout you use; they go back to their usual arrangement when the session returns.
+- **A thin strip stays behind.** Where the session was, a narrow strip (on the left edge, or along the top when stacked) shows the session's state dot. Point at it and it widens a little and tells you the session's name, what it is doing and **Click or drag to bring it back**, plus the shortcut. When the session **needs you** (an approval, a question) the strip turns amber, the dot blinks and a **Needs you** tag appears. Harnu never opens the session by itself for that: the strip and the Approval Inbox carry the message.
+- **With Floating panels on** (Settings → Appearance), the strip is its own small panel: a thin 4px rounded bar that keeps the same gap to the sidebar and to the split as every other panel. The bar's colour is the session's state (grey when idle, green while it works, red when it failed) and turns amber and blinks when the session needs you; the **Needs you** tag is left out because it would not fit, so rely on the colour and on the hover note. The bar widens a little when you point at it, and the area you can click is as wide as the classic strip's.
+- **Bring it back.** Click the strip, or focus it with `Tab` and press `Enter` or `Space`: the session returns at exactly its 40% size. Or press the strip and drag it out: the session returns and follows your pointer (between 40% and 80%). `Cmd/Ctrl+Shift+J` and **Tuck the session away or bring it back** in the command palette (rebind it in Settings → Keyboard Shortcuts) tuck the session and bring it back from the keyboard. Closing the last pane of the split also brings the session back, so you are never left with an empty window.
+- **Per folder, not remembered.** Tucked belongs to the folder you tucked it in: switching to another folder shows that folder's session as usual, and a restart starts with the session shown. It does not get in the way of maximize or expand to window: while a pane is expanded the strip hides with the session, and when you leave the expanded view the session is still tucked. While a pane is expanded the shortcut only leaves the expanded view, like `Cmd/Ctrl+Shift+M`.
 
 ### Moving between panes from the keyboard
 
@@ -214,6 +253,7 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `Cmd/Ctrl+Shift+M` | Maximize or restore the focused split pane (leaves an expanded pane)            |
 | _(unbound)_        | Expand the focused split pane to the window (bind it in Keyboard Shortcuts)     |
 | _(unbound)_        | Cycle the split layout (bind **Cycle the split layout** in Keyboard Shortcuts)  |
+| `Cmd/Ctrl+Shift+J` | Tuck the session away, or bring it back                                         |
 | `Alt+←` / `Cmd+[`  | Back to the previous session you viewed                                         |
 | `Alt+→` / `Cmd+]`  | Forward again after going back                                                  |
 | Arrow keys / Enter | Move and activate the keyboard cursor in the sidebar                            |
@@ -264,7 +304,7 @@ can be given a shortcut as well, again with none out of the box:
 hidden), `inbox.toggleOrder` (flip the rail's newest-first / oldest-first
 order), `inbox.filter` (the **Filter states** popover), `inbox.showAll` (**Show
 all**, while a state is filtered out), `view.activity` (the Activity bell),
-`view.missionProgress` (the mission's "Step N of M" pill), `view.pastedImages`
+`view.missionProgress` (the mission pill, such as "4/21 · 3 for you"), `view.pastedImages`
 (the pasted-images pill), `view.claudeStatus` (the Claude service status dot)
 and `view.usagePanel` (the plan-usage meters). Pressing a popover's shortcut
 again closes it, and `Esc` closes it exactly as when you opened it with a
