@@ -161,9 +161,11 @@ export const SettledSchema: z.ZodType<Settled> = z
   .passthrough()
 
 /**
- * A builder's own check of a criterion: labelled, and never proof. `by` is the session that built the
- * step. It sits beside `settled` and never replaces it: a criterion with a self-check and no `settled`
- * is still open (spec "Facts, and who is trusted": a self-check is labelled and never proof).
+ * A session's claim about a criterion: its evidence, labelled, and never proof. `by` is the session
+ * that wrote it: the builder of the step on a `session` criterion, or any attached session on an
+ * `operator` one. It sits beside `settled` and never replaces it: a criterion with a claim and no
+ * `settled` is still open until the operator accepts it or, for a `session` one, a second session
+ * settles it. The key keeps its older name (`selfCheck`), so stamps already on records are claims.
  */
 export interface SelfCheck {
   at: string

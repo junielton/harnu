@@ -12,9 +12,10 @@
  *   once. A session clears an agent-owned blocker; an operator-owned one is the operator's to clear.
  * - **Done when** is never rewritten by a verb: a change is staged in `pendingDoneWhen` for the
  *   operator, who approves it at the door (S-15).
- * - **Settle**: a session that did NOT build the step settles a `by: session` criterion (`settled`); the
- *   builder's own call is a `selfCheck`, which never settles. A fact, the operator and another person
- *   settle the other three kinds, never a session by hand.
+ * - **Settle**: a session that did NOT build the step settles a `by: session` criterion (`settled`). The
+ *   builder's own call on it, and any session's call on an `operator` criterion, records a CLAIM
+ *   (`selfCheck`), which never settles: the operator accepts it at their door. A fact and another
+ *   person's approval take neither from a session.
  * - **Ask to close** is refused `STEPS_OPEN` while a required step is not done (the state is S-7's), sets
  *   `closeRequested` and never closes: closing is the operator's door.
  * - **Ask to attach** is the one write an unattached session may make. It asks to JOIN (no role: only
@@ -414,27 +415,26 @@ export interface SettleCriterionArgs {
   extraBuilders?: readonly string[]
 }
 
-const NOT_BY_HAND: Record<Exclude<AcceptanceCriterion['by'], 'session'>, string> = {
-  fact: 'a fact settles itself: Harnu reads it, and nobody ticks what Harnu can see.',
-  operator: 'the operator marks it in the Mission dropdown; a session never does.',
+const NOT_BY_HAND: Record<'fact' | 'person', string> = {
+  fact: 'Harnu reads that fact itself; nobody claims or ticks it.',
   person:
-    'the operator marks it for the other person in the Mission dropdown; a session never does.'
+    'only that person can approve; the operator marks it in the Mission dropdown, and a session neither claims nor settles it.'
 }
 
 /**
- * Settle one criterion with evidence. A session that did NOT build the step settles a `by: session`
- * criterion (`settled { at, by, evidence }`, `by` its own id). The builder's own call is a self-check
- * (`selfCheck { at, by, evidence }`): labelled, and never proof, so the criterion stays open. The
- * builder is S-11's `isBuilderOf` (the step's `session` links), plus the ids the caller names. A fact,
- * an operator criterion and a person's are never settled by hand: the verb refuses each.
+ * Settle or claim one criterion with evidence. A session that did NOT build the step settles a `by:
+ * session` criterion (`settled { at, by, evidence }`, `by` its own id). The builder's own call on it,
+ * and any attached session's call on an `operator` criterion, records a claim (`selfCheck { at, by,
+ * evidence }`): labelled, and never proof, so the criterion stays open until the operator accepts it. A
+ * newer claim replaces the older one; each stays in the Log with its evidence. The builder is S-11's
+ * `isBuilderOf` (the step's `session` links), plus the ids the caller names. A fact and another
+ * person's criterion take neither: the verb refuses each.
  */
 export async function settleCriterion(
   folder: string,
   actor: Actor,
   args: SettleCriterionArgs
-): Promise<
-  StateResult<{ outcome: 'settled' | 'self-check'; stepId: string; criterionId: string }>
-> {
+): Promise<StateResult<{ outcome: 'settled' | 'claimed'; stepId: string; criterionId: string }>> {
   if (actor.kind !== 'session') return sessionOnly('mission_settle_ac')
   const sessionId = actor.sessionId
   const at = new Date().toISOString()
@@ -451,7 +451,7 @@ export async function settleCriterion(
         `step ${step.id} has no criterion ${args.criterionId}; it has ${step.acs.map((c) => c.id).join(', ') || 'none'}.`
       )
     }
-    if (ac.by !== 'session') {
+    if (ac.by === 'fact' || ac.by === 'person') {
       throw new Refusal('SETTLE_NOT_ALLOWED', `${step.id} ${ac.id}: ${NOT_BY_HAND[ac.by]}`)
     }
     if (ac.settled) {
@@ -462,7 +462,7 @@ export async function settleCriterion(
     }
     const builder =
       isBuilderOf(record, sessionId, step.id) || (args.extraBuilders ?? []).includes(sessionId)
-    const settled = !builder
+    const settled = ac.by === 'session' && !builder
     const updated: AcceptanceCriterion = settled
       ? { ...ac, settled: { at, by: sessionId, evidence } }
       : { ...ac, selfCheck: { at, by: sessionId, evidence } }
@@ -472,11 +472,11 @@ export async function settleCriterion(
     })
     const line = settled
       ? `${quoted(step)}: a criterion was settled by another session.`
-      : `${quoted(step)}: a criterion was checked by the session that built it; it stays open.`
+      : `${quoted(step)}: a session claims "${oneLine(ac.text)}" is done; it stays open. Evidence: ${evidence}`
     return {
       next: { record: next, log: appendLog(log, at, line, step.id) },
       report: {
-        outcome: settled ? 'settled' : 'self-check',
+        outcome: settled ? 'settled' : 'claimed',
         stepId: step.id,
         criterionId: ac.id
       }

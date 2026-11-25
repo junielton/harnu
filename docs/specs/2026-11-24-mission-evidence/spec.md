@@ -131,6 +131,7 @@ builder's own claim reads as verified before the operator accepts it; a claim wi
 
 ## Amendments · Deviations
 
-| date       | kind      | what changed                                                          | by           |
-| ---------- | --------- | --------------------------------------------------------------------- | ------------ |
-| 2026-11-24 | amendment | Approved by the operator in chat; D-1..D-5 resolved at their defaults | orchestrator |
+| date       | kind      | what changed                                                                                                                                  | by           |
+| ---------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| 2026-11-24 | amendment | Approved by the operator in chat; D-1..D-5 resolved at their defaults                                                                         | orchestrator |
+| 2026-11-24 | amendment | A dispatched worker holds mission_settle_ac on its own step, claim-only (it built the step); a claimed criterion is counted under accept only | orchestrator |

@@ -13,6 +13,7 @@ import { WAITING_RANK, waitingListV4, type WaitingItemV4 } from '../src/main/mis
 import { missionDrafts } from '../src/main/your-move/source-mission'
 import { projectMissions, type MissionViewIn } from '../src/main/companion/mission-state-core'
 import { buildMissionModel, youRows } from '../src/renderer/src/lib/mission-view'
+import { cueFamilyOfKey } from '../src/renderer/src/lib/mission-cue'
 import { fixtureView, FIXTURE_NOW } from './helpers/mission-v3-view'
 
 const OWNER = '11111111-2222-4333-8444-555555555555'
@@ -134,6 +135,124 @@ describe('one list feeds every reader (AC-7)', () => {
     expect(rows.find((r) => r.kind === 'decide')).toMatchObject({
       stepId: steps[1].id,
       risk: 'high'
+    })
+  })
+})
+
+describe('claims wait for the operator’s Accept (evidence AC-7)', () => {
+  const claimed = { at: AT, by: OWNER, evidence: 'Ran it' }
+  const step = (
+    id: string,
+    acs: MissionV4['steps'][number]['acs']
+  ): MissionV4['steps'][number] => ({ id, title: `Step ${id}`, acs, links: [], blockers: [] })
+
+  const withClaims = (): MissionV4 =>
+    mission({
+      steps: [
+        step('stp-1', [
+          { id: 'ac-1', text: 'The store is chosen', by: 'operator', selfCheck: claimed },
+          { id: 'ac-2', text: 'A second session read it', by: 'session', selfCheck: claimed }
+        ]),
+        step('stp-2', [{ id: 'ac-1', text: 'The wiring reads well', by: 'session' }]),
+        step('stp-3', [{ id: 'ac-1', text: 'The page loads', by: 'session', selfCheck: claimed }])
+      ],
+      blockers: [
+        {
+          id: 'blk-1',
+          reason: 'The API key is not on this machine.',
+          ask: 'Put the API key in the vault',
+          unblocks: 'The wiring can run',
+          owner: 'operator'
+        }
+      ]
+    } as Partial<MissionV4>)
+
+  it('claims rank after unblock', () => {
+    expect(WAITING_RANK.indexOf('accept')).toBe(WAITING_RANK.indexOf('unblock') + 1)
+    const list = waitingListV4(withClaims())
+    expect(list.items.map((i) => i.kind).slice(0, 2)).toEqual(['unblock', 'accept'])
+    // one item for all of them: how many, and on which steps (plan order)
+    const items = list.items.filter((i) => i.kind === 'accept')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ id: 'accept', count: 3, stepIds: ['stp-1', 'stp-3'] })
+    expect(items[0].ask).toBe('Accept 3 criteria sessions say are done')
+    // `next` names it when it is first
+    const alone = waitingListV4({ ...withClaims(), blockers: [] })
+    expect(alone.next).toMatchObject({ kind: 'accept', count: 3 })
+  })
+
+  it('a claimed criterion shows under accept only, never also under settle', () => {
+    const m = mission({
+      steps: [
+        {
+          ...step('stp-1', [
+            { id: 'ac-1', text: 'The store is chosen', by: 'operator', selfCheck: claimed },
+            { id: 'ac-2', text: 'The page reads well', by: 'operator' }
+          ]),
+          links: [{ kind: 'session', ref: OWNER }]
+        }
+      ]
+    } as Partial<MissionV4>)
+    const items = waitingListV4(m).items
+    expect(items.map((i) => i.kind)).toEqual(['accept', 'settle'])
+    // the unclaimed one proves the step is started; the claimed one is not listed twice
+    expect(items.filter((i) => i.kind === 'settle')).toMatchObject([{ criterionId: 'ac-2' }])
+    expect(items[0]).toMatchObject({ count: 1, stepIds: ['stp-1'] })
+  })
+
+  it('accept asks for attention as the settle item it replaces did', () => {
+    expect(cueFamilyOfKey('accept')).toBe('ask')
+  })
+
+  it('counts only open claims on operator and session criteria', () => {
+    const none = mission({
+      steps: [
+        step('stp-1', [
+          {
+            id: 'ac-1',
+            text: 'The designer signed off',
+            by: 'person',
+            person: 'the designer',
+            selfCheck: claimed
+          },
+          { id: 'ac-2', text: 'The pull request is merged', by: 'fact', fact: 'pr-merged' },
+          {
+            id: 'ac-3',
+            text: 'The store is chosen',
+            by: 'operator',
+            selfCheck: claimed,
+            settled: { at: AT, by: 'operator' }
+          },
+          { id: 'ac-4', text: 'Nobody looked yet', by: 'session' }
+        ])
+      ]
+    } as Partial<MissionV4>)
+    expect(waitingListV4(none).items.map((i) => i.kind)).not.toContain('accept')
+    expect(waitingListV4({ ...withClaims(), status: 'closed' }).items).toEqual([])
+  })
+
+  it('words one claim in the singular', () => {
+    const one = mission({
+      steps: [
+        step('stp-1', [{ id: 'ac-1', text: 'The page loads', by: 'session', selfCheck: claimed }])
+      ]
+    } as Partial<MissionV4>)
+    expect(waitingListV4(one).next).toMatchObject({
+      kind: 'accept',
+      count: 1,
+      ask: 'Accept the criterion a session says is done'
+    })
+  })
+
+  it('Your move files it as a check card', () => {
+    const items = waitingListV4(withClaims()).items
+    const drafts = missionDrafts(
+      { root: '/repo', mission: { id: ID, owner: { sessionId: OWNER } }, you: items },
+      'live'
+    )
+    expect(drafts.find((d) => d.sourceKey === `${ID}:accept`)).toMatchObject({
+      kind: 'check',
+      ask: 'Accept 3 criteria sessions say are done'
     })
   })
 })

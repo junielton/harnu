@@ -57,7 +57,7 @@ Pass your own on every call (`sessionId`). It is already in your context: the sc
 
 - **No scratchpad path in your context** → you cannot lead honestly. Say so and ask the operator which session should; never invent an id or pass a `synthetic-…` one.
 - **The directory reads `agent-<something>`** → you are a subagent, not a session: create and lead nothing, report to the session that dispatched you. The one exception is a tick subagent, handed the leader's own id in its prompt: it runs the tick below on the leader's behalf and passes that id.
-- **A session Harnu spawned for a step** holds a scoped credential, with one of three roles: a **worker** (`mission_get`, `mission_link`, `mission_log`, `mission_set_blocker`, only on its own step), a **verifier** (the same plus `mission_settle_ac`) or an **observer** (reads, bound to a folder). If you are one, never pass a `sessionId`: your id is the credential's and one you pass is ignored. None of them can lead, plan, attach itself or touch another mission; to ask the leader or the operator for something, `mission_log` or `mission_set_blocker` on your step.
+- **A session Harnu spawned for a step** holds a scoped credential, with one of three roles: a **worker** (`mission_get`, `mission_link`, `mission_log`, `mission_set_blocker`, `mission_settle_ac` for claims only, on its own step), a **verifier** (the same, and its check settles a step it did not build) or an **observer** (reads, bound to a folder). If you are one, never pass a `sessionId`: your id is the credential's and one you pass is ignored. None of them can lead, plan, attach itself or touch another mission; to ask the leader or the operator for something, `mission_log` or `mission_set_blocker` on your step.
 
 ## Task intake
 

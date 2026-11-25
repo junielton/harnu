@@ -141,6 +141,7 @@ export function waitingStepId(item: WaitingItem): string | null {
     case 'unblock':
       return item.stepId
     case 'review':
+    case 'accept':
       return item.stepIds.length === 1 ? item.stepIds[0] : null
     default:
       return null
@@ -151,7 +152,7 @@ export function waitingStepId(item: WaitingItem): string | null {
 function owedStepIds(detail: Detail): Set<string> {
   const ids = new Set<string>()
   for (const item of detail.waiting.items) {
-    if (item.kind === 'review') item.stepIds.forEach((id) => ids.add(id))
+    if (item.kind === 'review' || item.kind === 'accept') item.stepIds.forEach((id) => ids.add(id))
     else if ('stepId' in item && item.stepId) ids.add(item.stepId)
   }
   return ids
@@ -755,6 +756,7 @@ interface NextCard {
 export const OWED_RANK = [
   'main-failing',
   'unblock',
+  'accept',
   'rescope',
   'settle',
   'review',

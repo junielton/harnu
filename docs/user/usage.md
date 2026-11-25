@@ -47,6 +47,8 @@ Also in this tab: a calculator that compares your observed 5-hour-window peaks a
 
 **Open full dashboard** (from the footer popover) takes over the main pane with a deeper view: five at-a-glance KPIs (current 5h/7d window, cost today, sessions today, a projection to your next reset), a switchable trajectory chart (cost, rate, or session count over time — including a visual split around the mid-week reset point so you're not comparing usage across two different limit periods as if they were one continuous line), an activity calendar, ranked lists (top models, top projects, top sessions), a per-session "anatomy" view (duration, cost, and token breakdown per session, with subagent activity called out), and an explorer table you can regroup by day, session, model, or project and sort however you like.
 
+Opening it can take a while: Harnu has to read every session transcript that changed since the last time, and on the very first run that is all of them. The reading happens in the background, so terminals, typing and the rest of the app keep working while the dashboard shows its loading state.
+
 ## What this doesn't cover
 
 None of this data leaves your machine — it's all read from what Claude Code and Harnu already track locally (plus the periodic status/usage checks noted in the [README](../../README.md#network-activity)). There's no cloud usage service involved.
