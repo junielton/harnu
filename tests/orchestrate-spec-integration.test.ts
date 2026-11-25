@@ -2,17 +2,21 @@
  * T601 S-7 (card T671) — `orchestrate-delivery` consumes the spec-born mission (S-5) and the
  * derive planner (S-6).
  *
- * - AC-25: Phase 1 adopts the mission whose scope names the spec (`mission_list`, then
- *   `mission_get`) instead of a second `mission_create`, and adds one step per slice with
- *   `mission_add_step` and a reason.
+ * - AC-25: Phase 1 adopts the mission whose links name the spec (`mission_list`, then
+ *   `mission_get`) instead of a second mission, asks to join with `mission_attach` when another session
+ *   leads it, and adds one step per slice with `mission_add_step` (criteria, milestone and a reason).
  * - AC-26: Phase 2 runs the planner found as the sibling `../spec/scripts/spec-derive.mjs` of its
  *   own base directory (with `harnu:spec` off it keeps the Wave A hand derivation and says so),
  *   executes the plan with `create_card` / `update_card`, writes the `spec-slice: S-n` marker
  *   with each card, keeps the envelope its own, and hands the `card` rows to the wave's
  *   bookkeeping unit (D-3). Phase 2 names no `derive` verb.
- * - AC-27: each open D-n that gates a slice becomes one `mission_add_step` decision node whose
- *   `blocks` lists exactly the gated slices' steps; a D-n gating nothing gets no node; the
- *   slices no open D-n gates are dispatched.
+ * - AC-27: each open D-n that gates a slice becomes an operator blocker (`mission_set_blocker`) on
+ *   exactly the gated slices' steps, written to the writing contract; a D-n gating nothing gets none;
+ *   the slices no open D-n gates are dispatched.
+ *
+ * Missions v4 S-29: the skill speaks v4, so the slice step is a titled step with criteria (an id such as
+ * `S-2` at the edge of a title is refused by the writing contract) and the decision node is an operator
+ * blocker (D-17). The planner, the marker and the card map are unchanged.
  *
  * A skill is prose, so what is graded is the contract its text states (sub-section headings,
  * fenced payloads parsed against the real verb schemas, fenced command lines) plus the data it
@@ -35,6 +39,7 @@ import {
   planDerive
 } from '../resources/skills/skills/spec/scripts/spec-derive-core.mjs'
 import { toolByName } from '../src/main/mcp/tool-catalog'
+import { CAPS, checkBlockerReason, checkTitleEdge } from '../src/main/missions/contract'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 const SKILL_BASE = path.join(REPO_ROOT, 'resources', 'skills', 'skills', 'orchestrate-delivery')
@@ -71,14 +76,14 @@ function sectionOf(md: string, re: RegExp): string {
   return start === -1 ? '' : lines.slice(start).join('\n')
 }
 
-const phase1Of = (skill: string): string => sectionOf(skill, /^## Phase 1 — Topology\s*$/)
+const phase1Of = (skill: string): string => sectionOf(skill, /^## Phase 1 — Plan\s*$/)
 const phase2Of = (skill: string): string => sectionOf(skill, /^## Phase 2 — Cards and dispatch\s*$/)
 const adoptOf = (skill: string): string =>
   sectionOf(phase1Of(skill), /^### The spec-born mission\s*$/)
 const plannerOf = (skill: string): string =>
   sectionOf(phase2Of(skill), /^### Cards from a spec — the derive planner\s*$/)
 const decisionsOf = (skill: string): string =>
-  sectionOf(phase2Of(skill), /^### Open decisions become decision nodes\s*$/)
+  sectionOf(phase2Of(skill), /^### Open decisions become operator blockers\s*$/)
 
 /** The fenced blocks of a text: `{ lang, body }`, in order. */
 function fences(md: string): { lang: string; body: string }[] {
@@ -167,53 +172,54 @@ function adoptProblems(skill: string): string[] {
   if (!sec) return ['no "### The spec-born mission" section in Phase 1']
   const f = flat(sec)
   const problems: string[] = []
-  const list = f.indexOf('`mission_list`')
+  const list = f.indexOf('`mission_list')
   const get = f.indexOf('`mission_get`')
   if (list === -1 || get === -1 || get < list)
     problems.push('the mission is not found with `mission_list` then `mission_get`')
-  if (!/`scope` names the spec/.test(f))
-    problems.push('the adopted mission is not the one whose scope names the spec')
-  if (!/never call `mission_create` a second time/.test(f))
-    problems.push('Phase 1 may still call mission_create a second time')
-  if (!/D-5/.test(f)) problems.push('the adoption does not cite D-5')
+  if (!/until one's `links` name the spec/.test(f))
+    problems.push('the adopted mission is not the one whose links name the spec')
+  if (!/never open a second/.test(f)) problems.push('Phase 1 may still open a second mission')
   if (!/`mission_add_step`/.test(f))
     problems.push('the slice steps are not added with mission_add_step')
-  if (!/one step per slice/.test(f)) problems.push('not one step per slice')
+  if (!/Add one step per slice/.test(f)) problems.push('not one step per slice')
   if (!/`stepId`/.test(f)) problems.push('the slice → step map (stepId) is not kept')
-  if (!/`mission_set_end`/.test(f))
-    problems.push('a changed end is not re-scoped with mission_set_end')
-  if (!/When none does/.test(f))
-    problems.push('no fallback to mission_create when no mission names the spec')
+  if (!/`mission_attach`/.test(f) || !/the hand-off/.test(f))
+    problems.push('another session leading it is not handled by attach and the hand-off')
+  if (!/NOT_ATTACHED/.test(f)) problems.push('the refusal of an unattached session is not named')
+  if (!/With no mission naming the spec/.test(f) || !/`mission_link \{/.test(f))
+    problems.push('no fallback when no mission names the spec (create it and link the spec)')
 
-  const payload = jsonFences(sec).find((p) => 'verification' in p && !('decision' in p))
+  const payload = jsonFences(sec).find((p) => 'criteria' in p && 'milestone' in p)
   problems.push(...verbSchemaProblems('mission_add_step', payload))
   if (payload) {
     if (typeof payload.reason !== 'string' || payload.reason.length === 0)
       problems.push('the slice step carries no reason')
-    if (typeof payload.title !== 'string' || !/^S-n · /.test(payload.title))
-      problems.push('the slice step is not titled `S-n · <slice title>`')
+    if (typeof payload.title !== 'string' || /^S-/.test(payload.title))
+      problems.push(
+        'the slice step title starts with the slice id, which the writing contract refuses'
+      )
+    else if (!checkTitleEdge(payload.title).ok)
+      problems.push('the slice step title breaks the id-at-the-edge rule')
+    if (!Array.isArray(payload.criteria) || payload.criteria.length === 0)
+      problems.push('the slice step carries no criterion')
   }
-
-  // The "declare the mission now" rule points at the adoption, so it does not create a second one.
-  const declare = flat(sectionOf(skill, /^## Phase 1 — Topology\s*$/))
-  const at = declare.indexOf('**Declare the mission now')
-  const para = at === -1 ? '' : declare.slice(at, at + 900)
-  if (!/_The spec-born mission_/.test(para))
-    problems.push('"Declare the mission now" does not defer to _The spec-born mission_')
+  // The step titles the skill asks for are short and carry no id at either edge.
+  if (!/an id like `S-2` is refused at either edge of a title/.test(f))
+    problems.push('the skill does not warn that a slice id cannot open a step title')
   return problems
 }
 
 it('phase 1 adopts the spec-born mission', () => {
   expectCheck(adoptProblems, [
     {
-      pattern: '`mission_list`([^]*?)`mission_get`',
-      replace: '`mission_get`$1`mission_list`',
+      pattern: '`mission_list([^`]*)`([^]*?)`mission_get`',
+      replace: '`mission_get`$2`mission_list$1`',
       why: 'mission_list comes before mission_get'
     },
     {
-      find: 'never call `mission_create` a second time',
-      replace: 'call `mission_create`',
-      why: 'no second mission_create'
+      pattern: 'you adopt that one and never open a\\s+second',
+      replace: 'you adopt that one and open a second',
+      why: 'no second mission'
     },
     {
       pattern: '"reason": "[^"]*",?\\s*',
@@ -221,14 +227,19 @@ it('phase 1 adopts the spec-born mission', () => {
       why: 'the slice step carries a reason'
     },
     {
-      find: '"verification": "verifier"',
-      replace: '"verification": "reviewer"',
+      find: '"milestone": "<mls-… of the slice\'s stage>"',
+      replace: '"milestone": 3',
       why: 'the payload must parse against mission_add_step'
     },
     {
-      find: '_The spec-born mission_',
-      replace: 'the next section',
-      why: 'Declare the mission now defers to the adoption'
+      find: '"title": "<the slice\'s title as a verb phrase>"',
+      replace: '"title": "S-n · <slice title>"',
+      why: 'a title opening with the slice id is refused by the writing contract'
+    },
+    {
+      find: 'ask to\n   join with `mission_attach`',
+      replace: 'ask to\n   join with a transfer',
+      why: 'another leader is handled by attach'
     }
   ])
 })
@@ -254,8 +265,8 @@ function plannerProblems(skill: string): string[] {
   if (!existsSync(path.join(SKILL_BASE, '..', 'spec', 'scripts', 'spec-derive.mjs')))
     problems.push('the sibling ../spec/scripts/spec-derive.mjs does not exist')
 
-  if (!/`harnu:spec` is switched off/.test(f) || !/Wave A hand derivation/.test(f))
-    problems.push('with harnu:spec off the Wave A hand derivation is not kept')
+  if (!/`harnu:spec` switched off/.test(f) || !/hand derivation/.test(f))
+    problems.push('with harnu:spec off the hand derivation is not kept')
   if (!/the derive planner was unavailable/.test(f))
     problems.push('the fallback does not say the planner was unavailable')
 
@@ -404,7 +415,7 @@ it('phase 2 runs the planner and hands the card map to a unit', () => {
   }
 })
 
-// ---- AC-27: open decisions become decision nodes that gate only their slices ------------------
+// ---- AC-27: open decisions become operator blockers on only their slices' steps -------------------
 
 /** The options cell of each Open decisions row, split at `;`. */
 function decisionOptions(spec: string): Map<string, string[]> {
@@ -425,90 +436,87 @@ function decisionOptions(spec: string): Map<string, string[]> {
 }
 
 /**
- * The documented rule, applied to a spec: one node per open D-n that some slice's `gated-by`
- * names, filled from the skill's own payload template; the slices no open D-n gates go out.
+ * The documented rule, applied to a spec: one blocker per (open D-n, step of a slice it gates), filled
+ * from the skill's own payload template; the slices no open D-n gates go out.
  */
-function decisionNodes(
+function decisionBlockers(
   template: Record<string, unknown>,
   specText: string,
+  specPath: string,
   stepBySlice: Map<string, string>
-): { nodes: Record<string, unknown>[]; dispatched: string[] } {
+): { blockers: Record<string, unknown>[]; dispatched: string[] } {
   const parsed = parseSpec(specText) as {
-    slices: { id: string; gatedBy: string[] }[]
+    slices: { id: string; title: string; gatedBy: string[] }[]
     decisions: { id: string; status: string; question: string }[]
   }
   const options = decisionOptions(specText)
   const open = parsed.decisions.filter((d) => /^open\b/i.test(d.status))
-  const nodes: Record<string, unknown>[] = []
+  const blockers: Record<string, unknown>[] = []
   for (const d of open) {
-    const gated = parsed.slices.filter((s) => s.gatedBy.includes(d.id))
-    if (gated.length === 0) continue
-    const decision = template.decision as Record<string, unknown>
-    nodes.push({
-      ...template,
-      title: `${d.id} · ${d.question}`.slice(0, 200),
-      decision: {
-        ...decision,
-        title: d.question,
-        options: options.get(d.id),
-        blocks: gated.map((s) => stepBySlice.get(s.id))
-      }
-    })
+    for (const slice of parsed.slices.filter((x) => x.gatedBy.includes(d.id))) {
+      blockers.push({
+        ...template,
+        stepId: stepBySlice.get(slice.id),
+        reason: `${specPath} leaves open ${d.id}: ${d.question} Options: ${(options.get(d.id) ?? []).join(' or ')}`,
+        ask: `Choose ${d.id}, then say done`,
+        unblocks: slice.title
+      })
+    }
   }
   const openIds = new Set(open.map((d) => d.id))
   const dispatched = parsed.slices
     .filter((s) => !s.gatedBy.some((id) => openIds.has(id)))
     .map((s) => s.id)
-  return { nodes, dispatched }
+  return { blockers, dispatched }
 }
 
 function decisionProblems(skill: string): string[] {
   const sec = decisionsOf(skill)
-  if (!sec) return ['no "### Open decisions become decision nodes" section in Phase 2']
+  if (!sec) return ['no "### Open decisions become operator blockers" section in Phase 2']
   const f = flat(sec)
   const problems: string[] = []
-  const payload = jsonFences(sec).find((p) => 'decision' in p)
-  problems.push(...verbSchemaProblems('mission_add_step', payload))
+  const payload = jsonFences(sec).find((p) => 'reason' in p && 'ask' in p)
+  problems.push(...verbSchemaProblems('mission_set_blocker', payload))
   if (payload) {
-    const d = payload.decision as Record<string, unknown> | undefined
-    if (!d || !Array.isArray(d.blocks)) problems.push('the decision carries no blocks list')
-    if (d && 'chosen' in d) problems.push('the decision payload writes chosen')
-    if (typeof payload.title !== 'string' || !/^D-n · /.test(payload.title))
-      problems.push('the decision node is not titled `D-n · <question>`')
+    if (payload.owner !== 'operator') problems.push('the decision blocker is not the operator’s')
+    if (typeof payload.stepId !== 'string') problems.push('the decision blocker is on no step')
   }
-  if (!/status `open`/.test(f)) problems.push('only open D-n rows become nodes is not stated')
-  if (!/`gated-by:`/.test(f)) problems.push("blocks is not read from the slices' gated-by")
+  if (!/open D-n that gates a slice is an operator blocker/.test(f))
+    problems.push('only open D-n rows become blockers is not stated')
+  if (!/`gated-by:`/.test(f)) problems.push("the steps are not read from the slices' gated-by")
   if (!/exactly the steps of the slices whose `gated-by:` names it/.test(f))
-    problems.push("blocks is not exactly the gated slices' steps")
-  if (!/gates no slice gets no node/.test(f))
-    problems.push('a D-n that gates no slice may get a node')
+    problems.push("the blockers are not exactly the gated slices' steps")
+  if (!/gates no slice gets no blocker/.test(f))
+    problems.push('a D-n that gates no slice may get a blocker')
   if (!/no open D-n gates are dispatched/.test(f))
     problems.push('the slices no open D-n gates are not dispatched')
   if (!/split at `;`/.test(f)) problems.push("the options are not the row's options cell")
-  if (!/\*\*Choose…\*\*/.test(f) || !/never write `chosen`/.test(f))
-    problems.push("the choice is not left to the operator's Choose door")
+  if (!/so is clearing an operator-owned blocker/.test(f))
+    problems.push("the clearing is not left to the operator's door")
+  if (!/`mission_log \{ kind: 'decision', stepId \}`/.test(f))
+    problems.push('the choice is not recorded as a decision log entry')
   if (!/`submit_manifest`/.test(f)) problems.push('the held slices are not dispatched once chosen')
-  // S-7: a row with one option cannot be a node (`options` takes 2 to 10), and an edit voids a stamp.
-  if (!/single option/.test(f) || !/2 to 10/.test(f))
-    problems.push('a row with a single option is not covered (mission_add_step takes 2 to 10)')
-  if (!/hold those slices/.test(f))
-    problems.push('the slices gated by a single-option row are not held out of the manifest')
   if (!/voids its stamp/.test(f) || !/fresh `submit_manifest`/.test(f))
-    problems.push('an `update_card` on a stamped ready card is not warned to void its stamp')
+    problems.push('editing a stamped ready card must void its stamp and require a fresh manifest')
   return problems
 }
 
-it('open decisions become decision nodes that gate only their slices', () => {
+it('open decisions become operator blockers that hold only their slices', () => {
   expectCheck(decisionProblems, [
     {
-      pattern: '"blocks": \\[[^\\]]*\\]',
-      replace: '"blocks": "stp-2"',
-      why: 'the payload must parse against mission_add_step'
+      find: '"owner": "operator"',
+      replace: '"owner": "agent"',
+      why: 'the decision blocker is the operator’s'
     },
     {
-      find: 'gates no slice gets no node',
-      replace: 'gates no slice gets a node anyway',
-      why: 'a D-n gating no slice gets no node'
+      find: '"stepId": "<stp-… of a gated slice>"',
+      replace: '"stepId": 4',
+      why: 'the payload must parse against mission_set_blocker'
+    },
+    {
+      find: 'gates no slice gets no blocker',
+      replace: 'gates no slice gets a blocker anyway',
+      why: 'a D-n gating no slice gets no blocker'
     },
     {
       find: 'no open D-n gates are dispatched',
@@ -516,41 +524,51 @@ it('open decisions become decision nodes that gate only their slices', () => {
       why: 'un-gated slices are dispatched'
     },
     {
-      find: '"options": [',
-      replace: '"chosen": 0, "options": [',
-      why: 'the payload never writes chosen'
-    },
-    {
-      find: 'single option',
-      replace: 'lone choice',
-      why: 'a single-option row must be covered (S-7)'
-    },
-    {
       find: 'voids its stamp',
-      replace: 'is fine',
-      why: 'editing a stamped ready card voids its manifest stamp (S-7)'
+      replace: 'leaves its stamp valid',
+      why: 'editing a stamped ready card voids its manifest stamp'
+    },
+    {
+      find: 'fresh `submit_manifest`',
+      replace: 'previous manifest',
+      why: 'a card whose stamp was voided needs a fresh manifest'
+    },
+    {
+      find: 'so is clearing an operator-owned blocker',
+      replace: 'and you clear the blocker',
+      why: 'clearing an operator-owned blocker is the operator’s'
     }
   ])
 
   // The rule over a spec with one open D-n gating two slices, one gating none, one resolved.
   const skill = read(SKILL_FILE)
-  const template = jsonFences(decisionsOf(skill)).find((p) => 'decision' in p)!
+  const template = jsonFences(decisionsOf(skill)).find((p) => 'reason' in p && 'ask' in p)!
   const stepBySlice = new Map([
     ['S-1', 'stp-2'],
     ['S-2', 'stp-3'],
     ['S-3', 'stp-4']
   ])
-  const { nodes, dispatched } = decisionNodes(template, read(GATED), stepBySlice)
-  expect(nodes.map((n) => String(n.title).split(' · ')[0])).toEqual(['D-1'])
-  expect((nodes[0].decision as { blocks: string[] }).blocks).toEqual(['stp-3', 'stp-4'])
-  for (const n of nodes)
+  const { blockers, dispatched } = decisionBlockers(template, read(GATED), SPEC_REL, stepBySlice)
+  expect(blockers.map((b) => b.stepId)).toEqual(['stp-3', 'stp-4'])
+  for (const b of blockers) {
     expect(
-      verbSchemaProblems('mission_add_step', { ...n, folder: REPO_ROOT, missionId: 'mnt-0000abcd' })
+      verbSchemaProblems('mission_set_blocker', {
+        ...b,
+        folder: REPO_ROOT,
+        missionId: 'mnt-0000abcd',
+        sessionId: '1cad4914-43cc-4e13-82d6-c505ebc03993'
+      })
     ).toEqual([])
+    // What the skill asks for is what the writing contract accepts: a reason with an exact reference
+    // (the spec path), an ask and an unblocks within their caps.
+    expect(checkBlockerReason(String(b.reason)), String(b.reason)).toEqual({ ok: true })
+    expect(String(b.ask).length).toBeLessThanOrEqual(CAPS.ask)
+    expect(String(b.unblocks).length).toBeLessThanOrEqual(CAPS.why)
+  }
   expect(dispatched).toEqual(['S-1'])
 
   // The derive fixture: its one open D-n gates S-3 alone.
-  const derive = decisionNodes(template, read(path.join(FIX, 'spec.md')), stepBySlice)
-  expect(derive.nodes.map((n) => (n.decision as { blocks: string[] }).blocks)).toEqual([['stp-4']])
+  const derive = decisionBlockers(template, read(path.join(FIX, 'spec.md')), SPEC_REL, stepBySlice)
+  expect(derive.blockers.map((b) => b.stepId)).toEqual(['stp-4'])
   expect(derive.dispatched).toEqual(['S-1', 'S-2'])
 })

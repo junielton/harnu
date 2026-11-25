@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, nextTick, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, ref, shallowReactive, shallowRef, toRaw, watch } from 'vue'
 import type {
   DegradedCode,
   FolderEntry,
@@ -25,7 +25,14 @@ import {
   type FolderGroup,
   type ShelvedMember
 } from './folder-zones'
-import { isInsidePath, partitionShelved, shelvedMatchesQuery } from '../lib/shelved-sidebar'
+import {
+  isInsidePath,
+  partitionShelved,
+  sameShelvedList,
+  shelvedDays,
+  shelvedMatchesQuery,
+  type ShelvedSource
+} from '../lib/shelved-sidebar'
 import { useGcStore } from './gc'
 import { persistedRef, persistedSet } from './persisted'
 import { useApprovalQueue } from './session-approvals'
@@ -65,6 +72,7 @@ import { teamHex } from '../components/teammate-grouping'
 import { isForkSyntheticLike, sessionTitle } from '../lib/session-label'
 import { injectionLedger } from './injection-ledger'
 import { createNavHistory } from '../lib/nav-history'
+import { createKeyedComputeds } from '../lib/keyed-computeds'
 import {
   claimedAway,
   claimFor,
@@ -81,8 +89,10 @@ import {
   type WindowCtx
 } from './session-window'
 import {
+  NOTIFY_KIND_FAMILY,
   decideNotification,
   parseNotifyPrefs,
+  soundAllowed,
   type NotifyPrefs,
   type NotifyKind
 } from './session-notify'
@@ -140,8 +150,10 @@ export interface SessionAgent {
   parentSessionId: string
   fullPath: string
   fileMtime: number
-  /** `attributionAgent` (e.g. `general-purpose`); '' → render the generic label. */
+  /** meta.json `agentType`, else `attributionAgent` (e.g. `general-purpose`); '' → no type chip. */
   agentType: string
+  /** meta.json `description` — what the subagent did; '' → label falls back to the task. */
+  description: string
   /** `attributionSkill` origin (e.g. `superpowers:…`); '' if absent. */
   skill: string
   /** `attributionPlugin` origin; '' if absent. */
@@ -541,6 +553,7 @@ const SUBAGENT_ACTIVE_WINDOW_MS = 15000
 
 /** localStorage key for the per-session agent-list expand/collapse state. */
 const AGENTS_EXPANDED_KEY = 'om2tab.agentsExpanded'
+const AGENTS_DONE_EXPANDED_KEY = 'om2tab.agentsDoneExpanded'
 
 /**
  * localStorage key for the teammate-group expand/collapse state (T99), keyed
@@ -723,6 +736,26 @@ export const useSessionsStore = defineStore('sessions', () => {
   // Empty until `init()` populates it from the main process. While
   // `folders.length === 0` the Onboarding state is shown.
   const folders = ref<Folder[]>([])
+  /**
+   * Every session by id, with the alias of the folder that holds it (BUG-261). One pass over the
+   * folders per change to the model, so a surface that names many sessions (the Your move queue)
+   * reads each in O(1) instead of scanning every folder per lookup. First folder wins, as a scan did.
+   */
+  const sessionIndex = computed(() => {
+    const index = new Map<
+      string,
+      { session: Folder['sessions'][number]; folderAlias: string; folder: Folder }
+    >()
+    for (const f of folders.value) {
+      const folderAlias = f.alias || f.path
+      for (const session of f.sessions) {
+        if (!index.has(session.sessionId)) {
+          index.set(session.sessionId, { session, folderAlias, folder: f })
+        }
+      }
+    }
+    return index
+  })
   // T180: true until init()'s first reloadModel() resolves. Lets the sidebar
   // distinguish "still scanning ~/.claude/projects/" from "genuinely empty".
   const foldersLoading = ref(true)
@@ -1215,7 +1248,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     addParkedConfirm,
     removeParkedConfirm,
     resolveParkedConfirm
-  } = useMcpConfirmQueue()
+  } = useMcpConfirmQueue({
+    // T154: a parked approval's sound obeys the Sound switch and the Asks-you mute.
+    soundAllowed: (family) => soundAllowed(notifyPrefs.value, family)
+  })
 
   /**
    * Set of session ids whose nested agent list is expanded in the sidebar
@@ -1233,6 +1269,22 @@ export const useSessionsStore = defineStore('sessions', () => {
   /** Toggle (and persist) a session's nested agent list expand/collapse state. */
   function toggleAgents(sessionId: string): void {
     agentsExpandedSet.toggle(sessionId)
+  }
+
+  /**
+   * Set of session ids whose folded "N done" subagent row is expanded. Same
+   * pattern as `agentsExpandedSet`; absent → folded (collapsed by default).
+   */
+  const agentsDoneExpandedSet = persistedSet(AGENTS_DONE_EXPANDED_KEY)
+
+  /** Whether a session's finished-subagents fold is currently expanded. */
+  function isAgentsDoneExpanded(sessionId: string): boolean {
+    return agentsDoneExpandedSet.set.value.has(sessionId)
+  }
+
+  /** Toggle (and persist) a session's finished-subagents fold. */
+  function toggleAgentsDone(sessionId: string): void {
+    agentsDoneExpandedSet.toggle(sessionId)
   }
 
   /**
@@ -2045,8 +2097,10 @@ export const useSessionsStore = defineStore('sessions', () => {
    * the Session). `registryStates` is the PID-registry task-state per session
    * (`~/.claude/sessions/<pid>.json`), applied BELOW hook `taskState`; `lastEventMs`
    * is the epoch ms of the last hook/registry event per session (the stuck-timer
-   * freshness anchor). Both are reassigned (new Map) on update so computeds
-   * relying on them re-run.
+   * freshness anchor). Both are mutated IN PLACE: a reactive Map tracks `get` / `has`
+   * per key, so an event for one session wakes the computeds that read THAT session
+   * and no other. (They used to be copied and reassigned per event, which made every
+   * computed that read any key re-run for every event of every session: BUG-265.)
    */
   const registryStates = ref<Map<string, TaskState>>(new Map())
   const lastEventMs = ref<Map<string, number>>(new Map())
@@ -2073,9 +2127,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (!Number.isFinite(ts)) return
     const cur = lastEventMs.value.get(sessionId)
     if (cur !== undefined && cur >= ts) return
-    const next = new Map(lastEventMs.value)
-    next.set(sessionId, ts)
-    lastEventMs.value = next
+    lastEventMs.value.set(sessionId, ts)
   }
 
   /** Apply a PID-registry update: set (or clear, on `null`) the registry override
@@ -2085,10 +2137,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     taskState: TaskState | null,
     updatedAt?: number
   ): void {
-    const next = new Map(registryStates.value)
-    if (taskState === null) next.delete(sessionId)
-    else next.set(sessionId, taskState)
-    registryStates.value = next
+    if (taskState === null) registryStates.value.delete(sessionId)
+    else registryStates.value.set(sessionId, taskState)
     bumpLastEvent(sessionId, updatedAt ?? Date.now())
   }
 
@@ -2238,6 +2288,71 @@ export const useSessionsStore = defineStore('sessions', () => {
   )
 
   /**
+   * Per-session verdicts (BUG-265). The aggregates below used to loop over every session and classify
+   * each one inline, so one hook event or transcript append re-read the whole fleet. Each verdict is now
+   * its own cached computed: an event wakes the verdicts of the sessions it touched and the aggregate
+   * only folds the results.
+   */
+  const sessionById = (id: string): Session | undefined => sessionIndex.value.get(id)?.session
+
+  /** Session ids with a parked hook approval. */
+  const parkedSessionIds = computed<Set<string>>(() => {
+    const ids = new Set<string>()
+    for (const w of pendingApprovals.value.values()) ids.add(w.sessionId)
+    return ids
+  })
+  // Booleans on purpose: a verdict reads these, and a computed that is still `false` wakes nobody, so an
+  // approval for session A or a selection change does not re-run the verdict of session B.
+  const hasParkedFor = createKeyedComputeds<boolean>((id) => parkedSessionIds.value.has(id))
+  const isViewingFor = createKeyedComputeds<boolean>((id) => selectedId.value === id)
+
+  /** The canonical fleet state of one session: what `classifyFleetState` says for it right now. */
+  const fleetStateVerdicts = createKeyedComputeds<FleetState>((id) => {
+    const s = sessionById(id)
+    if (!s) return 'idle'
+    return classifyFleetState(
+      {
+        taskState: s.taskState,
+        transcriptState: s.transcriptState,
+        stagnation: s.stagnation,
+        registryState: registryStates.value.get(id),
+        status: s.status,
+        modifiedMs: Date.parse(s.modified),
+        liveAgentCount: runningAgentCount(s),
+        lastEventMs: lastEventMs.value.get(id),
+        hasParkedApproval: hasParkedFor.get(id),
+        lastViewedMs: lastViewedAt(id),
+        isViewing: isViewingFor.get(id),
+        isLive: isLiveSignal(id)
+      },
+      {
+        nowMs: closureNow.value,
+        stuckAfterMs: STUCK_AFTER_MS,
+        forgottenAfterMs: FORGOTTEN_THRESHOLD_MS
+      }
+    )
+  })
+
+  /** The live-activity verdict of one session (`activityOf`, cached per session). */
+  const activityVerdicts = createKeyedComputeds<FleetActivity>((id) => {
+    const s = sessionById(id)
+    return s ? activityOf(s, closureNow.value) : 'idle'
+  })
+
+  /**
+   * The Claude sessions the fleet counts and the board shows: no sidechains, no folder terminals. Reads
+   * those two flags of every session once, and again only when one of them (or the membership) changes.
+   */
+  const fleetSessionIds = computed<string[]>(() => {
+    const ids: string[] = []
+    for (const s of allSessions.value) {
+      if (s.isSidechain || s.isShellTerminal) continue
+      ids.push(s.sessionId)
+    }
+    return ids
+  })
+
+  /**
    * Supervision load (T67 §3) — how many live sessions are actively on you right
    * now: those the canonical classifier puts in `working` OR `needs-you`. A plain
    * count, derived from the same `classifyFleetState` the dot/board use, surfaced
@@ -2246,30 +2361,12 @@ export const useSessionsStore = defineStore('sessions', () => {
    * `return-here` are excluded by definition — they are their own signals.
    */
   const supervisionLoad = computed<number>(() => {
-    const now = closureNow.value
-    const parked = new Set<string>()
-    for (const w of pendingApprovals.value.values()) parked.add(w.sessionId)
+    // `archivedIds` is replaced wholesale on every change, so reading the ref once is the whole dependency.
+    const archived = toRaw(archivedIds.value)
     let n = 0
-    for (const s of allSessions.value) {
-      if (s.isSidechain || s.isShellTerminal) continue
-      if (archivedIds.value.has(s.sessionId)) continue
-      const state = classifyFleetState(
-        {
-          taskState: s.taskState,
-          transcriptState: s.transcriptState,
-          stagnation: s.stagnation,
-          registryState: registryStates.value.get(s.sessionId),
-          status: s.status,
-          modifiedMs: Date.parse(s.modified),
-          liveAgentCount: runningAgentCount(s),
-          lastEventMs: lastEventMs.value.get(s.sessionId),
-          hasParkedApproval: parked.has(s.sessionId),
-          lastViewedMs: lastViewedAt(s.sessionId),
-          isViewing: s.sessionId === selectedId.value,
-          isLive: isLiveSignal(s.sessionId)
-        },
-        { nowMs: now, stuckAfterMs: STUCK_AFTER_MS, forgottenAfterMs: FORGOTTEN_THRESHOLD_MS }
-      )
+    for (const id of fleetSessionIds.value) {
+      if (archived.has(id)) continue
+      const state = fleetStateVerdicts.get(id)
       if (state === 'working' || state === 'needs-you') n++
     }
     return n
@@ -2395,9 +2492,26 @@ export const useSessionsStore = defineStore('sessions', () => {
    * pulled out here and re-presented as a member of its repo group's Shelved section (`shelvedByRepo`).
    * The entries come from the GC snapshot, which the footer keeps live (`gc.init()`).
    */
+  // BUG-262 AC-3: the partition costs 325-408 ms on a large fleet, so it must re-run only when its real
+  // inputs change — not on the 30 s clock tick, nor on a GC snapshot that carries the same shelved list.
+  //  1. `shelvedEntries` keeps the PREVIOUS array while the new one is structurally equal, so a
+  //     replaced-but-identical snapshot never reaches the partition.
+  //  2. `shelvedDaysKey` is the only reader of the clock: it changes only when a row's whole-day count does.
+  //  3. The partition itself then tracks just the folder fields it reads (path / repoId / isMainWorktree and
+  //     the sessions of folders inside a shelved worktree), never a live folder's session churn.
+  const shelvedEntries = computed<ShelvedSource[]>((prev) => {
+    const next = useGcStore().snapshot?.shelved ?? []
+    return prev && sameShelvedList(prev, next) ? prev : next
+  })
+  let shelvedNowMs = Date.now()
+  const shelvedDaysKey = computed(() => {
+    shelvedNowMs = closureNow.value
+    return shelvedEntries.value.map((e) => shelvedDays(e, shelvedNowMs)).join(',')
+  })
   const shelvedPartition = computed(() => {
-    const entries = useGcStore().snapshot?.shelved ?? []
-    return partitionShelved<Session, Folder>(folders.value, entries, closureNow.value)
+    const entries = shelvedEntries.value
+    void shelvedDaysKey.value // re-run when a day count flips; `shelvedNowMs` is fresh by now
+    return partitionShelved<Session, Folder>(folders.value, entries, shelvedNowMs)
   })
   const listableFolders = computed<Folder[]>(() => shelvedPartition.value.live)
 
@@ -2625,7 +2739,7 @@ export const useSessionsStore = defineStore('sessions', () => {
    * `created` with the disk row's on the next index update.
    * `Session.created` itself is never rewritten (twin matching reads it).
    */
-  const creationAnchors = new Map<string, string>()
+  const creationAnchors = shallowReactive(new Map<string, string>())
   function anchorCreation(synth: Session, realId: string): void {
     if (Number.isFinite(Date.parse(synth.created))) {
       creationAnchors.set(realId, creationAnchors.get(synth.sessionId) ?? synth.created)
@@ -2642,43 +2756,60 @@ export const useSessionsStore = defineStore('sessions', () => {
    * (`layout.inboxRailOrder`) says otherwise. Orthogonal to the zones — never
    * touches folder-zones.ts.
    */
-  const boardBuckets = computed<BoardBucket[]>(() => {
+  /**
+   * One board card per session, cached per session (BUG-265): `null` when the session is filtered out of
+   * the board by the inline filter. Reads only this session, its folder and its activity verdict.
+   */
+  const boardSliceOf = createKeyedComputeds<BoardSession | null>((id) => {
+    const entry = sessionIndex.value.get(id)
+    if (!entry) return null
+    const s = entry.session
+    const f = entry.folder
     const q = filterQuery.value.trim()
-    const now = closureNow.value // dep: recompute on the 30s tick so `stuck` ages in
+    if (q) {
+      const hit =
+        matchesFilter(f.alias, q) ||
+        (f.gitBranch ? matchesFilter(f.gitBranch, q) : false) ||
+        matchesFilter(s.summary, q) ||
+        matchesFilter(s.firstPrompt, q) ||
+        matchesFilter(sessionTitle(s, allSessions.value, i18n.global.t), q)
+      if (!hit) return null
+    }
+    return {
+      sessionId: s.sessionId,
+      taskState: s.taskState,
+      transcriptState: s.transcriptState,
+      status: s.status,
+      isSidechain: s.isSidechain,
+      modified: s.modified,
+      created: creationAnchors.get(s.sessionId) ?? s.created,
+      // `activityVerdicts` reads the shared 30 s clock, so `stuck` still ages in on the tick.
+      activity: activityVerdicts.get(id),
+      folderAlias: f.alias
+    }
+  })
+
+  const boardBuckets = computed<BoardBucket[]>(() => {
+    // Archived sessions are "put away" everywhere else in the sidebar (hidden from the tree, excluded
+    // from attentionCount) — keep them out of the board too, so archiving still removes a session from
+    // view. The set is replaced wholesale on every change: reading the ref once is the dependency.
+    const archived = toRaw(archivedIds.value)
     const slices: BoardSession[] = []
-    for (const f of folders.value) {
-      for (const s of f.sessions) {
-        if (s.isSidechain) continue
-        // Folder terminals are not Claude sessions — they never appear on the
-        // by-state board.
-        if (s.isShellTerminal) continue
-        // Archived sessions are "put away" everywhere else in the sidebar
-        // (hidden from the tree, excluded from attentionCount) — keep them out
-        // of the board too, so archiving still removes a session from view.
-        if (archivedIds.value.has(s.sessionId)) continue
-        if (q) {
-          const hit =
-            matchesFilter(f.alias, q) ||
-            (f.gitBranch ? matchesFilter(f.gitBranch, q) : false) ||
-            matchesFilter(s.summary, q) ||
-            matchesFilter(s.firstPrompt, q) ||
-            matchesFilter(sessionTitle(s, allSessions.value, i18n.global.t), q)
-          if (!hit) continue
-        }
-        slices.push({
-          sessionId: s.sessionId,
-          taskState: s.taskState,
-          transcriptState: s.transcriptState,
-          status: s.status,
-          isSidechain: s.isSidechain,
-          modified: s.modified,
-          created: creationAnchors.get(s.sessionId) ?? s.created,
-          activity: activityOf(s, now),
-          folderAlias: f.alias
-        })
-      }
+    for (const id of fleetSessionIds.value) {
+      if (archived.has(id)) continue
+      const slice = boardSliceOf.get(id)
+      if (slice) slices.push(slice)
     }
     return buildBoard(slices, useLayoutStore().inboxRailOrder)
+  })
+
+  // The per-session caches hold one computed per id: drop the ids that left the model.
+  watch(sessionIndex, (index) => {
+    fleetStateVerdicts.prune(index)
+    activityVerdicts.prune(index)
+    boardSliceOf.prune(index)
+    hasParkedFor.prune(index)
+    isViewingFor.prune(index)
   })
 
   /**
@@ -4216,19 +4347,14 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   /** Locate a session by uuid across all folders — globally unique. */
   function findSessionById(sessionId: string): Session | null {
-    for (const f of folders.value) {
-      const s = f.sessions.find((x) => x.sessionId === sessionId)
-      if (s) return s
-    }
-    return null
+    // The index is rebuilt once per change of the fleet's membership (first folder wins, as a scan did),
+    // so a hook event or a transcript append finds its session in O(1) instead of scanning every folder.
+    return sessionIndex.value.get(sessionId)?.session ?? null
   }
 
   /** Resolve a session's owning folder alias (for the notification body). */
   function folderAliasOf(sessionId: string): string {
-    for (const f of folders.value) {
-      if (f.sessions.some((s) => s.sessionId === sessionId)) return f.alias || f.path
-    }
-    return ''
+    return sessionIndex.value.get(sessionId)?.folderAlias ?? ''
   }
 
   /**
@@ -4423,7 +4549,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     })
     if (needsChimeFallback(outcome, chimeAlreadyPlayed)) {
       try {
-        playNotificationSound()
+        // T154: the fallback plays the event's own family, and only when sound is allowed at all —
+        // a failed voice must not sneak a sound past the Sound switch or a family mute.
+        const family = NOTIFY_KIND_FAMILY[kind]
+        if (soundAllowed(notifyPrefs.value, family)) playNotificationSound(family)
       } catch {
         // The fallback is a courtesy, not a contract — never escape the caller.
       }
@@ -4471,6 +4600,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       body,
       channel: decision.channel,
       sound: decision.sound,
+      family: NOTIFY_KIND_FAMILY[decision.kind],
       sessionId: s.sessionId,
       toastKind: TOAST_KIND[decision.kind],
       // T599: tag the Activity row with its unit so repeats fold into one.
@@ -4612,7 +4742,8 @@ export const useSessionsStore = defineStore('sessions', () => {
       title: i18n.global.t('notifications.usageReset.title'),
       body: i18n.global.t('notifications.usageReset.body'),
       channel: windowFocused.value ? 'toast' : 'os',
-      sound: notifyPrefs.value.sound,
+      sound: soundAllowed(notifyPrefs.value, 'info'),
+      family: 'info',
       sessionId: '',
       toastKind: 'info'
     })
@@ -4656,7 +4787,8 @@ export const useSessionsStore = defineStore('sessions', () => {
             pct: Math.max(0, Math.round(budget.budgetPct - budget.spentPct))
           }),
       channel: windowFocused.value ? 'toast' : 'os',
-      sound: notifyPrefs.value.sound,
+      sound: soundAllowed(notifyPrefs.value, 'info'),
+      family: 'info',
       sessionId: '',
       toastKind: threshold === 100 ? 'warning' : 'info'
     })
@@ -5294,6 +5426,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         fullPath: '',
         fileMtime: Date.now(),
         agentType: meta.agentType ?? '',
+        description: '',
         skill: meta.skill ?? '',
         plugin: meta.plugin ?? '',
         model: meta.model ?? '',
@@ -6178,6 +6311,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     selectedSession,
     selectedPath,
     allSessions,
+    sessionIndex,
     watcherStatus,
     prefsBySession,
     keyboardCursor,
@@ -6350,6 +6484,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     actionableInboxCount,
     agentsExpanded,
     isAgentsExpanded,
+    isAgentsDoneExpanded,
+    toggleAgentsDone,
     toggleAgents,
     cursorDown,
     cursorUp,

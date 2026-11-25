@@ -67,6 +67,40 @@ describe('accel — override-aware menu accelerators', () => {
   })
 })
 
+describe('buildAppMenu — Quick notes items (menu-backed so they fire over a terminal)', () => {
+  type Item = MenuItemConstructorOptions
+  function folderItems(resolved?: ReturnType<typeof resolveKeybindings>): Item[] {
+    const template = buildAppMenu(() => null, resolved) as unknown as Item[]
+    return (template.find((m) => m.label === 'F&older')?.submenu as Item[]) ?? []
+  }
+
+  it('adds New Note for Today and All Notes… to the Folder menu with their default accelerators', () => {
+    const items = folderItems()
+    expect(items.find((i) => i.label === 'New Note for Today')?.accelerator).toBe(
+      'CmdOrCtrl+Shift+N'
+    )
+    expect(items.find((i) => i.label === 'All Notes…')?.accelerator).toBe('CmdOrCtrl+Alt+N')
+  })
+
+  it('follows a rebind, and drops the accelerator when unbound', () => {
+    const resolved = resolveKeybindings([
+      { key: 'Cmd+Alt+J', command: 'notes.openToday' },
+      { key: null, command: 'notes.open' }
+    ])
+    const items = folderItems(resolved)
+    expect(items.find((i) => i.label === 'New Note for Today')?.accelerator).toBe('CmdOrCtrl+Alt+J')
+    expect(items.find((i) => i.label === 'All Notes…')?.accelerator).toBeUndefined()
+  })
+
+  it('emits the action id to the renderer when clicked', () => {
+    const send = vi.fn()
+    const template = buildAppMenu(() => ({ webContents: { send } }) as never) as unknown as Item[]
+    const items = template.find((m) => m.label === 'F&older')?.submenu as Item[]
+    ;(items.find((i) => i.label === 'All Notes…')!.click as () => void)()
+    expect(send).toHaveBeenCalledWith('shortcut:fired', 'notes.open')
+  })
+})
+
 describe('buildAppMenu — threads the resolved table into every item', () => {
   function fileMenu(template: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
     const file = template.find((m) => m.label === '&File')

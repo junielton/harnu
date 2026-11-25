@@ -9,11 +9,10 @@
  * ADR-0001; every parser it relies on is unit-tested in the core.
  */
 
-import { execFile, spawn, type ChildProcess, type ExecFileOptions } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import { spawnEnvOnce } from '../appimage-env'
+import { runFile, spawnChild, type RunFileOptions, type SpawnedChild } from '../spawn-runner'
 import { getFleetFolders } from '../fleet-model'
 import { readUserProjects } from '../user-projects'
 import { getTaskStates } from '../hook-bridge'
@@ -40,8 +39,6 @@ import type { EventsProcess } from './docker-facts-shell'
 import type { DockerBatchResult } from './containers-actions'
 import type { ContainersSnapshot, Tombstone } from './containers-wire'
 
-const execFileAsync = promisify(execFile)
-
 /** Every docker command carries a timeout and a buffer bound. */
 const PROBE_OPTS = { windowsHide: true, timeout: 10_000, maxBuffer: 1 << 20 } as const
 /** `inspect`, `stats` and `system df -v` can be slow and large with many containers (PRD §9). */
@@ -63,18 +60,14 @@ const RECENT_LIMIT = 50
 async function runTool(
   file: 'docker' | 'git',
   args: readonly string[],
-  opts: Omit<ExecFileOptions, 'env'>
+  opts: Omit<RunFileOptions, 'env'>
 ): Promise<{ stdout: string }> {
-  return execFileAsync(file, [...args], {
-    ...opts,
-    encoding: 'utf8',
-    env: await spawnEnvOnce()
-  })
+  return runFile(file, args, { ...opts, env: await spawnEnvOnce() })
 }
 
 export function runDocker(
   args: readonly string[],
-  opts: Omit<ExecFileOptions, 'env'>
+  opts: Omit<RunFileOptions, 'env'>
 ): Promise<{ stdout: string }> {
   return runTool('docker', args, opts)
 }
@@ -88,7 +81,7 @@ export function runDocker(
 export function spawnDockerStream(args: readonly string[]): EventsProcess {
   const lineCbs: Array<(line: string) => void> = []
   const exitCbs: Array<() => void> = []
-  let child: ChildProcess | null = null
+  let child: SpawnedChild | null = null
   let killed = false
   let exited = false
   const exit = (): void => {
@@ -99,7 +92,7 @@ export function spawnDockerStream(args: readonly string[]): EventsProcess {
   void spawnEnvOnce()
     .then((env) => {
       if (killed) return
-      child = spawn('docker', [...args], {
+      child = spawnChild('docker', args, {
         env,
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'ignore']

@@ -10,6 +10,7 @@
  *
  * Pure (ADR-0001): the clock and the body fetch are injected.
  */
+import type { CaptureEndReason } from './pane-readers'
 import { createCursorRing, type CursorRing } from './cursor-ring'
 
 export const NETWORK_MAX_ENTRIES = 1000
@@ -97,8 +98,10 @@ export function isTextMime(mime: string | undefined): boolean {
 }
 
 export interface NetworkEntry {
-  /** CDP request id; a redirect hop gets `<id>#<n>`. */
+  /** CDP request id; a redirect hop gets `<id>#<n>`. Unique within one tab only: read it with `tabId`. */
   id: string
+  /** The tab whose page made the request (browser tabs: capture belongs to the pane, entries say which tab). */
+  tabId?: string
   /** Epoch ms the request started. */
   startedAt: number
   method: string
@@ -149,7 +152,8 @@ export interface NetworkCapture {
   /** End capture; entries stay readable until the next `start` or the pane closes. */
   stop(): CaptureStatus
   status(): CaptureStatus
-  ingest(method: string, params: unknown): void
+  /** `tabId` names the tab whose debugger session sent the event; request ids are only unique within one tab. */
+  ingest(method: string, params: unknown, tabId?: string): void
   read(req: NetworkReadRequest): NetworkReadResult
 }
 
@@ -174,8 +178,14 @@ interface CdpResponse {
 
 export interface CaptureDeps {
   now(): number
-  /** Fetch a finished response's body (CDP `Network.getResponseBody`); `undefined` when it is gone. */
-  fetchBody(requestId: string): Promise<{ body: string; base64Encoded: boolean } | undefined>
+  /**
+   * Fetch a finished response's body (CDP `Network.getResponseBody`); `undefined` when it is gone. `tabId` says which
+   * tab's session to ask (absent: the pane's only one).
+   */
+  fetchBody(
+    requestId: string,
+    tabId?: string
+  ): Promise<{ body: string; base64Encoded: boolean } | undefined>
   /** Redact secret shapes in recorded text (best-effort, like every other reading verb). */
   scrub(text: string): string
 }
@@ -251,24 +261,27 @@ export function createNetworkCapture(deps: CaptureDeps): NetworkCapture {
       return status()
     },
     status,
-    ingest(method, params) {
+    ingest(method, params, tabId) {
       if (!isActive() || !state) return
       const opts = state.opts
       const p = (params ?? {}) as Record<string, unknown>
       const requestId = typeof p.requestId === 'string' ? p.requestId : ''
       if (requestId === '') return
+      // Two tabs can both have a request "1": the pending table is keyed by tab too.
+      const key = `${tabId ?? ''}\u0000${requestId}`
 
       if (method === 'Network.requestWillBeSent') {
         const e = p as CdpRequestWillBeSent
-        const prior = pending.get(requestId)
+        const prior = pending.get(key)
         // A redirect: the previous hop ends with the redirect response, and a new entry starts.
         if (prior && e.redirectResponse) {
           applyResponse(prior.entry, e.redirectResponse, opts.headers)
-          pending.delete(requestId)
+          pending.delete(key)
         }
         const startedAt = Math.round((e.wallTime ?? deps.now() / 1000) * 1000)
         const entry: NetworkEntry = {
           id: prior && e.redirectResponse ? `${requestId}#${++hop}` : requestId,
+          ...(tabId !== undefined ? { tabId } : {}),
           startedAt,
           method: e.request?.method ?? 'GET',
           url: scrubQueryValues(e.request?.url ?? ''),
@@ -280,11 +293,11 @@ export function createNetworkCapture(deps: CaptureDeps): NetworkCapture {
         }
         if (opts.headers) entry.requestHeaders = scrubHeaders(e.request?.headers)
         ring.push(entry)
-        pending.set(requestId, { entry })
+        pending.set(key, { entry })
         return
       }
 
-      const rec = pending.get(requestId)
+      const rec = pending.get(key)
       if (!rec) return
       const entry = rec.entry
       if (method === 'Network.responseReceived') {
@@ -293,10 +306,10 @@ export function createNetworkCapture(deps: CaptureDeps): NetworkCapture {
       } else if (method === 'Network.loadingFinished') {
         if (typeof p.encodedDataLength === 'number') entry.encodedBytes = p.encodedDataLength
         entry.durationMs = Math.max(0, deps.now() - entry.startedAt)
-        pending.delete(requestId)
+        pending.delete(key)
         if (opts.bodies && isTextMime(entry.mimeType) && bodyBytes < MAX_TOTAL_BODY_BYTES) {
           void deps
-            .fetchBody(requestId)
+            .fetchBody(requestId, tabId)
             .then((res) => {
               if (!res || res.base64Encoded || !state || state.opts !== opts) return
               const room = Math.min(MAX_BODY_BYTES, MAX_TOTAL_BODY_BYTES - bodyBytes)
@@ -312,7 +325,7 @@ export function createNetworkCapture(deps: CaptureDeps): NetworkCapture {
         entry.failure = typeof p.errorText === 'string' ? p.errorText : 'failed'
         if (p.canceled === true) entry.canceled = true
         entry.durationMs = Math.max(0, deps.now() - entry.startedAt)
-        pending.delete(requestId)
+        pending.delete(key)
       }
     },
     read(req) {
@@ -411,4 +424,124 @@ export function networkEnableParams(bodies: boolean): {
   return bodies
     ? { maxTotalBufferSize: 8 * 1024 * 1024, maxResourceBufferSize: 1024 * 1024 }
     : { maxTotalBufferSize: 1024, maxResourceBufferSize: 1024 }
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+/* Capture belongs to the pane (browser tabs, ADR-0026)                                                */
+/* ------------------------------------------------------------------------------------------------ */
+
+/** A live tab's debugger session, as the pane's capture reaches it. */
+export interface CaptureMember {
+  tabId: string
+  /** Send one CDP command to the tab; rejects on failure. */
+  send(method: string, params: object): Promise<unknown>
+}
+
+export interface CaptureGroupDeps {
+  now(): number
+  scrub(text: string): string
+  setTimer(fn: () => void, ms: number): unknown
+  clearTimer(handle: unknown): void
+  /** Capture started or ended: the host pushes the pane's state so the header counter follows. */
+  onChange(status: CaptureStatus, reason: CaptureEndReason | 'started'): void
+}
+
+/**
+ * One network capture for a whole pane: a single ring, a single expiry and a single stop, whichever tab asks. `start`
+ * reaches every live member's session (Network buffers sized for bodies), a member that joins while it runs
+ * (a tab created or revived) is brought in, and a member that leaves (discarded, closed, moved) takes nothing out of
+ * the ring: what it recorded stays with the pane. Every entry carries its tab's id.
+ */
+export interface CaptureGroup {
+  /** The pane's ring. Reads go here; `ingest` on it is not used, feed {@link CaptureGroup.ingest}. */
+  readonly capture: NetworkCapture
+  join(member: CaptureMember): void
+  leave(tabId: string): void
+  start(opts: Partial<CaptureOptions>): CaptureStatus
+  stop(reason?: CaptureEndReason): CaptureStatus
+  status(): CaptureStatus
+  /** One CDP event of a tab's session. */
+  ingest(tabId: string, method: string, params: unknown): void
+  /** The pane is closing: end capture and drop the timer. */
+  dispose(): void
+}
+
+export function createCaptureGroup(deps: CaptureGroupDeps): CaptureGroup {
+  const members = new Map<string, CaptureMember>()
+  const capture = createNetworkCapture({
+    now: deps.now,
+    scrub: deps.scrub,
+    fetchBody: async (requestId, tabId) => {
+      const m = tabId !== undefined ? members.get(tabId) : undefined
+      if (!m) return undefined
+      try {
+        const res = (await m.send('Network.getResponseBody', { requestId })) as
+          { body?: string; base64Encoded?: boolean } | undefined
+        return res && typeof res.body === 'string'
+          ? { body: res.body, base64Encoded: res.base64Encoded === true }
+          : undefined
+      } catch {
+        return undefined
+      }
+    }
+  })
+  let timer: unknown = null
+  /** Capture was started and not ended by us: the lazy expiry inside `capture` cannot tell us. */
+  let capturing = false
+  let bodyBuffers = false
+
+  const sizeBuffers = (m: CaptureMember, on: boolean): void => {
+    void m.send('Network.enable', networkEnableParams(on)).catch(() => undefined)
+  }
+  const setBodyBuffers = (on: boolean): void => {
+    if (bodyBuffers === on) return
+    bodyBuffers = on
+    for (const m of members.values()) sizeBuffers(m, on)
+  }
+  const clearExpiry = (): void => {
+    if (timer !== null) deps.clearTimer(timer)
+    timer = null
+  }
+  function stop(reason: CaptureEndReason): CaptureStatus {
+    const wasActive = capturing
+    capturing = false
+    setBodyBuffers(false)
+    clearExpiry()
+    const status = capture.stop()
+    if (wasActive) deps.onChange(status, reason)
+    return status
+  }
+
+  return {
+    capture,
+    join(member) {
+      members.set(member.tabId, member)
+      if (capturing && bodyBuffers) sizeBuffers(member, true)
+    },
+    leave: (tabId) => void members.delete(tabId),
+    start(opts) {
+      clearExpiry()
+      capturing = true
+      const status = capture.start({ maxMinutes: DEFAULT_CAPTURE_MINUTES, ...opts })
+      if (status.expiresAt !== null) {
+        timer = deps.setTimer(
+          () => {
+            timer = null
+            stop('expired')
+          },
+          Math.max(0, status.expiresAt - deps.now())
+        )
+      }
+      setBodyBuffers(status.bodies)
+      deps.onChange(status, 'started')
+      return status
+    },
+    stop: (reason = 'stopped') => stop(reason),
+    status: () => capture.status(),
+    ingest: (tabId, method, params) => capture.ingest(method, params, tabId),
+    dispose() {
+      stop('closed')
+      members.clear()
+    }
+  }
 }

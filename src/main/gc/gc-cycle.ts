@@ -145,6 +145,12 @@ export interface GcCycleDeps {
    * fails the cycle.
    */
   docker?(): Promise<DockerCycleRecord>
+  /**
+   * T616: removes the staged-skills dirs of folders that are gone. Harnu's own regenerable cache,
+   * not user data, so it never reads `autopilot`; it only stops when cleanup is paused. A throw is
+   * logged and never fails the cycle.
+   */
+  pruneStagedSkills?(): Promise<unknown>
   /** Called with every gather, whether or not the cycle cleans: the Containers feed reads it. */
   onGathered?(g: GcGather): void
   state: CycleState
@@ -349,6 +355,15 @@ export async function runGcCycle(
       docker = await deps.docker()
     } catch (err) {
       console.warn('[gc] docker autonomy failed', messageOf(err))
+    }
+  }
+
+  // The staged-skills cache rides the same tick, silently (nothing user-visible is lost).
+  if (deps.pruneStagedSkills) {
+    try {
+      await deps.pruneStagedSkills()
+    } catch (err) {
+      console.warn('[gc] staged-skills prune failed', messageOf(err))
     }
   }
 

@@ -1,5 +1,5 @@
 /**
- * T1 spike: the doc-reader read gate, the decision a `PreToolUse` hook makes before the main
+ * The doc-reader read gate (T1 spike, shipped in T2): the decision a `PreToolUse` hook makes before the main
  * model reads a large documentation file into its own context.
  *
  * The idea comes from Spotify's `shunt` plugin. A full read of a large doc is cheaper when a small
@@ -13,9 +13,9 @@
  * What the gate lets through, and why:
  * - **Any subagent's call.** Subagents cannot start subagents, so pointing one at `doc-reader`
  *   would strand it. That includes `doc-reader` itself, which must read the files it was sent.
- * - **A targeted read.** That is a `Read` with `offset` or `limit`, or `head`/`tail`/`sed -n`/
- *   `grep`. The model already knows which part it needs, which is exactly what it should do
- *   before an edit.
+ * - **A targeted read.** That is a `Read` whose `limit` is set and at most the threshold, or
+ *   `head`/`tail`/`sed -n`/`grep`. The model already knows which part it needs, which is exactly
+ *   what it should do before an edit.
  * - **A file that is not documentation, or that is small.** Below the threshold the cost of
  *   delegating is higher than the saving.
  * - **A Bash read whose output is filtered or redirected.** `cat big.md | grep x` and
@@ -23,9 +23,10 @@
  * - **Anything it cannot judge.** It fails open: a missing file, an unreadable file, a command it
  *   does not parse.
  *
- * The gate is cooperative, not a sandbox: a `Read` with any `offset`/`limit` passes whatever the
- * span. The study (`docs/studies/T1-doc-reader-spike.md`, Limits) proposes a span cap for the
- * shipped version.
+ * **The span cap (T2).** A `Read` passes as targeted only when `limit` is a positive number no
+ * larger than the threshold. `offset` alone reads to the end of the file, so it is judged like a
+ * full read, and so is a `limit` above the threshold (`offset: 1, limit: 5000` is the whole doc).
+ * Bash stays cooperative: only the first command before a chain is judged.
  */
 
 import * as path from 'node:path'
@@ -67,6 +68,16 @@ export type GateDecision =
 
 export type AllowReason =
   'subagent' | 'not-a-read' | 'targeted' | 'not-a-doc' | 'missing' | 'small' | 'unparsed'
+
+/** The smallest and largest per-folder threshold Harnu accepts. */
+export const DOC_READER_MIN_LINES_FLOOR = 50
+export const DOC_READER_MIN_LINES_CEILING = 100_000
+
+/** Clamp a stored threshold into range; anything that is not a finite number is the default. */
+export function clampMinLines(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return DOC_READER_DEFAULT_MIN_LINES
+  return Math.min(DOC_READER_MIN_LINES_CEILING, Math.max(DOC_READER_MIN_LINES_FLOOR, Math.round(n)))
+}
 
 /** Parse a threshold from the environment; anything but a positive integer falls back to the default. */
 export function parseMinLines(raw: string | undefined): number {
@@ -119,7 +130,7 @@ function deny(file: string, lines: number, opts: GateOptions): GateDecision {
       `Do not load it whole into your context. Ask the ${opts.agentName} agent your question ` +
       `about it instead (pass the file path and the exact question); it reads the file and ` +
       `returns only the answer. If you need exact text to quote or edit, Read just that section ` +
-      `with offset and limit.`
+      `with offset and limit (limit at most ${opts.minLines} lines).`
   }
 }
 
@@ -137,7 +148,9 @@ export function decideDocRead(input: GateInput, opts: GateOptions): GateDecision
 
   let target: string
   if (input.tool_name === 'Read') {
-    if (toolInput.offset !== undefined || toolInput.limit !== undefined)
+    // The span cap: only a bounded `limit` is targeted. `offset` alone reads to the end.
+    const limit = toolInput.limit
+    if (typeof limit === 'number' && limit > 0 && limit <= opts.minLines)
       return { action: 'allow', why: 'targeted' }
     if (typeof toolInput.file_path !== 'string' || toolInput.file_path === '')
       return { action: 'allow', why: 'unparsed' }

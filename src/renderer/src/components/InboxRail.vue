@@ -67,6 +67,7 @@ import McpConfirmRow from './McpConfirmRow.vue'
 import FleetBoardCard from './FleetBoardCard.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 import type { BoardState } from './fleet-board'
+import { buildFleetCards, type FleetCard } from '../lib/fleet-cards'
 import type { ResponderMode, ShadowEntry } from '../../../preload'
 
 const sessions = useSessionsStore()
@@ -99,20 +100,7 @@ const minimized = computed(() => layout.inboxRailState === 'minimized')
  * newest first unless the header toggle inverts it — T459). The minimized
  * strip's minicards flatten the same list, so both views always agree.
  */
-const fleetCards = computed<Array<{ session: Session; folderAlias: string; state: BoardState }>>(
-  () => {
-    const byId = new Map(sessions.allSessions.map((s) => [s.sessionId, s]))
-    const cards: Array<{ session: Session; folderAlias: string; state: BoardState }> = []
-    for (const bucket of sessions.boardBuckets) {
-      if (bucket.state === 'idle') continue
-      for (const slice of bucket.sessions) {
-        const session = byId.get(slice.sessionId)
-        if (session) cards.push({ session, folderAlias: slice.folderAlias, state: bucket.state })
-      }
-    }
-    return cards
-  }
-)
+const fleetCards = computed<FleetCard[]>(() => buildFleetCards(sessions.boardBuckets, sessions))
 
 /**
  * Fleet rail state filter (T159) — which of `fleetCards`' five non-idle
@@ -636,7 +624,12 @@ onMounted(() => {
       -->
         <div
           class="scrollable min-h-0 flex-1"
-          style="overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding-top: 6px"
+          style="
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-gutter: stable both-edges;
+            padding-top: 6px;
+          "
         >
           <FleetBoardCard
             v-for="card in visibleFleetCards"

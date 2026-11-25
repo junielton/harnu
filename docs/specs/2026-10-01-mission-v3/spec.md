@@ -1,5 +1,10 @@
 # Mission v3 — know where it is
 
+> **Superseded (2026-11-16).** This spec describes the mission model before Missions v4, kept as history.
+> The model that replaces it, with one Mission → Milestone → Step record and no Campaign, steward or
+> merge batch, is in [the Missions v4 spec](../2026-11-14-missions-v4/spec.md) and
+> [ADR-0025](../../adr/0025-missions-v4-one-model-supersedes-campaigns-and-stewards.md). Where they disagree, v4 wins.
+
 - **Date:** 2026-10-01 · **Revision:** 2 (after adversarial review — §10)
 - **Status:** implemented (2026-10-01) — S1 #396, S2 #397, S3 #401, S4 #402, S5 #403 (this change; stacked S5 → #402 → #401 → #397 → #396 → `main`). Deviations from this spec: §11. Client identifiers are scrubbed to the neutral vocabulary (CLAUDE.md "Client confidentiality"); every number and shape is kept.
 - **Amends:** the T358 design (decisions 4, 8, 14, §8 and the shadow phase), the Mission v2 spec (superseded in part: §3.1, §3.2, §3.4's draft cue, §3.5) and ADR-0015 (approval model, checks trust model) carry dated notes pointing here.

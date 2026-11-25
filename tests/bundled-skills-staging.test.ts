@@ -117,9 +117,83 @@ describe('stageSkillsForFolder', () => {
     expect(await exists(path.join(staged!.dir, '.claude-plugin', 'plugin.json'))).toBe(true)
   })
 
-  it('stages NOTHING and returns null on a fresh install (default OFF)', async () => {
+  it('stages NOTHING and returns null on a fresh install when no catalog skill ships on', async () => {
+    // a, b, c and d have no default: the default-OFF rule still holds for every skill but `walk`
     const m = await load()
     expect(await m.stageSkillsForFolder('/repo/one')).toBeNull()
+  })
+
+  describe('walk ships on by default (D-21, guided walks S-6)', () => {
+    // This block REVERSES the rule the file used to pin: a fresh install used to stage nothing at all and an
+    // empty enabled set emitted no `--plugin-dir`. `walk` now stages with no prefs file; everything else stays off.
+    beforeEach(async () => {
+      const dir = path.join(h.appPath, 'resources', 'skills', 'skills', 'walk')
+      await fs.mkdir(path.join(dir, 'references'), { recursive: true })
+      await fs.writeFile(
+        path.join(dir, 'SKILL.md'),
+        '---\nname: walk\ndescription: walk skill\n---\n\nbody of walk\n',
+        'utf8'
+      )
+      await fs.writeFile(
+        path.join(dir, 'references', 'panel-contract.md'),
+        'the contract\n',
+        'utf8'
+      )
+    })
+
+    it('stages walk, and only walk, into a new session of a fresh install', async () => {
+      const m = await load()
+      const staged = await m.stageSkillsForFolder('/repo/one')
+      expect(staged).not.toBeNull()
+      expect(staged!.enabled).toEqual(['walk'])
+      expect(await exists(path.join(staged!.dir, 'skills', 'walk', 'SKILL.md'))).toBe(true)
+      // the reference travels with it: the skill is self-contained only if its reference is staged too
+      expect(
+        await exists(path.join(staged!.dir, 'skills', 'walk', 'references', 'panel-contract.md'))
+      ).toBe(true)
+      expect(await exists(path.join(staged!.dir, 'skills', 'a'))).toBe(false)
+    })
+
+    it('emits --plugin-dir for it on a fresh install (the argv the spawn gets)', async () => {
+      const m = await load()
+      const args = await m.injectBundledSkillArgs(['--resume', 'x'], '/repo/one')
+      const i = args.indexOf('--plugin-dir')
+      expect(i).toBeGreaterThan(-1)
+      expect(await exists(path.join(args[i + 1], 'skills', 'walk', 'SKILL.md'))).toBe(true)
+    })
+
+    it('is added to what the operator switched on, not replaced by it', async () => {
+      await setGlobal({ a: true })
+      const m = await load()
+      expect((await m.stageSkillsForFolder('/repo/one'))!.enabled).toEqual(['a', 'walk'])
+    })
+
+    it('does not stage it once the operator switches it off globally, and emits no flag then', async () => {
+      await setGlobal({ walk: false })
+      const m = await load()
+      expect(await m.stageSkillsForFolder('/repo/one')).toBeNull()
+      expect(await m.injectBundledSkillArgs(['--resume', 'x'], '/repo/one')).toEqual([
+        '--resume',
+        'x'
+      ])
+    })
+
+    it('removes a copy staged while it was on once it is switched off (a toggle re-stages)', async () => {
+      const m = await load()
+      const on = await m.stageSkillsForFolder('/repo/one')
+      expect(await exists(path.join(on!.dir, 'skills', 'walk'))).toBe(true)
+      await setGlobal({ walk: false })
+      expect(await m.stageSkillsForFolder('/repo/one')).toBeNull()
+      expect(await exists(path.join(on!.dir, 'skills', 'walk'))).toBe(false)
+    })
+
+    it('shows the pane the resolved value: on until the operator turns it off', async () => {
+      const m = await load()
+      const view = await m.readBundledSkillsView()
+      expect(view.enabled).toEqual({ walk: true })
+      await setGlobal({ walk: false })
+      expect((await m.readBundledSkillsView()).enabled).toEqual({ walk: false })
+    })
   })
 
   it('does not re-stage when the stamp is unchanged', async () => {

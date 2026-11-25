@@ -10,7 +10,7 @@ import { createI18n } from 'vue-i18n'
 import en from '../src/renderer/src/i18n/en.json'
 import ptBR from '../src/renderer/src/i18n/pt-BR.json'
 import type { MissionView } from '../src/main/mission-ipc'
-import type { MissionStep } from '../src/main/mission-core'
+import type { MissionStep } from '../src/main/missions/derive'
 import { endWarnings } from '../src/renderer/src/lib/mission-view'
 import { fixtureView } from './helpers/mission-v3-view'
 

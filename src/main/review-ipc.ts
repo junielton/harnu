@@ -26,10 +26,8 @@
  */
 
 import { app, ipcMain, type BrowserWindow } from 'electron'
-import { execFile, type ExecFileOptions } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
-import { promisify } from 'node:util'
 import { spawnEnvOnce } from './appimage-env'
 import { folderKey } from './claude-config'
 import { isGhThrottled, runGh } from './gh-runner'
@@ -72,8 +70,7 @@ import {
   pushViewed,
   putFolderMark
 } from './review-viewed-store'
-
-const execFileAsync = promisify(execFile)
+import { runFile as execFileAsync, type RunFileOptions } from './spawn-runner'
 
 /**
  * Every subprocess on this path goes through here so it is spawned with the
@@ -85,15 +82,9 @@ const execFileAsync = promisify(execFile)
 async function runFile(
   file: string,
   args: readonly string[],
-  opts: Omit<ExecFileOptions, 'env'>
+  opts: Omit<RunFileOptions, 'env'>
 ): Promise<{ stdout: string }> {
-  // `encoding` is pinned so the promisified overload resolves to the string
-  // form (utf8 is execFile's own default — no behavior change).
-  return execFileAsync(file, [...args], {
-    ...opts,
-    encoding: 'utf8',
-    env: await spawnEnvOnce()
-  })
+  return execFileAsync(file, [...args], { ...opts, env: await spawnEnvOnce() })
 }
 
 const GIT_TIMEOUT_MS = 20_000

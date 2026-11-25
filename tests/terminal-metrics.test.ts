@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { measureCells, measureXtermCells } from '../src/renderer/src/lib/terminalMetrics'
+import {
+  measureCells,
+  measureXtermCells,
+  rendererCellSize
+} from '../src/renderer/src/lib/terminalMetrics'
 
 /**
  * `measureCells` font-size parameterization (terminal-font-settings spec §3).
@@ -194,5 +198,42 @@ describe('xterm width-cache measuring element', () => {
     expect(css).toMatch(
       /\.xterm-width-cache-measure-container\s*\{[^}]*letter-spacing:\s*0\s*!important/
     )
+  })
+})
+
+/**
+ * BUG-267 — with the WebGL renderer there is no `.xterm-rows` DOM, and the
+ * renderer snaps cells to whole device pixels (7px where the DOM measured 7.8px).
+ * The grid must be sized from the cell the renderer really paints, otherwise the
+ * terminal draws narrower than the host and the right-hand columns sit empty.
+ */
+describe('GPU-rendered terminal measurement (BUG-267)', () => {
+  const gpuTerm = (cell: { width?: number; height?: number } | null) => ({
+    _core: { _renderService: { dimensions: { css: { cell } } } }
+  })
+
+  it('rendererCellSize reads the renderer cell, and is null when unavailable', () => {
+    expect(rendererCellSize(gpuTerm({ width: 7, height: 20 }))).toEqual({ width: 7, height: 20 })
+    expect(rendererCellSize(gpuTerm({ width: 0, height: 20 }))).toBeNull()
+    expect(rendererCellSize(gpuTerm({}))).toBeNull()
+    expect(rendererCellSize(gpuTerm(null))).toBeNull()
+    expect(rendererCellSize({})).toBeNull()
+    expect(rendererCellSize(undefined)).toBeNull()
+  })
+
+  it('sizes the grid from the renderer cell, not the span estimate', () => {
+    const el = stubDom({ css: '' }) // span estimate would be 8 x 20; host 800 x 600
+    // 7px cell: floor((800 - 14 scrollbar - 7 gutter) / 7) = 111 cols; 600/20 = 30 rows.
+    expect(measureXtermCells(el, 13, undefined, gpuTerm({ width: 7, height: 20 }))).toEqual({
+      cols: 111,
+      rows: 30
+    })
+    // The span-based estimate (8px) would have produced 97 cols — narrower than drawn.
+    expect(measureCells(el, 20, 13)).toEqual({ cols: 97, rows: 30 })
+  })
+
+  it('without renderer dimensions and without DOM rows there is nothing to measure', () => {
+    const el = { ...stubDom({ css: '' }), querySelector: () => null } as unknown as HTMLElement
+    expect(measureXtermCells(el, 13, undefined, gpuTerm(null))).toBeNull()
   })
 })

@@ -42,6 +42,7 @@ import {
 import { injectHookSettings } from './hook-settings-blob'
 import { forceDowngradePermission } from './mcp/agent-boot'
 import { orderMcpArgs } from './mcp/config-file'
+import { scopedSpawnLine, takePendingSpawn, type PendingSpawn, type Scope } from './mcp/scope'
 import type { SpawnOwner } from './companion/session-table'
 import { PtySessionIndex } from './pty-session-index'
 import {
@@ -51,6 +52,8 @@ import {
   setCompanionSpawnKindResolver
 } from './companion/host'
 import { pruneTaskState } from './hook-bridge'
+import { getTaskState } from './detect/task-state-hub'
+import type { TaskState } from './hook-state'
 import { RingBuffer } from './pty-ring-buffer'
 import { foregroundProcessName } from './detect/foreground-process'
 import { sanitizeSpawnEnv, mergeLoginPath, loginPathOnce } from './appimage-env'
@@ -303,6 +306,31 @@ export type PtyKind = 'shell' | 'claude-new' | 'claude-resume' | 'claude-fork'
  */
 export type PtyExitReason = 'natural' | 'park'
 
+/**
+ * What an in-main observer learns when a session's PTY ends, read before the session's hook
+ * state is dropped (Your move: a process that died mid-turn is a card).
+ */
+export interface PtyExitFact {
+  sessionKey: string
+  reason: PtyExitReason
+  /** Harnu already removed the record: its own quit, the operator's close, a park. */
+  removedFirst: boolean
+  /** The folded hook state at the moment of exit. */
+  taskState?: TaskState
+  /** Epoch ms of the last Ctrl+C written to this PTY. */
+  lastCtrlCAt?: number
+  /** The directory the PTY ran in. */
+  cwd?: string
+  now: number
+}
+
+let ptyExitObserver: ((x: PtyExitFact) => void) | null = null
+
+/** One observer of session PTY exits; `null` removes it. It never blocks or breaks an exit. */
+export function setPtyExitObserver(fn: ((x: PtyExitFact) => void) | null): void {
+  ptyExitObserver = fn
+}
+
 export interface CreateOpts {
   cwd?: string
   cols: number
@@ -489,6 +517,14 @@ interface PtyRec {
   /** T363: the directory the PTY runs in — locates the repo whose missions it may own. */
   cwd: string
   /**
+   * T616: the folder exactly as the skills stager keyed it (`opts.cwd`, which differs from `cwd`
+   * when the folder is gone and the PTY fell back to an ancestor). Names the staged dir this
+   * process uses as `--plugin-dir`, so the prune never removes it.
+   */
+  stageFolder: string
+  /** Epoch ms of the last `\x03` the operator wrote: a Ctrl+C that ends a session is not a death. */
+  lastCtrlCAt?: number
+  /**
    * T257: the `--session-id` a `claude-new` spawn was handed, which is the sid its mod binding
    * reports. Lets the review selection find the PTY of a companion that has no binding yet.
    */
@@ -562,6 +598,20 @@ let mcpArgsProvider: () => string[] = () => []
 /** Wire the app-managed MCP argv provider (called once by the integrator). */
 export function setMcpArgsProvider(fn: () => string[]): void {
   mcpArgsProvider = fn
+}
+
+/**
+ * Missions v4 S-25 (BUG-253): the argv that gives ONE agent-spawned session the scoped verbs of its role
+ * (`--mcp-config <0600 file holding its own credential>` + the `--allowedTools` of that role). The server
+ * mints the credential and writes the file; this module only receives the argv, so the bearer is never
+ * in a string the model, the argv or a log could carry. `[]` (the default, and the server being off)
+ * means the session is spawned without a Harnu server, exactly as an agent-controlled spawn always was.
+ */
+let scopedMcpArgsProvider: (scope: Scope) => Promise<string[]> = async () => []
+
+/** Wire the scoped-credential argv provider (called once by the MCP server's registration). */
+export function setScopedMcpArgsProvider(fn: (scope: Scope) => Promise<string[]>): void {
+  scopedMcpArgsProvider = fn
 }
 
 /**
@@ -800,7 +850,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     sessionIndex.removeByPtyId(ptyId)
     pruneTaskState(sessionKey)
     lastFocusedAt.delete(sessionKey)
-    markHibernated(sessionKey)
+    markHibernated(sessionKey, rec.stageFolder)
     recordPark(sessionKey, Date.now())
     getWindow()?.webContents.send('pty:hibernated', { sessionKey })
   }
@@ -869,6 +919,7 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     // T474: a registered terminal remembers when the operator last typed. Every other PTY
     // pays one Map lookup and nothing else.
     if (terminalRegistry.hasPty(id)) terminalRegistry.noteOperatorWrite(id, data)
+    if (data.includes('\x03')) rec.lastCtrlCAt = Date.now()
     rec.pty.write(data)
   })
 
@@ -1249,6 +1300,19 @@ export function livePtyDescriptors(): LivePtyDescriptor[] {
 }
 
 /**
+ * T616: every folder a running PTY's staged skills dir is keyed on (the folder as handed to the
+ * stager, plus the directory it actually runs in). The staged-skills prune never removes these.
+ */
+export function livePtyFolders(): string[] {
+  const out = new Set<string>()
+  for (const rec of ptys.values()) {
+    out.add(rec.stageFolder)
+    out.add(rec.cwd)
+  }
+  return [...out]
+}
+
+/**
  * Kill one PTY and drop it: the body of `pty:destroy`, shared with {@link closeTerminalPty}.
  * A no-op for an unknown id. Returns the raw output the PTY had produced (what a tombstone
  * keeps), or `undefined` when there was nothing to destroy.
@@ -1547,6 +1611,18 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     // `--session-id` argv and the `isArmed` check downstream both see the
     // SAME id.
     let effectiveClaudeSessionId = opts.claudeSessionId
+    // Missions v4 S-25: a `create_session` for one step of a mission left a note for this spawn (the
+    // folder is the key: one create_session is in flight per folder). Only an agent-controlled
+    // `claude-new` takes it, once; its session id is minted HERE so the credential can carry it.
+    let scopedSpawn: PendingSpawn | undefined
+    if (kind === 'claude-new') {
+      // A card a manifest drain or the board dispatches for a step is `spawnedBy: 'agent'` without being
+      // `agentControlled`: it takes the note too (Missions v4 S-26), so it holds its step's verbs only.
+      if ((opts.agentControlled || opts.spawnedBy === 'agent') && !opts.readOnly) {
+        scopedSpawn = takePendingSpawn(opts.cwd ?? '')
+      }
+      if (scopedSpawn) effectiveClaudeSessionId = effectiveClaudeSessionId ?? randomUUID()
+    }
     if (kind === 'claude-new') {
       // A caller-minted uuid (T245) is emitted as `--session-id`; without one
       // this stays a bare `claude` and the CLI mints its own.
@@ -1623,7 +1699,8 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       harnuPreambleBase,
       orchestratorArmed ? HARNU_ORCHESTRATOR_DOC : '',
       modeDoc,
-      autoOrganizeAwareness
+      autoOrganizeAwareness,
+      scopedSpawn ? scopedSpawnLine(scopedSpawn) : ''
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -1651,6 +1728,18 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
           : readOnlyCfg,
         harnuPreamble
       )
+    } else if (scopedSpawn && !opts.agentControlled) {
+      // Missions v4 S-26: a card the drain or the board dispatches for a step. It is the operator's own
+      // dispatch, so its boot config stands as it is, but it holds the scoped verbs of its step and not
+      // the whole server: the app-managed --mcp-config is replaced by the credential of its role.
+      const scopedArgs = effectiveClaudeSessionId
+        ? await scopedMcpArgsProvider({
+            ...scopedSpawn,
+            sessionId: effectiveClaudeSessionId,
+            folder: opts.cwd ?? ''
+          })
+        : []
+      args = orderMcpArgs(scopedArgs, spawnCfg.args)
     } else if (opts.agentControlled) {
       // MCP-spawned agent: untrusted. Re-resolve the merged boot cfg
       // (global ⊕ folder ⊕ override) and strip any permission-bypass flag the
@@ -1659,7 +1748,21 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       // the app-managed --mcp-config so the agent gets NO Harnu MCP server.
       const baseCfg = await getResolvedConfig(opts.cwd)
       const merged = opts.bootOverride ? mergeBootConfig(baseCfg, opts.bootOverride) : baseCfg
-      args = buildClaudeArgs(base, forceDowngradePermission(merged), harnuPreamble)
+      // Missions v4 S-25 (BUG-253): a session started for one step of a mission is the exception to
+      // the withholding. It gets a config of its OWN (the scoped credential of its role, in a 0600 file;
+      // argv carries the path only) and never the full server, so there is still no recursive Conductor.
+      const scopedArgs =
+        scopedSpawn && effectiveClaudeSessionId
+          ? await scopedMcpArgsProvider({
+              ...scopedSpawn,
+              sessionId: effectiveClaudeSessionId,
+              folder: opts.cwd ?? ''
+            })
+          : []
+      args = orderMcpArgs(
+        scopedArgs,
+        buildClaudeArgs(base, forceDowngradePermission(merged), harnuPreamble)
+      )
     } else {
       // Prepend Harnu's app-managed --mcp-config (when the MCP server is enabled)
       // BEFORE the user's resolved Boot args so a user --mcp-config can't bury it.
@@ -1793,6 +1896,7 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
     // T215: fail closed — an unstamped spawn is treated as the operator's.
     spawnedBy: opts.spawnedBy === 'agent' ? 'agent' : 'operator',
     cwd: runCwd,
+    stageFolder: opts.cwd ?? '',
     ...(kind === 'claude-new' && opts.claudeSessionId
       ? { claudeSessionId: opts.claudeSessionId }
       : {})
@@ -1808,6 +1912,7 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       origin: opts.terminal.origin,
       ownerSessionId: opts.terminal.ownerSessionId ?? null,
       ...(opts.terminal.disconnected ? { disconnected: true } : {}),
+      shellPid: rec.pty.pid,
       size: { cols: opts.cols, rows: opts.rows }
     })
     // T480: an agent terminal is exact from byte 0, so its screen model is born with it. An
@@ -1948,7 +2053,25 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       // Prune the dead session's hook state (T13/BUG-1) before dropping the index
       // entry — resolve the key while the reverse lookup still holds it.
       const exitedKey = sessionIndex.getSessionKey(id)
-      if (exitedKey) pruneTaskState(exitedKey)
+      if (exitedKey) {
+        // Read the state BEFORE it is pruned: whether the process ended mid-turn is its only proof.
+        if (ptyExitObserver) {
+          try {
+            ptyExitObserver({
+              sessionKey: exitedKey,
+              reason,
+              removedFirst: r !== rec,
+              taskState: getTaskState(exitedKey),
+              lastCtrlCAt: rec.lastCtrlCAt,
+              cwd: rec.cwd,
+              now: Date.now()
+            })
+          } catch (err) {
+            console.error('[pty] exit observer threw', err)
+          }
+        }
+        pruneTaskState(exitedKey)
+      }
       sessionIndex.removeByPtyId(id)
     })
   }

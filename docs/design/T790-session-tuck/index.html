@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — T790 · Tuck the session away</title>
+    <style>
+      :root {
+        --ix-bg: #f6f6f7;
+        --ix-fg: #1b1b1f;
+        --ix-muted: #6b6b76;
+        --ix-line: #dcdce2;
+        --ix-card: #fff;
+        --ix-accent: #2f5bea;
+        --ix-draft: #b7791f;
+        --ix-ok: #2f855a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ix-bg: #121216;
+          --ix-fg: #ececf1;
+          --ix-muted: #9a9aa6;
+          --ix-line: #2b2b33;
+          --ix-card: #1b1b21;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        color: var(--ix-fg);
+        background: var(--ix-bg);
+      }
+      header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--ix-line);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ix-draft);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status[data-status='approved'] {
+        background: var(--ix-ok);
+      }
+      nav.toc {
+        font-size: 13px;
+        color: var(--ix-muted);
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      nav.toc a {
+        color: inherit;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        margin-bottom: 48px;
+      }
+      section > h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .prose {
+        max-width: 72ch;
+        color: var(--ix-fg);
+      }
+      .prose p {
+        margin: 0 0 10px;
+      }
+      /* one card per screen */
+      .screen {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .screen .bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .screen h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .screen h3 code {
+        font-size: 12px;
+        color: var(--ix-muted);
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .screen .notes {
+        font-size: 13px;
+        color: var(--ix-muted);
+        margin: 0 0 12px;
+        max-width: 80ch;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chips button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--ix-line);
+        background: transparent;
+        color: var(--ix-fg);
+        cursor: pointer;
+      }
+      .chips button[aria-pressed='true'] {
+        background: var(--ix-accent);
+        border-color: var(--ix-accent);
+        color: #fff;
+      }
+      .open {
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .viewport {
+        overflow: hidden;
+        border: 1px solid var(--ix-line);
+        border-radius: 6px;
+        background: #fff;
+      }
+      .viewport iframe {
+        display: block;
+        border: 0;
+        transform-origin: top left;
+      }
+      .screen .approval {
+        font-size: 12px;
+        margin-top: 8px;
+        color: var(--ix-muted);
+      }
+      /* flows */
+      .flow {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .flow ol {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 0;
+        margin: 8px 0 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .flow li {
+        counter-increment: step;
+        font-size: 13px;
+      }
+      .flow li::before {
+        content: counter(step) '. ';
+        color: var(--ix-muted);
+      }
+      .flow li + li::before {
+        content: '→ ' counter(step) '. ';
+      }
+      .flow li small {
+        color: var(--ix-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>T790 · Tuck the session away</h1>
+      <!-- data-status MUST mirror mockup.json "status"; check-mockup.mjs enforces it -->
+      <span class="status" data-status="approved">approved</span>
+      <nav class="toc">
+        <a href="#context">Context</a><a href="#screens">Screens</a><a href="#flows">Flows</a
+        ><a href="parts/index.html">Parts</a>
+      </nav>
+    </header>
+    <main>
+      <section id="context">
+        <h2>Context and decisions</h2>
+        <div class="prose">
+          <p>
+            <b>Problem.</b> When testing a CMS with a guided walk plus a browser pane, the helper
+            stack has no room: the divider pins the session at 40% (clamp [0.4, 0.8]) and "expand to
+            window" only expands one pane.
+          </p>
+          <p>
+            <b>Proposal.</b> Dragging the divider past the floor arms the tuck (accent divider,
+            dimmed session, dashed line marking the floor). Releasing while armed tucks the session
+            away; releasing earlier springs back to 40%. A thin strip stays on the edge and brings
+            the session back at 40%.
+          </p>
+          <p>
+            <b>The strip.</b> At rest: 14px wide, state dot + grip. On hover: widens to 20px, shows
+            a chevron and a chip with the session name, its state and "Click or drag to bring the
+            session back" + the shortcut. Needs you: soft amber background, blinking dot, vertical
+            "Needs you" tag.
+          </p>
+          <p>
+            <b>D-1 (decided: side by side).</b> While tucked in the side-by-side orientation, the
+            stack takes the full width; the mockup lays the panes out <i>side by side</i> (walk 36%
+            | browser 64%) instead of stacked, which is what the use case needs.
+          </p>
+          <p>
+            <b>D-2 (provisional, executor checks).</b> The <kbd>Ctrl Shift J</kbd> shortcut is a
+            placeholder; the executor checks it for conflicts in the keybindings map.
+          </p>
+          <p>
+            Open a screen alone and hover the strip in the <code>tucked</code> state: the hover is
+            real. The mockup uses only the default dark theme.
+          </p>
+        </div>
+      </section>
+
+      <section id="screens">
+        <h2>Screens</h2>
+        <article
+          class="screen"
+          data-screen="split-side"
+          data-states="default armed tucked tucked-hover tucked-needs-you"
+        >
+          <div class="bar">
+            <h3>Side by side <code>split-side</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/split-side.html" target="_blank">open alone ↗</a>
+          </div>
+          <p class="notes">
+            Drag past the floor to arm, release to tuck; the vertical strip brings the session back
+            at 40%.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="split-side"></iframe></div>
+          <p class="approval">Approval: <strong>approved 2026-11-18</strong></p>
+        </article>
+        <article
+          class="screen"
+          data-screen="split-stacked"
+          data-states="default armed tucked tucked-hover"
+        >
+          <div class="bar">
+            <h3>Stacked <code>split-stacked</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/split-stacked.html" target="_blank">open alone ↗</a>
+          </div>
+          <p class="notes">The same on the Y axis; the strip is horizontal at the top.</p>
+          <div class="viewport"><iframe loading="lazy" title="split-stacked"></iframe></div>
+          <p class="approval">Approval: <strong>approved 2026-11-18</strong></p>
+        </article>
+      </section>
+
+      <section id="flows">
+        <h2>Flows</h2>
+        <article class="flow" data-flow="tuck">
+          <h3>
+            Tuck the session away —
+            <a href="screens/split-side.html?state=default" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/split-side.html?state=default" target="_blank"
+                >split-side · default</a
+              >
+              <small>via "drag the divider past the floor"</small>
+            </li>
+            <li>
+              <a href="screens/split-side.html?state=armed" target="_blank">split-side · armed</a>
+              <small>via "release"</small>
+            </li>
+            <li>
+              <a href="screens/split-side.html?state=tucked" target="_blank">split-side · tucked</a>
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="restore">
+          <h3>
+            Bring the session back —
+            <a href="screens/split-side.html?state=tucked-hover" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/split-side.html?state=tucked-hover" target="_blank"
+                >split-side · tucked-hover</a
+              >
+              <small>via "click the strip"</small>
+            </li>
+            <li>
+              <a href="screens/split-side.html?state=default" target="_blank"
+                >split-side · default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="attention">
+          <h3>
+            The session needs you while tucked —
+            <a href="screens/split-side.html?state=tucked-needs-you" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/split-side.html?state=tucked-needs-you" target="_blank"
+                >split-side · tucked-needs-you</a
+              >
+              <small>via "click the strip"</small>
+            </li>
+            <li>
+              <a href="screens/split-side.html?state=default" target="_blank"
+                >split-side · default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="tuck-stacked">
+          <h3>
+            Tuck the session away (stacked) —
+            <a href="screens/split-stacked.html?state=default" target="_blank">walk it ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/split-stacked.html?state=default" target="_blank"
+                >split-stacked · default</a
+              >
+              <small>via "drag the divider past the floor"</small>
+            </li>
+            <li>
+              <a href="screens/split-stacked.html?state=armed" target="_blank"
+                >split-stacked · armed</a
+              >
+              <small>via "release"</small>
+            </li>
+            <li>
+              <a href="screens/split-stacked.html?state=tucked" target="_blank"
+                >split-stacked · tucked</a
+              >
+            </li>
+          </ol>
+        </article>
+      </section>
+    </main>
+    <script>
+      /* index runtime: sizes each frame to the chosen viewport, swaps ?state=, listens for
+   mockup:size from the screens. Do not add behaviour here; screens own their behaviour. */
+      ;(() => {
+        const VIEWPORTS = [1280] // MUST mirror mockup.json "viewports"
+        const frames = new Map() // iframe -> {w, h}
+        const fit = (card) => {
+          const vp = card.querySelector('.viewport'),
+            ifr = vp.querySelector('iframe'),
+            f = frames.get(ifr)
+          const s = Math.min(1, vp.parentElement.clientWidth / f.w)
+          ifr.style.width = f.w + 'px'
+          ifr.style.height = f.h + 'px'
+          ifr.style.transform = `scale(${s})`
+          vp.style.height = Math.ceil(f.h * s) + 'px'
+          vp.style.width = Math.ceil(f.w * s) + 'px'
+        }
+        const load = (card) => {
+          const ifr = card.querySelector('iframe')
+          const state =
+            card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state ||
+            card.dataset.states.split(/\s+/)[0]
+          ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`
+        }
+        document.querySelectorAll('.screen').forEach((card) => {
+          const ifr = card.querySelector('iframe')
+          frames.set(ifr, { w: VIEWPORTS[0], h: 600 })
+          const vps = card.querySelector('[data-role="viewports"]')
+          VIEWPORTS.forEach((w, i) => {
+            const b = document.createElement('button')
+            b.textContent = w + 'px'
+            b.dataset.w = w
+            b.setAttribute('aria-pressed', String(i === 0))
+            b.onclick = () => {
+              vps
+                .querySelectorAll('button')
+                .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+              frames.get(ifr).w = w
+              fit(card)
+            }
+            vps.append(b)
+          })
+          const sts = card.querySelector('[data-role="states"]')
+          card.dataset.states
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((st, i) => {
+              const b = document.createElement('button')
+              b.textContent = st
+              b.dataset.state = st
+              b.setAttribute('aria-pressed', String(i === 0))
+              b.onclick = () => {
+                sts
+                  .querySelectorAll('button')
+                  .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+                load(card)
+              }
+              sts.append(b)
+            })
+          new IntersectionObserver(
+            (es, io) =>
+              es.forEach((e) => {
+                if (e.isIntersecting) {
+                  io.disconnect()
+                  load(card)
+                }
+              }),
+            { rootMargin: '600px' }
+          ).observe(card)
+          fit(card)
+        })
+        addEventListener('message', (e) => {
+          const m = e.data
+          if (!m || m.type !== 'mockup:size') return
+          for (const [ifr, f] of frames)
+            if (ifr.contentWindow === e.source) {
+              f.h = Math.max(320, m.height)
+              fit(ifr.closest('.screen'))
+            }
+        })
+        addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit))
+      })()
+    </script>
+  </body>
+</html>
