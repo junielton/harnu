@@ -257,8 +257,8 @@ function agentRows(): Promise<
           label: width(label),
           type: width(type),
           skill: width(skill),
-          typeWhole: type.scrollWidth <= type.clientWidth,
-          // The skill is longer than its cap, so "whole" is the cap.
+          // Each chip has a cap (72px, 120px): "whole" is its own width or that cap.
+          typeWhole: type.scrollWidth <= type.clientWidth || Math.round(width(type)) === 72,
           skillWhole: Math.round(width(skill)) === 120,
           labelCut: label.scrollWidth > label.clientWidth,
           off: Math.max(...centres.map((c) => Math.abs(c - mid))),
