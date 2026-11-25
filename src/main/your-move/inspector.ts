@@ -7,7 +7,8 @@
  *   store failure leaves it where it was, so a crash re-inspects instead of skipping;
  * - never two judges for one session: a request during a run coalesces into one rerun;
  * - a session first seen at its Stop has its recent tail judged (recall over noise);
- * - mid-turn inspection moves only `shadowOffset`, so a later Stop judges the same text.
+ * - mid-turn inspection moves only `shadowOffset`, so a later Stop judges the same text;
+ * - a judged Stop (or manual) turn supersedes the session's older judge cards (BUG-308).
  *
  * The transcript text never leaves this module except to the judge calls: the inspection log
  * rows carry counts and outcomes only.
@@ -18,6 +19,7 @@ import {
   applyVerdict,
   followLive,
   openCardsFor,
+  supersedeJudgeCards,
   type CardLane,
   type Verdict,
   type YourMoveMode,
@@ -290,6 +292,14 @@ export function createInspector(deps: InspectorDeps): {
           now,
           ...f
         })
+      }
+      // A judged turn closes what the earlier ones left, whatever its verdict (BUG-308). A
+      // mid-turn look is only part of a turn: it replaces nothing.
+      if (req.trigger !== 'mid-turn') {
+        const own = new Set(
+          folds.flatMap((f) => [...f.newIds, ...f.verdict.update.map((u) => u.id)])
+        )
+        next = supersedeJudgeCards(next, req.sessionId, own, now)
       }
       return {
         next: moveCursor(next, res.nextOffset, now),

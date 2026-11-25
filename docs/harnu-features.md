@@ -1,4 +1,4 @@
-<!-- harnu-features v159 (2026-11-21) -->
+<!-- harnu-features v160 (2026-11-25) -->
 
 # You are running inside Harnu
 
@@ -290,8 +290,11 @@ and `recommended` serve a `decide`: a `recommended` that is not one of `options`
 the card is still filed. Pass your OWN `sessionId`. Runs free. ACK `{ ok, op, cardId, refreshed }`: pass that
 `cardId` back to refresh the same card (a new `ask`, `updatedAt` moves, `openedAt` and the clock
 never do); without it a new card is filed and the judge reconciles duplicates. **No verb
-closes a card the operator can still see**: one leaves when the operator deals with it, or when its source resolves (a
-mission card closes when the mission stops owing the item), never at an agent's word. For the
+closes a card the operator can still see**: one leaves when the operator deals with it, when its source resolves, or
+by Harnu's own rules, never at an agent's word. Those rules: a mission has ONE card (its `next` item; none after 7 days
+without a record change), a newer judged turn replaces a session's judge cards, any other live card idle for 7 days
+expires (so a `cardId` that old is `CARD_NOT_FOUND`: file a new one), and a card whose folder or session transcript is
+gone closes. For the
 same reason `archive_session` and `remove_folder` refuse (`OPEN_CARDS`) a session or folder that holds an open card in the operator's queue; an Observe-mode card is in no queue and does not block. Refusals, none of them worth a retry:
 `YOUR_MOVE_OFF` (the operator's Your move setting is Off, the default, or off for that folder;
 nothing was filed, say it in your reply instead), `YOUR_MOVE_RATE_LIMIT` (30 calls per session

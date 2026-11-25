@@ -89,7 +89,8 @@ beforeEach(async () => {
     human: { state: 'found', path: human },
     agent: { state: 'found', path: agent },
     ghost: { state: 'missing' },
-    flaky: { state: 'unknown' }
+    flaky: { state: 'unknown' },
+    sleeper: { state: 'unknown' }
   }
   await writeFile(
     path.join(dir, 'your-move.json'),
@@ -101,7 +102,7 @@ beforeEach(async () => {
           card({ id: `c-${s}`, sessionId: s, folder: dir })
         ),
         // BUG-308: an expired card, and one whose folder is gone, of sessions that are fine.
-        card({ id: 'c-expired', sessionId: 'flaky', folder: dir, updatedAt: 1 }),
+        card({ id: 'c-expired', sessionId: 'sleeper', folder: dir, updatedAt: 1 }),
         card({ id: 'c-nofolder', sessionId: 'flaky', folder: path.join(dir, 'removed') })
       ]
     })

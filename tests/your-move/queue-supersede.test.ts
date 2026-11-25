@@ -358,3 +358,16 @@ describe('AC-3: the record views carry the mission record’s own change time', 
     expect((read.get(root)!.views[0] as unknown as { leaderGone: boolean }).leaderGone).toBe(true)
   })
 })
+
+describe('AC-3: one card per mission never reaches a root the pass does not follow', () => {
+  it('leaves the extra cards of a folder switched off', () => {
+    const other = (id: string): YourMoveCard =>
+      card(id, {
+        source: 'mission',
+        sourceKey: `mnt-off:${id}`,
+        mission: { missionId: 'mnt-off', root: '/org/other/www', item: {} as never }
+      })
+    const s: YourMoveState = { ...emptyState(), cards: [other('x'), other('y')] }
+    expect(openIds(pass(s, []))).toEqual(['x', 'y'])
+  })
+})

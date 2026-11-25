@@ -218,3 +218,46 @@ describe('the startup cleanup applies the four rules to what is on disk', () => 
     expect(r).toEqual({ gone: 2, superseded: 2, expired: 1, mission: 0 })
   })
 })
+
+describe('a mission card ages with its mission record, not with the card', () => {
+  const missionCard = card('m-old', {
+    source: 'mission',
+    sourceKey: 'mnt-alpha:close',
+    updatedAt: NOW - 20 * DAY,
+    openedAt: NOW - 20 * DAY,
+    mission: { missionId: 'mnt-alpha', root: HERE, item: {} as never }
+  })
+
+  it('expiry alone never closes it: an app that was closed for a week keeps an active mission', async () => {
+    const store = await storeWith([missionCard])
+    expect(await sweepStaleCards({ store, ...presence, now: () => NOW })).toEqual({
+      gone: 0,
+      expired: 0
+    })
+    const views: RecordViews = new Map([
+      [
+        HERE,
+        {
+          views: [
+            {
+              root: HERE,
+              mission: { id: 'mnt-alpha', owner: { sessionId: 'alive' } },
+              you: [{ kind: 'close', id: 'close', ask: 'Close it', why: 'why' } as never],
+              changedAt: NOW - DAY
+            }
+          ],
+          unreadable: false
+        }
+      ]
+    ])
+    const r = await cleanupQueue({
+      store,
+      ...presence,
+      now: () => NOW,
+      readViews: async () => views,
+      folderOff: () => false
+    })
+    expect(r).toEqual({ gone: 0, superseded: 0, expired: 0, mission: 0 })
+    expect(open(store)).toEqual(['m-old'])
+  })
+})

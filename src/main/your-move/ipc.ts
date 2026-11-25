@@ -32,6 +32,7 @@ import {
 } from './core'
 import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
+import { cleanupQueue, folderPresence, sweepStaleCards } from './hygiene'
 import { createTranscriptLocator } from './locate'
 import { closeIneligibleCards, createOperatorGate } from './operator'
 import {
@@ -46,7 +47,12 @@ import {
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
 import { buildSegment } from './segment'
 import { createGateWatch, watchArchive, watchFolderRemoval } from './source-gate'
-import { reconcileMissions, selectForReconcile } from './source-mission'
+import {
+  readRecordViews,
+  reconcileMissions,
+  selectForReconcile,
+  setMissionLeaderCheck
+} from './source-mission'
 import { readFrom } from './transcript'
 import {
   SWEEP_MS,
@@ -202,6 +208,8 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   const mode = (): YourMoveMode => (prefs ? effectiveMode(prefs) : 'off')
   const eligible = async (sessionId: string, folder: string): Promise<boolean> => {
     await refreshDeny()
+    // A folder that is gone files nothing (BUG-308): its card could not be acted on.
+    if ((await folderPresence(folder)) === 'missing') return false
     return (
       !isFolderDenied(folder, denyFolders) &&
       !(getSessionArchive()?.has(sessionId) ?? false) &&
@@ -299,6 +307,16 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         states: getTaskStates,
         now: () => Date.now()
       })
+      // What is known about the world a card points at (BUG-308).
+      const world = {
+        store,
+        lookup: (id: string) => transcripts.lookup(id),
+        folder: folderPresence,
+        now: () => Date.now()
+      }
+      const leaderGone = async (id: string): Promise<boolean> =>
+        (await transcripts.lookup(id)).state === 'missing'
+      setMissionLeaderCheck(leaderGone)
       // One pass at start: judge cards filed before the rule existed, for sessions the operator
       // never typed in, are closed. Idempotent, and later cards of those sessions are never filed.
       void closeIneligibleCards({
@@ -311,6 +329,23 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
           if (n > 0) console.log(`[your-move] closed ${n} cards of sessions with no operator entry`)
         })
         .catch((e) => console.error(`[your-move] cleanup failed: ${(e as Error).message}`))
+        // Then the queue rules on what is already on disk: gone, superseded, expired, missions.
+        .then(() =>
+          cleanupQueue({
+            ...world,
+            readViews: (roots) => readRecordViews(roots, { leaderGone }),
+            folderOff: (root) => (prefs ? isFolderDisabled(prefs, root) : false)
+          })
+        )
+        .then((r) => {
+          if (r.gone + r.superseded + r.expired + r.mission > 0) {
+            console.log(
+              `[your-move] queue cleanup closed: ${r.gone} gone, ${r.superseded} superseded, ` +
+                `${r.expired} expired, ${r.mission} mission`
+            )
+          }
+        })
+        .catch((e) => console.error(`[your-move] queue cleanup failed: ${(e as Error).message}`))
       const gate = createGateWatch({
         store,
         mode,
@@ -336,10 +371,11 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         void gate.tick()
         // The store keeps closed cards only for their window (BUG-277): a long uptime must not
         // let them pile up between launches. Riding this timer keeps it one timer, not two.
+        // The same beat closes idle and gone open cards (BUG-308).
         if (Date.now() - lastPrune >= PRUNE_EVERY_MS) {
           lastPrune = Date.now()
-          store
-            .transact((s) => ({ next: pruneClosed(s, Date.now()), result: null }))
+          sweepStaleCards(world)
+            .then(() => store.transact((s) => ({ next: pruneClosed(s, Date.now()), result: null })))
             .catch((e) => console.error(`[your-move] prune failed: ${(e as Error).message}`))
         }
       }, SWEEP_MS)
@@ -399,6 +435,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         unobserve()
         setPtyExitObserver(null)
         setMissionListObserver(null)
+        setMissionLeaderCheck(undefined)
         clearInterval(sweepTimer)
         if (archiveRetry) clearTimeout(archiveRetry)
         stopArchive?.()

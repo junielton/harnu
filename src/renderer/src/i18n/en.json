@@ -3066,6 +3066,8 @@
       "not-for-me": "not for me",
       "already-handled": "already handled",
       "source-resolved": "resolved at the source",
+      "superseded": "replaced by a newer turn",
+      "expired": "expired",
       "archived": "session archived",
       "folder-removed": "folder removed"
     }

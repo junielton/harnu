@@ -39,6 +39,11 @@ vi.mock('../../src/main/your-move/operator', async (orig) => ({
   ...(await orig<typeof import('../../src/main/your-move/operator')>()),
   closeIneligibleCards: async (): Promise<number> => 0
 }))
+// Same for the queue cleanup (BUG-308): these fixtures' folder does not exist.
+vi.mock('../../src/main/your-move/hygiene', async (orig) => ({
+  ...(await orig<typeof import('../../src/main/your-move/hygiene')>()),
+  cleanupQueue: async () => ({ gone: 0, superseded: 0, expired: 0, mission: 0 })
+}))
 vi.mock('../../src/main/claude-watcher', () => ({ classifyTranscriptLines: () => null }))
 vi.mock('../../src/main/claude-cli', () => ({ resolveClaudePath: async () => null }))
 vi.mock('../../src/main/user-projects', () => ({

@@ -137,7 +137,8 @@ you first, because all it does is add one line to your list.
 - **A session can refresh a card, but it cannot close one.** It can sharpen a card it filed before
   and the clock on it keeps running, but no action a session can take closes a card you can still
   see. A card leaves when you deal with it, or when whatever raised it stops being owed (a mission
-  card closes when the mission stops owing you that item). So Harnu also refuses a session's
+  card closes when the mission stops owing you anything, and Harnu also closes cards left behind:
+  replaced by a newer turn, idle for 7 days, or pointing at a folder or session that is gone). So Harnu also refuses a session's
   request to archive a session, or to remove a folder, while one of your cards is open for it. A
   card checked only in Observe mode shows in no queue, so it does not block anything. A session
   cannot tell Harnu you handled something.

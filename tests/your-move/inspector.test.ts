@@ -532,7 +532,8 @@ describe('detector runs and enrichment', () => {
       folder: '/f',
       kind: 'decide' as const,
       ask: 'A or B',
-      source: 'judge' as const,
+      // BUG-308: a verb card, which only a `close` verdict can close (a judge card is superseded).
+      source: 'verb' as const,
       lane: 'observe' as const,
       openedAt: 1,
       updatedAt: 1

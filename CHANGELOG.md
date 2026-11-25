@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-25
+
+### Fixed
+
+- **Your move** no longer piles up hundreds of old cards. A newer turn of a session replaces the cards of its earlier turns; a card nothing new happened to for 7 days closes as expired; a mission has one card (its next item), and none once its record has been untouched for 7 days; and a card whose folder or session transcript is gone closes (a stopped session's card only when its folder is gone). Harnu applies this to the existing queue when it starts. Closed cards stay in **Settings → Your move** for 7 days with the reason.
+
 ## 2026-11-24
 
 ### Added
