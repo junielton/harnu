@@ -20,7 +20,11 @@ import {
   treeKeyAction,
   type TreeRow
 } from '../src/renderer/src/lib/mission-dropdown-tree'
-import { buildPaneTree, type MissionV4Reply } from '../src/renderer/src/lib/mission-pane-view'
+import {
+  buildPaneTree,
+  waitingStepId,
+  type MissionV4Reply
+} from '../src/renderer/src/lib/mission-pane-view'
 
 type Detail = MissionV4Reply['detail']
 type StepState = 'todo' | 'running' | 'waiting-review' | 'done'
@@ -410,6 +414,37 @@ describe('AC-10 — order inside an open milestone, and the step row', () => {
         .map((s) => s.id)
         .sort()
     )
+  })
+})
+
+describe('a step with a claim waiting is the operator’s', () => {
+  it('marks every step the accept item names', () => {
+    const detail = detailOf(MID)
+    detail.waiting.items = [
+      {
+        kind: 'accept',
+        id: 'accept',
+        count: 1,
+        stepIds: ['s-run-1'],
+        ask: 'Accept the criterion a session says is done',
+        why: 'Each one is settled once you accept it'
+      }
+    ]
+    const rows = buildPaneTree(detail).milestones.flatMap((m) => [...m.shown, ...m.folded])
+    expect(rows.filter((r) => r.needsYou).map((r) => r.id)).toEqual(['s-run-1'])
+  })
+
+  it('names the one step to open when every claim is on it, as the settle item did', () => {
+    const claim = (stepIds: string[]): Parameters<typeof waitingStepId>[0] => ({
+      kind: 'accept',
+      id: 'accept',
+      count: stepIds.length,
+      stepIds,
+      ask: 'Accept the criterion a session says is done',
+      why: 'Each one is settled once you accept it'
+    })
+    expect(waitingStepId(claim(['s-run-1']))).toBe('s-run-1')
+    expect(waitingStepId(claim(['s-run-1', 's-run-2']))).toBeNull()
   })
 })
 

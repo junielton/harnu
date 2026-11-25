@@ -171,6 +171,9 @@ function keyOfV4(item: WaitingItemV4): [OwedKey, number] {
     // is its scope plus its words, so clearing a neighbour never makes it new (a decrease never chimes).
     case 'unblock':
       return [`unblock:${item.stepId ?? 'mission'}:${item.ask}`, 1]
+    // One item for every claim: its count is how many wait, so a new claim reads as an increase.
+    case 'accept':
+      return [item.id, item.count]
     case 'main-failing':
     case 'settle':
     case 'attach':
@@ -187,6 +190,7 @@ function isBlocking(key: OwedKey): boolean {
     key.startsWith('attach:') ||
     key.startsWith('main-failing:') ||
     key.startsWith('settle:') ||
+    key === 'accept' ||
     key.startsWith('rescope:') ||
     key.startsWith('blocker:') ||
     key.startsWith('decide:') ||

@@ -14,8 +14,9 @@
  *
  * | role       | verbs                                                                    | bound to                   |
  * | ---------- | ------------------------------------------------------------------------ | -------------------------- |
- * | `worker`   | `mission_get`, `mission_link`, `mission_log`, `mission_set_blocker`      | one session, mission, step |
- * | `verifier` | the worker's, plus `mission_settle_ac`                                   | one session, mission, step |
+ * | `worker`   | `mission_get`, `mission_link`, `mission_log`, `mission_set_blocker`,     | one session, mission, step |
+ * |            | `mission_settle_ac` (a claim only: it built the step, it never settles)  |                            |
+ * | `verifier` | the same; its `mission_settle_ac` settles a step it did not build        | one session, mission, step |
  * | `observer` | the observe allowlist's read verbs (`OBSERVE_MCP_ALLOW`), `mission_get`, `mission_list` | one folder |
  *
  * **The session id comes from the credential, never from the call** (AC-65): a worker or verifier is the
@@ -64,18 +65,30 @@ const OBSERVER_VERBS: readonly string[] = OBSERVE_MCP_ALLOW.filter((n) =>
   n.startsWith(mcpToolName(''))
 ).map((n) => n.slice(mcpToolName('').length))
 
+/**
+ * What a session bound to one step may call. Both step roles hold the same verbs; what differs is what
+ * `mission_settle_ac` does for each ({@link claimsOnly}).
+ */
+const STEP_ROLE_VERBS: readonly string[] = [
+  'mission_get',
+  'mission_link',
+  'mission_log',
+  'mission_set_blocker',
+  'mission_settle_ac'
+]
+
 /** The verbs each role may call, by name. Everything else is refused, and is not even listed. */
 export const SCOPED_VERBS: Readonly<Record<ScopedRole, readonly string[]>> = {
-  worker: ['mission_get', 'mission_link', 'mission_log', 'mission_set_blocker'],
-  verifier: [
-    'mission_get',
-    'mission_link',
-    'mission_log',
-    'mission_set_blocker',
-    'mission_settle_ac'
-  ],
+  worker: STEP_ROLE_VERBS,
+  verifier: STEP_ROLE_VERBS,
   observer: OBSERVER_VERBS
 }
+
+/**
+ * A worker built its step by definition, so its `mission_settle_ac` records a claim and never settles,
+ * whether or not the dispatch managed to put a `session` link on the step.
+ */
+export const claimsOnly = (scope: Scope): boolean => scope.role === 'worker'
 
 /** The verbs that write a step: a worker's own step is theirs, and only theirs. */
 const STEP_VERBS: ReadonlySet<string> = new Set([
@@ -404,6 +417,6 @@ export function scopedSpawnLine(spawn: PendingSpawn): string {
   const own =
     spawn.role === 'verifier'
       ? 'You may settle a criterion of that step you did not build'
-      : 'You write only that step'
+      : 'You write only that step, and mission_settle_ac there records a claim the operator accepts'
   return `Harnu started this session as the ${spawn.role} of step ${spawn.stepId} of mission ${spawn.missionId}. Your only Harnu verbs are ${verbs}. ${own}; the leader and the operator do everything else, so when you need something from them, say it with mission_log or mission_set_blocker on your step. Your session id is part of your credential: you never pass one.`
 }

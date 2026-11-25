@@ -426,6 +426,7 @@
       "kind": {
         "main-failing": "Corrigir",
         "unblock": "Destravar",
+        "accept": "Aceitar",
         "rescope": "Pronto quando",
         "settle": "Conferir",
         "review": "Revisar",

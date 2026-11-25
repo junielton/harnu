@@ -227,7 +227,13 @@ import { resolveCreateSessionBoot } from './agent-boot'
 import { getResolvedConfig } from '../claude-config'
 import { type ClaudeBootConfig } from '../claude-args'
 import { parsePlanMission } from './validate'
-import { dropPendingSpawn, registerPendingSpawn, type PendingSpawn, type Scope } from './scope'
+import {
+  claimsOnly,
+  dropPendingSpawn,
+  registerPendingSpawn,
+  type PendingSpawn,
+  type Scope
+} from './scope'
 import { pokeManifestDrain } from '../manifest-drain'
 import { isFolderDenied, isWithinRoot, normalizePath, resolveKnownFolder } from './permission-core'
 import { scanFolders } from '../claude-reader'
@@ -4417,7 +4423,9 @@ async function runV4Call(
   if (!who.ok) return errorResult(who.error)
   // BUG-33 AC5: the response already went out as TOOL_TIMEOUT — abort before writing.
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
-  const out = await runV4(op, folder, who.actor, args, v4Deps)
+  const out = await runV4(op, folder, who.actor, args, v4Deps, {
+    claimsOnly: ctx.caller?.kind === 'scoped' && claimsOnly(ctx.caller.scope)
+  })
   return out.ok ? textResult(out) : errorResult(out.error)
 }
 

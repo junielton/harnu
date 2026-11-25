@@ -185,6 +185,7 @@ const V4_BLOCKING: ReadonlySet<string> = new Set([
   'close',
   'main-failing',
   'settle',
+  'accept',
   'rescope'
 ])
 

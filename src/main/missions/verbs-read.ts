@@ -64,7 +64,7 @@ import {
   type MissionRecordRead,
   type MissionRecordView
 } from './record-store'
-import { type StepInput } from './state'
+import { openClaimOf, type StepInput } from './state'
 import { buildMissionSummary } from './summary'
 import { deriveStepResults, waitingListV4, type WaitingItemV4, type WaitingListV4 } from './waiting'
 import { createMission, newMissionId, type WriteCode } from './write'
@@ -120,8 +120,10 @@ export interface CriterionView {
   settled: boolean
   /** How it settled: `fact`, `session`, `operator` or `person`; `null` while open. */
   via: AcceptanceCriterion['by'] | null
-  /** A builder's own check: labelled, and never proof. */
+  /** A session's claim as stored: labelled, and never proof. Kept after the criterion settles. */
   selfCheck?: AcceptanceCriterion['selfCheck']
+  /** The claim the operator can accept now: present only while the criterion is open to one. */
+  claim?: AcceptanceCriterion['selfCheck']
 }
 
 export interface BlockerView {
@@ -354,6 +356,7 @@ export async function missionGet(
       waitsFor: step.waitsFor ?? null,
       criteria: step.acs.map((ac) => {
         const c = result.criteria.find((x) => x.id === ac.id)
+        const claim = openClaimOf(ac)
         return {
           id: ac.id,
           text: ac.text,
@@ -362,7 +365,8 @@ export async function missionGet(
           ...(ac.person !== undefined ? { person: ac.person } : {}),
           settled: c?.settled ?? false,
           via: c?.via ?? null,
-          ...(ac.selfCheck !== undefined ? { selfCheck: ac.selfCheck } : {})
+          ...(ac.selfCheck !== undefined ? { selfCheck: ac.selfCheck } : {}),
+          ...(claim ? { claim } : {})
         }
       }),
       open: result.open.map((c) => c.id),
