@@ -349,6 +349,10 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
           cleanupQueue({
             ...world,
             readViews: (roots) => readRecordViews(roots, { leaderGone }),
+            lastReplyAt: async (id) => {
+              const found = await transcripts.lookup(id)
+              return found.state === 'found' ? operatorGate.lastReplyAt(found.path) : null
+            },
             folderOff: (root) => (prefs ? isFolderDisabled(prefs, root) : false)
           })
         )

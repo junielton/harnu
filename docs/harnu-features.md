@@ -292,7 +292,7 @@ the card is still filed. Pass your OWN `sessionId`. Runs free. ACK `{ ok, op, ca
 never do); without it a new card is filed and the judge reconciles duplicates. **No verb
 closes a card the operator can still see**: one leaves when the operator deals with it, when its source resolves, or
 by Harnu's own rules, never at an agent's word. Those rules: a mission has ONE card (its `next` item; none after 7 days
-without a record change), a newer judged turn replaces a session's judge cards, any other live card idle for 7 days
+without a record change), a session's judge cards are replaced only by a later judged turn the operator typed in (agent work never closes them), any other live card idle for 7 days
 expires (so a `cardId` that old is `CARD_NOT_FOUND`: file a new one), and a card whose folder or session transcript is
 gone closes. For the
 same reason `archive_session` and `remove_folder` refuse (`OPEN_CARDS`) a session or folder that holds an open card in the operator's queue; an Observe-mode card is in no queue and does not block. Refusals, none of them worth a retry:

@@ -3067,7 +3067,7 @@
       "not-for-me": "não é para mim",
       "already-handled": "já resolvido",
       "source-resolved": "resolvido na origem",
-      "superseded": "substituído por um turno mais novo",
+      "superseded": "substituído após sua resposta",
       "expired": "expirado",
       "archived": "sessão arquivada",
       "folder-removed": "pasta removida"

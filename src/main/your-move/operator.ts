@@ -29,6 +29,19 @@ export interface OperatorGate {
   has(sessionId: string, path: string): Promise<boolean>
   /** Like `has`, but tells a transcript read to the end with none (`no`) from one that could not be read. */
   status(sessionId: string, path: string): Promise<'yes' | 'no' | 'unknown'>
+  /** When the operator last typed in the transcript; null when never, or it cannot be read. */
+  lastReplyAt(path: string): Promise<number | null>
+}
+
+/** When an operator entry among `lines` was typed, newest first; null when none says. */
+export function lastReplyIn(lines: readonly Record<string, unknown>[]): number | null {
+  let last: number | null = null
+  for (const line of lines) {
+    if (!hasOperatorEntry(buildSegment([line]))) continue
+    const at = typeof line.timestamp === 'string' ? Date.parse(line.timestamp) : NaN
+    if (!Number.isNaN(at) && (last === null || at > last)) last = at
+  }
+  return last
 }
 
 /** Remembered sessions (yes and no, each): the oldest go first. */
@@ -58,17 +71,57 @@ const NOTHING: Progress = { scannedTo: 0, booted: false, bootIsOperator: false }
 /** A cheap pre-filter: only a line that says `human` can be an operator entry. */
 const HUMAN = Buffer.from('human')
 
-/** What a transcript line is, as far as who typed it goes; null when no human entry. */
-function humanLine(line: Buffer): { operator: boolean } | null {
+/** The line as a record, when it can be an operator entry at all. */
+function humanRecord(line: Buffer): Record<string, unknown> | null {
   if (line.indexOf(HUMAN) === -1) return null
   try {
     const v: unknown = JSON.parse(line.toString('utf8'))
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return null
-    const entries = buildSegment([v as Record<string, unknown>])
-    return entries.some((e) => e.from === 'human') ? { operator: hasOperatorEntry(entries) } : null
+    return v as Record<string, unknown>
   } catch {
     return null // a malformed line is skipped, as the reader skips it
   }
+}
+
+/** What a transcript line is, as far as who typed it goes; null when no human entry. */
+function humanLine(line: Buffer): { operator: boolean } | null {
+  const record = humanRecord(line)
+  if (!record) return null
+  const entries = buildSegment([record])
+  return entries.some((e) => e.from === 'human') ? { operator: hasOperatorEntry(entries) } : null
+}
+
+/** The whole lines of `path` from byte `from`, with the bytes each one takes in the file. */
+async function* wholeLines(path: string, from: number): AsyncGenerator<[Buffer, number]> {
+  let carry: Buffer = Buffer.alloc(0)
+  const stream = createReadStream(path, { start: from })
+  try {
+    for await (const chunk of stream) {
+      const buf = carry.length === 0 ? (chunk as Buffer) : Buffer.concat([carry, chunk as Buffer])
+      let start = 0
+      for (let nl = buf.indexOf(NEWLINE, start); nl !== -1; nl = buf.indexOf(NEWLINE, start)) {
+        yield [buf.subarray(start, nl), nl + 1 - start]
+        start = nl + 1
+      }
+      carry = buf.subarray(start)
+    }
+  } finally {
+    stream.destroy()
+  }
+}
+
+async function lastReplyAt(path: string): Promise<number | null> {
+  let last: number | null = null
+  try {
+    for await (const [line] of wholeLines(path, 0)) {
+      const record = humanRecord(line)
+      const at = record ? lastReplyIn([record]) : null
+      if (at !== null && (last === null || at > last)) last = at
+    }
+  } catch {
+    return null // unreadable: nothing is known, so nothing is closed on it
+  }
+  return last
 }
 
 /** Scan whole lines from where `at` stopped, up to the first operator entry after the boot one. */
@@ -79,28 +132,16 @@ async function scanFrom(path: string, at: Progress): Promise<Scan> {
   } catch {
     return { ...out, ok: false }
   }
-  let carry: Buffer = Buffer.alloc(0)
-  const stream = createReadStream(path, { start: at.scannedTo })
-  try {
-    for await (const chunk of stream) {
-      const buf = carry.length === 0 ? (chunk as Buffer) : Buffer.concat([carry, chunk as Buffer])
-      let start = 0
-      for (let nl = buf.indexOf(NEWLINE, start); nl !== -1; nl = buf.indexOf(NEWLINE, start)) {
-        const entry = humanLine(buf.subarray(start, nl))
-        out.scannedTo += nl + 1 - start
-        start = nl + 1
-        if (!entry) continue
-        if (!out.booted) {
-          out.booted = true
-          out.bootIsOperator = entry.operator
-        } else if (entry.operator) {
-          return { ...out, beyondBoot: true }
-        }
-      }
-      carry = buf.subarray(start)
+  for await (const [line, bytes] of wholeLines(path, at.scannedTo)) {
+    const entry = humanLine(line)
+    out.scannedTo += bytes
+    if (!entry) continue
+    if (!out.booted) {
+      out.booted = true
+      out.bootIsOperator = entry.operator
+    } else if (entry.operator) {
+      return { ...out, beyondBoot: true }
     }
-  } finally {
-    stream.destroy()
   }
   return out
 }
@@ -168,7 +209,11 @@ export function createOperatorGate(
     return run
   }
 
-  return { status, has: async (sessionId, path) => (await status(sessionId, path)) === 'yes' }
+  return {
+    status,
+    has: async (sessionId, path) => (await status(sessionId, path)) === 'yes',
+    lastReplyAt
+  }
 }
 
 export interface CleanupDeps {

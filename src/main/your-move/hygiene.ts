@@ -2,7 +2,8 @@
  * Queue hygiene (BUG-308): the queue holds only cards the operator can still act on.
  *
  * Four rules, each applied where cards are filed and once more at start to what is on disk:
- *   A. a judged turn supersedes the session's older judge cards (`inspector.ts`);
+ *   A. a judged turn the operator typed in supersedes the session's older judge cards
+ *      (`inspector.ts`); at start, an older card closes only on a reply after it;
  *   B. a live card with no activity for 7 days expires;
  *   C. a mission has at most one card, and a mission nobody touched in 7 days has none
  *      (`source-mission.ts`);
@@ -20,6 +21,7 @@ import { isShelvedFolder, type ShelvedFile } from '../gc/shelve-store'
 import {
   closeCards,
   expireStale,
+  sessionsWithOlderTurns,
   supersedeOlderTurns,
   type YourMoveCard,
   type YourMoveState
@@ -133,6 +135,8 @@ export interface CleanupQueueDeps extends SweepDeps {
   readViews(roots: readonly string[]): Promise<RecordViews>
   /** A folder switched off for Your move: its mission cards are left as they are. */
   folderOff(root: string): boolean
+  /** When the operator last typed in the session; null when never or unknown. */
+  lastReplyAt(sessionId: string): Promise<number | null>
 }
 
 export interface CleanupCounts {
@@ -148,10 +152,19 @@ export interface CleanupCounts {
  */
 export async function cleanupQueue(deps: CleanupQueueDeps): Promise<CleanupCounts> {
   const gone = await findGone(deps.store.state().cards, deps)
+  const repliedAt = new Map<string, number>()
+  for (const id of sessionsWithOlderTurns(deps.store.state())) {
+    try {
+      const at = await deps.lastReplyAt(id)
+      if (at !== null) repliedAt.set(id, at)
+    } catch {
+      /* could not tell: the session's cards stay */
+    }
+  }
   const first = await deps.store.transact((s) => {
     const now = deps.now()
     const a = closeGone(s, gone, now)
-    const b = supersedeOlderTurns(a, now)
+    const b = supersedeOlderTurns(a, repliedAt, now)
     const c = expireStale(b, now)
     return {
       next: c,

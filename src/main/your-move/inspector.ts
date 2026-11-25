@@ -8,7 +8,8 @@
  * - never two judges for one session: a request during a run coalesces into one rerun;
  * - a session first seen at its Stop has its recent tail judged (recall over noise);
  * - mid-turn inspection moves only `shadowOffset`, so a later Stop judges the same text;
- * - a judged Stop (or manual) turn supersedes the session's older judge cards (BUG-308).
+ * - a judged Stop (or manual) turn the operator typed in supersedes the session's older judge
+ *   cards; a turn made only of agent work closes nothing (BUG-308).
  *
  * The transcript text never leaves this module except to the judge calls: the inspection log
  * rows carry counts and outcomes only.
@@ -26,6 +27,7 @@ import {
   type YourMoveState
 } from './core'
 import type { JudgeRunner } from './judge'
+import { lastReplyIn } from './operator'
 import { judgeSegment } from './pipeline'
 import {
   buildSegment,
@@ -293,13 +295,18 @@ export function createInspector(deps: InspectorDeps): {
           ...f
         })
       }
-      // A judged turn closes what the earlier ones left, whatever its verdict (BUG-308). A
-      // mid-turn look is only part of a turn: it replaces nothing.
-      if (req.trigger !== 'mid-turn') {
+      // A turn the operator typed in closes what the earlier ones left, whatever its verdict
+      // (BUG-308). Agent work alone never does, and a mid-turn look is only part of a turn.
+      if (req.trigger !== 'mid-turn' && hasOperatorEntry(entries)) {
         const own = new Set(
           folds.flatMap((f) => [...f.newIds, ...f.verdict.update.map((u) => u.id)])
         )
-        next = supersedeJudgeCards(next, req.sessionId, own, now)
+        // Everything read since the last Stop came after the older cards' text. When that is not
+        // so (a first sight reads old turns; mid-turn cards are filed inside a turn), only the
+        // cards older than the operator's last words close, and none when that time is unknown.
+        const before =
+          from === null || deps.midTurnLive() ? (lastReplyIn(res.lines) ?? -Infinity) : undefined
+        next = supersedeJudgeCards(next, req.sessionId, own, now, before)
       }
       return {
         next: moveCursor(next, res.nextOffset, now),

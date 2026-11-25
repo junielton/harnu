@@ -279,37 +279,62 @@ export function closeCard(
 }
 
 /**
- * A judged turn replaces what the earlier ones of its session left (BUG-308): every open judge
- * card of the session closes except the ones this turn filed or restated (`keep`).
+ * A judged turn the operator typed in replaces what the earlier ones of its session left
+ * (BUG-308): the open judge cards close except the ones this turn filed or restated (`keep`).
+ * With `before`, only cards last filed before that moment close: a card newer than the
+ * operator's last words is still unanswered.
  */
 export function supersedeJudgeCards(
   s: YourMoveState,
   sessionId: string,
   keep: ReadonlySet<string>,
-  now: number
+  now: number,
+  before = Infinity
 ): YourMoveState {
   return closeWhere(
     s,
-    (c) => c.source === 'judge' && c.sessionId === sessionId && !keep.has(c.id),
+    (c) =>
+      c.source === 'judge' && c.sessionId === sessionId && !keep.has(c.id) && c.updatedAt < before,
     'superseded',
     now
   )
 }
 
-/**
- * The same rule for cards already on disk. A turn leaves its cards with one `updatedAt` (filed
- * and restated alike), so per session the newest batch stays and every older judge card closes.
- * A hidden mid-turn look is not a turn: it never sets the newest batch.
- */
-export function supersedeOlderTurns(s: YourMoveState, now: number): YourMoveState {
+/** Each session's newest batch of judge cards: a hidden mid-turn look never sets it. */
+function newestBatches(s: YourMoveState): Map<string, number> {
   const newest = new Map<string, number>()
   for (const c of s.cards) {
     if (!isOpen(c) || c.source !== 'judge' || c.lane === 'mid-turn') continue
     if (c.updatedAt > (newest.get(c.sessionId) ?? 0)) newest.set(c.sessionId, c.updatedAt)
   }
+  return newest
+}
+
+const isOlderTurn = (c: YourMoveCard, newest: ReadonlyMap<string, number>): boolean =>
+  c.source === 'judge' && c.updatedAt < (newest.get(c.sessionId) ?? 0)
+
+/** The sessions holding a judge card from an earlier turn: the only ones worth a transcript read. */
+export function sessionsWithOlderTurns(s: YourMoveState): string[] {
+  const newest = newestBatches(s)
+  return [
+    ...new Set(s.cards.filter((c) => isOpen(c) && isOlderTurn(c, newest)).map((c) => c.sessionId))
+  ]
+}
+
+/**
+ * The same rule for cards already on disk. A turn leaves its cards with one `updatedAt` (filed
+ * and restated alike). A card older than its session's newest batch closes only when the operator
+ * typed after it (`repliedAt`); a session with no known reply keeps everything.
+ */
+export function supersedeOlderTurns(
+  s: YourMoveState,
+  repliedAt: ReadonlyMap<string, number>,
+  now: number
+): YourMoveState {
+  const newest = newestBatches(s)
   return closeWhere(
     s,
-    (c) => c.source === 'judge' && c.updatedAt < (newest.get(c.sessionId) ?? 0),
+    (c) => isOlderTurn(c, newest) && c.updatedAt < (repliedAt.get(c.sessionId) ?? -Infinity),
     'superseded',
     now
   )
