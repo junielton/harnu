@@ -27,7 +27,8 @@ import { getFleetFolders } from './fleet-model'
 import { isHibernated } from './hibernation'
 import { liveSessionKeys, resolveSessionAlias } from './pty'
 import { getUserProjectWipLimit } from './user-projects'
-import { createDrainBinder, setBootWaiter } from './missions/dispatch'
+import { createDrainBinder, setBindNotifier, setBootWaiter } from './missions/dispatch'
+import { awaitSessionBoot } from './mcp/session-boot'
 
 /**
  * T113 — the env-bound shell wiring the pure drain driver (`manifest-drain.ts`)
@@ -140,9 +141,12 @@ export function registerManifestDrain(
 
   // Missions v4 S-26 (AC-68): a card that is the work of a step spawns a session with the scoped verbs of
   // that step (see `createDrainBinder`), and is attached to it once it has booted: `bindSessionCore`, which
-  // the board and this drain both bind through, does that, waiting for the real session id over this bridge.
+  // the board and this drain both bind through, does that. BUG-296: the wait is on the PTY's re-key, not on
+  // the bridge's materialization report, which the renderer sends only for agent-controlled rows.
   const binder = createDrainBinder()
-  setBootWaiter((syntheticId, timeoutMs) => bridge.awaitMaterialization(syntheticId, timeoutMs))
+  setBootWaiter(awaitSessionBoot)
+  // A bind that fails reaches the operator in Activity, whatever path dispatched the card.
+  setBindNotifier((notice) => bridge.dispatch('notify.push', notice))
 
   const deps: DrainPassDeps = {
     loadState: async (folder) => {
@@ -215,7 +219,7 @@ export function registerManifestDrain(
     spawnSession: async (folder, prompt, routing, adopted) => {
       // A card that is the work of a step spawns a session with the scoped verbs of that step (and not the
       // whole server): leave the note `pty:create` turns into its credential, keyed by where it spawns.
-      const undoNote = await binder.beforeSpawn(folder)
+      const undoNote = await binder.beforeSpawn(folder, prompt)
       try {
         const ack = await bridge.dispatch<{ sessionId?: string; error?: string }>(
           'session.dispatchCard',

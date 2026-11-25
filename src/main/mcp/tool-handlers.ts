@@ -146,7 +146,16 @@ import {
   type WalkVerbEnv,
   type WalkVerbResult
 } from './walk-handlers'
-import { dispatchAck, dispatchStep, realBoardIo, stampCardForStep } from '../missions/dispatch'
+import {
+  dispatchAck,
+  dispatchStep,
+  realBoardIo,
+  asksForVerifier,
+  reportBindFailure,
+  stampCardForStep,
+  verifierRefusal
+} from '../missions/dispatch'
+import { awaitSessionBoot, spawnedSessionId } from './session-boot'
 import {
   anonymousKey,
   createProactiveTally,
@@ -1011,6 +1020,57 @@ async function stepSpawnOf(
   return { role: role === 'verifier' ? 'verifier' : 'worker', missionId, stepId }
 }
 
+/** How long a step's session that missed the ACK's deadline is still waited for. */
+const LATE_BOOT_WAIT_MS = 15 * 60_000
+
+/**
+ * Attach the session `create_session` started for a step, and report a failure on the mission Log and
+ * in Activity (AC-13). Returns what the ACK gains. The id attached is the one Harnu minted for the
+ * spawn (its credential carries it), else the one the renderer reported.
+ */
+async function bindCreatedStepSession(
+  folder: string,
+  spawn: PendingSpawn,
+  booted: { syntheticId: string; sessionId: string },
+  bridge: CommandBridge
+): Promise<Record<string, unknown>> {
+  const sessionId = spawnedSessionId(booted.syntheticId) ?? booted.sessionId
+  let reason: string
+  try {
+    const done = await dispatchStep(
+      folder,
+      {
+        missionId: spawn.missionId,
+        stepId: spawn.stepId,
+        sessionId,
+        role: spawn.role,
+        to: 'session'
+      },
+      await realBoardIo(folder)
+    )
+    if (done.ok) return dispatchAck(done)
+    reason = done.error
+  } catch (err) {
+    reason = err instanceof Error ? err.message : String(err)
+  }
+  await reportStepBindFailure(folder, spawn, reason, bridge, sessionId)
+  return { bindError: reason }
+}
+
+/** The report of a step session that could not be attached. */
+async function reportStepBindFailure(
+  folder: string,
+  spawn: PendingSpawn,
+  reason: string,
+  bridge: CommandBridge,
+  sessionId: string
+): Promise<void> {
+  await reportBindFailure(
+    { folder, missionId: spawn.missionId, stepId: spawn.stepId, reason, sessionId },
+    (notice) => bridge.dispatch('notify.push', notice)
+  )
+}
+
 /**
  * Missions v4 S-34 (AC-82): what each counted caller has started since Harnu booted. The count lives in
  * the process on purpose: a hint is a backstop, and a restart starting every caller from zero costs one
@@ -1111,7 +1171,7 @@ const createSessionHandler: Handler = async (args, ctx) => {
     dispatchCreate: async (p) => {
       // Noted only once the folder's single-occupancy reservation is held (this runs after it), so a
       // refused duplicate never replaces the note of the spawn that is really in flight.
-      if (stepSpawn) registerPendingSpawn(folder, stepSpawn)
+      if (stepSpawn) registerPendingSpawn(folder, stepSpawn, Date.now(), { agentOnly: true })
       let result = await bridge.dispatch('session.create', p)
       if (asRecord(result).error === 'FOLDER_NOT_FOUND') {
         result = await ensureFolderThenRetryCreate(folder, p, bridge)
@@ -1152,19 +1212,25 @@ const createSessionHandler: Handler = async (args, ctx) => {
     // leader does itself is never dispatched, so it never reaches here and never gets a card.
     ...(stepSpawn
       ? {
-          bindMaterialized: async (mat: Materialization): Promise<Record<string, unknown>> => {
-            const done = await dispatchStep(
-              folder,
-              {
-                missionId: stepSpawn.missionId,
-                stepId: stepSpawn.stepId,
-                sessionId: mat.sessionId,
-                role: stepSpawn.role,
-                to: 'session'
-              },
-              await realBoardIo(folder)
-            )
-            return done.ok ? dispatchAck(done) : { bindError: done.error }
+          bindMaterialized: (mat: Materialization) =>
+            bindCreatedStepSession(folder, stepSpawn, mat, bridge),
+          // The ACK says the spawn did not materialize; the step is still owed its attach (BUG-296).
+          onNotMaterialized: (syntheticId: string) => {
+            void awaitSessionBoot(syntheticId, LATE_BOOT_WAIT_MS)
+              .then(async (boot) => {
+                if (boot) {
+                  await bindCreatedStepSession(folder, stepSpawn, boot, bridge)
+                  return
+                }
+                await reportStepBindFailure(
+                  folder,
+                  stepSpawn,
+                  'SESSION_NOT_BOOTED: the session did not boot in time. Attach it from the Mission dropdown.',
+                  bridge,
+                  spawnedSessionId(syntheticId) ?? syntheticId
+                )
+              })
+              .catch((err) => console.warn('[create_session] the late bind failed:', err))
           }
         }
       : {})
@@ -2409,6 +2475,8 @@ function manifestCardRequestsFromArgs(args: Record<string, unknown>): ManifestCa
  *  (the confirm path surfaces the same codes via the parked disclosure text). */
 function manifestBuildErrorMessage(err: ManifestBuildError): string {
   switch (err.code) {
+    case 'verifier-role':
+      return verifierRefusal(err.slug)
     case 'card-done':
       return `CARD_CLOSED: card "${err.slug}" is already done — a manifest cannot include a closed card.`
     case 'contains-secret':
@@ -2551,6 +2619,11 @@ const submitManifestHandler: Handler = async (args, ctx) => {
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
   const caller = declaredCaller(args)
   if (!caller.ok) return errorResult(caller.error)
+  // An entry that asks for a verifier is refused whole: its session would be started as the builder.
+  const verifierEntry = (Array.isArray(args.cards) ? args.cards : [])
+    .map(asRecord)
+    .find((c) => asksForVerifier(c.role))
+  if (verifierEntry) return errorResult(verifierRefusal(strField(verifierEntry, 'slug') ?? '?'))
 
   // T104 §2.2: the Allow actuation. `ctx.opts.manifest` is populated ONLY by
   // `parkMutationConfirm`'s `actuateAllow` (reached only under "Ask before

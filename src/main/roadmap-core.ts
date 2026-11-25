@@ -270,6 +270,8 @@ export interface RoadmapCard {
   mission?: string
   milestone?: string
   step?: string
+  /** Read only to refuse it: a card's session is a worker, so `verifier` is never dispatched. */
+  role?: string
   /** Provenance (fail-closed). */
   provenance: CardProvenance
   /** Free markdown body (the spec / boot-prompt source). */
@@ -479,6 +481,7 @@ export function parseCard(content: string, slug: string): RoadmapCard {
   const mission = readOptionalScalar(fm, 'mission')
   const milestone = readOptionalScalar(fm, 'milestone')
   const step = readOptionalScalar(fm, 'step')
+  const role = readOptionalScalar(fm, 'role')
 
   return {
     id,
@@ -506,6 +509,7 @@ export function parseCard(content: string, slug: string): RoadmapCard {
     ...(mission ? { mission } : {}),
     ...(milestone ? { milestone } : {}),
     ...(step ? { step } : {}),
+    ...(role ? { role } : {}),
     provenance: readProvenance(fm, hasProvBlock),
     body: doc.body,
     malformed: false
@@ -704,9 +708,9 @@ export interface WipLivenessEnv {
 }
 
 /**
- * Compose the {@link WipSessionFacts} for a card's bound session. A card keeps its
- * `synthetic-…` id after the session migrates to a real uuid, so every lookup is
- * made under both the bound id and its alias.
+ * Compose the {@link WipSessionFacts} for a card's bound session. A card can still hold a
+ * `synthetic-…` id after the session migrated to a real uuid (it is moved once the transcript
+ * lands, BUG-296), so every lookup is made under both the bound id and its alias.
  */
 export function resolveWipSessionFacts(session: string, env: WipLivenessEnv): WipSessionFacts {
   const keys = [...new Set([session, env.resolveAlias(session)])]
