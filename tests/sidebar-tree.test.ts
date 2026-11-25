@@ -611,7 +611,7 @@ describe('sidebar group rail priority (S-3)', () => {
     const quiet = store.folders.find((f) => f.path === APP)!.sessions[0]
     quiet.modified = new Date(Date.now() - 3_600_000).toISOString()
     await states('working', 'idle', 'idle')
-    expect(w.get('[data-session-id="a"] [aria-label="Stuck"]').exists()).toBe(true)
+    expect(w.get('[data-session-id="a"] [aria-label="stuck"]').exists()).toBe(true)
     expect(rail(APP)).toBe('working')
 
     // The colours: the dim working green, then warning and red at full strength.

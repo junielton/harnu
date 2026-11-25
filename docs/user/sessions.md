@@ -25,6 +25,17 @@ A session row in the sidebar reads, left to right: its status dot, its title, th
 
 Hover a sidebar row, select a session, or move to a row with the keyboard and its label brightens. A bar on the left marks the row, with an accent colour for selection and a thicker bar for keyboard focus. The row has no highlight box.
 
+**The bar down a checkout** says something is happening in it, even while its sessions are folded. It runs along the left edge of the checkout row and its sessions:
+
+| Bar       | Meaning                                                |
+| --------- | ------------------------------------------------------ |
+| Dim green | an agent is working there (a stuck session counts too) |
+| Amber     | a session there needs you                              |
+| Red       | a session there failed                                 |
+| none      | everything there is idle or done                       |
+
+Amber wins over red, and red wins over green. Hovering the checkout row of a marked checkout widens the bar and shows its colour at full strength; keyboard focus draws the usual focus bar. A screen reader reads the state with the branch name. Folder headers have no bar (their ring says it), and a folder that is not a git repository has no checkout row, so no bar either.
+
 ## The terminal pane
 
 Each session's terminal is a real xterm.js terminal, not a log viewer — it behaves like the terminal you already know:

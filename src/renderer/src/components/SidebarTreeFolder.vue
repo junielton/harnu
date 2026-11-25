@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { EyeOff, GitBranch, Home } from 'lucide-vue-next'
 import { useHoverPreview } from '../composables/useHoverPreview'
-import { checkoutLabel, type TreeFolder } from '../lib/sidebar-tree'
+import { checkoutLabel, railState, type RailState, type TreeFolder } from '../lib/sidebar-tree'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import { densityMetrics } from './sidebar-density'
@@ -31,10 +31,17 @@ const listed = computed(() =>
       folder,
       hasRows: count > 0 || sessions.terminalsForFolder(folder).length > 0,
       folded: sessions.isCheckoutFolded(folder.path),
-      count
+      count,
+      rail: railState(sessions.folderRingLevel(folder.path))
     }
   })
 )
+
+const railLabel: Record<RailState, string> = {
+  working: 'sidebar.tree.railWorking',
+  failed: 'sidebar.tree.railFailed',
+  'needs-input': 'sidebar.tree.railNeedsInput'
+}
 
 function isHidden(path: string): boolean {
   return sessions.manuallyHiddenPaths.has(path)
@@ -62,10 +69,15 @@ function preview(event: MouseEvent, path: string): void {
       <div class="sidebar-disclosure-content">
         <div class="pt-0.5 pb-2">
           <SidebarFolder v-if="!tree.git" :folder="tree.primary" embedded />
+          <!-- The group rail (design.md "Group rail") is painted on this box: the
+               checkout row and its sessions. -->
           <div
-            v-for="{ folder, hasRows, folded, count } in listed"
+            v-for="{ folder, hasRows, folded, count, rail } in listed"
             :key="folder.path"
             :data-folder-path="folder.path"
+            data-checkout-group
+            data-dsqa-part="checkout-group"
+            :data-group-rail="rail"
           >
             <button
               type="button"
@@ -76,6 +88,7 @@ function preview(event: MouseEvent, path: string): void {
               :data-sidebar-row="`folder:${folder.path}`"
               :data-focused="focused('folder', folder.path)"
               :aria-expanded="hasRows ? !folded : undefined"
+              :aria-label="rail && $t(railLabel[rail], { branch: checkoutLabel(folder) })"
               class="sidebar-row relative group flex w-full items-center gap-2 pr-3 text-left text-text-4"
               :class="[hasRows && 'cursor-pointer', isHidden(folder.path) && 'opacity-50']"
               :style="{ height: `${metrics.checkoutRowHeight}px`, paddingLeft: '14px' }"

@@ -122,7 +122,10 @@
     "tree": {
       "idleWorktrees": "{count} idle worktree | {count} idle worktrees",
       "foldFolder": "Collapse {name}",
-      "openFolder": "Expand {name}"
+      "openFolder": "Expand {name}",
+      "railWorking": "{branch}, agent working",
+      "railFailed": "{branch}, failed",
+      "railNeedsInput": "{branch}, needs you"
     }
   },
   "board": {
