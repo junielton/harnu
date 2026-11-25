@@ -2447,7 +2447,12 @@ Focus replaces drill-in. It narrows the list to **one folder**; the tree anatomy
   `--border` bottom rule, 6px below it. On its right, what waits **elsewhere**: `{n} others`, then
   `· {k} needs you` and `· {j} failed` when non-zero (10.5px `--warning`, `tabular-nums`). The whole
   row is the button.
+- **Narrow sidebar:** `needs you` and `failed` are never cut; only `{n} others` truncates, down to
+  nothing. When the two do not fit beside `All folders`, the counts move to a second line inside the
+  same 35px row, right-aligned.
 - Focused, the folder is always open and its header offers no collapse and no focus button.
+- **Keyboard:** entering Focus with Enter or Space moves focus to the back row; leaving it moves
+  focus to the Focus button of that folder. A mouse click moves no focus.
 - Needs attention and the dock stay **global**. Selecting a session of another folder (from
   anywhere) leaves Focus. `Esc` does **not** leave it: it is a view of the list, not an overlay.
 - The collapse cycle's level 0 leaves Focus.
