@@ -6,9 +6,8 @@ import { openNoteInStack } from '../lib/notes'
 import { isFolderGroup, type FolderGroup, type GroupSource } from '../stores/folder-zones'
 
 /**
- * The Folder menu's and the repo-group menu's actions, shared by `FolderMenu.vue`,
- * `SidebarDrillView.vue` (its group menu) and the keyboard
- * bindings in `App.vue` (T486 §3.4, AC-37): a menu item and its keybinding run
+ * The Folder menu's and the repo-group menu's actions, shared by `FolderMenu.vue`
+ * and the keyboard bindings in `App.vue` (T486 §3.4, AC-37): a menu item and its keybinding run
  * the same function, never a copy. Folder actions take the target folder's path,
  * group actions the target group.
  *
@@ -232,7 +231,7 @@ export function useFolderMenuActions(): FolderMenuActions {
       kind === 'older'
         ? sessions.isOlderRevealed(folderPath)
         : sessions.isArchivedRevealed(folderPath)
-    if (!revealed && !sessions.drillModeEnabled) sessions.revealCheckout(folderPath)
+    if (!revealed) sessions.revealCheckout(folderPath)
     if (kind === 'older') sessions.toggleRevealOlder(folderPath)
     else sessions.toggleRevealArchived(folderPath)
   }
@@ -305,9 +304,9 @@ export function useFolderMenuActions(): FolderMenuActions {
     })
   }
 
-  /** The keyboard cursor's row, or `null` — the cursor is inert in drill mode. */
+  /** The keyboard cursor's row, or `null`. */
   function cursorRow(): { kind: 'folder' | 'group' | 'session'; id: string } | null {
-    return sessions.drillModeEnabled ? null : sessions.keyboardCursor
+    return sessions.keyboardCursor
   }
 
   function activeFor(action: FolderAction): string | null {

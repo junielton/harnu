@@ -149,18 +149,6 @@ watch(anyOverlayOpen, (open) => {
   else popScope('modal')
 })
 
-/**
- * Arrow-key / Enter sidebar cursor navigation walks the flat checkout tree
- * (`sessions.sidebarCursorRows`: folder headers, checkout rows, the idle-worktrees
- * row and sessions). Drill-in mode shows a different screen at a time and doesn't
- * render that tree, so these shortcuts simply no-op while drill mode is on.
- * Click-based navigation through the drill screens (SidebarDrillView) works
- * fully regardless.
- */
-function sidebarCursorNavAllowed(): boolean {
-  return !sessions.drillModeEnabled
-}
-
 watch(
   () => helpers.currentWorktreePath,
   async (wt) => {
@@ -1373,7 +1361,7 @@ useShortcuts(
       handler: () => {
         sessionActions.openContextMenu()
         const cursor = sessions.keyboardCursor
-        if (sessions.drillModeEnabled || cursor?.kind !== 'group') return
+        if (cursor?.kind !== 'group') return
         const tree = sessions.sidebarTree.find((folder) => folder.key === cursor.id)
         if (!tree) return
         const row = document.querySelector(
@@ -1489,20 +1477,11 @@ useShortcuts(
       handler: () => sidebarActions.rescan()
     },
     {
-      id: 'sidebar.cycleDrillDepth',
-      scope: 'global',
-      keys: kb('sidebar.cycleDrillDepth'),
-      keysGuard: notInTextEntry,
-      enabled: () => sessions.folders.length > 0,
-      handler: () => sessions.cycleDrillDepth()
-    },
-    {
       id: 'sidebar.toggleCollapseAll',
       scope: 'global',
       keys: kb('sidebar.toggleCollapseAll'),
       keysGuard: notInTextEntry,
-      // The button is hidden at the deepest drill level.
-      enabled: () => sessions.folders.length > 0 && sessions.drillDepth < 2,
+      enabled: () => sessions.folders.length > 0,
       handler: () => sidebarActions.toggleCollapseAll()
     },
     {
@@ -1637,7 +1616,6 @@ useShortcuts(
       id: 'sidebar.cursor.down',
       scope: 'global',
       keys: kb('sidebar.cursor.down'),
-      enabled: sidebarCursorNavAllowed,
       keysGuard: notInTextEntry,
       handler: () => sessions.cursorDown()
     },
@@ -1645,7 +1623,6 @@ useShortcuts(
       id: 'sidebar.cursor.up',
       scope: 'global',
       keys: kb('sidebar.cursor.up'),
-      enabled: sidebarCursorNavAllowed,
       keysGuard: notInTextEntry,
       handler: () => sessions.cursorUp()
     },
@@ -1653,7 +1630,6 @@ useShortcuts(
       id: 'sidebar.cursor.right',
       scope: 'global',
       keys: kb('sidebar.cursor.right'),
-      enabled: sidebarCursorNavAllowed,
       keysGuard: notInTextEntry,
       handler: () => sessions.cursorRight()
     },
@@ -1661,7 +1637,6 @@ useShortcuts(
       id: 'sidebar.cursor.left',
       scope: 'global',
       keys: kb('sidebar.cursor.left'),
-      enabled: sidebarCursorNavAllowed,
       keysGuard: notInTextEntry,
       handler: () => sessions.cursorLeft()
     },
@@ -1673,7 +1648,7 @@ useShortcuts(
       // surface is left alone (T22 — the Topbar inline-rename contenteditable
       // pushes no scope, so scope gating alone wouldn't catch it). The store
       // also no-ops on a null cursor.
-      enabled: () => sessions.keyboardCursor !== null && sidebarCursorNavAllowed(),
+      enabled: () => sessions.keyboardCursor !== null,
       keysGuard: notInTextEntry,
       handler: () => sessions.cursorActivate()
     },

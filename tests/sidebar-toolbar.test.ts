@@ -2,7 +2,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
-import { ChevronsDownUp, ChevronsUpDown, Columns2, Columns3, ListTree } from 'lucide-vue-next'
 import { i18n } from '@renderer/i18n'
 import Sidebar from '../src/renderer/src/components/Sidebar.vue'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
@@ -12,10 +11,7 @@ import type { FolderEntry } from '../src/preload'
 function installWindow(disk: FolderEntry[]): void {
   // Assign onto the real jsdom `window` rather than replacing it outright —
   // replacing `globalThis.window` with a plain object strips the DOM globals
-  // (`Event`, etc.) that `@vue/test-utils`' `.trigger()` needs, breaking the
-  // click assertion below. `sidebar-drill-view.test.ts` and
-  // `markdown-pane-edit.test.ts` use the same merge-onto-window pattern for
-  // the same reason.
+  // (`Event`, etc.) that `@vue/test-utils`' `.trigger()` needs.
   ;(window as unknown as { api: unknown }).api = {
     foldersLoad: vi.fn(async () => disk),
     userProjectsList: vi.fn(async () => ({ projects: [], hiddenPaths: [] })),
@@ -27,61 +23,11 @@ function installWindow(disk: FolderEntry[]): void {
 describe('Sidebar toolbar', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    // `drillModeEnabled` is a persistedRef backed by localStorage, which
-    // jsdom keeps alive across tests in this file (unlike Pinia state) —
-    // without this, toggling drill mode on in one test leaks into the next.
+    // jsdom keeps `localStorage` (the persisted sidebar state) alive across tests.
     localStorage.clear()
   })
   afterEach(() => {
     delete (window as unknown as { api?: unknown }).api
-  })
-
-  it('cycles the drill button 0 → 1 → 2 → 0, swapping the icon and switching to SidebarDrillView', async () => {
-    installWindow([{ path: '/repos/alpha', alias: 'alpha', gitBranch: '', sessions: [] }])
-    const sessionsStore = useSessionsStore()
-    await sessionsStore.reloadModel()
-
-    const w = mount(Sidebar, { global: { plugins: [i18n] } })
-    expect(w.find('[data-drill-toggle]').exists()).toBe(true)
-    expect(w.findComponent({ name: 'SidebarDrillView' }).exists()).toBe(false)
-    // lucide-vue-next icons are anonymous functional components (no `name`
-    // option), so `findComponent({ name: '...' })` never matches them —
-    // match by the imported component reference instead.
-    expect(w.get('[data-drill-toggle]').findComponent(ListTree).exists()).toBe(true)
-
-    await w.get('[data-drill-toggle]').trigger('click')
-    expect(sessionsStore.drillDepth).toBe(1)
-    expect(w.findComponent({ name: 'SidebarDrillView' }).exists()).toBe(true)
-    expect(w.get('[data-drill-toggle]').findComponent(Columns2).exists()).toBe(true)
-
-    await w.get('[data-drill-toggle]').trigger('click')
-    expect(sessionsStore.drillDepth).toBe(2)
-    expect(w.get('[data-drill-toggle]').findComponent(Columns3).exists()).toBe(true)
-
-    await w.get('[data-drill-toggle]').trigger('click')
-    expect(sessionsStore.drillDepth).toBe(0)
-    expect(w.findComponent({ name: 'SidebarDrillView' }).exists()).toBe(false)
-  })
-
-  it('keeps Collapse all available at depth 1 (inline folders exist) and hides it at depth 2', async () => {
-    installWindow([{ path: '/repos/alpha', alias: 'alpha', gitBranch: '', sessions: [] }])
-    const sessionsStore = useSessionsStore()
-    await sessionsStore.reloadModel()
-
-    const w = mount(Sidebar, { global: { plugins: [i18n] } })
-    const collapseAll = (): boolean =>
-      w.get('[role="toolbar"]').findComponent(ChevronsUpDown).exists() ||
-      w.get('[role="toolbar"]').findComponent(ChevronsDownUp).exists()
-
-    expect(collapseAll()).toBe(true)
-
-    sessionsStore.drillDepth = 1
-    await w.vm.$nextTick()
-    expect(collapseAll()).toBe(true)
-
-    sessionsStore.drillDepth = 2
-    await w.vm.$nextTick()
-    expect(collapseAll()).toBe(false)
   })
 
   // Rescan (BUG-55 AC6) moved out of the deleted `⋯` menu and into the
@@ -164,28 +110,5 @@ describe('Sidebar toolbar', () => {
     // by the new title above), but the rendered icon markup must differ —
     // a static icon with only the tooltip changing would fail this.
     expect(expandedIconHtml).not.toBe(collapsedIconHtml)
-  })
-
-  // Superseded by the three-level depth model: Collapse-all now hides only
-  // at depth 2 (nothing left for it to act on), not at depth 1 (folders
-  // still render inline — see the 'keeps Collapse all available…' test
-  // above). Updated to drive the toggle to depth 2 instead of asserting
-  // hidden after a single click.
-  it('hides the Collapse-all button once drill-in reaches depth 2, since it has nothing to act on', async () => {
-    installWindow([{ path: '/repos/alpha', alias: 'alpha', gitBranch: '', sessions: [] }])
-    const sessionsStore = useSessionsStore()
-    await sessionsStore.reloadModel()
-
-    const w = mount(Sidebar, { global: { plugins: [i18n] } })
-    expect(
-      w.find(`[title="${w.vm.$t('sidebar.menu.expandAll')}"]`).exists() ||
-        w.find(`[title="${w.vm.$t('sidebar.menu.collapseAll')}"]`).exists()
-    ).toBe(true)
-
-    await w.get('[data-drill-toggle]').trigger('click')
-    await w.get('[data-drill-toggle]').trigger('click')
-
-    expect(w.find(`[title="${w.vm.$t('sidebar.menu.expandAll')}"]`).exists()).toBe(false)
-    expect(w.find(`[title="${w.vm.$t('sidebar.menu.collapseAll')}"]`).exists()).toBe(false)
   })
 })

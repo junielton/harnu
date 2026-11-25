@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { BotOff, Crown, EyeOff, PanelRight } from 'lucide-vue-next'
+import { computed, nextTick } from 'vue'
+import { BotOff, Crown, EyeOff, PanelRight, Target } from 'lucide-vue-next'
 import { useHoverPreview } from '../composables/useHoverPreview'
 import { checkoutLabel, treeHeaderCursor, type TreeFolder } from '../lib/sidebar-tree'
 import { useHelpersStore } from '../stores/helpers'
@@ -12,8 +12,8 @@ import SidebarValueSlot from './SidebarValueSlot.vue'
 /**
  * The folder header of the sidebar tree (design.md §6 "Sidebar tree → Folder
  * header"): one per repo or standalone folder — state ring, name, the signals
- * of any of its checkouts, and the shared value slot. A click selects the
- * folder's Folder View and opens it; only the chevron collapses.
+ * of any of its checkouts, the Focus button and the shared value slot. A click
+ * selects the folder's Folder View and opens it; only the chevron collapses.
  */
 const props = defineProps<{ tree: TreeFolder }>()
 
@@ -44,6 +44,9 @@ const blocked = computed(() =>
 const orchestrators = computed(() =>
   members.value.filter((folder) => sessions.orchestratorDefaultPaths.has(folder.path))
 )
+/** Focused, the one folder drawn is always open: no collapse and no focus button. */
+const solo = computed(() => sessions.sidebarFocus !== null)
+
 /** A non-git folder has no checkout to count: it shows its sessions only while folded. */
 const count = computed(() => {
   if (props.tree.git) return props.tree.checkoutCount
@@ -53,7 +56,9 @@ const count = computed(() => {
 })
 
 /** A non-git folder with nothing under it cannot fold; a repo always has checkouts. */
-const foldable = computed(() => props.tree.git || sessions.checkoutHasRows(props.tree.primary))
+const foldable = computed(
+  () => !solo.value && (props.tree.git || sessions.checkoutHasRows(props.tree.primary))
+)
 
 /** The hottest session of any checkout: needs input, then failed, then working. */
 const ringStates = ['idle', 'working', 'errored', 'needs-input'] as const
@@ -84,6 +89,19 @@ function select(): void {
   sessions.selectFolder(props.tree.primary.path)
 }
 
+/** The list is about to move under the pointer: the header's hover card goes with the click. */
+async function focusFolder(event: MouseEvent): Promise<void> {
+  const sidebar = (event.currentTarget as HTMLElement).closest('[data-sidebar]')
+  hoverPreview.leave()
+  ui.closePreview()
+  sessions.enterFocus(props.tree.primary.path)
+  // A key press clicks with no pointer detail: this button unmounts under the keyboard, so hand
+  // focus to the back row that replaced it.
+  if (event.detail !== 0) return
+  await nextTick()
+  sidebar?.querySelector<HTMLElement>('[data-focus-back]')?.focus()
+}
+
 function openMenu(event: MouseEvent): void {
   ui.openFolderMenu({
     projectPath: props.tree.primary.path,
@@ -110,7 +128,7 @@ function preview(event: MouseEvent): void {
     :data-sidebar-row="`${cursor.kind}:${cursor.id}`"
     :data-focused="focused ? 'true' : undefined"
     :data-current="current || undefined"
-    class="sidebar-tree-head sidebar-row group sticky top-0 z-[3] flex w-full items-center gap-2 bg-sidebar pr-3"
+    class="sidebar-tree-head sidebar-row group sticky top-[var(--sidebar-tree-back-height,0px)] z-[3] flex w-full items-center gap-2 bg-sidebar pr-3"
     :style="{ height: `${metrics.folderRowHeight}px` }"
     @click="select"
     @contextmenu.prevent="openMenu"
@@ -167,6 +185,21 @@ function preview(event: MouseEvent): void {
         :aria-label="signalLabel($t('sidebar.orchestratorDefaultIndicator'), orchestrators)"
         ><Crown :size="11" :stroke-width="1.6" aria-hidden="true"
       /></span>
+    </button>
+    <!-- Invisible at rest, never absent: the reveal is opacity only, so nothing shifts. -->
+    <button
+      v-if="!solo && !allHidden"
+      type="button"
+      data-focus-button
+      data-dsqa-part="focus-button"
+      class="pointer-events-none grid size-4 shrink-0 cursor-pointer place-items-center rounded-[var(--float-radius)] text-text-3 opacity-0 transition-[opacity,color] duration-(--dur-fast) ease-(--ease) group-hover:pointer-events-auto group-hover:opacity-100 hover:text-text focus-visible:pointer-events-auto focus-visible:text-text focus-visible:opacity-100"
+      :title="$t('sidebar.focus.enter')"
+      :aria-label="$t('sidebar.focus.enterNamed', { name: tree.label })"
+      @click.stop="focusFolder"
+      @keydown.enter.stop
+      @keydown.space.stop
+    >
+      <Target :size="13" :stroke-width="1.6" aria-hidden="true" />
     </button>
     <SidebarValueSlot
       :count="count"

@@ -58,7 +58,7 @@ interface ZoneFolder {
  * Where a group's membership came from. `repo` — 2+ worktrees sharing a git
  * `repoId`; `path` — 2+ folders sharing a DIRECT parent directory. The two are
  * one node type on purpose: header rendering, the keyboard cursor, collapse
- * persistence, aliases, and drill-in all take a single code path (T182).
+ * persistence and aliases all take a single code path (T182).
  */
 export type GroupSource = 'repo' | 'path'
 

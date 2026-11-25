@@ -325,9 +325,9 @@ export function useSessionActions(): SessionActions {
     dismiss
   }
 
-  /** The keyboard cursor's row, or `null` — the cursor is inert in drill mode. */
+  /** The keyboard cursor's row, or `null`. */
   function cursorRow(): { kind: 'folder' | 'group' | 'session'; id: string } | null {
-    return sessions.drillModeEnabled ? null : sessions.keyboardCursor
+    return sessions.keyboardCursor
   }
 
   /** `session.openToSide`'s target: the cursor's session row, else the selection. */
@@ -358,7 +358,7 @@ export function useSessionActions(): SessionActions {
 
   /**
    * Bottom-left of the target's sidebar row — the keyboard-anchor fallback the
-   * drill view already uses. A row not in the DOM falls back to the sidebar's
+   * folder menu's own keyboard opener uses. A row not in the DOM falls back to the sidebar's
    * top-left; a collapsed sidebar to the Topbar title.
    */
   function anchorFor(target: ContextMenuTarget): { x: number; y: number } {

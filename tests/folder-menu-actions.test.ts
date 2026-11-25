@@ -173,15 +173,6 @@ describe('AC-35 — folder.rename (F2)', () => {
     expect(actions.renameTarget()).toBe('/repos/alpha')
   })
 
-  it('ignores the cursor in drill mode', () => {
-    const sessions = useSessionsStore()
-    const actions = withSetup(() => useFolderMenuActions())
-    sessions.selectFolder('/plain/beta')
-    sessions.keyboardCursor = { kind: 'session', id: 's-a' }
-    sessions.drillDepth = 1
-    expect(actions.renameTarget()).toBe('/plain/beta')
-  })
-
   it('opens the Rename folder dialog through the menu item’s function', () => {
     const ui = useUiStore()
     const actions = withSetup(() => useFolderMenuActions())
@@ -329,19 +320,6 @@ describe('folder actions target the active folder (§3.10)', () => {
     expect(reveal).toHaveBeenCalledWith('/plain/beta')
   })
 
-  it('in drill mode toggleOlder reveals without flipping the classic tree', () => {
-    const sessions = useSessionsStore()
-    const actions = withSetup(() => useFolderMenuActions())
-    sessions.drillDepth = 1
-    const revealCheckout = vi.spyOn(sessions, 'revealCheckout')
-    const reveal = vi.spyOn(sessions, 'toggleRevealOlder')
-    sessions.findFolderByPath('/plain/beta')!.expanded = false
-    actions.run.toggleOlder('/plain/beta')
-    expect(revealCheckout).not.toHaveBeenCalled()
-    expect(sessions.findFolderByPath('/plain/beta')?.expanded).toBe(false)
-    expect(reveal).toHaveBeenCalledWith('/plain/beta')
-  })
-
   it('a path the store does not hold keeps the items that need no git or session facts', () => {
     const actions = withSetup(() => useFolderMenuActions())
     expect(actions.visible('toggleAutoOrganize', '/not/loaded')).toBe(true)
@@ -404,18 +382,11 @@ describe('repo-group actions (§3.10)', () => {
 describe('AC-37 — the menus and the bindings share one function', () => {
   const read = (p: string): string => readFileSync(resolve(__dirname, '..', p), 'utf8')
 
-  it('the folder and drill menus call the composable, not the store actions directly', () => {
-    for (const p of [
-      'src/renderer/src/components/FolderMenu.vue',
-      'src/renderer/src/components/SidebarDrillView.vue'
-    ]) {
-      const src = read(p)
-      expect(src, p).toContain('useFolderMenuActions')
-      expect(src, p).not.toContain('ui.openRenameRepo(')
-      expect(src, p).not.toContain("setGroupAlias(group.key, '')")
-      expect(src, p).not.toContain("setGroupAlias(props.group.key, '')")
-    }
+  it('the folder menu calls the composable, not the store actions directly', () => {
     const menu = read('src/renderer/src/components/FolderMenu.vue')
+    expect(menu).toContain('useFolderMenuActions')
+    expect(menu).not.toContain('ui.openRenameRepo(')
+    expect(menu).not.toContain("setGroupAlias(group.key, '')")
     expect(menu).toContain('folderActions.group.rename(group)')
     expect(menu).toContain('folderActions.group.resetName(group)')
     expect(menu).toContain('folderActions.group.cleanup(group)')
@@ -430,19 +401,6 @@ describe('AC-37 — the menus and the bindings share one function', () => {
       'sessions.dismissFolder('
     ])
       expect(menu, call).not.toContain(call)
-
-    // The folder row's and the drill folder screen's older / archived peeks run
-    // the same function too.
-    for (const p of [
-      'src/renderer/src/components/SidebarFolder.vue',
-      'src/renderer/src/components/SidebarDrillView.vue'
-    ]) {
-      const src = read(p)
-      expect(src, p).toContain('folderMenuActions.run.toggleOlder(')
-      expect(src, p).toContain('folderMenuActions.run.toggleArchived(')
-      expect(src, p).not.toContain('sessions.toggleRevealOlder(')
-      expect(src, p).not.toContain('sessions.toggleRevealArchived(')
-    }
   })
 
   it('every §3.4 registration in App.vue runs the composable', () => {

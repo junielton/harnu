@@ -11,14 +11,14 @@ import type { FolderEntry } from '../src/preload'
 /**
  * BUG-257 — a cold boot reads as "loading", not "empty".
  *
- * With drill-in on and a persisted drill stack (T289), the sidebar used to mount
- * the drill view (a Back row over an empty list) while the folder model was still
- * loading, hiding the "Loading folders…" spinner; the main pane meanwhile showed
- * the "Welcome to Harnu" onboarding as if the user had no folders.
+ * The sidebar must never stand over a blank list: the loading, "nothing yet" and
+ * "no matches" states show where the operator is looking — the full list, or the
+ * focused folder under its back row (design.md §6 "Sidebar tree → Focus"; the
+ * persisted position was the drill stack before Focus replaced drill-in). The
+ * main pane must not show the "Welcome to Harnu" onboarding while folders load.
  */
 
-const DRILL_STACK_KEY = 'om2tab.sidebarDrillStack'
-const DRILL_DEPTH_KEY = 'om2tab.sidebarDrillDepth'
+const FOCUS_KEY = 'om2tab.sidebarFocus'
 
 function session(id: string, projectPath: string): FolderEntry['sessions'][number] {
   const now = new Date().toISOString()
@@ -91,15 +91,8 @@ function installGatedWindow(disk: FolderEntry[]): { release: () => void } {
   return { release }
 }
 
-function seedPersistedDrillStack(): void {
-  localStorage.setItem(DRILL_DEPTH_KEY, '2')
-  localStorage.setItem(
-    DRILL_STACK_KEY,
-    JSON.stringify([
-      { kind: 'group', key: 'repo:repo-x' },
-      { kind: 'folder', path: '/repos/alpha/wt-b' }
-    ])
-  )
+function seedFocus(path = '/repos/alpha/main'): void {
+  localStorage.setItem(FOCUS_KEY, JSON.stringify(path))
 }
 
 let wrapper: VueWrapper | null = null
@@ -118,12 +111,22 @@ afterEach(() => {
   localStorage.clear()
 })
 
-describe('Sidebar status states at every drill level (BUG-257)', () => {
-  it('AC-1: shows the loading state UNDER the Back row of a restored drilled screen while folders load', async () => {
-    seedPersistedDrillStack()
+describe('Sidebar status states, full list and focused folder (BUG-257)', () => {
+  async function bootLoaded(): Promise<ReturnType<typeof useSessionsStore>> {
     const { release } = installGatedWindow(REPO)
     const store = useSessionsStore()
-    expect(store.drillStack).toHaveLength(2)
+    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
+    const boot = store.init()
+    release()
+    await boot
+    await flushPromises()
+    return store
+  }
+
+  it('AC-1: shows the loading state UNDER the back row of a restored focus while folders load', async () => {
+    seedFocus()
+    const { release } = installGatedWindow(REPO)
+    const store = useSessionsStore()
 
     wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
     const boot = store.init()
@@ -131,135 +134,80 @@ describe('Sidebar status states at every drill level (BUG-257)', () => {
 
     expect(store.foldersLoading).toBe(true)
     expect(store.folders).toHaveLength(0)
-    // The operator keeps their place: the drill view stays mounted, loader inside it.
-    const drill = wrapper.find('[data-drill-view]')
-    expect(drill.exists()).toBe(true)
-    expect(drill.find('[data-drill-back]').exists()).toBe(true)
-    expect(drill.find('[data-sidebar-loading]').exists()).toBe(true)
-    expect(drill.text()).toContain('Loading folders')
-    // ...and nothing else is rendered as if it were an empty screen.
+    // The operator keeps their place: the back row stays, the loader under it.
+    const back = wrapper.find('[data-focus-back]')
+    const loading = wrapper.find('[data-sidebar-loading]')
+    expect(back.exists()).toBe(true)
+    expect(loading.exists()).toBe(true)
+    expect(
+      back.element.compareDocumentPosition(loading.element) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(loading.text()).toContain('Loading folders')
+    // Nothing is counted yet, and nothing reads as an empty list.
+    expect(wrapper.find('[data-focus-back-meta]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain(i18n.global.t('sidebar.emptyShort'))
 
     release()
     await boot
   })
 
-  it('AC-1: the repo (group) screen shows the loading state too, not only the folder screen', async () => {
-    localStorage.setItem(DRILL_DEPTH_KEY, '2')
-    localStorage.setItem(DRILL_STACK_KEY, JSON.stringify([{ kind: 'group', key: 'repo:repo-x' }]))
+  it('AC-1: the full list shows the loading state with no focus', async () => {
     const { release } = installGatedWindow(REPO)
     const store = useSessionsStore()
-    expect(store.drillStack).toHaveLength(1)
-
-    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
-    const boot = store.init()
-    await flushPromises()
-
-    const drill = wrapper.find('[data-drill-view]')
-    expect(drill.find('[data-drill-back]').exists()).toBe(true)
-    expect(drill.find('[data-sidebar-loading]').exists()).toBe(true)
-
-    release()
-    await boot
-  })
-
-  it('AC-1: the root screen still shows the loading state with an empty stack', async () => {
-    localStorage.setItem(DRILL_DEPTH_KEY, '2')
-    const { release } = installGatedWindow(REPO)
-    const store = useSessionsStore()
-    expect(store.drillStack).toHaveLength(0)
 
     wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
     const boot = store.init()
     await flushPromises()
 
     expect(wrapper.find('[data-sidebar-loading]').exists()).toBe(true)
-    expect(wrapper.find('[data-drill-back]').exists()).toBe(false)
+    expect(wrapper.find('[data-focus-back]').exists()).toBe(false)
 
     release()
     await boot
   })
 
-  it('AC-2: a filter that matches nothing shows the no-match message on a drilled screen, not a blank body', async () => {
-    localStorage.setItem(DRILL_DEPTH_KEY, '2')
-    const { release } = installGatedWindow(REPO)
-    const store = useSessionsStore()
-    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
-    const boot = store.init()
-    release()
-    await boot
-    await flushPromises()
-    store.drillIntoGroup('repo:repo-x')
-    await flushPromises()
-    expect(store.drillStack).toHaveLength(1)
-    expect(wrapper.find('[data-drill-back]').exists()).toBe(true)
+  it('AC-2: a filter that matches nothing says so under the back row, not a blank body', async () => {
+    seedFocus()
+    const store = await bootLoaded()
+    expect(wrapper!.find('[data-focus-back]').exists()).toBe(true)
 
     store.filterQuery = 'zzz-no-folder-matches-this'
     await flushPromises()
 
-    const drill = wrapper.find('[data-drill-view]')
-    expect(drill.find('[data-drill-back]').exists()).toBe(true)
-    expect(drill.text()).toContain(i18n.global.t('sidebar.filter.empty'))
+    expect(wrapper!.find('[data-focus-back]').exists()).toBe(true)
+    expect(wrapper!.text()).toContain(i18n.global.t('sidebar.filter.empty'))
+    expect(wrapper!.findAll('[data-tree-folder]')).toHaveLength(0)
   })
 
-  it('AC-2: an empty folder list shows the "nothing yet" message on a drilled screen, not a blank body', async () => {
-    localStorage.setItem(DRILL_DEPTH_KEY, '2')
-    const { release } = installGatedWindow(REPO)
-    const store = useSessionsStore()
-    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
-    const boot = store.init()
-    release()
-    await boot
-    await flushPromises()
-    store.drillIntoGroup('repo:repo-x')
-    await flushPromises()
-    expect(store.drillStack).toHaveLength(1)
+  it('AC-2: an emptied folder list shows the "nothing yet" message, not a blank body', async () => {
+    seedFocus()
+    const store = await bootLoaded()
 
-    // The folders vanish while a screen is drilled (e.g. every worktree removed).
+    // The folders vanish while one is focused (e.g. every worktree removed).
     store.folders = []
     await flushPromises()
 
-    const drill = wrapper.find('[data-drill-view]')
-    expect(drill.find('[data-drill-back]').exists()).toBe(true)
-    expect(drill.text()).toContain(i18n.global.t('sidebar.emptyShort'))
-    expect(drill.find('[data-sidebar-loading]').exists()).toBe(false)
+    expect(wrapper!.text()).toContain(i18n.global.t('sidebar.emptyShort'))
+    expect(wrapper!.find('[data-sidebar-loading]').exists()).toBe(false)
   })
 
-  it('AC-4: once loaded, the restored drill screen resolves exactly as before (T289 restore kept)', async () => {
-    seedPersistedDrillStack()
-    const { release } = installGatedWindow(REPO)
-    const store = useSessionsStore()
-
-    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
-    const boot = store.init()
-    await flushPromises()
-    release()
-    await boot
-    await flushPromises()
+  it('AC-4: once loaded, the restored focus resolves to its folder', async () => {
+    seedFocus()
+    const store = await bootLoaded()
 
     expect(store.foldersLoading).toBe(false)
-    expect(store.drillStack).toEqual([
-      { kind: 'group', key: 'repo:repo-x' },
-      { kind: 'folder', path: '/repos/alpha/wt-b' }
-    ])
-    expect(wrapper.find('[data-sidebar-loading]').exists()).toBe(false)
-    expect(wrapper.find('[data-drill-back]').exists()).toBe(true)
+    expect(wrapper!.find('[data-sidebar-loading]').exists()).toBe(false)
+    expect(wrapper!.find('[data-focus-back]').exists()).toBe(true)
+    expect(wrapper!.findAll('[data-tree-folder]')).toHaveLength(1)
   })
 
-  it('AC-4: a restored stack that no longer resolves is still dropped once loaded', async () => {
-    seedPersistedDrillStack()
-    const { release } = installGatedWindow([REPO[0]]) // wt-b is gone
-    const store = useSessionsStore()
+  it('AC-4: a restored focus that no longer resolves is dropped once loaded', async () => {
+    seedFocus('/repos/gone')
+    await bootLoaded()
 
-    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
-    const boot = store.init()
-    await flushPromises()
-    release()
-    await boot
-    await flushPromises()
-
-    expect(store.drillStack).toEqual([])
-    expect(wrapper.find('[data-sidebar-loading]').exists()).toBe(false)
+    expect(wrapper!.find('[data-focus-back]').exists()).toBe(false)
+    expect(wrapper!.find('[data-sidebar-loading]').exists()).toBe(false)
+    expect(wrapper!.findAll('[data-tree-folder]')).toHaveLength(1)
   })
 })
 
