@@ -292,23 +292,26 @@ const SECONDARY = 'border-border-2 text-text-2 hover:bg-surface-2 hover:text-tex
     data-dsqa="folder-view"
     data-dsqa-part="folder-view"
   >
-    <header class="flex min-w-0 items-center gap-2.5">
-      <h1 class="m-0 min-w-0 truncate text-[18px] font-semibold text-text">{{ label }}</h1>
-      <!-- A card branch name runs to ~295px and the pane can be far narrower than
-           the window, so the chip shrinks and truncates. -->
+    <!-- Three text sizes on one line: they share a baseline, and the branch icon
+         centres on its own text. In a narrow pane the branch gives way first and
+         the name last (a card branch name runs to ~295px). -->
+    <header class="flex min-w-0 items-baseline gap-2.5">
+      <h1 class="m-0 max-w-1/2 shrink-0 truncate text-[18px] font-semibold text-text">
+        {{ label }}
+      </h1>
       <span
         v-if="isGit"
-        class="flex min-w-0 items-center gap-1 font-mono text-[11.5px] text-text-3"
+        class="flex min-w-8 shrink-100 items-baseline gap-1 overflow-hidden font-mono text-[11.5px] text-text-3"
         :title="folder.gitBranch || undefined"
       >
-        <GitBranch :size="12" :stroke-width="1.6" class="shrink-0" />
+        <GitBranch :size="12" :stroke-width="1.6" class="mb-px shrink-0 self-center" />
         <span class="truncate" data-test="folder-view-branch">{{
           folder.gitBranch || $t('preview.folder.detached')
         }}</span>
       </span>
       <span
         v-if="git"
-        class="shrink-0 whitespace-nowrap text-[12px] tabular-nums"
+        class="min-w-0 truncate text-[12px] tabular-nums"
         :class="git.attention ? 'text-warning' : 'text-text-4'"
         data-test="folder-view-git"
       >
