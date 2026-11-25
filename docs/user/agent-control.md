@@ -152,6 +152,8 @@ you first, because all it does is add one line to your list.
   verb, and the optional `your-move` skill under [bundled skills](bundled-skills.md), make
   the cards better and earlier. Until the queue ships in the sidebar, a card from the verb
   shows in the list under **Settings → Your move**.
+- **A session an agent launched is not inspected until you type in it.** Until then the verb is
+  how it reaches your queue.
 
 ## Sessions talking out loud
 

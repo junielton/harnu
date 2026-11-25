@@ -62,6 +62,7 @@ describe('agent-spawned sessions', () => {
     expect(await a.isAgentSpawned('mine')).toBe(false)
     expect(await a.isAgentSpawned('ticking')).toBe(false)
     expect(await a.isAgentSpawned('absent')).toBe(false)
+    await a.idle()
   })
 
   it('reads the audit again only after a while', async () => {
@@ -72,6 +73,7 @@ describe('agent-spawned sessions', () => {
     expect(await a.isAgentSpawned('later')).toBe(false)
     at += 61_000
     expect(await a.isAgentSpawned('later')).toBe(true)
+    await a.idle()
   })
 
   it('knows nothing when there is nothing to read, and a broken file is not fatal', async () => {

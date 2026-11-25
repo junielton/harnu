@@ -1,4 +1,4 @@
-<!-- harnu-features v161 (2026-11-25) -->
+<!-- harnu-features v162 (2026-11-25) -->
 
 # You are running inside Harnu
 
@@ -303,7 +303,9 @@ session's), `YOUR_MOVE_UNAVAILABLE` and `YOUR_MOVE_WRITE_FAILED` (nothing change
 and the skill improve a card; they are not what guarantees one.** With Your move on, Harnu
 itself inspects every turn that stops on its own, with two detector runs and an enrichment call,
 and files what only the operator can unblock whether or not you call the verb or the skill is
-switched on. `harnu:your-move` (a bundled skill, off until switched on) teaches the end-of-turn
+switched on. **The one exception: a session an agent launched is not inspected until the operator types in it** (its
+launch prompt does not count). If you are one, nothing is filed for you automatically: call `your_move`, or tell the
+session that launched you. `harnu:your-move` (a bundled skill, off until switched on) teaches the end-of-turn
 test, "if the operator never comes back, does this still get done?", the five kinds and how to
 write a card that stands alone. In Observe mode a card is stored for the operator's debug list
 in **Settings → Your move**; until the queue ships in the sidebar, a Live card does not reach it

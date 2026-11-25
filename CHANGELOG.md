@@ -15,6 +15,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - **Your move** no longer piles up hundreds of old cards. A newer turn of a session replaces the cards of its earlier turns; a card nothing new happened to for 7 days closes as expired; a mission has one card (its next item), and none once its record has been untouched for 7 days; and a card whose folder or session transcript is gone closes (a stopped session's card only when its folder is gone). Harnu applies this to the existing queue when it starts. Closed cards stay in **Settings → Your move** for 7 days with the reason.
+- Sessions an agent launched (dispatched executors, verifiers, shippers) no longer reach the **Your move** queue until you type in them: the prompt they were launched with was being counted as something you had written. Cards already filed for them close when Harnu starts, for sessions Harnu can still tell were launched by an agent.
 
 ## 2026-11-24
 

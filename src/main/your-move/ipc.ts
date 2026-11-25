@@ -18,7 +18,7 @@ import { addTaskEventObserver, getTaskStates } from '../detect/task-state-hub'
 import { resolveClaudePath } from '../claude-cli'
 import { isFolderDenied } from '../mcp/permission-core'
 import { setMissionListObserver } from '../mission-ipc'
-import { setPtyExitObserver } from '../pty'
+import { setPtyExitObserver, spawnOriginForSession } from '../pty'
 import { getSessionArchive } from '../session-archive-core'
 import { onFolderRemoved, readUserProjects } from '../user-projects'
 import {
@@ -30,6 +30,7 @@ import {
   type CardView,
   type YourMoveCard
 } from './core'
+import { createAgentOrigins } from './agent-origin'
 import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
 import { cleanupQueue, folderPresence, sweepStaleCards } from './hygiene'
@@ -66,6 +67,7 @@ const STATE_FILE = 'your-move.json'
 const PREFS_FILE = 'your-move-prefs.json'
 const INSPECTIONS_FILE = 'your-move-inspections.jsonl'
 const LABELS_FILE = 'your-move-labels.jsonl'
+const AGENTS_FILE = 'your-move-agent-sessions.json'
 const EMPTY_DIR = path.join('your-move', 'empty')
 const NEWEST_CLOSED = 200
 /** Closed cards past their window are dropped at most this often while the app stays open. */
@@ -135,9 +137,6 @@ async function transcriptHasReply(file: string, text: string): Promise<boolean> 
   return buildSegment(res.lines).some((e) => e.tag === 'ASSISTANT' && e.text.includes(wanted))
 }
 
-/** Whether a session's transcript holds an operator entry, remembered across asks (BUG-300). */
-const operatorGate = createOperatorGate()
-
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 let runner: JudgeRunner | null = null
@@ -150,6 +149,17 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   const inspectionsPath = path.join(userData, INSPECTIONS_FILE)
   const labelsPath = path.join(userData, LABELS_FILE)
   const emptyDir = path.join(userData, EMPTY_DIR)
+
+  // A dispatched session's launch prompt reads as a human entry (BUG-308): who Harnu spawned for
+  // an agent is written down, and the gate asks. Remembered across restarts.
+  const origins = createAgentOrigins({
+    file: path.join(userData, AGENTS_FILE),
+    auditFiles: ['audit.1.ndjson', 'audit.ndjson'].map((f) => path.join(userData, 'companion', f)),
+    live: (id) => spawnOriginForSession(id),
+    now: () => Date.now()
+  })
+  /** Whether a session's transcript holds an operator entry, remembered across asks (BUG-300). */
+  const operatorGate = createOperatorGate({ agentSpawned: (id) => origins.isAgentSpawned(id) })
 
   let prefs: YourMovePrefs | null = null
   let denyFolders: string[] = []
@@ -385,7 +395,11 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         // The path the hook carried is the one place a session's transcript is named for certain:
         // remember it, and nothing ever lists a directory to find this session. A subagent's
         // event names the subagent's own file, not the session's.
-        if (ev.agentId === undefined) transcripts.note(ev.sessionId, ev.payload?.transcriptPath)
+        if (ev.agentId === undefined) {
+          transcripts.note(ev.sessionId, ev.payload?.transcriptPath)
+          // The spawn marker is gone at the next restart: write it down while it is there.
+          origins.note(ev.sessionId)
+        }
         triggers.onTaskEvent(ev)
         system.onTaskEvent(ev)
         gate.onTaskEvent(ev)
