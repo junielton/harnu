@@ -34,7 +34,7 @@ Hover a sidebar row, select a session, or move to a row with the keyboard and it
 | Red       | a session there failed                                 |
 | none      | everything there is idle or done                       |
 
-Amber wins over red, and red wins over green. Hovering the checkout row of a marked checkout widens the bar and shows its colour at full strength; keyboard focus draws the usual focus bar. A screen reader reads the state with the branch name. Folder headers have no bar (their ring says it), and a folder that is not a git repository has no checkout row, so no bar either.
+Amber wins over red, and red wins over green. Hovering the checkout row of a marked checkout widens the bar and shows its colour at full strength; keyboard focus draws the usual focus bar. A screen reader reads the state with the branch name, and the session count while the checkout is folded. Folder headers have no bar (their ring says it), and a folder that is not a git repository has no checkout row, so no bar either.
 
 ## The terminal pane
 

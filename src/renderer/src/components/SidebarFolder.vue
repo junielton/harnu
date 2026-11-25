@@ -802,7 +802,7 @@ function onSelectTeammate(session: Session): void {
                     }"
                     aria-hidden="true"
                   />
-                  <span class="flex-1 truncate">{{
+                  <span class="flex-1 truncate leading-[14px]">{{
                     $t('agent.doneFold', { n: agentRow.count })
                   }}</span>
                 </button>
@@ -828,16 +828,16 @@ function onSelectTeammate(session: Session): void {
                 >
                   <CornerDownRight :size="11" :stroke-width="1.6" class="shrink-0 text-text-4" />
                   <Bot :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-                  <span
-                    class="flex-1 truncate"
-                    :style="{
-                      flex: agentRow.agent.status === 'running' ? '1 0 96px' : '1 0 112px'
-                    }"
-                    >{{ agentLabel(agentRow.agent) }}</span
-                  >
+                  <!-- The title gives way first: it takes the spare room, and the type and skill keep
+                       their width until it is down to 48px. They shrink 1000 times faster than it, so
+                       it only goes below that when they have nothing left. -->
+                  <!-- The three font sizes in this row share one baseline: the smaller ones sit lower. -->
+                  <span class="shrink grow basis-12 truncate leading-[14px]">{{
+                    agentLabel(agentRow.agent)
+                  }}</span>
                   <span
                     v-if="agentTypeChip(agentRow.agent)"
-                    class="truncate font-mono text-text-4"
+                    class="relative top-[0.5px] shrink-[1000] truncate font-mono leading-[14px] text-text-4"
                     style="font-size: 10px; max-width: 72px; min-width: 0"
                     data-dsqa="sidebar-agent-type-chip"
                     :title="agentTypeChip(agentRow.agent)"
@@ -845,7 +845,7 @@ function onSelectTeammate(session: Session): void {
                   >
                   <span
                     v-if="agentOrigin(agentRow.agent)"
-                    class="truncate font-mono text-text-4"
+                    class="relative top-[0.5px] shrink-[1000] truncate font-mono leading-[14px] text-text-4"
                     style="font-size: 10px; max-width: 120px; min-width: 0"
                     :title="agentOrigin(agentRow.agent)"
                     >{{ agentOrigin(agentRow.agent) }}</span
@@ -859,7 +859,9 @@ function onSelectTeammate(session: Session): void {
                       class="anim-pulse-dot rounded-full bg-green"
                       style="width: 6px; height: 6px"
                     />
-                    <span style="font-size: 10.5px">{{ $t('agent.statusRunning') }}</span>
+                    <span class="relative top-[0.5px]" style="font-size: 10.5px">{{
+                      $t('agent.statusRunning')
+                    }}</span>
                   </span>
                 </div>
               </template>
@@ -941,7 +943,7 @@ function onSelectTeammate(session: Session): void {
                   style="width: 6px; height: 6px"
                 />
               </span>
-              <span class="flex-1 truncate">{{ labelFor(tm) }}</span>
+              <span class="flex-1 truncate leading-[14px]">{{ labelFor(tm) }}</span>
               <span class="tabular-nums text-text-4" style="font-size: 10.5px">{{
                 relativeTime(tm.modified)
               }}</span>

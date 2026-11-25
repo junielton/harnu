@@ -123,7 +123,8 @@
       "openFolder": "Expand {name}",
       "railWorking": "{branch}, agent working",
       "railFailed": "{branch}, failed",
-      "railNeedsInput": "{branch}, needs you"
+      "railNeedsInput": "{branch}, needs you",
+      "railCount": "{label}, {count} session | {label}, {count} sessions"
     }
   },
   "topbar": {
