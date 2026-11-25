@@ -386,20 +386,18 @@ function onSelectTeammate(session: Session): void {
     <!-- Folder row -->
     <button
       v-if="!headerless && !embedded"
-      class="sidebar-row group flex w-full cursor-pointer items-center text-left text-text transition hover:bg-surface"
+      data-row-bar="header"
+      class="sidebar-row group relative flex w-full cursor-pointer items-center text-left text-text transition"
       style="gap: 4px; font-size: 12.5px; font-weight: 500"
       :style="{
         height: `${metrics.checkoutRowHeight}px`,
         margin: '0',
         paddingLeft: '8px',
         paddingRight: '12px',
-        // T212: a selected folder is highlighted the same way a selected session
-        // row is — the two selections are peers, so they must read as peers.
-        background:
-          sessions.selectedFolderPath === folder.path ? 'var(--color-accent-soft)' : 'transparent',
         ...(folderHidden ? { opacity: 0.5 } : {})
       }"
       :data-focused="folderFocused ? 'true' : null"
+      :data-current="sessions.selectedFolderPath === folder.path || undefined"
       :data-sidebar-row="`folder:${folder.path}`"
       @click="onFolderClick"
       @contextmenu="(e) => onFolderContext(e, folder.path)"
@@ -530,12 +528,10 @@ function onSelectTeammate(session: Session): void {
         <template v-for="{ session: s, mission } in displayRows" :key="s.sessionId">
           <button
             data-session-row
+            data-row-bar="session"
             data-dsqa-part="session-row"
-            class="sidebar-row sidebar-row-cv sidebar-session-tint group relative flex w-full cursor-pointer items-center text-left transition"
-            :class="[
-              sessions.selectedId === s.sessionId ? 'text-text' : 'text-text-2 hover:text-text',
-              embedded && 'sidebar-tree-guide'
-            ]"
+            class="sidebar-row sidebar-row-cv group relative flex w-full cursor-pointer items-center text-left text-text-2 transition"
+            :class="embedded && 'sidebar-tree-guide'"
             :data-guide-last="
               (lastSession(s) &&
                 !hasExpandedTeammates(s) &&
@@ -553,8 +549,7 @@ function onSelectTeammate(session: Session): void {
               paddingLeft: `${metrics.sessionIndent}px`,
               paddingRight: '12px',
               gap: `${metrics.gap}px`,
-              fontSize: '12.5px',
-              fontWeight: sessions.selectedId === s.sessionId ? 500 : 400
+              fontSize: '12.5px'
             }"
             @click="sessions.select(s.sessionId)"
             @contextmenu="(e) => onSessionContext(e, s.sessionId)"
@@ -567,14 +562,6 @@ function onSelectTeammate(session: Session): void {
             "
             @mouseleave="hoverPreview.leave()"
           >
-            <!-- Accent bar (selected) -->
-            <span
-              v-if="sessions.selectedId === s.sessionId"
-              class="absolute left-0 top-0 bg-accent"
-              style="width: 2px; height: 100%; border-radius: 0 2px 2px 0"
-              aria-hidden="true"
-            />
-
             <span class="flex size-3 shrink-0 items-center justify-center">
               <Cloud
                 v-if="!s.resumable"
@@ -784,9 +771,10 @@ function onSelectTeammate(session: Session): void {
                 <button
                   v-if="agentRow.kind === 'fold'"
                   type="button"
-                  class="agent-row flex w-full items-center text-left text-text-3 transition hover:text-text-2"
+                  data-row-bar="session"
+                  class="agent-row relative flex w-full items-center text-left text-text-3 transition"
                   data-dsqa="sidebar-agents-done-fold"
-                  :class="embedded && 'sidebar-tree-guide relative'"
+                  :class="embedded && 'sidebar-tree-guide'"
                   :data-guide-last="
                     (lastSession(s) &&
                       !hasExpandedTeammates(s) &&
@@ -820,8 +808,9 @@ function onSelectTeammate(session: Session): void {
                 </button>
                 <div
                   v-else
-                  class="agent-row flex w-full items-center text-left text-text-2 transition"
-                  :class="embedded && 'sidebar-tree-guide relative'"
+                  data-row-bar="session"
+                  class="agent-row relative flex w-full items-center text-left text-text-2 transition"
+                  :class="embedded && 'sidebar-tree-guide'"
                   :data-guide-last="
                     (lastSession(s) &&
                       !hasExpandedTeammates(s) &&
@@ -889,17 +878,16 @@ function onSelectTeammate(session: Session): void {
               v-for="(tm, index) in teammatesOf(s.sessionId)"
               :key="tm.sessionId"
               data-teammate-row
+              data-row-bar="session"
               :data-session-id="tm.sessionId"
               :data-sidebar-row="`session:${tm.sessionId}`"
               :data-focused="sessionFocused(tm.sessionId) ? 'true' : undefined"
+              :data-selected="sessions.selectedId === tm.sessionId ? 'true' : null"
               :data-guide-last="
                 (lastSession(s) && index === teammatesOf(s.sessionId).length - 1) || undefined
               "
-              class="sidebar-row group relative flex w-full cursor-pointer items-center text-left transition"
-              :class="[
-                sessions.selectedId === tm.sessionId ? 'text-text' : 'text-text-2 hover:text-text',
-                embedded && 'sidebar-tree-guide'
-              ]"
+              class="sidebar-row group relative flex w-full cursor-pointer items-center text-left text-text-2 transition"
+              :class="embedded && 'sidebar-tree-guide'"
               :style="{
                 height: `${metrics.childRowHeight}px`,
                 paddingLeft: `${metrics.childIndent}px`,
@@ -987,15 +975,14 @@ function onSelectTeammate(session: Session): void {
             v-for="(term, idx) in terminalList"
             :key="term.sessionId"
             data-terminal-row
+            data-row-bar="session"
             :data-guide-last="idx === terminalList.length - 1 || undefined"
             :data-session-id="term.sessionId"
             :data-sidebar-row="`session:${term.sessionId}`"
             :data-focused="sessionFocused(term.sessionId) ? 'true' : null"
-            class="sidebar-row group relative flex w-full cursor-pointer items-center text-left transition"
-            :class="[
-              sessions.selectedId === term.sessionId ? 'text-text' : 'text-text-2 hover:text-text',
-              embedded && 'sidebar-tree-guide'
-            ]"
+            :data-selected="sessions.selectedId === term.sessionId ? 'true' : null"
+            class="sidebar-row group relative flex w-full cursor-pointer items-center text-left text-text-2 transition"
+            :class="embedded && 'sidebar-tree-guide'"
             :style="{
               height: `${metrics.terminalRowHeight}px`,
               width: '100%',
@@ -1003,21 +990,10 @@ function onSelectTeammate(session: Session): void {
               paddingLeft: `${metrics.sessionIndent}px`,
               paddingRight: '12px',
               gap: `${metrics.gap}px`,
-              fontSize: '12.5px',
-              fontWeight: sessions.selectedId === term.sessionId ? 500 : 400,
-              background:
-                sessions.selectedId === term.sessionId ? 'var(--color-accent-soft)' : 'transparent'
+              fontSize: '12.5px'
             }"
             @click="sessions.select(term.sessionId)"
           >
-            <!-- Accent bar (selected) -->
-            <span
-              v-if="sessions.selectedId === term.sessionId"
-              class="absolute left-0 top-0 bg-accent"
-              style="width: 2px; height: 100%; border-radius: 0 2px 2px 0"
-              aria-hidden="true"
-            />
-
             <span class="flex size-3 shrink-0 items-center justify-center">
               <SquareTerminal
                 :size="12"

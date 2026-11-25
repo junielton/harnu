@@ -18,6 +18,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- Hover, selection and keyboard focus in the sidebar now show a bar on the left and brighten the row label, without filling the row or moving its contents.
 - The sidebar is now a flat checkout tree. Each repository or folder has one header, with the main checkout first and its worktrees flat below it, and each checkout's sessions under it, joined by a thin guide line. Parent-directory groups and the indented worktree lineage are no longer drawn (**Set parent folder** is still in the menu).
 - Worktrees with no listed session fold into one **n idle worktrees** row. The main checkout always keeps its own row, and a worktree that gains a session comes out of the fold on its own.
 - A folder header shows a ring for the hottest session inside it, stays on screen while you scroll its checkouts, and opens the folder's view when clicked. Only its chevron collapses it. Clicking a checkout folds or unfolds its sessions.

@@ -70,17 +70,14 @@ textarea,
  *
  * Painted on EVERY interactive element when the user reaches it via keyboard
  * (`:focus-visible` only — never on click/touch). The accent-line token is
- * the same color used for input :focus borders and the sidebar's
- * arrow-cursor outline, so the ring is visually consistent across surfaces
- * regardless of theme.
+ * the same color used for input :focus borders.
  *
  * `outline-offset: 1px` keeps the ring clear of any internal border and the
  * `border-radius: inherit` re-uses the host's corner rounding — flat rings
  * on flat surfaces, rounded rings on chips/buttons.
  *
  * Per-component overrides: any element that owns its own focus painting (the
- * sidebar's `data-focused` arrow-cursor ring, the command palette's
- * keyboard-cursor accent bar, the SessionMenu items which paint a focus bg
+ * command palette's keyboard-cursor accent bar, the SessionMenu items which paint a focus bg
  * on `focus`) should add `.no-default-ring` to skip this rule. The
  * `:not(.no-default-ring)` selector below provides that opt-out without
  * forcing every overriding component to set `outline: none` defensively.
@@ -1157,10 +1154,6 @@ textarea,
   scroll-margin-top: var(--sidebar-tree-header-height);
 }
 
-.sidebar-tree-head[data-current='true'] {
-  background-image: linear-gradient(var(--color-accent-soft), var(--color-accent-soft));
-}
-
 .sidebar-disclosure {
   display: grid;
   /* Without this the implicit column grows to its content's min width, and one long row
@@ -1179,45 +1172,150 @@ textarea,
   overflow: clip;
 }
 
-.sidebar-tree-guide::before {
+[data-row-bar]::before {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  background-color: transparent;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+[data-row-bar='session']::before {
+  top: 0;
+  bottom: 0;
+  left: 20px;
+  width: 1px;
+}
+
+[data-row-bar='checkout']::before {
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+}
+
+[data-row-bar='header']::before {
+  top: calc(50% - 8px);
+  height: 16px;
+  left: 0;
+  width: 2px;
+}
+
+/* Idle worktrees keep the tree guide alongside their checkout bar. */
+.sidebar-tree-guide::before,
+[data-idle-worktree]::after {
   position: absolute;
   inset: 0 auto 0 20px;
   width: 1px;
-  background: var(--color-border-2);
+  background-color: var(--color-border-2);
   pointer-events: none;
   content: '';
 }
 
-.sidebar-tree-guide[data-guide-last='true']::before {
+.sidebar-tree-guide[data-guide-last='true']::before,
+[data-idle-worktree][data-guide-last='true']::after {
   bottom: 2px;
 }
 
-.sidebar-row[data-focused='true'] {
-  position: relative;
-  outline: 2px solid var(--color-accent-line);
-  outline-offset: 1px;
-  z-index: 1;
+[data-row-bar='session']:hover::before {
+  left: 19.5px;
+  width: 2px;
+  background-color: var(--color-text-2);
 }
 
-.sidebar-tree-head[data-focused='true'] {
-  position: sticky;
-  z-index: 3;
+[data-row-bar='checkout']:hover::before,
+[data-row-bar='checkout'][data-menu-open='true']::before,
+[data-row-bar='header']:hover::before {
+  width: 2px;
+  background-color: var(--color-text-2);
 }
 
-/* Preserve the existing hover and selected paint across the row and its overlays. */
-.sidebar-session-tint {
-  --sidebar-row-tint: transparent;
-  background-color: var(--sidebar-row-tint);
+[data-row-bar='session'][data-selected='true']::before {
+  left: 19.5px;
+  width: 2px;
+  background-color: var(--color-accent);
 }
 
-.sidebar-session-tint:hover,
-.agent-row:hover {
-  --sidebar-row-tint: rgba(255, 255, 255, 0.025);
-  background-color: var(--sidebar-row-tint);
+[data-row-bar='header'][data-current='true']::before {
+  width: 2px;
+  background-color: var(--color-accent);
 }
 
-.sidebar-session-tint[data-selected='true'] {
-  --sidebar-row-tint: var(--color-accent-soft);
+/* A focus stop inside a row (a count chip) is the row's focus too: same bar, no box. */
+[data-row-bar='session']:focus-visible::before,
+[data-row-bar='session']:has([tabindex]:focus-visible)::before,
+[data-row-bar='session'][data-focused='true']::before {
+  left: 19px;
+  width: 3px;
+  background-color: var(--color-text);
+}
+
+[data-row-bar='checkout']:focus-visible::before,
+[data-row-bar='checkout']:has([tabindex]:focus-visible)::before,
+[data-row-bar='checkout'][data-focused='true']::before {
+  width: 3px;
+  background-color: var(--color-text);
+}
+
+[data-row-bar='header']:has(button:focus-visible)::before,
+[data-row-bar='header']:has([tabindex]:focus-visible)::before,
+[data-row-bar='header']:focus-visible::before,
+[data-row-bar='header'][data-focused='true']::before {
+  width: 3px;
+  background-color: var(--color-text);
+}
+
+[data-row-bar='session'][data-selected='true']:focus-visible::before,
+[data-row-bar='session'][data-selected='true']:has([tabindex]:focus-visible)::before,
+[data-row-bar='session'][data-selected='true'][data-focused='true']::before,
+[data-row-bar='header'][data-current='true']:has(button:focus-visible)::before,
+[data-row-bar='header'][data-current='true']:has([tabindex]:focus-visible)::before,
+[data-row-bar='header'][data-current='true']:focus-visible::before,
+[data-row-bar='header'][data-current='true'][data-focused='true']::before {
+  background-color: var(--color-accent);
+}
+
+[data-row-bar]:hover,
+[data-row-bar]:hover [data-row-label],
+[data-row-bar='session'][data-selected='true'],
+[data-row-bar='session'][data-selected='true'] [data-row-label],
+[data-row-bar='header'][data-current='true'],
+[data-row-bar='header'][data-current='true'] [data-row-label],
+[data-row-bar]:focus-visible,
+[data-row-bar]:focus-visible [data-row-label],
+[data-row-bar]:has([tabindex]:focus-visible),
+[data-row-bar]:has([tabindex]:focus-visible) [data-row-label],
+[data-row-bar][data-focused='true'],
+[data-row-bar][data-focused='true'] [data-row-label],
+[data-row-bar='header']:has(button:focus-visible),
+[data-row-bar='header']:has(button:focus-visible) [data-row-label],
+[data-row-bar='checkout'][data-menu-open='true'],
+[data-row-bar='checkout'][data-menu-open='true'] [data-row-label] {
+  color: var(--color-text);
+}
+
+[data-row-bar]:focus-visible,
+[data-row-bar] [tabindex]:focus-visible,
+[data-row-bar='header'] button:focus-visible {
+  outline: none;
+}
+
+/* With no box, the focused element itself says which one it is by colour. */
+[data-row-bar] [tabindex]:focus-visible,
+[data-row-bar='header'] button:focus-visible {
+  color: var(--color-text);
+}
+
+@media (forced-colors: active) {
+  [data-row-bar]:focus-visible,
+  [data-row-bar]:has([tabindex]:focus-visible),
+  [data-row-bar] [tabindex]:focus-visible,
+  [data-row-bar='header'] button:focus-visible,
+  [data-row-bar][data-focused='true'],
+  [data-row-bar='header']:has(button:focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }
 
 .sidebar-trailing {
@@ -1231,8 +1329,7 @@ textarea,
 
 .sidebar-trailing-scrim,
 .sidebar-mission-full {
-  background:
-    linear-gradient(var(--sidebar-row-tint), var(--sidebar-row-tint)), var(--color-sidebar);
+  background: var(--color-sidebar);
 }
 
 .sidebar-trailing-scrim {
