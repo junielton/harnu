@@ -47,6 +47,7 @@ function rig(
     scale?: number
     evalReply?: (p: Record<string, unknown>) => unknown
     onCdp?: (method: string) => void
+    loadError?: { code: string; url: string }
   } = {}
 ) {
   let clock = 1_000
@@ -157,7 +158,8 @@ function rig(
     capture: vi.fn(),
     viewToken: () => 'view-1',
     inputScale: () => opts.scale ?? 1,
-    drive: vi.fn()
+    drive: vi.fn(),
+    loadErrorOf: () => opts.loadError
   }
   const deps: BrowserActDeps = {
     now: () => clock,
@@ -523,6 +525,17 @@ describe('browser_press', () => {
 })
 
 describe('browser_eval', () => {
+  it('on a tab showing the load error page answers loadError and runs nothing (browser-tabs S-3)', async () => {
+    const loadError = { code: 'ERR_CONNECTION_REFUSED', url: 'http://localhost:8000/' }
+    const r = rig({ loadError })
+    expect(await evalVerb({ paneId: 'bp-1', expression: '6*7' }, r.deps)).toMatchObject({
+      ok: true,
+      loadError,
+      note: BROWSER_NOTE
+    })
+    expect(calls(r.log, 'Runtime.evaluate')).toEqual([])
+  })
+
   it('returns a primitive result', async () => {
     const r = rig()
     expect(await evalVerb({ paneId: 'bp-1', expression: '6*7' }, r.deps)).toMatchObject({

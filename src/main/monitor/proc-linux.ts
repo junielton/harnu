@@ -97,3 +97,17 @@ class NullProcessSampler implements ProcessSampler {
 export function createSampler(): ProcessSampler {
   return process.platform === 'linux' ? new LinuxProcessSampler() : new NullProcessSampler()
 }
+
+/**
+ * Cumulative CPU jiffies of one thread (`/proc/<pid>/task/<tid>/stat`). The main thread of a process
+ * has `tid === pid`: for Electron's browser process that is the thread the app's JavaScript runs on, and
+ * for a renderer it is the page's main thread. `null` on a platform without `/proc` or a thread that is gone.
+ */
+export function readThreadCpu(pid: number, tid: number): { utime: number; stime: number } | null {
+  try {
+    const stat = parseProcStat(readFileSync(`/proc/${pid}/task/${tid}/stat`, 'utf8'))
+    return stat ? { utime: stat.utime, stime: stat.stime } : null
+  } catch {
+    return null
+  }
+}

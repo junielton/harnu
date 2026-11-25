@@ -12,6 +12,10 @@ export const BROWSER_DENIAL_CODES = [
   'BROWSER_PAUSED',
   'URL_SCHEME_BLOCKED',
   'PANE_LIMIT',
+  // browser-tabs S-6: agent tabs.
+  'TAB_NOT_FOUND',
+  'TAB_LIMIT',
+  'NOT_AN_AGENT_PANE',
   'PANE_REVIVE_FAILED',
   'PANE_FOLDER_BLOCKED',
   'NOT_YET_AVAILABLE',
@@ -86,6 +90,8 @@ export interface BrowserHintContext {
   detail?: string
   /** `ELEMENT_NOT_VISIBLE`: the verb that asked, so the hint speaks of input and not of a capture. */
   during?: 'input'
+  /** `PANE_INPUT_NOT_READY`: the tab the refused call was judged on, which the reload must name (browser-tabs S-6). */
+  tabId?: string
   /** `PANE_INPUT_NOT_READY`: who opened the pane. An agent may reload its own pane; an operator's page is theirs. */
   openedBy?: 'agent' | 'operator'
   /** `REV_CONFLICT`: the rev the sidecar holds now. */
@@ -207,6 +213,39 @@ export function shapeBrowserDenial(
                 ? `Reuse one: browser_navigate on ${ctx.reusablePaneIds.join(', ')}, or browser_close one first.`
                 : 'Call browser_list and reuse one of the panes, or close one with browser_close.',
             why: 'A pane that outlived its task still holds a page in memory; reusing one is cheaper than another.'
+          }
+        ]
+      }
+    case 'TAB_NOT_FOUND':
+      return {
+        error: code,
+        message: 'That pane has no tab with that id: it never did, or it was closed.',
+        nextActions: [
+          {
+            do: 'Call browser_list for the pane’s tabs and pass one of their `tabId`s, or leave `tabId` out to act on the active tab.',
+            why: 'Tab ids belong to one pane and do not survive its closing; closing the last tab closes the pane.'
+          }
+        ]
+      }
+    case 'TAB_LIMIT':
+      return {
+        error: code,
+        message: `That pane${at} already holds 8 tabs, so Harnu will not open a ninth.`,
+        nextActions: [
+          {
+            do: 'Reuse a tab with browser_navigate and its `tabId`, or close one with browser_close and its `tabId`, then open again.',
+            why: 'Every tab holds a page in memory; a pane stops at 8.'
+          }
+        ]
+      }
+    case 'NOT_AN_AGENT_PANE':
+      return {
+        error: code,
+        message: `That pane${at} is not one you opened for browsing: it belongs to the operator, or it is a live panel, so a tab cannot be added to it.`,
+        nextActions: [
+          {
+            do: 'Call browser_open with a `url` and no `paneId` to get a pane of your own, then pass that pane’s `paneId` to add tabs.',
+            why: 'Agents get tabs only in their own panes; the operator’s panes and live panels keep the pages the operator chose.'
           }
         ]
       }
@@ -448,7 +487,7 @@ export function shapeBrowserDenial(
                 why: 'The operator opened this pane: a reload can lose what they have typed or the state they are in. After that the pane delivers clicks and key presses.'
               }
             : {
-                do: 'Reload it with browser_navigate({ paneId, action: "reload" }), then browser_snapshot for fresh refs, and call again. A reload (or navigating the same site again) fixes it.',
+                do: `Reload it with browser_navigate({ paneId, ${ctx.tabId ? `tabId: "${ctx.tabId}", ` : ''}action: "reload" }), then browser_snapshot for fresh refs, and call again. A reload (or navigating the same site again) fixes it.`,
                 why: 'After that the pane delivers clicks and key presses, whether or not the operator is looking at it.'
               },
           {

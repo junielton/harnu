@@ -262,6 +262,14 @@ export interface RoadmapCard {
   /** T104: fingerprint of the card's title/spec/body AT approval time (see
    *  {@link computeCardApprovalHash}) — recomputed and compared at dispatch. */
   approvedBodyHash?: string
+  /**
+   * Missions v4 S-10: the mission, milestone and step this card is the dispatched work of. Stamped
+   * ONLY by Harnu when a step is dispatched (`missions/cards.ts`), never by a verb: `update_card`
+   * refuses all three. A card with none of them is an ordinary board card.
+   */
+  mission?: string
+  milestone?: string
+  step?: string
   /** Provenance (fail-closed). */
   provenance: CardProvenance
   /** Free markdown body (the spec / boot-prompt source). */
@@ -398,6 +406,12 @@ function readProvenance(fm: RawFields, hasBlock: boolean): CardProvenance {
   return prov
 }
 
+/** A top-level scalar, unquoted; blank and the literal `null` read as absent. */
+function readOptionalScalar(fm: { scalars: Map<string, string> }, key: string): string | undefined {
+  const raw = unquote(fm.scalars.get(key) ?? '')
+  return raw && raw !== 'null' ? raw : undefined
+}
+
 /**
  * Parse a card `.md` into a {@link RoadmapCard}. `slug` is the filename without
  * `.md` (the canonical write key). Frontmatter drives every field; the status is
@@ -461,6 +475,10 @@ export function parseCard(content: string, slug: string): RoadmapCard {
   // (both fail the manifest path — see `decideDispatchGate`).
   const approved = unquote(fm.scalars.get('approved') ?? '') || undefined
   const approvedBodyHash = unquote(fm.scalars.get('approvedBodyHash') ?? '') || undefined
+  // Missions v4 S-10: read like `session` — blank or `null` degrades to absent.
+  const mission = readOptionalScalar(fm, 'mission')
+  const milestone = readOptionalScalar(fm, 'milestone')
+  const step = readOptionalScalar(fm, 'step')
 
   return {
     id,
@@ -485,6 +503,9 @@ export function parseCard(content: string, slug: string): RoadmapCard {
     ...(substrate ? { substrate } : {}),
     ...(approved ? { approved } : {}),
     ...(approvedBodyHash ? { approvedBodyHash } : {}),
+    ...(mission ? { mission } : {}),
+    ...(milestone ? { milestone } : {}),
+    ...(step ? { step } : {}),
     provenance: readProvenance(fm, hasProvBlock),
     body: doc.body,
     malformed: false
@@ -979,7 +1000,11 @@ export const CARD_CONTROLLED_FIELDS = [
   'evidence',
   'provenance',
   'approved',
-  'approvedBodyHash'
+  'approvedBodyHash',
+  // Missions v4 S-10: stamped by Harnu when a step is dispatched (`missions/cards.ts`).
+  'mission',
+  'milestone',
+  'step'
 ]
 
 /** `update_card`'s verdict: a ready-to-write plan, or a typed refusal. */
@@ -1215,6 +1240,10 @@ export interface NewCardInput {
   substrate?: CardSubstrate
   priority?: string
   spec?: string
+  /** Missions v4 S-10: set only when the card is a dispatched mission step (`missions/cards.ts`). */
+  mission?: string
+  milestone?: string
+  step?: string
   provenance: { author: CardAuthor; at: string; branch?: string }
 }
 
@@ -1236,6 +1265,9 @@ export function buildNewCardContent(input: NewCardInput): string {
   if (input.substrate) lines.push(`substrate: ${input.substrate}`)
   if (input.priority) lines.push(`priority: ${input.priority}`)
   if (input.spec) lines.push(`spec: ${input.spec}`)
+  if (input.mission) lines.push(`mission: ${input.mission}`)
+  if (input.milestone) lines.push(`milestone: ${input.milestone}`)
+  if (input.step) lines.push(`step: ${input.step}`)
   if (input.deps && input.deps.length > 0) lines.push(`deps: ${toFlowList(input.deps)}`)
   lines.push('provenance:')
   lines.push(`  author: ${input.provenance.author}`)

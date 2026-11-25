@@ -200,6 +200,81 @@ describe('AC-35 — folder.rename (F2)', () => {
   })
 })
 
+describe('Quick notes folder actions', () => {
+  const notesOpen = vi.fn()
+  beforeEach(() => {
+    notesOpen.mockReset()
+    notesOpen.mockResolvedValue({ ok: true, filePath: '/repos/.harnu/notes/x.md', created: false })
+    ;(window as unknown as { api: Record<string, unknown> }).api.notesOpen = notesOpen
+  })
+
+  it('notesToday selects the right-clicked folder first, then opens its note for today', async () => {
+    const sessions = useSessionsStore()
+    const order: string[] = []
+    const select = vi.spyOn(sessions, 'selectFolder').mockImplementation((p: string) => {
+      order.push(`select:${p}`)
+    })
+    notesOpen.mockImplementation(async (p: string, d?: string) => {
+      order.push(`open:${p}:${d}`)
+      return { ok: true, filePath: '/x.md', created: false }
+    })
+    const actions = withSetup(() => useFolderMenuActions())
+    actions.run.notesToday('/repos/alpha-wt')
+    await vi.waitFor(() => expect(notesOpen).toHaveBeenCalled())
+    expect(select).toHaveBeenCalledWith('/repos/alpha-wt')
+    expect(notesOpen).toHaveBeenCalledWith('/repos/alpha-wt', undefined)
+    expect(order).toEqual(['select:/repos/alpha-wt', 'open:/repos/alpha-wt:undefined'])
+  })
+
+  it('notesAll selects the folder, then opens the picker for it', () => {
+    const sessions = useSessionsStore()
+    const ui = useUiStore()
+    const select = vi.spyOn(sessions, 'selectFolder')
+    const open = vi.spyOn(ui, 'openNotesPicker')
+    const actions = withSetup(() => useFolderMenuActions())
+    actions.run.notesAll('/repos/alpha-wt')
+    expect(select).toHaveBeenCalledWith('/repos/alpha-wt')
+    expect(open).toHaveBeenCalledWith('/repos/alpha-wt')
+    expect(select.mock.invocationCallOrder[0]).toBeLessThan(open.mock.invocationCallOrder[0])
+    expect(notesOpen).not.toHaveBeenCalled()
+  })
+
+  it('does not reselect the folder that is already active (that would swap the session terminal for the Folder View)', () => {
+    const sessions = useSessionsStore()
+    sessions.selectFolder('/repos/alpha-wt')
+    const select = vi.spyOn(sessions, 'selectFolder')
+    const ui = useUiStore()
+    const open = vi.spyOn(ui, 'openNotesPicker')
+    const actions = withSetup(() => useFolderMenuActions())
+    actions.run.notesAll('/repos/alpha-wt')
+    actions.run.notesToday('/repos/alpha-wt')
+    expect(select).not.toHaveBeenCalled()
+    expect(open).toHaveBeenCalledWith('/repos/alpha-wt')
+    expect(notesOpen).toHaveBeenCalledWith('/repos/alpha-wt', undefined)
+  })
+
+  it('both are shown for every folder, git or not', () => {
+    for (const a of ['notesToday', 'notesAll'] as const) {
+      expect(
+        folderActionVisible(a, {
+          gitFolder: false,
+          linkedWorktree: false,
+          olderCount: 0,
+          archivedCount: 0
+        })
+      ).toBe(true)
+      expect(
+        folderActionVisible(a, {
+          gitFolder: true,
+          linkedWorktree: true,
+          olderCount: 0,
+          archivedCount: 0
+        })
+      ).toBe(true)
+    }
+  })
+})
+
 describe('folder actions target the active folder (§3.10)', () => {
   it('no active folder → no target', () => {
     const actions = withSetup(() => useFolderMenuActions())

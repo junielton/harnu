@@ -1,6 +1,11 @@
 # ADR-0023 — A Campaign is a separate record above the Mission; a chapter IS a mission
 
-**Status:** Accepted (shape approved by the operator with the campaign spec and mockup v6, 2026-10-30; the gates amendment decided 2026-10-31)
+> **Superseded by [ADR-0025](0025-missions-v4-one-model-supersedes-campaigns-and-stewards.md) (2026-11-16).** The Campaign record, its chapters and the
+> steward are retired: a mission now holds optional milestones itself, so the second record above
+> it is gone. The trigger section 5 ("Revisit when") named, an operator who wants to restructure
+> chapters, is the one that came true. The record below stays as written.
+
+**Status:** Superseded by ADR-0025 (2026-11-14). Was: Accepted (shape approved by the operator with the campaign spec and mockup v6, 2026-10-30; the gates amendment decided 2026-10-31)
 **Date:** 2026-10-31
 **Author:** agent (T595, campaign chapter 3a)
 **Technical context:** `docs/specs/2026-10-30-campaign/spec.md` (§3.1, §3.3, §3.5, Amendments (a)), ADR-0015 (Mission as structured data), `docs/lessons/testing/006-eval-harness-grades-state-through-the-real-transport.md`

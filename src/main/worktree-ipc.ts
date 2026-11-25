@@ -33,8 +33,6 @@
  * env-bound (`child_process` + electron IPC + `node:fs`) ⇒ e2e-only per ADR-0001.
  */
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { basename, dirname, join, isAbsolute, resolve } from 'node:path'
 import { readFile, mkdir, symlink, access, lstat, rm, stat, cp } from 'node:fs/promises'
 import { platform } from 'node:os'
@@ -89,6 +87,8 @@ import {
   type SeedOp,
   type WorktreeProvisionStage
 } from './worktree-manifest'
+import { GIT_PROBE_CONCURRENCY, runFile } from './spawn-runner'
+import { mapLimit } from './map-limit'
 import { probeGitMeta } from './git-probe'
 import {
   addUserProject,
@@ -99,8 +99,6 @@ import {
   type RemoveGhostFolderResult
 } from './user-projects'
 import { readWorktreeInheritControl } from './mcp/worktree-inherit-prefs'
-
-const runFile = promisify(execFile)
 
 /** Hard wall-clock ceiling for any single `git`/`cp` invocation (ms). */
 const GIT_TIMEOUT_MS = 30_000
@@ -1477,6 +1475,13 @@ export async function listBranches(repoPath: string): Promise<BranchRef[]> {
 }
 
 /**
+ * BUG-262 — most `git status` children one listing keeps in flight (the repo this was measured on has 56
+ * worktrees; spawning all at once held the main thread for 1.2 s). BUG-266: the limit is enforced by the spawn
+ * runner's `git-probe` lane; the same number also bounds this loop's own work.
+ */
+export { GIT_PROBE_CONCURRENCY }
+
+/**
  * Gather real `git worktree list` truth across the given (already-distinct) repo
  * roots for the MCP `list_worktrees` read (T44 S3b — the "diverged from git" face
  * of BUG-4). Dedups entries by path (repos may overlap) and best-effort probes
@@ -1498,16 +1503,16 @@ export async function collectWorktreeListing(
   }
   const entries = [...byPath.values()]
   const dirtyByPath: Record<string, boolean> = {}
-  await Promise.all(
-    entries
-      .filter((e) => !e.bare)
-      .map(async (e) => {
-        try {
-          dirtyByPath[e.path] = await isWorktreeDirty(e.path)
-        } catch {
-          dirtyByPath[e.path] = false
-        }
-      })
+  await mapLimit(
+    entries.filter((e) => !e.bare),
+    GIT_PROBE_CONCURRENCY,
+    async (e) => {
+      try {
+        dirtyByPath[e.path] = await isWorktreeDirty(e.path)
+      } catch {
+        dirtyByPath[e.path] = false
+      }
+    }
   )
   return { entries, dirtyByPath }
 }
@@ -1517,7 +1522,8 @@ export async function isWorktreeDirty(worktreePath: string): Promise<boolean> {
   const { stdout } = await runFile('git', ['-C', worktreePath, 'status', '--porcelain'], {
     windowsHide: true,
     timeout: GIT_TIMEOUT_MS,
-    maxBuffer: 1 << 20
+    maxBuffer: 1 << 20,
+    lane: 'git-probe'
   })
   return stdout.trim().length > 0
 }

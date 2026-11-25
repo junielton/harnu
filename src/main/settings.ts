@@ -50,6 +50,8 @@ export interface SettingsData {
   floatingPanels?: boolean
   /** T628: what expanding a helper pane to the window hides. Absent means `everything`. */
   expandHides?: 'everything' | 'session-only'
+  /** T807: the guided walk pane's text size step. Absent means 1. */
+  walkTextScale?: number
 }
 
 const DEFAULT_SETTINGS: SettingsData = {
@@ -68,6 +70,9 @@ const MIN_FONT_SIZE = 8
 const MAX_FONT_SIZE = 32
 const MIN_UI_ZOOM = 0.5
 const MAX_UI_ZOOM = 2
+/** The walk text size: the renderer snaps to its four steps (0.9–1.3); main only keeps it in a sane range. */
+const MIN_WALK_TEXT_SCALE = 0.75
+const MAX_WALK_TEXT_SCALE = 1.5
 /** Mirrors `SPLIT_LAYOUTS` in `renderer/src/lib/split-orientation.ts` (main never imports the renderer). */
 const SPLIT_LAYOUTS: readonly string[] = ['auto', 'side-by-side', 'stacked']
 /** Mirrors `EXPAND_HIDES` in `renderer/src/stores/settings.ts`. */
@@ -93,6 +98,13 @@ export function sanitizePatch(patch: Record<string, unknown>): Partial<SettingsD
       // and never accumulate float drift on disk.
       const clamped = Math.min(MAX_UI_ZOOM, Math.max(MIN_UI_ZOOM, v))
       out.uiZoom = Math.round(clamped * 100) / 100
+    }
+  }
+  if (patch && typeof patch === 'object' && 'walkTextScale' in patch) {
+    const v = patch.walkTextScale
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      const clamped = Math.min(MAX_WALK_TEXT_SCALE, Math.max(MIN_WALK_TEXT_SCALE, v))
+      out.walkTextScale = Math.round(clamped * 100) / 100
     }
   }
   if (patch && typeof patch === 'object' && 'editor' in patch) {

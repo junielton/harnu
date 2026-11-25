@@ -76,3 +76,53 @@ function view(
 ): ChipView {
   return { labelKey, ...(params ? { params } : {}), parked, clickSessionId, disconnectable }
 }
+
+/* ---- The compact icon (browser-tabs S-7, decision D-4) --------------------------------------------- */
+
+/** The states the browser header's chip can be in (`chipFor` in `lib/browser-pane.ts`). */
+export type HeaderChipKind =
+  'connected' | 'connectedAgent' | 'operatorLease' | 'operatorRead' | 'paused' | 'disconnected'
+
+/**
+ * How a header draws a chip state: a connected agent is the compact pulsing icon; Paused and Disconnected keep
+ * their text pill (they carry words the operator has to read, a countdown and a Resume button).
+ */
+export function chipPresentation(kind: HeaderChipKind): 'icon' | 'pill' {
+  return kind === 'paused' || kind === 'disconnected' ? 'pill' : 'icon'
+}
+
+/**
+ * What the shared icon view draws, already in words: the browser header builds one from its chip state, the
+ * terminal header from `chipView`. The component owns no wording of its own.
+ */
+export interface IconModel {
+  /** The tip's head, "Connected to ‹session›" and the like. */
+  head: string
+  /** The tip's second line: what the agent is doing ("Typing", "Driving this tab · host"); empty when idle. */
+  detail: string
+  /** The lower-case word the `aria-live` node announces; empty when idle. */
+  live: string
+  /** The session a click selects; `null` = the icon is not a button. */
+  clickSessionId: string | null
+  /** The Disconnect button is offered beside the icon. */
+  disconnectable: boolean
+}
+
+/** A chip word starts the tip's second line: "typing" → "Typing". */
+export function sentenceCase(word: string): string {
+  return word === '' ? '' : word.charAt(0).toUpperCase() + word.slice(1)
+}
+
+/** The icon's accessible name: the tip's two lines on one. */
+export function iconAriaLabel(m: Pick<IconModel, 'head' | 'detail'>): string {
+  return m.detail ? `${m.head} · ${m.detail}` : m.head
+}
+
+/**
+ * How far to move a tip to the right so it does not start left of its pane (design.md "Compact agent icon": the tip
+ * is right-aligned under the icon, and only moves when that would clip it). 0 when it already fits.
+ */
+export function tipShift(box: { left: number }, tip: { left: number }, margin = 4): number {
+  const over = box.left + margin - tip.left
+  return over > 0 ? over : 0
+}

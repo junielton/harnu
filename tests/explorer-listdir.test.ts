@@ -114,22 +114,32 @@ describe('listDir — real fixture (gitignore + .git + sort)', () => {
     await fs.rm(root, { recursive: true, force: true })
   })
 
-  it('excludes gitignored + .git, keeps dotfiles that are not ignored', async () => {
+  it('flags gitignored entries, drops .git, keeps everything else', async () => {
     const res = await listDir(root, root)
     expect(res.error).toBeUndefined()
     const names = res.entries.map((e) => e.name)
-    // Hidden: node_modules, dist, .env, debug.log (gitignore) + .git (always).
-    expect(names).not.toContain('node_modules')
-    expect(names).not.toContain('dist')
-    expect(names).not.toContain('.env')
-    expect(names).not.toContain('debug.log')
-    expect(names).not.toContain('.git')
-    // Shown: .docs, src (dirs, alpha) then files alpha. `.gitignore` is itself
-    // tracked by git (never self-ignored), so it appears; '.' sorts before 'R'.
-    expect(names).toEqual(['.docs', 'src', '.gitignore', 'README.md'])
+    // Dirs first (alpha), then files (alpha); `.git` is always dropped.
+    expect(names).toEqual([
+      '.docs',
+      'dist',
+      'node_modules',
+      'src',
+      '.env',
+      '.gitignore',
+      'debug.log',
+      'README.md'
+    ])
+    const ignored = res.entries.filter((e) => e.ignored).map((e) => e.name)
+    expect(ignored.sort()).toEqual(['.env', 'debug.log', 'dist', 'node_modules'])
     // isDir flags correct.
     expect(res.entries.find((e) => e.name === 'src')?.isDir).toBe(true)
     expect(res.entries.find((e) => e.name === 'README.md')?.isDir).toBe(false)
+  })
+
+  it('flags every child of an ignored directory as ignored', async () => {
+    await fs.writeFile(path.join(root, 'node_modules', 'pkg.json'), '{}')
+    const res = await listDir(root, path.join(root, 'node_modules'))
+    expect(res.entries.map((e) => [e.name, e.ignored])).toEqual([['pkg.json', true]])
   })
 
   it('applies a nested .gitignore to a subdirectory listing', async () => {
@@ -143,11 +153,9 @@ describe('listDir — real fixture (gitignore + .git + sort)', () => {
     await fs.writeFile(path.join(pkg, 'index.ts'), 'x')
 
     const res = await listDir(root, pkg)
-    const names = res.entries.map((e) => e.name)
-    expect(names).not.toContain('build') // nested .gitignore
-    expect(names).not.toContain('trace.log') // inherited root rule
-    // `.gitignore` (this dir's own) is tracked → listed; '.' sorts before 'i'.
-    expect(names).toEqual(['lib', '.gitignore', 'index.ts'])
+    const ignored = res.entries.filter((e) => e.ignored).map((e) => e.name)
+    // `build` via the nested .gitignore, `trace.log` via the inherited root rule.
+    expect(ignored.sort()).toEqual(['build', 'trace.log'])
   })
 
   it('returns not-found for a missing dir inside the root', async () => {

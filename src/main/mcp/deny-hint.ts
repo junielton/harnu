@@ -61,6 +61,15 @@ export function shapeDenial(
   if (result === 'PANE_INPUT_NOT_READY: operator-pane') {
     return shapeBrowserDenial('PANE_INPUT_NOT_READY', { folder: ctx.folder, openedBy: 'operator' })
   }
+  // browser-tabs S-6: the reload hint names the tab the refused call was judged on.
+  const inputNotReady = /^PANE_INPUT_NOT_READY: (tab-[0-9a-f]{8})$/.exec(result)
+  if (inputNotReady) {
+    return shapeBrowserDenial('PANE_INPUT_NOT_READY', {
+      folder: ctx.folder,
+      openedBy: 'agent',
+      tabId: inputNotReady[1]!
+    })
+  }
   // T571: a refused key press names the offending key in its detail.
   const browserDetail = new RegExp(`^(${BROWSER_DETAIL_CODES.join('|')}): ([\\s\\S]*)$`).exec(
     result

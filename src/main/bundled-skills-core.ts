@@ -11,12 +11,13 @@
  *  - {@link parseSkillFrontmatter} — a `SKILL.md`'s `name` + `description`, with
  *    PER-ENTRY fail-soft: a malformed file drops THAT skill, never the catalog
  *    (same posture as `contributes.themes` / `contributes.modes`, T138).
- *  - {@link resolveSkillEnabled} — the tri-state cascade `folder ?? global ?? false`.
- *    Default OFF is the product rule (spec §4.2): a skill silently added to a
- *    session's catalog changes model behaviour without consent.
+ *  - {@link resolveSkillEnabled} — the tri-state cascade `folder ?? global ?? default`.
+ *    The default is OFF (spec §4.2: a skill silently added to a session's catalog changes
+ *    model behaviour without consent) except for the skills named in
+ *    {@link SKILL_DEFAULTS}; today that is `walk` alone (guided walks, D-21).
  *  - {@link insertPluginDirArg} — the argv step. An EMPTY enabled set emits NO
- *    `--plugin-dir` at all, which is what makes AC-2's negative half true by
- *    construction rather than by prompt discipline.
+ *    `--plugin-dir` at all, so an install where the operator switched every default-on
+ *    skill off spawns byte-identical argv to one with no skills.
  */
 
 import { createHash } from 'node:crypto'
@@ -31,7 +32,25 @@ export interface BundledSkill {
   /** The `SKILL.md` frontmatter description — model-facing trigger text AND the
    *  panel's one-line purpose. One source of truth, never i18n'd (spec §3.1). */
   description: string
+  /**
+   * T2: `'feature'` for an entry under `features/<name>/FEATURE.md` — something Harnu stages
+   * that is not a skill (the doc-reader's agent and hook). Absent for a skill. A feature is
+   * switched on and off like a skill but is never a `/mention`, never installed outside Harnu.
+   */
+  kind?: 'feature'
 }
+
+/**
+ * The per-skill DEFAULT, used when neither the folder nor the global map names the skill. A skill absent
+ * from this map defaults OFF. An explicit `false` (folder or global) always wins, so the operator can still
+ * switch a default-on skill off; and the default reaches existing installs, because nothing is written
+ * to `bundled-skills.json` for a key the operator never touched.
+ *
+ * `walk` is the one exception to "bundled skills are off until switched on" (guided walks, D-21): a plain
+ * sentence like "walk me through what we just built" must open the panel walk in a session that never
+ * switched anything on; otherwise the trigger degrades silently to a chat walk and nothing says why.
+ */
+export const SKILL_DEFAULTS: Readonly<Record<string, boolean>> = Object.freeze({ walk: true })
 
 /** Per-skill boolean map. A MISSING key means "not set" (inherit / default). */
 export type SkillFlags = Record<string, boolean | undefined>
@@ -39,13 +58,13 @@ export type SkillFlags = Record<string, boolean | undefined>
 /** On-disk schema for `<userData>/bundled-skills.json` (spec §4.1). */
 export interface BundledSkillsPrefs {
   version: 1
-  /** Global per-skill on/off. Missing key ⇒ OFF (spec §4.2). */
+  /** Global per-skill on/off. A missing key takes the skill's default: OFF, except {@link SKILL_DEFAULTS}. */
   enabled: SkillFlags
   /** Per-skill "Also outside Harnu" opt-in (`~/.claude/skills/<name>/`, spec §4.3). */
   userLevelInstall: SkillFlags
 }
 
-/** A fresh install: nothing enabled, nothing installed outside Harnu. */
+/** A fresh install: nothing chosen, nothing installed outside Harnu (the defaults of {@link SKILL_DEFAULTS} apply). */
 export const EMPTY_PREFS: BundledSkillsPrefs = {
   version: 1,
   enabled: {},
@@ -241,9 +260,10 @@ export function parseSkillFrontmatter(raw: string, dirName?: string): BundledSki
 /**
  * The tri-state cascade (spec §4.1): a folder value of `undefined` INHERITS, an
  * explicit `true`/`false` wins over the global one in both directions, and neither
- * set resolves to `false` — the default-OFF rule behind AC-1.
+ * set resolves to the skill's default: `false`, except the skills of {@link SKILL_DEFAULTS}.
  *
- * This is the whole of AC-3's first half: `folder ?? global ?? false`, folder first.
+ * This is the whole of AC-3's first half: `folder ?? global ?? default`, folder first. Callers that
+ * are not bundled skills (the voice gate uses a flag named `speak`) are not in the map and stay off.
  */
 export function resolveSkillEnabled(
   global: SkillFlags | undefined,
@@ -254,7 +274,7 @@ export function resolveSkillEnabled(
   if (f !== undefined) return f
   const g = global?.[name]
   if (g !== undefined) return g
-  return false
+  return SKILL_DEFAULTS[name] === true
 }
 
 /**
@@ -319,6 +339,73 @@ export function folderStageKey(folder: string): string {
     .update(folder || '<none>')
     .digest('hex')
     .slice(0, 16)
+}
+
+/** A stage dir name is exactly what {@link folderStageKey} produces: 16 lowercase hex chars. */
+const STAGE_KEY_RE = /^[0-9a-f]{16}$/
+
+/** An unmatched stage dir (no known folder hashes to it) survives this long after its last use. */
+export const STAGING_GRACE_MS = 24 * 3_600_000
+
+/** A dir touched this recently is never pruned: a spawn may be about to register its session. */
+export const STAGING_JUST_STAGED_MS = 10 * 60_000
+
+export interface StagedDirStat {
+  name: string
+  isDirectory: boolean
+  /** Last use: refreshed by every stage, so it reads "unused for N" and not just "created". */
+  mtimeMs: number
+}
+
+export interface StagingPruneInput {
+  /** Every entry directly under `<userData>/skills/`. */
+  entries: readonly StagedDirStat[]
+  /** Folders with a live or parked session: their stage dir is never removed. */
+  inUseFolders: readonly string[]
+  /** Every folder the app knows (session index + pinned), used to tell "dormant" from "unknown". */
+  knownFolders: readonly string[]
+  now: number
+  graceMs?: number
+  justStagedMs?: number
+}
+
+export type StagingKeepReason = 'not-a-stage-dir' | 'in-use' | 'just-staged' | 'within-grace'
+
+export interface StagingPruneDecision {
+  remove: string[]
+  keep: Array<{ name: string; reason: StagingKeepReason }>
+}
+
+/**
+ * Decide which staged-skill dirs are dead. A staged dir is a regenerable copy (`stage` rebuilds it
+ * at every spawn), so the only way to hurt is deleting one a running `claude` uses as
+ * `--plugin-dir`. Hence: in use (live or parked session) ⇒ keep; dormant known folder ⇒ remove
+ * unless staged moments ago; unknown hash (a deleted folder, a worker's mention-keyed dir, a
+ * legacy dir) ⇒ remove only past the grace window. Entries that are not 16-hex directories are
+ * never ours to delete.
+ */
+export function planStagingPrune(input: StagingPruneInput): StagingPruneDecision {
+  const graceMs = input.graceMs ?? STAGING_GRACE_MS
+  const justStagedMs = input.justStagedMs ?? STAGING_JUST_STAGED_MS
+  const inUse = new Set(input.inUseFolders.map(folderStageKey))
+  const known = new Set(input.knownFolders.map(folderStageKey))
+  const out: StagingPruneDecision = { remove: [], keep: [] }
+  for (const e of input.entries) {
+    if (!e.isDirectory || !STAGE_KEY_RE.test(e.name)) {
+      out.keep.push({ name: e.name, reason: 'not-a-stage-dir' })
+      continue
+    }
+    if (inUse.has(e.name)) {
+      out.keep.push({ name: e.name, reason: 'in-use' })
+      continue
+    }
+    const age = input.now - e.mtimeMs
+    if (age < justStagedMs) out.keep.push({ name: e.name, reason: 'just-staged' })
+    else if (!known.has(e.name) && age < graceMs)
+      out.keep.push({ name: e.name, reason: 'within-grace' })
+    else out.remove.push(e.name)
+  }
+  return out
 }
 
 /**

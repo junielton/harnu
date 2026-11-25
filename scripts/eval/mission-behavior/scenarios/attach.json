@@ -1,0 +1,175 @@
+{
+  "name": "attach",
+  "order": 2,
+  "title": "a session that is not attached asks to join: a pending request, never attached, never the leader",
+  "label": "v4 AC-81 (attach)",
+  "description": "Missions v4 S-33, AC-81. A v4 mission led by A is seeded. Session B, attached to nothing, calls `mission_attach` twice and then tries `mission_get`. The request is stored once (the second call is a dedupe), it is pending (`decision: null`: only the operator allows it, in the Mission dropdown), B is not in the session history (it never attaches itself and never leads) and the leader is unchanged.",
+  "agents": ["A", "B"],
+  "phases": [
+    {
+      "seedV4": {
+        "slug": "notes-export",
+        "title": "Notes export",
+        "doneWhen": "The notes export ships",
+        "steps": [
+          {
+            "title": "Write the CSV writer",
+            "acs": [
+              {
+                "text": "The writer emits one row per board"
+              }
+            ]
+          }
+        ],
+        "sessions": [
+          {
+            "id": "{{session.A}}",
+            "role": "leads"
+          }
+        ]
+      }
+    },
+    {
+      "agent": "B",
+      "prompt": "1. mcp__harnu__mission_attach with folder=\"{{folder}}\", missionId=\"{{m.notes-export.id}}\", sessionId=\"{{self}}\".\n2. The same mcp__harnu__mission_attach call again, with the same arguments.\n3. mcp__harnu__mission_get with folder=\"{{folder}}\", missionId=\"{{m.notes-export.id}}\", sessionId=\"{{self}}\" (it is refused until the operator allows you; do not retry)."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "mission": "notes-export",
+      "label": "the request is stored once",
+      "path": "attachRequests",
+      "length": 1
+    },
+    {
+      "mission": "notes-export",
+      "path": "attachRequests.0.sessionId",
+      "equals": "{{session.B}}"
+    },
+    {
+      "mission": "notes-export",
+      "path": "attachRequests.0.missionId",
+      "equals": "{{m.notes-export.id}}"
+    },
+    {
+      "mission": "notes-export",
+      "label": "pending: only the operator decides",
+      "path": "attachRequests.0.decision",
+      "equals": null
+    },
+    {
+      "mission": "notes-export",
+      "label": "B is not attached",
+      "path": "sessions",
+      "excludes": {
+        "id": "{{session.B}}"
+      }
+    },
+    {
+      "mission": "notes-export",
+      "label": "the leader is unchanged",
+      "path": "sessions",
+      "length": 1
+    },
+    {
+      "mission": "notes-export",
+      "path": "sessions.0",
+      "equals": {
+        "id": "{{session.A}}",
+        "role": "leads",
+        "to": null
+      }
+    },
+    {
+      "mission": "notes-export",
+      "label": "the plan is untouched",
+      "path": "steps",
+      "length": 1
+    },
+    {
+      "mission": "notes-export",
+      "path": "status",
+      "equals": "open"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "no-request",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "unset": "attachRequests"
+        }
+      ]
+    },
+    {
+      "name": "request-not-deduped",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "set": {
+            "attachRequests.1": {
+              "id": "atr-2",
+              "missionId": "{{m.notes-export.id}}",
+              "sessionId": "{{session.B}}",
+              "at": "2026-11-14T10:00:00.000Z",
+              "decision": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "allowed-without-the-operator",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "set": {
+            "attachRequests.0.decision": "allowed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "attached-itself",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "set": {
+            "sessions.1": {
+              "id": "{{session.B}}",
+              "role": "worked",
+              "from": "2026-11-14T10:00:00.000Z",
+              "to": null
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "took-the-lead",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "set": {
+            "sessions.0.id": "{{session.B}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "request-for-the-wrong-session",
+      "mutate": [
+        {
+          "mission": "notes-export",
+          "set": {
+            "attachRequests.0.sessionId": "{{session.A}}"
+          }
+        }
+      ]
+    }
+  ]
+}

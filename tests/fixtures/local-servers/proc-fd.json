@@ -1,0 +1,23 @@
+{
+  "note": "A neutral recorded shape of /proc for one terminal shell: pid 4100 (zsh) runs pid 4101 (node, a Vite dev server) which spawns pid 4102 (esbuild), plus pid 4110 (python3) started by another shell. Names and paths are invented.",
+  "tree": {
+    "4100": {
+      "comm": "zsh",
+      "children": [4101, 4103],
+      "fds": ["/dev/pts/3", "anon_inode:[eventpoll]"]
+    },
+    "4101": {
+      "comm": "node",
+      "children": [4102],
+      "fds": ["socket:[41001]", "socket:[41004]", "pipe:[50001]", "/dev/null"]
+    },
+    "4102": { "comm": "esbuild", "children": [], "fds": ["pipe:[50001]", "socket:[41005]"] },
+    "4103": {
+      "comm": "python3",
+      "children": [],
+      "fds": ["socket:[41002]", "socket:[41006]", "socket:[41007]"]
+    },
+    "4110": { "comm": "ruby", "children": [], "fds": ["socket:[41003]"] },
+    "4200": { "comm": "sshd", "children": [], "fds": ["socket:[99999]"] }
+  }
+}

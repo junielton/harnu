@@ -252,3 +252,42 @@ describe('runCreateSession — BUG-58: held reservation closes the double-spawn 
     expect(tryReserveInFlight('/home/u/repo')).toBe(false) // still held by the new spawn
   })
 })
+
+describe('runCreateSession — the proactive hint (Missions v4 S-34)', () => {
+  const materialized = (): Partial<CreateSessionDeps> => ({
+    awaitMaterialization: vi.fn(async (syntheticId: string): Promise<Materialization> => ({
+      syntheticId,
+      sessionId: 'real-session-1',
+      folder: '/home/u/repo'
+    }))
+  })
+
+  it('adds the fields `hint` returns to the ACK of a materialized session', async () => {
+    const { deps } = harness({
+      ...materialized(),
+      hint: vi.fn(async () => ({ missionHint: 'call mission_create' }))
+    })
+    const ack = parse(await runCreateSession('/home/u/repo', { folder: '/home/u/repo' }, {}, deps))
+    expect(ack.ok).toBe(true)
+    expect(ack.missionHint).toBe('call mission_create')
+  })
+
+  it('never lets a failing hint fail the ACK of a session that is alive', async () => {
+    const { deps } = harness({
+      ...materialized(),
+      hint: vi.fn(async () => {
+        throw new Error('records unreadable')
+      })
+    })
+    const ack = parse(await runCreateSession('/home/u/repo', { folder: '/home/u/repo' }, {}, deps))
+    expect(ack.ok).toBe(true)
+    expect(ack.missionHint).toBeUndefined()
+  })
+
+  it('does not run the hint for a spawn that did not materialize', async () => {
+    const hint = vi.fn(async () => ({ missionHint: 'x' }))
+    const { deps } = harness({ hint })
+    await runCreateSession('/home/u/repo', { folder: '/home/u/repo' }, {}, deps)
+    expect(hint).not.toHaveBeenCalled()
+  })
+})
