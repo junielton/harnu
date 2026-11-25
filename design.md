@@ -2498,8 +2498,8 @@ When the Your move setting is **Live**, the zone stops listing forgotten session
 **cards** of the global Your move queue instead. In Off and Observe it keeps the rows above
 unchanged; the legacy `needs-input` rows retire in the answering unit. The island, its
 `data-island="sidebar-return"` attribute and the position are the same in both
-layouts. The zone is global: it never filters by the folder the sidebar is drilled into, so a card
-from another project shows while the list is drilled (R-3).
+layouts. The zone is global: it never filters by the folder the sidebar is focused on, so a card
+from another project shows while the list is focused (R-3).
 
 - **Head.** The dock head: `Return here`, the count and the oldest card's running clock.
 - **Order.** Oldest first (`openedAt` ascending). Only open cards of the `live` lane. The selected
