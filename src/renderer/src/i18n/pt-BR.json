@@ -510,7 +510,7 @@
         "withAge": "{head} · {age}"
       },
       "clear": "Pronto, continuar",
-      "links": "Links",
+      "linksCount": "Links · {n}",
       "evidence": "Evidência",
       "evidenceTitle": "Abrir a evidência no visualizador",
       "worktreeTitle": "Mostrar este worktree na barra lateral",
@@ -603,6 +603,22 @@
       "mission": {
         "label": "Testar a missão inteira",
         "tip": "Percorrer a missão inteira na mão"
+      }
+    },
+    "time": {
+      "done": "Concluído · {date}",
+      "started": "Iniciado em {date} · {age}",
+      "notStarted": "Não iniciado",
+      "running": "Em execução há {age}",
+      "blocked": "Bloqueado há {age} · desde {date}",
+      "openSince": "Aberto desde {date}",
+      "lastVerified": "Último verificado em {date}",
+      "age": {
+        "underMinute": "<1 min",
+        "minutes": "{n} min",
+        "hours": "{h} h",
+        "hoursMinutes": "{h} h {m} min",
+        "days": "{n} dia | {n} dias"
       }
     }
   },

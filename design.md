@@ -7753,12 +7753,17 @@ doors" below).
   **8px** from each viewport edge (it flips to the right edge when the pill is near it). It is a
   `position: fixed` layer on `--z-dialog`, teleported to `body` (outside the Topbar's drag region, `no-drag`), `bg-surface`, `border border-border-2`, `rounded-lg`,
   `shadow-pop`, entering with `.anim-fade-in-scale` (origin top-left; none under reduced motion).
-- **Width.** `min(420px, 100vw - 16px)`. Below **360px** of window it is the full width minus the 8px
-  margins; there is no minimum.
-- **Height and scroll.** `max-height: min(640px, 100vh - 56px)`. A column: the **body** (`overflow-y:
-auto`, thin scrollbar on `border-border-2`) is the one scroller; the **footer** (Close mission…) is
-  pinned under it and nothing else is; every `overflow-y-auto` element carries `.scrollable`. Under **420px** of window height the footer stops being pinned and
-  scrolls with the body. The body is a size container (`@container`).
+- **Width.** From the window: `min(clamp(420px, 45vw, 760px), 100vw - 16px)` — 45% of the window, never
+  under 420px nor over 760px (about 576px on a 1280px window, 760px from 1690px up), and never wider than
+  the window less its 8px margins.
+- **Height and scroll.** From the window too: `max-height: calc(100vh - 62px)`, with no fixed ceiling. A
+  column: the **body** and the **footer** (Close mission…) pinned under it. When a tree is on screen, the
+  **head** (title, progress) and the **next card** are pinned as well and **only the tree scrolls** (thin
+  scrollbar); the body keeps its own scroll only for a next card taller than the dropdown, and the tree
+  never shrinks under 96px. Every other state (chooser, empty, loading, refused) scrolls the whole body.
+  Every `overflow-y-auto` element carries `.scrollable`. Under **420px** of window height nothing is
+  pinned: the head, the card and the footer scroll with the body. The body is a size container
+  (`@container`).
 - **Close.** Esc, a click outside, the pill again, or a door that ends the mission. Outside clicks
   that land on a dialog do not close it.
 
@@ -7781,25 +7786,29 @@ auto`, thin scrollbar on `border-border-2`) is the one scroller; the **footer** 
 1. **Head** (`padding: 14px 14px 12px`). Only when the session leads several missions: a one-line
    **switch** above the title ("Mission 1 of 3 · Change", `10px / 700` eyebrow, `chevron-down`) that opens a
    `radiogroup` of the missions (title, "{done} of {total} milestones · {n} for you", a `check` on the
-   current). The **title** (`13.5px / 600`, wraps, never truncates). The **progress**: a `6px` bar
-   (`rounded-sm border border-border bg-surface-2`, fill `bg-green`) and the count text (`11.5px`,
-   `tabular-nums`, `text-text-3`) on one row. No state tag and no "Ready to close" badge: the next step
+   current). The **title** (`13.5px / 600`, wraps, never truncates). The **progress**: a `6px` bar and the
+   count text (`11.5px`, `tabular-nums`, `text-text-3`) on one row. With milestones the bar is **one segment
+   per required milestone**, equal widths, **3px apart** (each `rounded-sm border`): done `bg-green
+border-green`; the current milestone `bg-accent-soft border-accent-line`; every other one (not started,
+   and one under way that is not the current) `bg-surface-2 border-border-2`. With no milestones it is one
+   bar (`border border-border bg-surface-2`, fill `bg-green`). No state tag and no "Ready to close" badge: the next step
    and the green pill say it.
 2. **One card, the next thing the operator owes** (`margin: 0 14px 12px`, `rounded`, `border`, `padding:
 10px 12px`): the next step (looks `you` / `ok` / `calm`; see "The next card" below); **or** a staged Done when (accent
    look, Approve / Decline); **or** a request to join (accent look, Allow / Deny). It is **one** card: a
    staged Done when is never also an ask with a "Review it" button. The button is the **compact** size
-   (`h-5`, `px-2`, `11px`): at the **right** of the text when the body is **380px or wider**, **under**
-   the text, left-aligned, when narrower. "{n} more waiting on you" is a link under the why and expands
+   (`h-5`, `px-2`, `11px`): at the **right** when the body is **380px or wider**, **centred vertically**
+   beside the eyebrow and the text, **under** the text, left-aligned, when narrower. "{n} more waiting on you" is a link under the why and expands
    the rest in place (a row per item, its compact button right when wide, below when narrow).
 3. **Tree** (`border-t`, `padding: 8px 14px 10px`). Milestone ▸ step ▸ criteria ("The tree and the glyphs" below), with these
-   rules: **only the current milestone is open**; no timeline line; an open milestone's summary line
+   rules: **only the current milestone is open**; a timeline runs down every level; an open milestone's summary line
    carries **Ask** at its right end (`gap: 4px 14px`, it wraps to its own line, never touching the count);
    inside an open milestone the owed steps come first, then **at most three** running steps, the rest behind
    "{n} more steps"; a step row has no Blocked chip (the flag glyph is it) and keeps the Yours chip and
    the PR link.
 4. **An open step.** Blocker (with Done, continue when it is the operator's), **Criteria** (verified
-   ones folded into one line; open ones with who settles them and their button), **Links**: the PR; a
+   ones folded into one line; open ones with who settles them and their button), **Links** (closed by
+   default behind a "Links · N" row, see "An open step"): the PR; a
    **worktree** as its branch name (click selects that folder in the sidebar) with a copy button for the
    path; the evidence as one **Evidence** link that opens its README; an address on this machine. A link
    that opens nothing is not drawn; no absolute path is ever drawn; an empty Links block is not drawn.
@@ -7984,8 +7993,9 @@ of one step) it is **Open step**: it unfolds the step in the tree (and its miles
 Milestone ▸ step ▸ criteria, every level behind a **chevron** (`ChevronRight` closed, `ChevronDown` open, `10px`,
 `text-text-4`), every row a `role="treeitem"` with `aria-expanded`.
 
-- **Milestone row** (columns `12px 12px 1fr auto`, `gap: 8px`, `padding: 7px 6px`, `rounded-sm`, `12.5px`,
-  `text-text-3`, hover `bg-surface-2`): chevron, glyph, title, then **"{done}/{total}"** (`10.5px`, `text-text-4`,
+- **Milestone row** (columns `10px 12px 1fr auto`, `gap: 8px`, `padding: 7px 6px`, `rounded-sm`, `12.5px` on
+  a `16px` line, `text-text-3`; everything on the row sits on the title's first line): chevron, glyph, title
+  with its time under it, then **"{done}/{total}"** (`10.5px`, `text-text-4`,
   `tabular-nums`). The current milestone's title is `text-text` / 500 ("current" is the server's
   `progress.current`: the first milestone in plan order that is neither done nor optional). A milestone that
   **waits for** another that is not the one just before it adds a second line under its title (`11px`,
@@ -8000,8 +8010,8 @@ Milestone ▸ step ▸ criteria, every level behind a **chevron** (`ChevronRight
 - **Order inside a milestone.** Steps the operator owes first, then at most three running ones, in plan order
   inside each group; every other step is folded behind a text link **"{n} more steps"** (`11px`, `text-text-4`)
   that expands in place, in plan order, and reads "Show less".
-- **Step row** (columns `10px 12px 1fr auto`, `gap: 7px`, `padding: 5px 6px`, `12px`, `text-text-2`): chevron,
-  glyph, the title (wraps to at most two lines, then cuts) and the right cell (`10.5px`, `text-text-4`): the pull
+- **Step row** (columns `10px 12px 1fr auto`, `gap: 7px`, `padding: 6px 6px`, `12px` on a `16px` line,
+  `text-text-2`): chevron, glyph, the title (it wraps) with its time under it, and the right cell (`10.5px`, `text-text-4`): the pull
   request number **`#256`** in `font-mono`, `text-accent`, and a **Yours** chip when the operator owes the step
   (`border-warning-line bg-warning-soft text-warning`). The number is a link when Harnu has the address: the step's
   `pr` link when it is an address, else the pull request of that number in the session's links. It is a
@@ -8014,6 +8024,44 @@ Milestone ▸ step ▸ criteria, every level behind a **chevron** (`ChevronRight
   same order, the same fold, and no milestone row. A small task is its own list, so **every step shows, in plan
   order**, when there are eight or fewer (`LOOSE_ALL_SHOWN`): a done step or one still to do is never hidden behind
   "N more steps"; past eight the order and the fold above apply.
+
+##### The timeline and the time lines
+
+- **Hover** on a milestone or step row is `bg-surface-2` (`rounded-sm`) **inset 18px from the row's left**, so
+  it starts after the toggle column and never covers the timeline. The focus ring still borders the row.
+- **The timeline** runs at all three levels and is CSS only (`.mission-tl*` in `main.css`; no measuring). Each
+  item (a milestone with its body, a step with its open body, a criterion line) owns a `2px` line,
+  `border-radius: 1px`, centred on its toggle's centre: the chevron's (5px in a 10px slot) for milestones and
+  steps, the box's (6px in 12px) for criteria. It starts under that toggle and reaches just above the next
+  item's, so it follows any height (an open step, a blocker, a wrapped title) and stays joined when a step
+  opens or closes. Milestone line: `top 24px`, `bottom -6px`; step: `23px`, `-5px`; criterion: `16px`, `-6px`.
+  A **done** item's line is `bg-green` (a settled criterion's too); every other is `text-4` at 55%
+  (`color-mix(in srgb, var(--color-text-4) 55%, transparent)`). The **last item of a level has no line**; the
+  last required milestone before the optional-milestones line has none either.
+- **An open milestone's body** is indented **30px**, so the milestone's line never crosses a step's chevron.
+  Items stack with no gap between them; the rows' own padding spaces them.
+- **A time under every title**: `10.5px` on a `14px` line, `text-text-4`, `tabular-nums`, `1px` under the
+  title. Only timestamps the record holds; **no line when there is none** (so that row is one line shorter).
+  A date reads day, month and 24h time in the reader's locale ("12 Nov, 16:40"); an age reads "<1 min",
+  "25 min", "1 h 10 min", "6 days".
+
+  | Where                | Line                               | From                                                     |
+  | -------------------- | ---------------------------------- | -------------------------------------------------------- |
+  | milestone, done      | "Done · {date}"                    | the last settle among its steps' criteria                |
+  | milestone, under way | "Started {date} · {age}"           | the first `startedAt` of its steps                       |
+  | milestone, none yet  | "Not started"                      | its state                                                |
+  | step, blocked        | "Blocked for {age} · since {date}" | the oldest active blocker's `raisedAt`                   |
+  | step, running        | "Running for {age}"                | `startedAt`                                              |
+  | open criterion       | "Open since {date}"                | the step's `startedAt`                                   |
+  | verified fold line   | "Last one verified {date}"         | the latest settle `at` among the step's settled criteria |
+
+  A step **in review**, to do or done has no line: nothing records when a step entered review. A criterion a
+  **fact** settles has no stamp, so it dates nothing. Settle times reach the dropdown in the view reply
+  (`settledAt`, by step and criterion); the record gains no field and `mission_get` is unchanged.
+
+- **Right edge.** The milestone's count, a step's **Yours** chip and the text of a ghost **Ask** that is alone
+  at the right end share one edge: that Ask hangs its padding and border `9px` past it. With "Test it" beside
+  it, the bordered button's own edge is the right edge.
 
 **Glyphs** (a `12px` slot, a circle, centred): `done` — `bg-green` with a `Check` (8px, stroke 3, `text-bg`);
 `running` — an `8px` `bg-accent` dot; `waiting-review` — an `8px` ring (`border-[1.5px] border-accent`); `todo` —
@@ -8032,7 +8080,8 @@ An open step is a column under its row (`margin: 2px 0 8px 29px`, `gap: 8px`) wi
   when the record has none); the reason (the server's words, as written); the ask, the exact thing needed (left out
   when it only repeats the reason); and what it unblocks (`11px`, `text-text-3`). **Done, continue** (door
   `clearBlocker`) is a button **only on a blocker that is the operator's**; the session's own has none.
-- **Criteria.** The verified ones fold into one line, a 12px `bg-green` circle with a `Check` and **"19 criteria
+- **Criteria.** They hang on the timeline, their box or check as the node, `6px` apart, each on a `16px` line
+  with its time under it. The verified ones fold into one line, a 12px `bg-green` circle with a `Check` and **"19 criteria
   verified"** (`11.5px`, `text-text-2`; "1 criterion verified"), left out when none is: a step with 19 settled
   criteria does not draw 19 rows. Only the open ones are listed (a `12px 1fr auto` grid, `11.5px`): a hollow 12px
   box, the text, and at the right **who settles it** (`10.5px`, `text-text-4`) and the operator's button.
@@ -8049,7 +8098,10 @@ An open step is a column under its row (`margin: 2px 0 8px 29px`, `gap: 8px`) wi
   and says under its text, `10.5px`, `text-text-4`: "The session says it is done. Not checked yet." A step with no
   criteria says "No criteria yet."
 
-- **Links** are drawn as the numbered block 4 above says. Only `http` and `https` addresses open
+- **Links** are **closed by default** behind a summary row, a button reading **"Links · {n}"** (the eyebrow's
+  type: `10px / 700`, uppercase, `0.07em`, `text-text-4`, hover `text-text-2`) with a `10px` `ChevronRight` before
+  it that turns 90° when open (`--dur-fast`; none under reduced motion). Click, Enter or Space toggles it
+  (`aria-expanded`); inside are the chips, drawn as the numbered block 4 above says. Only `http` and `https` addresses open
   (`shellOpenExternal`); a repo path in a record is plain text. The order is: the pull request (`font-mono`), the
   finished page ("Page · localhost:5173/score-report"), then the rest in the order they were written. They come
   from the step's own links (the pull request Harnu found on its branch and what the agent added with

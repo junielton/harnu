@@ -5,9 +5,10 @@
  *
  * A teleported, non-modal `role="dialog"` layer that hangs under the Topbar pill: `position: fixed` on
  * `--z-dialog`, 6px under the Topbar's bottom edge, its left edge on the pill's (flipped to the right edge
- * near the window's), 8px clear of every window edge (`lib/mission-dropdown-position.ts`). It is a column:
- * the **body** is the one scroller (`.scrollable`, a size container), the **footer** is pinned under it —
- * and under 420px of window height it scrolls with the body instead.
+ * near the window's), 8px clear of every window edge (`lib/mission-dropdown-position.ts`); both sizes follow
+ * the window. It is a column: the **body** (a size container) and the **footer** pinned under it. With a tree
+ * on screen the head and the next card are pinned too and only the **tree** scrolls; every other state scrolls
+ * the whole body. Under 420px of window height nothing is pinned: the footer and the head scroll with the body.
  *
  * Its open state is the existing `ui.popovers.missionProgress` flag, so the App's Esc binding and
  * `anyPopoverOpen` order it with the other popovers. It closes on Esc (focus goes back to the pill), on a
@@ -291,6 +292,13 @@ const placement = computed(() =>
 
 /** Under 420px of window height the footer scrolls with the body instead of staying pinned. */
 const footerInBody = computed(() => viewport.value.height < DROPDOWN_SHORT_WINDOW)
+/**
+ * The head and the next card stay in place and the tree is the scroller. Not in a short window, where there
+ * is no room to pin them. The body keeps its own scroll for a next card taller than the dropdown.
+ */
+const pinnedHead = computed(
+  () => mission.value !== null && !chooserOpen.value && !footerInBody.value
+)
 
 /** Close it. What a door that ends the mission calls (AC-17). */
 function close(): void {
@@ -390,18 +398,19 @@ function onClickOutside(e: MouseEvent): void {
       :inert="closeOpen ? true : undefined"
       data-test="mission-dropdown"
       data-dsqa="mission-dropdown"
-      class="anim-fade-in-scale fixed z-(--z-dialog) flex max-h-[min(640px,calc(100vh-56px))] w-[min(420px,calc(100vw-16px))] origin-top-left flex-col rounded-lg border border-border-2 bg-surface text-text shadow-pop outline-none [-webkit-app-region:no-drag]"
+      class="anim-fade-in-scale fixed z-(--z-dialog) flex max-h-[calc(100vh-62px)] w-[min(clamp(420px,45vw,760px),calc(100vw-16px))] origin-top-left flex-col rounded-lg border border-border-2 bg-surface text-text shadow-pop outline-none [-webkit-app-region:no-drag]"
       :class="closeOpen ? 'saturate-[0.7]' : ''"
       :style="{ top: `${placement.top}px`, left: `${placement.left}px` }"
     >
       <div
         class="scrollable @container min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+        :class="pinnedHead ? 'flex flex-col' : ''"
         data-test="mission-dropdown-body"
       >
         <!-- The sample strip: what shows below is made up, its states, and the way out. -->
         <section
           v-if="sample"
-          class="flex flex-col border-b border-accent-line bg-accent-soft text-text"
+          class="flex shrink-0 flex-col border-b border-accent-line bg-accent-soft text-text"
           style="padding: 8px 14px; gap: 6px; font-size: 11.5px; line-height: 1.45"
           :aria-label="t('missionDropdown.sample.label')"
           data-test="mission-sample"
@@ -448,6 +457,7 @@ function onClickOutside(e: MouseEvent): void {
         </section>
         <template v-if="mission">
           <MissionDropdownHead
+            class="shrink-0"
             :detail="mission.detail"
             :led="led"
             :current-id="mission.missionId"
@@ -456,6 +466,7 @@ function onClickOutside(e: MouseEvent): void {
           />
           <MissionDropdownNext
             v-show="!chooserOpen"
+            class="shrink-0"
             :mission="mission"
             @open-step="openStep"
             @close="openClose"
@@ -468,6 +479,12 @@ function onClickOutside(e: MouseEvent): void {
             :detail="mission.detail"
             :ask-leader="askLeader"
             :session-links="sessionLinks"
+            :settled-at="mission.settledAt"
+            :class="
+              pinnedHead
+                ? 'scrollable min-h-24 flex-[1_1_auto] overflow-y-auto overflow-x-hidden'
+                : 'shrink-0'
+            "
             @walk="walk"
           />
         </template>
@@ -480,7 +497,7 @@ function onClickOutside(e: MouseEvent): void {
           :refusal="refusal"
           :sample-link="!sample && kind === 'none' && sessionId !== null"
         />
-        <div v-show="!chooserOpen"><slot /></div>
+        <div v-show="!chooserOpen" class="shrink-0"><slot /></div>
         <div
           v-if="footerInBody && hasFooter"
           class="border-t border-border"

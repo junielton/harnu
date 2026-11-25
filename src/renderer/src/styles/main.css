@@ -91,6 +91,61 @@ textarea,
   border-radius: inherit;
 }
 
+/* Mission dropdown — the timeline (design.md §6 "Mission dropdown" → "The timeline and the time lines").
+   CSS only: each item owns a 2px line from under its own toggle to just above the next item's, so it follows
+   any height (an open step, a blocker, a wrapped title). A toggle is 10px wide (its centre at 5px), a
+   criterion's box 12px (centre at 6px); the line's left edge is 1px left of that centre. `--tl-top` is under
+   the toggle, `--tl-bottom` reaches into the next item, both 4px (2px on a criterion) clear of the node. */
+.mission-tl {
+  position: relative;
+}
+.mission-tl--milestone {
+  --tl-left: 4px;
+  --tl-top: 24px;
+  --tl-bottom: -6px;
+}
+.mission-tl--step {
+  --tl-left: 4px;
+  --tl-top: 23px;
+  --tl-bottom: -5px;
+}
+.mission-tl--criterion {
+  --tl-left: 5px;
+  --tl-top: 16px;
+  --tl-bottom: -6px;
+}
+.mission-tl--line::before {
+  content: '';
+  position: absolute;
+  left: var(--tl-left);
+  top: var(--tl-top);
+  bottom: var(--tl-bottom);
+  width: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--color-text-4) 55%, transparent);
+  pointer-events: none;
+}
+.mission-tl--line.mission-tl--done::before {
+  background: var(--color-green);
+}
+/* A milestone or step row: its hover starts after the toggle column, so it never covers the timeline. */
+.mission-row {
+  position: relative;
+  isolation: isolate;
+}
+.mission-row::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 18px;
+  z-index: -1;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.mission-row:hover::after,
+.mission-row:focus-visible::after {
+  background: var(--color-surface-2);
+}
+
 .scrollable {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;

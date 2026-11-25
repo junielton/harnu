@@ -244,7 +244,7 @@ const WIDE_COLS = '@min-[380px]:grid-cols-[minmax(0,1fr)_auto]'
     data-dsqa-part="next"
     data-test="next-card"
   >
-    <!-- A step: eyebrow, text, and the button at the right of the eyebrow (wide) or under the text (narrow). -->
+    <!-- A step: eyebrow and text, with the button centred at their right (wide) or under the text (narrow). -->
     <div
       v-if="cardKind === 'step'"
       class="grid grid-cols-[minmax(0,1fr)]"
@@ -260,10 +260,7 @@ const WIDE_COLS = '@min-[380px]:grid-cols-[minmax(0,1fr)_auto]'
           look === 'calm' ? $t('missionDropdown.next.calm') : $t('missionDropdown.next.you')
         }}</span
       >
-      <div
-        class="min-w-0 @min-[380px]:col-span-full @min-[380px]:row-start-2"
-        data-test="next-body"
-      >
+      <div class="min-w-0 @min-[380px]:col-start-1 @min-[380px]:row-start-2" data-test="next-body">
         <template v-if="card.primary">
           <div class="text-text [overflow-wrap:anywhere]" style="font-size: 13px; line-height: 1.4">
             {{ wordsOf(card.primary).ask }}
@@ -302,7 +299,7 @@ const WIDE_COLS = '@min-[380px]:grid-cols-[minmax(0,1fr)_auto]'
       </div>
       <div
         v-if="primaryActions.length > 0"
-        class="mt-1 flex flex-wrap items-start rounded-sm @min-[380px]:col-start-2 @min-[380px]:row-start-1 @min-[380px]:-mt-1 @min-[380px]:self-baseline"
+        class="mt-1 flex flex-wrap items-start rounded-sm @min-[380px]:col-start-2 @min-[380px]:row-span-2 @min-[380px]:row-start-1 @min-[380px]:mt-0 @min-[380px]:self-center"
         style="gap: 6px"
         data-test="next-actions"
       >

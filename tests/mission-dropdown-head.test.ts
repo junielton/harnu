@@ -93,13 +93,27 @@ describe('AC-6 — the head draws the title and one progress row, nothing else',
     expect(bar.getAttribute('aria-valuemax')).toBe(String(detail.progress.total))
     expect(bar.getAttribute('aria-valuenow')).toBe(String(detail.progress.done))
     expect(bar.className).toMatch(/\bh-1\.5\b/) // 6px
-    expect(bar.className).toMatch(/\brounded-sm\b/)
-    expect(bar.className).toMatch(/\bborder-border\b/)
-    expect(bar.className).toMatch(/\bbg-surface-2\b/)
-    const fill = bar.querySelector<HTMLElement>('[data-test="mission-bar-fill"]') as HTMLElement
-    expect(fill.className).toMatch(/\bbg-green\b/)
-    const pct = (detail.progress.done / detail.progress.total) * 100
-    expect(fill.style.width).toBe(`${pct}%`)
+    // One segment per milestone, 3px apart, in place of a single fill (T810).
+    expect(bar.className).toContain('gap-[3px]')
+    expect(bar.querySelector('[data-test="mission-bar-fill"]')).toBeNull()
+    const segments = [...bar.querySelectorAll<HTMLElement>('[data-test="mission-segment"]')]
+    const required = detail.milestones.filter((m) => !m.optional)
+    expect(segments).toHaveLength(required.length)
+    expect(segments.map((s) => s.dataset.state)).toEqual(
+      required.map((m) =>
+        m.state === 'done' ? 'done' : m.id === detail.progress.current?.id ? 'current' : 'todo'
+      )
+    )
+    const looks = {
+      done: ['bg-green', 'border-green'],
+      current: ['bg-accent-soft', 'border-accent-line'],
+      todo: ['border-border-2']
+    }
+    for (const s of segments) {
+      expect(s.className.split(' ')).toEqual(
+        expect.arrayContaining(looks[s.dataset.state as keyof typeof looks])
+      )
+    }
 
     const count = q('[data-test="mission-count"]') as HTMLElement
     expect(count.textContent?.trim()).toBe(
@@ -135,8 +149,13 @@ describe('AC-6 — the head draws the title and one progress row, nothing else',
   it('counts steps when the mission has no milestones', () => {
     const detail = detailOf()
     detail.progress = { ...detail.progress, unit: 'steps', done: 4, total: 21 }
+    detail.milestones = []
     mountHead({ detail })
     expect(q('[data-test="mission-count"]')?.textContent?.trim()).toBe('4 of 21 steps done')
+    // With no milestone there is nothing to segment: one fill, on the server's numbers.
+    expect(qa('[data-test="mission-segment"]')).toHaveLength(0)
+    const fill = q('[data-test="mission-bar-fill"]') as HTMLElement
+    expect(fill.style.width).toBe(`${(4 / 21) * 100}%`)
   })
 })
 

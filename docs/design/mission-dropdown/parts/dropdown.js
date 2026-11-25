@@ -222,25 +222,48 @@
     <div class="r"><div><span class="k warn">${t('kind.review')}</span><span class="a">${t('next.review.ask')}</span></div><div class="w">${t('next.review.why')}</div><button class="btn" ${go('step-open')}>${ic('arrow', 'i10')}${t('next.openStep')}</button></div>
     <div class="r"><div><span class="k warn">${t('kind.settle')}</span><span class="a">${t('next.settle.ask')}</span></div><div class="w">${t('next.settle.why')}</div><button class="btn" ${go('step-open')}>${ic('check', 'i10')}${t('step.mark')}</button></div></div>`
 
+  /* sample times under the titles; a title with no stamp in the record has no line */
+  const WHEN = {
+    'ms1:done': 'Done · 12 Nov, 16:40',
+    'ms2:running': 'Started 13 Nov, 09:10 · 6 days',
+    'ms2:done': 'Done · 19 Nov, 11:05',
+    'ms3:done': 'Done · 21 Nov, 17:30',
+    'ms3:todo': 'Not started',
+    s10: 'Blocked for 40 min · since 19 Nov, 10:12',
+    s5: 'Running for 25 min',
+    s6: 'Running for 1 h 10 min',
+    s7: 'Running for 8 min',
+    verified: 'Last one verified 18 Nov, 15:20',
+    'c.open1': 'Open since 18 Nov, 14:02',
+    'c.open2': 'Open since 18 Nov, 14:02',
+    'c.open3': 'Open since 19 Nov, 10:12'
+  }
+  const when = (k) => (WHEN[k] ? `<span class="when">${WHEN[k]}</span>` : '')
+  /* a title with its time under it */
+  const tt = (text, key) => `<span class="tt"><span class="t">${text}</span>${when(key)}</span>`
+  /* a timeline item: draws its line down to the next one (the last of a level draws none) */
+  const tl = (done, inner) => `<div class="tl ${done ? 'done' : ''}">${inner}</div>`
+
   const stepRow = (id, titleKey, state, o = {}) => {
     const open = o.open
     const tip = o.blocked ? t('tip.blocked') : t('tip.' + state)
     const g = o.blocked ? dot('blocked', tip, o.tipOpen ? 'data-tip-open' : '') : dot(state, tip)
     return `<button class="st" role="treeitem" aria-expanded="${!!open}" ${o.goto ? go(o.goto) : ''} data-dsqa-part="step">
-      <span class="chev">${ic(open ? 'down' : 'right', 'i10')}</span>${g}<span class="t">${t(titleKey)}</span>
+      <span class="chev">${ic(open ? 'down' : 'right', 'i10')}</span>${g}${tt(t(titleKey), id)}
       <span class="r">${o.pr ? `<span class="pr" role="link" tabindex="0">#${o.pr}</span>` : ''}${o.yours ? `<span class="chip yours">${t('chip.yours')}</span>` : ''}</span></button>`
   }
   const crit = (c) => {
     const lk = (inner) => `<div class="links">${inner}</div>`
+    const nLinks = c.openStep === 's10' ? 2 : 4
     const blocked = c.openStep === 's10'
     const blocker = blocked
       ? `<div class="blocker" data-dsqa-part="blocker"><div class="bh">${ic('flag', 'i10')}${t('blk.you')} · 40m</div><div>${t('blk.reason')}</div><div style="font-weight:500">${t('blk.ask')}</div><div class="u">${t('blk.unblocks')}</div><div><button class="btn primary" ${go('mid')}>${ic('check', 'i10')}${t('blk.clear')}</button></div></div>`
       : ''
     const criteria = blocked
-      ? `<div class="crit"><div class="eyebrow">${t('step.criteria')}</div><div class="cr"><span class="bx" role="img" aria-label="${t('tip.crit.open')}" data-tip="${t('tip.crit.open')}"></span><span>${t('c.open3')}</span><span class="who">${t('by.session')}</span></div></div>`
-      : `<div class="crit"><div class="eyebrow">${t('step.criteria')}</div><div class="verified">${dot('done', t('tip.crit.done'))}<span>${t('step.verified', 3)}</span></div>
-          <div class="cr"><span class="bx" role="img" aria-label="${t('tip.crit.open')}" data-tip="${t('tip.crit.open')}"></span><span>${t('c.open1')}</span><span class="who">${t('by.you')}<button class="btn" ${go('step-open')}>${ic('check', 'i10')}${t('step.mark')}</button></span></div>
-          <div class="cr"><span class="bx" role="img" aria-label="${t('tip.crit.open')}" data-tip="${t('tip.crit.open')}"></span><span>${t('c.open2')}</span><span class="who">${t('by.session')}</span></div></div>`
+      ? `<div class="crit"><div class="eyebrow">${t('step.criteria')}</div><div class="cr tl"><span class="bx" role="img" aria-label="${t('tip.crit.open')}" data-tip="${t('tip.crit.open')}"></span>${tt(t('c.open3'), 'c.open3')}<span class="who">${t('by.session')}</span></div></div>`
+      : `<div class="crit"><div class="eyebrow">${t('step.criteria')}</div><div class="verified tl done">${dot('done', t('tip.crit.done'))}${tt(t('step.verified', 3), 'verified')}</div>
+          <div class="cr tl"><span class="bx" role="img" aria-label="${t('tip.crit.open')}" data-tip="${t('tip.crit.open')}"></span>${tt(t('c.open1'), 'c.open1')}<span class="who">${t('by.you')}<button class="btn" ${go('step-open')}>${ic('check', 'i10')}${t('step.mark')}</button></span></div>
+          <div class="cr tl"><span class="bx" role="img" aria-label="${t('tip.crit.open')}" data-tip="${t('tip.crit.open')}"></span>${tt(t('c.open2'), 'c.open2')}<span class="who">${t('by.session')}</span></div></div>`
     const links = blocked
       ? lk(
           `<span class="lk split"><button title="${esc(t('lk.branchTitle'))}">${ic('branch', 'i10')}<span class="x">card/score-slices</span></button><button class="cp" aria-label="${esc(t('lk.copy'))}" title="${esc(t('lk.copy'))}">${ic('copy', 'i10')}</button></span><button class="lk" role="link">${ic('file', 'i10')}<span class="x">${t('lk.evidence')}</span></button>`
@@ -248,15 +271,15 @@
       : lk(
           `<button class="lk mono" role="link">${ic('link', 'i10')}<span class="x">#21</span></button><span class="lk split"><button title="${esc(t('lk.branchTitle'))}">${ic('branch', 'i10')}<span class="x">card/score-proofs</span></button><button class="cp" aria-label="${esc(t('lk.copy'))}" title="${esc(t('lk.copy'))}">${ic('copy', 'i10')}</button></span><button class="lk" role="link">${ic('file', 'i10')}<span class="x">${t('lk.evidence')}</span></button><button class="lk" role="link">${ic('link', 'i10')}<span class="x">${t('lk.page')}</span></button>`
         )
-    return `<div class="open-step" data-dsqa-part="open-step">${blocker}${criteria}<div class="crit"><div class="eyebrow">${t('step.links')}</div>${links}</div></div>`
+    return `<div class="open-step" data-dsqa-part="open-step">${blocker}${criteria}<details class="crit lkt"><summary class="eyebrow"><span class="lkchev">${ic('right', 'i10')}</span>${t('step.links')} · ${nLinks}</summary>${links}</details></div>`
   }
 
   const tree = (c) => {
     const ready = c.ready
     const m = (id, title, state, cnt, cur) =>
-      `<button class="ms ${cur ? 'cur' : ''}" role="treeitem" aria-expanded="${!!cur && !ready}" data-dsqa-part="milestone"><span class="chev">${ic(cur && !ready ? 'down' : 'right', 'i10')}</span>${dot(state + (cur ? ' cur' : ''), t(state === 'done' ? 'tip.ms.done' : state === 'running' ? 'tip.ms.prog' : 'tip.ms.not'), c.dots && cur ? 'data-tip-open' : '')}<span class="t">${t(title)}</span><span class="n">${cnt}</span></button>`
+      `<button class="ms ${cur ? 'cur' : ''}" role="treeitem" aria-expanded="${!!cur && !ready}" data-dsqa-part="milestone"><span class="chev">${ic(cur && !ready ? 'down' : 'right', 'i10')}</span>${dot(state + (cur ? ' cur' : ''), t(state === 'done' ? 'tip.ms.done' : state === 'running' ? 'tip.ms.prog' : 'tip.ms.not'), c.dots && cur ? 'data-tip-open' : '')}${tt(t(title), title + ':' + state)}<span class="n">${cnt}</span></button>`
     if (ready)
-      return `<div class="tree" role="tree" data-dsqa-part="tree">${m('1', 'ms1', 'done', '4/4')}${m('2', 'ms2', 'done', '14/14')}${m('3', 'ms3', 'done', '3/3')}</div>`
+      return `<div class="tree" role="tree" data-dsqa-part="tree">${tl(true, m('1', 'ms1', 'done', '4/4'))}${tl(true, m('2', 'ms2', 'done', '14/14'))}${tl(true, m('3', 'ms3', 'done', '3/3'))}</div>`
     const sum = `<span class="l">${t('ms.summary.running', 5)} · ${t('ms.summary.review', 9)} · <span class="bad">${t('ms.summary.blocked', 1)}</span></span>`
     const askBtn = c.ask
       ? ''
@@ -265,18 +288,23 @@
       ? `<div class="askbox" data-dsqa-part="ask"><label for="q">${t('ask.label')}</label><textarea id="q" placeholder="${esc(t('ask.placeholder'))}" data-autofocus></textarea><div class="h">${t('ask.hint')}</div><div class="acts"><button class="btn ghost" ${go('mid')}>${t('ask.cancel')}</button><button class="btn primary" ${go('mid')}>${ic('send', 'i10')}${t('ask.send')}</button></div></div>`
       : ''
     const ob = c.openStep
-    return `<div class="tree" role="tree" data-dsqa-part="tree">${m('1', 'ms1', 'done', '4/4')}${m('2', 'ms2', 'running', '0/14', true)}
+    const step = (id, titleKey, state, o) =>
+      stepRow(id, titleKey, state, o) + (ob === id ? crit(c) : '')
+    return `<div class="tree" role="tree" data-dsqa-part="tree">${tl(true, m('1', 'ms1', 'done', '4/4'))}${tl(
+      false,
+      `${m('2', 'ms2', 'running', '0/14', true)}
       <div class="ms-body" role="group">
         <div class="ms-sum">${sum}${askBtn}</div>${askBox}
-        ${stepRow('s10', 'step.a', 'review', { blocked: true, yours: true, open: ob === 's10', goto: ob === 's10' ? 'mid' : 'blocked', tipOpen: c.dots })}${ob === 's10' ? crit(c) : ''}
-        ${stepRow('s11', 'step.b', 'review', { yours: true, pr: 21, open: ob === 's11', goto: ob === 's11' ? 'mid' : 'step-open' })}${ob === 's11' ? crit(c) : ''}
-        ${stepRow('s5', 'step.c', 'running')}${stepRow('s6', 'step.d', 'running')}${stepRow('s7', 'step.e', 'running')}
+        ${tl(false, step('s10', 'step.a', 'review', { blocked: true, yours: true, open: ob === 's10', goto: ob === 's10' ? 'mid' : 'blocked', tipOpen: c.dots }))}
+        ${tl(false, step('s11', 'step.b', 'review', { yours: true, pr: 21, open: ob === 's11', goto: ob === 's11' ? 'mid' : 'step-open' }))}
+        ${tl(false, stepRow('s5', 'step.c', 'running'))}${tl(false, stepRow('s6', 'step.d', 'running'))}${tl(false, stepRow('s7', 'step.e', 'running'))}
         <button class="more">${t('tree.more', 9)}</button>
-      </div>${m('3', 'ms3', 'todo', '0/3')}</div>`
+      </div>`
+    )}${tl(false, m('3', 'ms3', 'todo', '0/3'))}</div>`
   }
 
   const head = (c) => {
-    const bar = `<div class="progress" data-dsqa-part="progress"><div class="track" role="progressbar" aria-label="${esc(t('progress.ms', c.ready ? 3 : 1, 3))}" aria-valuemin="0" aria-valuemax="3" aria-valuenow="${c.ready ? 3 : 1}"><span class="fill" style="width:${c.ready ? 100 : 33}%"></span></div><span class="count">${t('progress.ms', c.ready ? 3 : 1, 3)}</span></div>`
+    const bar = `<div class="progress" data-dsqa-part="progress"><div class="track seg" role="progressbar" aria-label="${esc(t('progress.ms', c.ready ? 3 : 1, 3))}" aria-valuemin="0" aria-valuemax="3" aria-valuenow="${c.ready ? 3 : 1}">${[0, 1, 2].map((i) => `<span class="sg ${c.ready || i === 0 ? 'done' : i === 1 ? 'cur' : 'todo'}"></span>`).join('')}</div><span class="count">${t('progress.ms', c.ready ? 3 : 1, 3)}</span></div>`
     if (c.multi)
       return `<div class="head" data-dsqa-part="head"><button class="switch" aria-haspopup="listbox" ${go('chooser')}><span class="eyebrow">${t('sw.count', 1, 3)}</span><span class="meta">${t('sw.change')}${ic('down', 'i10')}</span></button><h2>${t('title')}</h2>${bar}</div>`
     return `<div class="head" data-dsqa-part="head"><h2>${t('title')}</h2>${bar}</div>`
@@ -380,7 +408,7 @@
         const dd = this.querySelector('#dd'),
           pill = this.querySelector('#pill')
         if (!dd || !pill) return
-        const w = Math.min(420, innerWidth - 16),
+        const w = Math.min(Math.min(Math.max(420, innerWidth * 0.45), 760), innerWidth - 16),
           left = Math.max(8, Math.min(pill.getBoundingClientRect().left, innerWidth - w - 8))
         dd.style.setProperty('--dd-left', left + 'px')
         this.showForced()

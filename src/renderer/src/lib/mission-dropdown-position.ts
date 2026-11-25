@@ -5,8 +5,8 @@
  * computed from the pill's rectangle and the window's size. The numbers are the design's: 6px under the
  * Topbar's bottom edge (the Topbar is 42px, so `top: 48px`), its left edge on the pill's left edge,
  * flipped to the pill's right edge when it would run past the window, and never closer than 8px to a
- * window edge. The width is `min(420px, 100vw - 16px)` with no minimum; the height is capped at
- * `min(640px, 100vh - 56px)`.
+ * window edge. Both sizes follow the window: the width is 45% of it, held between 420px and 760px and never
+ * wider than `100vw - 16px`; the height is capped at `100vh - 62px`, with no fixed ceiling.
  */
 
 /** The Topbar's height (design.md §4 "Layout dimensions"). */
@@ -17,10 +17,17 @@ export const DROPDOWN_GAP = 6
 export const DROPDOWN_TOP = TOPBAR_HEIGHT + DROPDOWN_GAP
 /** The closest the dropdown comes to a window edge. */
 export const DROPDOWN_EDGE = 8
-/** The widest the dropdown gets. */
-export const DROPDOWN_MAX_WIDTH = 420
-/** The tallest the dropdown gets, before the window caps it. */
-export const DROPDOWN_MAX_HEIGHT = 640
+/** What the window's height keeps back: 46px above the dropdown and a 16px gap under it. */
+const DROPDOWN_HEIGHT_MARGIN = 62
+
+/**
+ * The dropdown's width in a window: 45% of it, never under 420px nor over 760px, and never wider than the
+ * window less its two edges. The component's class says the same expression in CSS.
+ */
+export function dropdownWidth(viewportWidth: number): number {
+  const wanted = Math.min(Math.max(420, viewportWidth * 0.45), 760)
+  return Math.max(0, Math.min(wanted, viewportWidth - 2 * DROPDOWN_EDGE))
+}
 /** Under this window height the footer stops being pinned and scrolls with the body. */
 export const DROPDOWN_SHORT_WINDOW = 420
 
@@ -46,8 +53,8 @@ export function placeMissionDropdown(input: {
   viewport: { width: number; height: number }
 }): DropdownPlacement {
   const { anchor, viewport } = input
-  const width = Math.max(0, Math.min(DROPDOWN_MAX_WIDTH, viewport.width - 2 * DROPDOWN_EDGE))
-  const maxHeight = Math.max(0, Math.min(DROPDOWN_MAX_HEIGHT, viewport.height - 56))
+  const width = dropdownWidth(viewport.width)
+  const maxHeight = Math.max(0, viewport.height - DROPDOWN_HEIGHT_MARGIN)
   const furthestLeft = Math.max(DROPDOWN_EDGE, viewport.width - DROPDOWN_EDGE - width)
 
   let left = anchor ? anchor.left : DROPDOWN_EDGE

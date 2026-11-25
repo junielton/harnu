@@ -18,7 +18,7 @@ import MissionDropdown from '../src/renderer/src/components/MissionDropdown.vue'
 import {
   DROPDOWN_EDGE,
   DROPDOWN_GAP,
-  DROPDOWN_MAX_WIDTH,
+  dropdownWidth,
   DROPDOWN_SHORT_WINDOW,
   DROPDOWN_TOP,
   TOPBAR_HEIGHT,
@@ -114,7 +114,7 @@ describe('placeMissionDropdown (the pure placement)', () => {
       viewport: { width: 1280, height: 800 }
     })
     expect(p.left).toBe(300)
-    expect(p.width).toBe(DROPDOWN_MAX_WIDTH)
+    expect(p.width).toBe(dropdownWidth(1280))
   })
 
   it('flips to the pill’s right edge when the pill is near the right of the window', () => {
@@ -139,24 +139,24 @@ describe('placeMissionDropdown (the pure placement)', () => {
     expect(right.left + right.width).toBeLessThanOrEqual(1280 - 8)
   })
 
-  it('is min(420, viewport - 16) wide, with no minimum, and its height is min(640, viewport - 56)', () => {
+  it('is 45% of the window between 420 and 760px, never wider than window - 16, and as tall as the window - 62', () => {
+    const at = (width: number, height = 800): { width: number; maxHeight: number } =>
+      placeMissionDropdown({ anchor: null, viewport: { width, height } })
+    expect(at(1280).width).toBe(576)
+    expect(at(1000).width).toBe(450)
+    expect(at(900).width).toBe(420)
+    expect(at(1700).width).toBe(760)
+    expect(at(2400).width).toBe(760)
     const narrow = placeMissionDropdown({
       anchor: { left: 40, right: 100 },
       viewport: { width: 360, height: 640 }
     })
     expect(narrow.width).toBe(344)
     expect(narrow.left).toBe(8)
-    const tiny = placeMissionDropdown({
-      anchor: { left: 0, right: 10 },
-      viewport: { width: 200, height: 300 }
-    })
-    expect(tiny.width).toBe(184)
-    expect(
-      placeMissionDropdown({ anchor: null, viewport: { width: 1280, height: 800 } }).maxHeight
-    ).toBe(640)
-    expect(
-      placeMissionDropdown({ anchor: null, viewport: { width: 1280, height: 500 } }).maxHeight
-    ).toBe(444)
+    expect(at(200, 300).width).toBe(184)
+    // No 640px cap: 46px from the top and a 16px gap.
+    expect(at(1280, 800).maxHeight).toBe(738)
+    expect(at(1280, 1400).maxHeight).toBe(1338)
   })
 
   it('falls back to the left margin when there is no anchor', () => {
@@ -195,9 +195,9 @@ describe('MissionDropdown shell', () => {
     expect(el!.style.top).toBe('48px')
     expect(el!.style.left).toBe('300px')
 
-    // The width and the height are the spec's two min() expressions.
-    expect(el!.className).toContain('w-[min(420px,calc(100vw-16px))]')
-    expect(el!.className).toContain('max-h-[min(640px,calc(100vh-56px))]')
+    // The width and the height are the spec's two expressions (they follow the window).
+    expect(el!.className).toContain('w-[min(clamp(420px,45vw,760px),calc(100vw-16px))]')
+    expect(el!.className).toContain('max-h-[calc(100vh-62px)]')
     expect(el!.className).toMatch(/\bflex-col\b/)
 
     // The body is the one scroller, with the app's scrollbar; the footer is pinned under it.
@@ -210,7 +210,7 @@ describe('MissionDropdown shell', () => {
     expect(b.contains(f)).toBe(false)
     expect(el!.contains(f)).toBe(true)
     expect(f.className).toMatch(/\bshrink-0\b/)
-    // Nothing but the body scrolls.
+    // With no tree, nothing but the body scrolls.
     expect(el!.querySelectorAll('[class*="overflow-y-auto"]').length).toBe(1)
   })
 
@@ -220,7 +220,7 @@ describe('MissionDropdown shell', () => {
       ({ left: 1100, right: 1180, top: 12, bottom: 30, width: 80, height: 18 }) as DOMRect
     mountDropdown()
     await open()
-    expect(dialog()!.style.left).toBe(`${1180 - 420}px`)
+    expect(dialog()!.style.left).toBe(`${1180 - 576}px`)
 
     wrapper!.unmount()
     wrapper = null

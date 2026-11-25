@@ -20,6 +20,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- **The Mission dropdown is easier to read.** It now sizes itself from your window (45% of its width, from 420 up to 760 pixels, and as tall as the window allows), keeps the title, progress bar and next step in place while only the list scrolls, and draws the progress bar as one segment per milestone. A timeline joins milestones, steps and criteria (green where done), titles say when work started, finished or was blocked, and a step's links are folded behind **Links · N**.
 - Closing a Markdown pane with unsaved edits now asks **Save**, **Don't save** or **Cancel** instead of just showing a toast, for every Markdown pane and not only notes. If a save fails, the pane stays open. Reload and link navigation keep their toast.
 - Quitting Harnu while any Markdown pane has unsaved edits now asks first and names the files, even when confirm-on-quit is off. If agents are working, the same prompt lists them too. Choose **Cancel** to go back or **Quit without saving**; there is no "Don't ask again" for this one.
 - Opening a fifth Markdown pane now recycles the oldest pane without unsaved edits instead of dropping a draft.
