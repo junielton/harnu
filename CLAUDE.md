@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **Read the relevant section of `design.md` first.** Sections are: §1 Logo, §2 Colors, §3 Typography, §4 Spacing & radii, §5 Iconography, §6 Components, §7 Motion, §8 Voice & copy, §9 Tokens.
 2. **If your task needs a token, size, animation, or component variant that's not in `design.md`, edit `design.md` first** in the same change, then implement. Never silently add a new color, radius, easing, or row-height.
 3. **No raw colors or off-system sizes in components.** Tailwind utilities only, backed by `src/renderer/src/styles/themes.css` (which mirrors `design.md` §9). If you reach for `bg-[#1a1a1f]` or `style="color: rgba(...)"`, you are violating the contract.
+4. **Every button needs a visible label or a tooltip.** Each new `<button>` (or `role="button"`/`tab`/`menuitem`, or `<Button size="icon">`) must show visible text, or else carry a `title` (the tooltip, through `$t()`) and an `aria-label`. An icon-only control with neither shows nothing on hover and has no accessible name. The app tooltip (`TooltipLayer.vue`, `design.md` §6 "Tooltip") shows the `title`, or the `aria-label` when there is no `title`. If the action has a shortcut, put it in the `title` through `keybindings.withChord(label, id)`. `tests/icon-button-labels.test.ts` is the gate. Never silence it with an empty `title`; give the control a real label instead.
 
 ### Branding note
 
@@ -283,6 +284,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Helper pane (one cell)                             | `src/renderer/src/components/HelperPane.vue`                                     |
 | Agent connection chip (pane header, T474 U1)       | `src/renderer/src/components/AgentConnectionChip.vue` + `lib/agent-chip.ts`      |
 | Image lightbox (Pasted-images gallery, §6)         | `src/renderer/src/components/ImageLightbox.vue`                                  |
+| Tooltip (app-wide, §6 — Tooltip)                   | `src/renderer/src/components/TooltipLayer.vue` + `lib/tooltip.ts`                |
 | Links pill + popover (footer, §6 — T617)           | `src/renderer/src/components/FooterLinksPopover.vue`                             |
 | Markdown pane (file-backed viewer, §6 — T74)       | `src/renderer/src/components/MarkdownPane.vue`                                   |
 | Markdown renderer (string→prose, reusable)         | `src/renderer/src/components/MarkdownRenderer.vue` + `lib/markdown.ts` seam      |
