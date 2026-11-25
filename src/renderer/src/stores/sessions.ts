@@ -2865,7 +2865,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
-   * Creation-time anchors for the Fleet rail's sort (T459): `realId` → the
+   * Creation-time anchors for the Needs attention sort (T459): `realId` → the
    * `created` of the synthetic placeholder it replaced. When the synthetic row
    * is DROPPED and a different (disk) row survives (`absorbSyntheticIntoRealRow`,
    * `collapseResolvedSynthetics`), the survivor's own `created` is the JSONL's
