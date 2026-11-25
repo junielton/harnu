@@ -180,6 +180,18 @@ const drawn = (): Promise<{
     }
   })
 
+/** design.md's level 2 test: the chevron and the long counts fit the row's content width. */
+const longFormFits = (): Promise<boolean> =>
+  page.locator('[data-focus-back]').evaluate((row) => {
+    const style = getComputedStyle(row)
+    const width = (part: string): number =>
+      row.querySelector(`[data-focus-back-${part}]`)!.getBoundingClientRect().width
+    const available =
+      row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+    const needed = width('chevron') + parseFloat(style.columnGap) + width('needs') + width('failed')
+    return needed <= available + 0.5
+  })
+
 test.beforeAll(async () => {
   root = seed()
   app = await launchApp({ userData: root })
@@ -231,12 +243,14 @@ const CASES = [
     'Pastas1 precisa de você · 1 falhou',
     'Pastas, 15 outras, 1 precisa de você, 1 falhou'
   ],
+  // So close to the edge that the machine's sans font decides it (Inter is not bundled):
+  // level 2 with the long form where that fits, else level 3 with the short one.
   [
     'pt-BR',
     200,
     1,
     1,
-    '2',
+    'fit',
     '1 precisa de você · 1 falhou',
     'Pastas, 15 outras, 1 precisa de você, 1 falhou'
   ],
@@ -270,9 +284,17 @@ for (const [locale, width, needs, failed, level, text, full] of CASES) {
     // Away from the row, so its colours are the resting ones.
     await page.mouse.move(900, 700)
 
-    await expect.poll(async () => (await drawn()).level).toBe(level)
+    let expected: { level: string; text: string } = { level, text }
+    if (level === 'fit') {
+      await page.evaluate(() => document.fonts.ready)
+      expected = (await longFormFits())
+        ? { level: '2', text }
+        : { level: '3', text: '1 precisa · 1 falhou' }
+    }
+
+    await expect.poll(async () => (await drawn()).level).toBe(expected.level)
     const row = await drawn()
-    expect(row.text).toBe(text)
+    expect(row.text).toBe(expected.text)
     expect(row.cut).toEqual([])
     expect(row.ellipsis).toEqual([])
     expect(row.lines).toBe(1)
