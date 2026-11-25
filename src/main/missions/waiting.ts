@@ -273,8 +273,8 @@ function mainFailingItems(steps: readonly { step: StepV4; input: StepInput }[]):
  *   decision is one of these. The blocker's own `ask` and `unblocks` are the wording. A mission-level
  *   blocker's `clearsWhen` is ignored: the write path refuses it, because a fact belongs to a step.
  * - `accept`: ONE item for every open claim ({@link openClaimOf}), whatever its step reads: the claim is a
- *   session's ask. A claimed operator criterion keeps its `settle` item too.
- * - `settle`: one item per open operator criterion on a started step (not `todo`, not done). A record converted
+ *   session's ask. A claimed criterion is listed here only, never under `settle` too.
+ * - `settle`: one item per open, unclaimed operator criterion on a started step (not `todo`, not done). A record converted
  *   from v3 raises them on a `todo` step too, because its facts may be unread and its steps are not planned ahead.
  * - `review`: the pull requests the operator can look over, grouped into one item: the step waits for
  *   review, is not blocked, and its checks are not known to be red (`ci-green` read and false).
@@ -331,6 +331,8 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
     ).filter((c) => c.text !== CHAPTER_HANDED_IN)
     for (const c of scanned) {
       if (c.by === 'operator') {
+        // Claimed: it is already in the `accept` item, and one thing owed is listed once.
+        if (openClaimOf(c) !== null) continue
         settle.push({
           kind: 'settle',
           id: `settle:${step.id}:${c.id}`,

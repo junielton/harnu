@@ -190,6 +190,7 @@ function isBlocking(key: OwedKey): boolean {
     key.startsWith('attach:') ||
     key.startsWith('main-failing:') ||
     key.startsWith('settle:') ||
+    key === 'accept' ||
     key.startsWith('rescope:') ||
     key.startsWith('blocker:') ||
     key.startsWith('decide:') ||

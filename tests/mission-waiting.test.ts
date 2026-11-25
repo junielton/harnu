@@ -13,6 +13,7 @@ import { WAITING_RANK, waitingListV4, type WaitingItemV4 } from '../src/main/mis
 import { missionDrafts } from '../src/main/your-move/source-mission'
 import { projectMissions, type MissionViewIn } from '../src/main/companion/mission-state-core'
 import { buildMissionModel, youRows } from '../src/renderer/src/lib/mission-view'
+import { cueFamilyOfKey } from '../src/renderer/src/lib/mission-cue'
 import { fixtureView, FIXTURE_NOW } from './helpers/mission-v3-view'
 
 const OWNER = '11111111-2222-4333-8444-555555555555'
@@ -178,6 +179,29 @@ describe('claims wait for the operator’s Accept (evidence AC-7)', () => {
     // `next` names it when it is first
     const alone = waitingListV4({ ...withClaims(), blockers: [] })
     expect(alone.next).toMatchObject({ kind: 'accept', count: 3 })
+  })
+
+  it('a claimed criterion shows under accept only, never also under settle', () => {
+    const m = mission({
+      steps: [
+        {
+          ...step('stp-1', [
+            { id: 'ac-1', text: 'The store is chosen', by: 'operator', selfCheck: claimed },
+            { id: 'ac-2', text: 'The page reads well', by: 'operator' }
+          ]),
+          links: [{ kind: 'session', ref: OWNER }]
+        }
+      ]
+    } as Partial<MissionV4>)
+    const items = waitingListV4(m).items
+    expect(items.map((i) => i.kind)).toEqual(['accept', 'settle'])
+    // the unclaimed one proves the step is started; the claimed one is not listed twice
+    expect(items.filter((i) => i.kind === 'settle')).toMatchObject([{ criterionId: 'ac-2' }])
+    expect(items[0]).toMatchObject({ count: 1, stepIds: ['stp-1'] })
+  })
+
+  it('accept asks for attention as the settle item it replaces did', () => {
+    expect(cueFamilyOfKey('accept')).toBe('ask')
   })
 
   it('counts only open claims on operator and session criteria', () => {

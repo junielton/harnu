@@ -175,12 +175,12 @@ An agent writes every criterion as a fact that is true when the step is done, in
 
 A session that checked a criterion can record that on the mission, with what it saw, instead of asking you in the chat to tick it. This is a **claim**. It never settles anything: the criterion stays open until you accept it, or, for one a second session checks, until that other session settles it.
 
-- A session can claim a criterion of **yours**, or one on a step it built itself. It cannot claim a fact Harnu reads, or another person's approval.
+- A session can claim a criterion of **yours**, or one on a step it built itself. It cannot claim a fact Harnu reads, or another person's approval. A session Harnu started as a step's worker can claim on that step only, and never settles.
 - Each claim keeps who made it, when, and the evidence. A newer claim on the same criterion replaces the older one; both stay in the mission's log.
-- The waiting list gains one item, **Accept the criterion a session says is done** (or **Accept 3 criteria sessions say are done**), ranked right after your blockers. Your move files one card for it. Claims that older versions of Harnu had already recorded count too.
+- The waiting list gains one item, **Accept the criterion a session says is done** (or **Accept 3 criteria sessions say are done**), ranked right after your blockers. A claimed criterion of yours is listed there only, not a second time as something to mark. Your move files one card for it. Claims that older versions of Harnu had already recorded count too.
 - **Accepting** settles the criterion in your name and stamps it with the session that claimed it and its evidence (the first 400 characters). It works on one criterion, or on every claim of a step or of the whole mission at once.
 
-**Not in the dropdown yet:** the dropdown shows that a criterion is claimed, but it does not show the evidence and has no **Accept** button, and the **Your next step** card that names the claims has no button either. Until it does, **Mark done** settles a criterion of yours as before, and a claim on a criterion a second session checks waits for that session.
+**Not in the dropdown yet:** the dropdown shows that a criterion is claimed, but it does not show the evidence and has no **Accept** button, and the **Your next step** card that names the claims cannot accept them: when they are all on one step it only opens that step. Until it does, **Mark done** settles a criterion of yours as before, and a claim on a criterion a second session checks waits for that session.
 
 ## Records from earlier versions
 

@@ -221,14 +221,20 @@ beforeEach(async () => {
 })
 
 describe('spawned sessions hold scoped verbs', () => {
-  it('a worker holds mission_get, mission_link, mission_log and mission_set_blocker, and no other verb', async () => {
+  it('a worker holds the four step verbs and mission_settle_ac, and no other verb', async () => {
     const id = await newMission(repo)
     await attachAsBuilder(repo, id, WORKER, 'stp-1')
     const worker = await connectAs(bearerFor(scopeOf('worker', WORKER, id)))
 
     const listed = (await worker.listTools()).tools.map((t) => t.name).sort()
     expect(listed).toEqual(
-      ['mission_get', 'mission_link', 'mission_log', 'mission_set_blocker'].sort()
+      [
+        'mission_get',
+        'mission_link',
+        'mission_log',
+        'mission_set_blocker',
+        'mission_settle_ac'
+      ].sort()
     )
     expect([...SCOPED_VERBS.worker].sort()).toEqual(listed)
 
@@ -237,10 +243,6 @@ describe('spawned sessions hold scoped verbs', () => {
       ['mission_attach', { folder: repo, missionId: id }],
       ['mission_request_close', { folder: repo, missionId: id }],
       ['mission_add_step', { folder: repo, missionId: id, title: 'Sneak a step in' }],
-      [
-        'mission_settle_ac',
-        { folder: repo, missionId: id, stepId: 'stp-1', criterionId: 'ac-1', evidence: 'x' }
-      ],
       ['mission_list', { folder: repo }],
       ['create_session', { folder: repo }],
       ['get_fleet', {}]
@@ -315,7 +317,8 @@ describe('spawned sessions hold scoped verbs', () => {
       [
         'mission_set_blocker',
         { stepId: 'stp-2', reason: 'Not my step', owner: 'agent', unblocks: 'nothing' }
-      ]
+      ],
+      ['mission_settle_ac', { stepId: 'stp-2', criterionId: 'ac-1', evidence: 'I read it' }]
     ] as Array<[string, Record<string, unknown>]>) {
       const r = await callOn(worker, verb, { folder: repo, missionId: id, ...args })
       expect(r.isError, verb).toBe(true)
@@ -372,6 +375,57 @@ describe('spawned sessions hold scoped verbs', () => {
     expect(r.isError).toBe(true)
     expect(r.text).toMatch(/SCOPE_FOLDER/)
   })
+
+  // Both ways a worker can stand on its step: linked by the dispatch, or attached with the link missing
+  // (a bind that half failed). It built the step either way, so its credential only ever claims.
+  it.each([
+    ['linked to its step', true],
+    ['attached with no step link', false]
+  ])(
+    'a worker %s claims its operator and session criteria and never settles',
+    async (_n, linked) => {
+      const id = await newMission(repo)
+      await okOn(mainClient, 'mission_add_ac', {
+        folder: repo,
+        missionId: id,
+        stepId: 'stp-1',
+        text: 'The export button reads well',
+        by: 'operator',
+        sessionId: LEADER
+      })
+      if (linked) await attachAsBuilder(repo, id, WORKER, 'stp-1')
+      else await attachWithoutLink(repo, id, WORKER)
+      const worker = await connectAs(bearerFor(scopeOf('worker', WORKER, id)))
+
+      const criteria = (await readRecord(repo, id)).steps[0].acs
+      expect(criteria.map((c) => c.by)).toEqual(['session', 'operator'])
+      for (const c of criteria) {
+        const r = await okOn(worker, 'mission_settle_ac', {
+          folder: repo,
+          missionId: id,
+          stepId: 'stp-1',
+          criterionId: c.id,
+          evidence: 'Ran the exporter on the sample file'
+        })
+        expect(r.body.outcome, c.by).toBe('claimed')
+      }
+      for (const c of (await readRecord(repo, id)).steps[0].acs) {
+        expect(c.settled, c.by).toBeUndefined()
+        expect(c.selfCheck?.by, c.by).toBe(WORKER)
+      }
+
+      const other = await callOn(worker, 'mission_settle_ac', {
+        folder: repo,
+        missionId: id,
+        stepId: 'stp-2',
+        criterionId: 'ac-1',
+        evidence: 'I read the README'
+      })
+      expect(other.isError).toBe(true)
+      expect(other.text).toMatch(/SCOPE_STEP/)
+      expect((await readRecord(repo, id)).steps[1].acs[0].selfCheck).toBeUndefined()
+    }
+  )
 
   it('a verifier also settles a criterion of a step it did not build', async () => {
     const id = await newMission(repo)

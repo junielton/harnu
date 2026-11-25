@@ -163,7 +163,9 @@ export async function runV4(
   folder: string,
   actor: Actor,
   args: Args,
-  deps: V4Deps
+  deps: V4Deps,
+  /** The caller built the step it names by definition (a dispatched worker): its check is a claim. */
+  opts: { claimsOnly?: boolean } = {}
 ): Promise<VerbOutcome> {
   const missionId = str(args, 'missionId')
   const need = (key: string): string | undefined => str(args, key)
@@ -351,7 +353,10 @@ export async function runV4(
         stepId: need('stepId') as string,
         criterionId: need('criterionId') as string,
         evidence: need('evidence') as string,
-        extraBuilders: await leaderBuilds(folder, missionId as string, need('stepId'), actor)
+        extraBuilders:
+          opts.claimsOnly && actor.kind === 'session'
+            ? [actor.sessionId]
+            : await leaderBuilds(folder, missionId as string, need('stepId'), actor)
       })
       return r.ok ? done(op, r) : failed(r)
     }
