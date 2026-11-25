@@ -687,6 +687,38 @@ describe('a failed bind is loud', () => {
   })
 })
 
+describe('a failed bind is loud: a session that missed the deadline', () => {
+  it('create_session asks for the late bind when the spawn did not materialize in time', async () => {
+    const { runCreateSession } = await import('../src/main/mcp/create-session-core')
+    const late: string[] = []
+    const res = await runCreateSession(
+      repo,
+      { folder: repo },
+      {},
+      {
+        dispatchCreate: async () => ({ syntheticId: 'synthetic-late' }),
+        awaitMaterialization: async () => null,
+        tryReserve: () => true,
+        attachSyntheticId: () => {},
+        release: () => {},
+        onNotMaterialized: (syntheticId) => void late.push(syntheticId)
+      },
+      1
+    )
+    expect(res.isError).toBe(true)
+    expect(late).toEqual(['synthetic-late'])
+  })
+
+  it('a boot reported later reaches whoever waits, with the id Harnu minted over the renderer’s pick', async () => {
+    const boots = await import('../src/main/mcp/session-boot')
+    const waiting = boots.awaitSessionBoot('synthetic-minted', 5_000)
+    boots.noteSpawnedSessionId('synthetic-minted', 'aaaaaaaa-0000-4000-8000-000000000001')
+    boots.noteSessionRekey('synthetic-minted', 'bbbbbbbb-0000-4000-8000-000000000002', repo)
+    expect((await waiting)?.sessionId).toBe('aaaaaaaa-0000-4000-8000-000000000001')
+    expect(await boots.awaitSessionBoot('synthetic-never-booted', 1)).toBeNull()
+  })
+})
+
 // ---- AC-14 -----------------------------------------------------------------------------------------
 
 describe('card gets the real id', () => {

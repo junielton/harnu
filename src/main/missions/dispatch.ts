@@ -607,6 +607,11 @@ export function bindStepSession(folder: string, slug: string, sessionId: string)
   const failed = async (reason: string): Promise<void> => {
     const file = await (await realBoardIo(folder)).read(slug)
     const card = file ? parseCard(file.content, file.slug) : null
+    // A card with no step was never to be attached: only its real session id could not be written.
+    if (card && (!card.mission || !card.step)) {
+      console.warn(`[dispatch] ${slug} kept its synthetic session id: ${reason}`)
+      return
+    }
     await reportBindFailure({
       folder,
       card: slug,

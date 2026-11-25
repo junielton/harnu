@@ -704,9 +704,9 @@ export interface WipLivenessEnv {
 }
 
 /**
- * Compose the {@link WipSessionFacts} for a card's bound session. A card keeps its
- * `synthetic-…` id after the session migrates to a real uuid, so every lookup is
- * made under both the bound id and its alias.
+ * Compose the {@link WipSessionFacts} for a card's bound session. A card can still hold a
+ * `synthetic-…` id after the session migrated to a real uuid (it is moved once the transcript
+ * lands, BUG-296), so every lookup is made under both the bound id and its alias.
  */
 export function resolveWipSessionFacts(session: string, env: WipLivenessEnv): WipSessionFacts {
   const keys = [...new Set([session, env.resolveAlias(session)])]
