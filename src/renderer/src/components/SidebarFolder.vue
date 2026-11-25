@@ -814,7 +814,7 @@ function onSelectTeammate(session: Session): void {
                     }"
                     aria-hidden="true"
                   />
-                  <span class="flex-1 truncate">{{
+                  <span class="flex-1 truncate leading-[14px]">{{
                     $t('agent.doneFold', { n: agentRow.count })
                   }}</span>
                 </button>
@@ -955,7 +955,7 @@ function onSelectTeammate(session: Session): void {
                   style="width: 6px; height: 6px"
                 />
               </span>
-              <span class="flex-1 truncate">{{ labelFor(tm) }}</span>
+              <span class="flex-1 truncate leading-[14px]">{{ labelFor(tm) }}</span>
               <span class="tabular-nums text-text-4" style="font-size: 10.5px">{{
                 relativeTime(tm.modified)
               }}</span>
