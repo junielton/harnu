@@ -32,7 +32,7 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.restoreAllMocks()
   vi.useRealTimers()
-  await (mod as Partial<Mod>).stopUsageScanWorker?.()
+  await mod.stopUsageScanWorker()
   cleanupWorker?.()
   cleanupWorker = null
   rmSync(h.home, { recursive: true, force: true })
@@ -40,12 +40,10 @@ afterEach(async () => {
 
 /** Route the scan through a real worker thread, exactly as the app does at boot. */
 async function useWorker(): Promise<void> {
-  const start = (mod as Partial<Mod>).startUsageScanWorker
-  if (!start) return // before the offload existed: the scan runs on this thread
   const { buildUsageScanWorker } = await import('./support/usage-scan-worker-build')
   const built = await buildUsageScanWorker()
   cleanupWorker = built.cleanup
-  start(built.factory)
+  mod.startUsageScanWorker(built.factory)
 }
 
 interface Req {
