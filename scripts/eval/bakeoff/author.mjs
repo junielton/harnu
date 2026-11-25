@@ -46,6 +46,9 @@ const AUTHORING_PROMPT =
 export const EXCLUSIONS = [
   'resources/skills/**',
   'docs/specs/**',
+  'docs/design/missions-v4/index.html',
+  'docs/design/missions-v4/mockup.json',
+  'docs/design/missions-v4/screens/mission-pane.html',
   'docs/prds/T601*',
   'docs/prds/T676*',
   'docs/adr/0025-bakeoff-harness.md',
@@ -62,6 +65,8 @@ export const EXCLUSIONS = [
   'tests/fixtures/spec-skill/**',
   'tests/spec-*.test.ts',
   'tests/bundled-spec-skill.test.ts',
+  'tests/mission-model.test.ts',
+  'tests/mission-summary.test.ts',
   'tests/orchestrate-spec-integration.test.ts'
 ]
 

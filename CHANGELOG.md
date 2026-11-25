@@ -10,6 +10,12 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-25
+
+### Fixed
+
+- **The bake-off author sandbox keeps skill references out of its working copy.** The mission v4 mockup files and tests that name the skill are excluded from the sandbox archive.
+
 ## 2026-11-24
 
 ### Added
