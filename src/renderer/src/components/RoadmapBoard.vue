@@ -152,7 +152,7 @@ function dotKindOf(card: RoadmapCard): DotKind | null {
   return 'idle'
 }
 
-/** Dot classes per live state — reuses the FleetBoardCard tokens (§3.6, design.md §6). */
+/** Dot classes per live state — the sidebar row dot's tokens (§3.6, design.md §6). */
 function dotClass(card: RoadmapCard): string {
   switch (dotKindOf(card)) {
     case 'working':

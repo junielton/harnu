@@ -52,7 +52,7 @@ Sessions you've already had with Claude Code show up nested under their folder t
 
 ## The command palette
 
-`Cmd/Ctrl+K` opens a spotlight-style search over your recent sessions, folders, and available actions — the fastest way to jump around once you have more than a couple of folders pinned. A few other shortcuts worth knowing early: `Cmd/Ctrl+B` toggles the sidebar, and `Cmd/Ctrl+Shift+A` / `Cmd/Ctrl+Shift+B` both toggle the Fleet rail.
+`Cmd/Ctrl+K` opens a spotlight-style search over your recent sessions, folders, and available actions — the fastest way to jump around once you have more than a couple of folders pinned. A few other shortcuts worth knowing early: `Cmd/Ctrl+B` toggles the sidebar, and `Cmd/Ctrl+Shift+A` opens or folds the sidebar's **Needs you** section (see [Approvals](approval-inbox.md)).
 
 ## What's next
 

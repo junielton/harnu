@@ -1182,6 +1182,16 @@ async function openSeededBoard(): Promise<void> {
       timeout: STARTUP_TIMEOUT
     })
     .toEqual([WIDTH, HEIGHT])
+  // The gestures below are fractions of the pane, written for the pane this window left beside
+  // the 300px Fleet rail and its 6px divider. The rail is gone, so the window gives those
+  // pixels back and the canvas pane keeps the size the spec was written for.
+  await app.evaluate(
+    ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setContentSize(w, h),
+    [WIDTH - 306, HEIGHT]
+  )
+  await expect
+    .poll(() => page.evaluate(() => window.innerWidth), { timeout: STARTUP_TIMEOUT })
+    .toBe(WIDTH - 306)
   await expect
     .poll(
       () => page.evaluate(() => new Promise<boolean>((r) => requestAnimationFrame(() => r(true)))),
@@ -1238,6 +1248,11 @@ async function openSeededBoard(): Promise<void> {
   await expect(pane.getByTestId('canvas-toolbar')).toBeVisible({ timeout: STARTUP_TIMEOUT })
   await expect(pane.locator('g.x6-node')).toHaveCount(SEED.length, { timeout: STARTUP_TIMEOUT })
   await dismissToasts()
+  // Toasts stack bottom-right. That corner used to be the Fleet rail; it is the canvas pane now,
+  // so each later "Canvas saved" would swallow a gesture. Nothing below reads a toast.
+  await page.addStyleTag({
+    content: '[role="region"][aria-live="polite"] { display: none !important; }'
+  })
   // The pane settles (first-open fit) before any geometry is measured.
   await expectStableGeometry(idOf.A)
 }

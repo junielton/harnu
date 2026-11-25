@@ -742,8 +742,7 @@ function onKeydown(e: KeyboardEvent): void {
     <!-- Right cluster -->
     <div class="flex shrink-0 items-center gap-0.5" style="-webkit-app-region: no-drag">
       <!-- Activity bell (T152) — global, outside the selected-session guard
-           below: reachable with no session selected. design.md — Fleet rail
-           reorg §3 "Topbar: … [bell][acts]". -->
+           below: reachable with no session selected (design.md §6 "Activity bell"). -->
       <ActivityBell />
       <!-- T212 — gated on the ACTIVE FOLDER, not on a selected session: every action below only
            ever needed a folder path, so a folder with no sessions used to be a dead end here.

@@ -121,7 +121,8 @@
       "openFolder": "Expandir {name}",
       "railWorking": "{branch}, agente trabalhando",
       "railFailed": "{branch}, falhou",
-      "railNeedsInput": "{branch}, precisa de você"
+      "railNeedsInput": "{branch}, precisa de você",
+      "railCount": "{label}, {count} sessão | {label}, {count} sessões"
     }
   },
   "topbar": {

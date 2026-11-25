@@ -121,7 +121,8 @@
       "openFolder": "Expand {name}",
       "railWorking": "{branch}, agent working",
       "railFailed": "{branch}, failed",
-      "railNeedsInput": "{branch}, needs you"
+      "railNeedsInput": "{branch}, needs you",
+      "railCount": "{label}, {count} session | {label}, {count} sessions"
     }
   },
   "topbar": {
@@ -1555,7 +1556,7 @@
       },
       "expandHides": {
         "label": "Expand hides",
-        "hint": "What gets out of the way when a helper pane is expanded to the window. Everything also hides the sidebar and the Fleet rail; Session only hides just the session.",
+        "hint": "What gets out of the way when a helper pane is expanded to the window. Everything also hides the sidebar; Session only hides just the session.",
         "everything": "Everything",
         "sessionOnly": "Session only"
       }

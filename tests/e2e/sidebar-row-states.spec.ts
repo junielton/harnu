@@ -443,6 +443,30 @@ test('keyboard focus on a chip inside a row lights the row bar and draws no box'
   await blur()
 })
 
+test('keyboard focus tells the header chevron apart from the header name', async () => {
+  const header = targets()['folder header (repo)']
+  const chevron = header.locator('[data-folder-chevron]')
+  const colour = (): Promise<string> => chevron.evaluate((el) => getComputedStyle(el).color)
+  // The name button always reads in --text.
+  const lit = await header
+    .locator(':scope > button')
+    .first()
+    .evaluate((el) => getComputedStyle(el).color)
+
+  await blur()
+  await keyboardFocus(header)
+  expect(await colour(), 'focus on the name leaves the chevron quiet').not.toBe(lit)
+  await blur()
+
+  await page.keyboard.press('Shift')
+  await chevron.evaluate((el) => (el as HTMLElement).focus({ focusVisible: true } as FocusOptions))
+  expect(await chevron.evaluate((el) => el.matches(':focus-visible'))).toBe(true)
+  expect(await colour(), 'the focused chevron lights up').toBe(lit)
+  expect(await chevron.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('none')
+  expect((await paint(header)).bar.startsWith('3px ')).toBe(true)
+  await blur()
+})
+
 test('the header chevron and an agent row fill nothing', async () => {
   const header = targets()['folder header (repo)']
   const chevron = header.locator('[data-folder-chevron]')
