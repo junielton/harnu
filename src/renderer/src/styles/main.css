@@ -1298,7 +1298,8 @@ textarea,
 }
 
 /* With no box, the focused element itself says which one it is by colour. */
-[data-row-bar] [tabindex]:focus-visible {
+[data-row-bar] [tabindex]:focus-visible,
+[data-row-bar='header'] button:focus-visible {
   color: var(--color-text);
 }
 
@@ -1306,6 +1307,7 @@ textarea,
   [data-row-bar]:focus-visible,
   [data-row-bar]:has([tabindex]:focus-visible),
   [data-row-bar] [tabindex]:focus-visible,
+  [data-row-bar='header'] button:focus-visible,
   [data-row-bar][data-focused='true'],
   [data-row-bar='header']:has(button:focus-visible) {
     outline: 2px solid Highlight;

@@ -2366,6 +2366,9 @@ weight or background; the label **lights up to `--text`** on hover, selected and
 - **Keyboard focus draws no outline box.** Under `forced-colors: active` the bar is not reliable, so
   the row falls back to `outline: 2px solid Highlight` inset.
 - The sidebar's arrow-key cursor (`data-focused`) is keyboard focus: same 3px bar.
+- Keyboard focus on a **focus stop inside a row** (a count chip, a header's name or chevron button) is
+  that row's keyboard focus: same 3px bar, no box. The focused element itself lights to `--text`, which
+  tells it apart from its neighbours; under `forced-colors: active` it also takes the outline.
 - The jump flash (§7) is the one background a row ever takes, for one pass.
 
 #### Group rail
