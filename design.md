@@ -7294,8 +7294,8 @@ var(--color-accent)`, **unticked by default**) + a block with the **kind**
 
 #### Sidebar indicator (`SidebarFolder.vue`)
 
-**On the redesigned row the chip is compact** (§6 "Sidebar tree → Session rows": `⚠ n`, full text on
-hover); the data, tone and matching rules below still apply.
+**On the redesigned row the chip is compact** (§6 "Sidebar tree → Session rows": `⚠ n` at rest,
+progress and that count on hover); the data, tone and matching rules below still apply.
 
 The **last** (rightmost) entry of the session row's trailing chip cluster:
 StopFailure → subagent count → orchestrator crown → teammate count → **mission
@@ -9407,7 +9407,9 @@ the order toggle have nothing to act on. What the dock inherits is the row anato
      word wider than the row is split — and is never clamped, truncated or ellipsised — this is what the operator is approving. It is built from the
      wire's full tool input with the same function the main process summarises with, not from the
      shortened `summary`; a long command makes a tall row, which the dock body scrolls, so Allow is
-     reached after the whole of it;
+     reached after the whole of it. "Whole" means the part that function picks is never cut, not every
+     argument: `Bash` shows its command, the file and search tools their path or pattern, an MCP tool
+     its first argument only, any other tool its name only;
   2. `<folder alias> · <session summary>` (`--text-4` `11px` / `1.4`, `line-clamp-2`), 2px under the call;
   3. **Allow** and **Deny**, left-aligned with the text, wrapping if the column is too narrow for both.
 

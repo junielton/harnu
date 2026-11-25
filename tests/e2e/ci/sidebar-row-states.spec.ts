@@ -274,7 +274,7 @@ async function paint(row: Locator): Promise<Record<string, string>> {
       [
         '--color-text',
         '--color-text-2',
-        // Before the accent: a dark theme resolves both to one colour.
+        // The accent in a dark theme; named as the bar's token so a light theme passes too.
         '--color-bar-selected',
         '--color-border-2',
         '--color-green'
