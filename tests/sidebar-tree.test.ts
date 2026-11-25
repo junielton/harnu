@@ -2,10 +2,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
-import { nextTick } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { i18n } from '@renderer/i18n'
 import Sidebar from '../src/renderer/src/components/Sidebar.vue'
 import FolderMenu from '../src/renderer/src/components/FolderMenu.vue'
+import { useSidebarActions } from '../src/renderer/src/composables/useSidebarActions'
 import { useSessionsStore, type Session } from '../src/renderer/src/stores/sessions'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { useHelpersStore } from '../src/renderer/src/stores/helpers'
@@ -519,5 +520,54 @@ describe('sidebar flat checkout tree (S-1)', () => {
     store.setCheckoutFolded(WT_IDLE_A, true)
     await nextTick()
     expect(checkoutRow(w, WT_IDLE_A).get('[data-value-count]').text()).toBe('')
+  })
+
+  it('the collapse shortcut cycles three levels with and without a text filter', async () => {
+    const { w, store } = await boot()
+    let actions!: ReturnType<typeof useSidebarActions>
+    const host = defineComponent({
+      setup() {
+        actions = useSidebarActions()
+        return () => null
+      }
+    })
+    wrappers.push(mount(host, { global: { plugins: [i18n] } }))
+
+    /** The level before, then after each of three presses of the shortcut. */
+    const cycle = async (): Promise<number[]> => {
+      const seen = [store.collapseLevel]
+      for (let press = 0; press < 3; press++) {
+        actions.toggleCollapseAll()
+        await nextTick()
+        seen.push(store.collapseLevel)
+      }
+      return seen
+    }
+    const openFolders = (): string[] =>
+      w.findAll('[data-folder-content]').map((n) => n.attributes('data-open') ?? '')
+
+    expect(await cycle()).toEqual([2, 1, 0, 2])
+
+    store.setFilterActive(true)
+    store.setFilterQuery('Summary')
+    await nextTick()
+    expect(await cycle()).toEqual([2, 1, 0, 2])
+
+    // Level 0 really closes the folders, and a closed header can be opened again.
+    actions.toggleCollapseAll()
+    actions.toggleCollapseAll()
+    await nextTick()
+    expect(new Set(openFolders())).toEqual(new Set(['false']))
+    await block(w, APP).get('[data-folder-chevron]').trigger('click')
+    expect(block(w, APP).get('[data-folder-content]').attributes('data-open')).toBe('true')
+
+    // A new query shows its matches again, whatever was folded under the last one.
+    actions.toggleCollapseAll()
+    await nextTick()
+    actions.toggleCollapseAll()
+    await nextTick()
+    store.setFilterQuery('Summary main')
+    await nextTick()
+    expect(block(w, APP).get('[data-folder-content]').attributes('data-open')).toBe('true')
   })
 })
