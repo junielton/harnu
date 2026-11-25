@@ -256,7 +256,8 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Layout shell                                       | `src/renderer/src/App.vue`                                                       |
 | Sidebar (§6 — session rows)                        | `src/renderer/src/components/Sidebar.vue`                                        |
 | Sidebar folder row                                 | `src/renderer/src/components/SidebarFolder.vue`                                  |
-| Sidebar section shell (§6 — T702)                  | `SidebarSection.vue` + `lib/sidebar-section.ts`                                  |
+| Needs attention strip (§6)                         | `src/renderer/src/components/SidebarAttention.vue`                               |
+| Bottom dock sections — Needs you, Return here (§6) | `SidebarDockSection.vue`, `SidebarNeedsYou.vue`, `SidebarReturnZone.vue`         |
 | Sidebar jump palette (§6 — T288)                   | `src/renderer/src/components/SidebarJumpPalette.vue`                             |
 | Repo group header (multi-worktree repos)           | `src/renderer/src/components/RepoGroupHeader.vue`                                |
 | Shelved section of a repo group (§6 — U2.3b)       | `SidebarShelvedSection.vue` + `lib/shelved-sidebar.ts`                           |
@@ -288,7 +289,6 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Markdown renderer (string→prose, reusable)         | `src/renderer/src/components/MarkdownRenderer.vue` + `lib/markdown.ts` seam      |
 | Unsaved changes dialog (markdown pane close, §6)   | `src/renderer/src/components/UnsavedChangesDialog.vue`                           |
 | Memory pane (project memory viewer, §6 — T79)      | `src/renderer/src/components/MemoryPane.vue` + `stores/memory.ts`                |
-| Fleet rail — approvals + fleet state (§6, T151)    | `src/renderer/src/components/InboxRail.vue`                                      |
 | Approval Inbox row (§6)                            | `src/renderer/src/components/ApprovalRow.vue`                                    |
 | Settings dialog (§6)                               | `src/renderer/src/components/SettingsDialog.vue`                                 |
 | Claude config tab — settings.json editor (§6)      | `src/renderer/src/components/ClaudeConfigPane.vue` + `claude-config-catalog.ts`  |

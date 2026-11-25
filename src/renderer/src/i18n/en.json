@@ -104,14 +104,12 @@
     "resize": "Resize sidebar",
     "hide": "Hide sidebar",
     "show": "Show sidebar",
+    "attention": {
+      "title": "Needs attention"
+    },
     "returnHere": {
       "title": "Return here",
       "dismiss": "Mark as seen"
-    },
-    "section": {
-      "collapse": "Collapse {name}",
-      "expand": "Expand {name}",
-      "resize": "Resize {name}"
     },
     "teammates": {
       "show": "Show {n} teammates",
@@ -126,18 +124,6 @@
       "railWorking": "{branch}, agent working",
       "railFailed": "{branch}, failed",
       "railNeedsInput": "{branch}, needs you"
-    }
-  },
-  "board": {
-    "blockedFor": "blocked {time}",
-    "spinningOn": "repeating {target} ×{count}",
-    "state": {
-      "needsInput": "Needs input",
-      "errored": "Errored",
-      "stuck": "Stuck",
-      "working": "Working",
-      "idle": "Idle",
-      "done": "Done"
     }
   },
   "topbar": {
@@ -1665,8 +1651,7 @@
       "trustAll": "Trust all folders",
       "trustAllHint": "Intercept tool calls in every folder. Turn off to go back to picking folders one at a time.",
       "rampTitle": "Intercept per folder",
-      "rampEmpty": "No folders intercepted yet — add one below or turn on Trust all folders.",
-      "reviewShadowLog": "Review shadow log"
+      "rampEmpty": "No folders intercepted yet — add one below or turn on Trust all folders."
     },
     "notifications": {
       "label": "OS notifications",
@@ -1757,8 +1742,7 @@
     "actions": {
       "session_new": "New session",
       "app_search": "Open command palette",
-      "inbox_toggle": "Toggle the Approval Inbox rail",
-      "view_fleetRail": "Toggle the Fleet rail",
+      "inbox_toggle": "Open or fold Needs you",
       "view_toggleSidebar": "Toggle the left sidebar",
       "view_toggleHelper": "Toggle the right split panel",
       "project_switch": "Switch project",
@@ -1825,9 +1809,6 @@
       "repoGroup_resetName": "Reset name (group)",
       "repoGroup_cleanup": "Cleanup… (repo)",
       "inbox_open": "Open approvals",
-      "inbox_toggleOrder": "Newest first / Oldest first (Fleet rail)",
-      "inbox_filter": "Filter states (Fleet rail)",
-      "inbox_showAll": "Show all (Fleet rail)",
       "view_activity": "Open Activity",
       "view_missionProgress": "Open mission progress",
       "view_pastedImages": "Open pasted images",
@@ -2369,22 +2350,10 @@
     "blockedTitle": "Blocked a dangerous command"
   },
   "approvalInbox": {
-    "title": "Fleet",
-    "open": "Open approvals — {count} waiting",
-    "fleetEmpty": "You're all caught up",
     "subtitle": "Tool calls waiting on you. Allow or deny without switching tabs.",
     "sections": {
-      "needsYou": "Needs you",
-      "wouldHave": "Would-have"
+      "needsYou": "Needs you"
     },
-    "rail": {
-      "ariaLabel": "Fleet rail",
-      "expand": "Expand the Fleet rail",
-      "minimize": "Minimize the Fleet rail",
-      "resize": "Resize the Fleet rail"
-    },
-    "shadowEmpty": "No preview entries yet",
-    "shadowPaused": "Preview is paused — the responder is off (observer mode).",
     "allow": "Allow",
     "deny": "Deny",
     "expired": "That request already timed out — the session handled it in the terminal.",
@@ -2392,20 +2361,6 @@
     "allowAria": "Allow {tool} in {folder}",
     "denyAria": "Deny {tool} in {folder}",
     "openSessionAria": "Open the session for {tool}",
-    "missionsStrip": {
-      "title": "Active missions"
-    },
-    "order": {
-      "newestFirst": "Newest first — click for oldest first",
-      "oldestFirst": "Oldest first — click for newest first"
-    },
-    "filter": {
-      "title": "Filter states",
-      "showAll": "Show all",
-      "toggleAria": "Show or hide {state} cards",
-      "hiddenAttention": "{count} hidden by the filter",
-      "allHidden": "All fleet cards are hidden by your filter — tap to show all"
-    },
     "row": {
       "outside": "outside Harnu"
     }

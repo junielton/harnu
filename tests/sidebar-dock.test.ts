@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-/* eslint-disable @typescript-eslint/no-empty-function -- no-op subscription stubs */
 import { existsSync } from 'node:fs'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -49,6 +48,11 @@ import { DESCRIPTOR_BY_ID, KEYBINDINGS } from '../src/main/keybindings-core'
 import type { CardView } from '../src/main/your-move/core'
 import type { McpConfirmPending, PendingApprovalWire } from '../src/preload'
 
+// jsdom has no CSS.escape; the sidebar's reveal-and-scroll watch uses it, a tick after the test.
+;(globalThis as unknown as { CSS?: { escape: (value: string) => string } }).CSS ??= {
+  escape: (value) => value
+}
+
 const FOLDER = '/w/org-a/api-gateway'
 const MINUTE = 60_000
 
@@ -65,6 +69,8 @@ function stubApi(): void {
         lastFetchedAt: 0
       })),
       claudeConfigGetResolved: vi.fn(async () => ({})),
+      approvalsList: vi.fn(async () => []),
+      mcpConfirmsList: vi.fn(async () => []),
       foldersLoad: vi.fn(async () => []),
       userProjectsList: vi.fn(async () => ({ projects: [], hiddenPaths: [] })),
       yourMoveList: vi.fn(async () => structuredClone(cards)),
@@ -78,7 +84,7 @@ function stubApi(): void {
     {
       get: (target, key: string) => {
         if (key in target) return target[key]
-        return key.startsWith('on') ? none : vi.fn(async () => [])
+        return key.startsWith('on') ? none : vi.fn(async () => null)
       }
     }
   )
@@ -362,6 +368,6 @@ describe('reaching Needs you', () => {
         id
       ).toBe(false)
     }
-    expect(DESCRIPTOR_BY_ID['inbox.toggle'].keys).toBeDefined()
+    expect(DESCRIPTOR_BY_ID['inbox.toggle'].defaultKeys).toBe('Cmd+Shift+A')
   })
 })

@@ -3,7 +3,6 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X, Minus, Plus, Check, Search, Puzzle } from 'lucide-vue-next'
 import { useUiStore } from '../stores/ui'
-import { useLayoutStore } from '../stores/layout'
 import {
   useSettingsStore,
   MIN_TERMINAL_FONT_SIZE,
@@ -68,7 +67,6 @@ import type { SettingsTabId } from '../stores/ui'
  */
 
 const ui = useUiStore()
-const layout = useLayoutStore()
 const settings = useSettingsStore()
 const sessions = useSessionsStore()
 const companion = useCompanionStore()
@@ -656,12 +654,6 @@ const settingsIndex: Array<{
     labelKey: 'settings.responder.trustAll',
     keywords: ['trust', 'confiar', 'folder', 'pasta', 'all', 'todas'],
     anchor: 'set-trustAll'
-  },
-  {
-    tabId: 'interceptor',
-    labelKey: 'settings.responder.reviewShadowLog',
-    keywords: ['shadow', 'log', 'review', 'revisar', 'would-have', 'inbox'],
-    anchor: 'set-reviewShadowLog'
   }
 ]
 
@@ -898,16 +890,6 @@ function rampBasename(p: string): string {
   const trimmed = p.replace(/\/+$/, '')
   return trimmed.split('/').pop() || trimmed
 }
-/**
- * Reveal the "Would-have" shadow log, which now lives in the Inbox rail (T83 S0).
- * The rail is a column BEHIND this dialog, so expanding it alone would change
- * nothing visible — close the dialog too, or the operator clicks and sees nothing.
- */
-function openShadowLog(): void {
-  layout.setInboxRailState('expanded')
-  ui.closeDialog()
-}
-
 // Haiku auto-name opt-in (haiku-service-autoname spec §4.6). A plain localStorage
 // flag (om2tab.haikuAutoname), default OFF. The sessions store reads the same key
 // when deciding whether to fire; this toggle is just the UI control.
@@ -1542,8 +1524,8 @@ onBeforeUnmount(() => {
                 </div>
 
                 <!-- T30 trust ramp: revealed only when active. Trust-all master
-                   switch + per-folder ramp list (twin of the MCP allowlist) +
-                   the "Review shadow log" affordance. Calm-reversible tone. -->
+                   switch + per-folder ramp list (twin of the MCP allowlist).
+                   Calm-reversible tone. -->
                 <div
                   v-if="responderHooksEnabled && responderMode === 'active'"
                   class="border border-border bg-surface"
@@ -1619,25 +1601,6 @@ onBeforeUnmount(() => {
                       />
                     </div>
                   </div>
-
-                  <!-- Review shadow log (opens the inbox → Would-have tab) -->
-                  <button
-                    id="set-reviewShadowLog"
-                    type="button"
-                    class="text-accent transition hover:opacity-80"
-                    :class="highlightedAnchor === 'set-reviewShadowLog' ? 'anim-setting-flash' : ''"
-                    style="
-                      margin-top: 12px;
-                      font-size: 12px;
-                      background: none;
-                      border: none;
-                      padding: 0;
-                      cursor: pointer;
-                    "
-                    @click="openShadowLog()"
-                  >
-                    {{ $t('settings.responder.reviewShadowLog') }}
-                  </button>
                 </div>
               </section>
             </template>

@@ -333,7 +333,6 @@ describe('ratio per orientation', () => {
         'CloudSessionPanel',
         'Onboarding',
         'TakeoverHost',
-        'InboxRail',
         'HelperStack',
         'TerminalPane',
         'SessionPreview',
@@ -382,7 +381,7 @@ describe('ratio per orientation', () => {
       const w = await mountApp()
       const settings = useSettingsStore()
       expect(dividers(w, 'horizontal')).toHaveLength(0)
-      expect(dividers(w, 'vertical')).toHaveLength(3)
+      expect(dividers(w, 'vertical')).toHaveLength(2)
 
       settings.setSplitLayout('stacked')
       await flushPromises()
@@ -394,8 +393,8 @@ describe('ratio per orientation', () => {
       expect(horizontal[0].get('div').classes()).toEqual(
         expect.arrayContaining(['h-px', 'w-full', 'bg-border-2', 'group-hover:bg-accent-line'])
       )
-      // The sidebar and Fleet-rail dividers stay vertical.
-      expect(dividers(w, 'vertical')).toHaveLength(2)
+      // The sidebar divider stays vertical.
+      expect(dividers(w, 'vertical')).toHaveLength(1)
     })
 
     it('stacked: dragging on Y changes only the stacked ratio; double-click resets it', async () => {

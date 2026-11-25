@@ -1,27 +1,25 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { computed, defineComponent, nextTick, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { setActivePinia, createPinia } from 'pinia'
 import { i18n } from '@renderer/i18n'
 import { useUiStore, POPOVER_IDS, type PopoverId } from '../src/renderer/src/stores/ui'
-import { useLayoutStore } from '../src/renderer/src/stores/layout'
 import { useHelpersStore } from '../src/renderer/src/stores/helpers'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import ActivityBell from '../src/renderer/src/components/ActivityBell.vue'
 import MissionPill from '../src/renderer/src/components/MissionPill.vue'
 import StatusFooter from '../src/renderer/src/components/StatusFooter.vue'
-import InboxRail from '../src/renderer/src/components/InboxRail.vue'
 import ClaudeStatusPanel from '../src/renderer/src/components/ClaudeStatusPanel.vue'
 import UsagePanel from '../src/renderer/src/components/UsagePanel.vue'
 import FooterImagePopover from '../src/renderer/src/components/FooterImagePopover.vue'
 import ImageLightbox from '../src/renderer/src/components/ImageLightbox.vue'
-import { useShortcuts, resetScopesForTests } from '../src/renderer/src/composables/useShortcuts'
+import { resetScopesForTests } from '../src/renderer/src/composables/useShortcuts'
 
 /**
- * T486 U4a — the footer / Topbar / Fleet-rail popovers' open flags live in
+ * T486 U4a — the footer / Topbar popovers' open flags live in
  * `stores/ui.ts` (`docs/specs/T486-keybindings-coverage-pass.md` §3.5, §6.1).
  *
  *  - AC-54: each popover opens from its id (the store toggle its binding runs)
@@ -70,16 +68,6 @@ const esc = async (): Promise<void> => {
   await nextTick()
 }
 
-/** Press and release Alt+F the way a keyboard does, so `useMagicKeys` sees it. */
-const pressAltF = async (): Promise<void> => {
-  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt', code: 'AltLeft', altKey: true }))
-  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', altKey: true }))
-  await nextTick()
-  window.dispatchEvent(new KeyboardEvent('keyup', { key: 'f', code: 'KeyF', altKey: true }))
-  window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Alt', code: 'AltLeft' }))
-  await nextTick()
-}
-
 let wrapper: VueWrapper | null = null
 
 beforeEach(() => {
@@ -101,13 +89,12 @@ afterEach(() => {
 })
 
 describe('ui store — popover state', () => {
-  it('lists the eight lifted popovers', () => {
+  it('lists the seven lifted popovers', () => {
     expect([...POPOVER_IDS].sort()).toEqual(
       [
         'activity',
         'claudeStatus',
         'githubBudget',
-        'inboxFilter',
         'links',
         'missionProgress',
         'pastedImages',
@@ -444,87 +431,6 @@ describe('AC-54 — StatusFooter popovers', () => {
   })
 })
 
-describe('AC-54 — Fleet rail filter', () => {
-  async function mountRail(): Promise<VueWrapper> {
-    // The rail lists mission grants on mount; the quiet stub's `null` is not a list.
-    stubApi({ mcpGrantsList: vi.fn(async () => []) })
-    wrapper = mount(InboxRail, { attachTo: document.body, global: { plugins: [i18n] } })
-    await flushPromises()
-    return wrapper
-  }
-  const popover = (w: VueWrapper) => w.find('[data-dsqa="fleet-rail-filter-popover"]')
-  const filterButton = (w: VueWrapper) => w.get('[data-dsqa="fleet-rail-filter-button"]')
-
-  it('its button opens and closes it, and Esc closes it', async () => {
-    const w = await mountRail()
-    const ui = useUiStore()
-    await filterButton(w).trigger('click')
-    expect(popover(w).exists()).toBe(true)
-    expect(ui.popovers.inboxFilter).toBe(true)
-    await filterButton(w).trigger('click')
-    expect(popover(w).exists()).toBe(false)
-    await filterButton(w).trigger('click')
-    await esc()
-    expect(popover(w).exists()).toBe(false)
-    expect(ui.anyPopoverOpen).toBe(false)
-  })
-
-  it('opens from its id', async () => {
-    const w = await mountRail()
-    useUiStore().togglePopover('inboxFilter')
-    await nextTick()
-    expect(popover(w).exists()).toBe(true)
-  })
-
-  it('a bound chord opens it through useShortcuts, and does nothing once the rail is minimized', async () => {
-    const w = await mountRail()
-    const ui = useUiStore()
-    const handler = vi.fn(() => ui.togglePopover('inboxFilter'))
-    // The registration App.vue makes for `inbox.filter`, with a chord bound to it.
-    const Harness = defineComponent({
-      setup() {
-        useShortcuts([
-          {
-            id: 'inbox.filter',
-            scope: 'global',
-            keys: 'Alt+F',
-            enabled: () => ui.popoverAnchors.inboxFilter,
-            handler
-          }
-        ])
-        return () => null
-      }
-    })
-    const harness = mount(Harness)
-    try {
-      await pressAltF()
-      expect(popover(w).exists()).toBe(true)
-      await pressAltF()
-      expect(popover(w).exists()).toBe(false)
-
-      useLayoutStore().setInboxRailState('minimized')
-      await nextTick()
-      await pressAltF()
-      // enabled() stops it before the handler — no button, no binding.
-      expect(handler).toHaveBeenCalledTimes(2)
-      expect(ui.popovers.inboxFilter).toBe(false)
-      expect(ui.anyPopoverOpen).toBe(false)
-    } finally {
-      harness.unmount()
-    }
-  })
-
-  it('minimizing the rail removes the anchor and closes the popover', async () => {
-    await mountRail()
-    const ui = useUiStore()
-    ui.openPopover('inboxFilter')
-    useLayoutStore().setInboxRailState('minimized')
-    await nextTick()
-    expect(ui.popoverAnchors.inboxFilter).toBe(false)
-    expect(ui.popovers.inboxFilter).toBe(false)
-  })
-})
-
 describe('AC-37 — each binding runs its button’s function', () => {
   const read = (rel: string) => readFileSync(resolve(__dirname, '..', rel), 'utf8')
   const app = read('src/renderer/src/App.vue')
@@ -542,8 +448,7 @@ describe('AC-37 — each binding runs its button’s function', () => {
     ['view.pastedImages', 'pastedImages', 'components/StatusFooter.vue'],
     ['view.claudeStatus', 'claudeStatus', 'components/StatusFooter.vue'],
     ['view.usagePanel', 'usagePanel', 'components/StatusFooter.vue'],
-    ['view.missionProgress', 'missionProgress', 'components/MissionPill.vue'],
-    ['inbox.filter', 'inboxFilter', 'components/InboxRail.vue']
+    ['view.missionProgress', 'missionProgress', 'components/MissionPill.vue']
   ]
   for (const [id, popover, file] of POPOVERS) {
     it(`${id} toggles '${popover}', as its button does, and needs the button rendered`, () => {
@@ -553,30 +458,4 @@ describe('AC-37 — each binding runs its button’s function', () => {
       expect(read(`src/renderer/src/${file}`)).toContain(`@click="ui.togglePopover('${popover}')"`)
     })
   }
-
-  const LAYOUT: Array<[string, string]> = [
-    ['inbox.open', "layout.setInboxRailState('expanded')"],
-    ['inbox.toggleOrder', 'layout.toggleInboxRailOrder()'],
-    ['inbox.showAll', 'layout.clearInboxRailStateFilter()']
-  ]
-  const rail = read('src/renderer/src/components/InboxRail.vue')
-  for (const [id, call] of LAYOUT) {
-    it(`${id} calls ${call}, as its Fleet rail button does`, () => {
-      expect(registration(id)).toContain(call)
-      expect(rail).toContain(`@click="${call}"`)
-    })
-  }
-
-  it('inbox.showAll is enabled only in the expanded rail while a state is filtered out (its buttons show then)', () => {
-    const reg = registration('inbox.showAll')
-    expect(reg).toContain('inboxRailExpanded.value')
-    expect(reg).toContain('layout.inboxRailHiddenStates.size > 0')
-  })
-
-  it('inbox.toggleOrder is enabled only in the expanded rail (its button is in that header)', () => {
-    expect(registration('inbox.toggleOrder')).toContain('enabled: () => inboxRailExpanded.value')
-    expect(app).toMatch(
-      /const inboxRailExpanded = computed\(\s*\(\) => showInboxRail\.value && layout\.inboxRailState === 'expanded'\s*\)/
-    )
-  })
 })

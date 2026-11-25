@@ -606,7 +606,7 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
     expect(after.sessions.some((s) => s.sessionId === synthId)).toBe(false)
   })
 
-  it('T459 AC-7: a synthetic collapsing into its disk twin keeps its Fleet-rail position', async () => {
+  it('T459 AC-7: a synthetic collapsing into its disk twin keeps its Needs attention position', async () => {
     // A second folder holds a session created just AFTER the synthetic (T0+1s) —
     // in another folder, so it can never be mistaken for the synthetic's twin.
     const t0 = Date.now()
@@ -636,7 +636,7 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
       .find((f) => f.path === '/repos/alpha')!
       .sessions.find((s) => s.sessionId === synthId)!
     synth.created = at(0)
-    synth.taskState = 'completed'
+    synth.taskState = 'needs-input'
 
     // The real twin's transcript is born 2s AFTER T0 — i.e. AFTER `newer` was
     // created. Keyed by the real row's own `created` the card would jump above it.
@@ -657,19 +657,17 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
 
     const alpha = store.folders.find((f) => f.path === '/repos/alpha')!
     expect(alpha.sessions.some((s) => s.sessionId === synthId)).toBe(false)
-    alpha.sessions.find((s) => s.sessionId === 'real-twin')!.taskState = 'completed'
+    alpha.sessions.find((s) => s.sessionId === 'real-twin')!.taskState = 'needs-input'
     store.folders
       .find((f) => f.path === '/repos/beta')!
-      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'completed'
+      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'needs-input'
 
-    const order = store.boardBuckets
-      .find((b) => b.state === 'done')!
-      .sessions.map((s) => s.sessionId)
+    const order = store.attentionSessions.map((s) => s.sessionId)
     // Newest first: `newer` (T0+1s) above the twin, which keeps the synthetic's T0.
     expect(order).toEqual(['newer', 'real-twin'])
   })
 
-  it('T459 AC-7: an IN-PLACE synthetic→real migration keeps its Fleet-rail position across the next reload', async () => {
+  it('T459 AC-7: an IN-PLACE synthetic→real migration keeps its Needs attention position across the next reload', async () => {
     // Same shape as the twin-collapse test above, but the synthetic row is RENAMED
     // in place (same object). The next `index:updated` reconcile then overwrites
     // its `created` with the JSONL's later birthtime — the sort key must not move.
@@ -726,14 +724,12 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
 
     const row = alpha.sessions.find((s) => s.sessionId === 'real-inplace')!
     expect(row.created).toBe(at(2000)) // proves the reconcile really rewrote `created`
-    row.taskState = 'completed'
+    row.taskState = 'needs-input'
     store.folders
       .find((f) => f.path === '/repos/beta')!
-      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'completed'
+      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'needs-input'
 
-    const order = store.boardBuckets
-      .find((b) => b.state === 'done')!
-      .sessions.map((s) => s.sessionId)
+    const order = store.attentionSessions.map((s) => s.sessionId)
     // Newest first: `newer` (T0+1s) stays above the migrated row (anchored at T0).
     expect(order).toEqual(['newer', 'real-inplace'])
   })
@@ -2928,7 +2924,7 @@ describe('useSessionsStore identity claims (T389 P1W3)', () => {
     })
   })
 
-  it('T459 AC-7: a claim-bound in-place migration keeps its Fleet-rail position across the next reload', async () => {
+  it('T459 AC-7: a claim-bound in-place migration keeps its Needs attention position across the next reload', async () => {
     const BETA = '/repos/beta'
     const t0 = Date.now()
     const at = (offsetMs: number): string => new Date(t0 + offsetMs).toISOString()
@@ -2977,13 +2973,11 @@ describe('useSessionsStore identity claims (T389 P1W3)', () => {
     const row = store.folders.find((f) => f.path === ALPHA)!.sessions[0]!
     expect(row.sessionId).toBe('R1')
     expect(row.created).toBe(at(2000)) // the reconcile really rewrote `created`
-    row.taskState = 'completed'
+    row.taskState = 'needs-input'
     store.folders
       .find((f) => f.path === BETA)!
-      .sessions.find((x) => x.sessionId === 'newer')!.taskState = 'completed'
-    const order = store.boardBuckets
-      .find((b) => b.state === 'done')!
-      .sessions.map((x) => x.sessionId)
+      .sessions.find((x) => x.sessionId === 'newer')!.taskState = 'needs-input'
+    const order = store.attentionSessions.map((x) => x.sessionId)
     expect(order).toEqual(['newer', 'R1'])
   })
 

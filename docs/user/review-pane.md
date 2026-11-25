@@ -540,7 +540,7 @@ changes when you pick something else. It goes away when you clear the selection,
 when you run `/clear` in the companion, or when the companion is closed. In a wide companion
 (40 columns or more) the line names the file, `◆ Harnu ⧉ speech.ts L85–92`. In a narrow
 one it shrinks to the range alone — `⧉ L85–92`, or `⧉ old L85 – new L92` for a range
-across both sides — so it still fits beside the sidebar and the fleet rail, and it
+across both sides — so it still fits beside the sidebar, and it
 is left out only when the pane is too narrow even for that (about 8 columns).
 
 **While the companion is answering, updates wait.** If you change or clear the

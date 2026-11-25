@@ -218,7 +218,7 @@ export interface SidebarJumpPaletteState {
 /**
  * The anchored popovers whose open flag lives here (T486 U4a, spec §3.5 / §6.1):
  * the Topbar's Activity bell and Mission pill, the footer's pasted images, links shelf,
- * Claude service status and plan usage, and the Fleet rail's state filter. Each
+ * Claude service status and plan usage. Each
  * component keeps its own Esc and click-outside handlers; the flag moved here so
  * a keybinding can open the popover and so `anyPopoverOpen` can tell the App's
  * Esc binding (U4b `view.closeTakeover`) that a popover owns this Esc.
@@ -234,8 +234,7 @@ export const POPOVER_IDS = [
   'links',
   'claudeStatus',
   'usagePanel',
-  'githubBudget',
-  'inboxFilter'
+  'githubBudget'
 ] as const
 export type PopoverId = (typeof POPOVER_IDS)[number]
 
@@ -423,12 +422,9 @@ export const useUiStore = defineStore('ui', () => {
     () => POPOVER_IDS.some((id) => popovers.value[id]) || imageLightboxIndex.value !== null
   )
 
-  // NOTE (T83 S0): the Approval Inbox used to be a first-level floating surface
-  // here (`inbox: { open }`). It is now the Inbox rail — a persistent fourth
-  // COLUMN, so its state is layout, not mutex (`stores/layout.ts`
-  // `inboxRailState`). Nothing in this store may close, suppress, or otherwise
-  // "own" it: it is always on screen, so putting it back in the mutex would mean
-  // every dialog/palette/menu open silently hides the approval queue.
+  // NOTE: pending approvals are NOT a floating surface. They sit in the sidebar's bottom dock
+  // (design.md §6 "Bottom dock"), whose open state is layout (`stores/layout.ts`), so no
+  // dialog, palette or menu open ever hides or closes the queue.
 
   // Main-pane "takeover" views (T80 S1 §4, T47 P6 S2, T127 S2, Reaper PR3, T198,
   // T164, T295) — seven views that replace the transcript area, mutually exclusive with

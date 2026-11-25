@@ -1,16 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
-import {
-  useLayoutStore,
-  helperPanelVisible,
-  inboxRailWidthFor,
-  nextInboxRailStateOnToggle,
-  INBOX_RAIL_MINIMIZED_WIDTH,
-  INBOX_RAIL_WIDTH_DEFAULT,
-  INBOX_RAIL_WIDTH_MIN,
-  INBOX_RAIL_WIDTH_MAX
-} from '../src/renderer/src/stores/layout'
+import { useLayoutStore, helperPanelVisible } from '../src/renderer/src/stores/layout'
 
 /**
  * Layout collapse state (feat/layout-collapse — design.md §6 "Colapsar
@@ -126,129 +117,56 @@ describe('useLayoutStore collapse state', () => {
 })
 
 /**
- * Inbox rail (T83 S0 — the Approval Inbox as a fourth column instead of a modal).
- * The rail's contract is mostly about what it REFUSES to do: minimizing must not
- * hide the badge (that's a width, not a state, so it's asserted in the width
- * helper), toggling must never hide the queue, and an incoming actionable item
- * must be able to break a `hidden` rail open (`summon`).
+ * The sidebar's bottom dock (design.md §6 "Bottom dock"). Its contract is mostly about what it
+ * refuses to do: nothing but an operator gesture opens Needs you, and that state is never stored.
  */
-describe('inboxRailWidthFor', () => {
-  it('hidden renders nothing', () => {
-    expect(inboxRailWidthFor('hidden', 300)).toBeNull()
-  })
-
-  it('minimized is the fixed strip width — NOT the expanded width', () => {
-    // The strip still renders the badge; it just costs 44px instead of 300.
-    expect(inboxRailWidthFor('minimized', 300)).toBe(INBOX_RAIL_MINIMIZED_WIDTH)
-    expect(inboxRailWidthFor('minimized', 440)).toBe(INBOX_RAIL_MINIMIZED_WIDTH)
-  })
-
-  it('expanded clamps the persisted width into [260, 440]', () => {
-    expect(inboxRailWidthFor('expanded', 300)).toBe(300)
-    expect(inboxRailWidthFor('expanded', 10)).toBe(INBOX_RAIL_WIDTH_MIN)
-    expect(inboxRailWidthFor('expanded', 9999)).toBe(INBOX_RAIL_WIDTH_MAX)
-  })
-})
-
-describe('nextInboxRailStateOnToggle', () => {
-  it('expanded collapses to the strip', () => {
-    expect(nextInboxRailStateOnToggle('expanded')).toBe('minimized')
-  })
-
-  it('minimized and hidden both OPEN — a toggle never hides the queue', () => {
-    expect(nextInboxRailStateOnToggle('minimized')).toBe('expanded')
-    expect(nextInboxRailStateOnToggle('hidden')).toBe('expanded')
-  })
-})
-
-describe('useLayoutStore inbox rail', () => {
+describe('useLayoutStore dock', () => {
   beforeEach(() => {
     vi.stubGlobal('localStorage', makeLocalStorage())
     setActivePinia(createPinia())
   })
 
-  it('defaults to expanded at the default width (the queue is visible out of the box)', () => {
+  it('starts with both sections folded, whatever an earlier run left behind', async () => {
     const s = useLayoutStore()
-    expect(s.inboxRailState).toBe('expanded')
-    expect(s.inboxRailWidth).toBe(INBOX_RAIL_WIDTH_DEFAULT)
-  })
-
-  it('setInboxRailWidth clamps; reset restores the default', () => {
-    const s = useLayoutStore()
-    s.setInboxRailWidth(9999)
-    expect(s.inboxRailWidth).toBe(INBOX_RAIL_WIDTH_MAX)
-    s.setInboxRailWidth(0)
-    expect(s.inboxRailWidth).toBe(INBOX_RAIL_WIDTH_MIN)
-    s.resetInboxRailWidth()
-    expect(s.inboxRailWidth).toBe(INBOX_RAIL_WIDTH_DEFAULT)
-  })
-
-  it('summon expands a hidden rail — `hidden` is soft, an actionable item breaks it', () => {
-    const s = useLayoutStore()
-    s.setInboxRailState('hidden')
-    s.summonInboxRail()
-    expect(s.inboxRailState).toBe('expanded')
-  })
-
-  it('summon expands a minimized rail (this is what replaces the modal)', () => {
-    const s = useLayoutStore()
-    s.setInboxRailState('minimized')
-    s.summonInboxRail()
-    expect(s.inboxRailState).toBe('expanded')
-  })
-
-  it('summon is idempotent on an already-expanded rail', () => {
-    const s = useLayoutStore()
-    s.summonInboxRail()
-    expect(s.inboxRailState).toBe('expanded')
-  })
-
-  it('persists the state, and rejects a corrupt persisted value', async () => {
-    const s = useLayoutStore()
-    s.setInboxRailState('minimized')
+    expect(s.needsYouOpen).toBe(false)
+    expect(s.returnHereOpen).toBe(false)
+    s.openNeedsYou()
     await nextTick()
-    expect(localStorage.getItem('om2tab.inboxRailState')).toBe('minimized')
-
-    vi.stubGlobal('localStorage', makeLocalStorage({ 'om2tab.inboxRailState': 'garbage' }))
     setActivePinia(createPinia())
-    expect(useLayoutStore().inboxRailState).toBe('expanded')
-  })
-})
-
-describe('useLayoutStore inbox rail order (T459)', () => {
-  beforeEach(() => {
-    vi.stubGlobal('localStorage', makeLocalStorage())
-    setActivePinia(createPinia())
+    expect(useLayoutStore().needsYouOpen).toBe(false)
   })
 
-  it('defaults to newest-first and does not write storage until toggled', async () => {
+  it('openNeedsYou expands a collapsed sidebar and asks the shell to show it', () => {
     const s = useLayoutStore()
-    expect(s.inboxRailOrder).toBe('newest-first')
-    await nextTick()
-    expect(localStorage.getItem('om2tab.inboxRailOrder')).toBeNull()
+    s.setSidebarCollapsed(true)
+    const before = s.sidebarRevealRequest
+    s.openNeedsYou()
+    expect(s.sidebarCollapsed).toBe(false)
+    expect(s.needsYouOpen).toBe(true)
+    expect(s.sidebarRevealRequest).toBe(before + 1)
   })
 
-  it('toggleInboxRailOrder flips the direction and persists it', async () => {
+  it('the chord folds an open section, and opens it when the sidebar hides it', () => {
     const s = useLayoutStore()
-    s.toggleInboxRailOrder()
-    expect(s.inboxRailOrder).toBe('oldest-first')
-    await nextTick()
-    expect(localStorage.getItem('om2tab.inboxRailOrder')).toBe('oldest-first')
-    s.toggleInboxRailOrder()
-    expect(s.inboxRailOrder).toBe('newest-first')
-    await nextTick()
-    expect(localStorage.getItem('om2tab.inboxRailOrder')).toBe('newest-first')
+    s.toggleNeedsYou()
+    expect(s.needsYouOpen).toBe(true)
+    s.toggleNeedsYou()
+    expect(s.needsYouOpen).toBe(false)
+
+    s.openNeedsYou()
+    s.setSidebarCollapsed(true)
+    s.toggleNeedsYou()
+    expect(s.sidebarCollapsed).toBe(false)
+    expect(s.needsYouOpen).toBe(true)
   })
 
-  it('reads the persisted direction back on a fresh store', () => {
-    vi.stubGlobal('localStorage', makeLocalStorage({ 'om2tab.inboxRailOrder': 'oldest-first' }))
+  it('Needs attention is open by default and remembers a fold', async () => {
+    const s = useLayoutStore()
+    expect(s.attentionOpen).toBe(true)
+    s.attentionOpen = false
+    await nextTick()
+    expect(localStorage.getItem('om2tab.attentionOpen')).toBe('false')
     setActivePinia(createPinia())
-    expect(useLayoutStore().inboxRailOrder).toBe('oldest-first')
-  })
-
-  it('rejects a corrupt persisted value (falls back to newest-first)', () => {
-    vi.stubGlobal('localStorage', makeLocalStorage({ 'om2tab.inboxRailOrder': 'sideways' }))
-    setActivePinia(createPinia())
-    expect(useLayoutStore().inboxRailOrder).toBe('newest-first')
+    expect(useLayoutStore().attentionOpen).toBe(false)
   })
 })

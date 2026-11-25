@@ -112,8 +112,8 @@ textarea,
 
 /* Layout containment for long lists (BUG-269, design.md §6 — "Layout containment").
    The sidebar keeps every session row in the DOM, including the rows of collapsed
-   folders (zero-height clip, not `display: none`), and the Fleet rail one card per
-   live session — tens of thousands of boxes on a large workspace. With no
+   folders (zero-height clip, not `display: none`) — tens of thousands of boxes on a
+   large workspace. With no
    containment a style or layout pass walked all of them, so a single change anywhere
    in the page cost 100–240 ms and stalled key delivery to the terminal.
    `content-visibility: auto` makes the browser skip style, layout and paint for any
@@ -121,24 +121,17 @@ textarea,
    it in the DOM — find-in-page, focus, `scrollIntoView` and `querySelector` still
    reach it. Pure performance: no row changes size, position or paint.
    - `.sidebar-contain`: the sidebar column is a layout-containment root with a fixed
-     width, so a layout change elsewhere in the window (terminal, topbar, Fleet rail)
+     width, so a layout change elsewhere in the window (terminal, topbar)
      never re-walks the folder list, and a change inside it never escapes. Nothing in
      the column is `position: fixed` (menus and popovers are teleported to `body`),
      which is what makes the new containing block safe.
    - `.sidebar-row-cv`: session rows have a fixed inline height, so no
-     `contain-intrinsic-size` is needed and scroll positions cannot shift.
-   - `.fleet-card-cv`: a card's height depends on its optional second line, so the
-     placeholder size is `auto <fallback>` — the browser remembers the real height
-     once a card has rendered, which keeps the scrollbar from jumping. */
+     `contain-intrinsic-size` is needed and scroll positions cannot shift. */
 .sidebar-contain {
   contain: layout style;
 }
 .sidebar-row-cv {
   content-visibility: auto;
-}
-.fleet-card-cv {
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 64px;
 }
 
 /* Eyebrow / section label — design.md §3 (Eyebrow scale) + §6 (Section label).
@@ -584,9 +577,8 @@ textarea,
   }
 }
 
-/* Fleet state ring (design.md §7 — Fleet rail). The 16px badge that carries
-   session state on every `FleetBoardCard` and on the minimized rail's
-   minicards. It REPLACED the old card border-ring (T151/T160/T161/BUG-51): a
+/* Fleet state ring (design.md §7). The 16px badge that carries session state on
+   every folder header and Needs attention row. It REPLACED the old card border-ring (T151/T160/T161/BUG-51): a
    masked `.anim-ring::before` plus an `<svg><rect>` travelling
    `stroke-dashoffset`. Consumed as `fleet-ring` + `fleet-ring--<state>`;
    never rebuilt ad-hoc per component.
@@ -708,9 +700,7 @@ textarea,
   opacity: 0.5;
 }
 
-/* idle — never rendered in the Fleet rail (idle is dropped from that
-   projection), but the old sidebar board still passes it. A quiet neutral
-   ring keeps that path from rendering a ringless badge. */
+/* idle — a folder with nothing happening draws the faint track alone. */
 .fleet-ring--idle .fleet-ring-track {
   border-color: var(--color-border-2);
 }
@@ -734,48 +724,11 @@ textarea,
 
 /* Drop-to-pin affordance (sidebar + onboarding, design.md — "Dropping a
    folder onto the sidebar"). The dashed drop-target box pulses by reusing
-   THIS SAME `ring-breathe` keyframe (the Fleet rail's needs-input state,
+   THIS SAME `ring-breathe` keyframe (the ring's needs-input state,
    above) instead of a new one — "a solid ring that breathes" already means
    "waiting on you," which fits a drop target just as well. */
 .anim-drop-pulse {
   animation: ring-breathe 2.2s ease-in-out infinite;
-}
-
-/* Fleet card entrance (design.md §7): a newly-arriving card fades + slides
-   22px from the right as ONE unit (frame + ring badge + content, so they can
-   never diverge). `.card-enter` is removed on `animationend` (see
-   `FleetBoardCard.vue`). */
-@keyframes card-enter {
-  from {
-    opacity: 0;
-    transform: translateX(22px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-.card-enter {
-  animation: card-enter 620ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-/* The state ring is a child badge now, not the card's border, so it no
-   longer has to be suppressed during the entrance slide — it travels with
-   the card as part of the same moving unit. */
-
-/* Collapsible section body (Fleet rail — Needs you / Would-have, design.md
-   §7): a grid `1fr↔0fr` gives a real height transition without measuring
-   pixels (the modern max-height replacement). */
-.collapsible {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows var(--dur-slow) var(--ease);
-}
-.collapsible.closed {
-  grid-template-rows: 0fr;
-}
-.collapsible > .collapsible-inner {
-  overflow: hidden;
-  min-height: 0;
 }
 
 /* Canvas Eraser mark (design.md §6 → "Eraser mark", T536 U1). The pane adds
@@ -901,7 +854,7 @@ textarea,
 /* layout-motion:start */
 /* T628 — layout motion (design.md §7 "Layout motion").
    Transitions exist ONLY while the layout store has raised `data-layout-motion` on the app shell
-   (around a maximize, an expand, a sidebar or Fleet rail change, an orientation switch). A divider
+   (around a maximize, an expand, a sidebar change, an orientation switch). A divider
    drag never raises it, so a drag follows the pointer with no easing. Containers opt in with
    `data-lm`. An orientation switch also sets `data-lm-flip`: that one is animated by a transform
    (FLIP, App.vue), because a flex row turning into a column cannot be interpolated. Both `--dur-slow` and `--ease` are the existing motion tokens. */
@@ -920,7 +873,7 @@ textarea,
    Unlayered and !important on purpose, to beat the layered utilities and the floating rules that
    give the same elements sizes, margins and borders.
    .lm-collapse    a flex item sized by `flex` (session area, helper stack, a pane)
-   .lm-collapse-w  an item sized by `width` (sidebar, Fleet rail column, a vertical divider)
+   .lm-collapse-w  an item sized by `width` (sidebar, a vertical divider)
    .lm-collapse-h  an item sized by `height` (a horizontal divider) */
 .lm-collapse,
 .lm-collapse-w,
@@ -970,13 +923,10 @@ textarea,
   border-radius: var(--float-radius);
   box-sizing: border-box;
 }
+:root[data-floating='on'] [data-island='sidebar-needs-you'],
 :root[data-floating='on'] [data-island='sidebar-return'],
 :root[data-floating='on'] [data-island='sidebar-list'],
-:root[data-floating='on'] [data-island='sidebar-dock'],
-:root[data-floating='on'] [data-island='rail-list'],
-:root[data-floating='on'] [data-island='rail-needs-you'],
-:root[data-floating='on'] [data-island='rail-would-have'],
-:root[data-floating='on'] [data-island='rail-minimized'] {
+:root[data-floating='on'] [data-island='sidebar-dock'] {
   background: var(--color-sidebar);
 }
 :root[data-floating='on'] [data-island='topbar'],
@@ -986,9 +936,8 @@ textarea,
 }
 /* islands whose content must not poke past the rounded corners (scrollers already clip) */
 :root[data-floating='on'] [data-island='session'],
-:root[data-floating='on'] [data-island='sidebar-return'],
-:root[data-floating='on'] [data-island='rail-needs-you'],
-:root[data-floating='on'] [data-island='rail-would-have'] {
+:root[data-floating='on'] [data-island='sidebar-needs-you'],
+:root[data-floating='on'] [data-island='sidebar-return'] {
   overflow: hidden;
 }
 
@@ -998,28 +947,24 @@ textarea,
   height: var(--float-band);
 }
 
-/* a joined head (the sidebar toolbar, the Fleet rail header) is the TOP of its list island, not an
+/* a joined head (the sidebar toolbar) is the TOP of its list island, not an
    island of its own: it sits inside the island's 1px top border, so it is one px shorter than the
    band and its bottom rule (its own `border-b`, the inner divider) lands on the Topbar's bottom edge.
-   `!important` because both heads carry their 42px as an inline style, which only that beats. */
+   `!important` because the head carries its 42px as an inline style, which only that beats. */
 :root[data-floating='on'] [data-island-head][data-island-band] {
   box-sizing: border-box;
   height: calc(var(--float-band) - 1px) !important;
 }
 
-/* the sidebar column and the expanded Fleet rail are transparent stacks of islands */
-:root[data-floating='on'] aside[data-column]:not([data-rail-state='minimized']) {
+/* the sidebar column is a transparent stack of islands */
+:root[data-floating='on'] aside[data-column] {
   background: transparent;
   gap: var(--float-gap);
 }
 :root[data-floating='on'] [data-island='topbar'] {
   margin-bottom: var(--float-gap);
 }
-/* the Return here zone's own top rule: the island gap separates it from the list now */
-:root[data-floating='on'] [data-section-divider] {
-  display: none;
-}
-/* dock and rail sections are drop-in slots: each extra section is divided from the one above */
+/* dock sections are drop-in slots: each extra section is divided from the one above */
 :root[data-floating='on'] [data-dock-section] + [data-dock-section] {
   border-top: 1px solid var(--color-border);
 }
@@ -1064,10 +1009,6 @@ textarea,
   background: var(--color-accent-line);
 }
 
-/* a divider that is not rendered must not take the gap with it: the minimized Fleet rail */
-:root[data-floating='on'] [data-rail-column][data-rail-state='minimized'] {
-  margin-left: var(--float-gap);
-}
 /* T790 delta 2 — the session tuck strip as its own island (design.md §6 "Tucking the session away",
    the floating bullet). The strip is `bar + --float-gap` in layout (so the gap to the helper stack is its
    own; the main divider is collapsed while tucked), the visible bar is a 4px island with --float-radius

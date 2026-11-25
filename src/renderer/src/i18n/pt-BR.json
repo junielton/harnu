@@ -104,14 +104,12 @@
     "resize": "Redimensionar barra lateral",
     "hide": "Ocultar barra lateral",
     "show": "Mostrar barra lateral",
+    "attention": {
+      "title": "Precisa de atenção"
+    },
     "returnHere": {
       "title": "Voltar aqui",
       "dismiss": "Marcar como visto"
-    },
-    "section": {
-      "collapse": "Recolher {name}",
-      "expand": "Expandir {name}",
-      "resize": "Redimensionar {name}"
     },
     "teammates": {
       "show": "Mostrar {n} teammates",
@@ -126,18 +124,6 @@
       "railWorking": "{branch}, agente trabalhando",
       "railFailed": "{branch}, falhou",
       "railNeedsInput": "{branch}, precisa de você"
-    }
-  },
-  "board": {
-    "blockedFor": "bloqueada há {time}",
-    "spinningOn": "repetindo {target} ×{count}",
-    "state": {
-      "needsInput": "Needs input",
-      "errored": "Errored",
-      "stuck": "Stuck",
-      "working": "Working",
-      "idle": "Idle",
-      "done": "Done"
     }
   },
   "topbar": {
@@ -1573,7 +1559,7 @@
       },
       "expandHides": {
         "label": "Expandir esconde",
-        "hint": "O que sai da frente quando um painel auxiliar é expandido para a janela. Tudo também esconde a barra lateral e o Fleet rail; Só a sessão esconde apenas a sessão.",
+        "hint": "O que sai da frente quando um painel auxiliar é expandido para a janela. Tudo também esconde a barra lateral; Só a sessão esconde apenas a sessão.",
         "everything": "Tudo",
         "sessionOnly": "Só a sessão"
       }
@@ -1665,8 +1651,7 @@
       "trustAll": "Confiar em todas as pastas",
       "trustAllHint": "Intercepta tool calls em todas as pastas. Desligue para voltar a escolher pasta por pasta.",
       "rampTitle": "Interceptar por pasta",
-      "rampEmpty": "Nenhuma pasta interceptada ainda — adicione uma abaixo ou ligue Confiar em todas as pastas.",
-      "reviewShadowLog": "Ver shadow log"
+      "rampEmpty": "Nenhuma pasta interceptada ainda — adicione uma abaixo ou ligue Confiar em todas as pastas."
     },
     "notifications": {
       "label": "Notificações do sistema",
@@ -1757,8 +1742,7 @@
     "actions": {
       "session_new": "Nova sessão",
       "app_search": "Abrir a paleta de comandos",
-      "inbox_toggle": "Alternar a coluna de Aprovações",
-      "view_fleetRail": "Alternar a coluna da Frota",
+      "inbox_toggle": "Abrir ou recolher Precisa de você",
       "view_toggleSidebar": "Alternar a barra lateral esquerda",
       "view_toggleHelper": "Alternar o painel dividido à direita",
       "project_switch": "Trocar de projeto",
@@ -1825,9 +1809,6 @@
       "repoGroup_resetName": "Resetar nome (grupo)",
       "repoGroup_cleanup": "Limpeza… (repositório)",
       "inbox_open": "Abrir aprovações",
-      "inbox_toggleOrder": "Mais recentes primeiro / Mais antigos primeiro (coluna da Frota)",
-      "inbox_filter": "Filtrar estados (coluna da Frota)",
-      "inbox_showAll": "Mostrar tudo (coluna da Frota)",
       "view_activity": "Abrir a Atividade",
       "view_missionProgress": "Abrir o progresso da missão",
       "view_pastedImages": "Abrir as imagens coladas",
@@ -2369,22 +2350,10 @@
     "blockedTitle": "Bloqueou um comando perigoso"
   },
   "approvalInbox": {
-    "title": "Fleet",
-    "open": "Abrir aprovações — {count} esperando",
-    "fleetEmpty": "Tudo em dia",
     "subtitle": "Tool calls esperando por você. Allow ou deny sem trocar de tab.",
     "sections": {
-      "needsYou": "Precisa de você",
-      "wouldHave": "Teria pego"
+      "needsYou": "Precisa de você"
     },
-    "rail": {
-      "ariaLabel": "Fleet rail",
-      "expand": "Expandir o Fleet rail",
-      "minimize": "Minimizar o Fleet rail",
-      "resize": "Redimensionar o Fleet rail"
-    },
-    "shadowEmpty": "Nenhuma prévia ainda",
-    "shadowPaused": "Prévia pausada — o responder está off (modo observador).",
     "allow": "Allow",
     "deny": "Deny",
     "expired": "Esse request já expirou — a sessão resolveu no terminal.",
@@ -2392,20 +2361,6 @@
     "allowAria": "Allow {tool} em {folder}",
     "denyAria": "Deny {tool} em {folder}",
     "openSessionAria": "Abrir a sessão de {tool}",
-    "missionsStrip": {
-      "title": "Active missions"
-    },
-    "order": {
-      "newestFirst": "Mais recentes primeiro — clique para os mais antigos primeiro",
-      "oldestFirst": "Mais antigos primeiro — clique para os mais recentes primeiro"
-    },
-    "filter": {
-      "title": "Filtrar estados",
-      "showAll": "Mostrar tudo",
-      "toggleAria": "Mostrar ou esconder cards de {state}",
-      "hiddenAttention": "{count} escondidos pelo filtro",
-      "allHidden": "Todos os cards do fleet estão escondidos pelo seu filtro — toque para mostrar tudo"
-    },
     "row": {
       "outside": "fora do Harnu"
     }

@@ -120,11 +120,11 @@ describe('conflict detection surfaces through the optimistic resolve', () => {
   it('flags both participants when a rebind collides with a default', async () => {
     const store = useKeybindingsStore()
 
-    // `view.review` defaults to Cmd+Shift+D; bind the Fleet rail onto it.
-    await store.setBinding('view.fleetRail', 'Cmd+Shift+D')
+    // `view.review` defaults to Cmd+Shift+D; bind the sidebar rescan onto it.
+    await store.setBinding('sidebar.rescan', 'Cmd+Shift+D')
 
-    expect(store.resolved.byId['view.fleetRail'].conflictsWith).toContain('view.review')
-    expect(store.resolved.byId['view.review'].conflictsWith).toContain('view.fleetRail')
+    expect(store.resolved.byId['sidebar.rescan'].conflictsWith).toContain('view.review')
+    expect(store.resolved.byId['view.review'].conflictsWith).toContain('sidebar.rescan')
   })
 })
 

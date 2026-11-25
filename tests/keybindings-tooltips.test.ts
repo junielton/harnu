@@ -117,7 +117,6 @@ const TOOLTIP_SITES: Record<string, string[]> = {
   'SidebarFolder.vue': ['session.newInFolder'],
   'StatusFooter.vue': ['view.pastedImages', 'view.claudeStatus', 'view.cleanup', 'view.scheduler'],
   'HeapGauge.vue': ['view.systemMonitor'],
-  'InboxRail.vue': ['inbox.open', 'inbox.toggleOrder', 'inbox.toggle'],
   'TakeoverShell.vue': ['view.closeTakeover'],
   'HelperPane.vue': ['pane.toggleMaximize', 'pane.close'],
   'MarkdownPane.vue': ['pane.toggleMaximize', 'pane.close'],

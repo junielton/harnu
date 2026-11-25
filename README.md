@@ -13,7 +13,7 @@ Harnu is a cross-platform Electron + Vue 3 desktop app. It reads `~/.claude/proj
 ## Features
 
 - **Sessions in one place** — resume any past Claude Code session or start a new one, grouped by folder and git worktree, with live status (working / needs input / stuck / idle) right in the sidebar.
-- **Approval Inbox** — every action an agent takes through Harnu's control server surfaces in one rail for your say-so instead of scattered terminal prompts (Claude Code's own permission prompts join it only if you switch the opt-in Interceptor to Active in **Settings → Interceptor**; it ships in log-only Shadow mode, which never changes a session); grant a whole batch of actions at once or allow a verb durably per folder.
+- **Approval Inbox** — every action an agent takes through Harnu's control server that needs your say-so surfaces in one place, the sidebar's **Needs you**, instead of scattered terminal prompts (Claude Code's own permission prompts join it only if you switch the opt-in Interceptor to Active in **Settings → Interceptor**; it ships in log-only Shadow mode, which never changes a session); grant a whole batch of actions at once or allow a verb durably per folder.
 - **Git worktrees** — spin up an isolated worktree for a task straight from Harnu, seeded via a repo's own `WORKTREE.md` manifest so it's usable immediately instead of a bare checkout.
 - **Project memory** — a per-repo `.harnu/memory/` spotlight (hot state, decisions, roadmap) that every session and worktree shares, browsable from a built-in pane.
 - **Roadmap board** — a kanban for the project's backlog with agent-authored cards, a dispatch manifest gate, and configurable model routing per card kind.

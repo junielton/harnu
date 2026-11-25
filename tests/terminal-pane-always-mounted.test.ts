@@ -67,7 +67,6 @@ const STUB_ALL = {
   CloudSessionPanel: true,
   Onboarding: true,
   TakeoverHost: true,
-  InboxRail: true,
   HelperStack: true,
   TerminalPane: true,
   SessionPreview: true,

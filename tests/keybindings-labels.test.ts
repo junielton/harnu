@@ -69,7 +69,7 @@ describe('KeybindingsPane renders human labels', () => {
       i18n.global.locale.value = locale
       const store = useKeybindingsStore()
       // A conflict so the conflict badge (which names the other action) renders too.
-      store.resolved = resolveKeybindings([{ command: 'view.review', key: 'Cmd+Shift+B' }], {
+      store.resolved = resolveKeybindings([{ command: 'view.review', key: 'Cmd+B' }], {
         mac: false
       })
       wrapper = mount(KeybindingsPane, { global: { plugins: [i18n] }, attachTo: document.body })

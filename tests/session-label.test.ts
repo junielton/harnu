@@ -292,9 +292,6 @@ describe('sidebar filter (BUG-78 AC16)', () => {
 
     // The tree filter (`filteredFolders` → `visibleFolders`).
     expect(JSON.stringify(store.visibleFolders)).toContain('/work/Demo')
-    // The board filter (`boardBuckets`).
-    const ids = store.boardBuckets.flatMap((b) => b.sessions.map((x) => x.sessionId))
-    expect(ids).toEqual(['aaaa0000-0000-4000-8000-0000000000a2'])
   })
 
   it('still finds nothing for a query no field or name matches', () => {
@@ -302,6 +299,5 @@ describe('sidebar filter (BUG-78 AC16)', () => {
     seed(store, [haikuOnly('aaaa0000-0000-4000-8000-0000000000a3')])
     store.setFilterQuery('no-such-name')
     expect(JSON.stringify(store.visibleFolders)).not.toContain('/work/Demo')
-    expect(store.boardBuckets.flatMap((b) => b.sessions)).toEqual([])
   })
 })

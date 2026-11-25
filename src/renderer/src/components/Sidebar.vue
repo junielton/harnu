@@ -10,6 +10,8 @@ import SidebarTreeFolder from './SidebarTreeFolder.vue'
 import { densityMetrics } from './sidebar-density'
 import SidebarDrillView from './SidebarDrillView.vue'
 import SidebarJumpPalette from './SidebarJumpPalette.vue'
+import SidebarAttention from './SidebarAttention.vue'
+import SidebarNeedsYou from './SidebarNeedsYou.vue'
 import SidebarReturnZone from './SidebarReturnZone.vue'
 import WatcherStatusPill from './WatcherStatusPill.vue'
 import {
@@ -372,6 +374,10 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
         </template>
       </header>
 
+      <!-- Needs attention: pinned under the toolbar, outside the scroller, so it never leaves the
+         screen with the tree. Part of the list island (design.md §6 "Needs attention"). -->
+      <SidebarAttention />
+
       <!-- Tree (folder view). In drill mode the drill view owns its own scroller so
          its Back row can sit ABOVE it (BUG-248); this wrapper then only mounts to
          host the loading / empty states while the root screen has nothing to show. -->
@@ -411,11 +417,10 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
       />
     </div>
 
-    <!-- RETURN HERE zone (T37 — closure axis, T660) — forgotten needs-input sessions. Sits at the
-         BOTTOM, between the list island and the dock, so it never competes with the toolbar. It
-         self-hides when the forgotten set is empty (calm-tech). It is a resizable, collapsible
-         `SidebarSection` (T702); the list island above keeps a minimum height (`min-height` on it,
-         design.md §6 "Sidebar sections") so dragging the section taller never squeezes it away. -->
+    <!-- The bottom dock (design.md §6 "Bottom dock"): Needs you, Return here, then Add folder.
+         Each of the two is absent while empty and folded until the operator opens it; the list
+         island above keeps a minimum height, so an open body never squeezes it away. -->
+    <SidebarNeedsYou />
     <SidebarReturnZone />
 
     <!-- Dock (design.md §6 "Sidebar dock (slot)"): the lower island is a slot that stacks N

@@ -1,4 +1,4 @@
-<!-- harnu-features v160 (2026-11-24) -->
+<!-- harnu-features v161 (2026-11-25) -->
 
 # You are running inside Harnu
 
@@ -8,8 +8,9 @@ terminal pane hosting this session, a topbar, and a footer. Harnu adds capabilit
 around the session that you can use and refer the user to.
 
 **Approval Inbox.** Tool calls that need the user's approval surface in Harnu's
-Approval Inbox (tabs: "Needs you" for pending decisions, "Would have" for ones that
-were auto-handled). When you're blocked on a permission, that's where the user acts.
+Approval Inbox: the **Needs you** section at the bottom of the sidebar, folded until
+the user opens it (⌘⇧A / Ctrl+Shift+A, or the OS notification). When you're blocked
+on a permission, that's where the user acts.
 
 **Pasted images → footer gallery.** Every screenshot the user pastes is saved to
 `<os.tmpdir()>/claude-<uid>/<slug>/<uuid>/images/<n>.png` (newer Claude Code) or

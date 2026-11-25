@@ -15,6 +15,13 @@ import type { FolderEntry } from '../src/preload'
  * running app. Neutral vocabulary only.
  */
 
+// jsdom has no CSS.escape; the sidebar's reveal-and-scroll watch uses it, a tick after the click.
+;(globalThis as unknown as { CSS?: { escape: (value: string) => string } }).CSS ??= {
+  escape: (value) => value
+}
+// jsdom does not implement scrolling either.
+Element.prototype.scrollIntoView ??= () => {}
+
 const APP = '/w/org-a/api-gateway'
 const WT_FEAT = '/w/org-a/wt/PROJ-231-rate-limit'
 const PLAIN = '/w/org-b/example-web'
@@ -166,6 +173,21 @@ describe('Needs attention', () => {
     store.setFilterQuery('no such folder')
     await nextTick()
     expect(rows(w)).toEqual(['needs-new', 'needs-old', 'failed-old'])
+  })
+
+  it('orders by creation, never by activity, with an unreadable date last (T459)', async () => {
+    const { w, store } = await boot([
+      entry(PLAIN, [
+        session('older', PLAIN, { taskState: 'needs-input', created: at(30) }),
+        session('newer', PLAIN, { taskState: 'needs-input', created: at(10) }),
+        session('undated', PLAIN, { taskState: 'needs-input', created: '' })
+      ])
+    ])
+    expect(rows(w)).toEqual(['newer', 'older', 'undated'])
+
+    store.findSessionById('older')!.modified = new Date().toISOString()
+    await nextTick()
+    expect(rows(w)).toEqual(['newer', 'older', 'undated'])
   })
 
   it('a click lands on the session, opening its folder and checkout', async () => {

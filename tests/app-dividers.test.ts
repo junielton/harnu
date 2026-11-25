@@ -5,25 +5,20 @@ import { setActivePinia, createPinia } from 'pinia'
 import { i18n } from '@renderer/i18n'
 import App from '../src/renderer/src/App.vue'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
-import {
-  useLayoutStore,
-  SIDEBAR_WIDTH_DEFAULT,
-  INBOX_RAIL_WIDTH_DEFAULT
-} from '../src/renderer/src/stores/layout'
+import { useLayoutStore, SIDEBAR_WIDTH_DEFAULT } from '../src/renderer/src/stores/layout'
 import { useHelpersStore } from '../src/renderer/src/stores/helpers'
 
 /**
  * BUG-247 (floating layout S-2) — the vertical pane dividers.
  *
  *  - AC-3: the hit area stays 6px wide (`w-1.5`) with `cursor-col-resize`, drag
- *    resizes, double-click resets (sidebar, helper stack, Fleet rail), hover
- *    lights `--accent-line`.
+ *    resizes, double-click resets (sidebar, helper stack), hover lights
+ *    `--accent-line`.
  *  - AC-2 (structural half): the visible 1px line sits FLUSH against the side
  *    panel's edge instead of floating in the middle of the transparent hit
  *    column, so no strip of `--bg` separates the panel from the line (that strip
  *    is what read as a second bar). The visual half is a capture.
- *  - AC-4 (structural half): a collapsed sidebar / minimized Fleet rail renders
- *    no divider at all, so only the rail's own `border-l` remains.
+ *  - AC-4 (structural half): a collapsed sidebar renders no divider at all.
  */
 
 const none = (): (() => void) => () => {}
@@ -56,7 +51,6 @@ const STUBS = Object.fromEntries(
     'CloudSessionPanel',
     'Onboarding',
     'TakeoverHost',
-    'InboxRail',
     'HelperStack',
     'TerminalPane',
     'SessionPreview',
@@ -132,10 +126,10 @@ afterEach(() => {
 })
 
 describe('divider hit area and reset', () => {
-  it('renders the sidebar, helper-stack and Fleet-rail dividers with a 6px col-resize hit area', async () => {
+  it('renders the sidebar and helper-stack dividers with a 6px col-resize hit area', async () => {
     const w = await mountWithHelperStack()
     const seps = separators(w)
-    expect(seps).toHaveLength(3)
+    expect(seps).toHaveLength(2)
     for (const sep of seps) {
       expect(sep.classes()).toContain('w-1.5')
       expect(sep.classes()).toContain('cursor-col-resize')
@@ -177,24 +171,11 @@ describe('divider hit area and reset', () => {
     expect(helpers.splitRatioForCurrentWorktree).toBe(0.65)
   })
 
-  it('Fleet rail: dragging left grows it, double-click resets', async () => {
+  it('a collapsed sidebar renders no divider (AC-4, structural)', async () => {
     const w = await mountWithHelperStack()
-    const layout = useLayoutStore()
-    const rail = separators(w)[2]
-    const start = layout.inboxRailWidth
-    drag(rail.element, 1000, 960)
-    expect(layout.inboxRailWidth).toBe(start + 40)
-    await rail.trigger('dblclick')
-    expect(layout.inboxRailWidth).toBe(INBOX_RAIL_WIDTH_DEFAULT)
-  })
-
-  it('a collapsed sidebar and a minimized Fleet rail render no divider (AC-4, structural)', async () => {
-    const w = await mountWithHelperStack()
-    const layout = useLayoutStore()
-    layout.setSidebarCollapsed(true)
-    layout.setInboxRailState('minimized')
+    useLayoutStore().setSidebarCollapsed(true)
     await flushPromises()
-    // Only the helper-stack divider is left; the rail keeps its own border-l.
+    // Only the helper-stack divider is left.
     expect(separators(w)).toHaveLength(1)
   })
 })
@@ -202,13 +183,12 @@ describe('divider hit area and reset', () => {
 describe('single edge at rest (AC-2, structural)', () => {
   it('puts the visible line flush against the side panel, never centered in the hit column', async () => {
     const w = await mountWithHelperStack()
-    const [sidebar, helper, rail] = separators(w)
+    const [sidebar, helper] = separators(w)
     // Sidebar is LEFT of its divider → the line hugs the divider's left edge.
     expect(sidebar.classes()).toContain('justify-start')
-    // Helper stack and Fleet rail are RIGHT of theirs → the line hugs the right edge.
+    // Helper stack is RIGHT of its own → the line hugs the right edge.
     expect(helper.classes()).toContain('justify-end')
-    expect(rail.classes()).toContain('justify-end')
-    for (const sep of [sidebar, helper, rail]) {
+    for (const sep of [sidebar, helper]) {
       expect(sep.classes()).not.toContain('justify-center')
     }
   })
