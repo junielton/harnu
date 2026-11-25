@@ -45,14 +45,8 @@
   --radius: 7px;
   --radius-lg: 10px;
 
-  /* Folder View scroll caps (design.md §6 "Folder View → Height caps"). The
-   * two long lists cap their own height and scroll inside themselves instead of
-   * running off the bottom of the page: measured on a 102-worktree, 128-card
-   * repo, the fan-out alone pushed the Sessions block three screens down.
-   * Theme-invariant, like the shape and motion tokens above — they are read by
-   * three components, and a height that lives in one of them is a height the
-   * other two can drift from. */
-  --fv-fanout-max-h: 380px;
+  /* Scroll cap of the lists inside the Cleanup confirm dialogs (design.md §9). The name predates the
+   * slim Folder View, where it started. Theme-invariant. */
   --fv-rail-list-max-h: 280px;
 
   /* Cleanup layout dimensions (design.md §4, "Workspace GC — unified Cleanup"). Theme-invariant. */

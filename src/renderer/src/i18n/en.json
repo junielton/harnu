@@ -1124,111 +1124,19 @@
     "disclaimer": "Harnu is an independent project, not affiliated with or endorsed by Anthropic."
   },
   "folderView": {
-    "whereWeLeftOff": "Where we left off",
-    "sessions": "Sessions",
-    "noSessions": "No sessions here yet.",
     "newSession": "New session",
-    "older": "Older ({n})",
-    "archived": "Archived ({n})",
-    "roadmap": "Roadmap",
-    "sessionBound": "session bound",
-    "worktrees": "Worktrees in this repo",
-    "siblingWorktrees": "Sibling worktrees",
-    "scope": {
-      "thisFolder": "this folder",
-      "repo": "repo",
-      "thisFolderHint": "Only this folder — its own sessions, branch and working tree.",
-      "repoHint": "The whole repo — every worktree of it shows exactly this."
-    },
-    "owned": {
-      "rail": {
-        "dispatched": "Dispatched",
-        "dispatchedAt": "Dispatched · {age}",
-        "commits": "Commits",
-        "commitsCount": "{n} commits",
-        "commitsLatest": "{n} commits · latest {sha}",
-        "pr": "PR",
-        "prNumber": "PR #{n}",
-        "merge": "Merge",
-        "merged": "Merged"
-      },
-      "pr": {
-        "merged": "merged",
-        "closed": "closed",
-        "isDraft": "draft",
-        "changesRequested": "changes requested",
-        "approved": "approved",
-        "inReview": "in review"
-      },
-      "meta": {
-        "status": "Status",
-        "ownerSession": "Owner session",
-        "git": "Git",
-        "unpushed": "unpushed",
-        "cutFrom": "Cut from"
-      }
-    },
-    "thisWorktree": "this one",
-    "cutFromHere": "cut from here",
+    "terminalHere": "Terminal here",
+    "browseFiles": "Browse files",
     "openRoadmap": "Roadmap board",
     "openPrStack": "PR Stack",
-    "browseFiles": "Browse files",
     "openFolder": "Open folder",
-    "terminalHere": "Terminal here",
-    "fanout": {
-      "title": "Worktrees in flight",
-      "colBranch": "Branch",
-      "colCard": "Card",
-      "colSessions": "Sessions",
-      "colGit": "Git",
-      "colPr": "PR",
-      "sessionsLive": "{n} · {live} live",
-      "noCard": "No card is executing this branch",
-      "prState": {
-        "checksPassing": "checks passing",
-        "checksFailing": "checks failing",
-        "checksRunning": "checks running",
-        "changesRequested": "changes requested",
-        "draft": "draft #{n}",
-        "merged": "merged #{n}",
-        "closed": "closed #{n}",
-        "open": "open #{n}"
-      },
-      "expand": "Show details",
-      "collapse": "Hide details",
-      "detail": {
-        "branch": "Branch",
-        "path": "Path",
-        "card": "Card",
-        "git": "Git",
-        "gitClean": "up to date with its base",
-        "gitUnavailable": "Git status could not be read",
-        "pr": "Pull request",
-        "prNumber": "#{n}",
-        "noPr": "No open pull request for this branch",
-        "open": "Open this worktree",
-        "isSelf": "You are in this worktree"
-      }
-    },
-    "kpi": {
-      "needYou": "need you",
-      "needYouAcross": "Across {n} worktrees",
-      "needYouBreakdown": "{sessions} sessions · {prs} PRs changes requested",
-      "needYouPrsUnavailable": "{sessions} sessions · PR state unavailable",
-      "inFlight": "in flight",
-      "inFlightK": "Worktrees with a live session",
-      "inFlightSub": "{total} worktrees total · {idle} idle",
-      "inReview": "in review",
-      "roadmapK": "Roadmap · {inProgress} in progress · {ready} ready",
-      "sessionsHere": "sessions here",
-      "sessionsHereK": "In this checkout · {older} older",
-      "sessionsHereSub": "Where orchestrations start"
-    },
-    "activity": {
-      "title": "Activity · 14d",
-      "sessions": "{n} sessions",
-      "today": "today · {n}",
-      "chartLabel": "Sessions started per day across the repo, last 14 days"
+    "moreActions": "More folder actions",
+    "moreTitle": "More: {actions}",
+    "roadmap": "Roadmap",
+    "road": {
+      "inProgress": "{n} in progress",
+      "ready": "{n} ready",
+      "inReview": "{n} in review"
     }
   },
   "empty": {
