@@ -96,7 +96,14 @@ beforeEach(async () => {
     JSON.stringify({
       version: 1,
       cursors: {},
-      cards: ['human', 'agent', 'ghost', 'flaky'].map((s) => card({ id: `c-${s}`, sessionId: s }))
+      cards: [
+        ...['human', 'agent', 'ghost', 'flaky'].map((s) =>
+          card({ id: `c-${s}`, sessionId: s, folder: dir })
+        ),
+        // BUG-308: an expired card, and one whose folder is gone, of sessions that are fine.
+        card({ id: 'c-expired', sessionId: 'flaky', folder: dir, updatedAt: 1 }),
+        card({ id: 'c-nofolder', sessionId: 'flaky', folder: path.join(dir, 'removed') })
+      ]
     })
   )
 })
@@ -124,6 +131,27 @@ describe('startup cleanup wiring (BUG-300)', () => {
       expect(byId.get('c-agent')?.closedBy).toBe('source-resolved')
       expect(byId.get('c-human')?.closedAt).toBeUndefined()
       expect(byId.get('c-flaky')?.closedAt).toBeUndefined()
+    } finally {
+      closeYourMove()
+    }
+  })
+
+  it('booting also expires old cards and closes cards whose folder is gone (BUG-308)', async () => {
+    const { registerYourMove, closeYourMove } = await import('../../src/main/your-move/ipc')
+    registerYourMove(() => null)
+    try {
+      const list = async (): Promise<CardView[]> =>
+        (await h.handlers.get('yourMove:list')?.({})) as CardView[]
+      await vi.waitFor(
+        async () => {
+          const byId = new Map((await list()).map((c) => [c.id, c]))
+          expect(byId.get('c-expired')?.closedBy).toBe('expired')
+          expect(byId.get('c-nofolder')?.closedBy).toBe('folder-removed')
+        },
+        { timeout: 5_000 }
+      )
+      const byId = new Map((await list()).map((c) => [c.id, c]))
+      expect(byId.get('c-human')?.closedAt).toBeUndefined()
     } finally {
       closeYourMove()
     }

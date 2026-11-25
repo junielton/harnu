@@ -13,6 +13,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { pruneClosed, type YourMoveCard, type YourMoveState } from '../../src/main/your-move/core'
+import { sweepStaleCards } from '../../src/main/your-move/hygiene'
 import { openYourMoveStore, type YourMoveStore } from '../../src/main/your-move/store'
 
 const TOTAL = 10_000
@@ -202,5 +203,31 @@ describe('AC-3 / AC-7: closed cards live for a 7-day window, then go', () => {
     expect(store.state().cards).toHaveLength(OPEN)
     const again = await openYourMoveStore(file)
     expect(again.state().cards).toHaveLength(OPEN)
+  })
+})
+
+describe('BUG-308: the stale sweep at 10,000 cards', () => {
+  it('asks each session and folder once and commits in one write', async () => {
+    const store = await seed()
+    const sessions: string[] = []
+    const folders: string[] = []
+    const onChange = vi.fn()
+    store.onChange(onChange)
+    const r = await sweepStaleCards({
+      store,
+      lookup: async (id) => {
+        sessions.push(id)
+        return id === 'session-0' ? { state: 'missing' } : { state: 'found', path: `/t/${id}` }
+      },
+      folder: async (f) => {
+        folders.push(f)
+        return 'present'
+      },
+      now: () => NOW
+    })
+    expect(new Set(sessions).size).toBe(sessions.length)
+    expect(new Set(folders).size).toBe(folders.length)
+    expect(r.gone).toBeGreaterThan(0)
+    expect(onChange).toHaveBeenCalledTimes(1)
   })
 })
