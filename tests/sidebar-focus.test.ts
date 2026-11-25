@@ -317,6 +317,31 @@ describe('AC-21 Focus on one folder', () => {
     expect(reached).toEqual([])
   })
 
+  it('leaves no folder hover card behind the Focus button', async () => {
+    await boot()
+    vi.useFakeTimers()
+    try {
+      const ui = useUiStore()
+      const head = header(APP)
+      head.dispatchEvent(new MouseEvent('mouseenter'))
+      head.querySelector<HTMLElement>('[data-focus-button]')!.click()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(ui.preview.open).toBe(false)
+
+      // A card already on screen closes too.
+      back()!.click()
+      await nextTick()
+      header(APP).dispatchEvent(new MouseEvent('mouseenter'))
+      await vi.advanceTimersByTimeAsync(500)
+      expect(ui.preview.open).toBe(true)
+      header(APP).querySelector<HTMLElement>('[data-focus-button]')!.click()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(ui.preview.open).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('offers no drill-depth button in the toolbar', async () => {
     await boot()
     expect(find('[data-drill-toggle]')).toBeNull()
