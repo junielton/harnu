@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import Topbar from '../src/renderer/src/components/Topbar.vue'
+import FolderView from '../src/renderer/src/components/FolderView.vue'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import { i18n } from '@renderer/i18n'
@@ -49,6 +50,34 @@ describe('topbar with a folder selected', () => {
     const wrapper = mountTopbar()
     await wrapper.get('[data-test="topbar-roadmap"]').trigger('click')
 
+    expect(ui.roadmap.open).toBe(true)
+    expect(ui.roadmap.folderPath).toBe('/repo/alpha')
+  })
+
+  /**
+   * Sidebar redesign S-6, AC-27 — without a board the Folder View hides its
+   * Roadmap board button (design.md §6 "Folder View"), so the Topbar's is what
+   * keeps the board one click away.
+   */
+  it('keeps the roadmap button for a folder whose repo has no board', async () => {
+    const noBoard = vi.fn().mockResolvedValue({
+      counts: { backlog: 0, ready: 0, 'in-progress': 0, review: 0, done: 0 },
+      active: []
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(window as any).api.roadmapPeek = noBoard
+    const store = useSessionsStore()
+    const ui = useUiStore()
+    store.selectFolder('/repo/alpha')
+
+    const view = mount(FolderView, { global: { plugins: [i18n] } })
+    const wrapper = mountTopbar()
+    await flushPromises()
+
+    expect(noBoard).toHaveBeenCalledWith('/repo/alpha')
+    expect(view.find('[data-test="folder-view-open-roadmap"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="topbar-roadmap"]').trigger('click')
     expect(ui.roadmap.open).toBe(true)
     expect(ui.roadmap.folderPath).toBe('/repo/alpha')
   })
