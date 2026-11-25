@@ -16,7 +16,6 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - **Needs attention** at the top of the sidebar lists the sessions that need your input or have failed, from every folder, one line each: waiting ones first. Click a row to go to the session. It disappears when nothing needs you.
 - **Needs you** and **Return here** now sit at the bottom of the sidebar, above Add folder, folded to a line with the count and the age of the oldest item, and gone while empty. `Cmd/Ctrl+Shift+A`, the **Open approvals** command and a click on the system notification open Needs you (and expand a collapsed sidebar); it never opens by itself. In a very narrow sidebar, Allow and Deny move under the command so you can still read it.
-
 - A checkout with something happening in it now has a thin coloured bar down its left edge, covering its row and its sessions: dim green while an agent works there, amber when a session needs you, red when one failed. Idle and finished checkouts show nothing, and neighbouring checkouts never share a bar.
 
 ### Fixed
