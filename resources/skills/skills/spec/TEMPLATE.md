@@ -33,7 +33,7 @@ anywhere in the file, not even in prose; the gate fails on it.
 
 FOUR CONVENTIONS (`spec-check.mjs` of the `harnu:spec` skill reads them; the gate accepts them)
   gated-by:   a slice bullet listing the open decisions that lock it (`gated-by: D-1`). An open
-              D-n becomes a decision node that blocks only the slices naming it.
+              D-n becomes an operator blocker that holds only the slices naming it.
   NG-n        each non-goal is a bullet that starts `NG-n` and cites the request atoms it
               covers, e.g. `- NG-1 No import (R-3)`.
   existing:   a `consumes:` token no slice produces is written `existing:<name>` (a capability
