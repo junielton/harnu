@@ -30,7 +30,11 @@ vi.mock('electron', () => ({
   BrowserWindow: class {}
 }))
 vi.mock('../../src/main/mission-ipc', () => ({ setMissionListObserver: (): void => undefined }))
-vi.mock('../../src/main/pty', () => ({ setPtyExitObserver: (): void => undefined }))
+vi.mock('../../src/main/pty', () => ({
+  setPtyExitObserver: (): void => undefined,
+  // BUG-308 delta 1: Harnu spawned `dispatched` for an agent.
+  spawnOriginForSession: (id: string) => (id === 'dispatched' ? 'agent' : undefined)
+}))
 vi.mock('../../src/main/detect/task-state-hub', () => ({
   getTaskStates: () => new Map(),
   addTaskEventObserver: (): (() => void) => () => undefined
@@ -217,6 +221,43 @@ describe('startup cleanup wiring (BUG-300)', () => {
     } finally {
       closeYourMove()
       vi.useRealTimers()
+    }
+  })
+
+  it('booting closes the judge card of a dispatched session nobody typed in (BUG-308)', async () => {
+    const file = path.join(dir, 'dispatched.jsonl')
+    await writeFile(
+      file,
+      JSON.stringify({
+        type: 'user',
+        origin: { kind: 'human' },
+        message: { content: 'You are the executor. Do the slice.' }
+      }) + '\n'
+    )
+    h.lookups.dispatched = { state: 'found', path: file }
+    await writeFile(
+      path.join(dir, 'your-move.json'),
+      JSON.stringify({
+        version: 1,
+        cursors: {},
+        cards: [
+          card({ id: 'c-dispatched', sessionId: 'dispatched', folder: dir }),
+          card({ id: 'c-human', sessionId: 'human', folder: dir })
+        ]
+      })
+    )
+    const { registerYourMove, closeYourMove } = await import('../../src/main/your-move/ipc')
+    registerYourMove(() => null)
+    try {
+      const byId = async (): Promise<Map<string, CardView>> =>
+        new Map(((await h.handlers.get('yourMove:list')?.({})) as CardView[]).map((c) => [c.id, c]))
+      await vi.waitFor(
+        async () => expect((await byId()).get('c-dispatched')?.closedBy).toBe('source-resolved'),
+        { timeout: 4_000 }
+      )
+      expect((await byId()).get('c-human')?.closedAt).toBeUndefined()
+    } finally {
+      closeYourMove()
     }
   })
 })
