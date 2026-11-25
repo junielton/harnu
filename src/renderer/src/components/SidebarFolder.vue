@@ -645,6 +645,7 @@ function onSelectTeammate(session: Session): void {
                 :class="(isArchived(s) || !s.resumable || s.hibernated) && 'opacity-[.62]'"
                 >{{ labelFor(s) }}</span
               >
+              <!-- A real space, so the title and the overlaid mission text never read as one word. -->
               {{ ' ' }}
               <SidebarMissionDetail
                 v-if="mission && !mission.owed && !hasTrailingChips(s)"

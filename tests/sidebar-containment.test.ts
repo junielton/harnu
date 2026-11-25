@@ -23,6 +23,7 @@ const folder = readFileSync('src/renderer/src/components/SidebarFolder.vue', 'ut
 const card = readFileSync('src/renderer/src/components/FleetBoardCard.vue', 'utf8')
 const shelved = readFileSync('src/renderer/src/components/SidebarShelvedSection.vue', 'utf8')
 const treeFolder = readFileSync('src/renderer/src/components/SidebarTreeFolder.vue', 'utf8')
+const repoHeader = readFileSync('src/renderer/src/components/RepoGroupHeader.vue', 'utf8')
 
 /** The declaration block of the first `selector { … }` in the stylesheet. */
 function block(selector: string): string {
@@ -97,6 +98,7 @@ describe('BUG-269 invariant: layout containment is safe only while nothing in th
   for (const [name, source] of [
     ['Sidebar.vue', sidebar],
     ['SidebarFolder.vue', folder],
+    ['RepoGroupHeader.vue', repoHeader],
     ['SidebarTreeFolder.vue', treeFolder]
   ] as const) {
     it(`${name}: no fixed-position element outside a <Teleport>`, () => {

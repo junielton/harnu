@@ -272,14 +272,7 @@ describe('nothing of the old surfaces is left', () => {
     walk(dir)
     const map = read('CLAUDE.md')
     const mapped = [...new Set([...map.matchAll(/`?([A-Z][A-Za-z0-9]+\.vue)`?/g)].map((m) => m[1]))]
-    // The flat tree takes over the repo-header mapping. The orchestrator owns
-    // the design-entity table update, so validate the replacement in this slice.
-    const replacements: Record<string, string> = {
-      'RepoGroupHeader.vue': 'SidebarTreeFolder.vue'
-    }
-    expect(
-      mapped.map((name) => replacements[name] ?? name).filter((name) => !onDisk.has(name))
-    ).toEqual([])
+    expect(mapped.filter((n) => !onDisk.has(n))).toEqual([])
     const missionOnDisk = [...onDisk].filter((n) => /^Mission/.test(n))
     expect(missionOnDisk.filter((n) => !map.includes(n))).toEqual([])
   })

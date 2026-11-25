@@ -162,7 +162,7 @@ describe('AC-5: the review companion disposal hook fires on the close edge only,
 
 // ── AC-7 — menu entries and notification navigation stay open-only ─────────
 
-describe('AC-7: FolderMenu, SessionMenu, SidebarDrillView and openNavigableView never toggle', () => {
+describe('AC-7: FolderMenu, SessionMenu, RepoGroupHeader and openNavigableView never toggle', () => {
   const TOGGLE_CALLS = [
     'ui.toggleRoadmap',
     'ui.togglePrStack',
@@ -175,7 +175,7 @@ describe('AC-7: FolderMenu, SessionMenu, SidebarDrillView and openNavigableView 
   it.each([
     'src/renderer/src/components/FolderMenu.vue',
     'src/renderer/src/components/SessionMenu.vue',
-    'src/renderer/src/components/SidebarDrillView.vue'
+    'src/renderer/src/components/RepoGroupHeader.vue'
   ])('%s calls no ui.toggle* for a main-pane view', (rel) => {
     const code = codeOnly(read(rel))
     for (const toggle of TOGGLE_CALLS) {

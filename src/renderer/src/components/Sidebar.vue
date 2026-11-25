@@ -351,7 +351,9 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
         class="scrollable sidebar-tree-scroll flex-1 overflow-y-auto"
         :style="{ '--sidebar-tree-header-height': `${treeHeaderHeight}px` }"
       >
-        <div class="h-2" aria-hidden="true" />
+        <!-- Spacer elements, not padding, so the sticky header sticks flush. Rows only:
+             the loading and empty states fill the scroller exactly. -->
+        <div v-if="!treeStatus" class="h-2" aria-hidden="true" />
         <template v-if="sessions.folders.length === 0 && sessions.foldersLoading">
           <div data-sidebar-loading class="flex h-full flex-col items-center justify-center gap-3">
             <RefreshCw :size="20" :stroke-width="1.5" class="text-accent anim-spin" />
@@ -372,7 +374,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
         <template v-if="!sessions.drillModeEnabled">
           <SidebarTreeFolder v-for="tree in sessions.sidebarTree" :key="tree.key" :tree="tree" />
         </template>
-        <div class="h-2" aria-hidden="true" />
+        <div v-if="!treeStatus" class="h-2" aria-hidden="true" />
       </div>
       <SidebarDrillView
         v-if="sessions.drillModeEnabled && !(treeStatus && sessions.drillStack.length === 0)"
