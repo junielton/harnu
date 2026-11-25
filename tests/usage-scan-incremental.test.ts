@@ -349,3 +349,35 @@ describe('a transcript that did not only grow', () => {
     await rewritten(lines(req('a', 1000)), lines(req('a', 9000)))
   })
 })
+
+describe('two scans at once', () => {
+  it('counts appended requests once', async () => {
+    put(MAIN, lines(old(1), old(2)))
+    const s = scanner('inc')
+    await s.bi()
+    appendFileSync(pathOf(MAIN), lines(fresh(1)))
+    await Promise.all([s.merged(), s.bi()])
+    await expectSameAsFullRescan(s, 'inc')
+    expect((await s.merged()).mergedBuckets[0].requestCount).toBe(3)
+  })
+})
+
+describe('a same-size rewrite away from both ends', () => {
+  it('is re-parsed, though the fingerprint cannot see it', async () => {
+    const at = '2026-10-02T10:00:00.000Z'
+    const pad = Array.from({ length: 30 }, (_, n) => assistant({ id: `p${100 + n}`, at }))
+    const file = (input: number): string =>
+      lines(
+        ...pad,
+        assistant({ id: 'mid', at, input }),
+        ...pad.map((l) => l.replace(/_p1/g, '_q1'))
+      )
+    put(MAIN, file(1000))
+    const s = scanner('inc')
+    await s.bi()
+    put(MAIN, file(9000))
+    const later = new Date(statSync(pathOf(MAIN)).mtimeMs + 5_000)
+    utimesSync(pathOf(MAIN), later, later)
+    await expectSameAsFullRescan(s, 'inc')
+  })
+})

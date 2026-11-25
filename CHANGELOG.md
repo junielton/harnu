@@ -26,6 +26,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- Reopening the Usage Dashboard is much faster while sessions are running. A transcript that grew since the last look is now read from where Harnu stopped, not from the beginning; the totals are the same as a full re-read. The first load after this update still reads everything once, to rebuild the saved cost cache.
 - Opening the full Usage Dashboard no longer freezes Harnu. Your session transcripts are now read in a background thread, so typing and terminal output keep working while the dashboard loads. The first load still takes as long as before.
 - Half-written copies of the usage cost cache, left behind when Harnu quit while saving it, are now deleted.
 - A Markdown pane that opened straight in edit mode (a new note, a new file from Browse files, a scaffolded `WORKTREE.md`, the keybindings file) now comes back in view mode after a restart, instead of opening in edit and taking focus from the session terminal.
