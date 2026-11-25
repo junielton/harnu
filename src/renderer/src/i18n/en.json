@@ -68,6 +68,7 @@
       "enterNamed": "Focus {name}",
       "others": "{n} other | {n} others",
       "needsYou": "{n} needs you | {n} need you",
+      "needsYouShort": "{n} needs you | {n} need you",
       "failed": "{n} failed"
     },
     "filter": {

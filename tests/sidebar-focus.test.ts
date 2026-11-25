@@ -342,6 +342,42 @@ describe('AC-21 Focus on one folder', () => {
     }
   })
 
+  it('hands keyboard focus to the back row, and back to the Focus button', async () => {
+    await boot()
+    const button = (): HTMLElement => header(APP).querySelector('[data-focus-button]')!
+    // Enter on a button reaches it as a click with no pointer detail, which is what click() sends.
+    button().focus()
+    button().click()
+    await flushPromises()
+    expect(document.activeElement).toBe(back())
+
+    back()!.click()
+    await flushPromises()
+    expect(document.activeElement).toBe(button())
+  })
+
+  it('moves no focus after a mouse click', async () => {
+    await boot()
+    header(APP)
+      .querySelector('[data-focus-button]')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    await flushPromises()
+    expect(back()).not.toBeNull()
+    expect(document.activeElement).not.toBe(back())
+  })
+
+  it('draws each count of the back row on its own', async () => {
+    const store = await boot()
+    setState(store, 'web-1', 'failed')
+    setState(store, 'portal-1', 'needs-input')
+    await focusFolder(APP)
+    const part = (name: string): string =>
+      back()!.querySelector(`[data-focus-back-${name}]`)!.textContent!.trim()
+    expect(part('others')).toBe('3 others ·')
+    expect(part('needs')).toBe('1 needs you ·')
+    expect(part('failed')).toBe('1 failed')
+  })
+
   it('offers no drill-depth button in the toolbar', async () => {
     await boot()
     expect(find('[data-drill-toggle]')).toBeNull()

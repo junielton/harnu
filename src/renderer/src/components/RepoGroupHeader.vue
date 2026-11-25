@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick } from 'vue'
 import { BotOff, Crown, EyeOff, PanelRight, Target } from 'lucide-vue-next'
 import { useHoverPreview } from '../composables/useHoverPreview'
 import { checkoutLabel, treeHeaderCursor, type TreeFolder } from '../lib/sidebar-tree'
@@ -90,10 +90,16 @@ function select(): void {
 }
 
 /** The list is about to move under the pointer: the header's hover card goes with the click. */
-function focusFolder(): void {
+async function focusFolder(event: MouseEvent): Promise<void> {
+  const sidebar = (event.currentTarget as HTMLElement).closest('[data-sidebar]')
   hoverPreview.leave()
   ui.closePreview()
   sessions.enterFocus(props.tree.primary.path)
+  // A key press clicks with no pointer detail: this button unmounts under the keyboard, so hand
+  // focus to the back row that replaced it.
+  if (event.detail !== 0) return
+  await nextTick()
+  sidebar?.querySelector<HTMLElement>('[data-focus-back]')?.focus()
 }
 
 function openMenu(event: MouseEvent): void {

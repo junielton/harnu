@@ -2443,11 +2443,31 @@ Focus replaces drill-in. It narrows the list to **one folder**; the tree anatomy
 
 - **Enter:** the folder header's `target` button, or the folder menu.
 - **Back row** (sticky at the top of the list, `z` above folder headers): `chevron-left` 14px +
-  `All folders`, 12px `--text-3` → `--text` on hover, `padding: 8px 14px`, opaque `--sidebar`, 1px
-  `--border` bottom rule, 6px below it. On its right, what waits **elsewhere**: `{n} others`, then
-  `· {k} needs you` and `· {j} failed` when non-zero (10.5px `--warning`, `tabular-nums`). The whole
-  row is the button.
+  `All folders` (pt-BR `Pastas`), and on its right what waits **elsewhere**: `{n} others`, then
+  `{k} needs you` and `{j} failed`, joined by `·`. 35px, `padding: 0 14px`, `gap: 6px`, 12px for the
+  label and 10.5px `tabular-nums` for the counts, opaque `--sidebar`, 1px `--border` bottom rule,
+  6px below it. The whole row is the button.
+- **Colours:** the label, `{n} others` and the `·` separators are `--text-3`; the label and the
+  chevron go to `--text` on hover and keyboard focus, as in [Row states](#row-states). `needs you`
+  is `--warning` and `failed` is `--red`, the colours of the group rail and Needs attention.
+  `others` is not owed, so it is not amber.
+- **One line, always.** No wrap and no ellipsis anywhere in the row, and one shared baseline. The
+  row's `title` and `aria-label` always carry the full string, comma-joined, for example
+  `All folders, 7 others, 1 needs you, 1 failed`.
+- **Width levels.** As the row narrows it drops **whole parts**, never characters. `needs you` and
+  `failed` are never cut or hidden; the label comes next, then `others`. The level is read from the
+  parts' natural widths against the row's content width (a `ResizeObserver`); changing level is a
+  width response, not a state, so it may move things.
+  - **L0:** label + `{n} others · {k} needs you · {j} failed`.
+  - **L1:** `{n} others` goes, with its `·`.
+  - **L2:** the label text goes too. The chevron stays, and the label lives on in `title` and
+    `aria-label`.
+  - **L3** (only where it is shorter, i.e. pt-BR, when L2 still does not fit): `needs you` takes its
+    short form (`{n} precisa` / `{n} precisam`).
+  - A count of zero is not shown. With fewer parts, `others` is back whenever it fits.
 - Focused, the folder is always open and its header offers no collapse and no focus button.
+- **Keyboard:** entering Focus with Enter or Space moves focus to the back row; leaving it moves
+  focus to the Focus button of that folder. A mouse click moves no focus.
 - Needs attention and the dock stay **global**. Selecting a session of another folder (from
   anywhere) leaves Focus. `Esc` does **not** leave it: it is a view of the list, not an overlay.
 - The collapse cycle's level 0 leaves Focus.
