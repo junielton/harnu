@@ -966,3 +966,65 @@ describe('FolderView slim (sidebar redesign S-6)', () => {
     }
   })
 })
+
+/**
+ * AC-27 — no action of the old bar is lost: four up front, three behind More, in
+ * the order design.md §6 "Folder View" fixes.
+ */
+describe('FolderView slim actions (sidebar redesign S-6)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  const FRONT = [
+    'folder-view-new-session',
+    'folder-view-terminal',
+    'folder-view-browse-files',
+    'folder-view-open-roadmap',
+    'folder-view-more'
+  ]
+
+  it('keeps every action', async () => {
+    const openPath = vi.fn().mockResolvedValue(undefined)
+    const openInEditor = vi.fn().mockResolvedValue({ ok: true, mode: 'external' })
+    mockApi({ roadmapPeek: vi.fn().mockResolvedValue(BOARD_PEEK), openPath, openInEditor })
+    seed()
+    const store = useSessionsStore()
+    const { useUiStore } = await import('../src/renderer/src/stores/ui')
+    const { useHelpersStore } = await import('../src/renderer/src/stores/helpers')
+    const ui = useUiStore()
+    const helpers = useHelpersStore()
+    const newSession = vi.spyOn(ui, 'openNewSession')
+    const roadmap = vi.spyOn(ui, 'openRoadmap')
+    const prStack = vi.spyOn(ui, 'openPrStack')
+    const terminal = vi.spyOn(store, 'createFolderTerminal').mockImplementation(() => '')
+    const explorer = vi.spyOn(helpers, 'addExplorerHelper').mockImplementation(() => undefined)
+
+    const wrapper = mount(FolderView, { global: { plugins: [i18n] }, attachTo: document.body })
+    await flushPromises()
+
+    // Up front, in order, and one click each.
+    const bar = wrapper.get('[data-test="folder-view-actions"]')
+    expect(bar.findAll('button').map((b) => b.attributes('data-test'))).toEqual(FRONT)
+    for (const id of FRONT.slice(0, 4)) await wrapper.get(`[data-test="${id}"]`).trigger('click')
+    expect(newSession).toHaveBeenCalledWith('/repo/alpha')
+    expect(terminal).toHaveBeenCalledWith('/repo/alpha')
+    expect(explorer).toHaveBeenCalledWith('/repo/alpha', '/repo/alpha')
+    expect(roadmap).toHaveBeenCalledWith('/repo/alpha', 'alpha')
+
+    // Behind More: PR Stack, the editor, Open folder — two clicks each.
+    expect(wrapper.find('[data-test="folder-view-menu"]').exists()).toBe(false)
+    const pick = async (id: string): Promise<void> => {
+      await wrapper.get('[data-test="folder-view-more"]').trigger('click')
+      await wrapper.get(`[data-test="${id}"]`).trigger('click')
+      expect(wrapper.find('[data-test="folder-view-menu"]').exists()).toBe(false)
+    }
+    await pick('folder-view-open-pr-stack')
+    expect(prStack).toHaveBeenCalledWith('/repo/alpha', 'alpha')
+    await pick('folder-view-editor')
+    expect(openInEditor).toHaveBeenCalledWith('/repo/alpha')
+    await pick('folder-view-open-folder')
+    expect(openPath).toHaveBeenCalledWith('/repo/alpha')
+    wrapper.unmount()
+  })
+})
