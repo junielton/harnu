@@ -15,11 +15,29 @@ Settings is organized into tabs. Most are covered in depth on their own pages �
 - **Interceptor** — an optional, separate layer that lets Harnu answer Claude Code's own permission prompts (not to be confused with the MCP approvals above) — see [Intercepting Claude Code's own prompts](approval-inbox.md#intercepting-claude-codes-own-prompts) for how its shadow/active modes work.
 - **Memory** — where [project memory](project-memory.md) behavior is configured.
 - **Hibernation policy** — covered below.
+- **Your move** — whether Harnu checks sessions for something only you can unblock; covered [below](#your-move).
 - **Usage history** — covered in [Usage](usage.md#usage-history-settings-tab); the working-days control for the daily budget is [below](#daily-budget).
 - **Changelog** — renders this repo's `CHANGELOG.md` in-app, so you can see what shipped without leaving Harnu.
 - **Cleanup** — the autopilot, what it cleans, the never-clean list and the background scan behind the [Cleanup](cleanup.md) screen; covered [below](#cleanup).
 - **Containers** — the inspector's own background scan, its idle clock and the new-zombie notification behind the [Containers](containers.md#settings) view.
 - **Claude Code** — renders Claude Code's own official changelog (fetched from Anthropic, separate from Harnu's own Changelog tab above). Claude's live service status (incidents, scheduled maintenance) is shown in the footer popover alongside your [usage](usage.md#the-footer-popover), not here.
+
+## Notification sounds
+
+**Settings → General → Notifications → Sound** turns Harnu's sounds on or off. It is the master for every sound in the app: with it off, nothing plays, including a session that asks for approval and a mission that waits on you. Harnu still flashes the window, shows the notification and adds the Activity entry; only the sound goes.
+
+Each kind of event has its own sound, so you can tell what happened by ear:
+
+| Sound                | Plays when                                                                                                                                                                                                               | Sounds like                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| **Asks you**         | a session needs your input, an approval is waiting in the Inbox, a mission waits on you (a blocker of yours, a request to join, ready to close, a criterion only you can mark, a re-scope, a decision, steps to confirm) | two notes rising                     |
+| **Finished**         | a session finished its turn                                                                                                                                                                                              | a bright two-note jump up            |
+| **Broke**            | a session failed, or `main` went red                                                                                                                                                                                     | two low, muffled thuds               |
+| **Just so you know** | a pull request waits for review, a mission has checks due, your 5-hour usage window reset, the daily budget crossed 80% or 100%, a new Claude Code version                                                               | the soft chime Harnu has always used |
+
+Under the **Sound** switch there is one more switch per kind. Turning off **Broke**, say, silences only the failure sound; the others keep playing. All four are on by default. If several things wait on you in one check, a mission plays only the most urgent sound once: **Broke**, then **Asks you**, then **Just so you know**.
+
+Opening the **Close mission** dialog plays nothing: you just opened it yourself.
 
 ## Floating panels
 
@@ -66,7 +84,7 @@ The choice is saved in `settings.json` and applies on the next click, no restart
 
 **Settings → Keyboard Shortcuts** is a point-and-click editor for the same `keybindings.json` covered in [Sessions → Customizing shortcuts](sessions.md#customizing-shortcuts) — you never have to open the file by hand. Open it straight on this tab with `Cmd/Ctrl+Alt+S` or **View → Keyboard Shortcuts…** (on macOS, **Harnu → Keyboard Shortcuts…**, right after Settings…).
 
-- One row per rebindable action, showing its current chord. The Topbar's folder actions (roadmap board, PR Stack, open in file manager, open in VS Code, pull requests on GitHub, Browse files, open a terminal) are listed too, along with the usage overview; they ship with no chord and read **Set a shortcut…** until you give them one. Settings itself opens with `Cmd/Ctrl+,`, which you can rebind here too. **Click the chord, then press the keys you want.** `Esc` cancels the recording (Settings stays open), `Backspace` unbinds the action.
+- One row per rebindable action, showing its current chord. The Topbar's folder actions (roadmap board, PR Stack, open in file manager, open in VS Code, pull requests on GitHub, Browse files, open a terminal) are listed too, along with the usage overview; they ship with no chord and read **Set a shortcut…** until you give them one. The two [Quick notes](notes.md) actions ship with chords: **New note for today** with `Cmd/Ctrl+Shift+N` and **All notes…** with `Cmd/Ctrl+Alt+N`. Settings itself opens with `Cmd/Ctrl+,`, which you can rebind here too. **Click the chord, then press the keys you want.** `Esc` cancels the recording (Settings stays open), `Backspace` unbinds the action.
 - **Find a shortcut fast.** The search box at the top takes either words or a key combo. Words match an action's name (in your app language), its chord or its id: `session`, `palette`, `sidebar`. A combo — anything with a `+` or a modifier, an F-key, `Esc`, or a Mac symbol like `⌘K` — lists exactly the actions on that chord, so `Ctrl+K` answers "what is on Ctrl+K?" (on Linux and Windows `Ctrl` and `Cmd` count as the same key). A single key name such as `delete` or `left` does both: it lists actions on that key _and_ actions whose name contains the word.
 - Rows are grouped under **Sessions, Sidebar, Folders, Views, Panes, Takeovers** and **App**; a group with nothing to show is hidden.
 - The **Unbound**, **Conflicts** and **Customized** chips under the search narrow the list to actions with no chord, actions sharing a chord with another one, or actions you changed. Each chip shows how many such actions exist in total; turn on several and they combine with each other and with the search. When nothing matches you'll see **No shortcut matches.**
@@ -92,7 +110,7 @@ The **General** tab has a SIDEBAR section that controls how the folder/session l
 
 ## Quitting
 
-The **General** tab has a QUITTING section with one switch, **Confirm before quitting while agents are working** (on by default). While it is on, closing the window or quitting (Ctrl+Q, the app menu) shows a native prompt if any session is actively working at that moment, so you don't kill a turn by accident. See [Quitting Harnu](sessions.md#quitting-harnu) for what the prompt shows. The prompt's own **Don't ask again** checkbox turns this switch off; come back here to turn it on again. The choice survives restarts.
+The **General** tab has a QUITTING section with one switch, **Confirm before quitting while agents are working** (on by default). While it is on, closing the window or quitting (Ctrl+Q, the app menu) shows a native prompt if any session is actively working at that moment, so you don't kill a turn by accident. See [Quitting Harnu](sessions.md#quitting-harnu) for what the prompt shows. The prompt's own **Don't ask again** checkbox turns this switch off; come back here to turn it on again. Unsaved Markdown files always prompt before quitting, whatever this switch says, and that prompt lists any working agents too. The choice survives restarts.
 
 ## Daily budget
 
@@ -109,7 +127,7 @@ The alert lives in the other tab: **Settings → General**, in the **OS notifica
 Harnu asks GitHub (through your `gh` login) about pull requests, CI and reviews, and every one of those requests spends **your** quota: 5,000 REST requests and 5,000 GraphQL points an hour, shared with every other session, script and monitor using the same account. Harnu keeps an eye on that budget so it never spends you dry.
 
 - **It reads the budget once a minute** with `gh api rate_limit`, which GitHub does not charge for. If `gh` is missing or not signed in, Harnu treats the budget as unavailable and only looks again every ten minutes. It follows whichever of the two buckets (REST or GraphQL) has the smaller share left.
-- **It counts its own calls** per feature — missions, PR Stack, Review, Cleanup, the mission steward and the merge batch — so it can tell what it spent from what the rest of your account spent. "Outside Harnu" is GitHub's figure minus Harnu's count, so treat it as an estimate.
+- **It counts its own calls** per feature — missions, PR Stack, Review, Cleanup, and (until older versions' stewards are gone) the mission steward — so it can tell what it spent from what the rest of your account spent. "Outside Harnu" is GitHub's figure minus Harnu's count, so treat it as an estimate.
 - **Near the limit it slows down.** When the tighter bucket drops to **15 %** or less (10, 15 or 25 %), Harnu keeps mission PR and main-CI results for five minutes instead of one and pauses PR Stack's background refresh (opening the canvas, or pressing Refresh, still reads GitHub). At zero it stops reading GitHub altogether, shows the last values it knew, and starts again by itself after the reset. If `gh` ever prints "rate limit exceeded", Harnu checks the budget at once: when a bucket really is empty it stops as above, but when you still have calls left (GitHub's separate "secondary" limit, which can hit with budget to spare) it only pauses its reads for a minute, or for the wait GitHub asks for, and carries on.
 - **Your own actions are never held back.** Posting a review, merging, and marking a file viewed always go through.
 - **Delivered missions are not checked on GitHub.** A mission that has been delivered keeps the pull-request and CI state it last had. A `Check delivered missions` switch (off by default) turns the checking back on.
@@ -183,6 +201,36 @@ The marks you set with **Keep**, and whether you have acknowledged the first rep
 ## Containers
 
 **Settings → Containers** now holds only what the [Containers](containers.md#settings) inspector needs for itself: its own background scan, the idle clock for stacks that do not run from a worktree, and the new-zombie notification. A stack that runs from a worktree is judged by Cleanup, so there is no setting for it here. A note at the top of the tab says so and has an **Open Cleanup settings** link.
+
+## Your move
+
+**Settings → Your move** is where you choose whether Harnu reads your sessions to tell when the ball is yours: a question left unanswered, a decision, a step only you can do. It is built in stages, and this first one is a way to watch it work before it ever interrupts you.
+
+The mode has three values:
+
+- **Off** — the default. Nothing is read and nothing is spent.
+- **Observe** — when a session stops, Harnu reads what it wrote since the last check and asks two independent, isolated Claude calls whether anything is waiting on you, then one more call to write each card clearly (a short context, what it blocks, the options and a recommendation when the session gave one). If either detection call fails, Harnu uses the other; if the writing call fails or returns nothing, the cards are filed as the detection found them, and a card it leaves out is filed as found, never dropped. Two detections of the same item are merged into one card. What it finds is stored as a card and listed at the bottom of the tab. Nothing shows in the sidebar and nothing makes a sound.
+- **Live** — Harnu checks sessions the same way, and lists what it finds as cards in the **Return here** box at the bottom of the sidebar, oldest first, each with a clock that keeps running until you deal with it. See [Return here: sessions waiting on you](sessions.md#return-here-sessions-waiting-on-you). For now the answer buttons on a card open the session instead of answering for you.
+
+Each check uses your own Claude quota: about US$ 0.002 and several seconds across those calls, run in the background at low priority and never more than half your CPU cores at once. The calls are isolated: it has no tools, no settings and no project files, and it never answers or changes a session.
+
+**Inspect selected session** runs one check on the session you have selected, so you can see a card appear without waiting for a stop. The result sits beside the button: checked, nothing new, skipped (the mode is Off, the folder is blocked for agents, or the session is archived) or failed, with the reason.
+
+The list shows the cards Harnu stored, 25 at a time: open ones first and then the newest closed ones, with **Previous page** and **Next page** under it and the range you are looking at ("26–50 of 7,432"). Closed cards are kept for 7 days and then dropped, so the list never holds more than the cards still open plus the last week's closed ones. A card carries a kind (Decide, Go / no-go, Provide, Do or Check), the folder and session it came from, and the one-line ask, shown exactly as the model wrote it. The list is read-only: no card can be answered or dismissed yet.
+
+### What files a card
+
+With **Observe** or **Live**, a card is filed for each of these, with no button to press:
+
+- **A finished turn.** Two seconds after a session stops, Harnu reads what it wrote and asks whether anything is waiting on you. This never delays the session: Harnu answers the stop first.
+- **A long turn that never stops.** A session that has been working for five minutes without a check is looked at again; what it finds is kept in a separate lane that stays hidden for now, and the real check still happens when the turn ends and reads everything from the last stop on. A check that fails is not retried for five minutes.
+- **A session that died or could not be checked.** A stop on an error (rate limit, overload, billing) or a process that ended while a turn was still running files "Session stopped", even when the session shut down gracefully and Claude Code reported it finished first; a session Harnu failed to check files one "Could not check this session" for the whole run of failures. Your own Ctrl+C, closing the session and parking it are not deaths. A later good turn closes these cards.
+- **A mission.** Everything the mission owes you: a blocker of yours, a criterion only you can mark, pull requests to look over, a session asking to join, a close to confirm and a red main after a merge. A mission an earlier version wrote keeps the cards it had (a re-scope to approve, due checks, a human step, an imported end to review, a steward you paused before it was retired). The card points at the mission's owner session and closes when the mission stops owing it; it never changes the mission, and a child session's approvals and waiting-for-input items file nothing.
+- **A question parked in a session.** A session waiting on `AskUserQuestion` or `ExitPlanMode` files a card that opens the session, whatever else the session wrote after asking. The card closes when the question is answered or the session next stops, and never because Harnu could not read the transcript. A normal tool permission does not file one: it stays in the Approval Inbox.
+
+Archiving a session closes its cards, and so does removing its folder from the sidebar: only the cards of that exact folder, not those of a folder nested under it. Hiding a folder does not, and switching a folder off for Your move leaves its mission cards where they are. Harnu's own background runs (the auto-namer, the usage poller) are never checked, and with the mode **Off** nothing is read at all.
+
+When you switch from Off to Observe or Live, Harnu forgets where it had read up to in every session, so the days spent Off are never judged. The first stop after that reads the most recent part of the transcript, up to 256 KiB.
 
 ## Hibernation policy
 

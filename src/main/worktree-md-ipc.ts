@@ -17,14 +17,11 @@
  * no user-supplied path segment is ever joined, so there is no traversal surface.
  */
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { access, rename, stat, writeFile } from 'node:fs/promises'
 import { ipcMain } from 'electron'
 import { generateWorktreeMd, type JsPackageManager, type RepoProbe } from './worktree-md-generate'
-
-const runFile = promisify(execFile)
+import { runFile } from './spawn-runner'
 
 /** Hard wall-clock ceiling for any single read-only `git` probe (ms). */
 const GIT_TIMEOUT_MS = 30_000

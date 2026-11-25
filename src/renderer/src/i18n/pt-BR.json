@@ -106,6 +106,11 @@
       "title": "Voltar aqui",
       "dismiss": "Marcar como visto"
     },
+    "section": {
+      "collapse": "Recolher {name}",
+      "expand": "Expandir {name}",
+      "resize": "Redimensionar {name}"
+    },
     "teammates": {
       "show": "Mostrar {n} teammates",
       "hide": "Ocultar teammates",
@@ -143,19 +148,38 @@
     "openInEditorVSCodeHint": "Não foi possível iniciar a CLI do VS Code (`code`). No VS Code, abra a Paleta de Comandos e execute \"Shell Command: Install 'code' command in PATH\", depois tente de novo.",
     "openInEditorBadCommand": "O comando do editor personalizado está vazio ou malformado. Confira Configurações → Geral → Editor.",
     "openExplorer": "Navegar arquivos",
+    "notes": "Nova nota de hoje",
+    "notesAll": "Clique direito: todas as notas…",
     "githubPulls": "Pull requests no GitHub",
     "roadmapBoard": "Board do roadmap",
     "prStack": "PR Stack",
     "providerBadgeTitle": "Rodando em {name} (endpoint custom), não na API da Anthropic",
     "orchestratorBadge": "Orquestrador",
     "orchestratorBadgeTitle": "Orquestrador — esta sessão coordena o trabalho neste repo",
-    "review": "Revisar esta branch"
+    "review": "Revisar esta branch",
+    "walks": "Caminhadas"
   },
   "helperStack": {
     "label": "Painéis auxiliares",
     "paneLabel": "Painel auxiliar",
     "hide": "Ocultar painel",
     "show": "Mostrar painel"
+  },
+  "sessionTuck": {
+    "strip": "Mostrar a sessão {name}",
+    "needsYou": "Precisa de você",
+    "hint": "Clique ou arraste para trazer de volta",
+    "armedHint": "Solte para recolher a sessão",
+    "floor": "40% · limite da sessão",
+    "state": {
+      "working": "Trabalhando",
+      "idle": "Ociosa",
+      "needsInput": "Aguardando sua aprovação",
+      "stuck": "Travada",
+      "failed": "Falhou",
+      "completed": "Concluída",
+      "archived": "Arquivada"
+    }
   },
   "agentTerminal": {
     "connectedTo": "Conectado a {session}",
@@ -208,6 +232,13 @@
     "unsaved": {
       "title": "Alterações não salvas",
       "discard": "Descartar e continuar"
+    },
+    "unsavedDialog": {
+      "title": "Alterações não salvas",
+      "body": "{name} tem alterações que não foram salvas.",
+      "save": "Salvar",
+      "discard": "Não salvar",
+      "cancel": "Cancelar"
     },
     "changedOnDisk": {
       "title": "Este arquivo mudou no disco",
@@ -358,6 +389,301 @@
     "copyCode": "Copiar código",
     "copied": "Copiado"
   },
+  "missionDropdown": {
+    "pill": {
+      "none": "Sem missão"
+    },
+    "shell": {
+      "label": "Missão"
+    },
+    "head": {
+      "barLabel": "Progresso da missão",
+      "count": {
+        "milestones": "{done} de {total} marco concluído | {done} de {total} marcos concluídos",
+        "steps": "{done} de {total} passo concluído | {done} de {total} passos concluídos"
+      },
+      "switchLabel": "Missão {n} de {m} · Trocar",
+      "switchCount": "Missão {n} de {m}",
+      "change": "Trocar",
+      "leads": "Esta sessão lidera {n} missões",
+      "choose": "Escolha a missão a mostrar",
+      "sub": {
+        "milestones": "{done} de {total} marco | {done} de {total} marcos",
+        "steps": "{done} de {total} passo | {done} de {total} passos",
+        "forYou": "{count} · {n} para você"
+      }
+    },
+    "next": {
+      "label": "O que vem a seguir",
+      "you": "Seu próximo passo",
+      "calm": "Próximo passo",
+      "running": "{n} passo em andamento. Nada para você agora. | {n} passos em andamento. Nada para você agora.",
+      "idle": "Nada em andamento. Nada para você agora.",
+      "more": "Mais {n} esperando por você",
+      "less": "Mostrar menos",
+      "openStep": "Abrir passo",
+      "close": "Fechar missão…",
+      "kind": {
+        "main-failing": "Corrigir",
+        "unblock": "Destravar",
+        "accept": "Aceitar",
+        "rescope": "Pronto quando",
+        "settle": "Conferir",
+        "review": "Revisar",
+        "close": "Fechar",
+        "attach": "Entrar"
+      },
+      "doneWhenEyebrow": "Novo Pronto quando proposto",
+      "doneWhenHint": "Aprovar o torna o fim da missão. Recusar mantém o atual.",
+      "approve": "Aprovar",
+      "decline": "Recusar",
+      "requestEyebrow": "Pede para entrar",
+      "requestText": "{session} pede para entrar em “{mission}”. Se você permitir, ela trabalha na missão. Ela não a lidera.",
+      "allow": "Permitir",
+      "deny": "Negar",
+      "already": "Alguém já respondeu a isto, então nada mudou.",
+      "error": "O Harnu não conseguiu salvar sua resposta. Tente de novo em instantes."
+    },
+    "tree": {
+      "label": "Passos da missão",
+      "waitsFor": "Espera por “{title}”",
+      "waitsForMany": "Espera por {titles}",
+      "running": "{n} em andamento",
+      "waitingReview": "{n} aguardando revisão",
+      "blocked": "{n} bloqueado | {n} bloqueados",
+      "nothingRunning": "Nada em andamento",
+      "allDone": "Todos os passos estão concluídos",
+      "more": "Mais {n} passo | Mais {n} passos",
+      "less": "Mostrar menos",
+      "optional": "{n} marco opcional | {n} marcos opcionais",
+      "chipYours": "Seu",
+      "noCriteria": "Ainda sem critérios.",
+      "openLink": "Abrir {label}"
+    },
+    "state": {
+      "milestone": {
+        "not-started": "Não iniciado",
+        "in-progress": "Em andamento",
+        "waiting-review": "Aguardando revisão",
+        "done": "Concluído"
+      },
+      "step": {
+        "todo": "A fazer",
+        "running": "Em andamento",
+        "waiting-review": "Aguardando revisão",
+        "done": "Concluído",
+        "blocked": "Bloqueado"
+      },
+      "criterion": {
+        "open": "Ainda não confirmado",
+        "settled": "Confirmado"
+      }
+    },
+    "ask": {
+      "open": "Perguntar",
+      "openTitle": "Perguntar à sessão sobre este marco",
+      "placeholder": "O que ainda falta para terminar este marco?",
+      "label": "Pergunta sobre “{title}”",
+      "hint": "Vai para o prompt de {name}. A resposta aparece nessa sessão.",
+      "cancel": "Cancelar",
+      "send": "Enviar",
+      "done": "Adicionado ao prompt de {name}. Aperte Enter lá para enviar. A resposta aparece nessa sessão.",
+      "notRunning": "{name} não está rodando. Retome-a e envie a pergunta de novo.",
+      "close": "Fechar"
+    },
+    "step": {
+      "criteria": "Critérios",
+      "verified": "{n} critério verificado | {n} critérios verificados",
+      "by": {
+        "fact": "Conferido automaticamente",
+        "session": "Conferido por uma segunda sessão",
+        "operator": "Você",
+        "person": "Esperando {person}",
+        "personUnnamed": "Esperando outra pessoa"
+      },
+      "selfCheck": "A sessão diz que terminou. Ainda não foi conferido.",
+      "mark": "Marcar como feito",
+      "markPerson": "Marcar como aprovado",
+      "markPersonTitle": "Marcar que {person} aprovou isto",
+      "blocked": {
+        "you": "Bloqueado · esperando você",
+        "session": "Bloqueado · esperando a sessão",
+        "withAge": "{head} · {age}"
+      },
+      "clear": "Pronto, continuar",
+      "links": "Links",
+      "evidence": "Evidência",
+      "evidenceTitle": "Abrir a evidência no visualizador",
+      "worktreeTitle": "Mostrar este worktree na barra lateral",
+      "titleWithPath": "{title} · {path}",
+      "copy": "Copiar o caminho",
+      "copied": "Caminho copiado",
+      "removed": "removido — branch mantida",
+      "addOffer": "Esta pasta não está na barra lateral. Adicionar?",
+      "add": "Adicionar",
+      "addCancel": "Agora não",
+      "page": "Página · {address}",
+      "openLink": "Abrir {label}",
+      "error": {
+        "NOT_FOUND": "Isso mudou enquanto você olhava. O mais recente está na tela. Confira e tente de novo se ainda precisar.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. O mais recente está na tela. Tente de novo.",
+        "MISSION_CLOSED": "Esta missão está fechada, então nada nela pode mudar.",
+        "SETTLES_ITSELF": "O Harnu confere este critério sozinho. Você não o marca.",
+        "other": "O Harnu não conseguiu salvar. Tente de novo em instantes. Se continuar, feche o menu e abra de novo."
+      }
+    },
+    "empty": {
+      "title": "Esta sessão não tem missão.",
+      "loading": "Lendo a missão…",
+      "refusedTitle": "Não foi possível ler esta missão agora.",
+      "retry": "Tentar de novo",
+      "pickerTitle": "Missões abertas nesta pasta",
+      "ledBy": "liderada por {name}",
+      "unled": "ninguém a lidera",
+      "attach": "Anexar",
+      "confirm": {
+        "text": "Anexar esta sessão a “{title}”? Ela fará parte da missão, mas não vai liderá-la.",
+        "cancel": "Cancelar",
+        "yes": "Anexar"
+      },
+      "start": "Começar uma nova missão",
+      "startDone": "Adicionado ao prompt desta sessão. Aperte Enter lá para enviar.",
+      "startError": "Esta sessão não está rodando. Retome-a e tente de novo.",
+      "none": "Não há missão aberta nesta pasta para anexar.",
+      "sampleOpen": "Ver uma missão de exemplo",
+      "requestThisSession": "Esta sessão",
+      "error": {
+        "NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
+        "MISSION_NOT_FOUND": "Esta missão não existe mais. Escolha outra.",
+        "MISSION_CLOSED": "Esta missão foi encerrada, então uma sessão não pode entrar nela.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. Tente de novo.",
+        "other": "O Harnu não conseguiu anexar esta sessão. Tente de novo em instantes."
+      }
+    },
+    "sample": {
+      "label": "Missão de exemplo",
+      "note": "Dados inventados. Nada que você apertar aqui é salvo.",
+      "chooser": "Estado",
+      "leave": "Sair do exemplo",
+      "state": {
+        "default": "Padrão",
+        "waiting": "Esperando você",
+        "step-open": "Um passo aberto",
+        "step-blocked": "Um passo bloqueado",
+        "all-steps": "Todos os passos",
+        "ask": "Perguntando sobre um marco",
+        "clear": "Nada esperando",
+        "done": "Concluída, pronta para fechar",
+        "other-session": "Outra sessão",
+        "simple": "Tarefa pequena",
+        "simple-signoff": "Tarefa pequena, aprovações",
+        "big": "Missão grande",
+        "big-waiting": "Missão grande, esperando você",
+        "no-mission": "Sem missão",
+        "attach-request": "Pede para entrar",
+        "closed": "Missão fechada"
+      },
+      "hint": {
+        "waiting": "Aperte “{label}” no cartão do próximo passo.",
+        "all-steps": "Aperte “{label}” sob o marco aberto.",
+        "big-waiting": "Aperte “{label}” no cartão do próximo passo."
+      }
+    },
+    "footer": {
+      "close": "Fechar missão…"
+    },
+    "testIt": {
+      "label": "Testar",
+      "aria": "Testar · {what}",
+      "step": {
+        "tip": "Percorrer este passo na mão"
+      },
+      "milestone": {
+        "tip": "Percorrer este marco na mão"
+      },
+      "mission": {
+        "label": "Testar a missão inteira",
+        "tip": "Percorrer a missão inteira na mão"
+      }
+    }
+  },
+  "missionPane": {
+    "pill": {
+      "count": "{done}/{total}",
+      "forYou": "{n} para você",
+      "readyToClose": "pronta para fechar",
+      "joined": "{count} · {tail}",
+      "title": "{title} — {label}"
+    },
+    "progress": {
+      "steps": "{done} de {total} passo concluído | {done} de {total} passos concluídos",
+      "milestones": "{done} de {total} marco concluído | {done} de {total} marcos concluídos"
+    },
+    "state": {
+      "open": "Aberta",
+      "ready-to-close": "Pronta para fechar",
+      "closed": "Fechada"
+    },
+    "next": {
+      "text": {
+        "mainFailing": {
+          "ask": "Corrija a branch main: ela quebrou depois de “{title}”",
+          "why": "Tudo o que for mesclado em seguida parte de uma base quebrada"
+        },
+        "settle": {
+          "ask": "Marque como feito: {text}",
+          "whyLast": "É a última coisa em aberto neste passo",
+          "whyMore": "Mais {n} coisa em aberto neste passo | Mais {n} coisas em aberto neste passo"
+        },
+        "review": {
+          "askOne": "Revise o pull request de “{title}”",
+          "askMany": "Revise {n} pull requests",
+          "whyOne": "O passo não termina até você revisar",
+          "whyMany": "{n} passos não terminam até você revisar"
+        },
+        "close": {
+          "askRequested": "Feche a missão: a sessão diz que está pronta",
+          "askReady": "Feche a missão: todos os passos estão concluídos",
+          "why": "A missão termina quando você a fecha"
+        },
+        "doneWhen": {
+          "ask": "Aprove ou recuse o novo Pronto quando",
+          "why": "Uma sessão o propôs. Ele só vira o fim da missão se você aprovar."
+        },
+        "attach": {
+          "ask": "Deixe outra sessão entrar nesta missão",
+          "why": "Ela pediu para trabalhar nela e espera sua resposta"
+        },
+        "unblock": {
+          "whyStep": "O passo não pode seguir até lá",
+          "whyMission": "A missão não pode seguir até lá"
+        }
+      }
+    },
+    "sessions": {
+      "unnamed": "Sessão {id}"
+    },
+    "close": {
+      "title": "Fechar esta missão?",
+      "body": "{title} sai da Topbar e não pode ser reaberta. O arquivo da missão continua no disco como registro.",
+      "how": "Como fechar",
+      "confirm": "Fechar missão",
+      "doneWhen": "Fechar como entregue confirma este Pronto quando: “{text}”",
+      "matters": {
+        "unfinished-steps": "{count} passo não está pronto | {count} passos não estão prontos",
+        "open-blockers": "{count} bloqueio ainda aberto | {count} bloqueios ainda abertos",
+        "staged-done-when": "Um novo Pronto quando espera a sua aprovação",
+        "attach-requests": "{count} sessão espera para entrar | {count} sessões esperam para entrar",
+        "other": "{count} outro assunto ainda aberto | {count} outros assuntos ainda abertos"
+      },
+      "error": {
+        "NOT_FOUND": "Isso mudou enquanto você olhava. O menu mostra o mais recente. Confira e tente de novo se ainda precisar.",
+        "WRITE_CONFLICT": "A missão mudou no mesmo instante. O menu mostra o mais recente. Tente de novo.",
+        "MISSION_CLOSED": "Esta missão já está fechada, então não há mais o que fechar.",
+        "other": "O Harnu não conseguiu fechar a missão. Nada mudou. Tente de novo em instantes."
+      }
+    }
+  },
   "memoryPane": {
     "label": "Memória do projeto",
     "reload": "Recarregar memória",
@@ -440,6 +766,11 @@
     "setParentFolder": "Definir pasta-mãe",
     "clearParentFolder": "Remover pasta-mãe",
     "setParentFolderFailed": "Não foi possível atualizar a pasta-mãe",
+    "notes": {
+      "label": "Notas",
+      "today": "Nova nota de hoje",
+      "all": "Todas as notas…"
+    },
     "modes": {
       "label": "Modos",
       "learning": "Aprendizado",
@@ -447,7 +778,8 @@
     },
     "blockAgent": "Bloquear controle do agente",
     "unblockAgent": "Desbloquear controle do agente",
-    "prStack": "PR Stack"
+    "prStack": "PR Stack",
+    "walks": "Caminhadas"
   },
   "memoryLocation": {
     "intro": "Escolha onde o Harnu guarda a memória de projeto — dentro de cada repo, ou num lugar central fora dele (uma pasta do Google Drive, um vault do Obsidian, um HD externo). Os overrides ficam só na config do Harnu, nunca nos seus repos.",
@@ -946,6 +1278,7 @@
     "statusRunning": "rodando",
     "statusDone": "concluído",
     "count": "{n} agentes",
+    "doneFold": "{n} concluídos",
     "toggle": "Mostrar/ocultar agentes"
   },
   "actions": {
@@ -1054,6 +1387,22 @@
     "save": "Salvar",
     "failed": "Não foi possível renomear a pasta"
   },
+  "notes": {
+    "openFailed": "Não foi possível abrir a nota",
+    "noFolder": "Selecione uma pasta primeiro para escrever uma nota.",
+    "picker": {
+      "title": "Notas",
+      "searchPlaceholder": "Buscar notas por data",
+      "empty": "Nenhuma nota encontrada.",
+      "today": "Hoje",
+      "yesterday": "Ontem",
+      "loadFailed": "Não foi possível carregar as notas.",
+      "hints": {
+        "move": "mover",
+        "open": "abrir"
+      }
+    }
+  },
   "renameRepo": {
     "title": "Renomear grupo",
     "close": "Fechar",
@@ -1139,7 +1488,11 @@
     "andMore": "e mais {n}",
     "quitAnyway": "Sair mesmo assim",
     "cancel": "Cancelar",
-    "dontAskAgain": "Não perguntar novamente"
+    "dontAskAgain": "Não perguntar novamente",
+    "unsavedOne": "1 arquivo tem alterações não salvas",
+    "unsavedMany": "{count} arquivos têm alterações não salvas",
+    "unsavedDetail": "Sair do {app} agora descarta essas alterações.",
+    "quitWithoutSaving": "Sair sem salvar"
   },
   "settings": {
     "title": "Configurações",
@@ -1165,6 +1518,7 @@
       "mods": "Mods",
       "memory": "Memória",
       "hibernationPolicy": "Política de hibernação",
+      "yourMove": "Sua vez",
       "usageHistory": "Histórico de uso",
       "changelog": "Changelog",
       "claudeCode": "Claude Code",
@@ -1304,6 +1658,13 @@
     "notifications": {
       "label": "Notificações do sistema",
       "sound": "Som",
+      "soundHint": "Cada tipo de evento tem o seu som, então você distingue de ouvido. Pede algo: precisa de você, aprovações, uma missão esperando por você. Terminou: um turno acabou. Quebrou: uma sessão falhou ou a main está vermelha. Só pra saber: revisões, uso, orçamento, versão nova.",
+      "soundFamilies": {
+        "ask": "Pede algo",
+        "done": "Terminou",
+        "fail": "Quebrou",
+        "info": "Só pra saber"
+      },
       "description": "Receba uma notificação nativa do sistema quando uma sessão em background precisa de você ou termina. Suprimida pra sessão que você já está olhando.",
       "needsInput": "Precisa de você",
       "completed": "Concluída",
@@ -1389,6 +1750,8 @@
       "view_toggleHelper": "Alternar o painel dividido à direita",
       "project_switch": "Trocar de projeto",
       "folder_add": "Adicionar pasta",
+      "notes_openToday": "Nova nota de hoje",
+      "notes_open": "Todas as notas…",
       "view_review": "Revisar o branch da pasta ativa",
       "view_roadmap": "Alternar o quadro de roadmap",
       "view_prStack": "Alternar o PR Stack",
@@ -1476,6 +1839,7 @@
       "view_settings_mods": "Abrir Configurações: Mods",
       "view_settings_memory": "Abrir Configurações: Memória",
       "view_settings_hibernationPolicy": "Abrir Configurações: Política de hibernação",
+      "view_settings_yourMove": "Abrir Configurações: Sua vez",
       "view_settings_usageHistory": "Abrir Configurações: Histórico de uso",
       "view_settings_changelog": "Abrir Configurações: Changelog",
       "view_settings_claudeCode": "Abrir Configurações: Claude Code",
@@ -1492,6 +1856,7 @@
       "pane_close": "Fechar o painel focado",
       "terminal_toggle": "Alternar o painel do terminal",
       "layout_cycleSplitOrientation": "Alternar a divisão da tela (automático, lado a lado, empilhado)",
+      "session_toggleTuck": "Recolher a sessão ou trazê-la de volta",
       "app_reload": "Recarregar a janela",
       "app_devtools": "Alternar o DevTools",
       "app_quit": "Sair do Harnu",
@@ -1505,7 +1870,11 @@
       "browser_reload": "Painel do navegador: recarregar",
       "browser_back": "Painel do navegador: voltar",
       "browser_forward": "Painel do navegador: avançar",
-      "browser_focusAddress": "Painel do navegador: focar na barra de endereço"
+      "browser_focusAddress": "Painel do navegador: focar na barra de endereço",
+      "browser_tab_new": "Painel do navegador: nova aba",
+      "browser_tab_close": "Painel do navegador: fechar a aba",
+      "browser_tab_next": "Painel do navegador: próxima aba",
+      "browser_tab_prev": "Painel do navegador: aba anterior"
     }
   },
   "notifications": {
@@ -2103,6 +2472,12 @@
       "label": "Também fora do Harnu",
       "occupied": "Já existe uma pasta de skill para {name} e ela não foi criada pelo Harnu. Nada foi alterado.",
       "failed": "Não foi possível instalar {name} fora do Harnu."
+    },
+    "feature": {
+      "threshold": "Limite",
+      "linesSuffix": "linhas",
+      "thresholdHint": "Docs maiores que isso são lidos pelo agente doc-reader. Vazio usa o padrão ({n} linhas).",
+      "globalThresholdHint": "Limite: {n} linhas por padrão. Defina o de um projeto no escopo dele."
     }
   },
   "modsAudit": {
@@ -2515,6 +2890,22 @@
     "effortLabel": "Effort"
   },
   "systemMonitor": {
+    "stalls": {
+      "title": "Responsividade",
+      "summary": "nenhum travamento acima de 50 ms na última hora | um travamento acima de 50 ms na última hora | {count} travamentos acima de 50 ms na última hora",
+      "threadMain": "Processo principal",
+      "threadRenderer": "Renderer",
+      "busy": "Ocupada",
+      "busyApproxHint": "Um limite inferior: a fatia do último minuto gasta em tarefas acima de 50 ms. Esta plataforma não consegue ler a CPU da thread.",
+      "over50": "> 50 ms",
+      "over100": "> 100 ms",
+      "over250": "> 250 ms",
+      "offenders": "Maiores ofensores",
+      "none": "Nada acima de 50 ms na última hora",
+      "unattributed": "sem dono",
+      "times": "×{count}",
+      "off": "O monitor de travamentos está desligado (HARNU_STALL_MONITOR=off)."
+    },
     "title": "Monitor do sistema",
     "close": "Fechar monitor",
     "expand": "Expandir {name}",
@@ -2585,6 +2976,100 @@
       "hint": "Por quanto tempo uma sessão pode ficar ociosa antes que a varredura periódica a hiberne, independente do número de sessões."
     },
     "minutesSuffix": "min"
+  },
+  "yourMove": {
+    "eyebrow": "Sua vez",
+    "intro": "O Harnu pode ler uma sessão quando ela para e avisar quando a bola está com você: uma pergunta, uma decisão, um passo manual. Cada checagem são algumas chamadas curtas e isoladas do Claude.",
+    "mode": {
+      "label": "Modo",
+      "off": "Desligado",
+      "observe": "Observar",
+      "live": "Ao vivo",
+      "hint": {
+        "off": "Nada é checado e nada é gasto.",
+        "observe": "O Harnu checa as sessões e guarda o que encontra na lista abaixo. Nada aparece na barra lateral e nada faz som.",
+        "live": "O Harnu verifica as sessões e lista o que encontra como cartões na zona Voltar aqui da barra lateral, com um relógio correndo, até você resolver cada um."
+      },
+      "cost": "Cada checagem usa a sua própria cota do Claude: cerca de US$ 0,002 e vários segundos."
+    },
+    "inspect": {
+      "label": "Inspecionar agora",
+      "button": "Inspecionar a sessão selecionada",
+      "hintNone": "Selecione uma sessão na barra lateral primeiro.",
+      "hint": "Lê o que a sessão selecionada escreveu desde a última checagem e julga uma vez.",
+      "running": "Checando…",
+      "outcome": {
+        "judged": "Checada",
+        "empty": "Nada novo para checar",
+        "skipped": "Ignorada: o modo está Desligado, a pasta está bloqueada ou desligada, ou a sessão está arquivada",
+        "failed": "Falhou: {reason}",
+        "first-sight": "Primeira olhada: o Harnu lê daqui para frente"
+      }
+    },
+    "list": {
+      "eyebrow": "Cards guardados · {count}",
+      "empty": "Nenhum card ainda. Escolha Observar, deixe uma sessão parar ou use Inspecionar agora.",
+      "session": "sessão {id}",
+      "closed": "fechado · {reason}",
+      "range": "{from}–{to} de {total}",
+      "prev": "Página anterior",
+      "next": "Próxima página"
+    },
+    "kind": {
+      "decide": "Decidir",
+      "go_no_go": "Go / no-go",
+      "provide": "Fornecer",
+      "do": "Fazer",
+      "check": "Conferir"
+    },
+    "lane": {
+      "observe": "Observar",
+      "live": "Ao vivo",
+      "mid-turn": "Meio do turno"
+    },
+    "buttons": {
+      "openSession": "Abrir sessão",
+      "openLink": "Abrir link",
+      "openMission": "Abrir missão",
+      "go": "Go",
+      "noGo": "No-go",
+      "done": "Feito",
+      "looksRight": "Parece certo",
+      "somethingWrong": "Algo está errado",
+      "recommended": "Recomendado"
+    },
+    "exits": {
+      "notForMe": "Não é para mim",
+      "alreadyHandled": "Já resolvido",
+      "failed": "Não foi possível salvar. O cartão continua aqui; tente de novo."
+    },
+    "queue": {
+      "more": "Mostrar mais {n} · {left} ocultos"
+    },
+    "card": {
+      "blocks": "Bloqueia: {what}",
+      "clock": "Esperando há {time}"
+    },
+    "delivery": {
+      "wakeTimeout": "Sua resposta não foi entregue: a sessão não acordou a tempo.",
+      "processGone": "Sua resposta não foi entregue: a sessão não está mais rodando.",
+      "notConfirmed": "Sua resposta foi enviada, mas a sessão nunca a mostrou. Confira a sessão.",
+      "refused": "Sua resposta não foi entregue: ela não pode ser digitada em uma sessão."
+    },
+    "system": {
+      "stopped": "Sessão parou: {reason}",
+      "couldNotCheck": "Não foi possível verificar esta sessão: {reason}",
+      "planReady": "A sessão tem um plano esperando sua aprovação"
+    },
+    "closedBy": {
+      "answered": "respondido",
+      "judge": "resposta vista na sessão",
+      "not-for-me": "não é para mim",
+      "already-handled": "já resolvido",
+      "source-resolved": "resolvido na origem",
+      "archived": "sessão arquivada",
+      "folder-removed": "pasta removida"
+    }
   },
   "cleanup": {
     "title": "Limpeza",
@@ -4458,21 +4943,6 @@
     "subtitle": "{workers} workers · {running} rodando",
     "newWorker": "Novo worker",
     "footerNote": "Verifica a cada 30s · no máximo 2 workers por vez · nada roda com o Harnu fechado",
-    "stewards": {
-      "title": "Stewards",
-      "aria": "Stewards — um por missão, somente leitura",
-      "running": "Rodando",
-      "paused": "Pausado",
-      "awaitingClose": "Aguardando fechar",
-      "summaryRunning": "{n} rodando",
-      "summaryAwaiting": "{n} aguardando fechar",
-      "closeHint": "Feche uma missão entregue para aposentar o steward dela.",
-      "lastWake": "Último despertar há {age}",
-      "noTick": "Nenhum ciclo ainda",
-      "pausedReason": "Pausado — {reason}",
-      "unknownMission": "Missão {id}",
-      "hint": "Um steward pertence à missão dele. Pause-o pelo popover da missão."
-    },
     "emptyTitle": "Nenhum worker ainda",
     "emptyBody": "Um worker roda um prompt em uma pasta, numa cadência, sem abrir uma sessão. Bom para observar um repositório, responder comentários de review ou checar algo periodicamente.",
     "list": {
@@ -4618,9 +5088,6 @@
     }
   },
   "mission": {
-    "pillTitle": "Missão “{title}” — {state}. Clique para ver o progresso",
-    "pillTitleWithPulse": "Missão “{title}” — {state} · {pulse}. Clique para ver o progresso",
-    "progress": "Progresso",
     "headline": {
       "single": "Passo {n} de {m}",
       "range": "Passos {n}–{to} de {m}",
@@ -4631,85 +5098,7 @@
       "range": "{n}–{to}/{m}",
       "done": "{m}/{m} ✓"
     },
-    "header": {
-      "counts": "{done} feitos · {verified} verificados",
-      "leftBehind": "· {n} deixado(s) para trás",
-      "onBranch": "em uma branch"
-    },
-    "state": {
-      "active": "em andamento",
-      "blocked": "bloqueada",
-      "needsYou": "precisa de você",
-      "stale": "parada",
-      "totalChanged": "em andamento, passos adicionados",
-      "rescopePending": "re-escopo aguardando sua aprovação",
-      "delivered": "entregue, aguardando seu fechamento"
-    },
-    "visual": {
-      "verified": "Verificado",
-      "done": "Feito, não verificado",
-      "running": "Rodando",
-      "waiting": "Aguardando",
-      "blocked": "Bloqueado",
-      "todo": "A fazer",
-      "locked": "Travado",
-      "leftBehind": "Deixado para trás"
-    },
-    "side": {
-      "title": "Passos paralelos",
-      "show": "Mostrar passos paralelos",
-      "hide": "Ocultar passos paralelos",
-      "metaOpen": "{open} abertos",
-      "metaBoth": "{open} abertos · {done} feitos",
-      "discoveredFrom": "descoberto a partir de {origin}",
-      "open": "Aberto"
-    },
-    "decision": {
-      "blocks": "Bloqueia {steps}",
-      "options": "Opções",
-      "choose": "Escolher…",
-      "pickFirst": "Escolha uma opção primeiro",
-      "chose": "Escolheu {option}"
-    },
-    "gates": {
-      "label": "Gates do passo",
-      "name": {
-        "pr": "PR mergeado",
-        "ci": "CI verde no PR",
-        "main": "main verde após o merge",
-        "verifier": "Veredito do verificador"
-      },
-      "state": {
-        "green": "verde",
-        "red": "vermelho",
-        "running": "em andamento",
-        "off": "ainda não",
-        "na": "n/a"
-      },
-      "short": {
-        "pr": "PR",
-        "ci": "CI",
-        "main": "main",
-        "verifier": "verificador"
-      },
-      "tooltip": "{gate}: {state}",
-      "tooltipStale": "{gate}: {state} (último conhecido)"
-    },
-    "sub": {
-      "totalChanged": "Total: {total} passos (eram {was}) — {n} adicionado(s)",
-      "delivered": "Entregue — aguardando seu fechamento"
-    },
-    "approveRescope": "Aprovar re-escopo",
-    "close": "Fechar missão",
-    "checks": {
-      "add": "+ checagem",
-      "placeholder": "O que conferir à mão",
-      "delete": "Excluir checagem",
-      "due": "pendente",
-      "tick": "Marcar “{label}”"
-    },
     "end": {
-      "open": "Encerrar missão…",
       "title": "Encerrar esta missão?",
       "body": "{title} sai da Topbar e da sidebar e não pode ser reaberta. O arquivo da missão continua no disco como registro.",
       "choice": "Como encerrar",
@@ -4741,139 +5130,19 @@
         "rescopeStaged": "Há um re-escopo pendente"
       }
     },
-    "verification": {
-      "existence": "Checagem de existência",
-      "verifier": "Verificador",
-      "human": "Humano"
-    },
-    "proof": {
-      "claimed": "Declarado",
-      "proven": "Comprovado"
-    },
-    "added": "Adicionado",
-    "addedCaption": "Adicionado — motivo: {reason}",
-    "rescopeBadge": "Re-escopo pendente",
-    "endCaption": "Fim: {kind} · {target} · evidência: {evidence}",
-    "verifiedCaption": "Verificado por {who} — {verdict}",
-    "verifiedByYou": "você",
-    "blocked": "Bloqueado",
-    "blockedBody": "— {reason}. Desbloqueia quando {unblocks} · {owner}",
-    "blockerOwner": {
-      "agent": "agente",
-      "operator": "você"
-    },
-    "stale": "Parada",
-    "staleBody": "— sem evidência há {duration}.",
-    "rescopeTitle": "O fim mudou, aguardando aprovação.",
-    "was": "era:",
-    "now": "agora:",
     "you": {
-      "label": "Você",
-      "clear": "Nada — está tudo em dia.",
       "rescope": "Aprove o novo fim declarado ({kind}: {target}).",
       "close": "Feche a missão quando estiver satisfeito — o fim está verificado.",
       "blocker": "Desbloqueie: {reason} — desbloqueia quando {unblocks}.",
       "checks": "Marque a checagem pendente em {steps}. | Marque as {count} checagens pendentes em {steps}.",
       "humanSteps": "Confirme o passo humano: {steps}. | Confirme os passos humanos: {steps}.",
       "reviewImport": "Revise o fim importado — ele é provisório até você aprovar um re-escopo.",
-      "stewardPaused": "Steward pausado {age}: {reason}",
-      "mergeBatch": "{n} PRs prontos para mergear em ordem: {chain}",
       "mainRed": "main está vermelha após #{pr} — {step} foi mergeado, mas o commit de merge falha no CI da main.",
       "approvals": "Responda às aprovações pendentes ({count}) de {session} no Approval Inbox.",
       "needsInput": "{session} está esperando por você — abra e responda.",
       "decide": "Decidir: {title}"
     },
-    "markVerified": "Marcar verificado",
-    "unmark": "Desmarcar",
-    "openQuestions": "Perguntas em aberto",
-    "pulse": {
-      "commits": "{n} commit | {n} commits",
-      "active": "ativa há {age}",
-      "activeNow": "ativa agora",
-      "quiet": "sem atividade há {age}",
-      "quietNever": "nenhuma atividade ainda"
-    },
-    "pr": {
-      "line": "PR #{n} · {state}",
-      "state": {
-        "open": "aberta",
-        "draft": "rascunho",
-        "merged": "mergeada"
-      },
-      "ci": {
-        "passing": "CI verde",
-        "failing": "CI vermelho",
-        "pending": "CI rodando"
-      }
-    },
-    "child": {
-      "working": "trabalhando",
-      "workingHelpers": "trabalhando · subagentes",
-      "needsInput": "precisa de input",
-      "idle": "ociosa",
-      "parked": "hibernada",
-      "failed": "falhou",
-      "unknown": "não encontrada",
-      "goTo": "Ir para a sessão",
-      "notLoaded": "Sessão ainda não carregada",
-      "notLoadedBody": "Ela aparece assim que a sidebar a carregar.",
-      "elsewhere": "+{n} sessão | +{n} sessões"
-    },
     "doorFailed": "Ação da missão recusada",
-    "steward": {
-      "label": "Steward",
-      "lastAction": "{what}",
-      "noAction": "nenhuma ação ainda",
-      "ago": "há {age}",
-      "next": "próximo: {when}",
-      "nextEvents": "no próximo evento",
-      "paused": "pausado",
-      "pause": "Pausar steward…",
-      "resume": "Retomar steward",
-      "pauseDialog": {
-        "title": "Pausar o steward?",
-        "body": "Ele para de acordar por eventos e pelo ciclo de 20 minutos até você retomá-lo. Nada se perde — a missão mantém o estado.",
-        "reason": "Motivo",
-        "reasonPlaceholder": "Vai para o Log da missão e para a lista Você",
-        "confirm": "Pausar steward",
-        "cancel": "Cancelar",
-        "dismiss": "Cancelar e manter o steward rodando"
-      }
-    },
-    "mergeBatch": {
-      "title": "Mergear {n} PRs em ordem",
-      "who": "O {steward} mergeia um e trabalha entre os merges",
-      "stewardWord": "Steward",
-      "ciGreen": "· CI verde",
-      "rebase": "rebase --onto #{pr}",
-      "recheck": "reverificar gates",
-      "stopOnRed": "parar no vermelho",
-      "action": "Mergear {n} em ordem…",
-      "confirm": "Mergear {n} em ordem",
-      "merging": "Mergeando…",
-      "mergeRest": "Mergear o resto…",
-      "cancel": "Cancelar",
-      "close": "Fechar",
-      "dismiss": "Cancelar — nada é mergeado",
-      "running": "Mergeando em ordem — espera o steward e o CI entre os merges, então pode levar alguns minutos.",
-      "stoppedAt": "Parou em #{pr}",
-      "merged": "Mergeados: {list}",
-      "remaining": "Faltam mergear: {list}",
-      "done": "{n} PRs mergeados em ordem.",
-      "reason": {
-        "closed": "#{pr} não está mais aberto.",
-        "red": "#{pr} tem checks falhando.",
-        "not-ready": "#{pr} não está pronto — um rascunho, ou ainda sem checks passando.",
-        "pending": "#{pr} ainda tem checks rodando.",
-        "wrong-base": "#{pr} não mergeia na branch padrão — redirecione-o antes.",
-        "conflict": "#{pr} tem conflito com a base.",
-        "steward-skipped": "O steward não rodou depois do último merge, então #{pr} não foi rebaseado nem reverificado.",
-        "steward-timeout": "O steward não terminou a tempo depois do último merge, então #{pr} não foi rebaseado nem reverificado.",
-        "mission-closed": "A missão foi encerrada — #{pr} não foi mergeado.",
-        "paused": "O steward foi pausado — #{pr} não foi mergeado.",
-        "merge-failed": "O GitHub recusou o merge de #{pr}: {detail}"
-      }
-    },
     "recordFailedTitle": "Parte da memória não foi registrada",
     "recordFailed": "A missão foi encerrada, mas a memória recusou: {drafts}",
     "sidebarChip": "Missão: {headline}",
@@ -4881,136 +5150,14 @@
     "cue": {
       "one": "A missão “{title}” precisa de você: {what}",
       "many": "{n} missões precisam de você",
-      "reviewAll": "Revisar todas as {n}",
-      "ownerMissing": "A sessão dona não está aberta aqui — clique para revisar esta missão.",
+      "ownerMissing": "A sessão dona não está aberta aqui — clique para ver por que esta missão não abre.",
+      "ownerMissingTitle": "Não dá para abrir “{title}” daqui",
+      "ownerMissingBody": "A sessão dona não está aberta nesta janela. Abra essa sessão e use a pílula Mission dela.",
       "itemAria": "Abrir a missão {title}"
     },
-    "review": {
-      "title": "Missões que precisam de você",
-      "intro": "Feche as concluídas de uma vez, ou abra qualquer uma para resolvê-la.",
-      "groups": {
-        "ready": "Prontas para fechar",
-        "finished": "Concluídas, fechamento não pedido",
-        "finishedHint": "Ninguém verificou o fim destas, por isso nenhuma vem selecionada.",
-        "other": "Esperando você por outro motivo"
-      },
-      "selectAllReady": "Selecionar todas as prontas",
-      "selected": "{count} selecionada | {count} selecionadas",
-      "closeSelected": "Fechar {count} como entregue… | Fechar {count} como entregues…",
-      "empty": "Nenhuma missão precisa de você agora.",
-      "openMission": "Abrir",
-      "ownerMissing": "A sessão dona não está aberta aqui, então esta missão não pode ser aberta pela revisão.",
-      "dismiss": "Fechar a revisão"
-    },
-    "bulk": {
-      "title": "Fechar {count} missão como entregue? | Fechar {count} missões como entregues?",
-      "body": "Elas saem da Topbar e da sidebar e não podem ser reabertas. O arquivo de cada missão continua no disco como registro.",
-      "reason": "Motivo (opcional)",
-      "reasonPlaceholder": "Vai para o Log de cada missão",
-      "confirm": "Fechar {count} missão | Fechar {count} missões",
-      "cancel": "Cancelar",
-      "dismiss": "Cancelar e manter as missões abertas",
-      "closing": "Fechando {done} de {total}…",
-      "done": "{count} missão fechada | {count} missões fechadas",
-      "partial": "{failed} de {total} não puderam ser fechadas"
-    },
-    "back": {
-      "campaign": "Campanha",
-      "chapter": "Capítulo {n} de {m}",
-      "sideQuest": "Missão paralela"
-    },
-    "ledger": {
-      "label": "Registro",
-      "ago": "há {age}",
-      "kind": {
-        "dispatched": "Despachado",
-        "worktree": "Worktree",
-        "pr-opened": "PR aberto",
-        "pr-merged": "PR mergeado",
-        "ci": "CI",
-        "verified": "Verificado",
-        "session-died": "Sessão encerrada",
-        "compaction": "Compactada"
-      }
-    }
-  },
-  "campaign": {
-    "pill": {
-      "single": "Cap. {n}/{m}",
-      "range": "Cap. {n}–{to}/{m}",
-      "done": "Cap. {m}/{m} ✓",
-      "step": {
-        "single": "Passo {n}/{m}",
-        "range": "Passos {n}–{to}/{m}",
-        "done": "Passo {m}/{m} ✓"
-      },
-      "forYou": "{n} para você",
-      "radiant": "{done}/{total}",
-      "title": "{title} — campanha, {label}"
-    },
-    "headline": {
-      "single": "Capítulo {n} de {m}",
-      "range": "Capítulos {n}–{to} de {m}",
-      "done": "Capítulo {m} de {m} ✓"
-    },
-    "counts": "{done} concluídos · {inReview} em revisão · {running} em andamento · {locked} bloqueados · {side} paralelas ({sideDone} concluídas, {sideOpen} abertas)",
-    "radiant": "{done} / {total} unidades",
-    "declaredEnd": "Fim: {target}",
-    "group": {
-      "main": "Missão principal",
-      "side": "Missões paralelas",
-      "locked": "Bloqueados",
-      "mainMeta": "{n} de {m}",
-      "sideMeta": "{n} abertas"
-    },
-    "state": {
-      "done": "concluído",
-      "inReview": "em revisão",
-      "running": "em andamento",
-      "locked": "bloqueado",
-      "todo": "a fazer"
-    },
-    "objectives": "Objetivos",
-    "objectivesStepsOf": "{done} de {total} passos",
-    "openChapter": "Abrir capítulo →",
-    "noMission": "Ainda sem missão — este capítulo não começou.",
-    "missionNotOpen": "A missão deste capítulo está encerrada.",
-    "sideQuest": "Missão paralela",
-    "sideNotRequired": "não necessária para o fim",
-    "discoveredFrom": "Descoberta no capítulo {n} · {title}",
-    "lockedUntil": "Bloqueado até que seus pré-requisitos estejam concluídos.",
-    "you": {
-      "chapterTag": "cap. {n}"
-    },
-    "end": {
-      "open": "Encerrar campanha…",
-      "unavailable": "Ainda não dá para encerrar a campanha por aqui — encerre as missões dos capítulos."
-    },
-    "map": {
-      "title": "Mapa da campanha",
-      "close": "Fechar mapa da campanha",
-      "open": "Abrir mapa",
-      "here": "▼ Você está aqui",
-      "missing": "Esta campanha não está disponível — talvez tenha sido encerrada.",
-      "tileLabel": "Capítulo {n}: {title} — {state}",
-      "dockLabel": "Missão paralela: {title} — {state}",
-      "waitsFor": "Aguarda {what}",
-      "waitsForChapter": "o capítulo {n}",
-      "gatesLegend": "gates: PR · CI · main · verificador",
-      "ledger": {
-        "owed": "{n} pendentes",
-        "open": "Abrir"
-      },
-      "steward": {
-        "title": "Steward",
-        "empty": "Ainda sem steward"
-      },
-      "side": {
-        "meta": "{total} · {done} concluídas · {open} abertas"
-      },
-      "focus": {
-        "back": "Voltar"
-      }
+    "unreadable": {
+      "title": "Não foi possível ler um arquivo de missão",
+      "body": "{files}. A missão que ele guarda fica oculta até o arquivo ser corrigido ou removido."
     }
   },
   "harnuMod": {
@@ -5109,13 +5256,34 @@
     },
     "label": "Navegador",
     "newTab": "Nova aba",
+    "tabs": {
+      "new": "Nova aba ({keys})",
+      "newPlain": "Nova aba",
+      "limit": "Limite de abas atingido (8)",
+      "strip": "Abas",
+      "close": "Fechar aba",
+      "closeNamed": "Fechar {title}",
+      "agentDriving": "O agente está operando esta aba",
+      "more": "Mais {count} abas",
+      "moreList": "Todas as abas",
+      "open": "aberta",
+      "untitled": "Nova aba",
+      "menu": {
+        "newRight": "Nova aba à direita",
+        "reload": "Recarregar",
+        "duplicate": "Duplicar",
+        "move": "Mover para um novo painel",
+        "closeOthers": "Fechar as outras abas",
+        "close": "Fechar aba"
+      }
+    },
     "menu": "Mais ações",
     "back": "Voltar",
     "forward": "Avançar",
     "reload": "Recarregar",
     "stop": "Parar",
     "address": "Endereço",
-    "addressPlaceholder": "Digite um endereço",
+    "addressPlaceholder": "Digite um endereço e pressione Enter",
     "pauseAgent": "Pausar o agente por 10 min",
     "resumeAgent": "Retomar o agente",
     "devtools": "Abrir DevTools",
@@ -5145,7 +5313,8 @@
       "reading": "lendo",
       "driving": "operando",
       "pausedLabel": "Agente pausado",
-      "connectedPrefix": "Conectado a"
+      "drivingTab": "Operando esta aba · {host}",
+      "drivingTabBare": "Operando esta aba"
     },
     "notice": {
       "blocked": "Bloqueado: endereços {scheme}: não podem ser abertos",
@@ -5155,7 +5324,8 @@
       "crashed": "A página parou de responder",
       "dismiss": "Dispensar",
       "offline": "Bloqueado: este painel está offline e não pode abrir outros endereços. Ative Rede ativa para seguir links externos.",
-      "agentInput": "Ignorado — uma sessão acabou de agir nesta página"
+      "agentInput": "Ignorado — uma sessão acabou de agir nesta página",
+      "tabLimit": "Limite de abas atingido (8). Feche uma aba para abrir mais."
     },
     "zoom": {
       "in": "Aumentar zoom",
@@ -5191,6 +5361,43 @@
     "noticeDownloaded": "{name} salvo",
     "noticeDownloadCancelled": "Download cancelado",
     "noticeDownloadFailed": "O download falhou",
+    "start": {
+      "running": "Rodando nesta pasta",
+      "recent": "Recentes"
+    },
+    "loadError": {
+      "reload": "Recarregar",
+      "reloadWhenUp": "Recarregar quando estiver no ar",
+      "waiting": "Aguardando {target}…",
+      "refusedLocal": {
+        "title": "{host} recusou a conexão",
+        "hint": "Nada está respondendo na porta {port}. Inicie o servidor e recarregue."
+      },
+      "refused": {
+        "title": "{host} recusou a conexão",
+        "hint": "O site pode estar fora do ar. Tente de novo daqui a pouco."
+      },
+      "notFound": {
+        "title": "Não foi possível encontrar o endereço de {host}",
+        "hint": "Confira se o endereço tem algum erro de digitação."
+      },
+      "timeout": {
+        "title": "{host} demorou demais para responder",
+        "hint": "O site pode estar lento ou inacessível a partir desta rede."
+      },
+      "offline": {
+        "title": "Sem conexão com a internet",
+        "hint": "Verifique sua conexão e recarregue."
+      },
+      "cert": {
+        "title": "A conexão com {host} não é segura",
+        "hint": "O certificado não foi aceito, então a página não foi carregada."
+      },
+      "other": {
+        "title": "Não foi possível carregar {host}",
+        "hint": "A página falhou ao carregar."
+      }
+    },
     "discarded": {
       "titleIdle": "Pausado para economizar memória",
       "titleRestored": "Ainda não carregado",
@@ -5287,7 +5494,6 @@
       "review": "Review",
       "cleanup": "Limpeza",
       "steward": "Steward",
-      "mergeBatch": "Merge em lote",
       "outside": "Fora do Harnu"
     },
     "tag": {
@@ -5304,7 +5510,6 @@
       "review": "Review",
       "cleanup": "Limpeza · checagens de merge",
       "steward": "Steward",
-      "mergeBatch": "Merge em lote",
       "delivered": "{n} missão entregue | {n} missões entregues",
       "outside": "Fora do Harnu · sessões, scripts, monitores"
     },
@@ -5383,5 +5588,336 @@
         "body": "O Harnu pausou as checagens no GitHub até as {time} (em {minutes} min)."
       }
     }
+  },
+  "testWalk": {
+    "textSize": {
+      "smaller": "Texto menor (Ctrl/Cmd -)",
+      "bigger": "Texto maior (Ctrl/Cmd +)"
+    },
+    "label": "Caminhada guiada",
+    "title": "Caminhada",
+    "progress": "Verificação {n} de {total}",
+    "roadmapOpen": "Ver todas as verificações",
+    "closeRoadmap": "Voltar à verificação",
+    "source": {
+      "missionStep": "Missão · {mission} · etapa “{name}”",
+      "missionMilestone": "Missão · {mission} · marco “{name}”",
+      "missionAll": "Missão · {mission} · a missão inteira",
+      "branch": "{branch} → {base}",
+      "card": "Card · {slug}",
+      "feature": "{text}",
+      "rerunChip": "Repetição · execução {n}",
+      "openPr": "Abrir a PR",
+      "openMission": "Abrir a Missão",
+      "copyPr": "Copiar o link da PR"
+    },
+    "action": {
+      "start": "Começar pela {n}",
+      "done": "Pronto",
+      "tryAgain": "Tentar de novo",
+      "failed": "Falhou",
+      "back": "Voltar",
+      "skip": "Pular",
+      "explain": "Explicar mais",
+      "followAnyway": "Seguir mesmo assim (não verificado)",
+      "treatAsFailed": "Tratar como falha",
+      "continueWithout": "Continuar sem a verificação",
+      "send": "Enviar",
+      "cancelForm": "Voltar ao passo",
+      "pickSkipped": "Verificar agora",
+      "closeOut": "Encerrar",
+      "rerun": "Repetir",
+      "export": "Exportar markdown"
+    },
+    "roadmap": {
+      "sub": "{total} verificações",
+      "subEarlier": "{total} verificações · {earlier} já verificadas",
+      "eyes": "Só os seus olhos",
+      "icheck": "Eu verifico",
+      "earlier": "Verificada antes",
+      "added": "adicionada",
+      "leftOut": "{n} de fora · {owners}",
+      "owner": {
+        "ours": "nossa",
+        "optional": "opcional",
+        "decision": "decisão"
+      },
+      "rerunOffer": "Repetir a caminhada salva ({verified} de {total} passaram)?",
+      "rerunAction": "Repetir"
+    },
+    "section": {
+      "do": "Faça",
+      "where": "Onde",
+      "see": "O que você deve ver",
+      "check": "Eu verifico"
+    },
+    "not": "Não",
+    "nothing": "Nada daqui: {why}",
+    "blocks": "As verificações {from} a {to} dependem desta",
+    "blocksWhy": "As verificações {from} a {to} {why}",
+    "blocksOne": "A verificação {from} depende desta",
+    "blocksOneWhy": "A verificação {from} {why}",
+    "pathApprox": "caminho aproximado",
+    "linkNote": {
+      "login": "atrás de um login, não aberto",
+      "unchecked": "não verificado"
+    },
+    "copy": {
+      "label": "Copiar",
+      "copied": "Copiado",
+      "value": "Copiar {what}",
+      "command": "o comando",
+      "path": "o caminho",
+      "url": "o endereço",
+      "text": "o texto",
+      "error": "o texto do erro",
+      "summary": "o resumo"
+    },
+    "image": {
+      "expected": "Esperado",
+      "capture": "Capturado",
+      "enlarge": "Ampliar",
+      "close": "Fechar",
+      "escToClose": "Esc para fechar"
+    },
+    "table": {
+      "item": "Item",
+      "shows": "Mostra",
+      "source": "Fonte"
+    },
+    "lost": "Não entendi este passo",
+    "undoLead": "Antes, desfaça a última execução:",
+    "working": {
+      "checking": "Rodando minha verificação na verificação {n}",
+      "quiet": "Isso leva um instante. Você não precisa fazer nada.",
+      "waited": "Ainda sem resposta. Você pode seguir sem a minha verificação; ela fica registrada como não verificada."
+    },
+    "form": {
+      "title": "O que você viu?",
+      "placeholder": "Uma linha basta",
+      "paste": "Cole uma captura de tela",
+      "pasteKey": "Ctrl+V",
+      "attached": "Imagem colada {n}",
+      "remove": "Remover",
+      "secret": "Isto parece um segredo. Remova antes de enviar.",
+      "saveFailed": "Não foi possível salvar a captura de tela."
+    },
+    "retry": {
+      "reported": "Você relatou",
+      "eyebrow": "Minha única correção",
+      "again": "O mesmo passo, de novo",
+      "waiting": "Aguardando a minha correção",
+      "door": {
+        "mission": "Ainda errado? Envie para quem construiu a etapa",
+        "pr": "Ainda errado? Rascunhar um comentário para a PR",
+        "feature": "Ainda errado? Criar um card de bug"
+      },
+      "doorSent": "Enviado. A sessão segue a partir daqui."
+    },
+    "evidence": {
+      "title": "Você disse Pronto. Minha verificação discorda.",
+      "ran": "Executei",
+      "expected": "Esperado",
+      "found": "Encontrado",
+      "nonBlocking": "Nada depois depende desta verificação, então você pode seguir mesmo assim. Fica registrada como não verificada.",
+      "blocking": "Verificações seguintes dependem desta, então ela fica aberta até passar."
+    },
+    "explain": {
+      "why": "Por que isso importa",
+      "extra": "Verificações extras · {n}",
+      "hint": "Pronto fecha o passo com estas. As não marcadas aparecem no fim.",
+      "teach": "Por trás desta verificação",
+      "does": "O que faz",
+      "where": "Onde mora",
+      "idea": "A ideia por trás",
+      "whyTeach": "Por que se comporta assim",
+      "ask": "Pedir mais",
+      "asking": "Perguntando…",
+      "tick": "Marcar “{text}”"
+    },
+    "simpler": {
+      "eyebrow": "Dito de forma mais simples",
+      "asking": "Perguntando…"
+    },
+    "skipped": {
+      "title": "Verificações puladas · {n}",
+      "sub": "Veja agora, ou encerre a caminhada e deixe-as em aberto.",
+      "close": "Encerrar com {n} puladas",
+      "retry": "Verificar agora"
+    },
+    "closeout": {
+      "title": "Caminhada concluída",
+      "sub": "{verified} verificadas · {unverified} não verificadas · {skipped} puladas",
+      "subFailed": "{verified} verificadas · {unverified} não verificadas · {skipped} puladas · {failed} com falha",
+      "how": {
+        "agreed": "você confirmou · minha verificação concordou",
+        "eyes": "você confirmou · nada a verificar daqui",
+        "continued": "você continuou sem a minha verificação",
+        "followed": "seguiu mesmo assim · minha verificação encontrou {evidence}",
+        "ended": "encerrada antes de a minha verificação responder",
+        "earlier": "verificada antes · {evidence}",
+        "earlierCaveat": "certa na PR aberta · {evidence}",
+        "skipped": "pulada",
+        "failed": "falhou",
+        "failedLine": "falhou · “{line}”",
+        "disagreed": "minha verificação discordou",
+        "notReached": "não alcançada"
+      },
+      "owed": "Ainda é sua",
+      "owedMore": {
+        "one": "{parts} está listada acima.",
+        "other": "{parts} estão listadas acima."
+      },
+      "part": {
+        "skipped": {
+          "one": "{n} verificação pulada",
+          "other": "{n} verificações puladas"
+        },
+        "failed": {
+          "one": "{n} verificação com falha",
+          "other": "{n} verificações com falha"
+        },
+        "unverified": {
+          "one": "{n} verificação não verificada",
+          "other": "{n} verificações não verificadas"
+        }
+      },
+      "recheck": "Verificar “{n}” de novo depois que a #{pr} for mergeada",
+      "criterion": {
+        "open": "critério ainda aberto: {why}",
+        "settled": "critério resolvido",
+        "settledByWalk": "critério resolvido por esta caminhada",
+        "unavailable": "missão indisponível"
+      },
+      "criterionWhy": {
+        "none": "nenhuma verificação desta caminhada o cobriu",
+        "person": "outra pessoa o aprova",
+        "session": "uma segunda sessão o resolve",
+        "fact": "o Harnu lê isso do pull request ou do CI",
+        "caveat": "minha verificação discordou, ou você continuou sem ela",
+        "nothingFromHere": "só o seu Pronto, sem nada para eu verificar",
+        "preClosed": "foi marcado como verificado antes da caminhada",
+        "failed": "a verificação falhou",
+        "skipped": "a verificação foi pulada",
+        "notReached": "a caminhada terminou antes dessa verificação",
+        "notWritten": "a caminhada não conseguiu gravar"
+      },
+      "criteria": "Critérios da missão",
+      "neverTick": "Só o Pronto nunca resolve um critério: marque na Missão.",
+      "openMission": "Abrir na Missão",
+      "nothingOwed": "Nada pendente",
+      "unticked": "Verificações extras que você não marcou",
+      "saved": "Salva em Caminhadas",
+      "savedBody": "Reabra esta execução ou repita as mesmas verificações depois.",
+      "openWalks": "Abrir Caminhadas",
+      "export": "Exportar markdown",
+      "copy": "Copiar resumo",
+      "partAnd": " e "
+    },
+    "end": {
+      "title": "Encerrar a caminhada e ver o resumo?",
+      "confirm": "Encerrar a caminhada",
+      "cancel": "Continuar"
+    },
+    "empty": {
+      "title": "Nenhuma caminhada aberta",
+      "body": "Peça a uma sessão para iniciar uma: diga “me guie pelo que acabamos de construir” ou “teste a PR #48 comigo”. O controle Test it na Missão faz o mesmo para uma missão."
+    },
+    "error": {
+      "title": "A sessão acabou",
+      "body": "Não consigo servir a próxima verificação. Seu progresso está salvo: {done} de {total} verificadas.",
+      "resume": "Retomar a sessão",
+      "copyProgress": "Copiar progresso",
+      "errText": "Erro: nenhuma sessão pôde receber o turno",
+      "resumeFailed": "Não foi possível retomar a sessão."
+    },
+    "turn": {
+      "sent": "Resposta da caminhada enviada para ‹{session}›"
+    },
+    "waking": "Acordando a sessão…"
+  },
+  "walkEntry": {
+    "sent": "Pedi ao líder da missão para escrever a caminhada",
+    "started": "Abri uma sessão para escrever a caminhada",
+    "failed": "Não consegui pedir uma caminhada"
+  },
+  "walksLibrary": {
+    "label": "Caminhadas",
+    "title": "Caminhadas",
+    "sub": "{n} caminhadas · salvas nesta máquina",
+    "subOne": "1 caminhada · salva nesta máquina",
+    "rerun": "Repetir",
+    "open": "Abrir",
+    "list": "Caminhadas salvas",
+    "source": {
+      "mission": "Missão",
+      "pr": "PR #{number} · {author}",
+      "prNoAuthor": "PR #{number}",
+      "feature": "Funcionalidade",
+      "branch": "Branch {branch}",
+      "card": "Card · {slug}"
+    },
+    "outcome": {
+      "passed": "{verified} de {total} passaram",
+      "inProgress": "em andamento, verificação {check} de {total}",
+      "notWalked": "ainda não percorrida"
+    },
+    "empty": {
+      "title": "Nenhuma caminhada ainda",
+      "body": "Uma caminhada fica salva aqui depois que você a percorre. Peça a uma sessão para começar uma, ou use Testar na Missão.",
+      "command": "/step-by-step PR #48",
+      "hint": "Ou simplesmente diga: “me guie pelo que acabamos de construir”.",
+      "copy": "Copiar",
+      "copied": "Copiado"
+    },
+    "menu": {
+      "more": "Mais ações",
+      "delete": "Excluir…"
+    },
+    "delete": {
+      "ask": "Excluir “{title}” e {runs}? Isso não pode ser desfeito.",
+      "askLive": "Excluir “{title}” e {runs}? Uma execução está em andamento e vai junto. Isso não pode ser desfeito.",
+      "askNone": "Excluir “{title}”? Isso não pode ser desfeito.",
+      "confirm": "Excluir",
+      "cancel": "Manter",
+      "failed": "Não foi possível excluir a caminhada."
+    },
+    "runs": {
+      "one": "sua execução",
+      "other": "suas {n} execuções"
+    },
+    "past": {
+      "back": "Caminhadas",
+      "readOnly": "Somente leitura",
+      "run": "Execução {n} · {date}",
+      "runLive": "Execução {n} · em andamento",
+      "runs": "Execuções desta caminhada",
+      "sub": "{passed} passaram · {failed} falharam · {skipped} puladas",
+      "subUnverified": "{n} não confirmadas",
+      "subNotReached": "{n} não alcançadas",
+      "wrote": "Você escreveu",
+      "agent": "Minha verificação achou",
+      "correction": "Minha correção",
+      "shot": "Imagem colada {n}",
+      "openShot": "Abrir a captura"
+    },
+    "rerunSub": "Mesmas {total} verificações · execução {n}",
+    "lastTime": {
+      "passed": "da última vez: passou",
+      "failed": "da última vez: falhou",
+      "skipped": "da última vez: pulada",
+      "unverified": "da última vez: não confirmada"
+    },
+    "lastTimeHint": {
+      "passed": "Da última vez: passou",
+      "failed": "Da última vez: falhou",
+      "failedLine": "Da última vez: falhou · “{line}”",
+      "skipped": "Da última vez: pulada",
+      "unverified": "Da última vez: não confirmada"
+    },
+    "export": {
+      "failed": "Não foi possível exportar a caminhada."
+    },
+    "rerunFailed": "Não foi possível repetir a caminhada."
   }
 }

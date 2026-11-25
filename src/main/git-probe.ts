@@ -1,10 +1,7 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import type { GitMeta } from './folder-model'
-
-const runFile = promisify(execFile)
+import { runFile } from './spawn-runner'
 
 /**
  * Per-folder git metadata probe for the folder-first model (spec §4.2).

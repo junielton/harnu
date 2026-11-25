@@ -15,14 +15,11 @@
  * object store.
  */
 
-import { execFile, spawn } from 'node:child_process'
-import { promisify } from 'node:util'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { detachedArchiveKey, newestReusableStamp } from './archive-core'
-
-const runFile = promisify(execFile)
+import { runFile } from '../spawn-runner'
 
 /** Shared `execFile` options for `git` (no shell, hard bounds). */
 const GIT_OPTS = { windowsHide: true, timeout: 60_000, maxBuffer: 8 << 20 } as const
@@ -211,26 +208,18 @@ export interface ReflogIo {
 
 export const defaultReflogIo: ReflogIo = {
   run: (cwd, args) => git(cwd, args),
-  runIn: (cwd, args, input) =>
-    new Promise((resolve, reject) => {
-      const child = spawn('git', ['-C', cwd, ...args], { windowsHide: true })
-      let out = ''
-      let err = ''
-      const timer = setTimeout(() => child.kill(), GIT_OPTS.timeout)
-      child.stdout.on('data', (d: Buffer) => (out += d.toString()))
-      child.stderr.on('data', (d: Buffer) => (err += d.toString()))
-      child.on('error', (e) => {
-        clearTimeout(timer)
-        reject(e)
-      })
-      child.on('close', (code) => {
-        clearTimeout(timer)
-        if (code === 0) resolve(out)
-        else reject(new Error(`git ${args[0]} failed (${code}): ${err.trim()}`))
-      })
-      child.stdin.on('error', () => undefined)
-      child.stdin.end(input)
-    })
+  runIn: async (cwd, args, input) => {
+    try {
+      const { stdout } = await runFile('git', ['-C', cwd, ...args], { ...GIT_OPTS, stdin: input })
+      return stdout
+    } catch (err) {
+      const e = err as { code?: unknown; stderr?: string }
+      // A number is git's own exit code; anything else (ENOENT, a timeout kill) is passed on as it came.
+      if (typeof e.code === 'number')
+        throw new Error(`git ${args[0]} failed (${e.code}): ${(e.stderr ?? '').trim()}`)
+      throw err
+    }
+  }
 }
 
 /**

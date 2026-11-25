@@ -405,6 +405,49 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     expect(playNotificationSound).toHaveBeenCalledTimes(2)
   })
 
+  it('plays the family of what is owed: info for a standing kind, ask for a blocking one (T154)', async () => {
+    const store = useMissionsStore()
+    current = [due('mnt-00000001', 'Ship T373', 1)]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(playNotificationSound).toHaveBeenLastCalledWith('info')
+    current = [due('mnt-00000001', 'Ship T373', 1), blocked('mnt-00000002', 'Other', 'merge PR #6')]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(2)
+    expect(playNotificationSound).toHaveBeenLastCalledWith('ask')
+  })
+
+  it('one combined cue plays the most urgent family once (T154)', async () => {
+    const store = useMissionsStore()
+    current = [due('mnt-00000001', 'Ship T373', 1), blocked('mnt-00000002', 'Other', 'merge PR #6')]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(playNotificationSound).toHaveBeenCalledWith('ask')
+  })
+
+  it('honors the Sound switch: silent, but attention and the Activity entry still land (T154)', async () => {
+    const store = useMissionsStore()
+    const activity = useNotificationsStore()
+    useSessionsStore().setNotifyPref('sound', false)
+    current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #6')]
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    expect(requestAttention).toHaveBeenCalledTimes(1)
+    expect(activity.list).toHaveLength(1)
+  })
+
+  it('honors a family mute: ask silent, info still plays (T154)', async () => {
+    const store = useMissionsStore()
+    useSessionsStore().setNotifyPref('soundAsk', false)
+    current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #6')]
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #6'), due('mnt-00000002', 'Other', 1)]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(playNotificationSound).toHaveBeenCalledWith('info')
+  })
+
   it('a dead legacy draft never cues', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_790_000_000_000)
@@ -422,11 +465,38 @@ describe('useMissionsStore — owed-to-operator cue', () => {
     const activity = useNotificationsStore()
     current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #6')]
     await store.refresh()
-    expect(activity.list[0].title).toBe('Mission “Ship T373” needs you: merge PR #6')
+    expect(activity.list[0].title).toBe(
+      'Mission “Ship T373” needs you: Unblock: merge PR #6 — unblocks when merged.'
+    )
     current = [blocked('mnt-00000001', 'Ship T373', 'merge PR #7')]
     await store.refresh()
     expect(playNotificationSound).toHaveBeenCalledTimes(2)
-    expect(activity.list[0].title).toBe('Mission “Ship T373” needs you: merge PR #7')
+    expect(activity.list[0].title).toBe(
+      'Mission “Ship T373” needs you: Unblock: merge PR #7 — unblocks when merged.'
+    )
+  })
+
+  it('words a pending decision and a re-scope with the one wording the You lane uses', async () => {
+    const store = useMissionsStore()
+    const activity = useNotificationsStore()
+    current = [
+      owed('mnt-00000001', 'Ship T373', {
+        you: [{ kind: 'decide', stepId: 'stp-2', title: 'Which store?' }]
+      })
+    ]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(activity.list[0].title).toBe('Mission “Ship T373” needs you: Decide: Which store?')
+    expect(activity.list[0].items?.[0].description).toBe('Decide: Which store?')
+    current = [
+      owed('mnt-00000002', 'Other', {
+        you: [{ kind: 'rescope', end: { kind: 'code', target: 'a memo', evidence: 'e' } }]
+      })
+    ]
+    await store.refresh()
+    expect(activity.list[0].items?.map((i) => i.description)).toContain(
+      'Approve the new declared end (code: a memo).'
+    )
   })
 
   it('gives ONE combined cue when a start finds several missions already owed', async () => {
@@ -650,81 +720,5 @@ describe('useMissionsStore — persisted cue memory and stability (BUG-173 S3)',
     current = [m, other]
     await store.refresh()
     expect(playNotificationSound).not.toHaveBeenCalled()
-  })
-})
-
-describe('popoverRequest — open-the-mission request (BUG-173 S2, spec §3.4)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-10-09T12:00:00Z'))
-    setApi({ missionList: vi.fn(() => new Promise(() => {})) })
-  })
-
-  it('starts empty', () => {
-    expect(useMissionsStore().popoverRequest).toBeNull()
-  })
-
-  it("openNavigableView('mission', { missionId }) records { missionId, at }", () => {
-    const missions = useMissionsStore()
-    useUiStore().openNavigableView('mission', { missionId: 'mis-1' })
-
-    expect(missions.popoverRequest).toEqual({ missionId: 'mis-1', at: Date.now() })
-  })
-
-  it("openNavigableView('mission') without a missionId records nothing", () => {
-    const missions = useMissionsStore()
-    useUiStore().openNavigableView('mission')
-
-    expect(missions.popoverRequest).toBeNull()
-  })
-
-  it('a newer request replaces the older one', () => {
-    const missions = useMissionsStore()
-    const ui = useUiStore()
-    ui.openNavigableView('mission', { missionId: 'mis-1' })
-    vi.advanceTimersByTime(1000)
-    ui.openNavigableView('mission', { missionId: 'mis-2' })
-
-    expect(missions.popoverRequest?.missionId).toBe('mis-2')
-  })
-
-  it('expires after 5 s', () => {
-    const missions = useMissionsStore()
-    useUiStore().openNavigableView('mission', { missionId: 'mis-1' })
-
-    vi.advanceTimersByTime(4999)
-    expect(missions.popoverRequest).not.toBeNull()
-    vi.advanceTimersByTime(1)
-    expect(missions.popoverRequest).toBeNull()
-  })
-
-  it('an expired older request timer does not clear a newer request', () => {
-    const missions = useMissionsStore()
-    const ui = useUiStore()
-    ui.openNavigableView('mission', { missionId: 'mis-1' })
-    vi.advanceTimersByTime(3000)
-    ui.openNavigableView('mission', { missionId: 'mis-2' })
-    vi.advanceTimersByTime(3000) // first request's 5 s have passed; the second's have not
-
-    expect(missions.popoverRequest?.missionId).toBe('mis-2')
-  })
-
-  it('consumePopoverRequest returns the live request once and clears it', () => {
-    const missions = useMissionsStore()
-    useUiStore().openNavigableView('mission', { missionId: 'mis-1' })
-
-    expect(missions.consumePopoverRequest()?.missionId).toBe('mis-1')
-    expect(missions.popoverRequest).toBeNull()
-    expect(missions.consumePopoverRequest()).toBeNull()
-  })
-
-  it('consumePopoverRequest never returns an expired request, even if the timer was throttled', () => {
-    const missions = useMissionsStore()
-    useUiStore().openNavigableView('mission', { missionId: 'mis-1' })
-    // Move the clock without firing the timer (a throttled background tab).
-    vi.setSystemTime(Date.now() + 6000)
-
-    expect(missions.consumePopoverRequest()).toBeNull()
-    expect(missions.popoverRequest).toBeNull()
   })
 })

@@ -9,6 +9,7 @@ import {
   Folder as FolderIcon,
   PencilLine,
   Plus,
+  RefreshCw,
   Clock,
   Archive,
   RotateCcw,
@@ -57,6 +58,19 @@ function isGroup(node: RootNode): node is FolderGroup<Folder> {
 }
 
 const rootNodes = computed<RootNode[]>(() => sessions.visibleFolders)
+
+/**
+ * The status message that replaces the screen's rows (BUG-257): folders still loading,
+ * none at all, or a filter that matched nothing. Sidebar.vue hosts these itself on the
+ * ROOT screen; on a drilled screen (e.g. a drill position restored on a cold boot, before
+ * the model has loaded) they render here, under the Back row, so the operator keeps their
+ * place instead of seeing a blank body.
+ */
+const status = computed<'loading' | 'empty' | 'noMatch' | null>(() => {
+  if (sessions.folders.length === 0) return sessions.foldersLoading ? 'loading' : 'empty'
+  if (sessions.visibleFolders.length === 0 && sessions.filterQuery.trim()) return 'noMatch'
+  return null
+})
 
 const top = computed(() => sessions.drillStack[sessions.drillStack.length - 1] ?? null)
 
@@ -402,8 +416,26 @@ function onPeekClick(kind: 'older' | 'archived'): void {
          track starts below it (BUG-248). -->
     <div class="relative flex min-h-0 flex-1 flex-col">
       <div class="scrollable flex-1 overflow-y-auto" style="padding: 6px 0">
+        <!-- Status (BUG-257): loading / nothing yet / filter matched nothing, under the Back row. -->
+        <div
+          v-if="status === 'loading'"
+          data-sidebar-loading
+          class="flex h-full flex-col items-center justify-center gap-3"
+        >
+          <RefreshCw :size="20" :stroke-width="1.5" class="text-accent anim-spin" />
+          <div class="text-text-3" style="font-size: 11.5px">{{ $t('sidebar.loading') }}</div>
+        </div>
+        <div
+          v-else-if="status"
+          data-sidebar-status
+          class="text-text-3"
+          style="padding: 14px 12px; font-size: 11.5px; line-height: 1.5"
+        >
+          {{ status === 'empty' ? $t('sidebar.emptyShort') : $t('sidebar.filter.empty') }}
+        </div>
+
         <!-- Root screen -->
-        <template v-if="!top">
+        <template v-else-if="!top">
           <button
             v-for="node in rootNodes"
             :key="isGroup(node) ? node.key : node.path"

@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — Browser tabs</title>
+    <style>
+      :root {
+        --ix-bg: #f6f6f7;
+        --ix-fg: #1b1b1f;
+        --ix-muted: #6b6b76;
+        --ix-line: #dcdce2;
+        --ix-card: #fff;
+        --ix-accent: #2f5bea;
+        --ix-draft: #b7791f;
+        --ix-ok: #2f855a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ix-bg: #121216;
+          --ix-fg: #ececf1;
+          --ix-muted: #9a9aa6;
+          --ix-line: #2b2b33;
+          --ix-card: #1b1b21;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        color: var(--ix-fg);
+        background: var(--ix-bg);
+      }
+      header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--ix-line);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ix-draft);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status[data-status='approved'] {
+        background: var(--ix-ok);
+      }
+      nav.toc {
+        font-size: 13px;
+        color: var(--ix-muted);
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      nav.toc a {
+        color: inherit;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        margin-bottom: 48px;
+      }
+      section > h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .prose {
+        max-width: 72ch;
+        color: var(--ix-fg);
+      }
+      .prose p {
+        margin: 0 0 10px;
+      }
+      /* one card per screen */
+      .screen {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .screen .bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .screen h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .screen h3 code {
+        font-size: 12px;
+        color: var(--ix-muted);
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .screen .notes {
+        font-size: 13px;
+        color: var(--ix-muted);
+        margin: 0 0 12px;
+        max-width: 80ch;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chips button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--ix-line);
+        background: transparent;
+        color: var(--ix-fg);
+        cursor: pointer;
+      }
+      .chips button[aria-pressed='true'] {
+        background: var(--ix-accent);
+        border-color: var(--ix-accent);
+        color: #fff;
+      }
+      .open {
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .viewport {
+        overflow: hidden;
+        border: 1px solid var(--ix-line);
+        border-radius: 6px;
+        background: #fff;
+      }
+      .viewport iframe {
+        display: block;
+        border: 0;
+        transform-origin: top left;
+      }
+      .screen .approval {
+        font-size: 12px;
+        margin-top: 8px;
+        color: var(--ix-muted);
+      }
+      /* flows */
+      .flow {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .flow ol {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 0;
+        margin: 8px 0 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .flow li {
+        counter-increment: step;
+        font-size: 13px;
+      }
+      .flow li::before {
+        content: counter(step) '. ';
+        color: var(--ix-muted);
+      }
+      .flow li + li::before {
+        content: '→ ' counter(step) '. ';
+      }
+      .flow li small {
+        color: var(--ix-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Browser pane: tabs, start page, load error</h1>
+      <!-- data-status MUST mirror mockup.json "status"; check-mockup.mjs enforces it -->
+      <span class="status" data-status="approved">approved</span>
+      <nav class="toc">
+        <a href="#contexto">Context</a><a href="#telas">Screens</a><a href="#fluxos">Flows</a>
+      </nav>
+    </header>
+    <main>
+      <section id="contexto">
+        <h2>Context and decisions</h2>
+        <div class="prose">
+          <p>
+            <strong>Today:</strong> one browser pane = one page. A link that opens a new window
+            becomes a new pane in the split. A pane opened with no address is empty, and a load that
+            fails (for example <code>localhost:8000</code> with nothing listening) stays a blank
+            white view. The address field shows two borders on focus: its own plus the global focus
+            ring.
+          </p>
+          <p>
+            <strong>Tabs.</strong> With one tab the pane looks exactly like today, plus a
+            <code>+</code> in the header. From the second tab on, the strip takes the title's place
+            in the same 24px header; no new row. The active tab opens into the address bar (same
+            <code>--bg</code>) (no accent line). Ctrl+T new tab, Ctrl+W close, Ctrl+Tab next. A
+            page's <code>target=_blank</code> link opens as a tab next to its opener instead of a
+            new pane.
+          </p>
+          <p>
+            <strong>Logins.</strong> Every tab of a pane uses the pane's cookie partition: your
+            panes share your logins, an agent pane's tabs stay isolated. No new rule.
+          </p>
+          <p>
+            <strong>Narrow panes.</strong> Inactive tabs collapse to their icon, the active one
+            keeps its title, the rest go behind a <code>+N</code> list.
+          </p>
+          <p>
+            <strong>Agents.</strong> The "Connected to…" chip becomes one pulsing icon in the
+            header; hover shows who is connected and what it is doing. Paused and Disconnected keep
+            their text pill (they must be seen). Disconnect stays next to it; the tab the agent is
+            driving shows the live dot instead of its icon. Verbs would take an optional
+            <code>tabId</code> (defaults to the active tab).
+          </p>
+          <p>
+            <strong>Start page.</strong> Only what is useful: servers running in this folder (from
+            Docker stacks and terminals Harnu already sees) and recent sites of this folder's panes.
+            Nothing else.
+          </p>
+          <p>
+            <strong>Load error.</strong> Harnu draws its own page: what failed, a hint for local
+            hosts, the error code, Reload, and "Reload when it is up" (polls until the port answers,
+            then loads).
+          </p>
+          <p>
+            <strong>Focus border.</strong> The address field keeps one border
+            (<code>--accent-line</code>) and opts out of the global focus ring, as the Ask box did
+            in <code>c6930c3c</code>. This one is a small fix that can ship alone.
+          </p>
+        </div>
+      </section>
+
+      <section id="telas">
+        <h2>Screens</h2>
+        <!-- One screen article per screen in mockup.json. -->
+        <article
+          class="screen"
+          data-screen="browser-pane"
+          data-states="single start new-tab load-error tabs tab-menu overflow overflow-list agent agent-hover"
+        >
+          <div class="bar">
+            <h3>Browser pane <code>browser-pane</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/browser-pane.html" target="_blank">abrir sozinha ↗</a>
+          </div>
+          <p class="notes">
+            560px = a wide pane, 360px = a narrow one. Sample pages inside the view are drawn only
+            to tell the tabs apart. tab-menu: right-click a tab; overflow-list: the +4 button.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="browser-pane"></iframe></div>
+          <p class="approval">
+            Approval: <strong>approved · 2026-11-19 (overflow states redrawn)</strong>
+          </p>
+        </article>
+      </section>
+
+      <section id="fluxos">
+        <h2>Flows</h2>
+        <!-- One per flow in mockup.json. Each step links to the screen alone; "percorrer" opens step 1
+       in a tab where every data-goto is live, so the reader walks the flow like the real app. -->
+        <article class="flow" data-flow="open-a-tab">
+          <h3>
+            Open a second tab and type an address —
+            <a href="screens/browser-pane.html?state=single" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/browser-pane.html?state=single" target="_blank"
+                >browser-pane?state=single</a
+              >
+              <small>via "+ in the header"</small>
+            </li>
+            <li>
+              <a href="screens/browser-pane.html?state=new-tab" target="_blank"
+                >browser-pane?state=new-tab</a
+              >
+              <small>via "type an address, Enter"</small>
+            </li>
+            <li>
+              <a href="screens/browser-pane.html?state=tabs" target="_blank"
+                >browser-pane?state=tabs</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="close-others">
+          <h3>
+            Close the other tabs from a tab's menu —
+            <a href="screens/browser-pane.html?state=tabs" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/browser-pane.html?state=tabs" target="_blank"
+                >browser-pane?state=tabs</a
+              >
+              <small>via "right-click the Dashboard tab"</small>
+            </li>
+            <li>
+              <a href="screens/browser-pane.html?state=tab-menu" target="_blank"
+                >browser-pane?state=tab-menu</a
+              >
+              <small>via "Close other tabs"</small>
+            </li>
+            <li>
+              <a href="screens/browser-pane.html?state=single" target="_blank"
+                >browser-pane?state=single</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="start-page">
+          <h3>
+            Open the browser with no address and pick a running server —
+            <a href="screens/browser-pane.html?state=start" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/browser-pane.html?state=start" target="_blank"
+                >browser-pane?state=start</a
+              >
+              <small>via "click example-web"</small>
+            </li>
+            <li>
+              <a href="screens/browser-pane.html?state=single" target="_blank"
+                >browser-pane?state=single</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="overflow">
+          <h3>
+            Reach a tab that does not fit —
+            <a href="screens/browser-pane.html?state=overflow" target="_blank">percorrer ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/browser-pane.html?state=overflow" target="_blank"
+                >browser-pane?state=overflow</a
+              >
+              <small>via "+4"</small>
+            </li>
+            <li>
+              <a href="screens/browser-pane.html?state=overflow-list" target="_blank"
+                >browser-pane?state=overflow-list</a
+              >
+              <small>via "pick a tab"</small>
+            </li>
+            <li>
+              <a href="screens/browser-pane.html?state=overflow" target="_blank"
+                >browser-pane?state=overflow</a
+              >
+            </li>
+          </ol>
+        </article>
+      </section>
+    </main>
+    <script>
+      /* index runtime: sizes each frame to the chosen viewport, swaps ?state=, listens for
+   mockup:size from the screens. Do not add behaviour here; screens own their behaviour. */
+      ;(() => {
+        const VIEWPORTS = [560, 360] // MUST mirror mockup.json "viewports"
+        const frames = new Map() // iframe -> {w, h}
+        const fit = (card) => {
+          const vp = card.querySelector('.viewport'),
+            ifr = vp.querySelector('iframe'),
+            f = frames.get(ifr)
+          const s = Math.min(1, vp.parentElement.clientWidth / f.w)
+          ifr.style.width = f.w + 'px'
+          ifr.style.height = f.h + 'px'
+          ifr.style.transform = `scale(${s})`
+          vp.style.height = Math.ceil(f.h * s) + 'px'
+          vp.style.width = Math.ceil(f.w * s) + 'px'
+        }
+        const load = (card) => {
+          const ifr = card.querySelector('iframe')
+          const state =
+            card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state ||
+            card.dataset.states.split(/\s+/)[0]
+          ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`
+        }
+        document.querySelectorAll('.screen').forEach((card) => {
+          const ifr = card.querySelector('iframe')
+          frames.set(ifr, { w: VIEWPORTS[0], h: 600 })
+          const vps = card.querySelector('[data-role="viewports"]')
+          VIEWPORTS.forEach((w, i) => {
+            const b = document.createElement('button')
+            b.textContent = w + 'px'
+            b.dataset.w = w
+            b.setAttribute('aria-pressed', String(i === 0))
+            b.onclick = () => {
+              vps
+                .querySelectorAll('button')
+                .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+              frames.get(ifr).w = w
+              fit(card)
+            }
+            vps.append(b)
+          })
+          const sts = card.querySelector('[data-role="states"]')
+          card.dataset.states
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((st, i) => {
+              const b = document.createElement('button')
+              b.textContent = st
+              b.dataset.state = st
+              b.setAttribute('aria-pressed', String(i === 0))
+              b.onclick = () => {
+                sts
+                  .querySelectorAll('button')
+                  .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+                load(card)
+              }
+              sts.append(b)
+            })
+          new IntersectionObserver(
+            (es, io) =>
+              es.forEach((e) => {
+                if (e.isIntersecting) {
+                  io.disconnect()
+                  load(card)
+                }
+              }),
+            { rootMargin: '600px' }
+          ).observe(card)
+          fit(card)
+        })
+        addEventListener('message', (e) => {
+          const m = e.data
+          if (!m || m.type !== 'mockup:size') return
+          for (const [ifr, f] of frames)
+            if (ifr.contentWindow === e.source) {
+              f.h = Math.max(320, m.height)
+              fit(ifr.closest('.screen'))
+            }
+        })
+        addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit))
+      })()
+    </script>
+  </body>
+</html>

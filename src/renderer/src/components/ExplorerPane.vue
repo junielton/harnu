@@ -767,6 +767,7 @@ useFocusRegion(props.pane.id, rootEl, {
                  is the only way it opens). -->
             <button
               class="flex min-w-0 flex-1 items-center gap-1 text-left"
+              :class="row.entry.ignored ? 'opacity-50' : ''"
               :title="row.entry.path"
               @click="onRowClick(row.entry)"
             >

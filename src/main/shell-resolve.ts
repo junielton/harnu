@@ -16,11 +16,8 @@
  * `tests/worktree-shell-resolve.test.ts`, not real subprocess/filesystem I/O.
  */
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { access } from 'node:fs/promises'
-
-const runFile = promisify(execFile)
+import { runFile } from './spawn-runner'
 
 /**
  * The default interactive shell for a plain `'shell'` PTY (split terminal),

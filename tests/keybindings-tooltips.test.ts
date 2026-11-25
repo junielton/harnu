@@ -99,6 +99,8 @@ const TOOLTIP_SITES: Record<string, string[]> = {
     'folder.openInEditor',
     'folder.openGithubPulls',
     'folder.browseFiles',
+    'notes.openToday',
+    'notes.open',
     'folder.newTerminal',
     'view.toggleHelper'
   ],
@@ -258,5 +260,24 @@ describe('§9.2 — menu-item chord hints', () => {
     await useKeybindingsStore().setBinding('folder.bootOptions', 'Cmd+Alt+O')
     await flushPromises()
     expect(hintFor(i18n.global.t('folderMenu.bootOptions'))).toBe('Ctrl+Alt+O')
+  })
+
+  it('Folder menu: the Notes flyout shows both current chords, live on rebind', async () => {
+    seedSession()
+    wrapper = mount(FolderMenu, { attachTo: document.body, global: { plugins: [i18n] } })
+    useUiStore().openFolderMenu({ projectPath: '/repo/alpha', x: 10, y: 10 })
+    await flushPromises()
+    const group = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) =>
+      b.textContent?.includes(i18n.global.t('folderMenu.notes.label'))
+    )!
+    group.parentElement!.dispatchEvent(new MouseEvent('mouseenter'))
+    await flushPromises()
+    expect(hintFor(i18n.global.t('folderMenu.notes.today'))).toBe('Ctrl+Shift+N')
+    expect(hintFor(i18n.global.t('folderMenu.notes.all'))).toBe('Ctrl+Alt+N')
+    await useKeybindingsStore().setBinding('notes.openToday', 'Cmd+Alt+J')
+    await useKeybindingsStore().setBinding('notes.open', null)
+    await flushPromises()
+    expect(hintFor(i18n.global.t('folderMenu.notes.today'))).toBe('Ctrl+Alt+J')
+    expect(hintFor(i18n.global.t('folderMenu.notes.all'))).toBeNull()
   })
 })

@@ -5,7 +5,21 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        // BUG-266: the app's main entry plus the spawn helper, which runs in its own process (an Electron
+        // utilityProcess) and does the forking so the main thread never does. The helper is one
+        // self-contained script with no local imports, so it never shares a chunk with the app.
+        input: {
+          index: resolve('src/main/index.ts'),
+          'spawn-helper': resolve('src/main/spawn-helper.ts'),
+          // The usage scan, started by usage-cost.ts as a worker thread so transcripts are never parsed
+          // on the main thread.
+          'usage-scan-worker': resolve('src/main/usage-scan-worker.ts')
+        }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

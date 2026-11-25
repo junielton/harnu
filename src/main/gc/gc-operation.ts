@@ -5,12 +5,9 @@
 // not moved it yet). So Cleanup refuses to remove one until it is finished or aborted.
 // env-bound (git + fs); the decision to refuse is in bundle-core, gc-shell and gc-removability.
 
-import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
-import { promisify } from 'node:util'
-
-const run = promisify(execFile)
+import { runFile as run } from '../spawn-runner'
 
 export type GitOperation = 'rebase' | 'bisect' | 'am'
 

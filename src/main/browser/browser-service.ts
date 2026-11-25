@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { mkdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { join } from 'node:path'
@@ -31,7 +31,20 @@ import { openPaneUrls } from './pane-urls'
 import type { BrowserReadDeps } from './read-verbs'
 import { BrowserViewHost, collectHarnuPorts } from './view-host'
 import { resolveDiscardMs } from './lifecycle'
+import { getContainersService } from '../containers/containers-ipc'
+import { terminalRegistry } from '../terminal-registry'
+import { normalizePath as normalizeFolderPath } from '../user-projects'
+import { buildLocalServers, type LocalServerRow, type LocalServerStack } from './local-servers'
+import { listenersFor, realProcIo, realRunCommand } from './local-servers-shell'
+import { createRecentStore, topRecent, type RecentStore } from './recent-sites'
 import { runRestore } from './restore-run'
+import { findTab, moveTabToNewPane } from './tabs'
+import type {
+  BrowserTabCloseResult,
+  BrowserTabMoveResult,
+  BrowserTabNewOptions,
+  BrowserTabResult
+} from '../../shared/browser-tabs'
 import { readHelpers } from '../helpers-store'
 import { isFolderDenied } from '../mcp/permission-core'
 import { createPageService, type PageService } from './page-service'
@@ -116,6 +129,86 @@ function browserPrefs(): BrowserPrefsStore {
   return prefsStore
 }
 
+/** The start page's Recent list, `<userData>/browser-recent.json`. Created on first use. */
+let recentStore: RecentStore | null = null
+function recentSites(): RecentStore {
+  if (recentStore) return recentStore
+  const file = join(app.getPath('userData'), 'browser-recent.json')
+  recentStore = createRecentStore({
+    now: () => Date.now(),
+    io: {
+      read: async () => {
+        try {
+          return await readFile(file, 'utf8')
+        } catch {
+          return null
+        }
+      },
+      write: async (text) => {
+        const tmp = `${file}.${process.pid}.tmp`
+        await writeFile(tmp, text, 'utf8')
+        await rename(tmp, file)
+      }
+    }
+  })
+  return recentStore
+}
+
+/** "Recent" for the start page of a pane in `folder`: its newest sites, at most 8 (browser-tabs S-5). */
+export async function startRecentFor(
+  folder: string
+): Promise<Array<{ title: string; url: string; host: string }>> {
+  return topRecent(await recentSites().list(folder)).map(({ title, url, host }) => ({
+    title,
+    url,
+    host
+  }))
+}
+
+/** The running containers of `folder` with published host ports, one entry each (browser-tabs S-5, D-5). */
+async function dockerStacksOf(folder: string): Promise<LocalServerStack[]> {
+  const snap = getContainersService()?.snapshot()
+  if (!snap || !snap.dockerAvailable) return []
+  const out: LocalServerStack[] = []
+  for (const stack of snap.stacks) {
+    const at = stack.attribution.folderPath ?? stack.attribution.path
+    if (
+      at === null ||
+      (at !== folder && (await normalizeFolderPath(at).catch(() => at)) !== folder)
+    ) {
+      continue
+    }
+    for (const c of stack.containers) {
+      if (c.running && c.ports.length > 0) {
+        out.push({ folder, name: c.service ?? c.name, hostPorts: c.ports })
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * "Running in this folder" for the start page of a pane in `folder` (browser-tabs S-5, D-5). The folder is compared in
+ * its canonical form, the one the terminal registry and the containers scan hold it in.
+ */
+export async function startServersFor(folder: string): Promise<LocalServerRow[]> {
+  const canonical = await normalizeFolderPath(folder).catch(() => folder)
+  return buildLocalServers({
+    folder: canonical,
+    platform: process.platform,
+    stacks: await dockerStacksOf(canonical),
+    terminals: terminalRegistry
+      .listTerminalsByFolder(canonical)
+      .map((t) => ({ folder: canonical, shellPid: t.shellPid })),
+    listeners: (pids) =>
+      listenersFor(process.platform, pids, {
+        procIo: realProcIo,
+        runCommand: realRunCommand,
+        ownPid: process.pid
+      })
+  })
+}
+
 let mainWindowGetter: (() => BrowserWindow | null) | null = null
 let host: BrowserViewHost | null = null
 let pages: PageService | null = null
@@ -167,7 +260,19 @@ export function noteMcpPort(port: number): void {
  * looking at is in use). The view host is only touched when a pane exists.
  */
 export function listOpenPaneUrls(): string[] {
-  return openPaneUrls(browserRegistry.list(), (paneId) => getBrowserHost().info(paneId)?.url)
+  // Every TAB counts, the shown one or not: a background tab looking at a stack's port keeps that stack in use. The
+  // pure list is keyed by tab id here, and each tab id resolves back to its pane for the live address.
+  const paneOf = new Map<string, string>()
+  const tabs = browserRegistry.list().flatMap((rec) =>
+    rec.tabs.map((t) => {
+      paneOf.set(t.tabId, rec.paneId)
+      return { paneId: t.tabId, discarded: t.discarded }
+    })
+  )
+  return openPaneUrls(tabs, (tabId) => {
+    const paneId = paneOf.get(tabId)
+    return paneId ? getBrowserHost().info(paneId, tabId)?.url : undefined
+  })
 }
 
 /** The view host. Created on first use so a headless unit never builds electron views. */
@@ -184,19 +289,29 @@ export function getBrowserHost(): BrowserViewHost {
     trustedHosts: trustedHostsSync,
     readOptIn: (folder) => readOptInCache.get(folder) === true,
     leaseActive: (paneId, token) => browserLeases.isActive(paneId, token),
-    onMainFrameCommit: (paneId) => {
-      const token = host?.viewToken(paneId)
+    onMainFrameCommit: (paneId, tabId) => {
+      // The token of the tab that committed: a lease on another tab is not that tab's business.
+      const token = host?.viewToken(paneId, tabId)
       if (token !== undefined) browserLeases.noteToken(paneId, token)
     },
     scrub: (text) => scrubTerminalText(text, os.homedir()),
-    openPopupPane: ({ folder, partition, url }) =>
-      openOperatorPane({ folder, partition, url, popup: true }),
     prefs: browserPrefs(),
     pageHooks: getPageService().hooks,
     // A closed pane's pins go with it; a discarded one keeps them (spec §10.1).
     onPaneClosed: (paneId) => getOverlayBridge().forget(paneId),
     onViewDiscarded: (paneId) => getOverlayBridge().onViewDiscarded(paneId),
-    discardMs: resolveDiscardMs(process.env, app.isPackaged)
+    discardMs: resolveDiscardMs(process.env, app.isPackaged),
+    // The start page's Recent list: a committed navigation of an operator tab, then its title (S-5).
+    recentSites: {
+      visit: (folder, visit) =>
+        void recentSites()
+          .record(folder, visit)
+          .catch(() => undefined),
+      title: (folder, url, title) =>
+        void recentSites()
+          .setTitle(folder, url, title)
+          .catch(() => undefined)
+    }
   })
   // A lease that starts or ends repaints the pane's chip (display only).
   browserLeases.onChange((paneId) => host?.refresh(paneId))
@@ -208,14 +323,13 @@ export function bindBrowserWindow(getWindow: () => BrowserWindow | null): void {
 }
 
 /**
- * Create a pane the OPERATOR opened (the Topbar Browser button, a popup the operator clicked). Operator panes use the
- * operator partition (a popup inherits its opener's) and are never capped (spec §10.1).
+ * Create a pane the OPERATOR opened (the Topbar Browser button). Operator panes use the operator partition and are
+ * never capped (spec §10.1). A page's new window is a tab of its opener's pane, not a pane (browser-tabs D-2).
  */
 export function openOperatorPane(opts: {
   folder: string
   url: string
   partition?: BrowserPartition
-  popup?: boolean
 }): { paneId: string } {
   const paneId = `bp-${randomUUID().slice(0, 8)}`
   const now = Date.now()
@@ -241,14 +355,6 @@ export function openOperatorPane(opts: {
   } catch (err) {
     browserRegistry.remove(paneId)
     throw err
-  }
-  if (opts.popup) {
-    mainWindowGetter?.()?.webContents.send('browser:popup', {
-      paneId,
-      worktreePath: opts.folder,
-      url: opts.url,
-      partition
-    })
   }
   return { paneId }
 }
@@ -288,6 +394,52 @@ export async function restoreBrowserPanes(): Promise<number> {
   })
 }
 
+/**
+ * The operator's tab operations (browser-tabs S-2): the IPC handlers call these. A tab is added to, activated in or
+ * closed in a pane; closing the last tab closes the pane for good, its access state and leases with it.
+ */
+export function openTabFromOperator(paneId: string, opts: BrowserTabNewOptions): BrowserTabResult {
+  return getBrowserHost().newTab(paneId, opts)
+}
+
+export function duplicateTabFromOperator(paneId: string, tabId: string): BrowserTabResult {
+  return getBrowserHost().duplicateTab(paneId, tabId)
+}
+
+export function activateTabFromOperator(paneId: string, tabId: string): boolean {
+  return getBrowserHost().activateTab(paneId, tabId)
+}
+
+export function closeTabFromOperator(paneId: string, tabId: string): BrowserTabCloseResult {
+  const res = getBrowserHost().closeTab(paneId, tabId)
+  if (res.ok && res.paneClosed) {
+    browserAccess.forget(paneId)
+    browserLeases.forget(paneId)
+  }
+  return res
+}
+
+/** "Move to a new pane": the new pane is placed below the current one through the same event a popup pane uses. */
+export function moveTabFromOperator(paneId: string, tabId: string): BrowserTabMoveResult {
+  return moveTabToNewPane(
+    {
+      registry: browserRegistry,
+      access: browserAccess,
+      leases: browserLeases,
+      host: getBrowserHost(),
+      newPaneId: () => `bp-${randomUUID().slice(0, 8)}`,
+      now: () => Date.now(),
+      notifyPopup: (payload) => {
+        // The chip shows whether agents may read the new pane: fetch the folder's opt-in once, then repaint.
+        void readOptInFor(payload.worktreePath).then(() => host?.refresh(payload.paneId))
+        mainWindowGetter?.()?.webContents.send('browser:popup', payload)
+      }
+    },
+    paneId,
+    tabId
+  )
+}
+
 /** Close a pane from the operator's side (X button, a removed helper): the view, the record, the access state. */
 export function closePaneFromOperator(paneId: string): void {
   getBrowserHost().destroy(paneId)
@@ -307,7 +459,12 @@ export async function resolveBrowserGate(
   /** `browser_open` / `browser_list` carry a folder of their own: its trusted hosts are loaded for them. */
   folder?: string,
   /** The verb being judged: `browser_close` is the one write that outlives the kill-switch. */
-  op?: string
+  op?: string,
+  /**
+   * The tab the call names (browser-tabs S-6). Its view, origin and lease are what is judged: a lease is granted for
+   * one view, so one on another tab does not cover this one. An id the pane does not hold is `TAB_NOT_FOUND`.
+   */
+  tabId?: string
 ): Promise<GateResolution> {
   const writesEnabled = await readAgentBrowserWrites()
   // Switching agent browser control off ends every lease. The Settings toggle does that itself; doing it here too
@@ -322,10 +479,10 @@ export async function resolveBrowserGate(
   // A lease on an operator pane rides on the folder's opt-in: whenever the opt-in is seen OFF the lease ends,
   // whatever turned it off, so turning it back on can never revive an old approval.
   if (rec && rec.openedBy === 'operator' && !readOptIn) browserLeases.revoke(rec.paneId)
-  const token = rec ? getBrowserHost().viewToken(rec.paneId) : undefined
-  return resolveGateInput({
+  const token = rec ? getBrowserHost().viewToken(rec.paneId, tabId) : undefined
+  const resolution = resolveGateInput({
     rec,
-    liveUrl: rec ? (getBrowserHost().info(rec.paneId)?.url ?? '') : '',
+    liveUrl: rec ? (getBrowserHost().info(rec.paneId, tabId)?.url ?? '') : '',
     writesEnabled,
     disconnected: rec ? browserAccess.isDisconnected(rec.paneId) : false,
     paused: rec ? browserAccess.isPaused(rec.paneId) : false,
@@ -333,7 +490,7 @@ export async function resolveBrowserGate(
     leaseActive:
       rec !== undefined && token !== undefined ? browserLeases.isActive(rec.paneId, token) : false,
     writeDenied: rec ? browserLeases.isDenied(rec.paneId) : false,
-    inputReady: rec ? getBrowserHost().inputReady(rec.paneId) : true,
+    inputReady: rec ? getBrowserHost().inputReady(rec.paneId, tabId) : true,
     harnuPorts: collectHarnuPorts(mcpPort),
     trustedHosts: rec ? trustedHostsSync(rec.folder) : [],
     ...(op === 'browser_open' && folder !== undefined
@@ -347,6 +504,12 @@ export async function resolveBrowserGate(
         }
       : {})
   })
+  if (rec && resolution.input.pane) {
+    // The tab the call is judged on, for a refusal that must name it (PANE_INPUT_NOT_READY's reload).
+    resolution.input.pane.tabId = tabId ?? rec.activeTabId
+    if (tabId !== undefined && !findTab(rec, tabId)) resolution.input.pane.tabKnown = false
+  }
+  return resolution
 }
 
 /** What the handlers pass in: the bits of the MCP call context the verbs need. */

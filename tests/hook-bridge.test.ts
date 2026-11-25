@@ -299,3 +299,112 @@ describe('handleBridgeEvent — subagent activity (T547)', () => {
     expect(lastSubagentActivity('parent-3')).toBeUndefined()
   })
 })
+
+/** The mission summary route (S-16b, AC-41): `POST /mission/<token>/summary` answers the text a hook prints. */
+describe('mission summary route', () => {
+  let close: (() => Promise<void>) | null = null
+  afterEach(async () => {
+    if (close) await close()
+    close = null
+  })
+
+  it('answers the handler’s text as plain text, and hands it the parsed hook body', async () => {
+    const seen: Array<Record<string, unknown>> = []
+    const started = await startHookServer(() => undefined, 'tok', {
+      missionSummary: async (body) => {
+        seen.push(body)
+        return 'the summary'
+      }
+    })
+    close = started.close
+    const res = await post(started.port, '/mission/tok/summary', {
+      session_id: 'S1',
+      cwd: '/x',
+      source: 'compact'
+    })
+    expect(res.status).toBe(200)
+    expect(res.text).toBe('the summary')
+    expect(seen).toEqual([{ session_id: 'S1', cwd: '/x', source: 'compact' }])
+  })
+
+  it('with no handler, a throwing handler or an unreadable body it answers 200 and prints nothing', async () => {
+    const none = await startHookServer(() => undefined, 'tok')
+    expect((await post(none.port, '/mission/tok/summary', { session_id: 'S' })).text).toBe('')
+    await none.close()
+
+    const throwing = await startHookServer(() => undefined, 'tok', {
+      missionSummary: async () => {
+        throw new Error('boom')
+      }
+    })
+    const res = await post(throwing.port, '/mission/tok/summary', { session_id: 'S' })
+    expect(res).toEqual({ status: 200, text: '' })
+    await throwing.close()
+
+    let got: Record<string, unknown> | null = null
+    const started = await startHookServer(() => undefined, 'tok', {
+      missionSummary: async (body) => {
+        got = body
+        return 'x'
+      }
+    })
+    close = started.close
+    const raw = await new Promise<string>((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: started.port, path: '/mission/tok/summary', method: 'POST' },
+        (r) => {
+          let t = ''
+          r.on('data', (c) => (t += c))
+          r.on('end', () => resolve(t))
+        }
+      )
+      req.on('error', reject)
+      req.end('{not json')
+    })
+    expect(raw).toBe('x')
+    expect(got).toEqual({})
+  })
+
+  it('rejects a wrong token with 403 and never calls the handler', async () => {
+    let calls = 0
+    const started = await startHookServer(() => undefined, 'tok', {
+      missionSummary: async () => {
+        calls += 1
+        return 'secret'
+      }
+    })
+    close = started.close
+    const res = await post(started.port, '/mission/WRONG/summary', { session_id: 'S' })
+    expect(res.status).toBe(403)
+    expect(res.text).not.toContain('secret')
+    expect(calls).toBe(0)
+  })
+
+  it('only the summary route exists under /mission, and only by POST', async () => {
+    const started = await startHookServer(() => undefined, 'tok', {
+      missionSummary: async () => 'x'
+    })
+    close = started.close
+    expect((await post(started.port, '/mission/tok/other', {})).status).toBe(404)
+    expect((await post(started.port, '/mission/tok', {})).status).toBe(404)
+  })
+
+  it('an observer SessionStart event is not the summary: it still answers {} and emits', async () => {
+    const events: BridgeEvent[] = []
+    let calls = 0
+    const started = await startHookServer((e) => events.push(e), 'tok', {
+      missionSummary: async () => {
+        calls += 1
+        return 'x'
+      }
+    })
+    close = started.close
+    const res = await post(started.port, '/hook/tok/SessionStart/_', {
+      session_id: 'S1',
+      source: 'compact'
+    })
+    expect(res).toEqual({ status: 200, text: '{}' })
+    expect(events).toHaveLength(1)
+    expect(calls).toBe(0)
+  })
+})

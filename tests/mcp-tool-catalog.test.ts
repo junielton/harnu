@@ -32,9 +32,6 @@ import {
  */
 
 const READ_TOOLS = [
-  // Campaign ch.3a (T595)
-  'campaign_get',
-  'campaign_list',
   'get_fleet',
   'get_session',
   'list_worktrees',
@@ -78,25 +75,18 @@ const MUTATE_TOOLS = [
   'mission_create',
   'mission_add_step',
   'mission_update_step',
-  'mission_link_child',
   'mission_log',
   // T358 S4
   'mission_set_blocker',
   'mission_clear_blocker',
-  'mission_set_end',
-  'mission_verify_step',
   'mission_request_close',
-  // T358 S7
-  'mission_import_legacy',
-  // Mission v3 §3.6
-  'mission_add_check',
-  // Campaign ch.3a (T595): the three writes run free, like the mission writes.
-  'campaign_create',
-  'campaign_add_chapter',
-  'campaign_request_close',
-  // T654: the owner-transfer recovery verbs.
-  'mission_transfer_owner',
-  'campaign_transfer_owner',
+  // Missions v4 S-24: the v4-only verbs run free like the other mission writes.
+  'mission_add_milestone',
+  'mission_add_ac',
+  'mission_link',
+  'mission_set_done_when',
+  'mission_settle_ac',
+  'mission_attach',
   // Campaign ch.5a (T597): a local write, free like the mission writes.
   'rebase_stack'
 ] as const
@@ -204,7 +194,13 @@ describe('alwaysLoad turn-1 visibility (T93)', () => {
     'memory_read',
     'memory_query',
     'plan_mission',
-    'open_file'
+    'open_file',
+    // Guided walks (S-2, AC-43): a plain sentence in any session must open a walk, so the four verbs
+    // are core. This is a deliberate change to the pinned six-verb set.
+    'walk_open',
+    'walk_extend',
+    'walk_report',
+    'walk_get'
   ] as const
 
   it('ALWAYS_LOAD_OPS is exactly the intended turn-1 verb set', () => {
@@ -260,7 +256,16 @@ describe('T120 declarative gate fields — the def is the single source of truth
     // recipient scope enforced in the handler, not this flag.
     'message_session'
   ]
-  const alwaysAllowableExpected = grantableExpected
+  // Your move (U3): `your_move` is durable-allow-eligible but NOT grantable: it files one
+  // rate-capped card, so a mission grant never needs to buy it.
+  const alwaysAllowableExpected = [
+    ...grantableExpected,
+    'your_move',
+    // Guided walks (S-2): free like open_file, so a plain sentence is not stopped by a confirm
+    'walk_open',
+    'walk_extend',
+    'walk_report'
+  ]
   const dangerousExpected = ['create_worktree', 'spawn_terminal']
   // Post-reversal this is EVERY mutating verb except the one that must always face a
   // human: `plan_mission` (mints a grant). `submit_manifest` (T187) carries this flag
@@ -303,6 +308,8 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'archive_session',
     // T661: hide_folder only flips the sidebar's hidden flag and is reversible, so it runs free too.
     'hide_folder',
+    // Your move (U3): files one rate-capped card and can never close one, so it runs free.
+    'your_move',
     // T238: free like every other mutating verb, but NOT grantable and NOT
     // always-allowable — its real gate is the operator's voice switch, which
     // nothing may buy on their behalf.
@@ -335,27 +342,24 @@ describe('T120 declarative gate fields — the def is the single source of truth
     'mission_create',
     'mission_add_step',
     'mission_update_step',
-    'mission_link_child',
     'mission_log',
     // T358 S4
     'mission_set_blocker',
     'mission_clear_blocker',
-    'mission_set_end',
-    'mission_verify_step',
     'mission_request_close',
-    // T358 S7
-    'mission_import_legacy',
-    // Mission v3 §3.6
-    'mission_add_check',
-    // Campaign ch.3a (T595): the writes run free like the mission writes.
-    'campaign_create',
-    'campaign_add_chapter',
-    'campaign_request_close',
-    // T654: the owner-transfer recovery verbs run free like the other mission writes.
-    'mission_transfer_owner',
-    'campaign_transfer_owner',
+    // Missions v4 S-24: the v4-only verbs run free like the other mission writes.
+    'mission_add_milestone',
+    'mission_add_ac',
+    'mission_link',
+    'mission_set_done_when',
+    'mission_settle_ac',
+    'mission_attach',
     // Campaign ch.5a (T597): a local write, free like the mission writes.
-    'rebase_stack'
+    'rebase_stack',
+    // Guided walks (S-2): the three writes run free in an allowed folder, like open_file
+    'walk_open',
+    'walk_extend',
+    'walk_report'
   ]
   const bootstrapExpected = ['adopt_folder', 'plan_mission']
 
@@ -400,7 +404,7 @@ describe('T120 declarative gate fields — the def is the single source of truth
     expect([...actual].sort()).toEqual([...bootstrapExpected].sort())
   })
 
-  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup/list_terminals/browser_list:paths, everything else undefined', () => {
+  it('discloses is get_session:transcript, get_fleet/list_containers/list_cleanup/list_terminals/browser_list/walk_get:paths, everything else undefined', () => {
     for (const t of MCP_TOOLS) {
       if (t.op === 'get_session') expect(t.discloses).toBe('transcript')
       else if (
@@ -408,17 +412,21 @@ describe('T120 declarative gate fields — the def is the single source of truth
         t.op === 'list_containers' ||
         t.op === 'list_cleanup' ||
         t.op === 'list_terminals' ||
-        t.op === 'browser_list'
+        t.op === 'browser_list' ||
+        // Guided walks (S-2): a failure's screenshot path rides in the read
+        t.op === 'walk_get'
       )
         expect(t.discloses).toBe('paths')
       else expect(t.discloses).toBeUndefined()
     }
   })
 
-  it('disclosesTranscript is get_session/memory_read/memory_query/read_terminal only', () => {
+  it('disclosesTranscript is get_session/memory_read/memory_query/read_terminal/walk_get only', () => {
+    // walk_get reads the walk's own content (the operator's failure lines, the checks): a blocked folder
+    // must not be readable through it, so it is gated by the folder allowlist like project memory.
     const actual = MCP_TOOLS.filter((t) => t.disclosesTranscript).map((t) => t.op)
     expect([...actual].sort()).toEqual(
-      ['get_session', 'memory_query', 'memory_read', 'read_terminal'].sort()
+      ['get_session', 'memory_query', 'memory_read', 'read_terminal', 'walk_get'].sort()
     )
   })
 
@@ -927,5 +935,27 @@ describe('T571 delta 2 — catalog descriptions stay true to what the verbs retu
   it('browser_eval says the lease holds while the pane stays on one site, and ends when it moves', () => {
     expect(desc('browser_eval')).toContain('while the pane stays on the site the operator saw')
     expect(desc('browser_eval')).toContain('moving it to another host ends it')
+  })
+})
+
+describe('worker verb descriptions say only what the handlers do (S-39 delta 1)', () => {
+  const text = (name: string): string => toolByName(name)?.description ?? ''
+  const retired = ['STEWARD', 'steward', 'WORKER_IS_STEWARD']
+
+  it('list_workers and delete_worker no longer describe a steward behaviour that was removed', () => {
+    for (const name of ['list_workers', 'delete_worker', 'update_worker']) {
+      for (const word of retired) expect(text(name), `${name} / ${word}`).not.toContain(word)
+    }
+  })
+
+  it('list_workers says what agentControllable means for a worker', () => {
+    expect(text('list_workers')).toContain('agentControllable')
+    expect(text('list_workers')).toContain('blocked')
+  })
+
+  it('delete_worker keeps its posture: always asks, no undo, prefer pausing', () => {
+    expect(text('delete_worker')).toContain('ALWAYS asks the operator')
+    expect(text('delete_worker')).toContain('there is no undo')
+    expect(text('delete_worker')).toContain('update_worker({ id, set: { enabled: false } })')
   })
 })

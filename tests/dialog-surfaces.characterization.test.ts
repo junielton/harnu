@@ -112,21 +112,20 @@ const TABLE: Record<string, Row> = {
   'ImageLightbox.vue': ui('close[[]]', 'none', 'label'),
   'McpConfirmOverlay.vue': ui('', 'dismiss', 'label'),
   'MemoryLocationDialog.vue': ui(STORE, 'close'),
-  'MergeBatchDialog.vue': ui('close[]', 'cancel'),
-  'MissionBulkCloseConfirmDialog.vue': ui('cancel[]', 'cancel'),
   'MissionCloseConfirmDialog.vue': ui('cancel[]', 'cancel'),
-  'MissionsReviewDialog.vue': ui('local open=false (card removed from DOM)', 'cancel'),
   'NewFolderDialog.vue': ui(STORE, 'input'),
   'NewSessionDialog.vue': ui(STORE, 'start'),
   'NewWorktreeDialog.vue': ui(STORE, 'input'),
+  'NotesPickerDialog.vue': ui(STORE, 'search'),
   'OpenSubfolderDialog.vue': ui(STORE, 'search'),
   'RemoveWorktreeDialog.vue': ui(STORE, 'cancel'),
   'RenameFolderDialog.vue': ui(STORE, 'input'),
   'RenameRepoDialog.vue': ui(STORE, 'input'),
   'SettingsDialog.vue': ui(STORE, 'close'),
-  'StewardPauseDialog.vue': ui('cancel[]', 'input'),
   'SweepConfirmDialog.vue': ui('close[false]', 'cancel'),
-  'TrustedHostsDialog.vue': ui(STORE, 'input')
+  'TrustedHostsDialog.vue': ui(STORE, 'input'),
+  // Save (the primary, non-destructive action) takes the initial focus, so no deviation.
+  'UnsavedChangesDialog.vue': ui('cancel[]', 'confirm')
 }
 
 // KNOWN_DEVIATIONS:BEGIN — one entry per line, keyed by component filename, sorted.
@@ -198,7 +197,7 @@ describe('characterization table — coverage (AC-2)', () => {
       .sort()
     // `ui/` primitives live in a subfolder and are not listed by this top-level read.
     expect(Object.keys(TABLE).sort()).toEqual(onDisk)
-    expect(Object.keys(TABLE)).toHaveLength(31)
+    expect(Object.keys(TABLE)).toHaveLength(29)
   })
 
   it('lists the two inline overlays with a reason instead of mounting them', () => {
