@@ -14,6 +14,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
+- **Your move** no longer piles up hundreds of old cards. A newer turn of a session replaces the cards of its earlier turns once you have typed in it since they were filed (unanswered questions stay until you reply, however long the agent keeps working); a card nothing new happened to for 7 days closes as expired; a mission has one card (its next item), and none once its record has been untouched for 7 days; and a card whose folder or session transcript is gone closes (a stopped session's card only when its folder is gone; a worktree Cleanup shelved does not count as gone). Harnu applies this to the existing queue when it starts. Closed cards stay in **Settings → Your move** for 7 days with the reason.
+- Sessions an agent launched (dispatched executors, verifiers, shippers) no longer reach the **Your move** queue until you type in them: the prompt they were launched with was being counted as something you had written. Cards already filed for them close when Harnu starts, for sessions Harnu can still tell were launched by an agent.
 - Opening the Usage Dashboard no longer freezes Harnu when the turn ledger is large. The ledger, which corrects the estimated cost with the totals Claude Code measured, is now read off the main process, so typing and terminal output keep flowing while the dashboard loads. In tests with a large ledger and measured costs in use, the app could previously stop responding for more than a minute. The numbers are the same as before.
 
 ## 2026-11-24

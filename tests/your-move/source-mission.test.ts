@@ -154,42 +154,48 @@ describe('reconcileMissions', () => {
     const a = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, rec)
     const b = reconcileMissions(a, result(), roots, 'live', mint, 9_000, rec)
     expect(open(b)).toHaveLength(1)
-    expect(open(b)[0]).toMatchObject({ openedAt: 1_000, updatedAt: 9_000 })
+    // BUG-308: re-filing an unchanged card is not activity, so its clock does not move.
+    expect(open(b)[0]).toMatchObject({ openedAt: 1_000, updatedAt: 1_000 })
   })
 
   it('files the cards of a mission read from a v3 file the same way (no second path)', () => {
     // The record store reads a v3 file in memory, so its views arrive here like any other record's.
     const rec = records([view('mnt-3', [item.unblock('the vendor export'), item.close()])])
     const a = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, rec)
-    expect(open(a).map((c) => c.sourceKey)).toEqual([
-      'mnt-3:blocker:Unblock: the vendor export',
-      'mnt-3:close'
-    ])
+    // BUG-308: one card per mission, its next item.
+    expect(open(a).map((c) => c.sourceKey)).toEqual(['mnt-3:blocker:Unblock: the vendor export'])
   })
 
-  it('a cleared blocker closes its card as source-resolved', () => {
+  it('a cleared blocker turns the card into the next item', () => {
     const withBlocker = records([view('mnt-1', [item.unblock('a'), item.close()])])
     const a = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, withBlocker)
-    expect(open(a)).toHaveLength(2)
+    expect(open(a)).toHaveLength(1)
     const cleared = records([view('mnt-1', [item.close()])])
     const b = reconcileMissions(a, result(), roots, 'live', mint, 2_000, cleared)
-    expect(open(b)).toHaveLength(1)
-    const gone = b.cards.find((c) => c.sourceKey === 'mnt-1:blocker:Unblock: a')
-    expect(gone).toMatchObject({ closedBy: 'source-resolved', closedAt: 2_000 })
+    expect(b.cards).toHaveLength(1)
+    expect(open(b)[0]).toMatchObject({ id: a.cards[0].id, sourceKey: 'mnt-1:close' })
   })
 
-  it('BUG-294: the main-failing card closes when the item leaves the list (the base went green)', () => {
+  it('BUG-294: the main-failing item leaves the card once it leaves the list (the base went green)', () => {
     const red = records([view('mnt-1', [item.failing(), item.close()])])
     const a = reconcileMissions(emptyState(), result(), roots, 'live', mint, 1_000, red)
-    expect(open(a).map((c) => c.sourceKey)).toEqual(['mnt-1:main-failing:stp-3', 'mnt-1:close'])
+    expect(open(a).map((c) => c.sourceKey)).toEqual(['mnt-1:main-failing:stp-3'])
     // A later commit turned the branch green: the same mission now owes only the close.
     const green = records([view('mnt-1', [item.close()])])
     const b = reconcileMissions(a, result(), roots, 'live', mint, 2_000, green)
     expect(open(b).map((c) => c.sourceKey)).toEqual(['mnt-1:close'])
-    expect(b.cards.find((c) => c.sourceKey === 'mnt-1:main-failing:stp-3')).toMatchObject({
-      closedBy: 'source-resolved',
-      closedAt: 2_000
-    })
+    // ...and a mission that owes nothing at all closes the card.
+    const c = reconcileMissions(
+      b,
+      result(),
+      roots,
+      'live',
+      mint,
+      3_000,
+      records([view('mnt-1', [])])
+    )
+    expect(open(c)).toHaveLength(0)
+    expect(c.cards[0]).toMatchObject({ closedBy: 'source-resolved', closedAt: 3_000 })
   })
 
   it('a mission absent from the records under a queried root closes its cards', () => {

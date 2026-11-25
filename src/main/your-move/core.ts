@@ -24,6 +24,10 @@ export type CloseReason =
   | 'not-for-me'
   | 'already-handled'
   | 'source-resolved'
+  /** A newer judged turn of the same session replaced it (BUG-308). */
+  | 'superseded'
+  /** No activity for {@link EXPIRE_AFTER_DAYS} days (BUG-308). */
+  | 'expired'
   | 'archived'
   | 'folder-removed'
 export type DeliveryFailure = 'wake-timeout' | 'process-gone' | 'not-confirmed' | 'refused'
@@ -112,9 +116,17 @@ export interface StructuredDraft extends Omit<JudgeNew, 'confidence' | 'evidence
   lane: CardLane
   askKey?: YourMoveCard['askKey']
   mission?: MissionPointer
+  /**
+   * When the source itself last changed (a mission record's own change time). It is the only way
+   * re-filing an unchanged draft moves the card's clock: the pass that re-files it is not activity.
+   */
+  activityAt?: number
 }
 
 const DAY_MS = 86_400_000
+/** A live card with no activity for this long closes as expired (BUG-308). */
+export const EXPIRE_AFTER_DAYS = 7
+export const EXPIRE_AFTER_MS = EXPIRE_AFTER_DAYS * DAY_MS
 /** How long a closed card is kept for undo and audit; the store never grows past open + this. */
 export const CLOSED_WINDOW_DAYS = 7
 const PRUNE_AFTER_MS = CLOSED_WINDOW_DAYS * DAY_MS
@@ -266,6 +278,91 @@ export function closeCard(
   return closeWhere(s, (c) => c.id === cardId, reason, now)
 }
 
+/**
+ * A judged turn the operator typed in replaces what the earlier ones of its session left
+ * (BUG-308): the open judge cards close except the ones this turn filed or restated (`keep`).
+ * With `before`, only cards last filed before that moment close: a card newer than the
+ * operator's last words is still unanswered.
+ */
+export function supersedeJudgeCards(
+  s: YourMoveState,
+  sessionId: string,
+  keep: ReadonlySet<string>,
+  now: number,
+  before = Infinity
+): YourMoveState {
+  return closeWhere(
+    s,
+    (c) =>
+      c.source === 'judge' && c.sessionId === sessionId && !keep.has(c.id) && c.updatedAt < before,
+    'superseded',
+    now
+  )
+}
+
+/** Each session's newest batch of judge cards: a hidden mid-turn look never sets it. */
+function newestBatches(s: YourMoveState): Map<string, number> {
+  const newest = new Map<string, number>()
+  for (const c of s.cards) {
+    if (!isOpen(c) || c.source !== 'judge' || c.lane === 'mid-turn') continue
+    if (c.updatedAt > (newest.get(c.sessionId) ?? 0)) newest.set(c.sessionId, c.updatedAt)
+  }
+  return newest
+}
+
+const isOlderTurn = (c: YourMoveCard, newest: ReadonlyMap<string, number>): boolean =>
+  c.source === 'judge' && c.updatedAt < (newest.get(c.sessionId) ?? 0)
+
+/** The sessions holding a judge card from an earlier turn: the only ones worth a transcript read. */
+export function sessionsWithOlderTurns(s: YourMoveState): string[] {
+  const newest = newestBatches(s)
+  return [
+    ...new Set(s.cards.filter((c) => isOpen(c) && isOlderTurn(c, newest)).map((c) => c.sessionId))
+  ]
+}
+
+/**
+ * The same rule for cards already on disk. A turn leaves its cards with one `updatedAt` (filed
+ * and restated alike). A card older than its session's newest batch closes only when the operator
+ * typed after it (`repliedAt`); a session with no known reply keeps everything.
+ */
+export function supersedeOlderTurns(
+  s: YourMoveState,
+  repliedAt: ReadonlyMap<string, number>,
+  now: number
+): YourMoveState {
+  const newest = newestBatches(s)
+  return closeWhere(
+    s,
+    (c) => isOlderTurn(c, newest) && c.updatedAt < (repliedAt.get(c.sessionId) ?? -Infinity),
+    'superseded',
+    now
+  )
+}
+
+/**
+ * Live cards with no activity for {@link EXPIRE_AFTER_DAYS} days close; history keeps them. A
+ * mission card is not judged by its own clock: its activity is the mission record's, which only
+ * the mission source reads (`source-mission.ts` closes the card of a stale mission).
+ */
+export function expireStale(s: YourMoveState, now: number): YourMoveState {
+  return closeWhere(
+    s,
+    (c) => c.lane === 'live' && c.source !== 'mission' && now - c.updatedAt > EXPIRE_AFTER_MS,
+    'expired',
+    now
+  )
+}
+
+export function closeCards(
+  s: YourMoveState,
+  ids: ReadonlySet<string>,
+  reason: CloseReason,
+  now: number
+): YourMoveState {
+  return closeWhere(s, (c) => ids.has(c.id), reason, now)
+}
+
 function closeWhere(
   s: YourMoveState,
   pick: (c: YourMoveCard) => boolean,
@@ -305,28 +402,79 @@ function draftToCard(d: StructuredDraft, id: string, now: number): YourMoveCard 
   }
 }
 
-/** File a structured card, or refresh the open one with the same source and key (clock kept). */
+/** Whether two cards say the same thing to the operator. */
+function sameContent(a: YourMoveCard, b: YourMoveCard): boolean {
+  const said = (c: YourMoveCard): string =>
+    JSON.stringify([
+      c.kind,
+      c.ask,
+      c.askKey ?? null,
+      c.context ?? null,
+      c.blocks ?? null,
+      c.options ?? null,
+      c.recommended ?? null,
+      c.link ?? null
+    ])
+  return said(a) === said(b)
+}
+
+/**
+ * The open card `prev` as `draft` says it now: same id, same `openedAt`. `updatedAt` moves only
+ * when the card says something else, when the filing is a real event (`touch`), or when the
+ * source itself changed since: re-filing an unchanged card must not keep it alive forever.
+ */
+export function refreshCard(
+  prev: YourMoveCard,
+  draft: StructuredDraft,
+  now: number,
+  touch = false
+): YourMoveCard {
+  const fresh = draftToCard(draft, prev.id, prev.openedAt)
+  const moved = touch || !sameContent(prev, fresh)
+  return {
+    ...prev,
+    ...fresh,
+    openedAt: prev.openedAt,
+    updatedAt: moved ? now : Math.max(prev.updatedAt, Math.min(draft.activityAt ?? 0, now)),
+    delivery: prev.delivery,
+    cue: prev.cue
+  }
+}
+
+/** Did this very card expire, with nothing new at its source since? Then it is not filed again. */
+function stillExpired(s: YourMoveState, draft: StructuredDraft): boolean {
+  const asFiled = draftToCard(draft, '', 0)
+  return s.cards.some(
+    (c) =>
+      c.closedBy === 'expired' &&
+      c.source === draft.source &&
+      c.sourceKey === draft.sourceKey &&
+      sameContent(c, asFiled) &&
+      (draft.activityAt ?? 0) <= (c.closedAt ?? 0)
+  )
+}
+
+/**
+ * File a structured card, or refresh the open one with the same source and key (clock kept).
+ * `touch` says the filing is a real event (a session stopped again), not a pass re-reading what
+ * is still there.
+ */
 export function upsertStructured(
   s: YourMoveState,
   draft: StructuredDraft,
   mintId: () => string,
-  now: number
+  now: number,
+  opts: { touch?: boolean } = {}
 ): YourMoveState {
   const at = s.cards.findIndex(
     (c) => isOpen(c) && c.source === draft.source && c.sourceKey === draft.sourceKey
   )
-  if (at === -1) return { ...s, cards: [...s.cards, draftToCard(draft, mintId(), now)] }
-  const prev = s.cards[at]
-  const fresh = draftToCard(draft, prev.id, prev.openedAt)
-  const cards = s.cards.slice()
-  cards[at] = {
-    ...prev,
-    ...fresh,
-    openedAt: prev.openedAt,
-    updatedAt: now,
-    delivery: prev.delivery,
-    cue: prev.cue
+  if (at === -1) {
+    if (!opts.touch && stillExpired(s, draft)) return s
+    return { ...s, cards: [...s.cards, draftToCard(draft, mintId(), now)] }
   }
+  const cards = s.cards.slice()
+  cards[at] = refreshCard(cards[at], draft, now, opts.touch)
   return { ...s, cards }
 }
 
@@ -451,7 +599,10 @@ export function resetCursors(s: YourMoveState): YourMoveState {
   return { ...s, cursors: {} }
 }
 
-/** Closed cards older than the 7-day window go, and at most 1000 closed cards stay. Open cards never go. */
+/**
+ * Closed cards older than the 7-day window go, and at most 1000 closed cards stay. This drops no
+ * open card: what closes an idle one is {@link expireStale}.
+ */
 export function pruneClosed(s: YourMoveState, now: number): YourMoveState {
   const keep = s.cards.filter((c) => isOpen(c) || now - (c.closedAt ?? 0) <= PRUNE_AFTER_MS)
   const closed = keep.filter((c) => !isOpen(c))

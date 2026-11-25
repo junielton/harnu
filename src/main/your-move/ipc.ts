@@ -18,8 +18,9 @@ import { addTaskEventObserver, getTaskStates } from '../detect/task-state-hub'
 import { resolveClaudePath } from '../claude-cli'
 import { isFolderDenied } from '../mcp/permission-core'
 import { setMissionListObserver } from '../mission-ipc'
-import { setPtyExitObserver } from '../pty'
+import { setPtyExitObserver, spawnOriginForSession } from '../pty'
 import { getSessionArchive } from '../session-archive-core'
+import { readShelvedForUpdate, SHELVED_FILE } from '../gc/shelve-store'
 import { onFolderRemoved, readUserProjects } from '../user-projects'
 import {
   cardsPage,
@@ -30,8 +31,10 @@ import {
   type CardView,
   type YourMoveCard
 } from './core'
+import { companionAuditFiles, createAgentOrigins } from './agent-origin'
 import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
+import { cleanupQueue, folderPresence, shelvedAware, sweepStaleCards } from './hygiene'
 import { createTranscriptLocator } from './locate'
 import { closeIneligibleCards, createOperatorGate } from './operator'
 import {
@@ -46,7 +49,12 @@ import {
 import { openYourMoveStore, setYourMoveStore, type YourMoveStore } from './store'
 import { buildSegment } from './segment'
 import { createGateWatch, watchArchive, watchFolderRemoval } from './source-gate'
-import { reconcileMissions, selectForReconcile } from './source-mission'
+import {
+  readRecordViews,
+  reconcileMissions,
+  selectForReconcile,
+  setMissionLeaderCheck
+} from './source-mission'
 import { readFrom } from './transcript'
 import {
   SWEEP_MS,
@@ -60,6 +68,7 @@ const STATE_FILE = 'your-move.json'
 const PREFS_FILE = 'your-move-prefs.json'
 const INSPECTIONS_FILE = 'your-move-inspections.jsonl'
 const LABELS_FILE = 'your-move-labels.jsonl'
+const AGENTS_FILE = 'your-move-agent-sessions.json'
 const EMPTY_DIR = path.join('your-move', 'empty')
 const NEWEST_CLOSED = 200
 /** Closed cards past their window are dropped at most this often while the app stays open. */
@@ -129,9 +138,6 @@ async function transcriptHasReply(file: string, text: string): Promise<boolean> 
   return buildSegment(res.lines).some((e) => e.tag === 'ASSISTANT' && e.text.includes(wanted))
 }
 
-/** Whether a session's transcript holds an operator entry, remembered across asks (BUG-300). */
-const operatorGate = createOperatorGate()
-
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 let runner: JudgeRunner | null = null
@@ -144,6 +150,21 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   const inspectionsPath = path.join(userData, INSPECTIONS_FILE)
   const labelsPath = path.join(userData, LABELS_FILE)
   const emptyDir = path.join(userData, EMPTY_DIR)
+
+  // A dispatched session's launch prompt reads as a human entry (BUG-308): who Harnu spawned for
+  // an agent is written down, and the gate asks. Remembered across restarts.
+  const origins = createAgentOrigins({
+    file: path.join(userData, AGENTS_FILE),
+    auditFiles: companionAuditFiles(userData),
+    live: (id) => spawnOriginForSession(id),
+    now: () => Date.now()
+  })
+  /** Whether a session's transcript holds an operator entry, remembered across asks (BUG-300). */
+  const operatorGate = createOperatorGate({ agentSpawned: (id) => origins.isAgentSpawned(id) })
+  // A shelved worktree has no folder on purpose, and its cards stay (BUG-308).
+  const presence = shelvedAware(folderPresence, () =>
+    readShelvedForUpdate(path.join(userData, SHELVED_FILE))
+  )
 
   let prefs: YourMovePrefs | null = null
   let denyFolders: string[] = []
@@ -202,6 +223,8 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   const mode = (): YourMoveMode => (prefs ? effectiveMode(prefs) : 'off')
   const eligible = async (sessionId: string, folder: string): Promise<boolean> => {
     await refreshDeny()
+    // A folder that is gone files nothing (BUG-308): its card could not be acted on.
+    if ((await presence(folder)) === 'missing') return false
     return (
       !isFolderDenied(folder, denyFolders) &&
       !(getSessionArchive()?.has(sessionId) ?? false) &&
@@ -299,6 +322,16 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         states: getTaskStates,
         now: () => Date.now()
       })
+      // What is known about the world a card points at (BUG-308).
+      const world = {
+        store,
+        lookup: (id: string) => transcripts.lookup(id),
+        folder: presence,
+        now: () => Date.now()
+      }
+      const leaderGone = async (id: string): Promise<boolean> =>
+        (await transcripts.lookup(id)).state === 'missing'
+      setMissionLeaderCheck(leaderGone)
       // One pass at start: judge cards filed before the rule existed, for sessions the operator
       // never typed in, are closed. Idempotent, and later cards of those sessions are never filed.
       void closeIneligibleCards({
@@ -311,6 +344,27 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
           if (n > 0) console.log(`[your-move] closed ${n} cards of sessions with no operator entry`)
         })
         .catch((e) => console.error(`[your-move] cleanup failed: ${(e as Error).message}`))
+        // Then the queue rules on what is already on disk: gone, superseded, expired, missions.
+        .then(() =>
+          cleanupQueue({
+            ...world,
+            readViews: (roots) => readRecordViews(roots, { leaderGone }),
+            lastReplyAt: async (id) => {
+              const found = await transcripts.lookup(id)
+              return found.state === 'found' ? operatorGate.lastReplyAt(found.path) : null
+            },
+            folderOff: (root) => (prefs ? isFolderDisabled(prefs, root) : false)
+          })
+        )
+        .then((r) => {
+          if (r.gone + r.superseded + r.expired + r.mission > 0) {
+            console.log(
+              `[your-move] queue cleanup closed: ${r.gone} gone, ${r.superseded} superseded, ` +
+                `${r.expired} expired, ${r.mission} mission`
+            )
+          }
+        })
+        .catch((e) => console.error(`[your-move] queue cleanup failed: ${(e as Error).message}`))
       const gate = createGateWatch({
         store,
         mode,
@@ -336,10 +390,12 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         void gate.tick()
         // The store keeps closed cards only for their window (BUG-277): a long uptime must not
         // let them pile up between launches. Riding this timer keeps it one timer, not two.
+        // The same beat closes idle and gone open cards (BUG-308).
         if (Date.now() - lastPrune >= PRUNE_EVERY_MS) {
           lastPrune = Date.now()
-          store
-            .transact((s) => ({ next: pruneClosed(s, Date.now()), result: null }))
+          sweepStaleCards(world)
+            .catch((e) => console.error(`[your-move] stale sweep failed: ${(e as Error).message}`))
+            .then(() => store.transact((s) => ({ next: pruneClosed(s, Date.now()), result: null })))
             .catch((e) => console.error(`[your-move] prune failed: ${(e as Error).message}`))
         }
       }, SWEEP_MS)
@@ -348,7 +404,11 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         // The path the hook carried is the one place a session's transcript is named for certain:
         // remember it, and nothing ever lists a directory to find this session. A subagent's
         // event names the subagent's own file, not the session's.
-        if (ev.agentId === undefined) transcripts.note(ev.sessionId, ev.payload?.transcriptPath)
+        if (ev.agentId === undefined) {
+          transcripts.note(ev.sessionId, ev.payload?.transcriptPath)
+          // The spawn marker is gone at the next restart: write it down while it is there.
+          origins.note(ev.sessionId)
+        }
         triggers.onTaskEvent(ev)
         system.onTaskEvent(ev)
         gate.onTaskEvent(ev)
@@ -399,6 +459,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         unobserve()
         setPtyExitObserver(null)
         setMissionListObserver(null)
+        setMissionLeaderCheck(undefined)
         clearInterval(sweepTimer)
         if (archiveRetry) clearTimeout(archiveRetry)
         stopArchive?.()

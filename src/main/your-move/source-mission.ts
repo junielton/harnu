@@ -1,6 +1,10 @@
 /**
  * The mission source: what a mission still owes the operator, as cards.
  *
+ * One card per mission at most (BUG-308): the first item of its waiting list, refreshed in place
+ * as that changes, and only while the mission record itself changed in the last 7 days and its
+ * leader session still has a transcript.
+ *
  * A mission card is a pointer. It never writes to the mission: the operator's doors stay where
  * they are, and the card closes when the record stops owing the item. It reuses the list the
  * renderer already polls, so no extra GitHub budget is spent.
@@ -9,13 +13,19 @@
  */
 
 import type { MissionListResult } from '../mission-ipc'
+import { promises as fs } from 'node:fs'
+import * as path from 'node:path'
 import { repoRoot } from '../data-dir'
 import { leaderOf as leaderOfRecord } from '../missions/guard'
 import { reportUnreadableMissionFiles } from '../missions/store'
 import type { MissionYouItem, WaitingItemV4 } from '../missions/waiting'
 import type { MissionDetail } from '../missions/verbs-read'
+import type { MissionRecordView } from '../missions/record-store'
 import {
-  reconcileSource,
+  closeCards,
+  EXPIRE_AFTER_MS,
+  refreshCard,
+  upsertStructured,
   type CardKind,
   type CardLane,
   type StructuredDraft,
@@ -28,7 +38,15 @@ export interface DraftView {
   root: string
   mission: { id: string; owner: { sessionId: string } }
   you: readonly WaitingItemV4[]
+  /** When the mission record itself last changed; absent when it could not be read (kept active). */
+  changedAt?: number
+  /** The leader session's transcript is gone: its card would open nothing. */
+  leaderGone?: boolean
 }
+
+/** A mission nobody touched in the expiry window files nothing. */
+const isStale = (changedAt: number | undefined, now: number): boolean =>
+  changedAt !== undefined && now - changedAt > EXPIRE_AFTER_MS
 
 /** The card kind and the key suffix of one owed item; null for the ones that file no card. */
 function mapping(item: WaitingItemV4): { kind: CardKind; suffix: string } {
@@ -70,6 +88,7 @@ export function missionDrafts(view: DraftView, lane: CardLane): StructuredDraft[
       source: 'mission',
       sourceKey: `${view.mission.id}:${m.suffix}`,
       lane,
+      ...(view.changedAt !== undefined ? { activityAt: view.changedAt } : {}),
       // `MissionPointer.item` (core.ts) is typed as a v3 item; nothing reads it, so a v4 item rides along.
       mission: {
         missionId: view.mission.id,
@@ -81,9 +100,77 @@ export function missionDrafts(view: DraftView, lane: CardLane): StructuredDraft[
   return drafts
 }
 
+const openMissionCards = (s: YourMoveState, missionId: string): YourMoveCard[] =>
+  s.cards.filter(
+    (c) => c.closedAt === undefined && c.source === 'mission' && c.mission?.missionId === missionId
+  )
+
+/** The card of a mission that survives: the one already on `key`, else the oldest. */
+function keeperOf(cards: readonly YourMoveCard[], key?: string): YourMoveCard | undefined {
+  const oldest = [...cards].sort((a, b) => a.openedAt - b.openedAt)
+  return oldest.find((c) => c.sourceKey === key) ?? oldest[0]
+}
+
+/**
+ * Leave the mission with the one card `view` owes: its next item, in the card it already has.
+ * With `onlyExisting` (the startup cleanup) nothing is filed and a card keeps its lane.
+ */
+function fitMission(
+  s: YourMoveState,
+  view: DraftView,
+  lane: CardLane,
+  mintId: () => string,
+  now: number,
+  onlyExisting: boolean
+): YourMoveState {
+  const missionId = view.mission.id
+  const stale = isStale(view.changedAt, now)
+  const draft = stale || view.leaderGone ? undefined : missionDrafts(view, lane)[0]
+  const open = openMissionCards(s, missionId)
+  if (!draft) {
+    return closeCards(s, new Set(open.map((c) => c.id)), stale ? 'expired' : 'source-resolved', now)
+  }
+  const keeper = keeperOf(open, draft.sourceKey)
+  if (!keeper) return onlyExisting ? s : upsertStructured(s, draft, mintId, now)
+  const next = closeCards(
+    s,
+    new Set(open.filter((c) => c.id !== keeper.id).map((c) => c.id)),
+    'source-resolved',
+    now
+  )
+  const fitted = refreshCard(keeper, onlyExisting ? { ...draft, lane: keeper.lane } : draft, now)
+  return { ...next, cards: next.cards.map((c) => (c.id === keeper.id ? fitted : c)) }
+}
+
+/**
+ * One open card per mission, for missions this pass read nothing about (their records are not
+ * loaded yet, or a file cannot be read): the oldest stays. A later pass puts the next item on it.
+ * Roots the pass does not follow (a folder switched off) are left alone.
+ */
+function oneCardPerMission(
+  s: YourMoveState,
+  roots: ReadonlySet<string>,
+  now: number
+): YourMoveState {
+  const byMission = new Map<string, YourMoveCard[]>()
+  for (const c of s.cards) {
+    if (c.closedAt !== undefined || c.source !== 'mission' || !c.mission) continue
+    if (!roots.has(c.mission.root)) continue
+    const list = byMission.get(c.mission.missionId)
+    if (list) list.push(c)
+    else byMission.set(c.mission.missionId, [c])
+  }
+  const drop = new Set<string>()
+  for (const cards of byMission.values()) {
+    const keeper = keeperOf(cards)
+    for (const c of cards) if (c !== keeper) drop.add(c.id)
+  }
+  return closeCards(s, drop, 'source-resolved', now)
+}
+
 /**
  * Make the open mission cards match what the missions owe now. A mission that is absent from
- * the result under a queried root was ended: its cards close. Nothing is closed by absence
+ * the result under a queried root was ended: its card closes. Nothing is closed by absence
  * while any mission file failed to parse, because the missing mission may be that very file.
  */
 export function reconcileMissions(
@@ -93,7 +180,8 @@ export function reconcileMissions(
   lane: CardLane,
   mintId: () => string,
   now: number,
-  explicit?: RecordViews
+  explicit?: RecordViews,
+  opts: { onlyExisting?: boolean } = {}
 ): YourMoveState {
   let next = s
   // The records are read after this pass and used by the next one (the list poll is the clock).
@@ -111,63 +199,26 @@ export function reconcileMissions(
   const unreadable = result.unreadable.length > 0 || [...records.values()].some((r) => r.unreadable)
   for (const v of views) {
     present.add(v.mission.id)
-    next = reconcileSource(
-      next,
-      { source: 'mission', missionIds: [v.mission.id] },
-      missionDrafts(v, lane),
-      mintId,
-      now
-    )
+    next = fitMission(next, v, lane, mintId, now, opts.onlyExisting ?? false)
   }
-  if (unreadable) return dedupeOpenMissionCards(next, now)
+  if (unreadable) return oneCardPerMission(next, asked, now)
   // A root whose records are not read yet (the first poll after a start) says nothing about a v4 record: its
   // cards are not in the list's v3 views, so closing "what is absent" would close them, and the next poll would
   // file them again. Nothing closes by absence there until the records have been read.
   const roots = new Set(queriedRoots.filter((r) => records.has(r)))
-  const gone = [
-    ...new Set(
-      next.cards
-        .filter(
-          (c) =>
-            c.closedAt === undefined &&
-            c.source === 'mission' &&
-            c.mission !== undefined &&
-            roots.has(c.mission.root) &&
-            !present.has(c.mission.missionId)
-        )
-        .map((c) => (c.mission as { missionId: string }).missionId)
-    )
-  ]
-  if (gone.length === 0) return dedupeOpenMissionCards(next, now)
-  return dedupeOpenMissionCards(
-    reconcileSource(next, { source: 'mission', missionIds: gone }, [], mintId, now),
-    now
+  const gone = new Set(
+    next.cards
+      .filter(
+        (c) =>
+          c.closedAt === undefined &&
+          c.source === 'mission' &&
+          c.mission !== undefined &&
+          roots.has(c.mission.root) &&
+          !present.has(c.mission.missionId)
+      )
+      .map((c) => c.id)
   )
-}
-
-/**
- * One open card per key: when an earlier build left two open mission cards for one `sourceKey`, the older stays
- * and the others close as resolved. Nothing else is touched, so an upgrade closes and re-files nothing.
- */
-function dedupeOpenMissionCards(s: YourMoveState, now: number): YourMoveState {
-  const seen = new Map<string, YourMoveCard>()
-  const drop = new Set<string>()
-  for (const c of s.cards) {
-    if (c.closedAt !== undefined || c.source !== 'mission' || c.sourceKey === undefined) continue
-    const first = seen.get(c.sourceKey)
-    if (first === undefined) seen.set(c.sourceKey, c)
-    else if (c.openedAt < first.openedAt) {
-      drop.add(first.id)
-      seen.set(c.sourceKey, c)
-    } else drop.add(c.id)
-  }
-  if (drop.size === 0) return s
-  return {
-    ...s,
-    cards: s.cards.map((c) =>
-      drop.has(c.id) ? { ...c, closedAt: now, closedBy: 'source-resolved' as const } : c
-    )
-  }
+  return oneCardPerMission(closeCards(next, gone, 'source-resolved', now), asked, now)
 }
 
 /**
@@ -215,36 +266,89 @@ async function defaultReadDetail(folder: string, missionId: string): Promise<Det
   return reply.state === 'mission' ? reply.detail : null
 }
 
+export interface ReadViewsOptions {
+  readDetail?: (folder: string, missionId: string) => Promise<DetailRead>
+  /** Whether the leader session's transcript is gone. Only a sure answer is `true`. */
+  leaderGone?: (sessionId: string) => Promise<boolean>
+  now?: number
+}
+
+/** The leader check of the running app, for the reads the list poll triggers. */
+let appLeaderGone: ((sessionId: string) => Promise<boolean>) | undefined
+export function setMissionLeaderCheck(
+  fn: ((sessionId: string) => Promise<boolean>) | undefined
+): void {
+  appLeaderGone = fn
+}
+
+/**
+ * When the mission record last changed on disk. A campaign read from v3 files changes with its
+ * chapter missions too. Undefined when nothing could be read: the mission then counts as active.
+ */
+async function changedAtOf(view: MissionRecordView): Promise<number | undefined> {
+  const files = [view.file]
+  if (view.source === 'v3-campaign') {
+    const dir = path.join(path.dirname(path.dirname(view.file)), 'missions')
+    const names = await fs.readdir(dir).catch(() => [] as string[])
+    for (const name of names) {
+      if (view.sourceIds.some((id) => name.startsWith(`${id}-`))) files.push(path.join(dir, name))
+    }
+  }
+  const times = await Promise.all(
+    files.map((f) =>
+      fs.stat(f).then(
+        (st) => st.mtimeMs,
+        () => undefined
+      )
+    )
+  )
+  const known = times.filter((t): t is number => t !== undefined)
+  return known.length > 0 ? Math.max(...known) : undefined
+}
+
 /**
  * Missions v4 S-23 — what each repo's open missions owe, read through the record store (a v4 record, or a
  * v3 file converted in memory) and worded once by the waiting list. Reads only. A mission nobody leads any
- * more files nothing (a card needs a session to open).
+ * more files nothing (a card needs a session to open), and a stale mission or one whose leader is gone
+ * owes nothing, so its detail (and the facts behind it) is not even read (BUG-308).
  */
 export async function readRecordViews(
   roots: readonly string[],
-  opts: { readDetail?: (folder: string, missionId: string) => Promise<DetailRead> } = {}
+  opts: ReadViewsOptions = {}
 ): Promise<RecordViews> {
   const readDetail = opts.readDetail ?? defaultReadDetail
+  const leaderGone = opts.leaderGone ?? appLeaderGone
+  const now = opts.now ?? Date.now()
   const { listMissionRecords } = await import('../missions/record-store')
   const out = new Map<string, RecordRead>()
   const unreadableFiles: string[] = []
   for (const root of new Set(roots.map((r) => repoRoot(r)))) {
     const listed = await listMissionRecords(root)
     const views: DraftView[] = []
-    for (const { record, sourceIds } of listed.records) {
+    for (const found of listed.records) {
+      const { record, sourceIds } = found
       if (record.status !== 'open') continue
       // Who leads is the record's own rule (`leaderOf`, the one hibernation uses): the session with an open
       // `leads` entry. A mission nobody leads files nothing: a session that already left is not handed a
       // card. A v3 record's owner leads it until it is closed (the conversion writes that entry).
       const leader = leaderOfRecord(record)
       if (!leader) continue
-      const detail = await readDetail(root, sourceIds[0] ?? record.id)
-      if (!detail || !detail.ok) continue
-      views.push({
+      const view = {
         root,
         mission: { id: record.id, owner: { sessionId: leader } },
-        you: detail.waiting.items
-      })
+        changedAt: await changedAtOf(found)
+      }
+      if (isStale(view.changedAt, now)) {
+        views.push({ ...view, you: [] })
+        continue
+      }
+      if (leaderGone && (await leaderGone(leader).catch(() => false))) {
+        views.push({ ...view, you: [], leaderGone: true })
+        continue
+      }
+      const detail = await readDetail(root, sourceIds[0] ?? record.id)
+      if (!detail || !detail.ok) continue
+      views.push({ ...view, you: detail.waiting.items })
     }
     out.set(root, { views, unreadable: listed.unreadable.length > 0 })
     unreadableFiles.push(...listed.unreadable)
@@ -268,7 +372,7 @@ let again = false
  */
 export function refreshRecordViews(
   roots: readonly string[],
-  opts: { readDetail?: (folder: string, missionId: string) => Promise<DetailRead> } = {}
+  opts: ReadViewsOptions = {}
 ): Promise<void> {
   latestRoots = roots
   if (refreshing) {

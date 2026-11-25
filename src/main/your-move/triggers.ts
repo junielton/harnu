@@ -377,10 +377,14 @@ export function createSystemCards(deps: SystemCardDeps): {
     pending.add(p)
   }
 
-  /** Files the card, or refreshes the open one for this session: the clock keeps running. */
+  /**
+   * Files the card, or refreshes the open one for this session: `openedAt` keeps running. A
+   * session that stopped or could not be checked again is real activity, so the card does not
+   * expire under it (BUG-308).
+   */
   const file = (draft: StructuredDraft): Promise<void> =>
     deps.store.transact((s) => ({
-      next: upsertStructured(s, draft, deps.mintId, deps.now()),
+      next: upsertStructured(s, draft, deps.mintId, deps.now(), { touch: true }),
       result: undefined
     }))
 

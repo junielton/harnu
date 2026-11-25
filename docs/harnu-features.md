@@ -1,4 +1,4 @@
-<!-- harnu-features v161 (2026-11-24) -->
+<!-- harnu-features v162 (2026-11-25) -->
 
 # You are running inside Harnu
 
@@ -290,8 +290,11 @@ and `recommended` serve a `decide`: a `recommended` that is not one of `options`
 the card is still filed. Pass your OWN `sessionId`. Runs free. ACK `{ ok, op, cardId, refreshed }`: pass that
 `cardId` back to refresh the same card (a new `ask`, `updatedAt` moves, `openedAt` and the clock
 never do); without it a new card is filed and the judge reconciles duplicates. **No verb
-closes a card the operator can still see**: one leaves when the operator deals with it, or when its source resolves (a
-mission card closes when the mission stops owing the item), never at an agent's word. For the
+closes a card the operator can still see**: one leaves when the operator deals with it, when its source resolves, or
+by Harnu's own rules, never at an agent's word. Those rules: a mission has ONE card (its `next` item; none after 7 days
+without a record change), a session's judge cards are replaced only by a later judged turn the operator typed in (agent work never closes them), any other live card idle for 7 days
+expires (so a `cardId` that old is `CARD_NOT_FOUND`: file a new one), and a card whose folder or session transcript is
+gone closes. For the
 same reason `archive_session` and `remove_folder` refuse (`OPEN_CARDS`) a session or folder that holds an open card in the operator's queue; an Observe-mode card is in no queue and does not block. Refusals, none of them worth a retry:
 `YOUR_MOVE_OFF` (the operator's Your move setting is Off, the default, or off for that folder;
 nothing was filed, say it in your reply instead), `YOUR_MOVE_RATE_LIMIT` (30 calls per session
@@ -300,7 +303,9 @@ session's), `YOUR_MOVE_UNAVAILABLE` and `YOUR_MOVE_WRITE_FAILED` (nothing change
 and the skill improve a card; they are not what guarantees one.** With Your move on, Harnu
 itself inspects every turn that stops on its own, with two detector runs and an enrichment call,
 and files what only the operator can unblock whether or not you call the verb or the skill is
-switched on. `harnu:your-move` (a bundled skill, off until switched on) teaches the end-of-turn
+switched on. **The one exception: a session an agent launched is not inspected until the operator types in it** (its
+launch prompt does not count). If you are one, nothing is filed for you automatically: call `your_move`, or tell the
+session that launched you. `harnu:your-move` (a bundled skill, off until switched on) teaches the end-of-turn
 test, "if the operator never comes back, does this still get done?", the five kinds and how to
 write a card that stands alone. In Observe mode a card is stored for the operator's debug list
 in **Settings → Your move**; until the queue ships in the sidebar, a Live card does not reach it

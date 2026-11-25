@@ -307,7 +307,7 @@ describe('readers use the v4 view', () => {
         .map((c) => ({ kind: c.kind, ask: c.ask, sessionId: c.sessionId, key: c.sourceKey }))
     const NONE = { unreadable: [] }
 
-    it('a v4 record files a card per thing it owes, in the one wording, for its leader', async () => {
+    it('a v4 record files one card, for the next thing it owes, in the one wording, for its leader', async () => {
       seedV4(
         v4Record({
           steps: [{ ...v4Record().steps[0], blockers: [blocker] }],
@@ -325,9 +325,10 @@ describe('readers use the v4 view', () => {
       const views = await readRecordViews([repo], { readDetail })
       const s = reconcileMissions(emptyState(), NONE, [repo], 'live', mint, 1, views)
       const cards = open(s)
-      expect(cards.find((c) => c.kind === 'do')?.ask).toBe('Ask the vendor for the export')
-      expect(cards.some((c) => c.kind === 'go_no_go' && c.key?.includes('attach:atr-1'))).toBe(true)
-      expect(new Set(cards.map((c) => c.sessionId))).toEqual(new Set([LEADER]))
+      // BUG-308: the blocker is next; the criterion and the attach request wait their turn.
+      expect(cards.map((c) => [c.kind, c.ask, c.sessionId])).toEqual([
+        ['do', 'Ask the vendor for the export', LEADER]
+      ])
     })
 
     it('a v3 file files its cards from the records too, in the waiting list’s one wording, for its owner', async () => {
@@ -420,7 +421,7 @@ describe('readers use the v4 view', () => {
       expect((await readRecordViews([repo], { readDetail })).get(repo)?.views).toEqual([])
     })
 
-    it("a v3 blocker keeps main's card key, and clearing a neighbour never closes and re-files it", async () => {
+    it("a v3 blocker keeps main's card key, and clearing the one shown moves the same card to the next", async () => {
       const both = [v3Blocker('Waiting on the vendor key'), v3Blocker('Merge the pull request')]
       seedV3(v3Mission({ blockers: both as never }))
       let s = reconcileMissions(
@@ -437,10 +438,10 @@ describe('readers use the v4 view', () => {
           .filter((c) => c.closedAt === undefined)
           .map((c) => c.sourceKey!)
           .sort()
-      expect(keys()).toHaveLength(2)
-      const stepCard = s.cards.find((c) => c.sourceKey?.endsWith(both[1].reason as string))!
-      expect(stepCard.sourceKey).toBe(`mnt-0a1b2c3d:blocker:${stepCard.ask}`)
-      // The neighbour is cleared: the file now holds one blocker, and the other one's key does not move.
+      // BUG-308: one card per mission, for the first blocker.
+      expect(keys()).toEqual([`mnt-0a1b2c3d:blocker:${both[0].reason}`])
+      const shown = s.cards[0]
+      // The first one is cleared: the file now holds one blocker, renumbered, and still keyed by its words.
       rmSync(v3MissionsDir(repo), { recursive: true, force: true })
       seedV3(v3Mission({ blockers: [both[1]] as never }))
       s = reconcileMissions(
@@ -452,9 +453,9 @@ describe('readers use the v4 view', () => {
         2,
         await readRecordViews([repo], { readDetail })
       )
-      expect(s.cards.find((c) => c.id === stepCard.id)!.closedAt).toBeUndefined()
-      expect(s.cards.filter((c) => c.sourceKey === stepCard.sourceKey)).toHaveLength(1)
-      expect(keys()).toEqual([stepCard.sourceKey])
+      expect(keys()).toEqual([`mnt-0a1b2c3d:blocker:${both[1].reason}`])
+      expect(s.cards).toHaveLength(1)
+      expect(s.cards[0]).toMatchObject({ id: shown.id, openedAt: shown.openedAt })
     })
 
     it('only the roots of the latest query are remembered, even when two queries overlap', async () => {
