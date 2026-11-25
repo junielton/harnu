@@ -235,6 +235,59 @@ describe('sidebar row states (S-2)', () => {
     expect(accent.declarations['background-color']).toBe('var(--color-accent)')
   })
 
+  it('a focusable element inside a row draws the row bar, not a box', async () => {
+    const { w, store } = await boot()
+    const row = store.folders
+      .find((f) => f.path === APP)!
+      .sessions.find((x) => x.sessionId === 'main-1')!
+    row.agents = [{ agentId: 'agent-1', status: 'running', agentType: 'Explore' }] as never
+    await nextTick()
+
+    // The subagent chip is a focus stop of its own, inside the session row that draws the bar.
+    const chip = w.get('[data-session-id="main-1"] [role="button"][tabindex="0"]')
+    expect(chip.element.closest('[data-row-bar]')?.getAttribute('data-row-bar')).toBe('session')
+
+    // Its keyboard focus is drawn by the same rule as the row's own.
+    for (const type of ['header', 'checkout', 'session'] as const) {
+      const rule = ruleFor(`[data-row-bar='${type}']:has([tabindex]:focus-visible)::before`)
+      expect(rule.selectors).toContain(`${FOCUS_SELECTOR[type]}::before`)
+      expect(rule.declarations.width).toBe('3px')
+    }
+    const accent = ruleFor(
+      "[data-row-bar='session'][data-selected='true']:has([tabindex]:focus-visible)::before"
+    )
+    expect(accent.selectors).toContain(
+      "[data-row-bar='header'][data-current='true']:has([tabindex]:focus-visible)::before"
+    )
+    expect(accent.declarations['background-color']).toBe('var(--color-accent)')
+
+    // No box on the element: its text lights up instead. Forced colors keeps an outline.
+    const own = rules.find(
+      (r) =>
+        r.selectors.includes('[data-row-bar] [tabindex]:focus-visible') &&
+        r.declarations.outline === 'none'
+    )
+    expect(own, 'the element draws no outline').toBeDefined()
+    expect(own!.declarations.color).toBeUndefined()
+    const lit = rules.find(
+      (r) =>
+        r.selectors.includes('[data-row-bar] [tabindex]:focus-visible') &&
+        r.declarations.color === 'var(--color-text)'
+    )
+    expect(lit, 'the element lights up').toBeDefined()
+    const forced = css.slice(css.indexOf('@media (forced-colors: active)'))
+    expect(forced).toContain('[data-row-bar]:has([tabindex]:focus-visible)')
+  })
+
+  it('the value slot chevron has no hover fill', async () => {
+    const { w } = await boot()
+    const chevrons = w.findAll('[data-value-chevron]')
+    expect(chevrons.length).toBeGreaterThan(0)
+    for (const chevron of chevrons) {
+      expect(chevron.classes().filter((c) => /^(?:[a-z-]+:)*bg-/.test(c))).toEqual([])
+    }
+  })
+
   it('moving the cursor leaves one bar, not two', async () => {
     const { w, store } = await boot()
     const clicked = w.get(`[data-checkout-path="${WT_FEAT}"]`).element as HTMLElement

@@ -16,6 +16,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 - A checkout with something happening in it now has a thin coloured bar down its left edge, covering its row and its sessions: dim green while an agent works there, amber when a session needs you, red when one failed. Idle and finished checkouts show nothing, and neighbouring checkouts never share a bar.
 
+### Fixed
+
+- Worktrees with no session no longer disappear from the sidebar after the window reloads.
+
 ### Changed
 
 - Hover, selection and keyboard focus in the sidebar now show a bar on the left and brighten the row label, without filling the row or moving its contents.

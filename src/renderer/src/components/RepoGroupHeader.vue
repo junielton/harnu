@@ -52,6 +52,9 @@ const count = computed(() => {
     : sessions.sidebarSessionRows(props.tree.primary).rows.length || undefined
 })
 
+/** A non-git folder with nothing under it cannot fold; a repo always has checkouts. */
+const foldable = computed(() => props.tree.git || sessions.checkoutHasRows(props.tree.primary))
+
 /** The hottest session of any checkout: needs input, then failed, then working. */
 const ringStates = ['idle', 'working', 'errored', 'needs-input'] as const
 const ring = computed(
@@ -167,7 +170,7 @@ function preview(event: MouseEvent): void {
     </button>
     <SidebarValueSlot
       :count="count"
-      :open="tree.open"
+      :open="foldable ? tree.open : undefined"
       :label="
         $t(tree.open ? 'sidebar.tree.foldFolder' : 'sidebar.tree.openFolder', { name: tree.label })
       "

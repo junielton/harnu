@@ -3,6 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import type { FolderEntry } from '../src/preload'
 import { encodePathToSlug } from '../src/renderer/src/lib/folder-slug'
+import { createWorktreeTracker } from '../src/main/worktree-tracker'
 
 // Same window-stub harness as tests/sessions-liveness.test.ts, plus the T388
 // worktree channels (sidebar-liveness U4b).
@@ -247,5 +248,55 @@ describe('sidebar — always-listed worktrees (U4b)', () => {
     await store.init()
     await settle()
     expect(lastTrack().map((r) => r.repoId)).toEqual(['/p/.git', '/a/.git'])
+  })
+})
+
+describe('a renderer reload against a tracker that is still running (S-1 delta 3, F-5)', () => {
+  afterEach(() => {
+    delete (globalThis as unknown as { window?: unknown }).window
+  })
+
+  it('a sessionless worktree and its idle row come back', async () => {
+    disk = [
+      {
+        ...folder('/r', [
+          session({ sessionId: 'main-1', projectPath: '/r', fullPath: '/x.jsonl' })
+        ]),
+        repoId: '/r/.git',
+        isMainWorktree: true,
+        gitBranch: 'main'
+      }
+    ]
+    // The main process outlives the page: one tracker, wired to whichever page is up.
+    const tracker = createWorktreeTracker(
+      {
+        listWorktrees: async () => [
+          { path: '/r', branch: 'main' },
+          { path: '/r-wt', branch: 'feat' }
+        ],
+        canonicalize: async (p) => p,
+        watch: () => ({ close: () => {} }),
+        stat: async () => null,
+        onFocus: () => () => {},
+        now: () => 0
+      },
+      (repoId, entries) => cb.onWorktreesChanged?.({ repoId, entries })
+    )
+    const idleAfterBoot = async (): Promise<string[]> => {
+      setActivePinia(createPinia())
+      installWindow()
+      ;(window.api as { worktreesTrack: unknown }).worktreesTrack = async (
+        ...args: Parameters<typeof tracker.track>
+      ) => tracker.track(...args)
+      const store = useSessionsStore()
+      await store.init()
+      await settle()
+      await flush()
+      return store.sidebarTree.flatMap((node) => node.idle.map((worktree) => worktree.path))
+    }
+
+    expect(await idleAfterBoot()).toEqual(['/r-wt'])
+    expect(await idleAfterBoot()).toEqual(['/r-wt'])
+    tracker.close()
   })
 })

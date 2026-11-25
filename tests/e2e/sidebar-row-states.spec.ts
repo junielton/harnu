@@ -102,6 +102,32 @@ function seedWorld(): World {
   transcript(feat, SESSION_IDS.feat, 'Rate limit middleware', 'PROJ-231-rate-limit')
   transcript(plain, SESSION_IDS.plain, 'Hero section copy', '')
 
+  // One running subagent under the first session: its chip and its row are in the tree.
+  const subagents = join(
+    home,
+    '.claude',
+    'projects',
+    repo.replace(/[^a-zA-Z0-9]/g, '-'),
+    SESSION_IDS.main,
+    'subagents'
+  )
+  mkdirSync(subagents, { recursive: true })
+  writeFileSync(
+    join(subagents, 'agent-a1.jsonl'),
+    JSON.stringify({
+      agentId: 'a1',
+      sessionId: SESSION_IDS.main,
+      cwd: repo,
+      type: 'user',
+      timestamp: addedAt,
+      message: { role: 'user', content: 'Check the limiter' }
+    }) + '\n'
+  )
+  writeFileSync(
+    join(subagents, 'agent-a1.meta.json'),
+    JSON.stringify({ agentType: 'Explore', description: 'Check the limiter' })
+  )
+
   // A stand-in `claude`: a selected row resumes it, and it must never reach a real one.
   const shim = (name: string, body: string): void => {
     writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`)
@@ -334,4 +360,94 @@ test('no row moves between states', async () => {
     await moveCursorTo(row)
     expect(await measure(), `${name}: arrow cursor`).toEqual(rest)
   }
+})
+
+const TRANSPARENT = 'rgba(0, 0, 0, 0)'
+
+test('the selected session and the current header paint the accent bar and no fill', async () => {
+  const rows: [string, Locator, () => Promise<void>, string, string][] = [
+    [
+      'session row',
+      targets()['session row'],
+      () => targets()['session row'].click({ position: { x: 60, y: 10 } }),
+      'data-selected',
+      '19'
+    ],
+    [
+      'folder header',
+      targets()['folder header (repo)'],
+      () => targets()['folder header (repo)'].locator(':scope > button').click(),
+      'data-current',
+      '0'
+    ]
+  ]
+  for (const [name, row, select, attribute, x] of rows) {
+    await blur()
+    const fill = (await paint(row)).background
+    if (name === 'session row') expect(fill, `${name}: rest fill`).toBe(TRANSPARENT)
+    await select()
+    await expect(row).toHaveAttribute(attribute, 'true')
+    await blur()
+    const x2 = x === '19' ? '19.5px' : '0px'
+    const x3 = x === '19' ? '19px' : '0px'
+
+    for (const [state, enter] of [
+      ['selected', async (): Promise<void> => {}],
+      ['selected + hover', (): Promise<void> => row.hover()]
+    ] as const) {
+      await enter()
+      const painted = await paint(row)
+      expect(painted.bar, `${name}: ${state}`).toBe(`2px --color-accent x=${x2}`)
+      expect(painted.background, `${name}: ${state} fill`).toBe(fill)
+      expect(painted.label, `${name}: ${state} label`).toBe('--color-text')
+      await blur()
+    }
+
+    await keyboardFocus(row)
+    const focused = await paint(row)
+    expect(focused.bar, `${name}: focus + selected`).toBe(`3px --color-accent x=${x3}`)
+    expect(focused.background, `${name}: focus + selected fill`).toBe(fill)
+    expect(focused.outline, `${name}: focus + selected outline`).toBe('none none')
+    await blur()
+  }
+})
+
+test('keyboard focus on a chip inside a row lights the row bar and draws no box', async () => {
+  // Nothing selected on this row: the header holds the selection.
+  await targets()['folder header (repo)'].locator(':scope > button').click()
+  const row = targets()['session row']
+  const chip = row.locator('[role="button"][tabindex="0"]').first()
+  await blur()
+  await page.keyboard.press('Shift')
+  await chip.evaluate((el) => (el as HTMLElement).focus({ focusVisible: true } as FocusOptions))
+  expect(await chip.evaluate((el) => el.matches(':focus-visible'))).toBe(true)
+
+  const painted = await paint(row)
+  expect(painted.bar).toBe('3px --color-text x=19px')
+  expect(painted.background).toBe(TRANSPARENT)
+  expect(painted.label).toBe('--color-text')
+  expect(await chip.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('none')
+  await blur()
+})
+
+test('the header chevron and an agent row fill nothing', async () => {
+  const header = targets()['folder header (repo)']
+  const chevron = header.locator('[data-folder-chevron]')
+  await header.hover()
+  await chevron.hover()
+  await page.waitForTimeout(200)
+  expect(await chevron.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(TRANSPARENT)
+  await blur()
+
+  const chip = targets()['session row'].locator('[role="button"][tabindex="0"]').first()
+  if ((await chip.getAttribute('aria-expanded')) === 'false') await chip.click({ force: true })
+  const agent = page.locator('aside .agent-row').first()
+  await expect(agent).toBeVisible()
+  await blur()
+  expect((await paint(agent)).background).toBe(TRANSPARENT)
+  await agent.hover()
+  const hovered = await paint(agent)
+  expect(hovered.bar).toBe('2px --color-text-2 x=19.5px')
+  expect(hovered.background).toBe(TRANSPARENT)
+  await blur()
 })

@@ -2084,8 +2084,8 @@ const api = {
    * Replace the set of repos whose git worktrees main keeps listed (T388). Pass
    * the set ordered by priority (pinned, then active): main tracks the first 64.
    */
-  worktreesTrack: (repos: TrackedRepoWire[]): Promise<void> =>
-    ipcRenderer.invoke('worktrees:track', repos),
+  worktreesTrack: (repos: TrackedRepoWire[], options?: { replay?: boolean }): Promise<void> =>
+    ipcRenderer.invoke('worktrees:track', repos, options),
   /** A tracked repo's worktree listing changed (T388): `entries` is the full list. */
   onWorktreesChanged: (cb: (payload: WorktreesChangedEvent) => void): (() => void) =>
     subscribe('worktrees:changed', cb),
