@@ -1355,10 +1355,6 @@ textarea,
 }
 
 @media (forced-colors: active) {
-  [data-checkout-group][data-group-rail]::before {
-    background-color: CanvasText;
-  }
-
   [data-row-bar]:focus-visible,
   [data-row-bar]:has([tabindex]:focus-visible),
   [data-row-bar] [tabindex]:focus-visible,
@@ -1367,6 +1363,10 @@ textarea,
   [data-row-bar='header']:has(button:focus-visible) {
     outline: 2px solid Highlight;
     outline-offset: -2px;
+  }
+
+  [data-checkout-group][data-group-rail]::before {
+    background-color: CanvasText;
   }
 }
 
