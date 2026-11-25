@@ -777,6 +777,8 @@ export const useSessionsStore = defineStore('sessions', () => {
   // T180: true until init()'s first reloadModel() resolves. Lets the sidebar
   // distinguish "still scanning ~/.claude/projects/" from "genuinely empty".
   const foldersLoading = ref(true)
+  /** True once one model load has succeeded. */
+  const modelLoaded = ref(false)
   const selectedId = ref<string | null>(null)
 
   /**
@@ -2677,14 +2679,14 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (focusMemberPaths.value && !focusMemberPaths.value.has(path)) leaveFocus()
   }
 
-  // A focus that no longer resolves (folder gone, or dismissed) is dropped, but only once the
-  // model has loaded: a cold boot must not forget it while the folders are still on their way.
+  // A focus that no longer resolves (folder gone, or dismissed) is dropped, but only once a
+  // load has succeeded: neither a cold boot nor a failed scan may forget it.
   watch(
     () => {
       const path = sidebarFocus.value
       return (
         path !== null &&
-        !foldersLoading.value &&
+        modelLoaded.value &&
         (!findFolderByPath(path) || manuallyHiddenPaths.value.has(path))
       )
     },
@@ -3043,6 +3045,22 @@ export const useSessionsStore = defineStore('sessions', () => {
     if (folder) leaveFocusOutside(folder.path)
     selectedId.value = id
     selectedFolderPath.value = null
+  }
+
+  // True only while `selectInBackground` writes; the sync watcher on `selectedId` reads it.
+  let backgroundSelection = false
+
+  /**
+   * A selection the operator did not ask for (an agent spawn taking an empty selection, a row
+   * taking its real id): it reveals the row like any other, but never ends Focus.
+   */
+  function selectInBackground(id: string): void {
+    backgroundSelection = true
+    try {
+      selectedId.value = id
+    } finally {
+      backgroundSelection = false
+    }
   }
 
   /** T212 — select a FOLDER, which opens its `FolderView` in the main pane. */
@@ -3703,7 +3721,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     // what the operator is currently looking at.
     enqueueAgentBoot(agent.syntheticId)
     armAgentBootDeadline(agent.syntheticId)
-    if (selectedId.value === null) selectedId.value = agent.syntheticId
+    if (selectedId.value === null) selectInBackground(agent.syntheticId)
   }
 
   /**
@@ -3770,7 +3788,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     for (const [cid, entry] of agentCorrelations) {
       if (entry.syntheticId === oldId) clearAgentCorrelation(cid)
     }
-    if (selectedId.value === oldId) selectedId.value = realId
+    if (selectedId.value === oldId) selectInBackground(realId)
     fireMigrate(oldId, realId, via)
     // D8: same in-place swap as `collapseSyntheticInto` — wait for model evidence.
     awaitingConfirm.set(realId, {
@@ -4015,10 +4033,10 @@ export const useSessionsStore = defineStore('sessions', () => {
     revealSessionId.value = sessionId
   }
 
-  function revealCheckout(path: string): void {
+  function revealCheckout(path: string, { keepFocus = false } = {}): void {
     const folder = findFolderByPath(path)
     if (!folder) return
-    leaveFocusOutside(path)
+    if (!keepFocus) leaveFocusOutside(path)
     folder.expanded = true
     const node = sidebarTree.value.find((entry) => entry.paths.includes(path))
     if (node?.group && collapsedGroupsSet.has(node.key)) collapsedGroupsSet.delete(node.key)
@@ -4601,7 +4619,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       const folder = findFolderBySessionId(id)
       if (!folder) return
 
-      revealCheckout(folder.path)
+      revealCheckout(folder.path, { keepFocus: backgroundSelection })
 
       if (session.teamName) {
         const hex = teamHex(session.teamName)
@@ -5051,6 +5069,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         do {
           reloadDirty = false
           await reloadModelOnce(diskOverride)
+          modelLoaded.value = true
           // Only the first pass consumes the override — a dirty re-entry (a new
           // trigger landed mid-scan) re-fetches ordinary disk truth rather than
           // replaying a now-stale snapshot.
@@ -5701,7 +5720,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     synth.sessionId = realId
     synth.synthetic = false
     synth.forkSourceId = undefined
-    if (selectedId.value === synthId) selectedId.value = realId
+    if (selectedId.value === synthId) selectInBackground(realId)
     fireMigrate(synthId, realId, 'collapse')
     // D8: the model has not seen this id yet — keep the row across reloads
     // until the model confirms it or looks at this folder's slug and omits it.
@@ -5744,7 +5763,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     const live = folders.value.find((f) => f.path === folderPath)
     const idx = live ? live.sessions.indexOf(synth) : -1
     if (live && idx !== -1) live.sessions.splice(idx, 1)
-    if (selectedId.value === synthId) selectedId.value = realId
+    if (selectedId.value === synthId) selectInBackground(realId)
     fireMigrate(synthId, realId, via)
     if (wasAgentControlled) reportMaterialized(synthId, realId, folderPath)
   }
@@ -5812,7 +5831,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         /* the re-key below does not depend on the reload */
       }
       fireMigrate(c.key, sessionId, 'companion')
-      if (selectedId.value === c.key) selectedId.value = sessionId
+      if (selectedId.value === c.key) selectInBackground(sessionId)
     })()
     return true
   }
@@ -5839,7 +5858,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       if (!findSessionById(c.key)) continue
       appliedResumeClaims.add(id)
       fireMigrate(c.key, c.sid, 'companion')
-      if (selectedId.value === c.key) selectedId.value = c.sid
+      if (selectedId.value === c.key) selectInBackground(c.sid)
     }
     for (const id of [...appliedResumeClaims]) if (!keys.has(id)) appliedResumeClaims.delete(id)
   }
@@ -5944,7 +5963,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         const slot = folder.sessions.indexOf(synth)
         if (slot === -1) folder.sessions.push(twin)
         else folder.sessions.splice(slot, 1, twin)
-        if (selectedId.value === synthId) selectedId.value = twin.sessionId
+        if (selectedId.value === synthId) selectInBackground(twin.sessionId)
         fireMigrate(synthId, twin.sessionId, 'resolved-window')
       }
     }

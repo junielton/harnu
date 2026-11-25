@@ -9,6 +9,7 @@ import FolderMenu from '../src/renderer/src/components/FolderMenu.vue'
 import { useSessionsStore, type Session } from '../src/renderer/src/stores/sessions'
 import { useUiStore } from '../src/renderer/src/stores/ui'
 import type { FolderEntry, UserProject } from '../src/preload'
+import { encodePathToSlug } from '../src/renderer/src/lib/folder-slug'
 
 /**
  * Sidebar redesign S-5 — Focus on one folder (design.md §6 "Sidebar tree → Focus",
@@ -78,7 +79,11 @@ function defaultDisk(): FolderEntry[] {
   ]
 }
 
-function installWindow(disk: FolderEntry[], hidden: string[] = []): void {
+function installWindow(
+  disk: FolderEntry[],
+  hidden: string[] = [],
+  overrides: Record<string, unknown> = {}
+): void {
   const projects = disk.map((d) => ({
     path: d.path,
     alias: d.alias,
@@ -103,7 +108,8 @@ function installWindow(disk: FolderEntry[], hidden: string[] = []): void {
     worktreeMdProbe: vi.fn(async () => ({ manifestPath: '', exists: false, repoRoot: APP })),
     modesList: vi.fn(async () => []),
     probeGit: vi.fn(async () => []),
-    getPathForFile: vi.fn(() => null)
+    getPathForFile: vi.fn(() => null),
+    ...overrides
   }
   ;(window as unknown as { api: unknown }).api = new Proxy(base, {
     get: (target, key: string) => {
@@ -117,10 +123,14 @@ let wrapper: VueWrapper | null = null
 type Store = ReturnType<typeof useSessionsStore>
 
 /** A cold start of the renderer: new stores over whatever `localStorage` holds. */
-async function boot(disk = defaultDisk(), hidden: string[] = []): Promise<Store> {
+async function boot(
+  disk = defaultDisk(),
+  hidden: string[] = [],
+  overrides: Record<string, unknown> = {}
+): Promise<Store> {
   wrapper?.unmount()
   setActivePinia(createPinia())
-  installWindow(disk, hidden)
+  installWindow(disk, hidden, overrides)
   const store = useSessionsStore()
   wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
   await store.init()
@@ -466,6 +476,67 @@ describe('AC-23 Focus follows the selection and survives a restart', () => {
     store = await boot(defaultDisk(), [PORTAL])
     expect(back()).toBeNull()
     expect(trees()).toHaveLength(3)
+  })
+
+  it('keeps Focus when an agent spawn takes an empty selection', async () => {
+    const store = await boot()
+    await focusFolder(APP)
+    store.selectFolder(APP)
+
+    store.insertAgentSession({
+      syntheticId: 'synthetic-agent',
+      correlationId: 'corr-agent',
+      folderPath: WEB
+    })
+    await flushPromises()
+
+    expect(store.selectedId).toBe('synthetic-agent')
+    expect(back()).not.toBeNull()
+    expect(trees()).toHaveLength(1)
+
+    // The operator picking that session is still a way out.
+    store.select('synthetic-agent')
+    await flushPromises()
+    expect(back()).toBeNull()
+  })
+
+  it('keeps Focus when a selected new session takes its real id', async () => {
+    let added: (event: { slug: string; sessionId: string }) => void = () => {}
+    const store = await boot(defaultDisk(), [], {
+      onSessionAdded: (cb: typeof added) => {
+        added = cb
+        return () => {}
+      }
+    })
+    store.createNewSession(WEB)
+    await flushPromises()
+    // Focus on another folder; the selection stays where it was.
+    await focusFolder(APP)
+
+    added({ slug: encodePathToSlug(WEB), sessionId: 'web-real' })
+    await flushPromises()
+
+    expect(store.selectedId).toBe('web-real')
+    expect(back()).not.toBeNull()
+  })
+
+  it('does not forget the focused folder when the folders fail to load', async () => {
+    localStorage.setItem(FOCUS_KEY, JSON.stringify(PORTAL))
+    wrapper?.unmount()
+    wrapper = null
+    setActivePinia(createPinia())
+    installWindow(defaultDisk(), [], {
+      foldersLoad: vi.fn(async () => {
+        throw new Error('scan failed')
+      })
+    })
+    const store = useSessionsStore()
+
+    await expect(store.init()).rejects.toThrow('scan failed')
+    await flushPromises()
+
+    expect(store.sidebarFocus).toBe(PORTAL)
+    expect(localStorage.getItem(FOCUS_KEY)).toBe(JSON.stringify(PORTAL))
   })
 
   it('drops Focus as soon as the focused folder is hidden', async () => {
