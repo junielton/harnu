@@ -350,23 +350,25 @@ size; only text scales.
 The sidebar rows scale with a user-chosen **density preset** (Settings → SIDEBAR
 → Density: **Comfortable** / **Compact**, persisted globally under
 `om2tab.sidebarDensity`, default **Comfortable**). Comfortable is the baseline
-below; Compact tightens the sidebar's own rows (heights, gaps, and the session
-indent — see §6 "Row anatomy & indentation") without touching any other surface.
-Everything outside the sidebar (topbar, buttons, inputs, menus) is density-independent.
+below; Compact tightens the sidebar's own rows (heights and gaps) without touching
+any other surface. Everything outside the sidebar (topbar, buttons, inputs, menus)
+is density-independent. The redesigned tree (§6 "Sidebar tree") was approved at
+Comfortable; its Compact column is derived from the values Compact already used.
 
-| Component                    | Comfortable | Compact |
-| ---------------------------- | ----------- | ------- |
-| Sidebar — folder row         | 26px        | 23px    |
-| Sidebar — repo-group header  | 26px        | 26px    |
-| Sidebar — session row        | 28px        | 24px    |
-| Sidebar — terminal row       | 26px        | 23px    |
-| Sidebar — agent/teammate row | 24px        | 22px    |
-| Sidebar — "+ new session"    | 26px        | 23px    |
-| Topbar                       | 42px        | —       |
-| Default button               | 28px        | —       |
-| Large button (CTA)           | 32–36px     | —       |
-| Input                        | 32px        | —       |
-| Menu item                    | 26px        | —       |
+| Component                     | Comfortable | Compact |
+| ----------------------------- | ----------- | ------- |
+| Sidebar — folder header       | 30px        | 26px    |
+| Sidebar — checkout / idle row | 26px        | 23px    |
+| Sidebar — session row         | 26px        | 23px    |
+| Sidebar — terminal row        | 26px        | 23px    |
+| Sidebar — agent/teammate row  | 24px        | 22px    |
+| Sidebar — Needs attention row | 28px        | 28px    |
+
+| Topbar | 42px | — |
+| Default button | 28px | — |
+| Large button (CTA) | 32–36px | — |
+| Input | 32px | — |
+| Menu item | 26px | — |
 
 ### Layout dimensions
 
@@ -375,7 +377,7 @@ Everything outside the sidebar (topbar, buttons, inputs, menus) is density-indep
 | Sidebar — minimum width                | 200px                                                         | Drag-resize floor                                                                                                                                                                                                                                                                                                                                                                  |
 | Sidebar — default width                | 268px                                                         | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
 | Sidebar — maximum width                | 480px                                                         | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — minimum width             | 260px                                                         | Drag-resize floor (4th column, T83)                                                                                                                                                                                                                                                                                                                                                |
+| Inbox rail — minimum width             | 260px                                                         | **Removed by the sidebar redesign (§6 "Bottom dock")**, with the three rows below. Drag-resize floor (4th column, T83)                                                                                                                                                                                                                                                             |
 | Inbox rail — default width             | 300px                                                         | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
 | Inbox rail — maximum width             | 440px                                                         | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
 | Inbox rail — minimized strip           | 44px                                                          | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
@@ -437,8 +439,8 @@ _another_ folder.
 | `github`                                 | Open the repo's Pull requests page on GitHub (Topbar button, only when `origin` is on github.com). Lucide's brand glyph, deprecated upstream as a brand icon: if a future lucide major drops it, the import breaks at build time       |
 | `message-square`                         | Unresolved review threads on a PR Stack card (T275 — readiness chip at `full`, identity-row badge at `compact`); Review pane companion link                                                                                            |
 | `text-select`                            | Select the whole file (Review pane file header, T257); `lucide-vue-next` ships it as `TextSelect`. The delivery chip (T257 U2b) carries no glyph of its own.                                                                           |
-| `git-branch`                             | Branch badge (git folder) / repo-group header · a worktree link in an open step, by its branch name (Mission dropdown)                                                                                                                 |
-| `chevron-right`                          | Collapse folder / repo-group (rotates 90° when open)                                                                                                                                                                                   |
+| `git-branch`                             | Branch badge (git folder) / worktree checkout row · a worktree link in an open step, by its branch name (Mission dropdown)                                                                                                             |
+| `chevron-right`                          | Disclosure chevron (rotates 90° when open); sidebar tree rows use `chevron-up` / `chevron-down` in the value slot (§6 "Sidebar tree")                                                                                                  |
 | `recycle`                                | Workspace GC: the Cleanup summary line, the single footer pill (replaces `trash-2` + `container` there) and the first-cycle banner. The spec's ♻ glyph, as a Lucide icon (§5 forbids text glyphs); the takeover header keeps `trash-2` |
 | `circle-check` / `circle-help` / `lock`  | Cleanup bucket icons: Ready to clean / Needs review / In use — repeated in the legend, group headers, badges and list rows so a bucket never relies on colour alone                                                                    |
 | `check` · `square-check` · `list-checks` | Checked-block badge (`check`, 16px badge) · checked list row (`square-check`) · "Select all in repo" on narrow regions (`list-checks`, icon-only 22px Ghost) · "Test it" in the Mission dropdown (`list-checks`, 10px)                 |
@@ -684,7 +686,7 @@ Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P`
 | `⌘O`               | Add folder                                                                                                                                                                                                                                                                | global   | Opens `AddFolderDialog`                                                                                                                                                                                                                                                                                                                                                                                          |
 | `⌘R`               | Rename selected session                                                                                                                                                                                                                                                   | global   | Overrides Chromium's default reload; reload moves to `F5`                                                                                                                                                                                                                                                                                                                                                        |
 | `⌘⇧R`              | Resume last session                                                                                                                                                                                                                                                       | global   | Most recent by `lastActivity`                                                                                                                                                                                                                                                                                                                                                                                    |
-| `⌘⇧A`              | Expand/collapse the Inbox rail                                                                                                                                                                                                                                            | global   | 4th column "Needs you"; same helper as the Topbar button. **Never hides** — `minimized`/`hidden` always expand                                                                                                                                                                                                                                                                                                   |
+| `⌘⇧A`              | Open the dock's Needs you section (and expand a collapsed sidebar); pressed again, fold it (§6 "Bottom dock")                                                                                                                                                             | global   | The dock is part of the sidebar, so the chord expands a collapsed sidebar first. The chord's command id stays `inbox.toggle`                                                                                                                                                                                                                                                                                     |
 | `⌘B`               | Hide/show the left sidebar (folders/sessions) — "full screen for the terminal"                                                                                                                                                                                            | global   | Owned by the native menu (`&View`), so the accelerator is consumed **before** xterm (same as `⌘N`/`⌘K`); the renderer double-binds as a fallback. Also reopens via the Topbar's `PanelLeft` button (always visible)                                                                                                                                                                                              |
 | `⌘⌥B`              | Hide/show the right auxiliary panel (helper-stack / split)                                                                                                                                                                                                                | global   | Same scheme (`&View` menu + fallback). Hides **even with panes**; visual no-op with no panes. Reopens via the Topbar's `PanelRight` button (visible whenever there are panes)                                                                                                                                                                                                                                    |
 | `⌘W`               | Close selected session — **unless the terminal is focused**, in which case the shortcut is forwarded to xterm/PTY (becomes `\u0017`, used by programs like `nano` to delete the previous word). `⌘Q` still closes the app.                                                | global   | Suppressed by `enabled: () => !terminalFocused.value` (T-4.5)                                                                                                                                                                                                                                                                                                                                                    |
@@ -699,7 +701,6 @@ Examples: `⌘K` / `Ctrl+K` (search), `⌘N` / `Ctrl+N` (new session), `⌘⇧P`
 | `F2`               | Rename the cursor folder row (else the active folder) — opens the Rename folder dialog                                                                                                                                                                                    | global   | Renderer-only; a key press in a text field leaves it alone. A session or repo-group cursor row is a no-op (a session renames with `⌘R`). Inside a terminal the program gets F2. On a Mac keyboard, `Fn+F2` unless F-keys are standard                                                                                                                                                                            |
 | `Esc`              | Close the top layer: a dialog, palette, menu or popover; else the takeover's own state (Cleanup selection, PR Stack filter, Roadmap dispatch confirm, a Review line selection, the Diagram's shape in progress, drawing tool or selection); else the open takeover itself | global   | One layer per press. The takeover close is `view.closeTakeover` (rebindable, renderer-only): off while a popover is open, and it ignores a press made in a text field. In a terminal the program gets Esc (Claude Code cancels with it)                                                                                                                                                                          |
 | `⌘⌥S`              | Open Settings on the Keyboard Shortcuts tab                                                                                                                                                                                                                               | global   | Native menu: macOS app menu after Settings…, View elsewhere. Inert while Settings is open. On Windows layouts where Ctrl+Alt is AltGr (Polish: AltGr+S types ś) the chord may type a character instead                                                                                                                                                                                                           |
-| `⌘⇧B`              | Toggle the Fleet rail                                                                                                                                                                                                                                                     | global   | Renderer-only (no menu item), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                                    |
 | `⌘⇧D`              | Review the active folder's branch                                                                                                                                                                                                                                         | global   | Renderer-only; opens the Review pane (T164)                                                                                                                                                                                                                                                                                                                                                                      |
 | `F6` / `⇧F6`       | Focus the next / previous pane: the main terminal, then the helper panes in stack order, wrapping                                                                                                                                                                         | global   | **Shielded** (`pane.focusNext` / `pane.focusPrev`): works while a terminal holds focus, so the program there no longer gets F6. Inert while a dialog, palette or menu is open. On a Mac keyboard: Fn+F6 / Fn+⇧F6. See "Pane focus"                                                                                                                                                                               |
 | `⌘⇧M`              | Maximize or restore the focused helper pane; with none focused, restore the maximized one. While a pane is **expanded to the window** it exits the expanded view instead (T628)                                                                                           | global   | Renderer-only (`pane.toggleMaximize`), but fires over a focused terminal (xterm sends nothing for Ctrl/⌘+Shift+letter)                                                                                                                                                                                                                                                                                           |
@@ -728,7 +729,7 @@ only when the held modifiers are **exactly** the chord's — `F7` never fires on
 
 **Everything else is unbound by default (T486).** Every Session-menu item (fork,
 restart, the four copies, no-flicker, archive, delete, retry, dismiss), closing a
-folder terminal, and the sidebar header buttons (rescan, drill depth, collapse all,
+folder terminal, and the sidebar header buttons (rescan, collapse cycle,
 Hidden), every Folder-menu item except the ones that need a pick or change agent
 access (block agents, let agents read terminals, Modes ▸, Set / Clear parent folder),
 the older / archived peeks and
@@ -1359,9 +1360,9 @@ Badges).
 | New session               [ ⌘N ]            default ⌘N                 |
 | Resume last session        [ Set a shortcut… ]  unbound  ↺ Reset       |
 | VIEWS                                                                   |
-| Toggle the Fleet rail      [ ⌘⇧B ]  not in terminal    ↺ Reset  ⌫ Unbind|
+| Hide / show the sidebar    [ ⌘B  ]  not in terminal    ↺ Reset  ⌫ Unbind|
 | TAKEOVERS                                                               |
-| Review the active branch   [ ⌘⇧B ]  conflict: Toggle the Fleet rail    |
+| Review the active branch   [ ⌘B  ]  conflict: Hide / show the sidebar  |
 |  ...                                                                    |
 +-------------------------------------------------------------------------+
 ```
@@ -2202,230 +2203,267 @@ explorer table (a live-verification finding, fixed in the same round).
 animate via `--dur`/`--ease` (height, width, opacity); respects
 `prefers-reduced-motion` (global reset). No ad-hoc keyframes.
 
-### Folder-first model (sidebar — flat list)
+### Sidebar tree (flat checkouts)
 
-The sidebar organizes **folders** (the first-class unit — a folder IS what a
-worktree used to be: an absolute path that hosts sessions directly). Git is
-optional metadata, never structure (spec 2026-06-11).
+The approved screens are in [`docs/design/sidebar-redesign/`](docs/design/sidebar-redesign/)
+(`sidebar`, `row-states`, `group-rail`, `folder-view`), the decisions and rejections beside them in
+`decisions.md`, and the build is sliced in
+`docs/specs/2026-11-25-sidebar-redesign/spec.md`. This section is the contract.
 
-**Folder row** (height 26px, `padding: 0 12px 0 8px`, `gap 4px`, `font-size
-12.5px`, weight 500): chevron `12px` (`--text-4`, rotates 90° when expanded),
-`folder` icon `13px` (`--text-3`), alias (`truncate`), and the **inline action
-cluster** on the right (see below). Dismissed folders render with
-`opacity 0.5` and the `eye-off` icon in place of `folder` (same anatomy as the
-former hidden state). Branch **does not** appear on the folder row — the active
-session's branch lives in the footer / status bar (HUD), avoiding noise and
-duplication in the sidebar.
+The sidebar has **three levels and no deeper**: **folder header → checkout row → session row**. A
+**folder** is one repo (its main checkout plus its worktrees) or one standalone folder. A
+**checkout** is one working directory of it. No folder is ever nested inside another, and a checkout
+is never indented past its siblings.
 
-**Inline action cluster (folder row)** (spec 2026-06-24): on the right, in place
-of the old session count, a discreet cluster (`gap 9px`, `shrink-0`) gathers the
-three per-folder actions — previously stacked as rows at the end of the expanded
-list. Each item is a `role="button"` (`tabindex 0`, Enter/Space + click, native
-tooltip via `title`/`aria-label`) — **never** a `<button>`, since the folder row
-is already a `<button>` and nesting buttons is invalid HTML (same idiom as the
-agent chevron in session rows). Items, `--text-4` by default:
+Git is still optional metadata, never structure (spec 2026-06-11): the data model stays
+path-keyed `Folder`s; the tree only groups them for drawing.
 
-| Action   | Icon (§5) | Size / stroke | Appears when        | Hover      | Revealed (active) |
-| -------- | --------- | ------------- | ------------------- | ---------- | ----------------- |
-| older    | `clock`   | 11 / 1.6      | `olderCount > 0`    | `--text-2` | `--accent`        |
-| archived | `archive` | 11 / 1.6      | `archivedCount > 0` | `--text-2` | `--accent`        |
-| new      | `plus`    | 12 / 1.8      | always              | `--accent` | —                 |
+**Order of the column, top to bottom:** toolbar · [Needs attention](#needs-attention) · the list
+(folder headers and their rows) · [the bottom dock](#bottom-dock) (Needs you, Return here, Add
+folder). The list is the only part that scrolls with the tree, and it keeps
+**`scrollbar-gutter: stable`** in every state, so rows keep one width whether or not there is
+something to scroll (Focus included). The list starts with an 8px top spacer and ends with 8px of
+padding.
 
-The count follows `clock`/`archive` at `10.5px` `tabular-nums` (`gap 3px` from
-the icon); `plus` has no number. The folder's **total session count** is **no
-longer shown** — the cluster replaces it (a folder with no older/archived shows
-just the `+`). Every item uses `@click.stop` so triggering the action never
-collapses/expands the folder. The revealed item turns `--accent` to signal the
-current "peek".
+#### Geometry and trailing lanes
 
-**Stats on demand (hover-only — T118):** the stats/action clusters on the right
-edge of sidebar rows **don't** render permanently — stacked across the whole
-list they turned into a wall of numbers. At rest they're invisible (`opacity 0`;
-the space is **preserved**, no layout shift on reveal) and fade in
-(`transition-opacity`; reduced-motion falls back to the global reset in
-`main.css`) when the row is under the pointer (`group-hover`), has keyboard
-focus (`group-focus-within` and the `data-focused` cursor), or the item carries
-**active state or a signal** — which can never be invisible:
+Rows are **full width**: no side margin, no radius, no fill. Distances are from the row's own left
+and right edges, so they hold at any sidebar width.
 
-- **folder row:** the inline cluster (older / archived / `+`) and the `bot`
-  badge are forced visible while a peek is revealed (the "Hide" `--accent`
-  never disappears with the mouse off the row);
-- **session row:** the agent (`bot` + n) and teammate (`users` + n) chips are
-  hover-only — visible on the **selected** row; the teammate chip forces
-  visible while the group is **expanded** (it's the collapse control). The
-  StopFailure badge and the orchestrator `crown` are **signals** — always
-  visible. Context % and relative time **no longer render on the row** — see
-  "Context % and relative time (hover preview, not in the sidebar)" below;
-- **repo-group header:** the count is hover-only when the group is
-  **expanded** (the list below already counts itself) and **visible when
-  collapsed** — there the count is the only clue to what's hidden. The
-  folder-list toolbar's `⋯` (see "Folder-list toolbar (⋯ action)" below) is
-  always visible — there is no zone count left to gate it on — but still
-  forces visible while its popover is open (no behavior change there).
+| Row                | Height | Left padding | Leading item                      | Label                           | Right padding |
+| ------------------ | ------ | ------------ | --------------------------------- | ------------------------------- | ------------- |
+| Folder header      | 30px   | 12px         | 16px [state ring](#folder-ring)   | 12.5px / 500, `--text`          | 12px          |
+| Checkout row       | 26px   | 14px         | 13px `home` (main) / `git-branch` | branch, mono 11.5px, `--text-4` | 12px          |
+| Idle-worktrees row | 26px   | 14px         | 13px `git-branch`                 | 11.5px, `--text-4`              | 12px          |
+| Session row        | 26px   | 24px         | 12px status slot                  | 12.5px, `--text-2`              | 12px          |
 
-No new tokens — just `opacity` and the existing motion tokens.
+Gap between items is 8px in all four. Every item in a row is vertically centred on the row (a check
+tolerance of 0.75px).
 
-**Agent-blocked badge (folder row)**: when the folder is **blocked** for agents
-(`agentDeniedPaths` — the same source as the "Block / Unblock agent control"
-toggle in the Folder context menu, §6), the row shows a **discreet** marker —
-`bot-off` icon `11px` `--text-4`, immediately **to the left** of the inline
-action cluster — with a native tooltip (`title`/`aria-label`, copy
-`sidebar.agentBlockedBadge`) saying no agent can act in this folder.
+**One right edge.** Every trailing item ends on the same x in every row type (row width − 12px).
 
-**Inverted** from the old T71 "agent-allowed" badge: agents can act in every
-folder by default, so badging the allowed state would mark every row. The
-exception is what carries information. Consequently, unlike the stats cluster it
-sits next to, this badge is **always visible** — never hover-gated (the same
-reasoning as the unseen-agent-panes pill below: a folder the fleet cannot touch
-must not be one hover away). It's **status, not action**: an inert `<span>`
-(never `role="button"`; `aria-hidden` on the icon), it opens no menu and toggles
-nothing — the toggle stays in the context menu. Doesn't change the row's height
-or layout (joins the cluster's `shrink-0` flow).
+- **Value slot** (folder header and checkout row): one box, **24 × 16px**. At rest it holds the
+  **count** (10.5px, `--text-4`, `tabular-nums`, right-aligned): a folder header shows its number of
+  checkouts (idle ones included), a checkout row shows its number of sessions **only while folded**
+  (open, the rows below already count themselves). On row hover or keyboard focus the count fades
+  out and the **chevron** fades in **in the same box** (`opacity`, `--dur-fast`). The chevron's hit
+  area is 24 × 24px, overflowing the slot so the row keeps its height, and its ink ends where the
+  digits end. Chevron up = open, chevron down = folded. A checkout with no session has no chevron.
+- **Session row:** `[mission chip] [14px icon slot]`. The 14px slot holds the orchestrator `crown`
+  (12px, `--warning`) and is **reserved** when empty, so titles truncate at one x.
 
-**Unseen agent-panes badge (folder row)** (2026-07-13 agent-pane-routing
-design): an agent-opened helper pane (`open_file`, `spawn_terminal`, a hosted
-teammate, …) that lands in a folder the operator ISN'T currently looking at
-must not go unnoticed — that's the badge's whole job. When a folder's
-`helpers.unseenAgentPaneCount(folder.path)` is non-zero, the row shows a
-**pill**: `PanelRight` icon `11px` + the count, `--accent` text on
-`--accent-soft` background with an `--accent-line` border (the Badge
-component's **Accent** variant, §6 Badges — no new token), `2px 6px` padding,
-`999px` radius, `10px` font, `tabular-nums`. Placed in the trailing cluster,
-**before** the (hover-only) agent-control `bot` marker and peek/`+` cluster.
-Unlike that cluster it is **always visible** when non-zero (never
-hover-gated) — an unseen offer is exactly the kind of thing "Stats on demand"
-must not hide. Deliberately a different shape AND color from every session
-status dot (§Session status: green/amber/red 6px circles) so it never reads
-as a session's state — it's folder-level "something is waiting", not
-"someone is running". Native tooltip (`title`/`aria-label`,
-`sidebar.agentPaneBadge`). Clears the instant the operator selects ANY
-session in that folder (`currentWorktreePath` watcher in `stores/helpers.ts`)
-— ephemeral, never persisted (the panes themselves persist; the "haven't
-looked yet" flag does not, so a fresh boot never resurrects a stale badge).
+**Tree guide.** Each session row draws a 1px `--border-2` segment at **x = 20** (under the checkout
+icon's centre) over its full height, so a checkout's sessions join into one line. The guide of the
+**last** session of a checkout stops 2px above the row's bottom, on the same y as the
+[group rail](#group-rail). Expanded idle worktrees carry the same guide.
 
-**One flat list** (2026-07-15, BUG-39 — supersedes the FOLDERS / ACTIVE
-ELSEWHERE split below): every visible folder — pinned (added by the user,
-members of `projects.json#projects[]`) **and** auto-discovered active (running
-PTY, `taskState working`/`needs-input`, `status active`, or a session modified
-within the configurable active window) — renders in **one** classify → sort →
-`groupByRepo` → `groupByParentDir` pass, in one continuous list. No section header,
-no divider, and **no visual distinction** between a pinned and a merely-active
-folder (operator decision — revisit only if scanning a long flat list proves
-it's needed). Stale folders (non-pinned with zero sessions, or old and inert)
-don't list — reachable via ⌘K. Exception: a git worktree of a repo the
-list already shows — pinned, or active on its own sessions — always lists, with
-or without sessions, and appears or disappears live when it is added or removed
-with `git worktree`. It renders as an ordinary folder row; there is no new
-visual. A hidden path stays hidden. This also fixes the old duplicate-header bug:
-because the two former zones each ran their own `groupByRepo` pass, a repo with
-one pinned and one merely-active sibling worktree rendered **two** repo-group
-headers for the same repo; the single combined pass now yields exactly one.
+#### Folder header
 
-A small **folder-list toolbar** sits above the list — see "Folder-list toolbar
-(⋯ action)" below — carrying the whole-list actions (Expand/Collapse all,
-Hidden folders) that used to live on the `FOLDERS` eyebrow. It has no title,
-no chevron, and controls nothing about visibility of the list itself (there is
-no zone left to collapse).
+`ring · name · [signals] · [focus] · value slot`.
 
-**RepoGroupHeader** (height 26px): a single header component for BOTH kinds of
-group (T182 — `FolderGroup`, discriminated by `source`), collapsing 2+ visible
-folders that belong together. Reuses the sidebar-row / Section-label anatomy —
-**no new tokens**: chevron `13px` (like the section menu), a `13px` source icon
-(`--text-3`), label, count. Member folders render nested (indent +1 level) under
-the header.
+- Click or Enter on the header **opens the folder's [Folder View](#folder-view-folderviewvue)** and
+  expands the folder; it never collapses it. Collapsing is the chevron in the value slot. The
+  header of the folder whose view is on screen is **current** (accent bar, see
+  [Row states](#row-states)).
+- The header is **sticky** at the top of the list while its checkouts scroll, on an opaque
+  `--sidebar` background that does not change on hover; the next header pushes it out.
+- **Name resolution** is the repo-group rule: `repoAliases[repoId]` → the main worktree's alias →
+  the derived basename; a standalone folder uses its own alias. Two headers that resolve to the same
+  label get the dim `· parent` hint (`--text-4`, 10.5px).
+- **Signals stay visible** (never hover-gated), between the name and the focus button: the unseen
+  agent-panes pill (Accent badge, `PanelRight` 11px + count), the agent-blocked `bot-off` (11px,
+  `--text-4`) and the orchestrator-default `crown` (11px, `--accent`). A signal of **any** checkout of
+  the folder shows on the header, with the checkout named in the tooltip.
+- **Focus button:** `target` 13px in a 16 × 16px box, invisible at rest, shown on header hover or
+  its own keyboard focus. See [Focus](#focus-one-folder). Absent while focused.
+- Context menu: the main checkout's `FolderMenu`; for a repo, also **Rename repo** / **Reset name**.
 
-- `source: 'repo'` — 2+ visible worktree-folders sharing a `repoId`. Icon:
-  `git-branch`. Label: the main worktree's basename when present, otherwise
-  basename of `dirname(repoId)`.
-- `source: 'path'` — 2+ visible folders sharing a **direct** parent directory.
-  Icon: `folder`. Label: that directory's basename. See "Parent-directory folder
-  grouping" below.
+#### Checkout rows
 
-A group's members are always plain folders — **a group is never a member of
-another group**, which is what holds the list to one level of indentation.
+- The **main** checkout comes first (`home` icon), then worktrees (`git-branch`) in the folder sort
+  order. The label is the **branch**; a detached checkout shows its folder name.
+- Click or Enter (or the chevron) **folds and unfolds its sessions**. It does not open a view.
+- Context menu: the `FolderMenu` of that checkout's path. Because the row has no inline actions,
+  that menu also carries **New session**, **Show older ({n})** and **Show archived ({n})** (the
+  peeks and the `+` that lived on the old folder row).
+- A **non-git folder** has no checkout row: its sessions sit directly under its header, with the same
+  indent and guide.
 
-Clicking the header (or Enter on the keyboard cursor) **collapses/expands the
-whole group** — hides/shows the member-folder rows behind the header (chevron
-rotates 90° when open). This is a state **of its own** for the group (persisted
-by `repoId` in `om2tab.repoGroupsCollapsed`), **independent** of each member
-folder's `expanded` (which controls that folder's session list). Collapsing the
-group **doesn't** touch the internal expansion of the folders — reopening
-restores exactly what was open. An active text filter forces every group open
-(a collapsed group would hide matches — same rule as the zones).
+**Idle worktrees.** Worktrees with **no listed session** (after the age filter and archive) fold into
+**one** quiet row per folder, `n idle worktrees` (`opacity .85`), after the checkouts that have
+sessions. It toggles a list of the worktrees (branch only, same row anatomy, empty icon box, guide
+at x=20); right-click on one opens its `FolderMenu`, click opens its Folder View. The **main**
+checkout is never folded into it, with or without sessions. A worktree that gains a session leaves
+the group at once. The open state persists per folder (`om2tab.idleWorktreesOpen`).
 
-**Parent-directory folder grouping (non-git — T182, supersedes T70 Fix B):**
-2+ visible folders sharing the **same direct parent directory** collapse under a
-`RepoGroupHeader` with `source: 'path'`, labeled with that directory's basename.
-The parent directory does **not** need to be pinned — the header is synthetic,
-exactly like the repo one. When the parent directory **is** itself a visible
-folder, it becomes **member #0** of its own group (keeping its own sessions and
-row), mirroring the main worktree's position inside a repo group.
+The repo's **Shelved** section stays the last block of the folder (§6 "Shelved section"), after the
+idle row.
 
-**The parent is always the DIRECT one.** This is the whole point of T182: the
-old rule nested a folder under its _shallowest_ visible ancestor, so pinning
-`$HOME` made it the umbrella for every non-repo folder beneath it at any depth.
-A folder with no sibling under its parent stays a plain row.
+#### Session rows
 
-**Hard 1-level limit (the anti-VS-Code, retained from T70).** Chains resolve
-deepest-parent-first, and being a group's parent beats being another group's
-member: with `~/x`, `~/x/y`, `~/x/y/z` all visible, `y` claims `z` and renders as
-the `y` group, while `x` — now short a member — renders as a plain row. Never a
-3+ level staircase.
+`status slot (12px) · title · [mission chip] · [icon slot 14px]`. The status slot holds exactly one
+glyph: the 6px dot (working, needs input, failed, stuck, idle, archived) or an 11px icon (`check`
+completed, `cloud` non-resumable, `moon` hibernated). **No age, no context %, no branch** on the
+row: the hover preview is their only home. See [Session name](#session-name) for the title.
 
-Collapse state and group aliases are keyed by a **namespaced group key**
-(`repo:<repoId>` / `path:<dir>`) so both kinds share one persisted store without
-colliding. **No new tokens.**
+Subagent and teammate disclosure moves to their **trailing count chips** (hover-only, as today),
+which sit left of the mission chip together with the StopFailure badge; the old leading 12px toggle
+slot is gone. Agent rows, teammate rows and terminal rows keep their anatomy and indent one step
+(16px Comfortable, 14px Compact) past the session row. Trailing chips still overlay the label's tail
+and never reserve a column.
 
-**Worktree lineage (mother badge + child row + guide line) — T191:** a repo's
-fan-out history — which worktrees were cut BY another worktree's session,
-during an orchestrated dispatch — is real and load-bearing (the difference
-between "12 unrelated branches" and "3 orchestrators, each with its wave"), and
-otherwise invisible in a flat `RepoGroupHeader` member list. Structural, not a
-declared role (D2): a folder gets the mother badge because worktrees were born
-from it, so a promoted-but-idle Orchestrator session doesn't pollute the
-sidebar. Applies **only within one `RepoGroupHeader`'s member list** — nesting
-never reaches across a zone or a repo (D4); a fold whose recorded mother isn't
-a visible member of the SAME group renders flat, same as a deleted or hidden
-one.
+**Mission chip (compact).** On the row: `triangle-alert` 11px (`--warning`) + the number of things
+the mission owes the operator, 10.5px `tabular-nums`. With nothing owed the chip draws nothing at
+rest. On row hover or keyboard focus the chip's **full text** (the pill's own text and tone) fades in
+**over the tail of the title** (`position: absolute`, anchored right, `--sidebar` background, 8px
+left padding): no width change, no shift. `title`/`aria-label` spell the full text out.
 
-- **Mother badge** (folder row, in the existing badge slot next to the
-  agent-blocked marker): `git-fork` icon `11px` `--text-4` + the live child
-  count, `--text-4` `10.5px` `tabular-nums` (`gap 3px`) — same compact recipe
-  as the Accent badge (§6 Badges) but in the folder row's neutral badge tone,
-  not accent, since this is provenance, not an alert. Shown **only when the
-  count is ≥ 1** (D2 — a mother with zero live children is never marked).
-  `role="button"`, `tabindex 0` (same idiom as the inline action cluster — the
-  folder row is already a `<button>`): clicking (or Enter) **collapses/expands
-  the children**, independent of the folder's own `expanded` (which still only
-  controls that folder's session list). A **collapsed** mother keeps showing
-  its badge count — collapsing never hides the information, only the rows
-  (D5). Native tooltip (`title`/`aria-label`, `sidebar.lineageBadge`).
-- **Child row:** the worktrees a mother cut render **indented one level**
-  directly beneath it (same `+20px` indent step `RepoGroupHeader` members and
-  `nestByPath` children already use — never a second, deeper step: **a
-  grandchild flattens to its root mother**, D3). A **1px `--border-2`
-  guide line** runs down the children's column, anchored at the mother's row
-  and ending after the last child — a plain `border-left` on the children's
-  wrapper `<div>`, no new token. No connector glyph on each child row (unlike
-  the agent/teammate `corner-down-right` nesting, this is a column-wide cue,
-  not a per-row one) — the guide line alone reads as "these belong to that
-  mother" without repeating the icon on every row.
-- **Collapse persistence (D5):** by path, in `localStorage`
-  (`om2tab.lineageCollapsed`) — the same `persistedSet` mechanism
-  `om2tab.repoGroupsCollapsed` uses, keyed on the mother's path instead of a
-  `repoId`.
-- **Manual override (`FolderMenu`):** "Set parent folder" opens a submenu
-  (same flyout anatomy as "Modes ▸ …", §6 Context menu) listing this folder's
-  sibling worktrees in the SAME repo (`git-branch` icon per row); picking one
-  writes the `bornFrom` edge. "Clear parent folder" (shown only when a mother
-  is currently set) removes it. Both live in the git-only block, alongside
-  "New worktree…"/"WORKTREE.md". No new tokens — reuses the existing flyout,
-  row, and separator styles verbatim.
+#### Folder ring
+
+The folder header's 16px badge is the [Fleet state ring](#fleet-state-ring-fleet-rail)
+(`fleet-ring`), taking the **hottest** session of the folder: `needs-input` → `errored` → `working`
+(`stuck` counts as working) → idle. Idle (and a folder whose sessions are all done) shows the faint
+track only, in `--border-2`, with no dot. It is the folder's one state signal: a header never gets a
+rail.
+
+#### Visibility, order and states of the list
+
+One flat list: every visible folder — pinned and auto-discovered active — in one classify → sort →
+group pass, with no section header and no difference between pinned and merely active. Stale folders
+don't list (reachable via ⌘K). A worktree of a listed repo always lists, with or without sessions,
+and appears or disappears live. Hidden paths stay hidden. The age filter ("Show sessions within"),
+the session sort and the folder sort keep working.
+
+**Not drawn any more:** the repo-group header as a separate row (the folder header is it),
+parent-directory (`source: 'path'`) group headers, and worktree lineage nesting with its mother badge
+and guide. The lineage data (`bornFrom`) and the "Set parent folder" menu stay.
+
+Collapse state persists as it does today: the folder's open state, the folded checkouts
+(`om2tab.checkoutsFolded`), and the idle group.
+
+**Empty, loading and filter states** are unchanged and render inside the list: no folders →
+`sidebar.emptyShort`; cold boot → spinner and `sidebar.loading`; filter without matches →
+`sidebar.filter.empty` (all `--text-3` 11.5px).
+
+#### Row states
+
+State lives on a **left bar**, never on a fill or a box. No state changes a row's height, padding,
+weight or background; the label **lights up to `--text`** on hover, selected and keyboard focus
+(colour only). Rest colours are not brightened.
+
+| State                    | Session row (on its guide segment) | Checkout row (x = 0, inset 2px top and bottom) | Folder header (x = 0, a 16px tick centred on the ring) |
+| ------------------------ | ---------------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| Rest                     | 1px `--border-2`                   | nothing                                        | nothing                                                |
+| Hover                    | 2px `--text-2`                     | 2px `--text-2`                                 | 2px `--text-2`                                         |
+| Selected / current       | 2px `--accent` (hover keeps it)    | —                                              | 2px `--accent` (hover keeps it)                        |
+| Keyboard focus           | 3px `--text`                       | 3px `--text`                                   | 3px `--text`                                           |
+| Focus + selected/current | 3px `--accent`                     | —                                              | 3px `--accent`                                         |
+
+- A session's 2px bar is centred on the guide (left 19.5px), the 3px one starts at 19px.
+- On a checkout of a group that shows a [rail](#group-rail), hover keeps the **rail's colour at full
+  strength** and widens it to 3px.
+- The transition is `background-color` over `--dur-fast` `--ease`; none under reduced motion.
+- **Keyboard focus draws no outline box.** Under `forced-colors: active` the bar is not reliable, so
+  the row falls back to `outline: 2px solid Highlight` inset.
+- The sidebar's arrow-key cursor (`data-focused`) is keyboard focus: same 3px bar.
+- The jump flash (§7) is the one background a row ever takes, for one pass.
+
+#### Group rail
+
+A 2px vertical rail at **x = 0** over **one checkout and its session rows**, saying "something is
+happening in this checkout" without another dot.
+
+- **One rail per checkout**, inset **2px** top and bottom, so neighbours keep a 4px gap and the rail
+  is **never continuous** across checkouts. It covers the checkout row and its sessions; folded, it
+  covers the checkout row. The tree guide of the group's last session ends on the same y.
+- **Colour = the hottest session**, in this order:
+
+| Hottest session          | Rail                                                             |
+| ------------------------ | ---------------------------------------------------------------- |
+| needs input              | `--warning`                                                      |
+| failed                   | `--red`                                                          |
+| working (stuck included) | `--green` at **40%** (`bg-green/40`) — the **dim working green** |
+| idle, done, none         | nothing                                                          |
+
+- **No new token** for the dim green: it is the existing `--color-green` at 40% opacity (Tailwind
+  `bg-green/40`, a `color-mix` on the token), so every theme derives it.
+- **Folder headers never get a rail** (the ring says it), nor does the idle-worktrees row.
+- **Motion:** colour in over `--dur`, out over `--dur-slow`, `--ease`; none under reduced motion.
+  `forced-colors: active` → `CanvasText`.
+- The checkout row names the state for assistive tech: "{branch}, needs you" / "failed" /
+  "agent working".
+- **Accepted:** the dim green is 1.87:1 against `--sidebar` (under 3:1); the session dots still carry
+  "working".
+
+#### Needs attention
+
+A strip **pinned between the toolbar and the list** (it never scrolls away with the tree), listing
+**only** sessions that need input or have failed, across every folder, including folders the list is
+not showing under Focus. **Hidden when empty** (no persistent chrome).
+
+- `padding: 6px 0 4px`, a 1px `--border` bottom rule.
+- **Head** (`<button>`, `aria-expanded`): chevron 12px (rotates 90° when open, `--dur-fast`), `Needs
+attention` in Section-label type (10.5px / 600, `.06em`, uppercase) `--warning`, then the count
+  (`--text-3`, `tabular-nums`). Open by default; the open state persists.
+- **Row** — one line, **28px**, `padding: 0 12px`, `gap: 8px`, 12.5px: the 16px state ring, the title
+  (`--text`, truncate) and the folder alias (11px `--text-4`, `max-width: 96px`, truncate), the two
+  texts sharing a baseline. Hover `--surface-2`. The reason (the question, the pending command, the
+  error) is the tooltip. A click selects the session, expands its folder and checkout, and leaves
+  Focus when the session is outside the focused folder.
+- **Order:** needs input first, then failed; inside a tier, newest created first.
+- **Height:** at most 168px (six rows), then the rows scroll; the head stays put.
+
+#### Bottom dock
+
+The bottom of the sidebar column holds, top to bottom: **Needs you**, **Return here**, then the
+Add folder row. Each of the two is a dock section with a 1px `--border` top rule (an island of its
+own under Floating panels).
+
+- **Head** (`<button>`, `aria-expanded`), one line: label · count · age · chevron.
+  `padding: 8px 12px`, `gap: 6px`, 12px / 500 `--text-2`, `tabular-nums`; the count `--warning` / 600,
+  the age (oldest item's) 11px `--text-4`; chevron 12px `--text-4` pushed right, rotates 90° when
+  open. Hover `--surface-2`. **Folded by default**: label, count and age are the whole signal.
+- **A section with nothing in it is not rendered at all.**
+- **Open body:** content-sized, at most `min(380px, 45vh)`, scrolls inside; the head stays put. The
+  folder list keeps at least `min(160px, 40vh)`.
+- **Needs you** holds everything the Fleet rail's Needs you section held: pending approval rows,
+  parked agent confirms and hot proposals, with the same anatomy and the same disclosure rules (§6
+  "Needs you rows"). It never opens itself; the OS notification deep-link, `⌘⇧A` and the "Open
+  approvals" palette action open it (and expand a collapsed sidebar).
+- **Return here** holds the rows or the Your move cards described below, unchanged inside.
+- **The Fleet rail is gone** (4th column, its minimized strip, the mission-grants strip, the fleet
+  cards and Would-have). Fleet state is read from the tree (rings, dots, rails) and Needs attention;
+  grants are listed and revoked in Settings → Control server; the interceptor's preview log leaves
+  the main screen.
+
+#### Focus (one folder)
+
+Focus replaces drill-in. It narrows the list to **one folder**; the tree anatomy does not change.
+
+- **Enter:** the folder header's `target` button, or the folder menu.
+- **Back row** (sticky at the top of the list, `z` above folder headers): `chevron-left` 14px +
+  `All folders`, 12px `--text-3` → `--text` on hover, `padding: 8px 14px`, opaque `--sidebar`, 1px
+  `--border` bottom rule, 6px below it. On its right, what waits **elsewhere**: `{n} others`, then
+  `· {k} needs you` and `· {j} failed` when non-zero (10.5px `--warning`, `tabular-nums`). The whole
+  row is the button.
+- Focused, the folder is always open and its header offers no collapse and no focus button.
+- Needs attention and the dock stay **global**. Selecting a session of another folder (from
+  anywhere) leaves Focus. `Esc` does **not** leave it: it is a view of the list, not an overlay.
+- The collapse cycle's level 0 leaves Focus.
+- The focused folder persists (`om2tab.sidebarFocus`); a folder that is no longer known, or is
+  dismissed, clears it on load.
+
+### Return here (bottom dock section)
+
+The tree's visibility and ordering rules are under "Sidebar tree" above. What follows is the
+**Return here** section of the [bottom dock](#bottom-dock).
 
 #### `RETURN HERE` zone (closure axis)
 
-An attention zone **at the bottom of the sidebar, between the folder list and the dock** (T660;
-it used to sit at the top, where it competed with the toolbar).
+A section of the [bottom dock](#bottom-dock), under Needs you. Its head follows the dock head
+anatomy (label · count · age · chevron, **folded by default**); the eyebrow, the resize handle and
+the `SidebarSection` shell it had as a free-standing zone (T660, T702) are replaced by that head. The
+open body keeps the row and card anatomy below.
 Lists the sessions the operator **forgot**: a `needs-input` session they haven't
 viewed for ~10 min and which is **not** the currently selected one (the closure
 axis is orthogonal to `taskState` — it answers "have you seen this session's
@@ -2548,44 +2586,18 @@ tokens. Once the scan resolves (success or failure), `foldersLoading` flips to
 state above — manual rescans (the toolbar's own spinner) never re-trigger this
 state.
 
-**Status states in drill-in mode — BUG-257:** the empty, loading and filter
-no-match states render at EVERY drill level, never as a blank body. On the root
-screen the tree host shows them as above. On a drilled screen (a repo or folder
-screen, including a position restored from `localStorage` on a cold boot before
-the folder model has loaded) `SidebarDrillView` keeps its Back row and shows the
-same state under it, in the same spinner / text anatomy and tokens
-(`sidebar.loading`, `sidebar.emptyShort`, `sidebar.filter.empty`), so the
-operator keeps their place. Once folders load, the restored position resolves as
-before (T289). No new tokens.
-
 ### Repo-group header (sidebar)
 
-`RepoGroupHeader.vue` — the synthetic header for a **repo-group** (2+ visible
-worktree-folders of the same repo in a zone; `groupByRepo`). `26px` row,
-`padding: 0 12px 0 8px`, `gap 4px`, `12.5px`/500, reusing the sidebar-row anatomy
-(hover `bg-surface`): chevron `13px` (rotates on expand), `git-branch` icon
-`13px` `--text-3`, the **label**, and the member count (`--text-4`, `10.5px`,
-tabular). Clicking the whole row → `toggleRepoGroup(repoId)`. The count follows
-"Stats on demand": hover-only when the group is **expanded** (the member
-folders are listed right below), visible when the group is **collapsed** (it's
-the only clue to how many worktrees are hidden), and under the keyboard cursor
-(`data-focused`).
+**Replaced by the folder header** (§6 "Sidebar tree"). A repo is one folder header with its
+checkouts flat under it; there is no separate group row and no parent-directory group. What survives,
+on the folder header:
 
-- **Label resolution:** `repoAliases[repoId]` (per-repo alias) → **main
-  worktree**'s alias (renaming the main folder renames the group for free) →
-  derived basename (main's basename, else `basename(dirname(repoId))`, else the
-  raw repoId).
-- **Disambiguator:** when 2+ groups in the SAME zone resolve to the SAME
-  label, each gets a **dim hint** with the parent dir's name (`· org-a` / `· org-b`),
-  `--text-4` `10.5px`, to tell two `www` repos apart even before any rename.
-- **Context menu:** right-click on the row opens an inline menu (Teleport,
-  same visual idiom as `FolderMenu` — dismiss via Esc / click-outside / wheel):
-  **Rename repo** (`pencil-line` icon) → opens `RenameRepoDialog`; **Reset name**
-  (`rotate-ccw` icon, only when there's a custom alias) →
-  `setRepoAlias(repoId, '')`, back to the derived basename. The alias is
-  **renderer-only**, persisted in `localStorage` (`om2tab.repoAliases`), same as
-  `collapsedRepoGroups` (also per-repoId) — no round-trip through
-  `projects.json`. **No new tokens.**
+- **Label resolution:** `repoAliases[repoId]` → the main worktree's alias → the derived basename
+  (main's basename, else `basename(dirname(repoId))`, else the raw repoId).
+- **Disambiguator:** headers that resolve to the same label get a dim parent hint (`· org-a` /
+  `· org-b`), `--text-4` 10.5px.
+- **Context menu:** **Rename repo** (`pencil-line`) → `RenameRepoDialog`; **Reset name**
+  (`rotate-ccw`, only with a custom alias). The alias stays renderer-only in `om2tab.repoAliases`.
 
 ### Shelved section (repo group)
 
@@ -2600,8 +2612,8 @@ the grouping lives in `folder-zones.ts` (`groupByRepo`) and `lib/shelved-sidebar
 
 **Position and grouping.**
 
-- The section is the **last** child of the repo group, after every live member folder (and after any lineage
-  children). It never appears outside a repo group and never in a `source: 'path'` group.
+- The section is the **last** block of its repo's folder, after every checkout and the idle-worktrees row
+  (§6 "Sidebar tree"). It never appears under a standalone folder.
 - **Shelved members count toward the 2+ that makes a repo group.** A repo with one live worktree and one or
   more shelved ones still renders its `RepoGroupHeader`, so the section always has a home.
 - The repo-group header's member count stays **live members only**; the shelved count lives on the
@@ -2738,14 +2750,13 @@ searchable.
 
 ### Session rows (sidebar)
 
-Stacked visual states:
+Anatomy and geometry: §6 "Sidebar tree → Session rows". States: §6 "Sidebar tree → Row states"
+(the left bar only — **no hover or selected fill, no scale, no weight change**). One state remains
+besides those:
 
-| State            | Background                | Color                   | Decoration                                                   |
-| ---------------- | ------------------------- | ----------------------- | ------------------------------------------------------------ |
-| Default          | transparent               | `--text-2`              | —                                                            |
-| Hover            | `rgba(255,255,255,0.025)` | `--text-2`              | scale(1.003) on transform                                    |
-| Selected         | `rgba(217,119,87,0.08)`   | `--text`, weight 500    | 2px `--accent` bar on the left (border-radius `0 2px 2px 0`) |
-| Faded (idle-old) | transparent               | `--text-2` opacity 0.62 | —                                                            |
+| State            | Background  | Color                   |
+| ---------------- | ----------- | ----------------------- |
+| Faded (idle-old) | transparent | `--text-2` opacity 0.62 |
 
 #### Layout containment (long lists)
 
@@ -2777,44 +2788,21 @@ Rules for anyone touching these surfaces:
 
 #### Row anatomy & indentation (fixed slots)
 
-A session row is a strict horizontal sequence of **fixed-width slots** so the
-label baseline never shifts between rows, whatever status a row carries:
+A session row is a strict sequence of **fixed-width slots**, so the title's baseline never shifts
+between rows, whatever status a row carries: `padding-left` · **status slot** (12 × 12px, centred,
+one glyph, mandatory even for a 6px dot) · 8px gap · **title** (`flex-1 truncate`) · trailing chips ·
+**icon slot** (14px) · `padding-right` 12px. A **terminal row** uses the same slots, its
+`square-terminal` glyph in the status slot. Teammate child rows use a 13 × 13 status slot; agent child
+rows carry a fixed `bot` glyph.
 
-1. **Left indent** — `padding-left`, the only value that varies by density and
-   nesting (see the table below). This is the empty column that indents a
-   session under its folder; it aligns the row's leading edge under the folder
-   **icon** (not the folder label), which is why it is far smaller than the
-   folder-label offset.
-2. **Agent-toggle slot** — fixed `12×12`, centered. Holds the disclosure
-   chevron on a session that spawned subagents; empty (but reserved) otherwise,
-   so agent and non-agent rows align.
-3. **Status slot** — fixed `14×14`, centered. Holds **exactly one** status
-   glyph: the `6px` dot (working / needs-input / failed / stuck / idle / archived)
-   OR an `11px` icon (`check` completed, `cloud` non-resumable, `moon` hibernated).
-   **This slot is mandatory and fixed** — a `6px` dot and an `11px` icon must
-   occupy the _same_ column, or the label start drifts row-to-row (the bug this
-   rule prevents). A **terminal row reserves both slot 2 and slot 3 exactly as a
-   session row does** (an always-empty `12×12` toggle slot, then the `14×14`
-   status slot holding its `square-terminal` icon or status dot), so a terminal's
-   label starts in the **same column** as its folder's session labels — a
-   terminal reads as a child of the folder, not as a sibling of it. Teammate
-   child rows use a `13×13` status slot (agent child rows carry a fixed `bot`
-   glyph, so they need none).
-4. **Gap** `9px` (Comfortable) / `8px` (Compact), then the **label**
-   (`flex-1 truncate`).
+**Indentation** (`padding-left`), by density:
 
-**Indentation** (`padding-left`), by density × context:
+| Row                    | Comfortable | Compact |
+| ---------------------- | ----------- | ------- |
+| Session / terminal     | 24px        | 24px    |
+| Agent / teammate child | 40px        | 38px    |
 
-| Context                           | Comfortable | Compact     |
-| --------------------------------- | ----------- | ----------- |
-| Session — flat (no repo group)    | 24px        | 16px        |
-| Session — nested under repo group | 44px        | 32px        |
-| Session — drill-in folder screen  | 12px        | 8px         |
-| Agent / teammate child row        | indent + 16 | indent + 14 |
-
-The **drill-in** folder screen (§6 → drill-in) renders its sessions
-`headerless`, so it uses the small drill indent — the back-row header already
-names the folder, and there is no tree depth to justify the classic offset.
+The indent does not shrink in Compact: the status slot must stay clear of the tree guide at x=20.
 
 #### Trailing chips overlay the label (no reserved column)
 
@@ -3832,7 +3820,7 @@ sitting in Backlog, so its own status stays untouched.
 
 Motion: default `--dur`/`--ease`; no new keyframe.
 
-### Sidebar toolbar (one-line header: rescan · drill depth · collapse-all · hidden · search)
+### Sidebar toolbar (one-line header: rescan · collapse cycle · hidden · search)
 
 The Search button opens the [Sidebar jump palette](#sidebar-jump-palette); it does not turn
 the header into a filter input.
@@ -3842,9 +3830,9 @@ the header into a filter input.
 `gap: 2px`, `justify-content: flex-end`, bottom border `1px --border`. Contents,
 right-aligned, in this order:
 
-    rescan · drill depth · collapse-all · hidden(n) │ search
+    rescan · collapse cycle · hidden(n) │ search
 
-The first four are the tree actions, present only when
+The first three are the tree actions, present only when
 `sessions.folders.length > 0` (the same condition the old `⋯` trigger used);
 they are followed by a **1px × 16px `--border-2` divider** (`margin: 0 4px`)
 that separates them from the navigation affordance. **Search is always present
@@ -3853,7 +3841,7 @@ sidebar. All buttons are 26×26px, radius `--radius-sm`, ghost style (`--text-4`
 default, `--text` + `--surface` background on hover), except the Hidden button
 (auto width, `padding: 0 7px`, `gap: 4px`, to fit its count).
 
-At the 200px width floor the five buttons + count + divider need ~165px, so
+At the 200px width floor the four buttons + count + divider need ~140px, so
 nothing collapses behind a `⋯`.
 
 **macOS window-controls inset** still applies to this row's `padding-left`
@@ -3873,40 +3861,26 @@ jump palette's `⇥` fallback.
    §7 Motion) — the only feedback that anything is happening, since
    `sessions.rescan()` has no other visible side effect until the watcher
    settles. Tooltip: `$t('sidebar.menu.rescan')`.
-2. **Drill depth**. A three-state icon button (not a switch, not a toggle):
-   `list-tree` (14px) at depth 0 (classic tree), `columns-2` at depth 1,
-   `columns-3` at depth 2. Depths 1 and 2 also get the `--accent-soft`
-   background + `--accent` icon color (the same convention selected/active
-   icon buttons use elsewhere, e.g. `StatusFooter.vue`'s pill). Each click
-   advances the depth, wrapping `0 → 1 → 2 → 0`. Tooltip:
-   `$t('sidebar.toolbar.drillOn')` at depth 0 (it names the action), and
-   `$t('sidebar.toolbar.drillLevel')` at 1–2 (it names the current level,
-   since a click advances rather than toggles).
-3. **Collapse all**. Two-state icon, following the same "icon names the
-   action a click performs" convention as the drill depth button above:
-   `chevrons-down-up` (14px) when any folder is expanded (clicking
-   collapses), `chevrons-up-down` (14px) when every folder is collapsed
-   (clicking expands) — the icon itself always names the action a click
-   performs, not a static glyph with only the tooltip changing. Tooltip
-   flips between `$t('sidebar.menu.collapseAll')` / `$t('sidebar.menu.expandAll')`
-   in lockstep; same action (`sessions.expandAll()` / `sessions.collapseAll()`).
-   **Hidden entirely at drill depth 2** — expand/collapse state is a
-   classic-tree concept, and depth 2 navigates one screen at a time with
-   nothing inline to act on. At depth 1 the group screen renders its member
-   folders inline and expandable, so the button is present and meaningful
-   there, exactly as at depth 0.
-4. **Hidden**. `eye-off` (14px) + a numeric badge (the dismissed-folder
+2. **Collapse cycle**. One button, three levels, each click going one down and then back to the top:
+   **everything open** → **sessions folded** (checkouts listed) → **folders folded** (headers only) →
+   everything open. The icon names what the next click does: `chevrons-down-up` (14px) at levels 2 and
+   1, `chevrons-up-down` at level 0. Under it, **level dots** (2 × 2px `currentColor`, 4px apart,
+   2px from the button's bottom): three at level 2, two at level 1, none at level 0. Tooltip and
+   `aria-label`: `Collapse sessions` / `Collapse folders` / `Expand all`. The level is derived from
+   what is open, never stored. Level 0 also leaves Focus. The drill-depth button is **gone**.
+
+3. **Hidden**. `eye-off` (14px) + a numeric badge (the dismissed-folder
    count) — badge omitted at `0`, button stays present but visually and
    functionally inert. Click opens `SidebarHiddenPopover.vue`, anchored to
    this button's bounding rect (left-aligned, below) — same popover anatomy
    as the Context menu (220px min-width, 24px-tall items, `text-12px`,
    dismissal via Esc / click-outside / wheel), now scoped to just the
    Hidden-folders list (no more Expand/Collapse-all row above it).
-5. **Search** (rightmost, after the divider). `search` (14px). Opens the
+4. **Search** (rightmost, after the divider). `search` (14px). Opens the
    [Sidebar jump palette](#sidebar-jump-palette) — it does NOT filter the tree.
    While the palette is open the button takes the `--accent-soft` background +
-   `--accent` icon treatment (the same active convention the drill-depth button
-   uses); clicking it again closes the palette. Tooltip:
+   `--accent` icon treatment (the convention for an active icon button); clicking
+   it again closes the palette. Tooltip:
    `$t('sidebar.jump.label')`. `⌘K` is NOT bound to it — that stays on the
    [Command palette](#command-palette).
 
@@ -4064,140 +4038,10 @@ this rule exists to prevent.
 
 ### Drill-in navigation (sidebar, depth 0–2)
 
-Drill-in depth is a **budget of screens**, not an on/off mode. A row may push
-another screen only while `drillStack.length < drillDepth`; past that, the
-screen falls back to the classic inline tree.
-
-| Depth | Root screen    | Inside a group screen                    |
-| ----- | -------------- | ---------------------------------------- |
-| `0`   | classic tree   | —                                        |
-| `1`   | drillable rows | folders inline and expandable            |
-| `2`   | drillable rows | drillable rows → the folder's own screen |
-
-At depth 1 a standalone (ungrouped) folder on the root screen stays drillable
-— it spends the single available step and opens its own session screen.
-
-When drill-in is on (depth ≥ 1), the folder tree below the toolbar is replaced by one of
-three screens, all sharing the toolbar above:
-
-- **Root** — every repo-group and standalone folder as a flat, drillable row
-  (30px tall, `chevron-right` trailing), no inline expansion. A repo-group
-  row shows its `git-branch` icon, label, and a `"{n} worktrees"` count.
-- **Repo screen** — reached by clicking a repo-group row: that repo's member
-  folders, each a drillable row (`folder` icon). At depth 1 this screen
-  renders its member folders inline via the same `SidebarFolder` component
-  the classic tree uses inside a group, instead of drillable rows — but
-  WITHOUT the `nested` prop the classic tree passes there. `nested` deepens
-  the indent to read as "inside a `RepoGroupHeader` disclosure"; this screen
-  has no `RepoGroupHeader` in the DOM (the back row above already plays that
-  role), so the folders render at the default `flat` indent, the same one a
-  `SidebarFolder` uses when it isn't part of any group.
-- **Folder screen** — reached by clicking any folder row: that folder's own
-  session list, rendered by the same row anatomy as the classic tree's
-  session rows (status dot, teammate nesting) — nothing reimplemented, just
-  displayed without the folder's own title row (and, with it, the classic
-  tree's hover-revealed inline "+ New session" icon — replaced on this
-  screen by the back row's own trailing `+` action, below).
-
-A **back row** (30px tall) replaces the folder-screen/repo-screen's own
-header while drilled in. The **entire row is the back button** — not just
-the leading `chevron-left` — a `<button>` spanning the full width, so
-clicking anywhere on the title bar navigates back, matching every other
-row in the sidebar (folder rows, session rows) being fully clickable rather
-than icon-only. A folder screen additionally shows its parent repo's label
-as a dim subtitle when it has one, and — carried over from the classic
-tree's inline action cluster (same `older`/`archived`/`new` set, "Inline
-action cluster (folder row)" above) — the same trailing peek actions,
-immediately before the **`+` (New session)** action: `clock`/`archive`
-icon-only buttons (`role="button"`, 11px icon, `--text-4` default,
-`--accent` while revealed, `@click.stop`), each shown only when its count
-is non-zero, driving the same `sessions.toggleRevealOlder`/
-`toggleRevealArchived` state the classic row uses. Unlike the classic
-row's hover-gated reveal, this cluster is **always visible** in the back
-row — a persistent header, not a row that fades stats in on hover — same
-posture as the `+` action next to it (20×20px, `role="button"`,
-`@click.stop` so it doesn't also trigger the back navigation) that opens
-the new-session flow for the drilled-into folder
-(`ui.openNewSession(folder.path)`) — and, last in the cluster, the row's
-**`⋯` (folder actions)**, below. The repo screen has no peek or `+` actions,
-only a folder screen hosts sessions directly.
-
-**The back row is pinned, outside the scroller (BUG-248).** The back row is a
-sibling ABOVE the drill list's scroller, like the sidebar's own header — not a
-row inside the scroll area, and not `position: sticky` (a sticky row stops short
-of the scrollbar gutter and lets half-cut rows show at its edge). The drill view
-renders directly in the sidebar column (it is not wrapped by the classic tree's
-scroller), so the back row spans the full column width, its bottom `border`
-reaches both edges over the gutter, and the scrollbar track starts below it. The
-row is opaque (`bg-sidebar`). Rows sliding under its edge fade out through a
-14px strip at the top of the scroller (`--color-sidebar` → transparent,
-`pointer-events: none`), inset from the right by the 8px scrollbar so the thumb
-is never veiled; the borders stay solid. The scroller keeps its `6px 0`
-padding. Non-drill mode is unchanged.
-
-**Row actions — every drill-in row has the menu its classic-tree twin has.**
-Drill-in used to be a dead end for actions: right-clicking a back row or a
-chooser row did nothing, and reaching Rename / Hide / New worktree meant
-leaving drill-in first. Every row here now carries the SAME menu the classic
-tree gives the same entity — nothing new is invented, only re-hosted:
-
-- **Back row** — right-click anywhere on the row opens the drilled-into
-  entity's menu: the shared **`FolderMenu`** on a folder screen, the
-  **group menu** (Rename group / Reset name / Cleanup, the same items
-  "Repo-group header" describes) on a repo screen. A trailing **`⋯`**
-  (`ellipsis`, 14px, 20×20 `role="button"`, `@click.stop`) does the same for
-  mouse users, placed **last** in the trailing cluster — after `+` on a
-  folder screen, alone on a repo screen. Like the `+` beside it, this `⋯` is
-  **always visible**: the back row is a persistent header, not a row that
-  fades stats in on hover.
-- **Chooser rows** (root screen and repo screen) — right-click opens the
-  menu matching the row's kind (`FolderMenu` for a folder row, the group menu
-  for a group row), and the same `⋯` sits at the row's right edge **before**
-  the trailing `chevron-right`. Here it follows "Stats on demand": `opacity 0`
-  at rest with the 20×20 space **preserved** (no layout shift), revealed on
-  `group-hover` / `group-focus-within`, and forced visible while its own menu
-  is open.
-
-Both menus clamp against the viewport edges with the same estimate their
-original host uses (180×60 for `FolderMenu`, 172×108 for the group menu), and
-a keyboard activation — which has no cursor — anchors at the bottom-left of
-the `⋯` itself instead. The group menu is rendered inside the drill view
-rather than reached through `RepoGroupHeader`: that menu lives inside the
-header component, and drill-in never mounts one (the back row plays its role).
-Same items, same store actions, same Esc / click-outside / wheel dismissal —
-plus one dismissal `RepoGroupHeader` does not need: a group that stops
-rendering underneath an open menu closes it. Hiding the menu is not enough,
-because its Esc / click-outside listeners would stay armed and an invisible
-menu would eat the operator's next Escape.
-
-**Persistence — the drill position survives a restart.** `drillStack` is
-mirrored to `localStorage` (`om2tab.sidebarDrillStack`, the same
-`persistedRef` idiom as `drillDepth`), so reopening the app lands on the
-screen you left instead of bouncing back to the root. Restoring is two-phase:
-the stored **shape** is validated when the store is built, and the
-**resolution** check runs once the folder model has loaded — if any node in
-the stack no longer resolves, the WHOLE stack is emptied (a partial stack
-would leave the operator on a screen whose parent is gone). The restored stack
-is also clamped to the current `drillDepth`, exactly as lowering the depth
-truncates it.
-
-The per-node resolution rule is deliberately asymmetric. A **group** node must
-still be RENDERING (present in `visibleFolders`). A **folder** node must still
-be KNOWN and **not dismissed** — known rather than visible, because a folder
-that merely went `stale` overnight is still a legitimate place to be and
-demanding visibility would empty the stack every morning; and not dismissed,
-because restoring onto a folder the operator explicitly hid would resurface it
-as the sidebar's entire content.
-
-**Auto re-drill:** selecting a session — from a notification, the command
-palette, the roadmap board, anywhere — while drill-in is on jumps the
-navigator straight to that session's folder screen, skipping the
-intermediate repo screen even when the folder belongs to a repo-group. The
-drill position is always derived from the current selection; it is never
-independent state the operator can get lost relative to. The jump is
-clamped to the current depth: at depth 1 it lands on the owning group's
-screen with the session's folder expanded inline, at depth 2 on the
-folder's own screen.
+**Removed.** Drill-in (the depth control, the root / repo / folder screens, the pinned back row, the
+persisted drill stack, auto re-drill) is replaced by **Focus on one folder** — §6 "Sidebar tree →
+Focus". Every action a drill row offered lives on the folder header, the checkout row or their
+context menus.
 
 ### Resizable divider (handle)
 
@@ -4323,32 +4167,30 @@ it does without this section: the setting adds no pixel to the default layout.
   fleet list are ONE island (`rail-list`), with no gap between them; the head's own `border-b` stays
   as the **inner divider rule**. A head carries `data-island-head` (and `data-island-band`) instead
   of `data-island`. Because it sits inside the island's 1px top border, a head is
-  `calc(var(--float-band) - 1px)` tall, which puts its inner rule on the Topbar's bottom edge. The
-  drill view renders inside the same `sidebar-list` island, under the same toolbar.
+  `calc(var(--float-band) - 1px)` tall, which puts its inner rule on the Topbar's bottom edge.
 - **Island background.** Sidebar-family islands (Return here, the folder list with its toolbar, dock,
-  the Fleet rail list with its header and the sections) paint `--sidebar`; content-family islands (Topbar, the session
+  the dock sections) paint `--sidebar`; content-family islands (Topbar, the session
   area, every helper pane) paint `--bg`.
 
 ##### Islands and the grid
 
-One grid, three columns. The sidebar column and the Fleet rail column are stacks of islands; the
+One grid, two columns since the sidebar redesign removed the Fleet rail. The sidebar column is a stack of islands; the
 middle column is the Topbar over a row holding the session area and the helper stack.
 
-| Column     | Island, top to bottom (`data-island`)                                                                             |
-| ---------- | ----------------------------------------------------------------------------------------------------------------- |
-| Sidebar    | `sidebar-list` (toolbar head + folder list) · [`sidebar-return`] · `sidebar-dock`                                 |
-| Middle     | `topbar` · then `session` and each helper pane (`helper-pane`), side by side or stacked                           |
-| Fleet rail | `rail-list` (header head + fleet list) · [`rail-needs-you`] · `rail-would-have` (minimized: one `rail-minimized`) |
+| Column  | Island, top to bottom (`data-island`)                                                                                       |
+| ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar | `sidebar-list` (toolbar head + Needs attention + folder list) · [`sidebar-needs-you`] · [`sidebar-return`] · `sidebar-dock` |
+| Middle  | `topbar` · then `session` and each helper pane (`helper-pane`), side by side or stacked                                     |
 
-- **Top band.** `sidebar-toolbar`, `topbar` and `rail-header` are the **band**: three islands of
+- **Top band.** `sidebar-toolbar` and `topbar` are the **band**: two islands of
   `--float-band` (42px) on one line, sharing top and bottom (y = gap … gap + 42). They are marked
-  `data-island-band`. `topbar` is an island of its own; the other two are the heads of their list
-  islands (see "Joined heads"), so the band reads as three bars on one line.
+  `data-island-band`. `topbar` is an island of its own; the toolbar is the head of its list
+  island (see "Joined heads"), so the band reads as two bars on one line.
 - **Below the band.** The first island under each column starts at the same y: band + gap
   (`4 + 42 + 4 = 50px` from the window top). Under a joined head the list simply continues; below
   the Topbar it is the session area and the first helper pane in the middle column.
-- **Columns are separated by the dividers.** The three vertical dividers are exactly
-  `--float-gap` wide (4px; the five column dividers carry `data-float-divider`, and the floating
+- **Columns are separated by the dividers.** The vertical dividers (no Fleet rail divider) are exactly
+  `--float-gap` wide (4px; the column dividers carry `data-float-divider`, and the floating
   rule sets their width/height from the token), so the divider **is** the gap and the drag handle at
   once. With the layout off they keep the 6px `w-1.5` / `h-1.5` hit area. Between two helper panes the gap is `--float-gap` as well
   (a flex gap in side-by-side; the width splitter itself, `--float-gap` wide, when stacked).
@@ -4372,24 +4214,15 @@ The app footer is **not** an island. It stays **flush and full width**: no margi
 side border. It keeps `--surface` and a 1px `--border` **top rule**. The islands keep
 `--float-gap` above it.
 
-##### Sidebar column: Return here and drill Back row
+##### Sidebar column: the dock sections
 
-- `sidebar-return` (the Return here zone) is its **own island** between the list island and the
-  dock, `--float-gap` from both (T660). When the zone is empty it is not rendered and the list and
-  the dock are `--float-gap` apart as usual. Its internal top divider (the `aria-hidden` `border-t`)
-  is hidden; the island gap separates it from the list. Its height is capped (see `RETURN HERE`
-  zone) and the rows scroll inside. In Your move mode Live the cap is `min(380px, 45vh)` and the
-  cards scroll inside; the island keeps `overflow: hidden` so a card never pokes past the rounded
-  corners, and the eyebrow stays pinned above the scrolling cards.
-- The zone is mounted through `SidebarSection` (T702): the island keeps its `data-island`
-  attribute, but sits inside a transparent wrapper that carries the resize handle, so the handle can
-  live **in the gap** above the island without being clipped by its rounded corners (see "Sidebar
-  sections" below).
-- In **drill mode** the drill view (`data-drill-view`) renders inside the same `sidebar-list`
-  island, **under the joined toolbar head** (T659). Its pinned Back row (`data-drill-back`, BUG-248)
-  is the first row below the toolbar's inner rule, still outside the scroller; the toolbar, not the
-  Back row, sits on the island's top edge and is clipped by its rounded corners. The default layout is
-  untouched.
+- `sidebar-needs-you` and `sidebar-return` are each their **own island** between the list island and
+  the Add folder island, `--float-gap` apart (§6 "Bottom dock"). An empty one is not rendered. Their
+  top rules are hidden; the island gap separates them. Open bodies are capped and scroll inside; the
+  island keeps `overflow: hidden` so a card never pokes past the rounded corners.
+- Needs attention is **not** an island: it sits inside `sidebar-list`, under the toolbar head.
+- Rows keep their full-width anatomy inside the island; the left bar and the group rail sit just
+  inside the island border.
 
 ##### Sidebar sections (T702)
 
@@ -4459,18 +4292,10 @@ and Settings today, and it must accept more sections later without a layout chan
   and `--float-gap` above the footer.
 - Off, the dock is the same footer it always was: one section, a 1px `--border` top rule.
 
-##### Fleet rail sections (slots)
+##### Fleet rail sections (slots) — removed by the sidebar redesign
 
-The expanded Fleet rail is the same idea for its lower part: after the `rail-list` island,
-each section is a direct child of the rail with a `data-island` of its own and a
-`data-rail-section` marker, `--float-gap` apart:
-
-1. `rail-needs-you`, present **only while something is pending** (as today);
-2. `rail-would-have`.
-
-The lowest one sits `--float-gap` above the footer. A future section is another
-`data-rail-section` child, not a layout change. The **minimized** rail is a **single**
-`rail-minimized` island (44px wide, its own border on all sides, no separate `border-l`).
+There is no Fleet rail column: no `rail-*` island, and the Fleet rail rows of this layout section
+(grid, collapsed and hidden states, minimize motion) no longer apply.
 
 ##### Collapsed and hidden states keep the gap
 
@@ -7510,6 +7335,9 @@ var(--color-accent)`, **unticked by default**) + a block with the **kind**
 
 #### Sidebar indicator (`SidebarFolder.vue`)
 
+**On the redesigned row the chip is compact** (§6 "Sidebar tree → Session rows": `⚠ n`, full text on
+hover); the data, tone and matching rules below still apply.
+
 The **last** (rightmost) entry of the session row's trailing chip cluster:
 StopFailure → subagent count → orchestrator crown → teammate count → **mission
 chip**. **Missions v4 (S-23):** the chip is drawn from the v4 view. For a **v4
@@ -9601,206 +9429,13 @@ overlay — it became the **Inbox rail**, a column (below). It's not a forgotten
 
 ### Inbox rail ("Fleet rail" — 4th column)
 
-The whole fleet's approval queue **and** its live state, in one column. Two
-things share this rail: the **tool calls the responder is holding** for you
-to decide (only in the responder hook's `active` mode, §6 → "Hook
-responder"), plus parked agent confirms and hot proposals — resolved
-Allow/Deny **without switching tabs** — and, since T151, the **Fleet bucket
-cards** (below): every non-idle session in the fleet, one glance, no click
-required. `InboxRail.vue` is the same file, converted in place — the state
-machine, summon behavior, width persistence, and overlay-mutex exclusion
-below are unchanged from T83.
+**Removed by the sidebar redesign** (§6 "Sidebar tree → Bottom dock"). There is no fourth column:
+no expanded / minimized / hidden states, no minicards, no fleet bucket cards, no order toggle or
+state filter, no mission-grants strip, no Would-have section, and `⌘⇧B` ("Toggle the Fleet rail") and
+the order toggle have nothing to act on. What the dock inherits is the row anatomy below.
 
-**Not an overlay — a column.** It used to be a modal (until T83), and the modal had a
-fatal flaw: it required a **click to discover whether something was waiting for you**.
-When supervising 4–5 agents, "is anything stuck?" needs to be answered by a
-**glance**, not a gesture — a confirm parked behind a closed modal is, in
-practice, an invisible confirm. That's why the rail is **persistent**, lives to the
-right of the helper-stack, and **doesn't enter the floating-surfaces mutex**
-(no dialog/menu/palette can suppress it; `Esc` doesn't close it; it never pushes
-the `modal` keyboard scope — if it did, with the rail _always_ open, every
-global shortcut would die).
+#### Needs you rows
 
-- **Panel header (`expanded` state) and `minimized` ribbon button:** both
-  **42px** tall — the same value as the Topbar/Sidebar (§4) — so the header's
-  bottom border aligns with the Topbar's border across the window's full width,
-  instead of forming a step. No new token: reuses the `Topbar | 42px` row already
-  existing in §4.
-- **States (3, persisted globally — §4):**
-  - **`expanded`** (default): full panel, width `om2tab.inboxRailWidth`
-    (clamp `[260,440]`, default `300`), with the same 6px handle as the sidebar
-    (double-click resets).
-  - **`minimized`**: a **44px** strip with the `inbox` icon, the badge, **and
-    the whole fleet as minicards** — one 28px card per non-idle session,
-    carrying the same [state ring](#fleet-state-ring-fleet-rail)
-    and the same strict tier order as the expanded body, so the two views can
-    never disagree. Geometry: `8 + 28 + 8 = 44`, the strip's existing width,
-    unchanged. Minimizing reduces **area**, never information — it used to
-    cost you the entire fleet, which was backwards, because minimizing is
-    exactly when the glance matters most. Identity comes from the **same hover
-    preview** the expanded cards use; at 28px a baked-in label would be a lie.
-    Click selects, right-click opens the session menu — identical to a full
-    card.
-  - **`hidden`**: off. A **HARD** state now (it used to be soft — an
-    actionable arrival broke it open). Only the operator, or the OS
-    notification deep-link, brings the rail back.
-- **No auto-summon — `minimized` and `hidden` are HARD states.** The rail
-  **never expands itself** when an item arrives. It used to (T83 §5.6, a watch
-  on `sessions.actionableInboxCount` in `App.vue`), and that was justified by a
-  premise the minicards removed: a minimized rail showed **nothing**, so an
-  arriving confirm would have been invisible and the rail had to force itself
-  open. Now the fleet stays fully legible at 44px and the badge still counts,
-  so forcing the layout open stops being a rescue and becomes an
-  **interruption** — the exact modal behavior this rail exists to avoid. The
-  operator put the rail away; it stays away until the operator brings it back.
-  `layout.summonInboxRail()` survives for **one** caller: the OS
-  notification's **deep-link** (`onNotifyActivateInbox`), which is a real
-  operator gesture. Escalation is untouched — sound and OS attention still
-  fire at their own source (`session-mcp-confirms.ts`), and the badge still
-  counts. Only the layout yank is gone.
-- **Hot proposals:** a `hot.md` proposal is an informational
-  suggestion (see the "Hot proposal row" bullet below) — it enters the
-  displayed count (`inboxCount`, the badge) but not `actionableInboxCount`.
-  It never forced the panel open even when the auto-summon still existed, and
-  it still doesn't: the minimized strip's `inbox` icon gets
-  `.anim-shimmer-dot` (opacity
-  glow/pulse, `--color-accent`) only while there's **nothing** actionable
-  pending — a real approval always takes visual priority over the glow. No sound,
-  no `requestAttention()` beyond the existing gentle one, no forced focus
-  notification: "memory update" should never demand that you look at anything.
-- **Entry point:** the rail itself — always visible as the 4th column, so it
-  doesn't need a dedicated Topbar button to "open" what's already on screen.
-  Clicking the **minimized** ribbon (44px) expands it. Also `⌘⇧A` and the "Open
-  approvals" action in the palette (which always **expands**, never toggles). (The `inbox`
-  button that used to live in the Topbar was removed for being redundant with the
-  persistent rail — it kept the same `toggleInboxRail`, today only triggered by `⌘⇧A`.)
-- **Stacked sections (NOT tabs), T152 order:** `Active missions` (grants
-  strip, unchanged) → **`Fleet`** (bucket cards, the scrolling body — below)
-  → **`Needs you`** (actionable: allow/deny — parked fail-closed confirms
-  lead, a **collapsible section** matching Would-have's chrome, default
-  **collapsed**, internal `max-height: 40vh` scroll when open, never
-  auto-collapses once opened) →
-  **`Would-have`** (read-only shadow log, collapsible, **collapsed** by
-  default). `Activity` (the notification history) **left the rail in T152** —
-  it now lives in the **Topbar's Activity bell**, see "Activity bell (Topbar
-  notification popover)" below; it's global (not gated on a selected
-  session), so it had to leave a per-worktree column. Stacking instead of
-  tabbing is what guarantees the **actionable is never hidden behind an
-  unselected tab**: in a tall, narrow rail the attention hierarchy is
-  **spatial and permanent**. Needs-you and Would-have share one visual
-  language — a `.section-head` chevron button (rotates `-90deg`↔`0` on
-  toggle) over a `.collapsible` body (`grid-template-rows: 1fr↔0fr`, §7) —
-  and Needs-you **disappears entirely** (header included) when there is
-  nothing pending, the same way the empty-fleet mockup variant shows no
-  Needs-you section at all. Section header in caps `10px` `--text-3` +
-  counter on the right.
-- **Fleet bucket cards — the rail's scrolling body.** A projection of
-  `sessions.boardBuckets` (`stores/fleet-state.ts` + `components/fleet-board.ts`,
-  unchanged — no new heuristics), reusing `FleetBoardCard.vue`. Three rules
-  make this different from the old sidebar Fleet status board it replaces:
-  - **Idle is never rendered here** (the old board's `idle` bucket is
-    dropped for this projection only — `fleet-board.ts` is untouched and
-    still buckets `idle`; the rail simply doesn't render that bucket).
-    `done` stays.
-  - **No bucket eyebrows / state labels.** The board's per-bucket headers
-    are gone — a card's state is carried entirely by its **16px state ring**
-    (see "Fleet state ring" in §7), which replaced both the old dot and the
-    card border ring. One continuous column, not sections.
-  - **Strict-tier ordering (anti-flood).** Tiers render in the fixed order
-    `needs-input → errored → stuck → working → done` — a lower tier can
-    **never** render above a higher one, so a session that just turned
-    `working` can never push above something that still needs attention.
-    **Inside a tier, cards are in creation order** (T459) — by the
-    session's `created` time, **never** by `modified`, so a transcript write
-    can no longer move a card. **Newest on top** by default; the
-    [order toggle](#fleet-rail-order-toggle) inverts it. The same rule covers
-    every tier, the three attention tiers (`needs-input`/`errored`/`stuck`)
-    included — the old "oldest-waiting first" flip is gone. A session with a
-    missing/invalid `created` sorts after every valid one in both directions;
-    ties break on `sessionId`. A synthetic placeholder that is replaced by its
-    disk twin keeps the placeholder's creation time as its sort key, so the
-    card does not jump when the real transcript lands. The sort lives in
-    `buildBoard(sessions, order)` (`fleet-board.ts`); `sessions.boardBuckets`
-    passes it `layout.inboxRailOrder`, and the expanded cards and the
-    minimized minicards both flatten that one projection.
-  - <a id="fleet-rail-order-toggle"></a>**Order toggle.** A `22×22` icon
-    button in the header, immediately left of the state filter (same anatomy as
-    the minimize button). Icon (Lucide, §5): `ArrowDownWideNarrow` while
-    **newest first**, `ArrowUpNarrowWide` while **oldest first** — the icon
-    shows the _current_ order. `title` and `aria-label` carry the same string,
-    naming the current order and what a click does (`approvalInbox.order.*`:
-    "Newest first — click for oldest first"). It inverts the order inside
-    **every** state group; the groups themselves stay in tier order. No accent
-    dot: oldest-first is a preference, not hidden content. Persistence:
-    `om2tab.inboxRailOrder` (`'newest-first'` default / `'oldest-first'`,
-    `stores/layout.ts` next to `inboxRailHiddenStates`; an unknown stored value
-    falls back to newest-first). The minimized strip has no header, so it just
-    follows the persisted direction.
-  - **Card inset:** 8px left/right margin + 4px bottom margin per card
-    (`FleetBoardCard.vue`, not a wrapper's padding) + 6px top padding on the
-    scroll body, so the first card's ring never touches the header's
-    bottom border. `overflow-x: hidden` + `scrollbar-gutter: stable both-edges` +
-    `.scrollable` (§9) on the scroll body, so an incoming card's entrance
-    slide (§7) or the vertical scrollbar appearing never shifts existing
-    card widths. `both-edges` reserves the scrollbar's width on the left too, so
-    the cards stay centred in the rail (equal left/right inset, with or without a
-    visible scrollbar) instead of sitting one scrollbar-width closer to the left border.
-  - **Empty fleet:** "You're all caught up" (`--text-4`, centered) — the
-    same copy the pending queue used to show, now the fleet's own empty
-    state (an idle-only fleet has nothing left to render once idle is
-    dropped).
-- **State filter — icon → popover, doubles as the legend.** A `22×22`
-  icon button (`ListFilter`, same anatomy as the minimize button beside it)
-  sits in the header, right of the title/badge. It opens an anchored popover
-  (`FolderPreview`/`ActivityBell` convention: `absolute right-0 top-full`,
-  `anim-fade-in-scale`, `bg-surface`/`border-2`/`radius`/`shadow-pop`,
-  `onClickOutside` + `Esc` to close) listing the **five non-idle states**
-  (`needs-input`/`errored`/`stuck`/`working`/`done` — `idle` is never a row,
-  see below) as rows: **dot + label + live count + `ToggleSwitch`**. The dot
-  reuses `FleetBoardCard.vue`'s exact per-state markup and the label reuses
-  `board.state.*` — so this popover doubles as the legend the removed bucket
-  labels (§2a) used to provide, not just a filter. The icon gets a small
-  accent dot indicator (`bg-accent`, 6px, top-right) whenever any state is
-  hidden, so a filtered rail never silently reads as an empty/quiet one.
-  - **No idle toggle.** "Idle is never rendered" (§2) is a settled decision;
-    a sixth row would silently reopen it.
-  - **Filtering is a derived projection, never a mutation.** The unfiltered
-    `fleetCards` stay the honest source for both the popover's live counts
-    and the safety affordance below; only the rendered list
-    (`visibleFleetCards`) is narrowed.
-  - **Persistence:** a `Set<BoardState>` of hidden states,
-    `om2tab.inboxRailHiddenStates` (`stores/layout.ts`, alongside
-    `inboxRailWidth`/`inboxRailState` — fleet-global, not per-worktree).
-    Default empty (show all); an unknown/legacy persisted value is dropped
-    rather than resetting the whole set, so it can only ever fall back
-    toward showing more, never hiding everything.
-  - **Safety divergence from `CleanupView.vue`/`RoadmapBoard.vue`'s "header
-    counts reflect the filtered set" convention — the Fleet rail deliberately
-    does NOT follow it.** The header badge and the minimized-strip badge
-    (`sessions.inboxCount`) stay approvals/parked-confirms counts, entirely
-    independent of this filter — filtering to `working` and then having a
-    session go `errored` must never silently vanish from view. When the
-    active filter is hiding one or more `needs-input`/`errored`/`stuck`
-    cards, a warning-colored one-click strip (`TriangleAlert` + "N hidden by
-    the filter" + "Show all") appears above the Fleet body and clears the
-    filter entirely on click. This is commented in `InboxRail.vue` itself —
-    do not "fix" it into consistency with the other two views.
-- **Card anatomy** (`FleetBoardCard.vue`, clickable — selecting has the same
-  effect as a session row; hover reuses the Hover preview):
-  1. **Line 1 — dot + title + folder.** The per-state dot (same spans as a
-     session row). Title = the session name (§"Session name"), fallback
-     "Untitled". On the right, the owning **folder's alias** in
-     `--text-4` (`folder` icon 11px), to give context without the user
-     having to remember which folder the session belongs to.
-  2. **Line 2 — pulse / last PTY line** (`Code-sm`, `--text-3`, truncated
-     to 1 line). Preference: the session's Haiku pulse (when there is
-     one); otherwise the last non-empty PTY line (ANSI-sanitized). Neither
-     present → the line disappears (1-line card; additive).
-  3. **Line 3 — per-state meta.** `errored`: the reason reuses the Failure
-     badge (§6 — `rate limit · resets in …` / `overloaded` / `billing`).
-     `needs-input`: time blocked (`blocked {time}`). `working`/`done`:
-     context % chip (same `tabular-nums` + per-band row color) + relative
-     time.
 - **"Needs you" row (`ApprovalRow`):** amber dot `bg-warning` (same as
   `needs-input`, `margin-top: 4px` to sit level with the first text line) + the
   **tool summary** (`Bash(rm -rf build)` — technical string assembled in the
@@ -9815,43 +9450,14 @@ summary>` (`--text-4` `11px`). **2-line clamp** on both lines (`line-clamp-2`,
   (`McpConfirmRow`, collapsed state) gets the same clamp-2 + `items-start`
   treatment on its prompt line — Allow/Deny stay hidden until expanded either
   way (the T08 disclosure contract, unaffected by this fix).
-- **"Would-have" row (shadow log):** reuses the **`ApprovalRow`'s visual grammar**
-  (mono tool summary + `<folder alias> · <session summary>` `--text-4`, both
-  **2-line clamp**), enriched with the folder alias + the session summary (same
-  enrichment as the pending queue) and a **relative timestamp** (`--text-4`
-  `10.5px`, `tabular-nums`, `margin-top: 1px`). **Two deliberate
-  differences:** (1) **no** Allow/Deny buttons — it's review data, not action; (2)
-  **muted gray** dot (`bg-text-4`), **never** the pending queue's amber `--warning`, so it
-  doesn't read as a call-to-action. Ordered most-recent-first. The **badge counts only
-  pending** entries — shadow entries **never** enter the counter (AC17). Not
-  virtualized — the shadow log is a small preview ring, unlike Activity's
-  unbounded history.
 - **Allow/Deny buttons:** combinations of existing tokens, **no new color**. **Allow**
   = `bg-green-soft` / `text-green`; **Deny** = `bg-red-soft` / `text-red`
   (same anatomy as `SessionMenu`'s destructive item). `check` / `x` icons,
   `border-radius 5px`, hover `opacity 0.8`.
-- **Empty ("Needs you"):** the whole section (header + body) doesn't render
-  — an empty actionable queue isn't worth a permanent "you're all
-  caught up" row once the Fleet section above already shows the fleet is
-  quiet; the copy moved to the **Fleet section's own empty state** (above).
-- **Empty ("Would-have"):** "No preview entries yet" (`--text-4`, centered). If
-  the responder hook is `off`, the text becomes **"Preview is paused — the responder
-  is off (observer mode)."** (AC11) — never an ambiguous empty list.
-- **"Active missions" strip:** right **below the header and above the tabs**,
-  a compact band (`border-b`, `padding 10px 16px`) lists the **live mission grants**
-  — the running missions whose escalations land in the "Needs you" section right below, so the
-  operator sees what's auto-allowed right there. Same source as the canonical Settings
-  section (the `useMissionGrants` composable, `activeGrants`). Eyebrow "Active
-  missions" (`--text-3` 11px UPPERCASE). **One line per grant** (lean, the detail
-  lives in Settings): **goal** (`--text-2` 12px `truncate flex-1`), `spent / budget`
-  (`--text-4` 11px `tabular-nums`), "expires in {mins}m" (`--text-4` 11px `tabular-nums`)
-  and a **small Revoke** (`bg-red-soft`/`text-red`, `padding 3px 8px`, radius `5px`).
-  **Hidden when there's no live grant** (`activeGrants.length === 0`). Never shows
-  dimmed grants (revoked/expired) — those only in the Settings pane.
-- **Short window:** an approval expires in ~3.5s (the substrate's deadline, below
-  Claude Code hook's 5s timeout) → fail-open, and the session resolves in the
-  terminal. The inbox is the **fast path while you're watching**, not a
-  respond-whenever queue.
+- **Empty:** the whole Needs you section (head and body) is not rendered.
+- **Short window:** an approval expires in ~3.5s (the substrate's deadline, below Claude Code's 5s
+  hook timeout) → fail-open, and the session resolves in the terminal. The dock is the **fast path
+  while you're watching**, not a respond-whenever queue.
 
 #### Agent-action variant (MCP control-server confirm)
 
@@ -14525,587 +14131,41 @@ Everything is an estimate of Harnu's own share; only GitHub knows the real total
 
 ### Folder View (FolderView.vue)
 
-Spec: `docs/specs/T212-folder-view.md` (the original view). The main-pane view a **folder click**
-opens — the folder's home screen. Deliberately **not** a sixth takeover: it is
-**selection-driven**, exactly like `TerminalPane`. `sessions.selectedFolderPath`
-drives it, and it sits after the five takeovers in `App.vue`'s view chain
-(`… → RoadmapBoard → Onboarding → FolderView → EmptyState → TerminalPane`). So
-opening the Roadmap board from a folder shows the board, and closing it returns
-here, because the folder selection was never lost.
-
-**Selection is symmetric with a session.** `select(id)` and `selectFolder(path)`
-each clear the other, so a folder and a session can never both read as selected.
-This is why "+ New session" clicked from the Folder View reaches the terminal
-instead of staying stuck behind the index: minting, forking, and opening a folder
-terminal all route through `select(id)`, same as clicking a session row (shared
-rule above). The sidebar folder row paints `--accent-soft` when selected, identical
-to a selected session row — the two are peers and must read as peers. The keyboard
-path matches: `cursorActivate` (Enter on the arrow-key cursor) mirrors the click
-exactly — select, expand on the way in, collapse on a repeat with the selection
-kept. The row's visual focus ring is not DOM focus, so this parity has to be
-written, not inherited from the native `<button>`.
-
-#### Scope is the organising idea
-
-**Half of this view is not about the folder you clicked.** `resolveMemoryCheckout`
-and `resolveMemoryLocation` collapse every worktree of a repo onto its main
-checkout, so "Where we left off" and the roadmap counts a worktree shows are
-**byte-identical** to what main shows; the worktrees list is the repo's siblings,
-not this folder's children. The first version printed all of it in one undivided
-column, which read as a description of the folder. That is the ambiguity this
-redesign exists to kill.
-
-| Block                         | Real scope    | Why                                                   |
-| ----------------------------- | ------------- | ----------------------------------------------------- |
-| Sessions                      | `this folder` | `folder.sessions`, keyed by cwd                       |
-| Git (branch, dirty, ↑↓)       | `this folder` | `folders:gitStatus` on this path                      |
-| The card this branch owns     | `this folder` | `card.executedIn` === this branch                     |
-| Where we left off (`hot.md`)  | `repo`        | `resolveMemoryCheckout` collapses worktrees onto main |
-| Roadmap counts / cards        | `repo`        | same collapse, via `roadmap:peek`                     |
-| Worktrees                     | `repo`        | siblings by `repoId` — all of them                    |
-| Worktrees in flight (fan-out) | `repo`        | every sibling, not just children                      |
-| Activity · 14d                | `repo`        | sessions bucketed across the repo                     |
-
-That table is **data, not prose**: it lives in `folder-view-format.ts` as
-`BLOCK_SCOPE`, and every header reads its tag from it through `scopeOf(block)`.
-A block can never be tagged by hand in a template, so a tag can never drift from
-the read that feeds it.
-
-**Scope tag (`ui/ScopeTag.vue`).** A 10px chip: `--border` 1px, radius
-`--radius-sm` minus 2 (3px), `0 5px` padding, `--text-4` text, no uppercase and
-no letter-spacing — deliberately quieter than the `eyebrow` it sits beside, since
-it qualifies the label rather than competing with it. Two variants:
-
-- **`this folder`** — plain border (`--border`).
-- **`repo`** — `--border-2` border plus a 9px `git-fork` icon. The stronger border
-  and the icon are the whole signal: repo-wide blocks are the ones that lie if you
-  read them as folder-local, so they are the ones that get marked.
-
-Each carries a `title` explaining _why_ (`folderView.scope.thisFolderHint` /
-`folderView.scope.repoHint`), so the chip teaches the model instead of just
-labelling it.
-
-#### Two profiles, one view
-
-The view resolves a **profile** from the folder, in `folder-view-format.ts`:
-
-```
-resolveProfile(folder) → 'worktree'  when the folder is a git folder AND
-                                       isMainWorktree === false
-                       → 'main'      otherwise (main checkout, or a plain
-                                       non-git pinned folder)
-```
-
-A non-git folder gets the `main` profile: it has no siblings and no branch, so
-the worktree cockpit would be a frame around nothing.
-
-**Profile 1 — main checkout: the orchestration home.** Main has few sessions and
-they are the ones that plan and dispatch, so the lead block in the content stack
-is the **fan-out** (`Worktrees in flight`) — the one thing only main can show.
-
-**Profile 2 — worktree: one feature's cockpit.** A worktree exists to land one
-card and then die, so the hero above the grid is **the card this branch owns**
-plus its progress rail. The repo-scope blocks stay present but shrink into the
-labelled rail, never pretending to be about this folder.
-
-Neither profile duplicates the other's hero: the fan-out is meaningless in a
-worktree (it is the repo's view of itself), and the owned card is meaningless on
-main (main owns no card).
-
-> **Reserved slots.** T285 landed the skeleton — the profile switch, the scope
-> tags, the width and the shaping seam. The two hero blocks were dispatched
-> separately: **T286** filled the main profile (the `Worktrees in flight` fan-out
-> table, the KPI strip and the `Activity · 14d` sparkline), and **T287** filled the
-> worktree profile's hero (the owned-card block, below). Both have landed, so the
-> T212 rule now applies only to what each profile deliberately omits: a section
-> with nothing in it renders nothing at all, and a placeholder is worse than an
-> absence. **The activity strip is absent from the worktree profile permanently**,
-> not pending: a two-day worktree has nothing to trend, and the sessions bucketed
-> into it are the repo's, not the branch's.
-
-#### Container and grid
-
-**No width cap.** The 880px column is gone; the view uses the pane. Outer element
-is `overflow-y: auto`, inner column `padding: 24px`, `gap: 24px`.
-
-The body below the action bar (and below the worktree hero) is a two-column grid:
-
-| Pane width | Grid                                                            |
-| ---------- | --------------------------------------------------------------- |
-| `> 1100px` | `minmax(0, 1fr) 320px` — content stack + rail, 24px gap         |
-| `≤ 1100px` | one column; the rail becomes a **2-up grid** below it, 16px gap |
-| `≤ 760px`  | one column throughout; the rail stacks 1-up                     |
-
-1100 and 760 are the view's own breakpoints (they match the approved spec's
-viewports) and are declared in `FolderView.vue`'s scoped style, not as global
-Tailwind screens — no other surface shares them. Every grid child carries
-`min-width: 0` so a long branch name truncates instead of widening the column.
-
-**The folded rail is `align-items: start`.** At full width the rail is a flex
-column, where each card is its own content's height. When it folds to a 2-up
-grid it must keep that: a grid's default `stretch` makes every card as tall as
-the tallest in its row, and on a real repo — a roadmap card listing 88 cards in
-review, a worktree list with 90 rows — that drags its row-mate to some 3000px,
-so a 44px activity chart floats at the top of a bordered box three screens tall.
-A card's height means "this is how much this block has to say"; a fold must not
-change that.
-
-> **They are container queries (`@container folder-view`), never media queries.**
-> The Folder View is a pane, not a page. The sidebar and the Fleet rail routinely
-> take half the window: a 1440px window gives this view ~850px, and an 820px
-> window gives it ~230px. Keyed on the viewport, the rail's 2-up fold fires inside
-> a 230px pane and paints two ~110px columns of one-letter lines — measured, not
-> hypothetical. `.fv` carries `container-type: inline-size`, so the breakpoints
-> describe the space the view actually has. Any breakpoint added to this view
-> later must be a container query, for the same reason.
-
-#### Height caps — the two lists that scroll
-
-Measured on this repo: **102 worktrees, 128 cards**. The redesign was drawn
-against six rows, and at that scale the two long lists simply ran off the bottom.
-The fan-out pushed the Sessions block roughly three screens down; the rail's
-roadmap list did the same to everything under it. The page's own
-`overflow-y: auto` was the only scroll in the view, so the operator paid for the
-length of the longest list with the visibility of every block below it.
-
-Two blocks therefore carry a **fixed cap and scroll inside themselves**:
-
-| Block                                  | Token                  | Value   | ≈ rows |
-| -------------------------------------- | ---------------------- | ------- | ------ |
-| Fan-out table body                     | `--fv-fanout-max-h`    | `380px` | 11     |
-| A rail list (roadmap cards, worktrees) | `--fv-rail-list-max-h` | `280px` | 9      |
-
-They are **tokens, declared in `themes.css` beside `--radius`** (§9), never px
-literals in a component: three components read them, and a height that lives in
-one of them is a height the other two can drift from. Both containers carry the
-global `.scrollable` helper so they get the app's thin, hover-revealed scrollbar
-rather than a platform one.
-
-**`max-height` + `overflow-y: auto`, never a fixed `height`.** A list shorter
-than its cap renders at its natural height, with no scrollbar and no reserved
-gutter. A block's height must still mean "this is how much this block has to
-say" — the same rule the folded rail's `align-items: start` exists to protect. A
-cap is a ceiling, not a frame, and `scrollbar-gutter: stable` is deliberately
-**not** used here for exactly that reason.
-
-**The fan-out's header row stays put while its body scrolls.** ONE table inside
-the scroll container — never a split header table and body table, which
-desynchronises the `table-layout: fixed` column widths the fan-out's contract
-depends on — with `thead th` at `position: sticky; top: 0` on `--bg`. Its bottom
-rule is an `inset 0 -1px 0` box-shadow rather than a `border-bottom`: under
-`border-collapse: collapse` a collapsed border is painted by the table, not by
-the sticky cell, so a real border scrolls away with the rows.
-
-Section micro-labels use the `eyebrow` idiom — 10.5px / `0.07em` tracking /
-uppercase / `--text-4` — with the scope tag beside them on a shared header row
-(`space-between`, the label group left, any link right).
-
-**Rail blocks are cards, stack blocks are not.** Every block in the 320px rail is
-a `--surface` card (`--border` 1px, `--radius`, `14px 16px` padding, `10px` gap);
-blocks in the content stack are bare sections separated by the grid's 24px gap.
-That is what makes the rail read as a rail rather than as floating text beside a
-column, and it is the same card idiom the Settings panes and `UsageStatTiles`
-already use.
-
-#### Header and action bar
-
-**Header.** Alias (18px/600), branch (mono 12px with a `git-branch` icon, 12px,
-`--text-4`), a worktree-kind badge (`--border` 1px, radius 4px, 10px) reusing
-`preview.folder.mainWorktree` / `preview.folder.worktree`, then the absolute path
-(mono 11.5px, `--text-4`) and the git line: dirty count (`--warning` when > 0,
-else `--text-4`), `↑ahead` / `↓behind` in `tabular-nums`. All of it reuses
-`FolderPreview`'s copy keys — the two surfaces must never disagree about the same
-folder. The header carries **no scope tag**: it _is_ the folder's identity, and
-tagging it would imply the rest of the view is equally local.
-
-**Action bar.** One accent-filled primary (`New session`, `--accent` on
-`--accent-ink`) followed by bordered secondaries: Roadmap board, PR Stack, Browse
-files, Open in {editor} (the configured editor, with its mark), Open folder, Terminal here. Buttons are radius
-`--radius-sm`, `7px 12px`, 12px text, with a 13px lucide icon at 1.6 stroke. This
-duplicates the Topbar cluster on purpose: the view is the folder's home, and a
-home you must leave to act on is not one. Identical in both profiles.
-
-#### Blocks, by profile
-
-Each renders **nothing at all** when it has no content — an empty box is worse
-than an absent section. This rule is unchanged from T212 and survives the
-redesign intact.
-
-**Main profile**
-
-| Slot  | Blocks                                                                                                            |
-| ----- | ----------------------------------------------------------------------------------------------------------------- |
-| Strip | **KPI strip** — four tiles above the grid                                                                         |
-| Hero  | — (the fan-out is the stack's lead, not a hero)                                                                   |
-| Stack | **Worktrees in flight** `repo` · **Sessions** `this folder`                                                       |
-| Rail  | **Where we left off** `repo` · **Activity · 14d** `repo` · **Roadmap** `repo` · **Worktrees in this repo** `repo` |
-
-**Worktree profile**
-
-| Slot  | Blocks                                                                           |
-| ----- | -------------------------------------------------------------------------------- |
-| Hero  | **The card this branch owns** `this folder` __                                   |
-| Stack | **Sessions** `this folder`                                                       |
-| Rail  | **Where we left off** `repo` · **Sibling worktrees** `repo` · **Roadmap** `repo` |
-
-The worktree rail puts siblings above the roadmap because in a worktree the
-neighbouring branches are the live context (what am I stacked on, what was cut
-from me) and the board is background; on main the board is the work queue and the
-siblings are its execution, so the order flips.
-
-**The main rail leads with the short blocks.** `Activity · 14d` is a
-44px chart with two axis labels — the most glanceable thing in the view — and it
-originally rendered _last_, under both text lists. On a 102-worktree repo that
-put it below some 230 rows: the operator had to scroll past every branch and
-every card to reach the one block that could be read at a glance. Order in a rail
-is a claim about how long a block takes to read, not about how important it is,
-so the fixed-height blocks come first and the capped lists follow. The caps above
-are what make that stable: without them the order alone would only move the
-problem one block down.
-
-Block-by-block:
-
-1. **Where we left off** — the `hot.md` cue through `MarkdownRenderer`, in a
-   `--surface` card. Absent when the repo has no memory. Tagged `repo`: a worktree
-   shows its main checkout's snapshot verbatim.
-2. **Sessions** — rows of `status dot · title · message count · relative time`,
-   `hover:bg-surface`, radius `--radius-sm`. Clicking is `sessions.select(id)`,
-   the same call the sidebar row makes. With zero sessions the section becomes a
-   bordered `--surface` card carrying `folderView.noSessions` plus the primary
-   CTA. The only block tagged `this folder` — and the reason the tag is worth
-   having.
-
-   **The dot is the sidebar's dot.** It is resolved by the same recipe
-   `SidebarFolder`'s `statusDot` uses — archive overrides, then the canonical
-   `dotFor(taskState, status, activityOf(...), transcriptState)` — and then folded
-   onto three buckets by `activityBucket`: `stuck` counts as **working** (a
-   stalled session is not an idle one), `needs-input` is its own, and every
-   terminal or lifecycle state (`idle`, `completed`, `failed`, `archived`) reads
-   **idle**. Colours are the sidebar's: 6px `--green` with `anim-pulse-dot` for
-   working, `--warning` with `anim-attention-dot` for needs-input, flat
-   `--text-4` for idle. A session must never read `working` in the sidebar and
-   `idle` here, so neither surface owns its own opinion.
-
-   The message count is `session.messageCount`, `tabular-nums` / 11px /
-   `--text-4`, **omitted at zero** rather than printed as `0` — a synthetic
-   session that has not spoken yet has no count to show, and a `0` reads as a
-   fact rather than an absence.
-
-3. **Older / Archived** — disclosure toggles (11px, `--text-4`, rotating
-   `chevron-right`) with counts, expanding in place. These retire the
-   discoverability problem of the hover-gated peek icons on the sidebar row; the
-   peeks remain as a shortcut but are no longer the only path.
-4. **Roadmap** — a counts strip (backlog / ready / in-progress / review, all
-   `tabular-nums`) plus every `in-progress` and `review` card named, with a
-   "session bound" marker when the card carries one. The card **id** is
-   `shrink-0` **and capped at `max-width: 96px` with `truncate`** (full id on
-   `title`): a card whose frontmatter carries no short `id` falls back to a
-   slug-shaped one, and an uncapped `shrink-0` id measured 418px — three times
-   the rail — and forced the whole view to scroll sideways. A fixed cap is the
-   only thing that holds in a 320px rail, since `shrink-0` by definition opts out
-   of flex shrinking. Fed by the read-only
-   `roadmap:peek` IPC, never `roadmapLoad` — there is a single roadmap watcher,
-   and peeking must not steal it from another repo's open board.
-
-   **The card list is capped at `--fv-rail-list-max-h` and scrolls inside the
-   card**. The counts strip and the section label stay put above it, so
-   a 128-card board still answers "how many, and what is moving" at a glance
-   instead of burying the rest of the rail. The counts are the summary; the list
-   is the detail, and only the detail scrolls.
-
-5. **Worktrees** — siblings by `repoId`, with a "this one" marker and a
-   `git-fork` "cut from here" marker for children whose `bornFrom` is this folder
-   (T191 lineage). Absent for a lone checkout. Titled `Worktrees in this repo` on
-   main and `Sibling worktrees` in a worktree: same list, and the second name is
-   the honest one when you are standing inside it.
-
-   **Each row carries a state dot** — the same 6px sidebar dot, resolved
-   by the same `dotFor` recipe and folded by `activityBucket`, then folded again
-   across the worktree's sessions **worst-first**: `needs-input` beats `working`
-   beats `idle`. That order is the point: the reason to print a sibling's state
-   at all is to surface the branch you are stacked on that is blocked on _you_,
-   and an averaged dot would bury it.
-
-   **The sibling list carries the same `--fv-rail-list-max-h` cap** as the
-   roadmap list, and for the identical reason: 102 rows in a 320px rail is a
-   column of branch names three screens tall. The two rail lists are the same
-   shape of block and must not disagree about how much room a rail list gets.
-
-#### The card this branch owns (`FolderViewOwnedCard.vue`)
-
-The worktree profile's hero, above the grid. spec.html `#d-worktree` `.owncard`.
-A worktree exists to land one card and then die, so the question it must answer
-on sight is **"what is this branch FOR"** — not "which sessions live here".
-
-**The card is found by ownership, not by recency.** `roadmap:peek` is called with
-this folder's branch and answers with the card whose `executedIn` names
-it. `executedIn` is the **owner** branch, stamped at dispatch; `provenance.branch`
-is the **origin**, and it is never the answer to this question.
-
-**Container.** The only accent-filled block in the entire view, deliberately:
-`--accent-line` 1px border on `--accent-soft`, `--radius`, `14px 16px` padding,
-`10px` gap. Everything else in this view is `--surface` or bare, so the one block
-that answers "what is this folder for" is the one that is coloured.
-
-**Top row.** Card id (mono 11px, `--accent`, capped at `max-width: 96px` with
-`truncate` — the same cap and the same reason as the roadmap rail's id), the
-title (14px/500, `--text`, `flex-1` + `truncate`), the **PR state pill**, and the
-`this folder` scope tag.
-
-**PR state pill.** Radius `999px`, `1px 8px`, 10.5px. Four tones, all token-backed
-— `ok` = `--green-soft` / `--green`, `warn` = `bg-warning/10` / `--warning` (the
-app's existing amber-pill idiom; there is no `--color-warning-soft` token and one
-pill does not justify inventing one), `bad` = `--red-soft` / `--red`, `mute` =
-`--surface-2` / `--text-3`. Merged and approved are `ok`, changes-requested is
-`warn`, draft and closed and plain in-review are `mute`. **Absent when there is no
-PR** — including when `gh` could not be reached, because "we did not look" is not
-a state worth a chip.
-
-**The four-step rail.** `dispatched → commits → PR → merge`, a 4-column grid with
-a 2px gap so the bars read as one segmented track. Each step is a 4px `999px` bar
-over a 10.5px label. Three states, and the bar **is** the state: `done` =
-`--green`, `current` = `--accent`, `pending` = `--border` with a `--text-4` label.
-
-The state comes from `featureRail` in `folder-view-format.ts`, and it is a
-**frontier**, not four independent booleans — the furthest step whose evidence is
-actually present becomes `current`, everything before it is `done`, everything
-after is `pending`. There is therefore never more than one accent bar. A merged
-PR is the one terminal state: nothing follows it, so it reads `done`.
-
-> **The `merge` step does not light up yet.** `pr-stack:load` builds its graph
-> from OPEN pull requests only (`buildGraph` filters `state === 'OPEN'`), and the
-> snapshot carries no other PR list, so a MERGED entry never reaches this block.
-> A landed branch therefore falls back to "no PR" and the rail stops at
-> `commits` — it under-reports rather than over-reports, which is the required
-> side of the rule below, but the terminal state is unreachable and the `merged`
-> and `closed` pill tones are latent with it. Closing this needs a merged-PR read
-> in `pr-stack*.ts`, out of T287's scope (T280 single-owns those files).
-
-> **The `pr` step does not show the open-thread count.** The approved mockup
-> draws
-> this step as `PR #195 · 2 threads open`; what ships is `PR #{n}` and nothing
-> more. The count is not withheld for room — it does not exist on this side of
-> the wire: `PrEntry`/`PrNode` in `src/main/pr-stack-core.ts` carry
-> `reviewDecision`, `checks` and `behind`, and no thread total, and no other
-> preload verb supplies one. Widening the entry is a `pr-stack*.ts` change, and
-> those files are single-owned by T280, so this block reports the half it can
-> read rather than guessing at the other. **The step lights up with the count the
-> day `PrEntry` carries one** — a single field on the entry the block already
-> matches by `pr.branch`, no new call and no new match — and not before.
-
-> **A step whose evidence cannot be read renders as "not yet", never as done.**
-> This is the single rule this block must not break — an unknown step painted as
-> complete is the worst thing it could say. `null` ("read it, there is none") and
-> `undefined` ("could not read it") are different inputs to `featureRail` with
-> different answers, and unreadable evidence never advances the frontier: no
-> upstream truncates the rail at `dispatched`, no `gh` truncates it at `commits`.
-> A merged PR behind an unreadable commit count still prints as "not yet".
-
-**Where each step's evidence comes from — all of it already exists** (no new
-main-process call, and nothing in `pr-stack*.ts` is touched):
-
-| Step         | Evidence                         | Read                                             |
-| ------------ | -------------------------------- | ------------------------------------------------ |
-| `dispatched` | age of the card's bound session  | the card's `session`, dated by `session.created` |
-| `commits`    | commit count + latest short SHA  | `roadmap:mergeEvidence` (`ahead`, `refs[0]`)     |
-| `pr`         | PR number only — no thread count | `pr-stack:load`, matched on `pr.branch`          |
-| `merge`      | merged / not                     | the same entry's `state === 'MERGED'` _(latent)_ |
-
-Two honesty notes on that table. **The card carries no dispatch timestamp** —
-`provenance.at` is when the card was _raised_, a different event — so the age is
-the bound session's own `created`, which is exactly the moment the dispatch
-spawned it; when that session is not on disk here the step prints its bare name
-rather than inventing an age. And the **`gh` read is gated on the card**: it only
-fires once a card has claimed the branch, so the common hand-cut worktree costs
-no network call at all.
-
-**Meta line.** 11.5px `--text-3` with `--text` for the values, `6px 18px` gaps:
-card status (through `roadmap.columns.*`), the owner session's title, the git
-line (`↑ahead` unpushed · dirty count, reusing `preview.folder.changes` /
-`preview.folder.clean` so this and the header can never disagree), and the branch
-this worktree was cut from (T191 `bornFrom`). Each half is omitted when its read
-came back empty.
-
-**Absent, not empty.** A worktree whose branch owns **no** card renders no hero at
-all — not a placeholder, not a "no card yet" box, not a skeleton. The profile
-falls back to the sections already there and must still read as a finished view.
-This is the common case for a worktree cut by hand rather than by a dispatch, and
-it is the T212 rule applied to the one block most tempting to fill with a stub.
-
-**Fold.** The rail folds to 2 columns at `≤ 760px` — a `@container folder-view`
-query, like every other breakpoint in this view, because four labels in a 230px
-pane are four one-word ellipses.
-
-#### Worktrees in flight — the fan-out (main profile)
-
-`FolderViewFanout.vue`. The one block only a main checkout can show, and the
-reason the main profile exists: every worktree of the repo as one row, so "what
-is in flight and what needs me?" is answered without opening anything.
-
-A `table`, `table-layout: fixed`, `border-collapse: collapse`, 12.5px. **The
-column widths are part of the contract**, not a detail — without them a long
-branch name or a card title widens its column and the whole view scrolls
-sideways, which is exactly the T285 AC-3 failure.
-
-| Column       | Width   | Content                                                              |
-| ------------ | ------- | -------------------------------------------------------------------- |
-| **Branch**   | `250px` | status dot · `git-branch` 12px · branch, mono, truncated             |
-| **Card**     | fluid   | card `id` (mono 10.5px `--text-4`) + title, truncated, or an em-dash |
-| **Sessions** | `92px`  | `{n}` or `{n} · {live} live`, `tabular-nums` 11px                    |
-| **Git**      | `92px`  | `↑ahead` / `↓behind` (`↑0` when both are zero), `tabular-nums`       |
-| **PR**       | `150px` | one pill, or the `this folder` scope tag on your own row             |
-
-Rows separate with a `--border` bottom rule (none on the last), hover paints
-`--surface-2`, and **your own row carries `--accent-soft`** — the folder you are
-standing in is the anchor, not the news. It sorts **last**, with everything else
-alphabetical by branch; deliberately not sorted by liveness, since a session
-going quiet would reorder the table under the operator's cursor.
-
-**The body is capped at `--fv-fanout-max-h` and scrolls under a sticky header** —
-see "Height caps" above for the mechanics and the reason.
-
-##### A row expands in place; it does not navigate
-
-Clicking a row used to call `sessions.selectFolder(row.path)`: the whole view
-switched to that worktree, and there was **no way back to the fan-out you were
-reading**. A table you can only leave is not a table you can scan — the operator
-was one click from losing their place in 102 rows, with the browser-style "back"
-that would rescue them nowhere in this app.
-
-A row click now **toggles a detail row open underneath it**, and the anatomy is
-`SystemMonitorRow.vue`'s, copied rather than reinvented: a second `<tr>` rendered
-as a **sibling** of the first inside the same `<tbody>` (Vue 3 multi-root
-components make this a plain two-`<tr>` template — never a nested table, which
-would break the shared fixed column widths), a `chevron-right` → `chevron-down`
-toggle carrying `aria-expanded` and a collapse/expand `aria-label`, and a real
-`<button>` so the whole interaction is keyboard-reachable without a `tabindex`.
-
-**Opening a row reveals it.** The cap and the expansion collide: the porthole
-leaves ~354px of body under the 26px sticky header, and an open detail row is
-roughly half of that, so a row clicked in the lower half would render its panel
-below the fold with only the chevron flip as feedback. On open — never on close —
-the panel is brought into view with `scrollIntoView({ block: 'nearest' })`, the
-same idiom `CleanupView.vue` uses after a group expands. `nearest`, so a panel
-that already fits does not move the table under the operator's cursor.
-
-**At most one row is open at a time.** State is a single `expandedPath` — the
-worktree's path, not the row object and not its index. That is what makes the
-expansion survive the fan-out's three async reads (`folders:gitStatus`,
-`roadmap:peek`, `pr-stack:load`) resolving underneath it: every one of them
-rebuilds `rows` as fresh objects through `fanoutRows`, and an expansion keyed on
-identity rather than on a path would silently collapse each time a git probe came
-back. Changing repo clears it.
-
-**The detail row shows what the collapsed row had to truncate**, in a two-column
-grid of label/value pairs — one column under the `folder-view` container query's
-760px breakpoint, with **Path** spanning the full width in both — plus one
-explicit action:
-
-| Field      | Collapsed                      | Expanded                                             |
-| ---------- | ------------------------------ | ---------------------------------------------------- |
-| **Branch** | truncated at 250px, mono       | the full name, wrapping                              |
-| **Card**   | id + title, ellipsised         | id + the full title, wrapping; else `noCard` in full |
-| **Git**    | `↑n` `↓n` glyphs               | `n ahead` / `n behind` spelled out, or "unavailable" |
-| **PR**     | a pill with the state and `#n` | the PR's **title** and number, linked                |
-| **Path**   | absent                         | the worktree's absolute path, mono                   |
-
-Navigating away stays possible — it is just no longer accidental: the detail row
-carries an **Open this worktree** button (`--accent-soft` on `--accent-line`,
-`--radius-sm`), and that button is now the only caller of `selectFolder` in this
-block. Your own row's button is replaced by a line saying you are already there.
-
-The PR **title** is the one field that needed widening to print: `FanoutPr`
-carried `number`/`url`/`tone`/`key`, and `prPill` now also passes through
-`PrEntry.title`, which the entry has always had. No new read, no new IPC.
-
-**Every cell degrades to nothing, and never the row.** The four reads behind it
-fail independently: the store's counts always exist, `folders:gitStatus` runs per
-sibling, `roadmap:peek` per branch (T284's `owned`), and PR state comes from a
-single existing `pr-stack:load` for the repo. A worktree whose git probe failed
-is still a worktree in flight, so its git cell empties and the row stays. A
-branch no card owns gets an **em-dash**, never a blank (a blank reads as "not
-loaded") and never a guess.
-
-**The PR pill** (`--radius` 999px, `1px 8px`, 10.5px) reads worst-news-first:
-lifecycle → `changes requested` → `draft` → CI. `changes requested` outranks
-`draft` on purpose — it is the one state that feeds the needs-you tile, and a
-draft carrying it still needs you.
-
-| Pill                                | Tone                           |
-| ----------------------------------- | ------------------------------ |
-| `checks passing`                    | `--green-soft` on `--green`    |
-| `checks failing`                    | `--red-soft` on `--red`        |
-| `changes requested`                 | `bg-warning/10` on `--warning` |
-| `draft` / `open` / `checks running` | `--surface-2` on `--text-3`    |
-
-`bg-warning/10` is the app's existing amber-pill idiom (`PrStackCard`); there is
-no `--color-warning-soft` token and one pill does not justify a theme-wide
-addition across 13 themes.
-
-> **No `merged` pill today.** `buildGraph` (`pr-stack-core.ts`) filters the
-> snapshot to `state === 'OPEN'` before it leaves the main process, and
-> `WorktreeNode.mergedPr` is a caller-supplied echo rather than a lookup, so a
-> merged PR is not observable from `pr-stack:load`. `prPill` maps the lifecycle
-> states anyway (it is a total function over `PrEntry`), but until the snapshot
-> widens — `pr-stack*.ts`'s call, not this view's — a merged branch shows an
-> empty PR cell rather than a wrong one.
-
-**Absent, not empty (AC-10).** A repo with exactly one worktree renders **no
-fan-out section at all**. A lone checkout fans out to nothing, and a one-row
-table of yourself is a frame around nothing.
-
-#### KPI strip (main profile)
-
-Four `UsageStatTiles`-idiom tiles above the grid — `--surface` card, `--border`,
-`--radius`, `12px 14px`, value line 20px/500 with an 11px unit beside it, then a
-key line (`--text-3`) and a sub line (`--text-4`). 4-up, folding 2-up at 1100px
-and 1-up at 760px, on the same container queries as the grid.
-
-| Tile              | Value                         | Reads                                  |
-| ----------------- | ----------------------------- | -------------------------------------- |
-| **Needs you**     | sessions + PRs blocked on you | across N worktrees, with the breakdown |
-| **In flight**     | worktrees with a live session | N total · N idle                       |
-| **In review**     | the board's `review` count    | plus the four-segment pipeline bar     |
-| **Sessions here** | this checkout's working set   | plus how many folded into "Older"      |
-
-The strip renders in the main profile of a **git** folder only: a plain pinned
-directory has no fan-out and no board, so three of the four tiles would be a
-frame around nothing. The roadmap tile follows the roadmap block's own rule and
-is absent when the board has no cards.
-
-**The needs-you tile declares what it cannot read.** It counts two real signals —
-sessions in `needs-input`, and PRs with changes requested. When PR state is
-unreadable (no `gh`, no network, the call threw), the PR signal is **excluded and
-named** (`PR state unavailable`), never counted as zero. A tile that silently
-folds an unreadable signal into "nothing is waiting on you" is under-reporting
-exactly when the operator most needs to know it is blind.
-
-#### Activity · 14d (main profile rail)
-
-**It leads the rail's lower blocks** — directly under "Where we left
-off" and above both capped lists. See "Two profiles, one view" above for why:
-this is the shortest block in the view and it was rendering last.
-
-Sessions **started** per local day over the last fortnight, from `sessionsPerDay`
-— keyed on `created`, not `modified`, so the strip answers "when did work start
-here" instead of moving every old session onto today. Tagged `repo`: it counts
-every sibling's sessions, which is precisely why it needs the tag.
-
-A 280×44 `svg`, one series, so **one accent at one opacity** (0.55) with today at
-full — no categorical palette for what is a single measure. A `--border` baseline
-rule sits at `y=43.5`. A day with nothing on it is a flat 2px `--border-2` tick
-rather than a gap: a sparkline with holes punched out of it reads as a shorter,
-busier history than it was. Non-zero bars carry a 4px floor so one session cannot
-round down to invisible. Axis labels are 10px `--text-4`: the oldest day on the
-left, `today · n` on the right. Absent when the repo has no sessions at all.
-
-**Topbar with a folder selected.** The breadcrumb carries the folder icon, alias
-and branch; there is no editable title, provider badge or orchestrator pill —
-those describe a session, and there is none. The right cluster is gated on
-`sessions.activeFolderPath` (the selected folder, else the selected session's
-folder), so Roadmap, PR Stack, Open folder, VS Code, Browse files and the shell
-are reachable in a folder with no sessions at all. A `+` (`topbar.newSessionHere`)
-appears in the folder branch only.
+The main-pane view that a click on a **folder header** opens (an idle worktree row opens that
+worktree's). Selection-driven, exactly like `TerminalPane`: `sessions.selectedFolderPath` drives it,
+`select(id)` and `selectFolder(path)` clear each other, and it sits after the takeovers in
+`App.vue`'s view chain. The folder header of the shown folder is **current** (accent bar, §6
+"Row states"). Approved screen: `docs/design/sidebar-redesign/screens/folder-view.html`.
+
+It is **identity and actions**, plus one roadmap line. Everything the sidebar already shows
+(what needs you, what is in flight, worktrees, sessions) is **not** here: no KPI or count tiles, no
+fan-out or worktree table, no sessions list, no older/archived disclosures, no "Where we left off"
+card, no activity chart, no owned-card hero, no scope tags, no main/worktree profiles.
+
+**Container:** `overflow-y: auto`, `padding: 28px 32px`, `--bg`, no cards.
+
+| Block (top to bottom) | Spec                                                                                                                                                                                                                                                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Header                | alias 18px / 600 `--text` · branch chip (mono 11.5px `--text-3`, `git-branch` 12px) · git summary 12px: `{n} changes · ↑a · ↓b` in `--warning` when dirty or behind, `clean` in `--text-4`; `gap 10px`                                                                                                                                           |
+| Path                  | mono 12px `--text-4`, `margin-top: 4px`                                                                                                                                                                                                                                                                                                          |
+| Actions               | `margin-top: 20px`, wrapping row, `gap 6px`, each 30px tall, `padding: 0 12px`, `--radius-sm`, 1px `--border-2`, 12.5px `--text-2`, 14px icon, `gap 7px`; hover `--surface-2` + `--text`                                                                                                                                                         |
+| Roadmap line          | only when the repo has a board: `margin-top: 24px`, `padding-top: 16px`, 1px `--border` top rule, `max-width: 720px`, 12px `--text-4`: `Roadmap` (500, `--text-2`) · `n in progress · n ready · n in review` (the first two numbers `--text` 500) · a 4px bar (`--border` track, `--green` = in progress, `--accent` = ready, `min-width: 80px`) |
+
+**Actions, in order:** **New session** (primary: `--accent` background, `--accent-ink`, 500) ·
+**Terminal here** · **Browse files** · **Roadmap board** (only with a board) · **More** (a 30 × 30
+`ellipsis` button opening a menu with PR Stack, Open in {editor} with the editor's mark, and Open
+folder; non-git folders have no PR Stack).
+
+The roadmap counts come from the read-only `roadmap:peek` IPC (never `roadmapLoad`) and are the
+**repo's**: a worktree shows its main checkout's numbers.
+
+The git summary reuses `FolderPreview`'s copy keys: the two surfaces never disagree about a folder.
+
+**Topbar with a folder selected.** The breadcrumb carries the folder icon, alias and branch; there is
+no editable title, provider badge or orchestrator pill. The right cluster is gated on
+`sessions.activeFolderPath`, so Roadmap, PR Stack, Open folder, the editor, Browse files and the
+shell are reachable in a folder with no sessions at all. A `+` (`topbar.newSessionHere`) appears in
+the folder branch only.
 
 ---
 
@@ -15114,33 +14174,35 @@ appears in the folder branch only.
 Short movement, ease-out, rarely noticed. **If the user notices the animation,
 it ran too long.**
 
-| Action                       | Duration     | Easing      | Description                                                                                                                                                                                               |
-| ---------------------------- | ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hover row                    | 100ms        | ease        | Background fade + scale 1.003                                                                                                                                                                             |
-| Select                       | 120ms        | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
-| Review selection bar         | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
-| Expand project               | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
-| Overlay (dialog/menu)        | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
-| Divider hover                | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
-| Pulse (active status)        | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
-| Agent activity pulse         | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
-| Terminal cursor              | 1s           | steps(1)    | Blinking accent block                                                                                                                                                                                     |
-| Chart bar (BI)               | `--dur`      | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
-| Copy button reveal           | `--dur-fast` | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
-| Copy → copied                | 1.5s         | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
-| Fleet card entrance          | 620ms        | custom¹     | Whole card fades + slides 22px from the right, as one unit (`.card-enter`)                                                                                                                                |
-| Fleet card ring fade         | 900ms        | custom¹     | Border ring eases in after the entrance settles (suppressed during the slide)                                                                                                                             |
-| Fleet rail section           | `--dur-slow` | `--ease`    | Needs-you / Would-have collapse via `grid-template-rows: 1fr↔0fr` (`.collapsible`)                                                                                                                        |
-| Rescan spin                  | 0.7s loop    | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
-| Pasted-images pill bump      | 300ms        | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
-| Lightbox image swap          | `--dur`      | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
-| Jump flash                   | `--dur-slow` | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
-| PR focus ring                | `--dur-slow` | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
-| Pane maximize / restore      | `--dur-slow` | `--ease`    | The maximized pane grows and the others shrink to their 24px strip by `flex`; one pass (T628). Reduced motion: snaps                                                                                      |
-| Expand to window / restore   | `--dur-slow` | `--ease`    | The collapsed columns and panes go to 0 (`.lm-collapse`: size, opacity, margin, border) while the expanded pane grows; no remount (T628). Reduced motion: snaps                                           |
-| Fleet rail minimize / expand | `--dur-slow` | `--ease`    | The rail column animates `width` between 300px (or the dragged width) and the 44px strip (T628). Reduced motion: snaps                                                                                    |
-| Sidebar collapse / expand    | `--dur-slow` | `--ease`    | The sidebar and its divider animate `width` to 0 and back, with `opacity` (T628). Reduced motion: snaps                                                                                                   |
-| Split orientation switch     | `--dur-slow` | `--ease`    | The session area and the helper stack slide and scale from their old box to the new one (FLIP, one pass) (T628). Reduced motion: snaps                                                                    |
+| Action                       | Duration               | Easing      | Description                                                                                                                                                                                               |
+| ---------------------------- | ---------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hover row                    | 100ms                  | ease        | Background fade + scale 1.003 (**not** sidebar tree rows: §6 "Row states")                                                                                                                                |
+| Select                       | 120ms                  | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
+| Review selection bar         | `--dur`                | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
+| Expand project               | 220ms                  | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
+| Sidebar row state bar        | `--dur-fast`           | `--ease`    | The left bar changes colour; nothing else moves or fills (§6 "Row states")                                                                                                                                |
+| Group rail in / out          | `--dur` / `--dur-slow` | `--ease`    | The checkout rail appears over `--dur` and leaves over `--dur-slow` (§6 "Group rail"); none under reduced motion                                                                                          |
+| Overlay (dialog/menu)        | 140ms                  | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
+| Divider hover                | 140ms                  | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
+| Pulse (active status)        | 1.8s loop              | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
+| Agent activity pulse         | 1.8s loop              | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
+| Terminal cursor              | 1s                     | steps(1)    | Blinking accent block                                                                                                                                                                                     |
+| Chart bar (BI)               | `--dur`                | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
+| Copy button reveal           | `--dur-fast`           | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
+| Copy → copied                | 1.5s                   | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
+| Fleet card entrance          | 620ms                  | custom¹     | Whole card fades + slides 22px from the right, as one unit (`.card-enter`)                                                                                                                                |
+| Fleet card ring fade         | 900ms                  | custom¹     | Border ring eases in after the entrance settles (suppressed during the slide)                                                                                                                             |
+| Fleet rail section           | `--dur-slow`           | `--ease`    | Needs-you / Would-have collapse via `grid-template-rows: 1fr↔0fr` (`.collapsible`)                                                                                                                        |
+| Rescan spin                  | 0.7s loop              | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
+| Pasted-images pill bump      | 300ms                  | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
+| Lightbox image swap          | `--dur`                | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
+| Jump flash                   | `--dur-slow`           | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
+| PR focus ring                | `--dur-slow`           | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
+| Pane maximize / restore      | `--dur-slow`           | `--ease`    | The maximized pane grows and the others shrink to their 24px strip by `flex`; one pass (T628). Reduced motion: snaps                                                                                      |
+| Expand to window / restore   | `--dur-slow`           | `--ease`    | The collapsed columns and panes go to 0 (`.lm-collapse`: size, opacity, margin, border) while the expanded pane grows; no remount (T628). Reduced motion: snaps                                           |
+| Fleet rail minimize / expand | `--dur-slow`           | `--ease`    | The rail column animates `width` between 300px (or the dragged width) and the 44px strip (T628). Reduced motion: snaps                                                                                    |
+| Sidebar collapse / expand    | `--dur-slow`           | `--ease`    | The sidebar and its divider animate `width` to 0 and back, with `opacity` (T628). Reduced motion: snaps                                                                                                   |
+| Split orientation switch     | `--dur-slow`           | `--ease`    | The session area and the helper stack slide and scale from their old box to the new one (FLIP, one pass) (T628). Reduced motion: snaps                                                                    |
 
 ¹ `cubic-bezier(0.22, 0.61, 0.36, 1)` — a touch snappier than the default
 `--ease`, since this is a list-insertion cue that must read as immediate, not
@@ -15176,6 +14238,11 @@ hidden`, `opacity: 0`, no margin or border, and `pointer-events: none`. They rep
   browser pane is never frozen: the layout snaps as it did before.
 
 ### Fleet state ring (Fleet rail)
+
+**Since the sidebar redesign** the ring is drawn by the sidebar: on each folder header
+(§6 "Sidebar tree → Folder ring"), on each Needs attention row and on a pending Needs you row. The
+Fleet rail it was designed for is gone; the anatomy, states and geometry below are unchanged, and
+"idle" (no ring layer on the old rail) draws the track alone in `--color-border-2`.
 
 Each session in the [Fleet rail](#inbox-rail-fleet-rail--4th-column)
 carries a **16px ring badge** on the left of its card — the ring IS the state.
@@ -15426,7 +14493,7 @@ codebase is a bug to fix.
   --radius: 7px;
   --radius-lg: 10px;
 
-  /* Folder View scroll caps (§6 "Folder View → Height caps") */
+  /* Folder View scroll caps. Unused once the slim Folder View lands (§6 "Folder View"); its slice removes them here and in themes.css */
   --fv-fanout-max-h: 380px;
   --fv-rail-list-max-h: 280px;
 
