@@ -259,4 +259,39 @@ describe('sidebar group rail (S-3)', () => {
       'CanvasText'
     )
   })
+
+  it('keeps the folded session count in what the label says', async () => {
+    const { w, store } = await boot()
+    const row = (path: string): ReturnType<VueWrapper['get']> =>
+      w.get(`[data-checkout-row][data-checkout-path="${path}"]`)
+    for (const path of [APP, WT_FEAT]) {
+      for (const s of store.folders.find((f) => f.path === path)!.sessions) {
+        s.taskState = 'working' as never
+      }
+    }
+    await nextTick()
+    // Open, the rows below count themselves: the label is the branch and the state.
+    expect(row(WT_FEAT).attributes('aria-label')).toBe('PROJ-231-rate-limit, agent working')
+
+    // Folded, the row shows the count, so the label that replaces the content says it too.
+    await row(WT_FEAT).trigger('click')
+    await row(APP).trigger('click')
+    expect(row(WT_FEAT).get('[data-value-count]').text()).toBe('2')
+    expect(row(WT_FEAT).attributes('aria-label')).toBe(
+      'PROJ-231-rate-limit, agent working, 2 sessions'
+    )
+    expect(row(APP).attributes('aria-label')).toBe('main, agent working, 1 session')
+
+    // Unfolded again, the count leaves the label with the row.
+    await row(WT_FEAT).trigger('click')
+    expect(row(WT_FEAT).attributes('aria-label')).toBe('PROJ-231-rate-limit, agent working')
+
+    // With no rail nothing overrides the content, which holds the count itself.
+    for (const s of store.folders.find((f) => f.path === APP)!.sessions) {
+      s.taskState = 'idle' as never
+    }
+    await nextTick()
+    expect(row(APP).attributes('aria-label')).toBeUndefined()
+    expect(row(APP).text()).toContain('1')
+  })
 })
