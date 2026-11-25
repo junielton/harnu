@@ -11,6 +11,7 @@ defineEmits<{ toggle: [] }>()
 </script>
 
 <template>
+  <!-- The count sits half a pixel down, on the baseline of the larger row label beside it. -->
   <span
     data-value-slot
     data-dsqa-part="value-slot"
@@ -18,7 +19,7 @@ defineEmits<{ toggle: [] }>()
   >
     <span
       data-value-count
-      class="text-[10.5px] leading-none text-text-4 tabular-nums transition-opacity duration-(--dur-fast) ease-(--ease)"
+      class="relative top-[0.5px] text-[10.5px] leading-none text-text-4 tabular-nums transition-opacity duration-(--dur-fast) ease-(--ease)"
       :class="
         open !== undefined &&
         'group-hover:opacity-0 group-focus-visible:opacity-0 group-has-focus-visible:opacity-0 group-data-[focused=true]:opacity-0'
@@ -35,7 +36,7 @@ defineEmits<{ toggle: [] }>()
       :aria-label="label"
       :aria-hidden="label ? undefined : true"
       class="absolute -top-1 right-0 grid size-6 place-items-center justify-items-end text-text-4 opacity-0 transition-opacity duration-(--dur-fast) ease-(--ease) group-hover:opacity-100 group-focus-visible:opacity-100 group-has-focus-visible:opacity-100 group-data-[focused=true]:opacity-100"
-      :class="label && 'cursor-pointer hover:bg-border-2'"
+      :class="label && 'cursor-pointer rounded-[var(--float-radius)] hover:bg-border-2'"
       @click="
         (event) => {
           if (label) {

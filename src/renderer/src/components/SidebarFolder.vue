@@ -748,14 +748,15 @@ function onSelectTeammate(session: Session): void {
             >
               <template v-if="mission.owed">
                 <TriangleAlert :size="11" :stroke-width="1.7" aria-hidden="true" />
-                <span data-mission-count>{{ mission.owed }}</span>
+                <!-- Half a pixel down: puts the 10.5px digits on the title's baseline. -->
+                <span data-mission-count class="relative top-[0.5px]">{{ mission.owed }}</span>
                 <SidebarMissionDetail v-if="!hasTrailingChips(s)" :chip="mission" class="right-0" />
               </template>
             </span>
             <span
               data-icon-slot
               data-dsqa-part="session-trailing-icon"
-              class="flex w-3.5 shrink-0 items-center justify-center"
+              class="flex size-3.5 shrink-0 items-center justify-center"
             >
               <Crown
                 v-if="sessions.isSessionOrchestratorOn(s.sessionId)"

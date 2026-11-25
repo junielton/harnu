@@ -90,7 +90,7 @@ function preview(event: MouseEvent, path: string): void {
                 class="shrink-0"
                 aria-hidden="true"
               />
-              <span class="min-w-0 flex-1 truncate font-mono text-[11.5px]">{{
+              <span class="min-w-0 flex-1 truncate font-mono text-[11.5px] leading-[14px]">{{
                 checkoutLabel(folder)
               }}</span>
               <SidebarValueSlot
@@ -117,7 +117,7 @@ function preview(event: MouseEvent, path: string): void {
               @click="sessions.toggleIdleWorktrees(tree.key)"
             >
               <GitBranch :size="13" :stroke-width="1.6" class="shrink-0" aria-hidden="true" />
-              <span class="min-w-0 flex-1 truncate text-[11.5px]">{{
+              <span class="min-w-0 flex-1 truncate text-[11.5px] leading-[14px]">{{
                 $t('sidebar.tree.idleWorktrees', tree.idle.length)
               }}</span>
               <SidebarValueSlot :open="idleOpen" />
@@ -141,7 +141,7 @@ function preview(event: MouseEvent, path: string): void {
                   @contextmenu.prevent="openMenu($event, folder.path)"
                 >
                   <span class="w-[13px] shrink-0" aria-hidden="true" />
-                  <span class="min-w-0 flex-1 truncate font-mono text-[11.5px]">{{
+                  <span class="min-w-0 flex-1 truncate font-mono text-[11.5px] leading-[14px]">{{
                     checkoutLabel(folder)
                   }}</span>
                   <SidebarValueSlot />
