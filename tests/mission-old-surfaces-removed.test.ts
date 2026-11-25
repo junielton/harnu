@@ -434,24 +434,24 @@ describe('a v3 mission paused with a steward: the pause is not owed any more', (
         .map((c) => c.sourceKey ?? '')
         .sort()
     const records = await readRecordViews([repo], { readDetail })
-    // What the upgraded build files for the mission: the blocker and the close, from the one waiting list.
+    // What the upgraded build files for the mission: its next item, the blocker (BUG-308: one card).
     const filed = reconcileMissions(emptyState(), none, [repo], 'live', mint, 1, records)
-    expect(keysOf(filed)).toEqual([`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:close`])
+    expect(keysOf(filed)).toEqual([`${m.id}:blocker:Waiting on the vendor key`])
     // What main filed before the upgrade also held a card for the steward's pause (its key is main's).
-    const close = filed.cards.find((c) => c.sourceKey === `${m.id}:close`)!
+    const blockerCard = filed.cards[0]
     const before: YourMoveState = {
       ...filed,
       cards: [
         ...filed.cards,
-        { ...close, id: 'card-pause', sourceKey: `${m.id}:steward-paused`, kind: 'do' }
+        { ...blockerCard, id: 'card-pause', sourceKey: `${m.id}:steward-paused`, kind: 'do' }
       ]
     }
-    expect(keysOf(before)).toHaveLength(3)
+    expect(keysOf(before)).toHaveLength(2)
     const idsBefore = new Map(before.cards.map((c) => [c.sourceKey, c.id]))
 
     // After the upgrade the list has no pause: that card closes by itself, instead of being stranded.
     const after = reconcileMissions(before, none, [repo], 'live', mint, 2, records)
-    expect(keysOf(after)).toEqual([`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:close`])
+    expect(keysOf(after)).toEqual([`${m.id}:blocker:Waiting on the vendor key`])
     expect(after.cards.find((c) => c.id === 'card-pause')!.closedAt).toBeDefined()
     // The two that stay are the same cards, not closed and re-filed.
     for (const c of after.cards.filter((c) => c.closedAt === undefined)) {
@@ -607,7 +607,7 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
     expect(reply.state === 'mission' && reply.pendingDoneWhen).toBeNull()
   }, 60_000)
 
-  it('the Your move card for the re-scope closes when it is approved, and the blocker card is not touched', async () => {
+  it('approving the re-scope leaves the blocker card as it is', async () => {
     const m = rescopeV3()
     m.blockers = [
       { reason: 'Waiting on the vendor key', unblocks: 'a key', owner: 'operator', raisedAt: AT }
@@ -633,14 +633,8 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
       1,
       await records()
     )
-    // Every step is verified, so the converted record also derives a close: it is owed beside the re-scope.
-    expect(open(filed)).toEqual(
-      [
-        `${m.id}:blocker:Waiting on the vendor key`,
-        `${m.id}:close`,
-        `${m.id}:rescope:${NEW_END.target}`
-      ].sort()
-    )
+    // BUG-308: one card, and the blocker the operator owes ranks above the re-scope.
+    expect(open(filed)).toEqual([`${m.id}:blocker:Waiting on the vendor key`])
 
     const res = await ipc.runPaneDoor({ folder: repo, missionId: m.id, door: 'approveDoneWhen' })
     expect(res).toMatchObject({ ok: true })
@@ -653,16 +647,35 @@ describe('an older mission with a staged re-scope has Approve and Decline in the
       2,
       await records()
     )
-    // Only the re-scope card closes; the close and the blocker cards are the same cards, not re-filed.
-    expect(open(next)).toEqual(
-      [`${m.id}:blocker:Waiting on the vendor key`, `${m.id}:close`].sort()
-    )
-    for (const key of ['blocker', 'close']) {
-      const before = filed.cards.find((c) => c.sourceKey?.includes(`:${key}`))!
-      expect(next.cards.find((c) => c.id === before.id)?.closedAt).toBeUndefined()
-    }
-    const blockerCard = filed.cards.find((c) => c.sourceKey?.includes(':blocker:'))!
-    expect(next.cards.find((c) => c.id === blockerCard.id)?.closedAt).toBeUndefined()
+    // The blocker card is the same card, not re-filed.
+    expect(open(next)).toEqual([`${m.id}:blocker:Waiting on the vendor key`])
+    expect(next.cards).toHaveLength(1)
+    expect(next.cards[0].id).toBe(filed.cards[0].id)
+  }, 60_000)
+
+  it('with nothing ahead of it the card is the re-scope, and approving moves it to what is owed next', async () => {
+    const m = rescopeV3()
+    seed(m)
+    const ipc = await import('../src/main/mission-ipc')
+    let n = 0
+    const mint = (): string => `card-${++n}`
+    const pass = async (s: YourMoveState, at: number): Promise<YourMoveState> =>
+      reconcileMissions(
+        s,
+        { unreadable: [] },
+        [repo],
+        'live',
+        mint,
+        at,
+        await readRecordViews([repo], { readDetail })
+      )
+    const filed = await pass(emptyState(), 1)
+    expect(filed.cards.map((c) => c.sourceKey)).toEqual([`${m.id}:rescope:${NEW_END.target}`])
+    const res = await ipc.runPaneDoor({ folder: repo, missionId: m.id, door: 'approveDoneWhen' })
+    expect(res).toMatchObject({ ok: true })
+    const next = await pass(filed, 2)
+    expect(next.cards).toHaveLength(1)
+    expect(next.cards[0]).toMatchObject({ id: filed.cards[0].id, sourceKey: `${m.id}:close` })
   }, 60_000)
 
   it('a v4 mission is untouched by the new route: its Approve is still the v4 door', async () => {
