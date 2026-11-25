@@ -38,6 +38,7 @@ import CommandPalette from './components/CommandPalette.vue'
 import InboxRail from './components/InboxRail.vue'
 import McpConfirmOverlay from './components/McpConfirmOverlay.vue'
 import ToastStack from './components/ToastStack.vue'
+import TooltipLayer from './components/TooltipLayer.vue'
 import HelperStack from './components/HelperStack.vue'
 import SessionTuckStrip from './components/SessionTuckStrip.vue'
 import TakeoverHost from './components/TakeoverHost.vue'
@@ -2473,6 +2474,7 @@ onUnmounted(() => {
       <CommandPalette />
       <McpConfirmOverlay />
       <ToastStack />
+      <TooltipLayer />
     </Teleport>
   </div>
 </template>

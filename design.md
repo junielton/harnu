@@ -7114,6 +7114,30 @@ is the `archived` dot (6px, `--text-4` border, `opacity: 0.55`) and the label
 sits at `opacity: 0.62`, signaling the state and indicating where to
 right-click to Unarchive.
 
+### Tooltip
+
+One app-wide tooltip (`TooltipLayer.vue` + `lib/tooltip.ts`, mounted once in App.vue's body teleport)
+replaces Chromium's native `title` tooltip, whose ~1s delay cannot be tuned. Call sites keep writing a
+plain `title` (and `aria-label`); nothing per component opts in.
+
+- **Anchor:** the nearest element at or above the pointer with a `title`, or an icon-only control (a
+  `<button>`, `<a>`, or `role` button / link / tab / menuitem / option with no visible text) that names
+  itself only through `aria-label`. `data-tooltip="off"` on an element or an ancestor opts out. SVG
+  chart marks keep their own `<title>` child and are not affected.
+- **Rule (enforced by `tests/icon-button-labels.test.ts`):** every icon-only control carries a `title`
+  or an `aria-label`. When both exist the `title` is shown, so the chord rule above ("Tooltips carry the
+  chord") is unchanged.
+- **Timing:** opens after 250ms of rest; once a tooltip has closed, the next one within 500ms opens at
+  once (scanning a toolbar). Keyboard focus that is `:focus-visible` shows it with the same delay.
+  Pointer down, a key press, wheel, scroll or window blur hides it. Touch never shows it.
+- **Native suppression:** while hovered, the anchor's `title` moves to `data-harnu-title` and comes back
+  on leave, so the native tooltip never doubles it and the markup reads as written at rest.
+- **Placement:** centered below the anchor with a 6px gap; flips above when it would leave the window;
+  clamped 8px from either edge.
+- **Visual:** bg `--surface`, 1px `--border-2`, radius `--radius-sm`, padding `4px 8px`, Caption type
+  (11/16) in `--text-2`, `--shadow-pop`, max width 320px, wraps and honors `\n`. Enters with
+  `.anim-overlay-fade`, no exit animation. `pointer-events: none`, z-index 90 (above toasts at 80).
+
 ### Toast
 
 **Non-modal** visual notification, anchored to the bottom-right corner. Used
@@ -15121,6 +15145,7 @@ it ran too long.**
 | Review selection bar         | `--dur`      | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
 | Expand project               | 220ms        | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
 | Overlay (dialog/menu)        | 140ms        | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
+| Tooltip                      | `--dur`      | `--ease`    | Opens after 250ms of rest (0ms within 500ms of the previous one closing), then `.anim-overlay-fade`; no exit animation (§6 "Tooltip")                                                                     |
 | Divider hover                | 140ms        | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
 | Pulse (active status)        | 1.8s loop    | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
 | Agent activity pulse         | 1.8s loop    | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |

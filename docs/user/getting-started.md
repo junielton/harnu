@@ -54,6 +54,10 @@ Sessions you've already had with Claude Code show up nested under their folder t
 
 `Cmd/Ctrl+K` opens a spotlight-style search over your recent sessions, folders, and available actions — the fastest way to jump around once you have more than a couple of folders pinned. A few other shortcuts worth knowing early: `Cmd/Ctrl+B` toggles the sidebar, and `Cmd/Ctrl+Shift+A` / `Cmd/Ctrl+Shift+B` both toggle the Fleet rail.
 
+## Tooltips
+
+Every icon-only button has a tooltip that names what it does. Rest the pointer on it for a quarter of a second, or reach it with Tab, and the tooltip appears; once one is showing, moving to the next button shows its tooltip right away. When an action has a keyboard shortcut, the tooltip ends with it in parentheses, such as "Hide sidebar (⌘B)". Clicking, scrolling or pressing a key hides the tooltip.
+
 ## What's next
 
 From here, the rest of the guide (linked from the [index](README.md)) covers each capability in depth as those pages land — sessions and the terminal pane, worktrees, the Approval Inbox, agent control, project memory, the roadmap board, and settings.

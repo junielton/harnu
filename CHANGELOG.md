@@ -12,6 +12,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-25
 
+### Changed
+
+- **Tooltips now open almost at once.** Hovering a button, option or label with a tooltip shows it after a quarter of a second instead of the system's one-second wait, and moving along a toolbar shows the next one immediately. Every icon-only button now has a tooltip, including the close and navigation buttons that used to have none. Tooltips also appear when you reach a control with the keyboard.
+
 ### Fixed
 
 - **The bake-off author sandbox keeps skill references out of its working copy.** The mission v4 mockup files and tests that name the skill are excluded from the sandbox archive.
