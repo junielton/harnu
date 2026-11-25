@@ -102,9 +102,10 @@ function phrases(
     const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
     for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text)
     const all = nodes.map((n) => n.data).join('')
-    const at = (offset: number): [Text, number] => {
+    // A start on a boundary belongs to the node that follows, an end to the node before.
+    const at = (offset: number, end = false): [Text, number] => {
       for (const node of nodes) {
-        if (offset <= node.data.length) return [node, offset]
+        if (offset < node.data.length || (end && offset === node.data.length)) return [node, offset]
         offset -= node.data.length
       }
       throw new Error('offset past the row')
@@ -115,7 +116,7 @@ function phrases(
       if (start < 0) return null
       const range = document.createRange()
       range.setStart(...at(start))
-      range.setEnd(...at(start + text.length))
+      range.setEnd(...at(start + text.length, true))
       const r = range.getBoundingClientRect()
       let whole = r.width > 0 && r.left >= box.left && r.right <= box.right + 0.5
       whole &&= r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5
