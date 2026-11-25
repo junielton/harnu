@@ -331,4 +331,46 @@ describe('startup cleanup wiring (BUG-300)', () => {
       closeYourMove()
     }
   })
+
+  it('booting supersedes older cards only where the operator replied after them (BUG-308)', async () => {
+    const reply = path.join(dir, 'replied.jsonl')
+    const silent = path.join(dir, 'silent.jsonl')
+    const typed = (text: string, ago: number): string =>
+      JSON.stringify({
+        type: 'user',
+        timestamp: new Date(Date.now() - ago).toISOString(),
+        origin: { kind: 'human' },
+        message: { content: text }
+      })
+    await writeFile(reply, `${typed('start', 5 * 86_400_000)}\n${typed('go', 2 * 86_400_000)}\n`)
+    await writeFile(silent, `${typed('start', 5 * 86_400_000)}\n`)
+    h.lookups.replied = { state: 'found', path: reply }
+    h.lookups.silent = { state: 'found', path: silent }
+    const pair = (sessionId: string): YourMoveCard[] => [
+      card({
+        id: `${sessionId}-old`,
+        sessionId,
+        folder: dir,
+        updatedAt: Date.now() - 3 * 86_400_000
+      }),
+      card({ id: `${sessionId}-new`, sessionId, folder: dir })
+    ]
+    await writeFile(
+      path.join(dir, 'your-move.json'),
+      JSON.stringify({ version: 1, cursors: {}, cards: [...pair('replied'), ...pair('silent')] })
+    )
+    const { registerYourMove, closeYourMove } = await import('../../src/main/your-move/ipc')
+    registerYourMove(() => null)
+    try {
+      const byId = async (): Promise<Map<string, CardView>> =>
+        new Map(((await h.handlers.get('yourMove:list')?.({})) as CardView[]).map((c) => [c.id, c]))
+      await vi.waitFor(
+        async () => expect((await byId()).get('replied-old')?.closedBy).toBe('superseded'),
+        { timeout: 4_000 }
+      )
+      expect((await byId()).get('silent-old')?.closedAt).toBeUndefined()
+    } finally {
+      closeYourMove()
+    }
+  })
 })

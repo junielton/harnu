@@ -90,6 +90,14 @@ async function inspectorWith(
     store,
     read: (async (): Promise<ReadResult> => ({
       lines: [
+        // BUG-308 delta 2: only a turn the operator typed in supersedes.
+        {
+          type: 'user',
+          entrypoint: 'cli',
+          timestamp: new Date(NOW - 1_000).toISOString(),
+          origin: { kind: 'human' },
+          message: { content: 'carry on' }
+        },
         {
           type: 'assistant',
           entrypoint: 'cli',

@@ -172,6 +172,8 @@ describe('the startup cleanup applies the four rules to what is on disk', () => 
       store,
       ...presence,
       now: () => NOW,
+      // BUG-308 delta 2: `talker` replied after its older cards were filed.
+      lastReplyAt: async (id: string) => (id === 'talker' ? NOW - 2 * DAY : null),
       readViews: async () => views,
       folderOff: () => false
     })
@@ -197,6 +199,8 @@ describe('the startup cleanup applies the four rules to what is on disk', () => 
       store,
       ...presence,
       now: () => NOW,
+      // BUG-308 delta 2: `talker` replied after its older cards were filed.
+      lastReplyAt: async (id: string) => (id === 'talker' ? NOW - 2 * DAY : null),
       readViews: async (roots) => (roots.includes(HERE) ? views : new Map()),
       folderOff: (root) => root === HERE
     })
@@ -210,6 +214,8 @@ describe('the startup cleanup applies the four rules to what is on disk', () => 
       store,
       ...presence,
       now: () => NOW,
+      // BUG-308 delta 2: `talker` replied after its older cards were filed.
+      lastReplyAt: async (id: string) => (id === 'talker' ? NOW - 2 * DAY : null),
       readViews: async () => {
         throw new Error('boom')
       },
@@ -254,6 +260,8 @@ describe('a mission card ages with its mission record, not with the card', () =>
       store,
       ...presence,
       now: () => NOW,
+      // BUG-308 delta 2: `talker` replied after its older cards were filed.
+      lastReplyAt: async (id: string) => (id === 'talker' ? NOW - 2 * DAY : null),
       readViews: async () => views,
       folderOff: () => false
     })
