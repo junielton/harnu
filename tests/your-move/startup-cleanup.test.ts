@@ -4,7 +4,7 @@
  * this file fails when the call in `ipc.ts` is removed.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import type { CardView, YourMoveCard } from '../../src/main/your-move/core'
@@ -13,7 +13,8 @@ const h = vi.hoisted(() => ({
   userData: '',
   lookups: {} as Record<string, { state: string; path?: string }>,
   leaderCheck: undefined as undefined | ((id: string) => Promise<boolean>),
-  handlers: new Map<string, (...args: unknown[]) => Promise<unknown>>()
+  handlers: new Map<string, (...args: unknown[]) => Promise<unknown>>(),
+  onTaskEvent: undefined as undefined | ((ev: Record<string, unknown>) => void)
 }))
 
 vi.mock('electron', () => ({
@@ -37,7 +38,10 @@ vi.mock('../../src/main/pty', () => ({
 }))
 vi.mock('../../src/main/detect/task-state-hub', () => ({
   getTaskStates: () => new Map(),
-  addTaskEventObserver: (): (() => void) => () => undefined
+  addTaskEventObserver: (fn: typeof h.onTaskEvent): (() => void) => {
+    h.onTaskEvent = fn
+    return () => undefined
+  }
 }))
 vi.mock('../../src/main/claude-watcher', () => ({ classifyTranscriptLines: () => null }))
 vi.mock('../../src/main/claude-cli', () => ({ resolveClaudePath: async () => null }))
@@ -256,6 +260,25 @@ describe('startup cleanup wiring (BUG-300)', () => {
         { timeout: 4_000 }
       )
       expect((await byId()).get('c-human')?.closedAt).toBeUndefined()
+    } finally {
+      closeYourMove()
+    }
+  })
+
+  it('a hook event writes down an agent-spawned session while the marker is there (BUG-308)', async () => {
+    const { registerYourMove, closeYourMove } = await import('../../src/main/your-move/ipc')
+    h.onTaskEvent = undefined
+    registerYourMove(() => null)
+    try {
+      await vi.waitFor(() => expect(h.onTaskEvent).toBeTypeOf('function'), { timeout: 4_000 })
+      h.onTaskEvent!({ sessionId: 'dispatched', event: 'SessionStart', taskState: 'idle' })
+      await vi.waitFor(
+        async () => {
+          const raw = await readFile(path.join(dir, 'your-move-agent-sessions.json'), 'utf8')
+          expect(JSON.parse(raw).ids).toContain('dispatched')
+        },
+        { timeout: 4_000 }
+      )
     } finally {
       closeYourMove()
     }
