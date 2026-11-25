@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: split-side</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa='split-side'] .session {
+        width: 40%;
+      }
+      [data-dsqa='split-side'] .floor {
+        left: 40%;
+      }
+      [data-dsqa='split-side'] .divider.armed,
+      [data-dsqa='split-side'] .helpers-row,
+      [data-dsqa='split-side'] .strip {
+        display: none;
+      }
+      [data-dsqa='split-side'] .helpers-col {
+        display: contents;
+      }
+
+      /* armed: pulled ~80px past the floor */
+      [data-dsqa='split-side'][data-state='armed'] .session {
+        width: calc(40% - 80px);
+      }
+      [data-dsqa='split-side'][data-state='armed'] .dim {
+        display: flex;
+      }
+      [data-dsqa='split-side'][data-state='armed'] .floor {
+        display: block;
+      }
+      [data-dsqa='split-side'][data-state='armed'] .divider.rest {
+        display: none;
+      }
+      [data-dsqa='split-side'][data-state='armed'] .divider.armed {
+        display: block;
+      }
+
+      /* tucked: session out of the way, the stack takes the whole row, panes side by side */
+      [data-dsqa='split-side'][data-state^='tucked'] .session,
+      [data-dsqa='split-side'][data-state^='tucked'] .divider,
+      [data-dsqa='split-side'][data-state^='tucked'] .helpers-col {
+        display: none;
+      }
+      [data-dsqa='split-side'][data-state^='tucked'] .helpers-row {
+        display: contents;
+      }
+      [data-dsqa='split-side'][data-state='tucked'] .strip.s-idle,
+      [data-dsqa='split-side'][data-state='tucked-hover'] .strip.s-hover,
+      [data-dsqa='split-side'][data-state='tucked-needs-you'] .strip.s-needs {
+        display: flex;
+      }
+      [data-dsqa='split-side'] .strip {
+        flex: none;
+        position: relative;
+        z-index: 4;
+      }
+    </style>
+  </head>
+  <body data-states="default armed tucked tucked-hover tucked-needs-you">
+    <div data-dsqa="split-side" class="app">
+      <header class="topbar">
+        <span class="brand"></span>
+        <span class="crumb"
+          >harnu <span class="sep">/</span> main <span class="sep">/</span>
+          <b>Walk the CMS editor</b></span
+        >
+        <span class="spacer"></span>
+        <span class="pill">Mission · 2 of 5 steps done</span>
+      </header>
+      <div class="main">
+        <div class="split">
+          <div class="strip s-idle" data-goto="split-side?state=default">
+            <mk-tuck-strip orient="v" state="idle"></mk-tuck-strip>
+          </div>
+          <div class="strip s-hover" data-goto="split-side?state=default">
+            <mk-tuck-strip orient="v" state="hover"></mk-tuck-strip>
+          </div>
+          <div class="strip s-needs" data-goto="split-side?state=default">
+            <mk-tuck-strip orient="v" state="needs"></mk-tuck-strip>
+          </div>
+
+          <section class="session" data-dsqa-part="session-area">
+            <mk-session-term></mk-session-term>
+            <div class="dim" data-goto="split-side?state=tucked">
+              <div class="hint">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+                Release to tuck the session away
+              </div>
+            </div>
+          </section>
+          <div
+            class="divider rest"
+            data-dsqa-part="divider"
+            data-goto="split-side?state=armed"
+          ></div>
+          <div
+            class="divider armed"
+            data-dsqa-part="divider-armed"
+            data-goto="split-side?state=tucked"
+          ></div>
+          <div class="floor"><span>40% · session floor</span></div>
+
+          <div class="helpers-col"><mk-helper-panes layout="column"></mk-helper-panes></div>
+          <div class="helpers-row"><mk-helper-panes layout="row"></mk-helper-panes></div>
+        </div>
+        <aside class="rail"><i></i><i></i></aside>
+      </div>
+      <footer class="footer"><span>Ctrl+K commands</span><span>main · clean</span></footer>
+    </div>
+    <script src="../parts/tuck-strip.js"></script>
+    <script src="../parts/helper-panes.js"></script>
+    <script src="../parts/session-term.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,550 @@
+/**
+ * Missions v4 S-16a (V-2) — the one adapter that gathers a step's facts.
+ *
+ * S-7's state function takes a {@link StepInput} per step: the card's column, the pull request's state,
+ * the facts Harnu reads beyond it (`ci-green`, `main-green`, `link-exists`) and whether a worker is
+ * working. Nothing in the record holds those, so the view and the observer ask this module. It gathers
+ * them from what Harnu already holds and nothing else: the board, chapter 2's pull request join (one
+ * call per mission, which joins the single-flight cache a chapter 2 poll already warms), its last-known
+ * facts and the session list. Every source is a {@link FactsDeps} entry, so the module itself spawns no
+ * `git` or `gh`, reads no file and has no Electron import; `mission-ipc.ts` wires the real ones.
+ *
+ * **Absent is not false** (`state.ts`). A fact the adapter could not read (GitHub unreachable and no
+ * earlier sighting, a pull request that aged out of the recent list, a step with nothing to check) is
+ * left OUT of the input. `false` means read, and it does not hold. A pull request seen once keeps its
+ * state through an unreachable GitHub (the sticky last-known value): never a downgrade.
+ *
+ * It writes no file and no cache. What a pass may remember across restarts (the sticky sightings) and what
+ * it found for each step (the pull requests to attach) come back as data from {@link gatherStepFacts};
+ * only the observer acts on them. The one thing it keeps itself is {@link stepMemory}: in memory only,
+ * so that a read which does not arrive repeats the previous read instead of dropping the pull request. Electron-free, and no import of a v3 module (AC-26).
+ */
+
+import * as path from 'node:path'
+import { mapLegacyDataPath } from '../data-dir'
+import { parseCard } from '../roadmap-core'
+import type { LinkCacheKind, LinkResolution } from '../mission-link-cache'
+import type { MissionPrJoin } from '../pr-stack'
+import { findCardByName, indexStepCards, stepCardColumn, stepCardKey, type CardFile } from './cards'
+import { leaderOf } from './guard'
+import type { MissionLink, MissionV4, StepV4 } from './model'
+import type { CardColumn, PrState, ReadFact, StepInput } from './state'
+import type { FoundPr } from './verbs-plan'
+
+/** What chapter 2's join answers: pull requests by number, by worktree and by branch. */
+export type PrJoin = MissionPrJoin
+
+/** The verdict of one CI read, as chapter 2 words it. */
+type Ci = 'passing' | 'failing' | 'pending' | 'unknown'
+
+/** Every source the adapter reads. Each is injected: a test hands over a plain fake. */
+export interface FactsDeps {
+  /**
+   * The board's cards as files. Called once, and only when a step names a card. A throw reads as "no
+   * board": every card column is then absent.
+   */
+  board?: () => Promise<readonly CardFile[]>
+  /** The one join for the whole mission: its pull request numbers, worktree paths and card branches. */
+  findPrs: (refs: { worktrees: string[]; branches: string[]; numbers: number[] }) => Promise<PrJoin>
+  /** CI of the merge commits of merged pull requests on the default branch. */
+  findMainCi: (
+    numbers: number[]
+  ) => Promise<{ ghAvailable: boolean | null; byNumber: Record<number, Ci | null> }>
+  /**
+   * CI of the current tip of each base branch (`main`), one read per branch per pass (BUG-294). Optional:
+   * a source without it reads `main-green` from the merge commits alone. A throw reads as "no tips".
+   */
+  findBaseCi?: (
+    bases: string[]
+  ) => Promise<{ ghAvailable: boolean | null; byBase: Record<string, Ci | null> }>
+  /** The last-known resolution of a link (chapter 2's sticky cache), bound to the repo. */
+  lastKnown: (kind: LinkCacheKind, ref: string) => LinkResolution | null
+  /** Whether an absolute path exists. Asynchronous: the adapter reads no file itself. */
+  pathExists: (absolute: string) => Promise<boolean>
+  /** A session's task state (`working`, `idle`, …), or `undefined` when none is known. */
+  taskState: (sessionId: string) => string | undefined
+}
+
+/** One thing a pass may remember: the arguments of `rememberResolved` (minus the repo root). */
+export interface Sighting {
+  kind: LinkCacheKind
+  ref: string
+  seen: Omit<LinkResolution, 'at'>
+}
+
+export interface StepFacts {
+  /** Each step's input, by step id. */
+  inputs: Record<string, StepInput>
+  /** Sticky sightings: only what was actually read, never a value taken from the cache. */
+  sightings: Sighting[]
+  /** The pull requests found for each step (its `pr` links, its worktrees, its card's branch). */
+  found: FoundPr[]
+}
+
+// ---- Link helpers --------------------------------------------------------------------
+
+/** The pull request number a `pr` link names: `12`, `#12` or a `/pull/12` URL. */
+function prNumberOf(ref: string): number | null {
+  const m = /(?:#|\/pull\/|^)(\d+)\/?\s*$/.exec(ref.trim())
+  return m ? Number(m[1]) : null
+}
+
+/** A `worktree` or `doc` link's ref as an absolute path; a relative one is read from the repo root. */
+function linkPath(root: string, ref: string): string {
+  return path.isAbsolute(ref) ? ref : path.resolve(root, mapLegacyDataPath(ref))
+}
+
+const linksOf = (step: StepV4, kind: MissionLink['kind']): MissionLink[] =>
+  step.links.filter((l) => l.kind === kind)
+
+type PrRow = NonNullable<PrJoin['numbers'][number]>
+
+/** Merged beats open beats closed: the one pull request whose state stands for the step. */
+function pickPr(candidates: readonly PrRow[]): PrRow | undefined {
+  for (const state of ['MERGED', 'OPEN', 'CLOSED'] as const) {
+    const hit = candidates.filter((p) => p.state === state).sort((a, b) => b.number - a.number)[0]
+    if (hit) return hit
+  }
+  return undefined
+}
+
+const PR_STATE: Record<PrRow['state'], Exclude<PrState, 'none'>> = {
+  OPEN: 'open',
+  MERGED: 'merged',
+  CLOSED: 'closed'
+}
+
+const ciFact = (ci: string | undefined): boolean | undefined =>
+  ci === 'passing' ? true : ci === 'failing' ? false : undefined
+
+/**
+ * The board's step index, built once per board: a pass that gathers the facts of N records hands the
+ * same array of files to each, so the cards are parsed once, not once per record.
+ */
+const boards = new WeakMap<readonly CardFile[], ReturnType<typeof indexStepCards>>()
+function boardIndex(files: readonly CardFile[]): ReturnType<typeof indexStepCards> {
+  let index = boards.get(files)
+  if (!index) {
+    index = indexStepCards(files)
+    boards.set(files, index)
+  }
+  return index
+}
+
+// ---- Step memory ----------------------------------------------------------------------
+
+/** What the last read that arrived showed for a step's pull request. */
+interface StepMemo {
+  state: 'open' | 'merged' | 'closed'
+  number: number
+  ci: string | undefined
+  base: string | undefined
+  mergedAt: string | undefined
+}
+
+/**
+ * The last pull request read for each step, by repo, mission and step. GitHub's list is read through a
+ * 60 s cache with a short wait on a miss, so once a minute a poll gets nothing back for a whole repo. That
+ * says nothing about the pull request, and the step must keep reading what it read before (unread is not a
+ * reason to drop). The observer's sticky cache cannot stand in for it: it never sees a mission the v4
+ * observer skips (a v3 file), a pull request found only through a worktree or card branch, or the CI
+ * verdicts that are neither passing nor failing, so it can hold an older one than the last read.
+ *
+ * In memory only, bounded, and written only from a read that arrived; the process restart empties it and
+ * the sticky cache covers that case. Read before the sticky cache because it is never older than it in
+ * this process: the observer's own reads come through here too.
+ */
+const stepMemory = new Map<string, StepMemo>()
+const STEP_MEMORY_MAX = 2000
+
+const memoKey = (root: string, missionId: string, stepId: string): string =>
+  `${root}\u0000${missionId}\u0000${stepId}`
+
+function remember(key: string, memo: StepMemo): void {
+  stepMemory.delete(key) // re-insert last: Map order = recency
+  stepMemory.set(key, memo)
+  while (stepMemory.size > STEP_MEMORY_MAX) {
+    const oldest = stepMemory.keys().next().value
+    if (oldest === undefined) break
+    stepMemory.delete(oldest)
+  }
+}
+
+/** Test seam: forget what earlier polls read. */
+export function resetStepFactsMemory(): void {
+  stepMemory.clear()
+}
+
+// ---- The adapter ----------------------------------------------------------------------
+
+/**
+ * Gather every step's input and what the observer needs beyond it. Reads through `deps` only; never
+ * throws on a source that fails (that fact is simply absent).
+ */
+export async function gatherStepFacts(
+  root: string,
+  record: MissionV4,
+  deps: FactsDeps
+): Promise<StepFacts> {
+  const leader = leaderOf(record)
+
+  // The cards: the board is read once, and only when a step names a card.
+  let files: readonly CardFile[] = []
+  if (deps.board && record.steps.some((s) => s.card)) {
+    try {
+      files = await deps.board()
+    } catch {
+      files = []
+    }
+  }
+  const index = boardIndex(files)
+  const cardOf = (step: StepV4): { column?: CardColumn; branch?: string } => {
+    if (!step.card) return {}
+    const ref = { missionId: record.id, stepId: step.id }
+    // The card stamped for this step comes from the board's index (parsed once per board); a card the
+    // step names that carries no stamp for it is looked up by name and reads as no card.
+    const stamped = index.get(stepCardKey(ref))?.card
+    const named = stamped ? undefined : findCardByName(files, step.card)
+    const card = stamped ?? (named ? parseCard(named.content, named.slug) : undefined)
+    const column = stepCardColumn(card, ref)
+    if (column === undefined) return {}
+    return { column, ...(card?.executedIn ? { branch: card.executedIn } : {}) }
+  }
+  const cards = new Map(record.steps.map((s) => [s.id, cardOf(s)] as const))
+
+  // The refs the one join is asked for.
+  const exists = new Map<string, boolean>()
+  const checkPath = async (abs: string): Promise<boolean> => {
+    const known = exists.get(abs)
+    if (known !== undefined) return known
+    let ok = false
+    try {
+      ok = await deps.pathExists(abs)
+    } catch {
+      ok = false
+    }
+    exists.set(abs, ok)
+    return ok
+  }
+  const worktreePaths = new Set<string>()
+  for (const s of record.steps) {
+    for (const l of linksOf(s, 'worktree')) {
+      const abs = linkPath(root, l.ref)
+      if (await checkPath(abs)) worktreePaths.add(abs)
+    }
+  }
+  const branches = new Set<string>()
+  for (const c of cards.values()) if (c.branch) branches.add(c.branch)
+  const numbers = new Set<number>()
+  for (const s of record.steps) {
+    for (const l of linksOf(s, 'pr')) {
+      const n = prNumberOf(l.ref)
+      if (n !== null) numbers.add(n)
+    }
+  }
+
+  let join: PrJoin = { ghAvailable: null, worktrees: {}, branches: {}, numbers: {} }
+  if (worktreePaths.size + branches.size + numbers.size > 0) {
+    try {
+      join = await deps.findPrs({
+        worktrees: [...worktreePaths],
+        branches: [...branches],
+        numbers: [...numbers]
+      })
+    } catch {
+      join = { ghAvailable: false, worktrees: {}, branches: {}, numbers: {} }
+    }
+  }
+
+  // Each step's pull requests: the numbers of its `pr` links, its existing worktrees, its card's branch.
+  interface StepPrs {
+    candidates: PrRow[]
+    /** A `pr` link whose number the join did not list (aged out, or GitHub unreachable). */
+    unresolved: number[]
+    /** The step has a worktree or a card branch whose pull requests were asked for. */
+    askedByBranch: boolean
+  }
+  const prsOf = new Map<string, StepPrs>()
+  for (const s of record.steps) {
+    const byNumber = new Map<number, PrRow>()
+    const unresolved: number[] = []
+    let askedByBranch = false
+    for (const l of linksOf(s, 'pr')) {
+      const n = prNumberOf(l.ref)
+      if (n === null) continue
+      const row = join.numbers[n]
+      if (row) byNumber.set(row.number, row)
+      else unresolved.push(n)
+    }
+    for (const l of linksOf(s, 'worktree')) {
+      const abs = linkPath(root, l.ref)
+      if (!exists.get(abs)) continue
+      askedByBranch = true
+      for (const p of join.worktrees[abs]?.prs ?? []) byNumber.set(p.number, p)
+    }
+    const branch = cards.get(s.id)?.branch
+    if (branch) {
+      askedByBranch = true
+      for (const p of join.branches[branch] ?? []) byNumber.set(p.number, p)
+    }
+    prsOf.set(s.id, { candidates: [...byNumber.values()], unresolved, askedByBranch })
+  }
+
+  // The sticky state a step falls back on when nothing was read: never a downgrade.
+  interface Sticky {
+    state: 'open' | 'merged'
+    number: number
+    base: string | undefined
+    mergedAt: string | undefined
+  }
+  const stickyPr = (nums: readonly number[]): Sticky | undefined => {
+    let best: Sticky | undefined
+    for (const n of nums) {
+      const known = deps.lastKnown('pr', String(n))
+      if (known?.state !== 'OPEN' && known?.state !== 'MERGED') continue
+      const state = known.state === 'MERGED' ? 'merged' : 'open'
+      if (!best || (state === 'merged' && best.state === 'open')) {
+        best = { state, number: n, base: known.baseRefName, mergedAt: known.mergedAt }
+      }
+    }
+    return best
+  }
+
+  // One main-CI read for the merged pull requests of every step.
+  const chosen = new Map<string, PrRow | undefined>()
+  const mergedNumbers = new Set<number>()
+  for (const s of record.steps) {
+    const row = pickPr(prsOf.get(s.id)?.candidates ?? [])
+    chosen.set(s.id, row)
+    if (row?.state === 'MERGED') mergedNumbers.add(row.number)
+  }
+  const mainCi: Record<number, Ci | null> = {}
+  const toAsk = [...mergedNumbers]
+  if (toAsk.length > 0) {
+    try {
+      Object.assign(mainCi, (await deps.findMainCi(toAsk)).byNumber)
+    } catch {
+      /* unreadable: the sticky value, else absent */
+    }
+  }
+
+  const inputs: Record<string, StepInput> = {}
+  const sightings: Sighting[] = []
+  const sighted = new Set<string>()
+  const sight = (s: Sighting): void => {
+    const key = `${s.kind}\u0000${s.ref}`
+    if (sighted.has(key)) return
+    sighted.add(key)
+    sightings.push(s)
+  }
+  const found: FoundPr[] = []
+  const foundKeys = new Set<string>()
+
+  // First pass: which pull request stands for each step, and what a read that did not arrive repeats.
+  interface Resolved {
+    step: StepV4
+    input: StepInput
+    candidates: PrRow[]
+    row: PrRow | undefined
+    remembered: StepMemo | undefined
+    prNumber: number | undefined
+    prMerged: boolean
+    /** Where the merged pull request landed, and when. */
+    base: string | undefined
+    mergedAt: string | undefined
+  }
+  const resolved: Resolved[] = []
+  for (const step of record.steps) {
+    const input: StepInput = {}
+    const card = cards.get(step.id)
+    if (card?.column !== undefined) input.card = card.column
+
+    const { candidates, unresolved, askedByBranch } = prsOf.get(step.id) as StepPrs
+    const row = chosen.get(step.id)
+    const key = memoKey(root, record.id, step.id)
+    let prNumber: number | undefined
+    let prMerged = false
+    let base: string | undefined
+    let mergedAt: string | undefined
+    // What the last read that arrived showed, when this poll reads nothing for the pull request.
+    let remembered: StepMemo | undefined
+    if (row) {
+      input.pr = PR_STATE[row.state]
+      prNumber = row.state === 'CLOSED' ? undefined : row.number
+      prMerged = row.state === 'MERGED'
+      base = row.base
+      mergedAt = row.mergedAt ?? undefined
+      remember(key, {
+        state: PR_STATE[row.state],
+        number: row.number,
+        ci: row.ci,
+        base: row.base,
+        mergedAt: row.mergedAt ?? undefined
+      })
+    } else if (unresolved.length === 0 && askedByBranch && join.ghAvailable === true) {
+      // A read that arrived and found no pull request: that is an answer, and it ends the memory.
+      input.pr = 'none'
+      stepMemory.delete(key)
+    } else if (unresolved.length > 0 || askedByBranch) {
+      // Nothing was read for a pull request the step points at: repeat the last read, else the sticky one.
+      remembered = stepMemory.get(key)
+      if (remembered) {
+        input.pr = remembered.state
+        prNumber = remembered.state === 'closed' ? undefined : remembered.number
+        prMerged = remembered.state === 'merged'
+        base = remembered.base
+        mergedAt = remembered.mergedAt
+      } else {
+        const sticky = stickyPr(unresolved)
+        if (sticky) {
+          input.pr = sticky.state
+          prNumber = sticky.number
+          prMerged = sticky.state === 'merged'
+          base = sticky.base
+          mergedAt = sticky.mergedAt
+        }
+      }
+    }
+    resolved.push({ step, input, candidates, row, remembered, prNumber, prMerged, base, mergedAt })
+  }
+
+  // One tip read per base branch (BUG-294): only the branches where a merged step's own merge commit is
+  // not known green, because only those can be cleared (or kept red) by a later commit.
+  const tipCi: Record<string, Ci | null> = {}
+  const tipBases = new Set<string>()
+  for (const r of resolved) {
+    if (!r.prMerged || r.prNumber === undefined || r.base === undefined) continue
+    if (mainCi[r.prNumber] !== 'passing') tipBases.add(r.base)
+  }
+  if (deps.findBaseCi && tipBases.size > 0) {
+    try {
+      Object.assign(tipCi, (await deps.findBaseCi([...tipBases])).byBase)
+    } catch {
+      /* unreadable: the merge commit's verdict stands */
+    }
+  }
+
+  for (const {
+    step,
+    input,
+    candidates,
+    row,
+    remembered,
+    prNumber,
+    prMerged,
+    base,
+    mergedAt
+  } of resolved) {
+    const facts: Partial<Record<ReadFact, boolean>> = {}
+
+    for (const p of candidates) {
+      const key = `${step.id}#${p.number}`
+      if (!foundKeys.has(key)) {
+        foundKeys.add(key)
+        found.push({ stepId: step.id, number: p.number, state: PR_STATE[p.state] })
+      }
+      if (p.state === 'CLOSED') continue
+      sight({
+        kind: 'pr',
+        ref: String(p.number),
+        seen: {
+          state: p.state,
+          prNumber: p.number,
+          url: p.url,
+          baseRefName: p.base,
+          ...(p.mergedAt ? { mergedAt: p.mergedAt } : {})
+        }
+      })
+      if (p.ci === 'passing' || p.ci === 'failing') {
+        sight({ kind: 'pr-ci', ref: String(p.number), seen: { state: p.ci, prNumber: p.number } })
+      }
+    }
+
+    // ci-green: the pull request's ci. main-green: the merge commit's CI, or the CI of a later commit on
+    // the base branch (its current tip, which holds the merge commit), merged pull requests only.
+    if (prNumber !== undefined) {
+      const ci = row
+        ? ciFact(row.ci)
+        : remembered
+          ? ciFact(remembered.ci)
+          : ciFact(deps.lastKnown('pr-ci', String(prNumber))?.state)
+      if (ci !== undefined) facts['ci-green'] = ci
+      if (prMerged) {
+        const read = mainCi[prNumber]
+        const own = ciFact(read ?? undefined)
+        const earlier = ciFact(deps.lastKnown('pr-main', String(prNumber))?.state)
+        const tipGreen = base !== undefined && tipCi[base] === 'passing'
+        // A red merge a green commit already superseded stays history: `earlier` green wins over a fresh
+        // red read of the same merge commit, so a later, unrelated break does not blame this step.
+        const main = own === true || tipGreen ? true : own === false ? earlier === true : earlier
+        if (main !== undefined) facts['main-green'] = main
+        // Remember what was read, but never let a red read of a superseded merge undo that memory.
+        const seen =
+          tipGreen || read === 'passing' ? 'passing' : read === 'failing' ? 'failing' : null
+        if (seen !== null && !(seen === 'failing' && earlier === true)) {
+          sight({ kind: 'pr-main', ref: String(prNumber), seen: { state: seen, prNumber } })
+        }
+        input.base = base
+        if (mergedAt !== undefined) input.mergedAt = mergedAt
+      }
+    }
+
+    const linkExists = await linkExistsOf(root, step, join, deps, checkPath)
+    if (linkExists !== undefined) facts['link-exists'] = linkExists
+    if (Object.keys(facts).length > 0) input.facts = facts
+
+    const working = linksOf(step, 'session').some(
+      (l) => l.ref !== leader && deps.taskState(l.ref) === 'working'
+    )
+    if (working) input.workerWorking = true
+
+    inputs[step.id] = input
+  }
+  return { inputs, sightings, found }
+}
+
+/**
+ * `link-exists`: the step has at least one `pr`, `worktree` or `doc` link and each resolves (the path
+ * exists in the repo; the pull request is open or merged). A `url` link is never checked. `undefined`
+ * (absent) when the step has nothing to check or a pull request could not be read; `false` only when a
+ * link was read and does not resolve.
+ */
+async function linkExistsOf(
+  root: string,
+  step: StepV4,
+  join: PrJoin,
+  deps: FactsDeps,
+  checkPath: (abs: string) => Promise<boolean>
+): Promise<boolean | undefined> {
+  const links = step.links.filter(
+    (l) => l.kind === 'pr' || l.kind === 'worktree' || l.kind === 'doc'
+  )
+  if (links.length === 0) return undefined
+  let unknown = false
+  for (const l of links) {
+    if (l.kind === 'pr') {
+      const n = prNumberOf(l.ref)
+      if (n === null) return false
+      const row = join.numbers[n]
+      if (row) {
+        if (row.state === 'CLOSED') return false
+        continue
+      }
+      const known = deps.lastKnown('pr', String(n))
+      if (known?.state === 'OPEN' || known?.state === 'MERGED') continue
+      unknown = true
+    } else if (!(await checkPath(linkPath(root, l.ref)))) {
+      return false
+    }
+  }
+  return unknown ? undefined : true
+}
+
+/** Each step's input, by step id. See {@link gatherStepFacts} for what else a pass learns. */
+export async function gatherStepInputs(
+  root: string,
+  record: MissionV4,
+  deps: FactsDeps
+): Promise<Record<string, StepInput>> {
+  return (await gatherStepFacts(root, record, deps)).inputs
+}

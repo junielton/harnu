@@ -1,6 +1,11 @@
 # ADR-0015 — The goal file becomes structured Capy data; `agentControlled` children still report by native SendMessage
 
-**Status:** accepted · **Date:** 2026-09-26 · **Card:** T358
+> **Superseded by [ADR-0025](0025-missions-v4-one-model-supersedes-campaigns-and-stewards.md) (2026-11-16).** Missions v4 replaces the model this record
+> sets out: one Mission → Milestone → Step record, no Campaign, no steward, and a mission that
+> belongs to the repo, not to the session that created it. The record below stays as written, as
+> the history of why the first structured mission looked the way it did.
+
+**Status:** superseded by ADR-0025 (2026-11-14) · was accepted 2026-09-26 · **Date:** 2026-09-26 · **Card:** T358
 
 ## Context
 

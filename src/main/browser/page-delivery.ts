@@ -22,7 +22,8 @@ export interface UserTurnPayload {
   sessionId: string | null
   folder: string
   text: string
-  source: 'page-event' | 'overlay'
+  /** `walk`: a `[harnu-walk]` turn from a guided walk (spec S-2); its undeliverable turns wait in the run's outbox, not here. */
+  source: 'page-event' | 'overlay' | 'walk'
 }
 
 export interface DeliveryDeps {

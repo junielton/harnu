@@ -40,6 +40,8 @@ export type ShortcutActionId =
   | 'view.toggleHelper'
   | 'project.switch'
   | 'folder.add'
+  | 'notes.openToday'
+  | 'notes.open'
   | 'view.review'
   | 'view.roadmap'
   | 'view.prStack'
@@ -122,6 +124,7 @@ export type ShortcutActionId =
   | 'view.settings.mods'
   | 'view.settings.memory'
   | 'view.settings.hibernationPolicy'
+  | 'view.settings.yourMove'
   | 'view.settings.usageHistory'
   | 'view.settings.changelog'
   | 'view.settings.claudeCode'
@@ -150,6 +153,8 @@ export type ShortcutActionId =
   | 'terminal.toggle'
   // T627: cycle the session area / helper stack orientation (auto → side-by-side → stacked).
   | 'layout.cycleSplitOrientation'
+  // T790: tuck the session area away (the helper stack takes the main area), or bring it back.
+  | 'session.toggleTuck'
   // T564 U1 (spec §2.5): the browser pane's own actions, scoped to a focused browser pane.
   | 'browser.overlay.toggle'
   | 'browser.zoom.in'
@@ -160,6 +165,11 @@ export type ShortcutActionId =
   | 'browser.back'
   | 'browser.forward'
   | 'browser.focusAddress'
+  // browser-tabs S-4: the focused pane's tab chords.
+  | 'browser.tab.new'
+  | 'browser.tab.close'
+  | 'browser.tab.next'
+  | 'browser.tab.prev'
 
 export type ShortcutScope = 'global' | 'sidebar' | 'terminal' | 'modal' | 'browser'
 
@@ -312,6 +322,12 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.toggleHelper', 'views', 'Cmd+Alt+B', MENU),
   def('project.switch', 'app', 'Cmd+Shift+P', { ...MENU, palette: false }),
   def('folder.add', 'folders', 'Cmd+O', { ...MENU, paletteFeatured: true }),
+  // Quick notes: today's note, and the picker of every note of the repo. Both act on the
+  // selected folder and have a no-folder toast in the renderer, so neither is gated on one.
+  // Menu-backed (`&Folder` menu in `menu.ts`) so they fire over a focused terminal: off macOS
+  // xterm turns Ctrl+Alt+N into ESC ^N and cancels the event before the renderer sees it.
+  def('notes.openToday', 'folders', 'Cmd+Shift+N', { ...MENU, paletteFeatured: true }),
+  def('notes.open', 'folders', 'Cmd+Alt+N', MENU),
   def('view.review', 'takeovers', 'Cmd+Shift+D'),
   // The Topbar's per-folder actions. No default chord — they ship unbound and
   // are listed so the user can give them one. `menu: true` (the `&Folder` menu
@@ -428,6 +444,7 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('view.settings.mods', 'views', null),
   def('view.settings.memory', 'views', null),
   def('view.settings.hibernationPolicy', 'views', null),
+  def('view.settings.yourMove', 'views', null),
   def('view.settings.usageHistory', 'views', null),
   def('view.settings.changelog', 'views', null),
   def('view.settings.claudeCode', 'views', null),
@@ -458,6 +475,9 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   // T627 — the Topbar split-layout button's twin: auto → side-by-side → stacked → auto. Unbound,
   // renderer-only (no menu item), and listed in the palette like the other layout toggles.
   def('layout.cycleSplitOrientation', 'views', null),
+  // T790 — Ctrl+Shift+J / ⌘⇧J: tuck the session away or bring it back. Renderer-only (no menu item);
+  // a Ctrl/⌘+Shift+letter chord bubbles out of xterm, so it needs no shield (same as ⌘⇧M).
+  def('session.toggleTuck', 'views', 'Cmd+Shift+J'),
   // Reserved — un-rebindable. Handled entirely in the main process, so none of
   // them has a renderer handler the palette could run.
   def('app.reload', 'app', 'F5', { ...MENU, reserved: true, palette: false }),
@@ -481,7 +501,14 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('browser.reload', 'panes', 'Cmd+R', { scope: 'browser', palette: false }),
   def('browser.back', 'panes', 'Cmd+[', { scope: 'browser', palette: false }),
   def('browser.forward', 'panes', 'Cmd+]', { scope: 'browser', palette: false }),
-  def('browser.focusAddress', 'panes', 'Cmd+L', { scope: 'browser', palette: false })
+  def('browser.focusAddress', 'panes', 'Cmd+L', { scope: 'browser', palette: false }),
+  // browser-tabs S-4: the tab chords of a focused browser pane. `browser.tab.close` shares Cmd+W with the global
+  // `session.close`: with a browser pane focused the `browser` scope wins, so the chord closes the tab. Next and
+  // previous are Ctrl+Tab on every platform (Cmd+Tab belongs to the OS on macOS).
+  def('browser.tab.new', 'panes', 'Cmd+T', { scope: 'browser', palette: false }),
+  def('browser.tab.close', 'panes', 'Cmd+W', { scope: 'browser', palette: false }),
+  def('browser.tab.next', 'panes', 'Ctrl+Tab', { scope: 'browser', palette: false }),
+  def('browser.tab.prev', 'panes', 'Ctrl+Shift+Tab', { scope: 'browser', palette: false })
 ]
 
 export const DESCRIPTOR_BY_ID: Readonly<Record<ShortcutActionId, KeyBindingDescriptor>> =

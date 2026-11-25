@@ -1,0 +1,37 @@
+{
+  "title": "Check the notes search box",
+  "purpose": "check",
+  "source": { "kind": "feature", "text": "The search box on the notes list of example-empty" },
+  "checks": [
+    {
+      "id": "p1",
+      "title": "Type a word in the search box",
+      "why": "The box is the whole feature: it narrows the list as you type.",
+      "where": { "text": "The Notes page of the running app" },
+      "do": [
+        {
+          "text": "Type `milk` in the search box",
+          "see": "Only the row Milk run stays in the list"
+        }
+      ],
+      "passes": "One row, Milk run.",
+      "fails": "More rows than one, or none.",
+      "nothingFromHere": "The typing happens in your browser."
+    },
+    {
+      "id": "p2",
+      "title": "Clear the box with Escape",
+      "why": "Escape is the shortcut that brings every note back.",
+      "where": { "text": "The Notes page of the running app" },
+      "do": [
+        {
+          "text": "Press Escape in the search box",
+          "see": "The box is empty and all four rows are back"
+        }
+      ],
+      "passes": "Four rows, and the box is empty.",
+      "fails": "The box keeps the word, or fewer than four rows show.",
+      "nothingFromHere": "The keypress happens in your browser."
+    }
+  ]
+}

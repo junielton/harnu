@@ -1,0 +1,285 @@
+{
+  "name": "create-milestones",
+  "order": 1,
+  "title": "a plan with milestones lands as a v4 record: criteria on every step, the leader attached, a decision in the Log",
+  "label": "v4 AC-81 (create with milestones)",
+  "description": "Missions v4 S-33, AC-81. A scripted session declares a mission with `mission_create` in the v4 shape (a `doneWhen`, two milestones, three steps whose criteria say who settles each: a session, a fact, the operator), then grows the plan with `mission_add_milestone` (optional) and `mission_add_step`, logs a decision on a step and links a url to the mission. The grade reads the v4 record in `.harnu/missions-v4/`: schemaVersion 4, the milestones in order (the third optional), every step in its milestone with at least one criterion, the creating session leading with no confirmation, the decision in the Log, and no v3 file anywhere.",
+  "agents": ["A"],
+  "phases": [
+    {
+      "agent": "A",
+      "prompt": "1. mcp__harnu__mission_create with folder=\"{{folder}}\", sessionId=\"{{self}}\", title=\"Ship the notes export\", doneWhen=\"Notes export writes CSV for every board and the docs page names the flag\", milestones=[{\"title\":\"Writer works\"},{\"title\":\"Shipped with docs\"}], steps=[{\"title\":\"Write the CSV writer\",\"milestone\":\"Writer works\",\"criteria\":[\"The writer emits one row per board\"]},{\"title\":\"Add the export flag\",\"milestone\":\"Writer works\",\"criteria\":[{\"text\":\"The flag opens a pull request\",\"by\":\"fact\",\"fact\":\"pr-opened\"}]},{\"title\":\"Write the docs page\",\"milestone\":\"Shipped with docs\",\"criteria\":[{\"text\":\"The page names the flag\",\"by\":\"operator\"}]}].\n2. mcp__harnu__mission_add_milestone with folder=\"{{folder}}\", sessionId=\"{{self}}\", missionId = the `id` the first call returned (use that id as missionId in every later call), title=\"Announced\", optional=true.\n3. mcp__harnu__mission_add_step with folder=\"{{folder}}\", sessionId=\"{{self}}\", the missionId, title=\"Announce the export\", milestone=\"mls-3\", criteria=[\"The announcement is posted\"].\n4. mcp__harnu__mission_log with folder=\"{{folder}}\", sessionId=\"{{self}}\", the missionId, stepId=\"stp-1\", kind=\"decision\", note=\"Use CSV, not XLSX.\".\n5. mcp__harnu__mission_link with folder=\"{{folder}}\", sessionId=\"{{self}}\", the missionId, link={\"kind\":\"url\",\"ref\":\"https://example.com/notes-export\"} (no stepId: it links the mission)."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "legacyMissionCount": 0
+    },
+    {
+      "mission": "*",
+      "label": "a v4 record",
+      "path": "schemaVersion",
+      "equals": 4
+    },
+    {
+      "mission": "*",
+      "path": "status",
+      "equals": "open"
+    },
+    {
+      "mission": "*",
+      "path": "title",
+      "equals": "Ship the notes export"
+    },
+    {
+      "mission": "*",
+      "path": "doneWhen",
+      "equals": {
+        "$match": "CSV"
+      }
+    },
+    {
+      "mission": "*",
+      "label": "three milestones, in order",
+      "path": "milestones",
+      "length": 3
+    },
+    {
+      "mission": "*",
+      "path": "milestones",
+      "includes": [
+        {
+          "id": "mls-1",
+          "title": "Writer works"
+        },
+        {
+          "id": "mls-2",
+          "title": "Shipped with docs"
+        }
+      ]
+    },
+    {
+      "mission": "*",
+      "label": "the added milestone is optional",
+      "path": "milestones",
+      "includes": {
+        "id": "mls-3",
+        "title": "Announced",
+        "optional": true
+      }
+    },
+    {
+      "mission": "*",
+      "label": "four steps: the plan, then the added step",
+      "path": "steps",
+      "length": 4
+    },
+    {
+      "mission": "*",
+      "label": "two steps in the first milestone",
+      "stepCount": {
+        "milestone": "mls-1"
+      },
+      "equals": 2
+    },
+    {
+      "mission": "*",
+      "label": "the added step is in the added milestone",
+      "step": "id:stp-4",
+      "path": "milestone",
+      "equals": "mls-3"
+    },
+    {
+      "mission": "*",
+      "step": "id:stp-1",
+      "label": "step 1 has a criterion",
+      "path": "acs",
+      "lengthAtLeast": 1
+    },
+    {
+      "mission": "*",
+      "step": "id:stp-2",
+      "label": "step 2 has a criterion",
+      "path": "acs",
+      "lengthAtLeast": 1
+    },
+    {
+      "mission": "*",
+      "step": "id:stp-3",
+      "label": "step 3 has a criterion",
+      "path": "acs",
+      "lengthAtLeast": 1
+    },
+    {
+      "mission": "*",
+      "step": "id:stp-4",
+      "label": "the added step has a criterion",
+      "path": "acs",
+      "lengthAtLeast": 1
+    },
+    {
+      "mission": "*",
+      "step": "id:stp-2",
+      "label": "a fact criterion names its fact",
+      "path": "acs.0",
+      "equals": {
+        "by": "fact",
+        "fact": "pr-opened"
+      }
+    },
+    {
+      "mission": "*",
+      "step": "id:stp-3",
+      "label": "the operator's criterion",
+      "path": "acs.0.by",
+      "equals": "operator"
+    },
+    {
+      "mission": "*",
+      "label": "the creating session leads, with no confirmation",
+      "path": "sessions",
+      "includes": {
+        "id": "{{session.A}}",
+        "role": "leads",
+        "to": null
+      }
+    },
+    {
+      "mission": "*",
+      "label": "the mission link",
+      "path": "links",
+      "includes": {
+        "kind": "url",
+        "ref": "https://example.com/notes-export"
+      }
+    },
+    {
+      "mission": "*",
+      "label": "the decision is in the Log, on its step",
+      "logContains": "· decision · stp-1"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "no-mission",
+      "mutate": [
+        {
+          "drop": "*"
+        }
+      ]
+    },
+    {
+      "name": "v3-shaped",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "schemaVersion": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "milestones-lost",
+      "mutate": [
+        {
+          "mission": "*",
+          "unset": "milestones"
+        }
+      ]
+    },
+    {
+      "name": "added-milestone-not-optional",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "milestones.2.optional": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "step-without-criterion",
+      "mutate": [
+        {
+          "mission": "*",
+          "eachStep": {
+            "match": {
+              "id": "stp-4"
+            },
+            "set": {
+              "acs": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "step-in-the-wrong-milestone",
+      "mutate": [
+        {
+          "mission": "*",
+          "step": "id:stp-4",
+          "set": {
+            "milestone": "mls-1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "fact-lost",
+      "mutate": [
+        {
+          "mission": "*",
+          "step": "id:stp-2",
+          "set": {
+            "acs.0.by": "session"
+          }
+        }
+      ]
+    },
+    {
+      "name": "no-leader",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "sessions": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "decision-lost",
+      "mutate": [
+        {
+          "mission": "*",
+          "logRemove": "· decision · stp-1"
+        }
+      ]
+    },
+    {
+      "name": "link-lost",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "links": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "a-v3-mission-appeared",
+      "mutate": [
+        {
+          "addV3Mission": "mnt-0badc0de-old.md"
+        }
+      ]
+    }
+  ]
+}

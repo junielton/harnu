@@ -14,12 +14,18 @@
  * (grade.mjs) — never by a model's verdict. Every grade is then re-run against
  * the scenario's deliberately broken copies, which must fail.
  *
+ * Missions v4 (S-33): the state graded is the v4 records in `.harnu/missions-v4/`
+ * (plus the plain files a recorded turn leaves). The v3-only phases further down
+ * (`seed`, `operator`, `legacyFile`, `probe`, `precondition`, `burst`, `spawn`,
+ * `gateCache`) are kept as they were: no v4 scenario uses them, and they go, with
+ * the `mission-core` import, in S-40.
+ *
  * Runs under vite-node (see the `eval:mission` script) so the operator doors can
- * use the product's own `mission-core.ts` transitions instead of a copy of them.
+ * use the v3 file helpers declared below (the product's v3 core is gone from the app).
  * Exit code: 0 when every non-skipped scenario passes, 1 otherwise.
  */
 import { execFileSync } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import {
   cpSync,
   existsSync,
@@ -33,24 +39,22 @@ import {
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import yaml from 'js-yaml'
 import {
-  applyApprovedRescope,
-  buildMissionFileContent,
-  declaredEndHash,
-  mintMissionId,
-  parseMissionFile,
-  readMissionLog
-} from '../../../src/main/mission-core.ts'
+  parseV3MissionFile as parseMissionFile,
+  readV3MissionLog as readMissionLog
+} from '../../../src/main/missions/v3-read.ts'
 import { buildApp, killAllLaunched, startHarnu } from './harnu.mjs'
-import { killAgents, replyAsks, runAgent } from './agent.mjs'
+import { killAgents, replyAsks, runAgent, turnRecord } from './agent.mjs'
 import {
-  campaignsDirOf,
   checkBreaks,
   fillTemplate,
   gradeFolder,
   loadMissionState,
-  missionsDirOf
+  missionsDirOf,
+  v3MissionsDirOf
 } from './grade.mjs'
+import { seedV4Record } from './seed-v4.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, '..', '..', '..')
@@ -59,6 +63,58 @@ const SCENARIO_DIR = path.join(HERE, 'scenarios')
 const LEGACY_FIXTURE_DIR = path.join(REPO_ROOT, 'tests', 'fixtures', 'mission-migration')
 const AGENT_TIMEOUT_MS = 180_000
 const CHILD_TIMEOUT_MS = 240_000
+
+// ---- the v3 file helpers this harness needs (Missions v4 S-40) ---------------------------------
+// The v3 core module is gone from the app's import graph, so the few things a scripted operator and a
+// seeded legacy mission need live here: the same frontmatter dump a v3 Harnu wrote, the id mint, the
+// declared-end stamp and the re-scope approval. Reading goes through the frozen v3 reader.
+
+/** The frontmatter YAML a v3 Harnu wrote, then the Log. */
+const buildMissionFileContent = (mission, log = '') =>
+  `---\n${yaml.dump(mission, { lineWidth: -1, noRefs: true, skipInvalid: true })}---\n${log}`
+
+/** `mnt-<8 hex>` not in `existingIds`. */
+function mintMissionId(existingIds) {
+  const taken = new Set(existingIds)
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const id = `mnt-${randomBytes(4).toString('hex')}`
+    if (!taken.has(id)) return id
+  }
+  throw new Error('could not mint a free mission id')
+}
+
+/** `sha256:<hex>` of a declared end: the approval stamp a re-scope voids. */
+function declaredEndHash(end) {
+  return `sha256:${createHash('sha256')
+    .update(JSON.stringify([end.kind, end.target, end.evidence]))
+    .digest('hex')}`
+}
+
+/** What the operator's approval of a staged re-scope does to a v3 mission file. */
+function applyApprovedRescope(mission, approval) {
+  if (!mission.pendingRescope)
+    throw new Error(`mission ${mission.id} has no pending re-scope to approve`)
+  const next = structuredClone(mission)
+  const declaredEnd = next.pendingRescope
+  delete next.pendingRescope
+  delete next.pendingClose
+  next.declaredEnd = declaredEnd
+  next.declaredEndApproval = {
+    at: approval.at,
+    bodyHash: declaredEndHash(declaredEnd),
+    via: 'operator'
+  }
+  for (const step of next.steps) {
+    if (step.kind !== 'fixed-end') continue
+    step.proof = 'unproven'
+    delete step.verifiedBy
+  }
+  if (next.status === 'delivered') next.status = 'active'
+  if (next.legacy)
+    next.legacy.needsReview = next.legacy.needsReview.filter((f) => f !== 'declaredEnd')
+  next.updatedAt = approval.at
+  return next
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -118,22 +174,16 @@ function freshRepo(folder) {
 }
 
 /**
- * Setup-only view of the mission ids the next phase's prompt needs (`m.<slug>.id`,
- * `.end`, `.custom.<n>`). This is read to ADDRESS the missions, not to grade them.
- * Mission v3 has no fixed start: the end is found by its kind, never by id.
+ * Setup-only view of the mission ids the next phase's prompt needs (`m.<slug>.id`, `.steps`). This is
+ * read to ADDRESS the missions, not to grade them. A v4 record's slug is its file name's.
  */
 function refreshMissionVars(vars) {
   const m = {}
-  for (const { data } of loadMissionState(vars.folder).missions) {
-    const steps = data.steps ?? []
-    m[data.slug] = {
-      id: data.id,
-      end: steps.find((s) => s.kind === 'fixed-end')?.id,
-      custom: steps.filter((s) => s.kind === 'custom').map((s) => s.id)
-    }
+  for (const { slug, data } of loadMissionState(vars.folder).missions) {
+    m[slug] = { id: data.id, steps: (data.steps ?? []).map((s) => s.id) }
   }
-  // An owner turn (Mission v2 S4) names its own mission, so the scenario cannot
-  // know the slug in advance: `m._only` addresses the repo's single mission.
+  // A session turn names its own mission, so the scenario cannot know the slug in advance:
+  // `m._only` addresses the repo's single mission.
   const all = Object.values(m)
   if (all.length === 1) m._only = all[0]
   vars.m = m
@@ -142,7 +192,7 @@ function refreshMissionVars(vars) {
 // ---- operator doors (UI-only in the product) -----------------------------------
 
 function missionFileBySlug(folder, slug) {
-  const dir = missionsDirOf(folder)
+  const dir = v3MissionsDirOf(folder)
   const file = readdirSync(dir).find(
     (n) => /^mnt-[0-9a-f]{8}-/.test(n) && n.slice(13) === `${slug}.md`
   )
@@ -151,7 +201,7 @@ function missionFileBySlug(folder, slug) {
 }
 
 /**
- * Apply an operator transition through `mission-core`'s own parse/build, the way
+ * Apply an operator transition through the frozen v3 reader and the file helpers above, the way
  * the UI door does: parse → transition → build (validated) → atomic write. Mission
  * v3 retired the draft → active door (a mission is born active), so the only
  * transition left to simulate is the re-scope approval.
@@ -176,8 +226,7 @@ function operatorDoor(folder, slug, action) {
 // ---- seeded missions (a state no verb can reach) --------------------------------
 
 /**
- * Write a mission straight to disk through `mission-core`'s own validated
- * builder, for a state no verb reaches: AGE — the stall rule (design §8) turns on
+ * Write a mission straight to disk through the v3 file helpers above, for a state no verb reaches: AGE — the stall rule (design §8) turns on
  * `updatedAt` being over an hour old, which a scripted session cannot wait out —
  * and a LEGACY file written before Mission v3 (`legacy: true`: a fixed start
  * "Scope confirmed" before the end, and, with `status: "draft"`, no approval
@@ -191,7 +240,7 @@ function operatorDoor(folder, slug, action) {
  */
 function seedMission(vars, rawSpec) {
   const spec = fillTemplate(rawSpec, vars)
-  const dir = missionsDirOf(vars.folder)
+  const dir = v3MissionsDirOf(vars.folder)
   mkdirSync(dir, { recursive: true })
   const id = mintMissionId(readdirSync(dir).map((n) => n.slice(0, 12)))
   const at = new Date(Date.now() - (spec.ageMinutes ?? 0) * 60_000).toISOString()
@@ -382,9 +431,6 @@ async function runPhase(phase, ctx) {
     })
     const n = ++stats.agentRuns
     const logFile = path.join(scenarioDir, `agent-${n}-${phase.agent}.jsonl`)
-    // A steward turn may `create_session`: the session Harnu spawns into the sandbox asks for workspace
-    // trust like any spawn does, and `create_session` blocks until it materializes — so answer the dialog.
-    if (phase.stewardVerbs === true) harnu.startTrustWatcher()
     const r = await runAgent({
       sessionId,
       folder: vars.folder,
@@ -394,19 +440,9 @@ async function runPhase(phase, ctx) {
       logFile,
       timeoutMs: AGENT_TIMEOUT_MS,
       tools: phase.tools ?? [],
-      role: phase.role ?? 'scripted',
-      stewardVerbs: phase.stewardVerbs === true
+      role: phase.role ?? 'scripted'
     })
     stats.costUsd += r.costUsd
-    if (phase.stewardVerbs === true) {
-      // The dispatch is what is graded, not the verifier's own turn: keep what its screen showed, then
-      // kill it — nothing the scenario spawned keeps running (or billing) once the turn that started it ends.
-      writeFileSync(
-        path.join(scenarioDir, `agent-${n}-${phase.agent}-ptys.txt`),
-        await harnu.dumpPtys()
-      )
-      await harnu.killChildren(vars.folder)
-    }
     log(
       `    agent ${phase.agent} (#${n}, ${(r.ms / 1000).toFixed(1)}s): ${r.toolCalls.join(', ') || 'no tool calls'}` +
         (r.isError || r.code !== 0
@@ -444,6 +480,41 @@ async function runPhase(phase, ctx) {
         .map((x) => `${x.slug} (${x.status}, ${x.ageMinutes ?? 0} min old)`)
         .join(', ')}`
     )
+    return
+  }
+
+  if (phase.seedV4) {
+    // A v4 record written straight to `.harnu/missions-v4/` through the product's own writer, for a
+    // state a verb call does not reach cheaply (half done, a blocker, a decision, a built step).
+    for (const raw of [].concat(phase.seedV4)) {
+      const seeded = seedV4Record(vars.folder, fillTemplate(raw, vars))
+      vars.seeded[seeded.slug] = { id: seeded.id, at: seeded.at }
+      log(`    seedV4: ${seeded.slug} (${seeded.id})`)
+    }
+    return
+  }
+
+  if (phase.summary) {
+    // The text Harnu serves a fresh session (S-8): the HARNESS reads `mission_get`'s `summary` through
+    // the real transport, as the session that leads the mission, so no model transcribes it. A `cold`
+    // turn then gets it as its whole context (`{{summary.<name>}}`).
+    const { mission, as, name } = phase.summary
+    const target = vars.m[mission]
+    if (!target) throw new Error(`summary: no mission "${mission}"`)
+    const got = await harnu.call('mission_get', {
+      folder: vars.folder,
+      missionId: target.id,
+      sessionId: vars.session[as]
+    })
+    const text = got.payload?.summary
+    if (got.isError || typeof text !== 'string' || text.trim() === '') {
+      throw new Error(
+        `summary: mission_get gave no summary: ${JSON.stringify(got.payload).slice(0, 300)}`
+      )
+    }
+    vars.summary = { ...(vars.summary ?? {}), [name]: text }
+    writeFileSync(path.join(scenarioDir, `summary-${name}.txt`), text)
+    log(`    summary[${name}]: ${text.length} characters, read as ${as} through the transport`)
     return
   }
 
@@ -551,17 +622,28 @@ async function runPhase(phase, ctx) {
 }
 
 /**
- * Record what an owner turn did (Mission v2 S4) where the grader can read it:
- * the harness — never the model — `mission_log`s one line into the mission,
- * `EVAL-TURN[<tag>] asked=<b> tools=<calls in order>`, the same way `probe`
- * transcribes a derived signal. `asked` is true when the final reply puts a
- * question to the operator (a `?`, or the word "confirm"): `claude -p` has no
- * `AskUserQuestion`, so a headless owner asks in its reply and ends the turn.
- * `mission` is a slug or `*` (the repo's single mission). No mission → nothing
- * is recorded, and the scenario's own `missionCount` fails.
+ * Record what a behavior turn did where the grader can read it. The harness — never the model —
+ * writes it:
+ *
+ *  - `file: true` leaves the sandbox file `.eval/turn-<tag>.txt` (`turnRecord`: the tools called in
+ *    order, `asked=<b>`, then the reply). It needs no mission, so a turn that must create none (the
+ *    one-line question) and a cold turn (no tools at all) are graded on it.
+ *  - with a `mission` (a slug, or `*` for the repo's single mission) it also `mission_log`s one line
+ *    into that mission, `EVAL-TURN[<tag>] asked=<b> tools=<calls in order>`, the same way `probe`
+ *    transcribes a derived signal. `asked` is true when the final reply puts a question to the
+ *    operator (a `?`, or the word "confirm"): `claude -p` has no `AskUserQuestion`, so a headless
+ *    session asks in its reply and ends the turn. No such mission → nothing is logged, and the
+ *    scenario's own `missionCount` fails.
  */
 async function recordTurn(spec, r, ctx) {
   const { vars, harnu, log } = ctx
+  if (spec.file === true) {
+    const file = path.join(vars.folder, '.eval', `turn-${spec.tag}.txt`)
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(file, turnRecord(r))
+    log(`    record[${spec.tag}]: .eval/turn-${spec.tag}.txt`)
+  }
+  if (!spec.mission) return
   refreshMissionVars(vars)
   const target = spec.mission === '*' ? vars.m._only : vars.m[spec.mission]
   if (!target) {
@@ -572,6 +654,7 @@ async function recordTurn(spec, r, ctx) {
   const logged = await harnu.call('mission_log', {
     folder: vars.folder,
     missionId: target.id,
+    sessionId: vars.session[spec.as ?? 'A'],
     note: line
   })
   if (logged.isError) throw new Error(`record: mission_log: ${JSON.stringify(logged.payload)}`)
@@ -643,13 +726,11 @@ function gradeAndBreak(vars, assertions, breaks, dir) {
   mkdirSync(dir, { recursive: true })
   const graded = gradeFolder(vars.folder, assertions, vars)
   if (existsSync(missionsDirOf(vars.folder))) {
-    cpSync(missionsDirOf(vars.folder), path.join(dir, 'missions'), { recursive: true })
+    cpSync(missionsDirOf(vars.folder), path.join(dir, 'missions-v4'), { recursive: true })
   }
-  if (existsSync(campaignsDirOf(vars.folder))) {
-    cpSync(campaignsDirOf(vars.folder), path.join(dir, 'campaigns'), { recursive: true })
-  }
-  const goals = path.join(vars.folder, '.harnu', 'goals')
-  if (existsSync(goals)) cpSync(goals, path.join(dir, 'goals'), { recursive: true })
+  // The plain files a recorded turn leaves (`.eval/turn-<tag>.txt`) are graded too: keep them.
+  const evalFiles = path.join(vars.folder, '.eval')
+  if (existsSync(evalFiles)) cpSync(evalFiles, path.join(dir, 'eval'), { recursive: true })
   const breakResults = checkBreaks(vars.folder, assertions, breaks, vars, path.join(dir, 'breaks'))
   return { ...graded, breaks: breakResults }
 }
@@ -672,7 +753,7 @@ async function runScenario(scenario, harnu, model, runDir, log) {
   const folder = path.join(sandboxRoot(), scenario.name)
   freshRepo(folder)
   const session = Object.fromEntries((scenario.agents ?? ['A']).map((a) => [a, randomUUID()]))
-  const vars = { folder, repo: REPO_ROOT, session, m: {}, seeded: {}, legacy: {} }
+  const vars = { folder, repo: REPO_ROOT, session, m: {}, seeded: {}, legacy: {}, summary: {} }
   const ctx = {
     vars,
     harnu,

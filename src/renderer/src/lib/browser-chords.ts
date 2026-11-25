@@ -7,6 +7,7 @@
  * reloads the page, not the window. Scopes `sidebar`, `terminal` and `modal` never apply to a guest.
  */
 import type { ResolvedBinding } from '../../../main/keybindings-core'
+import { chordOf } from '../../../main/browser/chord'
 
 type BindingLike = Pick<ResolvedBinding, 'id' | 'keys' | 'scope'>
 
@@ -51,4 +52,38 @@ export function actionForChord(
     if (hit) return { id: hit.id, scope }
   }
   return null
+}
+
+/** The tab actions: pane chords that act on the focused pane's tabs (browser-tabs S-4). */
+const TAB_ACTIONS: ReadonlySet<string> = new Set([
+  'browser.tab.new',
+  'browser.tab.close',
+  'browser.tab.next',
+  'browser.tab.prev'
+])
+
+/**
+ * The tab action a key press in the pane chrome (header, address bar) runs, or `null`. The page's own presses reach
+ * main's `before-input-event` instead; both resolve through the same bindings, so a rebound chord moves both.
+ */
+export function tabActionForKey(
+  list: readonly BindingLike[],
+  ev: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey' | 'isComposing'>,
+  mac: boolean
+): string | null {
+  if (ev.isComposing || ev.key === 'Process') return null
+  const chord = chordOf(
+    {
+      type: 'keyDown',
+      key: ev.key,
+      control: ev.ctrlKey,
+      alt: ev.altKey,
+      shift: ev.shiftKey,
+      meta: ev.metaKey
+    },
+    mac
+  )
+  if (chord === null) return null
+  const hit = actionForChord(list, chord, mac)
+  return hit && TAB_ACTIONS.has(hit.id) ? hit.id : null
 }

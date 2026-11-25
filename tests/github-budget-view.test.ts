@@ -99,13 +99,6 @@ describe('attribution (mockup sample data)', () => {
     expect(outsideBarPct(low().rest!, consumerRows(low().rest!))).toBe(100)
   })
 
-  it('shows merge-batch only once it has spent a call', () => {
-    const v = healthy().rest!
-    expect(consumerRows(v).some((r) => r.consumer === 'merge-batch')).toBe(false)
-    v.byConsumer['merge-batch'] = 3
-    expect(consumerRows(v).some((r) => r.consumer === 'merge-batch')).toBe(true)
-  })
-
   it('gives the budget probe no row, but keeps its call in the Harnu total', () => {
     const v = healthy().rest!
     v.byConsumer.budget = 1
@@ -122,7 +115,6 @@ describe('attribution (mockup sample data)', () => {
 
   it('maps consumer ids to camelCase i18n leaves', () => {
     expect(consumerKey('pr-stack')).toBe('prStack')
-    expect(consumerKey('merge-batch')).toBe('mergeBatch')
     expect(consumerKey('missions')).toBe('missions')
   })
 })

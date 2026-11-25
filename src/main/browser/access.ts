@@ -97,6 +97,8 @@ const SCRIPT_AND_INPUT_OPS: ReadonlySet<string> = new Set([
  */
 function opensNewPane(input: BrowserGateInput): boolean {
   const args = input.args ?? {}
+  // A `paneId` adds a tab to a pane that exists (browser-tabs S-6): never a fifth pane.
+  if (args.paneId !== undefined) return false
   if (args.url !== undefined) return true
   if (input.openFolder === undefined) return false
   const target = lexicalPageTarget(args, input.openFolder)
@@ -124,6 +126,7 @@ export type BrowserDenyReason =
   | 'BROWSER_WRITE_DENIED'
   | 'BROWSER_LEASE_ENDED'
   | 'PANE_LIMIT'
+  | 'TAB_NOT_FOUND'
   | 'NOT_A_PAGE_PANE'
   | 'BROWSER_KEY_UNKNOWN'
   | 'PANE_INPUT_NOT_READY'
@@ -164,6 +167,13 @@ export interface BrowserPaneAccess {
   touchActive?: boolean
   /** The pane's folder, so upload paths are judged against it at plan level (T572). Absent = not checked. */
   folder?: string
+  /**
+   * The call names a `tabId` the pane does not hold (browser-tabs S-6): `false` refuses `TAB_NOT_FOUND`, before any
+   * confirm. Absent = the call names no tab, or the tab exists.
+   */
+  tabKnown?: boolean
+  /** The tab the call is judged on (the one it names, else the active tab), so a refusal can name it. */
+  tabId?: string
 }
 
 export interface BrowserGateInput {
@@ -280,6 +290,8 @@ export function gateBrowserOpDetailed(
     pane.readOptIn !== true
   )
     return { reason: 'BROWSER_READ_NOT_ENABLED' }
+  // After the access checks above, so a tab id never tells an agent anything about a pane it may not read.
+  if (addressesPane && pane?.tabKnown === false) return { reason: 'TAB_NOT_FOUND' }
   if (LIVE_PANEL_OPS.has(op) && pane && pane.originClass !== 'page') {
     return { reason: 'NOT_A_PAGE_PANE' }
   }

@@ -54,6 +54,7 @@ function makeRouter(knownFolders: string[] = [], over: Partial<CommandRouterActi
     addCanvasHelper: vi.fn((_wt: string, _fp: string, _cwd: string) => 'pane-canvas'),
     closeHelperByPath: vi.fn((_wt: string, _path: string) => 'pane-closed-by-path'),
     closeHelperById: vi.fn((_wt: string, _id: string) => true),
+    isPaneUnsaved: vi.fn((_wt: string, _ref: { path?: string; paneId?: string }) => false),
     notifyAgent: vi.fn(() => 'notif-1'),
     speechContext: vi.fn(() => ({
       enabled: true,
@@ -331,6 +332,15 @@ describe('makeCommandRouter — pane.closeFile (T171 close_file, headless)', () 
     expect(actions.closeHelperByPath).toHaveBeenCalledWith('/wt', '/wt/a.md')
   })
 
+  it('refuses with UNSAVED_CHANGES and closes nothing when the pane has unsaved edits', () => {
+    const isPaneUnsaved = vi.fn(() => true)
+    const { dispatch, actions } = makeRouter([], { isPaneUnsaved })
+    const result = dispatch('pane.closeFile', { worktreePath: '/wt', path: '/wt/a.md' })
+    expect(result).toEqual({ error: 'UNSAVED_CHANGES' })
+    expect(isPaneUnsaved).toHaveBeenCalledWith('/wt', { path: '/wt/a.md' })
+    expect(actions.closeHelperByPath).not.toHaveBeenCalled()
+  })
+
   it('returns { closed: false } when nothing matched', () => {
     const { dispatch } = makeRouter([], { closeHelperByPath: vi.fn(() => undefined) })
     const result = dispatch('pane.closeFile', { worktreePath: '/wt', path: '/wt/nope.md' })
@@ -350,6 +360,15 @@ describe('makeCommandRouter — pane.closePane (T171 close_pane, headless)', () 
     const result = dispatch('pane.closePane', { worktreePath: '/wt', paneId: 'h-1' })
     expect(result).toEqual({ closed: true })
     expect(actions.closeHelperById).toHaveBeenCalledWith('/wt', 'h-1')
+  })
+
+  it('refuses with UNSAVED_CHANGES and closes nothing when the pane has unsaved edits', () => {
+    const isPaneUnsaved = vi.fn(() => true)
+    const { dispatch, actions } = makeRouter([], { isPaneUnsaved })
+    const result = dispatch('pane.closePane', { worktreePath: '/wt', paneId: 'h-1' })
+    expect(result).toEqual({ error: 'UNSAVED_CHANGES' })
+    expect(isPaneUnsaved).toHaveBeenCalledWith('/wt', { paneId: 'h-1' })
+    expect(actions.closeHelperById).not.toHaveBeenCalled()
   })
 
   it('returns { closed: false } when the pane id does not exist', () => {

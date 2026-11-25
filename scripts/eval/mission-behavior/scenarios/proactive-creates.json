@@ -1,0 +1,242 @@
+{
+  "name": "proactive-creates",
+  "order": 5,
+  "title": "a multi-step request with no mission makes the session create one, with its steps, before the work, without asking",
+  "label": "v4 AC-79 (proactive, positive)",
+  "description": "Missions v4 S-33, AC-79 (the proactive rule of the `mission` skill, AC-73). A session that leads no mission reads the `mission` skill and gets a request that clearly takes several steps (two independent units, one pull request each). It is framed as an ordinary session, not as an orchestration, so the frame does not announce the rule it tests. The harness records the turn (`EVAL-TURN[proactive] asked=<b> tools=<calls in order>` into the mission, and `.eval/turn-proactive.txt`). The grade reads the record and that order: one v4 mission exists, with at least two steps that each carry a criterion, the session leads it, and `mission_create` came before any Write (only reads and `mission_list` / `mission_get` may precede it). The reply may ask a question after the mission exists; what AC-79 rules out is asking first and creating nothing, or starting the work before the mission.",
+  "agents": ["A"],
+  "phases": [
+    {
+      "copyIn": [
+        {
+          "from": "resources/skills/skills/mission/SKILL.md",
+          "to": ".eval/mission/SKILL.md"
+        },
+        {
+          "from": "resources/skills/skills/mission/references/writing-contract.md",
+          "to": ".eval/mission/references/writing-contract.md"
+        },
+        {
+          "from": "scripts/eval/mission-behavior/fixtures/notes-spec.md",
+          "to": "docs/notes-spec.md"
+        }
+      ]
+    },
+    {
+      "agent": "A",
+      "role": "session",
+      "tools": ["Read", "Write"],
+      "record": {
+        "mission": "*",
+        "tag": "proactive",
+        "file": true
+      },
+      "prompt": "Skill file: .eval/mission/SKILL.md.\n\nThe operator writes: \"Can you build what docs/notes-spec.md describes? It is two independent units, one pull request each. Please get going.\"\n\nIn this sandbox, writing code means writing files with the Write tool. Start now."
+    }
+  ],
+  "assert": [
+    {
+      "missionCount": 1
+    },
+    {
+      "legacyMissionCount": 0
+    },
+    {
+      "mission": "*",
+      "label": "a v4 record, created with the v4 shape",
+      "path": "schemaVersion",
+      "equals": 4
+    },
+    {
+      "mission": "*",
+      "path": "status",
+      "equals": "open"
+    },
+    {
+      "mission": "*",
+      "label": "with its steps",
+      "path": "steps",
+      "lengthAtLeast": 2
+    },
+    {
+      "mission": "*",
+      "step": "index:0",
+      "label": "the first step has a criterion",
+      "path": "acs",
+      "lengthAtLeast": 1
+    },
+    {
+      "mission": "*",
+      "step": "index:1",
+      "label": "the second step has a criterion",
+      "path": "acs",
+      "lengthAtLeast": 1
+    },
+    {
+      "mission": "*",
+      "label": "the session that created it leads it",
+      "path": "sessions",
+      "includes": {
+        "id": "{{session.A}}",
+        "role": "leads"
+      }
+    },
+    {
+      "mission": "*",
+      "label": "created before any Write, in the same turn",
+      "logLine": "EVAL-TURN[proactive]",
+      "matches": "tools=((Read|Glob|Grep|mission_list|mission_get),)*mission_create"
+    },
+    {
+      "mission": "*",
+      "label": "exactly one mission_create",
+      "logLine": "EVAL-TURN[proactive]",
+      "notMatches": "mission_create.*mission_create"
+    },
+    {
+      "file": ".eval/turn-proactive.txt",
+      "label": "the turn file agrees: created before the work",
+      "matches": "^tools=((Read|Glob|Grep|mission_list|mission_get),)*mission_create",
+      "flags": "m"
+    }
+  ],
+  "breaks": [
+    {
+      "name": "never-created",
+      "mutate": [
+        {
+          "drop": "*"
+        }
+      ]
+    },
+    {
+      "name": "turn-never-recorded",
+      "mutate": [
+        {
+          "mission": "*",
+          "logRemove": "EVAL-TURN[proactive]"
+        }
+      ]
+    },
+    {
+      "name": "work-before-the-mission-log",
+      "mutate": [
+        {
+          "mission": "*",
+          "logRemove": "mission_create"
+        },
+        {
+          "mission": "*",
+          "logAppend": "EVAL-TURN[proactive] asked=false tools=Read,Write,mission_create"
+        }
+      ]
+    },
+    {
+      "name": "work-before-the-mission-another-line",
+      "mutate": [
+        {
+          "mission": "*",
+          "logAppend": "EVAL-TURN[proactive] asked=false tools=Read,Write,mission_create"
+        }
+      ]
+    },
+    {
+      "name": "work-before-the-mission-file",
+      "mutate": [
+        {
+          "file": ".eval/turn-proactive.txt",
+          "write": "tools=Read,Write,mission_create\nasked=false\n---\nx\n"
+        }
+      ]
+    },
+    {
+      "name": "created-after-asking-nothing-done",
+      "mutate": [
+        {
+          "file": ".eval/turn-proactive.txt",
+          "write": "tools=Read\nasked=true\n---\nShall I start?\n"
+        }
+      ]
+    },
+    {
+      "name": "one-step-plan",
+      "mutate": [
+        {
+          "mission": "*",
+          "removeSteps": {
+            "id": "stp-2"
+          }
+        },
+        {
+          "mission": "*",
+          "removeSteps": {
+            "id": "stp-3"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a-step-without-a-criterion",
+      "mutate": [
+        {
+          "mission": "*",
+          "eachStep": {
+            "match": {
+              "id": "stp-1"
+            },
+            "set": {
+              "acs": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "v3-shaped",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "schemaVersion": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "not-the-leader",
+      "mutate": [
+        {
+          "mission": "*",
+          "set": {
+            "sessions": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "a-second-mission",
+      "mutate": [
+        {
+          "duplicate": "*"
+        }
+      ]
+    },
+    {
+      "name": "created-twice",
+      "mutate": [
+        {
+          "mission": "*",
+          "logAppend": "EVAL-TURN[proactive] asked=false tools=Read,mission_create,mission_create,Write"
+        }
+      ]
+    },
+    {
+      "name": "a-v3-mission-appeared",
+      "mutate": [
+        {
+          "addV3Mission": "mnt-0badc0de-old.md"
+        }
+      ]
+    }
+  ]
+}

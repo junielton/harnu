@@ -56,7 +56,9 @@ import { useHelpersStore, type AnyHelperPane } from '../stores/helpers'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useSessionsStore } from '../stores/sessions'
+import { forgetDraft, setDraftDirty } from '../lib/unsaved-drafts'
 import MarkdownRenderer from './MarkdownRenderer.vue'
+import UnsavedChangesDialog from './UnsavedChangesDialog.vue'
 import QuizBlock from './QuizBlock.vue'
 import { livePtyIdFor } from './TerminalPane.vue'
 import { pasteAndSubmit } from './prompt-inject'
@@ -294,6 +296,19 @@ const savedContent = ref<string>(cachedDraft?.savedContent ?? '')
 const dirty = computed<boolean>(() => draft.value !== savedContent.value)
 const editorEl = ref<HTMLTextAreaElement | null>(null)
 
+// Report unsaved edits to the shared registry so the helper stack (cap-recycle), the
+// command router (agent closes) and main (quit guard) never drop this draft silently.
+// Immediate: a pane restored from the draft cache can mount already dirty. A relative-
+// link browse re-targets `activeFilePath` only while clean, so it just re-labels a clean
+// pane; the entry stays correct either way.
+watch(
+  [dirty, activeFilePath],
+  ([isDirty, filePath]) => {
+    setDraftDirty({ paneId, filePath, worktreePath: props.worktreePath }, isDirty)
+  },
+  { immediate: true }
+)
+
 /**
  * Live-reload (T171): the backing file changed on disk while the pane had
  * unsaved edits. A clean pane just silently re-reads instead — see
@@ -489,25 +504,41 @@ function toggleMode(): void {
 
 async function focusEditor(): Promise<void> {
   await nextTick()
-  editorEl.value?.focus()
+  const el = editorEl.value
+  if (!el) return
+  el.focus()
+  // Caret at the end, so a note (or any file) opens ready to type after its last line.
+  const end = el.value.length
+  el.setSelectionRange(end, end)
 }
 
 /**
  * Persist the draft through the confined `markdown:write` IPC (same known-folder
  * containment + extension + size cap as the reader). On success the baseline
  * moves to the draft (dirty clears); on refusal a localized toast names the
- * reason by code. No-op when clean or not ready.
+ * reason by code. Resolves `true` when the draft is on disk (written now, or already
+ * clean so there is nothing to lose) and `false` when it is not (not ready, or the write
+ * was refused or threw), so a caller that must not lose edits can await it.
  */
-async function save(): Promise<void> {
-  if (state.value.status !== 'ready' || !dirty.value) return
-  const res = await window.api.markdownWrite(activeFilePath.value, draft.value)
+async function save(): Promise<boolean> {
+  if (state.value.status !== 'ready') return false
+  if (!dirty.value) return true
+  const written = draft.value
+  let res: Awaited<ReturnType<typeof window.api.markdownWrite>>
+  try {
+    res = await window.api.markdownWrite(activeFilePath.value, written)
+  } catch {
+    ui.pushToast({ kind: 'danger', title: t(errorKey('write-failed')) })
+    return false
+  }
   if (res.ok) {
-    savedContent.value = draft.value
+    savedContent.value = written
     staleOnDisk.value = false
     ui.pushToast({ kind: 'success', title: t('markdownPane.saved'), timeoutMs: 2500 })
-  } else {
-    ui.pushToast({ kind: 'danger', title: t(errorKey(res.code)) })
+    return true
   }
+  ui.pushToast({ kind: 'danger', title: t(errorKey(res.code)) })
+  return false
 }
 
 /** ⌘/Ctrl-S saves from within the editor (preventing the browser Save dialog). */
@@ -544,17 +575,63 @@ async function copyFileContents(): Promise<void> {
 
 onUnmounted(() => clearTimeout(fileCopiedTimer))
 
+/** Drop the cached draft and registry entry, then remove the pane from the stack. */
+function closePane(): void {
+  draftCache.delete(paneId)
+  forgetDraft(paneId)
+  helpers.removeHelper(props.worktreePath, props.pane.id)
+}
+
+/** The "Unsaved changes" dialog is up (the operator closed a dirty pane). */
+const closeDialogOpen = ref(false)
+/** A Save-then-close is in flight: ignore a second Save/Don't save until it settles. */
+const closeSaving = ref(false)
+
 /**
- * Close the pane, guarding unsaved edits (BUG-22). A dirty draft surfaces the same
- * non-blocking "unsaved changes" toast as reload/browse — closing is deferred until
- * the operator confirms discard (no blocking `window.confirm`, which would freeze
- * the extension). On an actual close the cached draft is dropped so it can't leak.
+ * Close the pane on the operator's behalf (the header X and the `pane.close` chord both
+ * land here). A clean pane closes at once. A pane with unsaved edits asks first through a
+ * blocking Save / Don't save / Cancel dialog (design.md §6 "Unsaved changes dialog"),
+ * replacing the non-blocking toast this path used before. Reload and relative-link
+ * navigation still use that toast (`withDiscardGuard`). On an actual close the cached
+ * draft is dropped so it can't leak (BUG-22).
  */
 function onClose(): void {
-  withDiscardGuard(() => {
-    draftCache.delete(paneId)
-    helpers.removeHelper(props.worktreePath, props.pane.id)
-  })
+  if (!dirty.value) {
+    closePane()
+    return
+  }
+  closeDialogOpen.value = true
+}
+
+function onCloseCancel(): void {
+  // Cancel is the whole of what a mid-save Esc may do: the write is already in flight.
+  if (closeSaving.value) return
+  closeDialogOpen.value = false
+}
+
+function onCloseDiscard(): void {
+  if (closeSaving.value) return
+  closeDialogOpen.value = false
+  closePane()
+}
+
+/**
+ * Save, then close, but only when nothing is left to lose: `save()` must have written
+ * the draft AND the pane must be clean again. A save can succeed while keystrokes typed
+ * during the write keep the pane dirty; closing then would drop them, so the pane stays
+ * open. A failed save (a toast is already up) also leaves the pane open and dirty.
+ */
+async function onCloseSave(): Promise<void> {
+  if (closeSaving.value) return
+  closeSaving.value = true
+  let saved = false
+  try {
+    saved = await save()
+  } finally {
+    closeSaving.value = false
+  }
+  closeDialogOpen.value = false
+  if (saved && !dirty.value) closePane()
 }
 
 /** Begin an inter-pane resize drag when the header (not a button) is pressed. */
@@ -577,7 +654,7 @@ function onToggleExpand(): void {
 // T486 U5b — a region of the pane focus ring: F6 focuses the editor in edit mode,
 // else the scroll body (focusing the overflow-hidden root would leave PageDown /
 // arrows with no scroller to drive), and `pane.close` runs the header X's close (the
-// discard guard holds). The root brightens the header text (design.md §6 "Pane focus") while
+// unsaved-changes dialog guards it). The root brightens the header text (design.md §6 "Pane focus") while
 // focus is inside.
 const rootEl = ref<HTMLDivElement | null>(null)
 const bodyEl = ref<HTMLDivElement | null>(null)
@@ -585,6 +662,26 @@ useFocusRegion(props.pane.id, rootEl, {
   focus: () => (editorEl.value ?? bodyEl.value)?.focus(),
   close: onClose
 })
+
+// A note shortcut or picker pick that lands on THIS already-open pane (a dedup hit never
+// remounts) asks it, through the store, to enter edit mode and take focus. Acted on once the file
+// is loaded, so a pane still reading its file does not have its mode overwritten by the load. The
+// draft is untouched: a dirty pane keeps its edits and only gains focus. An image stays in view.
+watch(
+  [() => helpers.markdownEditRequest, () => state.value.status],
+  ([id, status]) => {
+    if (id !== props.pane.id || status !== 'ready') return
+    helpers.consumeMarkdownEdit(props.pane.id)
+    if (isImageFile.value) {
+      bodyEl.value?.focus()
+      return
+    }
+    mode.value = 'edit'
+    void focusEditor()
+  },
+  // Immediate so a request made before this pane mounted (its stack was hidden) is still honored.
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -821,6 +918,14 @@ useFocusRegion(props.pane.id, rootEl, {
       />
       <pre v-else class="plain-text-view">{{ draft }}</pre>
     </div>
+    <!-- Closing a pane with unsaved edits (design.md §6 "Unsaved changes dialog"). -->
+    <UnsavedChangesDialog
+      :open="closeDialogOpen"
+      :file-name="fileName"
+      @save="onCloseSave"
+      @discard="onCloseDiscard"
+      @cancel="onCloseCancel"
+    />
   </div>
 </template>
 
