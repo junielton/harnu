@@ -675,7 +675,10 @@ describe('a failed bind is loud', () => {
     // The card is closed between the dispatch and the session's boot.
     const { roadmapDir } = await resolveRoadmap(repo)
     const file = path.join(roadmapDir, `${slug}.md`)
-    await vi.waitFor(async () => expect((await cardOf(slug)).session).toBeTruthy())
+    // The dispatch's own writes are done once its note is on the card.
+    await vi.waitFor(async () =>
+      expect(await fs.readFile(file, 'utf8')).toContain('dispatched-with:')
+    )
     await fs.writeFile(
       file,
       (await fs.readFile(file, 'utf8')).replace(/^status: .*$/m, 'status: done')
@@ -785,32 +788,42 @@ async function cardFile(slug: string): Promise<string> {
 }
 
 /**
- * Hold the `dispatched-with` append between its read and its write, long enough for everything the
- * bind does to land in between unless the two are kept apart.
+ * Hold the first write whose temp file `matches`, between its writer's read and its rename. `during`
+ * runs while it is held: whatever writes the card in that window is undone by the held write unless
+ * the two share the card's lock.
  */
-async function slowAppend(slug: string, ms = 600): Promise<void> {
-  const file = await cardFile(slug)
+function holdWrite(
+  matches: (tempName: string, data: string) => boolean,
+  during: () => void = () => {},
+  ms = 1_000
+): { held: () => boolean } {
   const real = fs.writeFile.bind(fs)
   let held = false
   vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
-    if (!held && String(target).startsWith(file) && String(data).includes('dispatched-with:')) {
+    if (!held && matches(path.basename(String(target)), String(data))) {
       held = true
+      during()
       await new Promise((r) => setTimeout(r, ms))
     }
     return real(target, data, options)
   })
+  return { held: () => held }
 }
 
 describe('card gets the real id: the boot is known before the bind', () => {
   it('card gets the real id: the dispatched-with note and the bind never overwrite each other', async () => {
     const id = await newMission()
     const slug = await newCard('Add the CSV exporter')
-    await slowAppend(slug)
+    // A card append writes `.<card>.md.<pid>.<uuid>.tmp`; the field writes use another name.
+    const append = holdWrite(
+      (name, data) => name.startsWith(`.${slug}.md.`) && data.includes('dispatched-with:')
+    )
     rekeyAtBoot = true
     await drain([{ slug, missionId: id, stepId: 'stp-1' }])
     const sessionId = sessionIdOf(started[0])
     // Past the held append, whatever order the two writers ran in.
-    await new Promise((r) => setTimeout(r, 1_500))
+    await new Promise((r) => setTimeout(r, 2_000))
+    expect(append.held(), 'the append was never held').toBe(true)
 
     const content = await fs.readFile(await cardFile(slug), 'utf8')
     expect(parseCard(content, slug).session).toBe(sessionId)
@@ -818,6 +831,39 @@ describe('card gets the real id: the boot is known before the bind', () => {
     expect(content).toContain('<!-- mission:begin stp-1 -->')
     await expectRunningWorker(id, 'stp-1', sessionId)
     expect(notices).toEqual([])
+  })
+})
+
+// ---- A body replace while the bind runs ------------------------------------------------------------
+
+describe('card gets the real id: a body replace while the session boots', () => {
+  it('card gets the real id: a body replace and the bind never overwrite each other', async () => {
+    const id = await newMission()
+    const slug = await newCard('Add the CSV exporter')
+    await drain([{ slug, missionId: id, stepId: 'stp-1' }])
+    const file = await cardFile(slug)
+    await vi.waitFor(async () =>
+      expect(await fs.readFile(file, 'utf8')).toContain('dispatched-with:')
+    )
+    let sessionId = ''
+    // The replace has read the card; the transcript lands before it writes.
+    const replace = holdWrite(
+      (name, data) => name.startsWith(`${slug}.md.`) && data.includes('A rewritten body'),
+      () => void (sessionId = rekey(started[0]))
+    )
+    const out = await boardIpc('roadmap:replaceBody', {
+      folder: repo,
+      slug,
+      body: 'A rewritten body.'
+    })
+    expect(out.ok, JSON.stringify(out)).toBe(true)
+    expect(replace.held(), 'the replace was never held').toBe(true)
+    await expectRunningWorker(id, 'stp-1', sessionId)
+    await new Promise((r) => setTimeout(r, 300))
+
+    const content = await fs.readFile(file, 'utf8')
+    expect(parseCard(content, slug).session).toBe(sessionId)
+    expect(content).toContain('A rewritten body.')
   })
 })
 

@@ -1017,26 +1017,33 @@ export function registerRoadmapHandlers(getWindow: () => Electron.BrowserWindow 
       const { roadmapDir } = await resolveRoadmap(args?.folder ?? '')
       const file = resolveCardFile(roadmapDir, args?.slug)
       if (!file) return { ok: false, code: 'bad-args' }
-      let content: string
-      try {
-        content = await fs.readFile(file, 'utf8')
-      } catch {
-        return { ok: false, code: 'not-found' }
-      }
-      const card = parseCard(content, String(args.slug))
       const incoming = Array.isArray(args.evidence)
         ? args.evidence.filter((e): e is string => typeof e === 'string')
         : []
-      const merged = [...new Set([...card.evidence, ...incoming])]
-      const updates: Record<string, string | null> = { status: 'review' }
-      if (merged.length) updates.evidence = toFlowList(merged)
-      try {
-        await atomicWrite(file, updateFrontmatterFields(content, updates))
-        pokeManifestDrain(args.folder) // T113: in-progress → review frees a WIP slot
-        return { ok: true }
-      } catch {
-        return { ok: false, code: 'write-failed' }
-      }
+      // BUG-296: read → write under the card's lock, like every other writer of it.
+      const res = await withPageFileLock(
+        file,
+        async (): Promise<{ ok: true } | { ok: false; code: RoadmapWriteCode }> => {
+          let content: string
+          try {
+            content = await fs.readFile(file, 'utf8')
+          } catch {
+            return { ok: false, code: 'not-found' }
+          }
+          const card = parseCard(content, String(args.slug))
+          const merged = [...new Set([...card.evidence, ...incoming])]
+          const updates: Record<string, string | null> = { status: 'review' }
+          if (merged.length) updates.evidence = toFlowList(merged)
+          try {
+            await atomicWrite(file, updateFrontmatterFields(content, updates))
+            return { ok: true }
+          } catch {
+            return { ok: false, code: 'write-failed' }
+          }
+        }
+      )
+      if (res.ok) pokeManifestDrain(args.folder) // T113: in-progress → review frees a WIP slot
+      return res
     }
   )
 
@@ -1466,22 +1473,31 @@ export async function replaceCardBodyCore(
   const { roadmapDir } = await resolveRoadmap(folder)
   const file = resolveCardFile(roadmapDir, slug)
   if (!file) return { ok: false, code: 'bad-args' }
-  let content: string
-  try {
-    content = await fs.readFile(file, 'utf8')
-  } catch {
-    return { ok: false, code: 'not-found' }
-  }
-  const card = parseCard(content, String(slug))
-  if (card.status === 'done') return { ok: false, code: 'card-done' }
-  if (!lintSecrets(body).ok) return { ok: false, code: 'contains-secret' }
-  try {
-    await atomicWrite(file, replaceCardBody(content, body))
-    pokeManifestDrain(folder)
-    return { ok: true, stampVoided: Boolean(card.approved) }
-  } catch {
-    return { ok: false, code: 'write-failed' }
-  }
+  // BUG-296: read → write under the card's lock, so a bind cannot be undone nor undo the new body.
+  const res = await withPageFileLock(
+    file,
+    async (): Promise<
+      { ok: true; stampVoided: boolean } | { ok: false; code: RoadmapWriteCode }
+    > => {
+      let content: string
+      try {
+        content = await fs.readFile(file, 'utf8')
+      } catch {
+        return { ok: false, code: 'not-found' }
+      }
+      const card = parseCard(content, String(slug))
+      if (card.status === 'done') return { ok: false, code: 'card-done' }
+      if (!lintSecrets(body).ok) return { ok: false, code: 'contains-secret' }
+      try {
+        await atomicWrite(file, replaceCardBody(content, body))
+        return { ok: true, stampVoided: Boolean(card.approved) }
+      } catch {
+        return { ok: false, code: 'write-failed' }
+      }
+    }
+  )
+  if (res.ok) pokeManifestDrain(folder)
+  return res
 }
 
 /**
