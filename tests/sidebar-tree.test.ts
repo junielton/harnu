@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -569,5 +570,58 @@ describe('sidebar flat checkout tree (S-1)', () => {
     store.setFilterQuery('Summary main')
     await nextTick()
     expect(block(w, APP).get('[data-folder-content]').attributes('data-open')).toBe('true')
+  })
+})
+
+describe('sidebar group rail priority (S-3)', () => {
+  it('rail takes the hottest session', async () => {
+    const { w, store } = await boot({
+      disk: [
+        repoEntry(APP, 'main', [session('a', APP), session('b', APP), session('c', APP)]),
+        repoEntry(WT_FEAT, 'PROJ-231-rate-limit', [session('feat-1', WT_FEAT)])
+      ]
+    })
+    const rail = (path: string): string | undefined =>
+      checkoutRow(w, path)
+        .element.closest('[data-checkout-group]')
+        ?.getAttribute('data-group-rail') ?? undefined
+    const states = async (...values: (string | undefined)[]): Promise<void> => {
+      const app = store.folders.find((f) => f.path === APP)!
+      values.forEach((value, index) => {
+        app.sessions.find((s) => s.sessionId === 'abc'[index])!.taskState = value as never
+      })
+      await nextTick()
+    }
+
+    await states('idle', 'idle', 'completed')
+    expect(rail(APP), 'idle and done draw nothing').toBeUndefined()
+
+    await states('working', 'idle', 'idle')
+    expect(rail(APP)).toBe('working')
+    await states('working', 'failed', 'idle')
+    expect(rail(APP), 'failed overrides working').toBe('failed')
+    await states('working', 'failed', 'needs-input')
+    expect(rail(APP), 'needs input beats failed').toBe('needs-input')
+    await states('working', 'idle', 'needs-input')
+    expect(rail(APP)).toBe('needs-input')
+    expect(rail(WT_FEAT), 'a neighbour keeps its own state').toBeUndefined()
+
+    // A working session gone quiet is stuck: it still counts as working.
+    await states('idle', 'idle', 'idle')
+    const quiet = store.folders.find((f) => f.path === APP)!.sessions[0]
+    quiet.modified = new Date(Date.now() - 3_600_000).toISOString()
+    await states('working', 'idle', 'idle')
+    expect(w.get('[data-session-id="a"] [aria-label="Stuck"]').exists()).toBe(true)
+    expect(rail(APP)).toBe('working')
+
+    // The colours: the dim working green, then warning and red at full strength.
+    const css = readFileSync('src/renderer/src/styles/main.css', 'utf8')
+    const colour = (state: string): string | undefined =>
+      new RegExp(
+        `\\[data-checkout-group\\]\\[data-group-rail='${state}'\\]\\s*\\{[^}]*--rail-color:\\s*([^;]+);`
+      ).exec(css)?.[1]
+    expect(colour('working')).toBe('color-mix(in oklab, var(--color-green) 40%, transparent)')
+    expect(colour('needs-input')).toBe('var(--color-warning)')
+    expect(colour('failed')).toBe('var(--color-red)')
   })
 })
