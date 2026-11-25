@@ -23,6 +23,8 @@ A session row in the sidebar reads, left to right: its status dot, its title, th
 - **Orchestrator crown**, in its own place at the far right.
 - **Subagents and teammates.** A count chip appears on hover; click it to list or hide them under the session.
 
+Hover a sidebar row, select a session, or move to a row with the keyboard and its label brightens. A bar on the left marks the row, with an accent colour for selection and a thicker bar for keyboard focus. The row has no highlight box.
+
 ## The terminal pane
 
 Each session's terminal is a real xterm.js terminal, not a log viewer — it behaves like the terminal you already know:

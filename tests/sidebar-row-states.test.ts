@@ -235,6 +235,30 @@ describe('sidebar row states (S-2)', () => {
     expect(accent.declarations['background-color']).toBe('var(--color-accent)')
   })
 
+  it('moving the cursor leaves one bar, not two', async () => {
+    const { w, store } = await boot()
+    const clicked = w.get(`[data-checkout-path="${WT_FEAT}"]`).element as HTMLElement
+    const other = w.get(`[data-checkout-path="${APP}"]`)
+
+    // A clicked row keeps DOM focus, so it would paint the focus bar beside the cursor's.
+    clicked.focus()
+    store.keyboardCursor = { kind: 'folder', id: APP }
+    await flushPromises()
+    expect(other.attributes('data-focused')).toBe('true')
+    expect(document.activeElement).not.toBe(clicked)
+
+    // The cursor on the focused row itself keeps it, and a text field is never touched.
+    clicked.focus()
+    store.keyboardCursor = { kind: 'folder', id: WT_FEAT }
+    await flushPromises()
+    expect(document.activeElement).toBe(clicked)
+    const input = document.body.appendChild(document.createElement('input'))
+    input.focus()
+    store.keyboardCursor = { kind: 'folder', id: APP }
+    await flushPromises()
+    expect(document.activeElement).toBe(input)
+  })
+
   it('gives the rows a mount cannot reach the same bar', () => {
     const source = (file: string): string =>
       readFileSync(`src/renderer/src/components/${file}`, 'utf8')
@@ -267,8 +291,19 @@ describe('sidebar row states (S-2)', () => {
   it('draws no fill, no weight change and no outline on a row', async () => {
     const { w, store } = await boot()
     store.select('main-1')
+    await nextTick()
+
+    // The selected session carries its state for the bar, and no bar element of its own.
+    const selected = w.get('[data-session-id="main-1"]')
+    expect(selected.attributes('data-selected')).toBe('true')
+    expect(selected.find('.bg-accent.absolute').exists()).toBe(false)
+    expect((selected.element as HTMLElement).style.fontWeight).not.toBe('500')
+
+    // A folder's view takes the selection, so the header is the current row.
+    const header = w.get(`[data-folder-path="${PLAIN}"][data-folder-head]`)
     store.selectFolder(PLAIN)
     await nextTick()
+    expect(header.attributes('data-current')).toBe('true')
 
     for (const [selector] of ROW_TYPES) {
       for (const row of w.findAll(selector)) {
@@ -279,11 +314,6 @@ describe('sidebar row states (S-2)', () => {
         expect(['', '400'], `${selector} never changes weight`).toContain(element.style.fontWeight)
       }
     }
-
-    // The selected session carries its state for the bar, and no bar element of its own.
-    const selected = w.get('[data-session-id="main-1"]')
-    expect(selected.attributes('data-selected')).toBe('true')
-    expect(selected.find('.bg-accent.absolute').exists()).toBe(false)
 
     // The old outline and tint rules are gone; the forced-colors outline is the one fallback.
     expect(rules.some((r) => r.selectors.includes(".sidebar-row[data-focused='true']"))).toBe(false)

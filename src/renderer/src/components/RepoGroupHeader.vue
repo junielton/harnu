@@ -101,6 +101,7 @@ function preview(event: MouseEvent): void {
 <template>
   <div
     data-folder-head
+    data-row-bar="header"
     data-dsqa-part="folder-header"
     :data-folder-path="tree.git ? undefined : tree.primary.path"
     :data-sidebar-row="`${cursor.kind}:${cursor.id}`"

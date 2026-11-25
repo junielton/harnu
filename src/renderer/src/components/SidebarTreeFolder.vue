@@ -70,12 +70,13 @@ function preview(event: MouseEvent, path: string): void {
             <button
               type="button"
               data-checkout-row
+              data-row-bar="checkout"
               data-dsqa-part="checkout-row"
               :data-checkout-path="folder.path"
               :data-sidebar-row="`folder:${folder.path}`"
               :data-focused="focused('folder', folder.path)"
               :aria-expanded="hasRows ? !folded : undefined"
-              class="sidebar-row relative group flex w-full items-center gap-2 pr-3 text-left text-text-4 hover:bg-surface hover:text-text"
+              class="sidebar-row relative group flex w-full items-center gap-2 pr-3 text-left text-text-4"
               :class="[hasRows && 'cursor-pointer', isHidden(folder.path) && 'opacity-50']"
               :style="{ height: `${metrics.checkoutRowHeight}px`, paddingLeft: '14px' }"
               @click="hasRows && sessions.toggleCheckoutFold(folder.path)"
@@ -108,11 +109,12 @@ function preview(event: MouseEvent, path: string): void {
             <button
               type="button"
               data-idle-row
+              data-row-bar="checkout"
               data-dsqa-part="idle-row"
               :data-sidebar-row="`group:idle:${tree.key}`"
               :data-focused="focused('group', `idle:${tree.key}`)"
               :aria-expanded="idleOpen"
-              class="sidebar-row relative group flex w-full cursor-pointer items-center gap-2 pr-3 pl-3.5 text-left text-text-4 opacity-85 hover:bg-surface hover:text-text"
+              class="sidebar-row relative group flex w-full cursor-pointer items-center gap-2 pr-3 pl-3.5 text-left text-text-4 opacity-85"
               :style="{ height: `${metrics.checkoutRowHeight}px` }"
               @click="sessions.toggleIdleWorktrees(tree.key)"
             >
@@ -131,10 +133,11 @@ function preview(event: MouseEvent, path: string): void {
                 <button
                   type="button"
                   data-idle-worktree
+                  data-row-bar="checkout"
                   :data-sidebar-row="`folder:${folder.path}`"
                   :data-focused="focused('folder', folder.path)"
                   :data-guide-last="index === tree.idle.length - 1 || undefined"
-                  class="sidebar-row sidebar-tree-guide group relative flex w-full cursor-pointer items-center gap-2 pr-3 pl-3.5 text-left text-text-4 hover:bg-surface hover:text-text"
+                  class="sidebar-row group relative flex w-full cursor-pointer items-center gap-2 pr-3 pl-3.5 text-left text-text-4"
                   :class="isHidden(folder.path) && 'opacity-50'"
                   :style="{ height: `${metrics.checkoutRowHeight}px` }"
                   @click="sessions.selectFolder(folder.path)"

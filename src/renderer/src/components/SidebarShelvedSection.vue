@@ -129,7 +129,8 @@ onBeforeUnmount(() => {
     <!-- Disclosure row: folder-row geometry, Eyebrow type. The count is always visible — collapsed it is
          the only clue to what is hidden. -->
     <button
-      class="sidebar-row flex w-full cursor-pointer items-center text-left text-text-4 transition hover:bg-surface hover:text-text-3"
+      data-row-bar="checkout"
+      class="sidebar-row relative flex w-full cursor-pointer items-center text-left text-text-4 transition"
       :style="{
         height: `${metrics.checkoutRowHeight}px`,
         padding: '0 12px 0 14px',
@@ -161,11 +162,11 @@ onBeforeUnmount(() => {
 
     <template v-if="open">
       <div v-for="m in members" :key="m.id" :data-shelved-id="m.id">
-        <!-- Worktree row: compact single line (variant B). Content dims, the row does not, so hover and
-             the menu target paint a crisp surface. -->
+        <!-- Worktree row: dimmed content with a left bar for hover and menu targeting. -->
         <div
-          class="sidebar-row group relative flex w-full cursor-pointer items-center text-text transition hover:bg-surface"
-          :class="menu.open && menu.member?.id === m.id ? 'bg-surface' : ''"
+          data-row-bar="checkout"
+          class="sidebar-row group relative flex w-full cursor-pointer items-center text-text transition"
+          :data-menu-open="(menu.open && menu.member?.id === m.id) || undefined"
           :style="{
             height: `${metrics.childRowHeight}px`,
             padding: '0 12px 0 14px',
@@ -220,9 +221,12 @@ onBeforeUnmount(() => {
               class="shrink-0 text-text-4"
               style="margin: 0 1px"
             />
-            <span class="min-w-0 flex-1 truncate font-mono text-text-3" style="font-size: 11px">{{
-              m.label
-            }}</span>
+            <span
+              data-row-label
+              class="min-w-0 flex-1 truncate font-mono text-text-3"
+              style="font-size: 11px"
+              >{{ m.label }}</span
+            >
             <span
               v-if="isRestoring(m)"
               class="anim-shimmer-dot shrink-0 text-text-3 tabular-nums"
@@ -258,11 +262,9 @@ onBeforeUnmount(() => {
             v-for="(s, index) in m.sessions"
             :key="s.sessionId"
             data-session-row
+            data-row-bar="session"
             :data-guide-last="index === m.sessions.length - 1 || undefined"
-            class="sidebar-row sidebar-row-cv sidebar-tree-guide sidebar-session-tint relative flex w-full cursor-pointer items-center text-left transition"
-            :class="
-              restoringSession(m) === s.sessionId ? 'text-text' : 'text-text-2 hover:text-text'
-            "
+            class="sidebar-row sidebar-row-cv sidebar-tree-guide relative flex w-full cursor-pointer items-center text-left text-text-2 transition"
             :data-session-id="s.sessionId"
             :data-sidebar-row="`session:${s.sessionId}`"
             :data-selected="restoringSession(m) === s.sessionId ? 'true' : null"
@@ -272,18 +274,11 @@ onBeforeUnmount(() => {
               paddingLeft: `${metrics.sessionIndent}px`,
               paddingRight: '12px',
               gap: `${metrics.gap}px`,
-              fontSize: '12.5px',
-              fontWeight: restoringSession(m) === s.sessionId ? 500 : 400
+              fontSize: '12.5px'
             }"
             @click="onResume(m, s)"
             @contextmenu="(e) => contextMenu.open(e, s.sessionId)"
           >
-            <span
-              v-if="restoringSession(m) === s.sessionId"
-              class="absolute left-0 top-0 bg-accent"
-              style="width: 2px; height: 100%; border-radius: 0 2px 2px 0"
-              aria-hidden="true"
-            />
             <span
               class="flex shrink-0 items-center justify-center"
               style="width: 12px; height: 12px"

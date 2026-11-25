@@ -137,6 +137,21 @@ watch(
   }
 )
 
+// The arrow cursor and keyboard focus draw the same bar (design.md §6 "Row states"),
+// so only one row may show it: a row still holding DOM focus (it was clicked) gives it
+// up when the cursor moves elsewhere.
+watch(
+  () => sessions.keyboardCursor,
+  async (cursor) => {
+    if (!cursor) return
+    await nextTick()
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement) || !asideRef.value?.contains(active)) return
+    const row = active.closest('[data-row-bar]')
+    if (row && row.getAttribute('data-focused') !== 'true') active.blur()
+  }
+)
+
 // The header buttons and their keyboard bindings (App.vue) run the same functions.
 const { rescanning, anyExpanded, rescan, toggleCollapseAll, toggleJump, toggleHiddenFolders } =
   useSidebarActions()

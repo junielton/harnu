@@ -226,6 +226,8 @@ async function moveCursorTo(row: Locator): Promise<void> {
 
 /** What the row paints: its bar, its own fill and outline, and its label colour. */
 async function paint(row: Locator): Promise<Record<string, string>> {
+  // The bar's colour transitions over --dur-fast; read it once it has landed.
+  await page.waitForTimeout(200)
   return row.evaluate((el) => {
     const probe = (token: string): string => {
       const span = document.createElement('span')

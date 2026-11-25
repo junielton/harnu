@@ -440,7 +440,8 @@ function onPeekClick(kind: 'older' | 'archived'): void {
             v-for="node in rootNodes"
             :key="isGroup(node) ? node.key : node.path"
             :data-drill-root-row="isGroup(node) ? node.key : node.path"
-            class="sidebar-row group flex w-full items-center text-left text-text transition hover:bg-surface"
+            data-row-bar="header"
+            class="sidebar-row group relative flex w-full items-center text-left text-text transition"
             style="height: 30px; padding: 0 10px; gap: 7px; font-size: 12.5px"
             @click="onRootClick(node)"
             @contextmenu="onRootActions($event, node)"
@@ -453,6 +454,7 @@ function onPeekClick(kind: 'older' | 'archived'): void {
             />
             <FolderIcon v-else :size="13" :stroke-width="1.8" class="shrink-0 text-text-3" />
             <span
+              data-row-label
               class="min-w-0 flex-1 truncate"
               :class="isGroup(node) ? 'font-semibold' : 'font-medium text-text-2'"
               >{{ labelFor(node) }}</span
@@ -505,13 +507,16 @@ function onPeekClick(kind: 'older' | 'archived'): void {
               v-for="f in groupScreen.folders"
               :key="f.path"
               :data-drill-folder-row="f.path"
-              class="sidebar-row group flex w-full items-center text-left text-text transition hover:bg-surface"
+              data-row-bar="header"
+              class="sidebar-row group relative flex w-full items-center text-left text-text transition"
               style="height: 30px; padding: 0 10px; gap: 7px; font-size: 12.5px"
               @click="sessions.drillIntoFolder(f.path)"
               @contextmenu="openFolderMenuAt($event, f.path)"
             >
               <FolderIcon :size="13" :stroke-width="1.8" class="shrink-0 text-text-3" />
-              <span class="min-w-0 flex-1 truncate font-medium text-text-2">{{ labelFor(f) }}</span>
+              <span data-row-label class="min-w-0 flex-1 truncate font-medium text-text-2">{{
+                labelFor(f)
+              }}</span>
               <span
                 role="button"
                 tabindex="0"
