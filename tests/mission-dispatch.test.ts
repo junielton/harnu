@@ -769,13 +769,21 @@ describe('a board dispatch binds the step like the drain does (S-26 delta 1)', (
     expect((await readRecord(id)).sessions.map((s) => s.id)).toEqual([LEADER])
   })
 
-  it('a card cut into a worktree plans no note: where it spawns is not known until the worktree exists', async () => {
+  it('a card cut into a worktree is noted by its prompt: where it spawns is not known until the worktree exists', async () => {
     const id = await newMission()
     const slug = await newCard('A worktree card')
     await submitManifest([{ slug, missionId: id, stepId: 'stp-1', substrate: 'worktree' }])
     const plan = await ipc('roadmap:planDispatch', { folder: repo, slug, labels: LABELS })
     expect(plan.ok).toBe(true)
+    // No folder claims it, and another agent spawn does not take it.
     expect(takePendingSpawn(repo)).toBeUndefined()
+    const worktree = path.join(path.dirname(repo), 'wt-board')
+    expect(takePendingSpawn(worktree, Date.now(), { prompt: 'another prompt' })).toBeUndefined()
+    expect(takePendingSpawn(worktree, Date.now(), { prompt: plan.prompt as string })).toEqual({
+      role: 'worker',
+      missionId: id,
+      stepId: 'stp-1'
+    })
   })
 })
 
