@@ -300,6 +300,9 @@ export type MissionV4ViewReply =
  */
 export type MissionV4Door = { folder: string; missionId: string } & (
   | { door: 'mark'; stepId: string; criterionId: string; evidence?: string }
+  | { door: 'acceptClaim'; stepId: string; criterionId: string }
+  /** Every open claim of one step, or of the whole mission with no `stepId`, in one write. */
+  | { door: 'acceptClaims'; stepId?: string }
   | { door: 'clearBlocker'; blockerId: string; stepId?: string }
   | { door: 'approveDoneWhen' }
   | { door: 'declineDoneWhen' }
@@ -321,6 +324,8 @@ export type MissionV4DoorReply =
       stepId?: string | null
       criterionId?: string
       blockerId?: string
+      /** What `acceptClaims` settled; empty when nothing was left to accept. */
+      accepted?: Array<{ stepId: string; criterionId: string }>
       warnings?: V4CloseWarning[]
     }
   | { ok: false; code: string; error: string }

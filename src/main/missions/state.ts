@@ -34,6 +34,7 @@ import type {
   Fact,
   MilestoneState,
   MissionState,
+  SelfCheck,
   StepState,
   StepV4
 } from './model'
@@ -176,6 +177,19 @@ export function criterionSettlement(
     return { settled: true, via: 'session' }
   }
   return OPEN
+}
+
+// ---- Claims -----------------------------------------------------------------------
+
+/**
+ * The claim the operator can accept on a criterion, or `null`. A claim is a session's evidence for a
+ * criterion that is still open, stored in `selfCheck` (the stamps older builds wrote there are claims
+ * too, D-5). Only an `operator` or `session` criterion takes one: a fact is Harnu's to read, and
+ * another person's approval is theirs (D-2). A claim never settles anything by itself.
+ */
+export function openClaimOf(criterion: AcceptanceCriterion): SelfCheck | null {
+  if (criterion.by !== 'operator' && criterion.by !== 'session') return null
+  return criterion.settled === undefined ? (criterion.selfCheck ?? null) : null
 }
 
 // ---- Blockers ---------------------------------------------------------------------

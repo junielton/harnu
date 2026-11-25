@@ -43,6 +43,8 @@ function mapping(item: WaitingItemV4): { kind: CardKind; suffix: string } {
     // A re-scope an older mission staged: Approve or Decline, as before (its key is the one main filed it under).
     case 'rescope':
       return { kind: 'go_no_go', suffix: item.id }
+    // Claims sessions made: the operator looks at the evidence and accepts. One card for all of them.
+    case 'accept':
     case 'settle':
     case 'review':
       return { kind: 'check', suffix: item.id }

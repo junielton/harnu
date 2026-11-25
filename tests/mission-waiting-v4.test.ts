@@ -400,6 +400,7 @@ describe('AC-18 · one next step, the rest in a fixed order', () => {
     expect(waiting.WAITING_RANK).toEqual([
       'main-failing',
       'unblock',
+      'accept',
       'rescope',
       'settle',
       'review',

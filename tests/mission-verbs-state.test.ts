@@ -625,10 +625,10 @@ describe('mission_settle_ac', () => {
     )
   })
 
-  it('a session that built the step only self-checks it, and a self-check never settles', async () => {
+  it('a session that built the step only claims it, and a claim never settles', async () => {
     seed()
     const r = must(await settleCriterion(root, session(BUILDER), args))
-    expect(r.outcome).toBe('self-check')
+    expect(r.outcome).toBe('claimed')
     const ac = stored().steps[0].acs[0]
     expect(ac.selfCheck).toMatchObject({ by: BUILDER, evidence: args.evidence })
     expect(ac).not.toHaveProperty('settled')
@@ -636,19 +636,19 @@ describe('mission_settle_ac', () => {
     expect(deriveStepState(stored().steps[0], {}).open.map((c) => c.id)).toContain('ac-1')
   })
 
-  it('a session the caller names as a builder of the step self-checks too (the leader, for a step it did)', async () => {
+  it('a session the caller names as a builder of the step claims too (the leader, for a step it did)', async () => {
     seed()
     const r = must(
       await settleCriterion(root, session(LEADER), { ...args, extraBuilders: [LEADER] })
     )
-    expect(r.outcome).toBe('self-check')
+    expect(r.outcome).toBe('claimed')
     expect(stored().steps[0].acs[0]).not.toHaveProperty('settled')
   })
 
-  it('never settles by hand a criterion a fact, the operator or another person settles', async () => {
+  it('takes nothing from a session on a criterion a fact or another person settles', async () => {
     seed()
     const before = snapshotV4()
-    for (const criterionId of ['ac-2', 'ac-3', 'ac-4']) {
+    for (const criterionId of ['ac-2', 'ac-4']) {
       for (const who of [BUILDER, VERIFIER, LEADER]) {
         const r = await settleCriterion(root, session(who), { ...args, criterionId })
         expect(r.ok, `${criterionId} by ${who}`).toBe(false)
@@ -851,7 +851,7 @@ describe('the Log a verb writes is one plain note a reader understands', () => {
         })
     ],
     [
-      'a self-check',
+      'a claim',
       () =>
         settleCriterion(root, session(BUILDER), {
           missionId: ID,
@@ -898,7 +898,7 @@ describe('the Log a verb writes is one plain note a reader understands', () => {
     expect(storedLog()).toContain(`Blocker raised on the mission: ${REASON} (blk-2).`)
   })
 
-  it('tells a self-check from a settlement, and neither names a session', async () => {
+  it('tells a claim from a settlement, and neither names a session', async () => {
     seed()
     must(
       await settleCriterion(root, session(BUILDER), {
@@ -909,7 +909,7 @@ describe('the Log a verb writes is one plain note a reader understands', () => {
       })
     )
     expect(storedLog()).toContain(
-      '"Load the test files": a criterion was checked by the session that built it; it stays open.'
+      '"Load the test files": a session claims "A reviewer reads every changed file" is done; it stays open. Evidence: Read it'
     )
     must(
       await settleCriterion(root, session(VERIFIER), {

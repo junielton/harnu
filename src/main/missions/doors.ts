@@ -1,8 +1,8 @@
 /**
  * Missions v4 S-15 (AC-37) — the operator doors.
  *
- * Mark a criterion, clear a blocker, approve a staged Done when, close as delivered or discarded, allow
- * or deny an attach request. They are the operator's: a session has no way to call them (the write path
+ * Mark a criterion, accept the claims sessions made on criteria, clear a blocker, approve a staged Done
+ * when, close as delivered or discarded, allow or deny an attach request. They are the operator's: a session has no way to call them (the write path
  * judges `need: 'operator'`, so a session that tries is `OPERATOR_ONLY`), and none of them refuses the
  * operator for a state the mission is in: a closed mission, no session attached, a released leader, open
  * matters. Open matters at close are **warnings** returned to the caller ({@link closeWarningsOf}),
@@ -24,8 +24,8 @@
  */
 
 import { openEntry } from './guard'
-import type { BlockerV4, MissionV4, Settled, WithUnknownKeys } from './model'
-import type { StepInput } from './state'
+import type { BlockerV4, MissionV4, SelfCheck, Settled, WithUnknownKeys } from './model'
+import { openClaimOf, type StepInput } from './state'
 import {
   appendWorked,
   applyChange,
@@ -134,6 +134,122 @@ export interface WalkSettleVia {
 export function walkSettleEvidence(via: WalkSettleVia, agent: string | undefined): string {
   const said = (agent ?? '').replace(/\s+/g, ' ').trim().slice(0, 400)
   return `Settled by walk ${via.walkId}, run ${via.runId}, check ${via.checkId} (Done plus the agent's check)${said ? `: ${said}` : ''}`
+}
+
+// ---- Accept a session's claim -----------------------------------------------------------
+
+/** One criterion a door settled. */
+export interface ClaimRef {
+  stepId: string
+  criterionId: string
+}
+
+/** The evidence an accepted claim stamps: who claimed it (first 8 characters), then what it saw. */
+function acceptedEvidence(claim: SelfCheck): string {
+  const said = claim.evidence.replace(/\s+/g, ' ').trim().slice(0, 400)
+  return `Accepted ${claim.by.slice(0, 8)}'s claim: ${said}`
+}
+
+/** The record and Log with the claim on each picked criterion settled in the operator's name. */
+function settleClaims(
+  record: MissionV4,
+  log: string,
+  at: string,
+  picks: readonly ClaimRef[]
+): { record: MissionV4; log: string } {
+  let nextLog = log
+  const steps = record.steps.map((step) => ({
+    ...step,
+    acs: step.acs.map((ac) => {
+      const claim = openClaimOf(ac)
+      if (!claim || !picks.some((p) => p.stepId === step.id && p.criterionId === ac.id)) return ac
+      nextLog = logEntry(
+        nextLog,
+        at,
+        `operator accepted a session's claim: "${ac.text}" on "${step.title}"`
+      )
+      const settled: Settled = { at, by: 'operator', evidence: acceptedEvidence(claim) }
+      return { ...ac, settled }
+    })
+  }))
+  return { record: { ...record, steps }, log: nextLog }
+}
+
+/**
+ * "Accept": the operator settles one claimed criterion in their own name, with the claim's evidence. A
+ * criterion that is already settled keeps its stamp (`changed: false`). One with nothing to accept (no
+ * claim, or another person's approval) is `NOT_FOUND`, and a fact is never ticked: `SETTLES_ITSELF`.
+ */
+export async function acceptClaim(
+  folder: string,
+  missionId: string,
+  args: { stepId: string; criterionId: string; at?: string }
+): Promise<DoorResult<{ stepId: string; criterionId: string }>> {
+  const at = now(args.at)
+  const result = await applyChange(folder, missionId, OPERATOR, 'operator', (record, log) => {
+    const stepId = resolveStepId(record, args.stepId, missionId)
+    const step = record.steps.find((s) => s.id === stepId)
+    const criterion = step?.acs.find((a) => a.id === args.criterionId)
+    if (!step || !criterion) {
+      throw doorError(
+        'NOT_FOUND',
+        `${record.id} has no step ${args.stepId} criterion ${args.criterionId}.`
+      )
+    }
+    if (criterion.by === 'fact') {
+      throw doorError(
+        'SETTLES_ITSELF',
+        `step ${step.id} criterion ${criterion.id} is settled by a fact Harnu reads; it is never ticked by hand.`
+      )
+    }
+    if (criterion.settled) return null
+    if (!openClaimOf(criterion)) {
+      throw doorError(
+        'NOT_FOUND',
+        `step ${step.id} criterion ${criterion.id} has no claim to accept.`
+      )
+    }
+    return settleClaims(record, log, at, [{ stepId: step.id, criterionId: criterion.id }])
+  })
+  return result.ok
+    ? {
+        ...result,
+        stepId: resolveStepId(result.record, args.stepId, missionId) ?? args.stepId,
+        criterionId: args.criterionId
+      }
+    : result
+}
+
+/**
+ * "Accept all": every open claim of one step, or of the whole mission when no step is named, settled in
+ * ONE write. A criterion settled in the meantime is skipped: it keeps its first stamp. `accepted` names
+ * what this call settled.
+ */
+export async function acceptClaims(
+  folder: string,
+  missionId: string,
+  args: { stepId?: string; at?: string } = {}
+): Promise<DoorResult<{ accepted: ClaimRef[] }>> {
+  const at = now(args.at)
+  let accepted: ClaimRef[] = []
+  const result = await applyChange(folder, missionId, OPERATOR, 'operator', (record, log) => {
+    let only: string | null = null
+    if (args.stepId !== undefined) {
+      const id = resolveStepId(record, args.stepId, missionId)
+      only = record.steps.find((s) => s.id === id)?.id ?? null
+      if (only === null) throw doorError('NOT_FOUND', `${record.id} has no step ${args.stepId}.`)
+    }
+    // The store may run this again on a fresher record: the run that lands is the one reported.
+    accepted = record.steps
+      .filter((s) => only === null || s.id === only)
+      .flatMap((s) =>
+        s.acs
+          .filter((c) => openClaimOf(c) !== null)
+          .map((c) => ({ stepId: s.id, criterionId: c.id }))
+      )
+    return accepted.length > 0 ? settleClaims(record, log, at, accepted) : null
+  })
+  return result.ok ? { ...result, accepted } : result
 }
 
 // ---- Clear a blocker -----------------------------------------------------------------
@@ -432,6 +548,20 @@ export async function runDoor(raw: unknown): Promise<DoorResult<object>> {
         criterionId,
         ...(text(a.evidence) !== null ? { evidence: text(a.evidence) as string } : {})
       })
+    }
+    case 'acceptClaim': {
+      const stepId = text(a.stepId)
+      const criterionId = text(a.criterionId)
+      if (stepId === null || criterionId === null) {
+        return bad('acceptClaim needs a step and a criterion')
+      }
+      return acceptClaim(folder, missionId, { stepId, criterionId })
+    }
+    case 'acceptClaims': {
+      const stepId = text(a.stepId)
+      // A step that was named and cannot be read never widens to the whole mission.
+      if (a.stepId !== undefined && stepId === null) return bad('acceptClaims names a step or none')
+      return acceptClaims(folder, missionId, stepId !== null ? { stepId } : {})
     }
     case 'clearBlocker': {
       const blockerId = text(a.blockerId)
