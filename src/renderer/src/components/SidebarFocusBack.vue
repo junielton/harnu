@@ -63,12 +63,11 @@ async function leave(event: MouseEvent): Promise<void> {
       class="flex flex-[1_0_auto] items-baseline justify-end text-[10.5px] text-warning tabular-nums"
       :title="meta.all"
     >
-      <!-- No width of its own: it takes what the other two leave, down to nothing. -->
-      <span
-        data-focus-back-others
-        class="w-0 min-w-0 flex-1 overflow-hidden text-right text-ellipsis whitespace-pre"
-        >{{ meta.others }}</span
-      >
+      <!-- No width of its own: it takes what the other two leave, down to nothing. Its padding is
+           the space after its "·", so a gap survives when it truncates. -->
+      <span data-focus-back-others class="w-0 min-w-0 flex-1 truncate pr-[3px] text-right">{{
+        meta.others
+      }}</span>
       <span data-focus-back-needs class="shrink-0 whitespace-pre">{{ meta.needs }}</span>
       <span data-focus-back-failed class="shrink-0 whitespace-pre">{{ meta.failed }}</span>
     </span>
