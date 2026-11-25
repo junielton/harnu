@@ -2568,6 +2568,23 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   const checkoutsFolded = persistedSet<string>('om2tab.checkoutsFolded')
   const idleWorktreesOpen = persistedSet<string>('om2tab.idleWorktreesOpen')
+  /**
+   * A text filter forces every repo folder open so its matches show. These are
+   * the ones the operator closed again since the current query was typed, by the
+   * chevron or the collapse shortcut; a new query shows everything again.
+   */
+  const closedUnderFilter = ref<ReadonlySet<string>>(new Set())
+  watch(filterQuery, () => {
+    closedUnderFilter.value = new Set()
+  })
+
+  function setClosedUnderFilter(key: string, closed: boolean): void {
+    if (closedUnderFilter.value.has(key) === closed) return
+    const next = new Set(closedUnderFilter.value)
+    if (closed) next.add(key)
+    else next.delete(key)
+    closedUnderFilter.value = next
+  }
 
   const sortedListedFolders = computed<Folder[]>(() =>
     sortFolders(
@@ -2690,7 +2707,8 @@ export const useSessionsStore = defineStore('sessions', () => {
       buildSidebarTree(repoNodes.value, {
         order: sortedListedFolders.value,
         aliasFromBranchPaths: aliasFromBranchPaths.value,
-        hasRows: checkoutHasRows
+        hasRows: checkoutHasRows,
+        closed: closedUnderFilter.value
       })
     )
   )
@@ -3987,11 +4005,12 @@ export const useSessionsStore = defineStore('sessions', () => {
     const folder = sidebarTree.value.find((node) => node.key === key)
     if (!folder) return
     if (folder.group) {
-      if (filterQuery.value.trim()) return
       if (folder.open) {
         for (const path of folder.paths) forgetPeeks(path)
       }
-      toggleGroup(key)
+      // Under a filter the choice lasts only as long as the query.
+      if (filterQuery.value.trim()) setClosedUnderFilter(key, folder.open)
+      else toggleGroup(key)
     } else toggleFolder(folder.primary.path)
   }
 
@@ -4034,6 +4053,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     folder.expanded = true
     const node = sidebarTree.value.find((entry) => entry.paths.includes(path))
     if (node?.group && collapsedGroupsSet.has(node.key)) collapsedGroupsSet.delete(node.key)
+    if (node) setClosedUnderFilter(node.key, false)
     if (node?.idle.some((checkout) => checkout.path === path) && !idleWorktreesOpen.has(node.key)) {
       idleWorktreesOpen.add(node.key)
     }
@@ -4046,6 +4066,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         if (key.startsWith('repo:')) collapsedGroupsSet.delete(key)
       }
       checkoutsFolded.clear()
+      closedUnderFilter.value = new Set()
       expandAll()
       return
     }
@@ -4054,6 +4075,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         for (const path of node.paths) setCheckoutFolded(path, true)
       } else if (node.group) {
         if (!collapsedGroupsSet.has(node.key)) collapsedGroupsSet.add(node.key)
+        if (filterQuery.value.trim()) setClosedUnderFilter(node.key, true)
       } else {
         node.primary.expanded = false
         forgetPeeks(node.primary.path)
