@@ -1156,6 +1156,9 @@ textarea,
 
 .sidebar-disclosure {
   display: grid;
+  /* Without this the implicit column grows to its content's min width, and one long row
+     widens the whole list. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 0fr;
   transition: grid-template-rows var(--dur) var(--ease);
 }
