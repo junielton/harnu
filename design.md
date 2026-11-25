@@ -1060,8 +1060,8 @@ remains a **pure observer** (only reads the StopFailure body, never decides).
 **Dead synthetic — boot failed.** An agent-created synthetic session
 (MCP `create_session`) that **never turned into a PTY/transcript** within the boot
 deadline (120s) is marked **`failed`** by the reaper, with `failureReason: 'boot_timeout'`. It
-leaves the Fleet board's **WORKING** section (moves to the `errored` bucket) and
-the dot's `working` reading, and shows the **solid red dot `--red`** (same as §6 "Session
+stops reading as `working` (the dot, the ring and the rail turn to `failed`, and Needs attention
+lists it), and shows the **solid red dot `--red`** (same as §6 "Session
 status" `failed`) + a **`Failed to start`** badge (`--red` variant, same anatomy
 as the StopFailure badge — **no new token**, reuses `--red`/`--red-soft`). It never
 hangs around as "working" (that was the symptom of BUG-23: eternal rows reading "New session ·
@@ -1103,19 +1103,19 @@ same tokens. Content:
   is off, a `--text-4` `12px` text — "No folders intercepted yet — add one below
   or turn on Trust all folders." — makes clear that **nothing is being held yet**
   (never a silent no-op).
-- **"Review shadow log":** an `--accent` text link (`hover opacity 0.8`) that opens
-  the Approval Inbox (the "Would-have" tab is the interceptor's own preview).
+- **No link to the shadow log** (the interceptor's own preview): its list left with the Fleet
+  rail, and its view comes back in Settings (card T809).
 
 **Sentinel — auto-deny.** A safety net above the interceptor: a resolver that
 **auto-DENIES** a small, conservative set of catastrophic commands (`rm -rf /`,
 `dd` to disk, `mkfs`, fork bomb, `chmod 777 /`, force-push to `main`/`master`,
 `curl | sh`) **before** the Approval Inbox holds them. Only acts in a folder's `active`
 on-ramp mode (respects the ramp); in `shadow`/off-ramp it only logs a "would-deny" in the
-"Would-have" tab. It's **deny-only** (never grants anything) and conservative (a false positive costs a
+shadow log. It's **deny-only** (never grants anything) and conservative (a false positive costs a
 retry, never data). When it denies, it fires a **`danger` toast** (`--red`/`--red-soft`,
 title "Blocked a dangerous command" + the reason) + OS attention — so you know _why_
-a command didn't run (never silent magic). Each block shows up in the
-"Would-have" tab (`by:'sentinel'`).
+a command didn't run (never silent magic). Each block is recorded in the
+shadow log (`by:'sentinel'`).
 
 Technical nouns (`shadow`, `active`, `tool call`, `worktree`) stay untranslated.
 No new token — reuses `--accent`/`--accent-soft`, `--text-3`/`--text-4`,
@@ -2701,7 +2701,7 @@ peek are different things and keep their own names.
 
 ### Session name
 
-Every surface that names a session — sidebar row, top bar, fleet card, triage
+Every surface that names a session — sidebar row, top bar, Needs attention row, triage
 and `RETURN HERE` rows, Approval Inbox, jump palette, `⌘K` palette, footer,
 folder view, cloud panel, mission dropdown, notifications — resolves it
 through **one** function, `sessionTitle()` (`lib/session-label.ts`, BUG-78), so
@@ -2748,16 +2748,16 @@ The sidebar keeps every session row in the DOM — including the rows of collaps
 folders, which sit behind a zero-height clip rather than `display: none`. On a large
 workspace that is ~15k
 elements, and without containment a style or layout pass walked all of them
-(measured: 100–240 ms per pass while a key was held in a terminal). Three
-containment helpers in `main.css` bound that cost. **None of them changes a row's
+(measured: 100–240 ms per pass while a key was held in a terminal). elements, and without containment a style or layout pass walked all of them
+(measured: 100–240 ms per pass while a key was held in a terminal). Two
+containment helpers bound that cost. **None of them changes a row's
 size, position or paint** — the check is a pixel-identical before/after in an
 isolated instance.
 
-| Helper             | Applied to                       | Declaration                                                         | Why this shape                                                                                                                                                              |
-| ------------------ | -------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.sidebar-row-cv`  | session row (`data-session-row`) | `content-visibility: auto`                                          | Rows have a fixed inline height (28 / 24 px by density), so no `contain-intrinsic-size` is needed and scroll positions cannot shift.                                        |
-| `.fleet-card-cv`   | Fleet card root (`fleet-card`)   | `content-visibility: auto; contain-intrinsic-block-size: auto 64px` | A card's height depends on its optional second line; `auto 64px` means "64px until it has rendered once, then its real height", so the scrollbar does not jump.             |
-| `.sidebar-contain` | the sidebar `<aside>`            | `contain: layout style`                                             | A fixed-width layout root: a change elsewhere in the window never re-walks the folder list. Deliberately **no** `paint` (it would clip the jump palette) and **no** `size`. |
+| Helper             | Applied to                       | Declaration                | Why this shape                                                                                                                                                              |
+| ------------------ | -------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.sidebar-row-cv`  | session row (`data-session-row`) | `content-visibility: auto` | Rows have a fixed inline height (28 / 24 px by density), so no `contain-intrinsic-size` is needed and scroll positions cannot shift.                                        |
+| `.sidebar-contain` | the sidebar `<aside>`            | `contain: layout style`    | A fixed-width layout root: a change elsewhere in the window never re-walks the folder list. Deliberately **no** `paint` (it would clip the jump palette) and **no** `size`. |
 
 Rules for anyone touching these surfaces:
 
@@ -2881,8 +2881,8 @@ terminal:
   kills the shell's PTY and removes the row). Selected reuses the session rows'
   anatomy: background `rgba(217,119,87,0.08)` + `2px --accent` bar on the left.
 
-Terminals **don't** count toward the folder's count badge, don't appear on the
-Fleet board, and have no status dot or OS notifications (a shell exiting isn't
+Terminals **don't** count toward the folder's count badge, don't appear in
+Needs attention, and have no status dot or OS notifications (a shell exiting isn't
 a "completed task"). In the topbar the title is fixed as `Terminal` (not
 editable).
 
@@ -3050,9 +3050,8 @@ confirmation is only for the active case.
 
 ### Roadmap board (lifecycle kanban)
 
-The **wide, side-by-side-columns panel** that the Fleet status board above
-explicitly is **not**. These are **two deliberately separate boards**: the
-sidebar's Fleet board answers _"who needs me NOW?"_ (attention, narrow,
+A **wide, side-by-side-columns panel**, deliberately separate from the sidebar: the
+sidebar (the tree and Needs attention) answers _"who needs me NOW?"_ (attention, narrow,
 vertical stack); the Roadmap board answers _"where is each piece of the PLAN?"_
 (lifecycle, wide, columns). The Roadmap board is a **VIEW derived from Project
 Memory** (`.harnu/memory/roadmap/`, T79): **1 card = 1 `.md` file with frontmatter
@@ -8118,7 +8117,7 @@ content, the card was widened to `min(92vw, 940px)`.
   - **v1 scope:** only settings that live **directly** on the dialog's own tabs
     (General → Interface language / Interface scale / Font size / Session state
     hooks / statusLine / OS notifications / Sound; Appearance → Theme; Interceptor →
-    Hook responder mode / Trust all folders / Review shadow log) have an anchor. Fields
+    Hook responder mode / Trust all folders) have an anchor. Fields
     inside sub-panes
     (Claude Boot / Claude config / Endpoints / MCP) appear only as a **tab
     match** (via keywords), not as a setting result. Search resets on every open.
@@ -9539,7 +9538,7 @@ overlay's markup — and **only then** the Allow (`bg-green-soft`/`text-green`) 
 **always** see the exact commands before approving — there's never a one-click Allow
 over hidden commands. Parked confirms **count** toward the Inbox badge
 (`inboxCount`) and the `attentionCount` (window title + OS badge) — they're
-**actionable**, unlike the "Would-have" section's read-only entries. An
+**actionable**. An
 `mcp:confirm:resolved` (respond / TTL / cancel / quit) **removes** the row; **there's no
 re-hydration channel** — a renderer reload discards the parked rows from the UI (the
 confirm stays alive in the main process, and the agent keeps polling `get_approval`).
@@ -14303,8 +14302,8 @@ equal.** No artificial enthusiasm, no emoji, no exclamation marks.
 - **Harnu mod** — the user-facing name is "Harnu mod" ("the Harnu mod", "mods"), never
   "companion". State lines are short and lowercase-led, with no trailing period:
   "Harnu mod: live", "Harnu mod: legacy — turned off by a setting or by your
-  organization's policy". `live`, `legacy` and `off` stay in English (state nouns, like
-  the fleet board's). A cause is named **only when it was observed**: "blocked by your
+  organization's policy". `live`, `legacy` and `off` stay in English (state nouns).
+  A cause is named **only when it was observed**: "blocked by your
   organization's policy" needs the CLI's own refusal text, a probe that only shows mods are
   off reads the neutral "turned off by a setting or by your organization's policy", and
   anything else reads "the mod did not load". Never promise protection, and never imply
