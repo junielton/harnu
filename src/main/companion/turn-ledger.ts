@@ -17,16 +17,16 @@ import type { AuxUsage } from './contract'
 import {
   COST_SETTLE_MS,
   createLedgerCore,
-  measuredUsdByDay,
-  summarizeLedger,
+  measuredByProject,
   type GapWhy,
   type LedgerCore,
+  type MeasuredProject,
   type TurnCompletion,
   type TurnLedgerRecord,
   type UsageReading
 } from './ingest/turn-ledger-core'
 
-export type { TurnCompletion, UsageReading }
+export type { MeasuredProject, TurnCompletion, UsageReading }
 
 export const turnLedgerDir = (userData: string): string => join(userData, 'companion', 'turns')
 
@@ -65,8 +65,41 @@ export interface TurnLedger {
   /**
    * Measured USD per `(session, local day)` for the sessions the ledger fully covers and whose
    * project `isActive` (the `telemetry` family is `active` for it): the input of calibration.
+   * `readMeasured` reads the files: a real ledger is tens of megabytes, so the app hands it a
+   * reader that runs off the main thread, and this side only picks the active projects.
    */
-  calibrationTotals(isActive: (projectPath: string) => boolean): Promise<Map<string, number>>
+  calibrationTotals(
+    isActive: (projectPath: string) => boolean,
+    readMeasured: (ledgerDir: string) => Promise<readonly MeasuredProject[]>
+  ): Promise<Map<string, number>>
+}
+
+/** Every record of every month file under `dir`, in month and line order. Never throws. */
+async function readRecords(dir: string): Promise<TurnLedgerRecord[]> {
+  const out: TurnLedgerRecord[] = []
+  try {
+    const files = (await readdir(dir)).filter((f) => /^\d{4}-\d{2}\.ndjson$/.test(f)).sort()
+    for (const f of files) {
+      const text = await readFile(join(dir, f), 'utf8')
+      for (const line of text.split('\n')) {
+        if (!line) continue
+        try {
+          const r = JSON.parse(line) as TurnLedgerRecord
+          if (r && r.v === 1 && typeof r.sessionId === 'string') out.push(r)
+        } catch {
+          // a torn last line: a crash, or an append that is being written right now
+        }
+      }
+    }
+  } catch {
+    // no ledger yet
+  }
+  return out
+}
+
+/** What `calibrationTotals` needs from the files under `dir`. */
+export async function readMeasuredLedger(dir: string): Promise<MeasuredProject[]> {
+  return measuredByProject(await readRecords(dir))
 }
 
 /** Session ids the previous boots ledgered: read once, synchronously, at construction. */
@@ -113,29 +146,10 @@ export function createTurnLedger(deps: TurnLedgerDeps): TurnLedger {
     })
   }
 
+  /** The records, once every append already queued has landed. */
   async function read(): Promise<TurnLedgerRecord[]> {
     await chain
-    const out: TurnLedgerRecord[] = []
-    try {
-      const files = (await readdir(turnLedgerDir(deps.userData)))
-        .filter((f) => /^\d{4}-\d{2}\.ndjson$/.test(f))
-        .sort()
-      for (const f of files) {
-        const text = await readFile(join(turnLedgerDir(deps.userData), f), 'utf8')
-        for (const line of text.split('\n')) {
-          if (!line) continue
-          try {
-            const r = JSON.parse(line) as TurnLedgerRecord
-            if (r && r.v === 1 && typeof r.sessionId === 'string') out.push(r)
-          } catch {
-            // a torn last line after a crash
-          }
-        }
-      }
-    } catch {
-      // no ledger yet
-    }
-    return out
+    return readRecords(turnLedgerDir(deps.userData))
   }
 
   return {
@@ -164,12 +178,12 @@ export function createTurnLedger(deps: TurnLedgerDeps): TurnLedger {
       }
     },
 
-    async calibrationTotals(isActive) {
-      const records = await read()
+    async calibrationTotals(isActive, readMeasured) {
+      await chain
       const out = new Map<string, number>()
-      for (const [sid, s] of summarizeLedger(records)) {
-        if (!s.covered || !isActive(s.projectPath)) continue
-        for (const [day, usd] of measuredUsdByDay(records, sid)) out.set(`${sid} ${day}`, usd)
+      for (const p of await readMeasured(turnLedgerDir(deps.userData))) {
+        if (!isActive(p.projectPath)) continue
+        p.keys.forEach((key, i) => out.set(key, p.usd[i]!))
       }
       return out
     }

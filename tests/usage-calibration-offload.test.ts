@@ -195,4 +195,43 @@ describe('usage calibration off the calling thread', () => {
     expect.soft(stale.maxStall, 'stale stall (ms)').toBeLessThan(100)
     expect.soft(warm.maxStall, 'warm stall (ms)').toBeLessThan(100)
   }, 120_000)
+
+  // The most this thread can be handed: every project active, so every covered session-day comes back.
+  it('stays under 100 ms when every project in the ledger is active', async () => {
+    const now = Date.now() - 3600_000
+    writeFileSync(transcript(), request(1, now) + request(2, now + 1000))
+    writeBigLedger(now)
+
+    const { buildUsageScanWorker } = await import('./support/usage-scan-worker-build')
+    const built = await buildUsageScanWorker()
+    cleanupWorker = built.cleanup
+    mod.startUsageScanWorker(built.factory)
+    const ledger = createTurnLedger({
+      userData,
+      now: () => Date.now(),
+      policy: async () => ({ enabled: true, retentionDays: 'forever' })
+    })
+    let entries = 0
+    mod.setUsageCostCalibration({
+      totals: async () => {
+        const totals = await ledger.calibrationTotals(() => true, mod.readUsageLedgerTotals)
+        entries = totals.size
+        return totals
+      }
+    })
+
+    let last = performance.now()
+    let maxStall = 0
+    const probe = setInterval(() => {
+      const t = performance.now()
+      maxStall = Math.max(maxStall, t - last - 5)
+      last = t
+    }, 5)
+    await mod.buildUsageBiRawData()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    clearInterval(probe)
+
+    expect(entries).toBeGreaterThan(30_000)
+    expect(maxStall).toBeLessThan(100)
+  }, 120_000)
 })
