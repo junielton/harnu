@@ -2304,9 +2304,15 @@ and never reserve a column.
 
 **Mission chip (compact).** On the row: `triangle-alert` 11px (`--warning`) + the number of things
 the mission owes the operator, 10.5px `tabular-nums`. With nothing owed the chip draws nothing at
-rest. On row hover or keyboard focus the chip's **full text** (the pill's own text and tone) fades in
-**over the tail of the title** (`position: absolute`, anchored right, `--sidebar` background, 8px
-left padding): no width change, no shift. `title`/`aria-label` spell the full text out.
+rest. On row hover or keyboard focus the chip's **hover text** fades in **over the tail of the title**
+(`position: absolute`, anchored right, `--sidebar` background, 8px left padding): no width change, no
+shift. It reads **progress, then the owed count with the alert icon** — `2/5 · ⚠ 7`, the same
+`triangle-alert` 11px and 3px gap as at rest, so the `⚠ 7` does not move — in the pill's tone, and
+**without words**: "7 for you" lives only in the `title` and the accessible name. With nothing owed it
+is the pill's own text (`2/5`), as it is when the mission is ready to close (`5/5 · ready to close`).
+Where the row's trailing chips sit between the overlay and the chip (subagent or teammate count,
+StopFailure badge), the chip's `⚠ 7` is already in view at the end of the row, so the overlay shows
+the progress alone, with 8px of right padding to keep clear of the first of them.
 
 #### Folder ring
 
@@ -2341,15 +2347,17 @@ State lives on a **left bar**, never on a fill or a box. No state changes a row'
 weight or background; the label **lights up to `--text`** on hover, selected and keyboard focus
 (colour only). Rest colours are not brightened.
 
-| State                    | Session row (on its guide segment) | Checkout row (x = 0, inset 2px top and bottom) | Folder header (x = 0, a 16px tick centred on the ring) |
-| ------------------------ | ---------------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
-| Rest                     | 1px `--border-2`                   | nothing                                        | nothing                                                |
-| Hover                    | 2px `--text-2`                     | 2px `--text-2`                                 | 2px `--text-2`                                         |
-| Selected / current       | 2px `--accent` (hover keeps it)    | —                                              | 2px `--accent` (hover keeps it)                        |
-| Keyboard focus           | 3px `--text`                       | 3px `--text`                                   | 3px `--text`                                           |
-| Focus + selected/current | 3px `--accent`                     | —                                              | 3px `--accent`                                         |
+| State                    | Session row (on its guide segment)    | Checkout row (x = 0, inset 2px top and bottom) | Folder header (x = 0, a 16px tick centred on the ring) |
+| ------------------------ | ------------------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| Rest                     | 1px `--border-2`                      | nothing                                        | nothing                                                |
+| Hover                    | 2px `--text-2`                        | 2px `--text-2`                                 | 2px `--text-2`                                         |
+| Selected / current       | 2px `--bar-selected` (hover keeps it) | —                                              | 2px `--bar-selected` (hover keeps it)                  |
+| Keyboard focus           | 3px `--text`                          | 3px `--text`                                   | 3px `--text`                                           |
+| Focus + selected/current | 3px `--bar-selected`                  | —                                              | 3px `--bar-selected`                                   |
 
 - A session's 2px bar is centred on the guide (left 19.5px), the 3px one starts at 19px.
+- `--bar-selected` is the theme's `--accent`, except in the light themes whose accent reads as failed
+  or needs-you ([§9 "Light themes: sidebar contrast"](#light-themes-sidebar-contrast)).
 - On a checkout of a group that shows a [rail](#group-rail), hover keeps the **rail's colour at full
   strength** and widens it to 3px.
 - The transition is `background-color` over `--dur-fast` `--ease`; none under reduced motion.
@@ -2371,23 +2379,25 @@ happening in this checkout" without another dot.
   covers the checkout row. The tree guide of the group's last session ends on the same y.
 - **Colour = the hottest session**, in this order:
 
-| Hottest session          | Rail                                                             |
-| ------------------------ | ---------------------------------------------------------------- |
-| needs input              | `--warning`                                                      |
-| failed                   | `--red`                                                          |
-| working (stuck included) | `--green` at **40%** (`bg-green/40`) — the **dim working green** |
-| idle, done, none         | nothing                                                          |
+| Hottest session          | Rail                                         |
+| ------------------------ | -------------------------------------------- |
+| needs input              | `--warning`                                  |
+| failed                   | `--red`                                      |
+| working (stuck included) | `--rail-working` — the **dim working green** |
+| idle, done, none         | nothing                                      |
 
-- **No new token** for the dim green: it is the existing `--color-green` at 40% opacity (Tailwind
-  `bg-green/40`, a `color-mix` on the token), so every theme derives it.
+- `--rail-working` is `--green` at **40%** (`color-mix(in oklab, var(--green) 40%, transparent)`), so
+  every dark theme and every extension theme derives it. The four light themes override it with a solid
+  green, where the 40% mix could not be told from the tree guide
+  ([§9 "Light themes: sidebar contrast"](#light-themes-sidebar-contrast)).
 - **Folder headers never get a rail** (the ring says it), nor does the idle-worktrees row.
 - **Motion:** colour in over `--dur`, out over `--dur-slow`, `--ease`; none under reduced motion.
   `forced-colors: active` → `CanvasText`.
 - The checkout row names the state for assistive tech: "{branch}, needs you" / "failed" /
   "agent working". Folded, the name goes on to say the session count the row shows
   ("{branch}, agent working, 2 sessions"), because the name replaces the row's content.
-- **Accepted:** the dim green is 1.87:1 against `--sidebar` (under 3:1); the session dots still carry
-  "working".
+- **Accepted (dark themes):** the dim green is 1.87:1 against `--sidebar` in `default-dark` (under
+  3:1); the session dots still carry "working". The light themes hold 3:1 or more.
 
 #### Needs attention
 
@@ -2426,8 +2436,9 @@ own under Floating panels).
 - **A section with nothing in it is not rendered at all.**
 - **Open body:** content-sized, at most `min(380px, 45vh)`, scrolls inside; the head stays put. The
   folder list keeps at least `min(160px, 40vh)`.
-- **Narrow sidebar:** below 260px an approval row's Allow and Deny drop under its text, so the
-  command keeps at least 60px of width.
+- **Approval rows stack at every width** (approved screen: `screens/sidebar.html`, dock open): the
+  command takes its own line(s), and Allow and Deny sit **under** it, never beside it. The command is
+  shown **whole** (see "Needs you rows"), so no width of the sidebar can hide what is being approved.
 - **Needs you** holds the pending approval rows and the parked agent confirms, with the same anatomy and the same disclosure rules (§6
   "Needs you rows"). It never opens itself; the OS notification deep-link, `⌘⇧A` and the "Open
   approvals" palette action open it (and expand a collapsed sidebar).
@@ -7283,8 +7294,8 @@ var(--color-accent)`, **unticked by default**) + a block with the **kind**
 
 #### Sidebar indicator (`SidebarFolder.vue`)
 
-**On the redesigned row the chip is compact** (§6 "Sidebar tree → Session rows": `⚠ n`, full text on
-hover); the data, tone and matching rules below still apply.
+**On the redesigned row the chip is compact** (§6 "Sidebar tree → Session rows": `⚠ n` at rest,
+progress and that count on hover); the data, tone and matching rules below still apply.
 
 The **last** (rightmost) entry of the session row's trailing chip cluster:
 StopFailure → subagent count → orchestrator crown → teammate count → **mission
@@ -7294,7 +7305,9 @@ record** it shows the **pill's own text and tone** ("4/21 · 3 for you",
 `lib/mission-pane-view.ts`) on the session that **leads** the mission. For a
 **v3 file** the view channel reads as v4 (since the cut-over) it shows the same
 text and tone, so one mission never carries two different counts on one screen;
-`chipFor` in `stores/missions.ts` picks by the record's source. The paragraph
+`chipFor` in `stores/missions.ts` picks by the record's source. That text is what
+the chip's `title` and accessible name carry; what the row **draws** on hover
+drops its words (§6 "Sidebar tree → Session rows → Mission chip (compact)"). The paragraph
 below describes the v3 headline (it also serves a build without the v4
 channel). The compact headline (`{n}/{m}`, `{n}–{to}/{m}`, `{m}/{m} ✓`),
 `10.5px`, `tabular-nums`, `gap: 3px`, colored with the **pill's tone** (the
@@ -9265,7 +9278,8 @@ count, and last activity (`folderActivity` → `relativeTime`).
   `foldersGitStatus(path)` — **its own probe, throttled/cached 5s, outside** `git-probe.ts`'s
   hot `rev-parse`. Shows the cheap fields **right away** and the expensive ones with a "…"/skeleton
   until resolved; failure (not a repo, no upstream) **omits** the fields, never breaks the
-  card. `dirty` in `--warning` when > 0; ahead/behind in `--text-3` (`↑n ↓n`).
+  card. `dirty` in `--warning` when > 0, and `clean` (`preview.folder.clean`) in `--text-4` at 0;
+  ahead/behind in `--text-3` (`↑n ↓n`). The [Folder View](#folder-view-folderviewvue) reuses these keys.
 
 **Hot cue (T79 S3 — "where we left off" in 1s):** below the session count, separated by
 a `border-t --border` (`margin-top 8px`, `padding-top 8px`), a block with an **eyebrow**
@@ -9385,19 +9399,24 @@ the order toggle have nothing to act on. What the dock inherits is the row anato
 #### Needs you rows
 
 - **"Needs you" row (`ApprovalRow`):** amber dot `bg-warning` (same as
-  `needs-input`, `margin-top: 4px` to sit level with the first text line) + the
-  **tool summary** (`Bash(rm -rf build)` — technical string assembled in the
-  main process, **untranslated**, mono `12.5px`) + `<folder alias> · <session
-summary>` (`--text-4` `11px`). **2-line clamp** on both lines (`line-clamp-2`,
-  `line-height: 1.4`) — BUG-36: this used to be single-line `truncate`, which
-  crowded the Allow/Deny buttons against clipped mid-word text on any
-  realistic tool summary. Clicking the **body** opens the tab (inspection). On
-  the right, **Allow** and **Deny**, row alignment `items-start` (not
-  `items-center`) with `margin-top: 2px` on the button pair so they don't sit
-  flush against a row that's wrapped to 2 lines. The parked-confirm row
-  (`McpConfirmRow`, collapsed state) gets the same clamp-2 + `items-start`
-  treatment on its prompt line — Allow/Deny stay hidden until expanded either
-  way (the T08 disclosure contract, unaffected by this fix).
+  `needs-input`, 7px, centred on the first text line: `margin-top: 5px`) beside one column that holds,
+  top to bottom (`gap: 6px`):
+  1. the **tool call** (`Bash(rm -rf build)` — a technical string, **untranslated**, mono `12.5px` /
+     `1.4`, `--text`), **whole**: it wraps (`white-space: pre-wrap`, `overflow-wrap: anywhere`) between
+     words — each word is its own `inline-block`, so a line never breaks after a flag's hyphens; only a
+     word wider than the row is split — and is never clamped, truncated or ellipsised — this is what the operator is approving. It is built from the
+     wire's full tool input with the same function the main process summarises with, not from the
+     shortened `summary`; a long command makes a tall row, which the dock body scrolls, so Allow is
+     reached after the whole of it. "Whole" means the part that function picks is never cut, not every
+     argument: `Bash` shows its command, the file and search tools their path or pattern, an MCP tool
+     its first argument only, any other tool its name only;
+  2. `<folder alias> · <session summary>` (`--text-4` `11px` / `1.4`, `line-clamp-2`), 2px under the call;
+  3. **Allow** and **Deny**, left-aligned with the text, wrapping if the column is too narrow for both.
+
+  Clicking the **body** (the two text blocks) opens the tab (inspection). The parked-confirm row
+  (`McpConfirmRow`, collapsed state) places its dot the same way, keeps a 2-line clamp on its prompt line and `items-start`: it has
+  no buttons until expanded, and expanding shows the full disclosure (the T08 contract).
+
 - **Allow/Deny buttons:** combinations of existing tokens, **no new color**. **Allow**
   = `bg-green-soft` / `text-green`; **Deny** = `bg-red-soft` / `text-red`
   (same anatomy as `SessionMenu`'s destructive item). `check` / `x` icons,
@@ -14460,6 +14479,10 @@ codebase is a bug to fix.
     0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 12px 32px rgba(0, 0, 0, 0.45),
     0 2px 8px rgba(0, 0, 0, 0.3);
 
+  /* sidebar marks (§6 "Row states", "Group rail"), derived; light themes override them */
+  --rail-working: color-mix(in oklab, var(--green) 40%, transparent);
+  --bar-selected: var(--accent);
+
   /* floating panels (§6 "Floating panels layout"), used only under :root[data-floating] */
   --canvas: color-mix(in oklab, var(--bg) 62%, black); /* dark themes; light themes override it */
   --float-gap: 4px; /* between islands, and from an island to the window edge */
@@ -14566,6 +14589,45 @@ Adding a theme = (1) a complete `:root[data-theme='<id>']` block in
 `theme.<id>` in **both** locales, (4) a row in this table. Alternate theme accents
 can stray from terracotta — the "single warm accent" rule applies to the
 default theme; each theme keeps its own identity.
+
+### Light themes: sidebar contrast
+
+The sidebar says state with 2px marks and its quietest labels in `--text-4`, which washed out on a
+light surface. Two tokens carry the marks, `--rail-working` and `--bar-selected`. Like `--canvas`,
+they are **not** part of the 20-token contract: the base derives them (`--green` at 40%, and
+`--accent`), which is right for every dark theme and is what an extension theme gets, and only the
+four light themes override them.
+
+| `data-theme`       | `--rail-working` | `--bar-selected`    | `--text-3`                | `--text-4`                | `--warning`               |
+| ------------------ | ---------------- | ------------------- | ------------------------- | ------------------------- | ------------------------- |
+| `light`            | `#55a06c`        | `#1d4ed8` (blue)    | `#52525b` (was `#71717a`) | `#696972` (was `#a1a1aa`) | `#926100` (was `#ca8a04`) |
+| `catppuccin-latte` | `#5a8c50`        | `#1e66f5` (blue)    | `#5f627a` (was `#6c6f85`) | `#626579` (was `#7c7f93`) | `#845500` (was `#df8e1d`) |
+| `github-light`     | `#53966a`        | = `--accent` (blue) | `#59636e` (was `#656d76`) | `#646c75` (was `#818b98`) | `#9a6700` (unchanged)     |
+| `gruvbox-light`    | `#6f8c38`        | `#458588` (blue)    | `#665c54` (unchanged)     | `#72665c` (was `#7c6f64`) | `#955700` (was `#b57614`) |
+
+`--warning-soft` and `--warning-line` are the theme's `--warning` at 0.10 and 0.30.
+
+What the values hold, against `--sidebar` unless said (WCAG ratio):
+
+| `data-theme`       | rail | rail vs tree guide | bar  | `--text-4` | `--warning` |
+| ------------------ | ---- | ------------------ | ---- | ---------- | ----------- |
+| `light`            | 3.17 | 2.14               | 6.70 | 5.43       | 5.34        |
+| `catppuccin-latte` | 3.26 | 2.18               | 4.04 | 4.72       | 5.26        |
+| `github-light`     | 3.32 | 1.76               | 4.88 | 5.00       | 4.57        |
+| `gruvbox-light`    | 3.48 | 1.76               | 3.84 | 5.06       | 5.24        |
+
+- **Text** (`--text-4`, `--warning`) is 4.5:1 or more on `--sidebar` (`--text-4` keeps a margin: 4.6 or
+  more), and never under 3:1 on `--bg`,
+  `--surface` or `--surface-2`. On a `--surface-2` hover row it is under 4.5 in latte (`--text-4`
+  4.34) and gruvbox (`--text-4` 4.06, `--warning` 4.20).
+- **Marks** (rail, bar) are 3:1 or more on `--sidebar`.
+- **The rail and the tree guide differ by hue**, not mainly by lightness (1.76:1 to 2.18:1): their OKLab
+  a/b distance is 0.07 or more, which no grey reaches.
+- **The bar is blue** where the accent is orange: an orange bar sits between failed (red) and needs-you
+  (amber) and reads as one of them. The accent itself is unchanged, so buttons and links keep the
+  theme's identity.
+- In light themes the working rail reads as dim by its lower saturation more than by lightness.
+- `tests/light-theme-contrast.test.ts` holds these floors.
 
 ### Extension themes (Extension SDK Phase 1)
 

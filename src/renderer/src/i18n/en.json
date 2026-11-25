@@ -1255,7 +1255,7 @@
       "activity": "active {time}",
       "noActivity": "no activity yet",
       "changes": "{count} changes",
-      "clean": "no changes",
+      "clean": "clean",
       "ahead": "{n} ahead",
       "behind": "{n} behind",
       "memoryLabel": "Where we left off"

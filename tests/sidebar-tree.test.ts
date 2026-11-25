@@ -267,22 +267,36 @@ describe('sidebar flat checkout tree (S-1)', () => {
       compact: '2/5 · 1 for you',
       tone: 'warning',
       needsYou: true,
-      owed: 1
+      owed: 1,
+      progress: '2/5'
     }
     const missions = useMissionsStore()
     vi.spyOn(missions, 'chipFor').mockImplementation((id) =>
-      id === 'main-1' ? chip : id === 'feat-1' ? { ...chip, needsYou: false, owed: 0 } : null
+      id === 'main-1'
+        ? chip
+        : id === 'feat-1'
+          ? { ...chip, text: '2/5', needsYou: false, owed: 0, progress: undefined }
+          : null
     )
     const { w } = await boot()
 
     const row = w.get('[data-session-row][data-session-id="main-1"]')
     // No age, context or branch: at rest the row reads title + owed number only.
     const full = row.get('[data-mission-full]')
-    expect(row.text().replace(full.text(), '').replace(/\s+/g, ' ').trim()).toBe('Summary main-1 1')
+    const atRest = row.element.cloneNode(true) as HTMLElement
+    atRest.querySelector('[data-mission-full]')!.remove()
+    expect(atRest.textContent!.replace(/\s+/g, ' ').trim()).toBe('Summary main-1 1')
     expect(row.text()).not.toContain('feat/branch-on-session')
 
     expect(row.get('[data-mission-count]').text()).toBe('1')
-    expect(full.text()).toBe('2/5 · 1 for you')
+    // On hover or focus: the progress, then the count behind the same alert icon, and no words.
+    expect(full.text().replace(/\s+/g, ' ')).toBe('2/5 · 1')
+    expect(full.find('svg.lucide-triangle-alert').exists()).toBe(true)
+    expect(full.get('[data-mission-owed]').text()).toBe('1')
+    // The words stay where a tooltip and a screen reader find them.
+    const named = row.get('[data-dsqa="sidebar-mission-chip"]')
+    for (const name of ['title', 'aria-label'])
+      expect(named.attributes(name)).toContain('2/5 · 1 for you')
     // Overlaid on the title tail: it takes no width.
     expect(full.classes()).toEqual(
       expect.arrayContaining(['absolute', 'opacity-0', 'group-hover:opacity-100'])
@@ -295,6 +309,61 @@ describe('sidebar flat checkout tree (S-1)', () => {
     const quiet = w.get('[data-session-row][data-session-id="feat-1"]')
     expect(quiet.find('[data-mission-count]').exists()).toBe(false)
     expect(quiet.get('[data-mission-full]').classes()).toContain('absolute')
+  })
+
+  it('the mission hover text says no words in pt-BR either', async () => {
+    i18n.global.locale.value = 'pt-BR'
+    try {
+      vi.spyOn(useMissionsStore(), 'chipFor').mockImplementation((id) =>
+        id === 'main-1'
+          ? {
+              text: '2/5 · 7 para você',
+              compact: '2/5 · 7 para você',
+              tone: 'warning',
+              needsYou: true,
+              owed: 7,
+              progress: '2/5'
+            }
+          : null
+      )
+      const { w } = await boot()
+      const row = w.get('[data-session-row][data-session-id="main-1"]')
+      const full = row.get('[data-mission-full]')
+      expect(full.text().replace(/\s+/g, ' ')).toBe('2/5 · 7')
+      expect(full.text()).not.toContain('para você')
+      expect(row.get('[data-dsqa="sidebar-mission-chip"]').attributes('title')).toContain(
+        '7 para você'
+      )
+    } finally {
+      i18n.global.locale.value = 'en'
+    }
+  })
+
+  it('beside the subagent count the hover text does not draw the owed count twice', async () => {
+    vi.spyOn(useMissionsStore(), 'chipFor').mockImplementation((id) =>
+      id === 'main-1'
+        ? {
+            text: '2/5 · 7 for you',
+            compact: '2/5 · 7 for you',
+            tone: 'warning',
+            needsYou: true,
+            owed: 7,
+            progress: '2/5'
+          }
+        : null
+    )
+    const { w, store } = await boot()
+    const first = store.folders.find((f) => f.path === APP)!.sessions[0]
+    first.agents = [{ agentId: 'agent-1', status: 'running', agentType: 'Explore' }] as never
+    await nextTick()
+    const row = w.get(`[data-session-row][data-session-id="${first.sessionId}"]`)
+    // The overlay sits left of the cluster, while the row's own `⚠ 7` stays at the end.
+    const full = row.get('[data-mission-full]')
+    expect(full.text()).toBe('2/5')
+    expect(full.find('svg').exists()).toBe(false)
+    expect(row.get('[data-mission-count]').text()).toBe('7')
+    // And it keeps clear of the chip that follows it.
+    expect(full.classes()).toContain('pr-2')
   })
 
   it('collapse button cycles three levels', async () => {
@@ -646,7 +715,7 @@ describe('sidebar group rail priority (S-3)', () => {
       new RegExp(
         `\\[data-checkout-group\\]\\[data-group-rail='${state}'\\]\\s*\\{[^}]*--rail-color:\\s*([^;]+);`
       ).exec(css)?.[1]
-    expect(colour('working')).toBe('color-mix(in oklab, var(--color-green) 40%, transparent)')
+    expect(colour('working')).toBe('var(--color-rail-working)')
     expect(colour('needs-input')).toBe('var(--color-warning)')
     expect(colour('failed')).toBe('var(--color-red)')
   })

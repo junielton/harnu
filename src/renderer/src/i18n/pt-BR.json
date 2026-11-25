@@ -1255,7 +1255,7 @@
       "activity": "ativa {time}",
       "noActivity": "sem atividade ainda",
       "changes": "{count} alterações",
-      "clean": "sem alterações",
+      "clean": "limpo",
       "ahead": "{n} à frente",
       "behind": "{n} atrás",
       "memoryLabel": "Onde paramos"

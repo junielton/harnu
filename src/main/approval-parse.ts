@@ -25,9 +25,10 @@ export interface PendingApprovalWire {
   /** body.tool_input normalized to a flat string→string record (complex values
    *  become short JSON). Never null. */
   toolInput: Record<string, string>
-  /** Short readable summary (e.g. `Bash(rm -rf build)`) — computed here so the
-   *  renderer never has to import the pure fn across the process boundary. A
-   *  technical string (tool names untranslated, §8), not i18n copy. */
+  /** Short readable summary (e.g. `Bash(rm -rf build)`), its argument cut at
+   *  {@link DEFAULT_MAX_LEN}. A technical string (tool names untranslated, §8),
+   *  not i18n copy. The renderer imports {@link toolSummary} too: the dock's
+   *  approval row rebuilds the call uncut from `toolInput`. */
   summary: string
   createdAtMs: number
   deadlineMs: number

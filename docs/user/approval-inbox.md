@@ -6,7 +6,7 @@ Harnu's optional **hook interceptor** parks its decisions in the same place — 
 
 ## Needs you
 
-**Needs you** sits above **Add folder**. It shows only while something is waiting, and it starts folded: one line with the number of pending items and how long the oldest has been waiting. Click it to open the list; the list scrolls inside its own box when it is long, and in a very narrow sidebar Allow and Deny sit under the command. It never opens by itself. A new request plays its sound and raises a system notification and the number goes up, but nothing on screen moves until you ask.
+**Needs you** sits above **Add folder**. It shows only while something is waiting, and it starts folded: one line with the number of pending items and how long the oldest has been waiting. Click it to open the list; the list scrolls inside its own box when it is long. Each request shows what it is asking about, never shortened, with Allow and Deny under it ([what each kind of tool shows](#reviewing-a-pending-item)). It never opens by itself. A new request plays its sound and raises a system notification and the number goes up, but nothing on screen moves until you ask.
 
 Three things open it, and each one also expands the sidebar if you had collapsed it:
 
@@ -22,7 +22,12 @@ There is no separate status column. The sidebar tree says it: a ring on each fol
 
 ## Reviewing a pending item
 
-Most tool calls show as a simple row: what folder/session it's from, a short technical summary of the call, and **Allow** / **Deny**.
+Most tool calls show as a simple row: a technical summary of the call, what folder/session it's from, and **Allow** / **Deny**. The summary is never shortened, but it is not every argument of the call:
+
+- `Bash` shows the whole command.
+- File and search tools (`Read`, `Edit`, `Write`, `Glob`, `Grep` and the like) show the path or the pattern, not the content being written.
+- An MCP tool shows its first argument only.
+- Any other tool shows its name only.
 
 A confirm that's been parked from a live session (because you weren't looking at its window when it needed you) expands into more detail: the exact prompt, any shell command it wants to run, its permission mode, and any non-default flags — reviewed before you decide, not after. This kind of row can also carry:
 
