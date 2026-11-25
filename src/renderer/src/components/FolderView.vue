@@ -413,7 +413,7 @@ function onTerminalHere(): void {
           <h1 class="truncate text-text" style="font-size: 18px; font-weight: 600">{{ label }}</h1>
           <!-- T285 — `min-w-0` + `truncate`, not `shrink-0`. A card branch name
                runs to ~295px, and the pane can be far narrower than the window
-               (sidebar + Fleet rail). Left unshrinkable it pushed the header out
+               (the sidebar and any helper panes). Left unshrinkable it pushed the header out
                of the view instead of truncating (AC-3). -->
           <span
             v-if="isGitFolder"

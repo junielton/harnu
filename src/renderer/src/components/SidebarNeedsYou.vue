@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
  * The dock's Needs you section (design.md §6 "Bottom dock" and "Needs you rows"): the parked agent
- * confirms and the pending approvals the Fleet rail held, with the same rows. Not rendered while
- * there are none.
+ * confirms and the pending approvals. Not rendered while there are none.
  */
 import { computed } from 'vue'
 import { useSessionsStore } from '../stores/sessions'
