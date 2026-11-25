@@ -137,6 +137,7 @@ function preview(event: MouseEvent): void {
   >
     <button
       type="button"
+      data-folder-select
       class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch pl-3 text-left text-[12.5px] font-medium text-text"
       :class="allHidden && 'opacity-50'"
       :aria-current="current ? 'page' : undefined"

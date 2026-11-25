@@ -85,7 +85,7 @@ function respond(verdict: 'allow' | 'deny'): void {
     >
       <span
         class="shrink-0 rounded-full bg-warning"
-        style="width: 7px; height: 7px; margin-top: 4px"
+        style="width: 7px; height: 7px; margin-top: 5px"
       />
       <span class="flex min-w-0 flex-1 flex-col items-start" style="gap: 2px">
         <span
