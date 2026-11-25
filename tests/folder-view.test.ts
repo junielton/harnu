@@ -863,3 +863,106 @@ describe('FolderView sibling worktree state (T287)', () => {
     expect(dot.classes()).toContain('bg-text-4')
   })
 })
+
+/**
+ * Sidebar redesign S-6 — the slim Folder View (design.md §6 "Folder View"): the
+ * folder's identity, its actions and one roadmap line. What the sidebar already
+ * shows (counts, worktrees, sessions, memory, activity, the owned card) is gone.
+ */
+const BOARD_PEEK = {
+  counts: { backlog: 4, ready: 3, 'in-progress': 1, review: 4, done: 2 },
+  active: [
+    {
+      slug: 'slim-1',
+      id: 'T900',
+      title: 'a card the board holds',
+      status: 'in-progress',
+      blocked: false,
+      session: 'sess-slim',
+      executedIn: 'card/x'
+    }
+  ],
+  owned: {
+    slug: 'slim-1',
+    id: 'T900',
+    title: 'a card the board holds',
+    status: 'in-progress',
+    blocked: false,
+    session: 'sess-slim',
+    executedIn: 'card/x'
+  }
+}
+
+/** Every block the slim view dropped, by the test id it used to render under. */
+const REMOVED_BLOCKS = [
+  'folder-view-kpis',
+  'folder-view-kpi-needs-you',
+  'folder-view-fanout',
+  'folder-view-worktrees',
+  'folder-view-worktree',
+  'folder-view-sessions-section',
+  'folder-view-session',
+  'folder-view-empty-cta',
+  'folder-view-older-toggle',
+  'folder-view-archived-toggle',
+  'folder-view-memory',
+  'folder-view-activity',
+  'folder-view-owned-card',
+  'folder-view-scope-tag'
+]
+
+describe('FolderView slim (sidebar redesign S-6)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('renders identity and actions only', async () => {
+    for (const seedIt of [seedMainOfRepo, seedWorktree]) {
+      setActivePinia(createPinia())
+      const memoryRead = vi.fn().mockResolvedValue(HOT)
+      const prStackLoad = vi.fn().mockResolvedValue(null)
+      mockApi({ roadmapPeek: vi.fn().mockResolvedValue(BOARD_PEEK), memoryRead, prStackLoad })
+      seedIt()
+      const store = useSessionsStore()
+      // A session in each checkout, so a sessions list or a fan-out would have rows to draw.
+      for (const f of store.folders) {
+        f.sessions.push({
+          sessionId: `sess-${f.alias}`,
+          projectPath: f.path,
+          summary: `session of ${f.alias}`,
+          firstPrompt: `session of ${f.alias}`,
+          status: 'idle',
+          messageCount: 4,
+          created: new Date().toISOString(),
+          modified: new Date().toISOString()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+      }
+      const wrapper = mountView()
+      await flushPromises()
+
+      for (const id of REMOVED_BLOCKS) {
+        expect(wrapper.find(`[data-test="${id}"]`).exists(), id).toBe(false)
+      }
+      const text = wrapper.text()
+      expect(text).not.toContain('session of')
+      expect(text).not.toContain('landing the scope tags')
+      expect(text).not.toContain('a card the board holds')
+      // The view makes no read for a part it no longer draws.
+      expect(memoryRead).not.toHaveBeenCalled()
+      expect(prStackLoad).not.toHaveBeenCalled()
+
+      // What stays: identity, git, actions and the one roadmap line.
+      const folder = store.findFolderByPath(store.selectedFolderPath!)!
+      expect(wrapper.get('h1').text()).toBe(folder.alias)
+      expect(wrapper.get('[data-test="folder-view-branch"]').text()).toBe(folder.gitBranch)
+      expect(wrapper.get('[data-test="folder-view-git"]').text()).toBe('3 changes · ↑1')
+      expect(wrapper.get('[data-test="folder-view-path"]').text()).toBe(folder.path)
+      expect(wrapper.find('[data-test="folder-view-actions"]').exists()).toBe(true)
+      expect(wrapper.findAll('[data-test="folder-view-roadmap"]')).toHaveLength(1)
+      expect(wrapper.get('[data-test="folder-view-roadmap"]').text()).toBe(
+        'Roadmap1 in progress · 3 ready · 4 in review'
+      )
+    }
+  })
+})
