@@ -14,7 +14,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Fixed
 
-- Opening the Usage Dashboard no longer freezes Harnu for a moment when the turn ledger is large. The ledger, which corrects the estimated cost with the totals Claude Code measured, is now read off the main process, so typing and terminal output keep flowing while the dashboard loads. The numbers are the same as before.
+- Opening the Usage Dashboard no longer freezes Harnu when the turn ledger is large. The ledger, which corrects the estimated cost with the totals Claude Code measured, is now read off the main process, so typing and terminal output keep flowing while the dashboard loads. In tests with a large ledger and measured costs in use, the app could previously stop responding for more than a minute. The numbers are the same as before.
 
 ## 2026-11-24
 
