@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","model":"x"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task"},{"type":"tool_use","name":"Bash"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent"},{"type":"text","text":"Task"}]}}
+{"type":"result","result":"Task Agent"}
