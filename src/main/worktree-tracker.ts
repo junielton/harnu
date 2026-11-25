@@ -11,6 +11,7 @@
  *   watches armed; a dropped repo has its watches closed and its listing
  *   forgotten; a `memberPaths`-only change re-matches the last listing without a
  *   re-list; a `probePath` change re-lists.
+ *   `replay` (a page that has just loaded) re-sends every tracked repo's cached listing.
  * - Watch events → 500 ms trailing debounce per repo → single-flight listing →
  *   `emit` only when the matched entries changed. One spawn per repo per burst.
  * - Bounds: at most 64 tracked repos (the first 64 of the `track` input, in
@@ -70,8 +71,13 @@ export interface WorktreeTrackerDeps {
   now(): number
 }
 
+export interface TrackOptions {
+  /** The caller holds nothing (a new or reloaded page): send every tracked repo again. */
+  replay?: boolean
+}
+
 export interface WorktreeTracker {
-  track(repos: TrackedRepo[]): void
+  track(repos: TrackedRepo[], options?: TrackOptions): void
   close(): void
 }
 
@@ -341,7 +347,7 @@ export function createWorktreeTracker(
   }
 
   return {
-    track(next) {
+    track(next, options) {
       canonMemo = new Map()
       const unique = new Map<string, TrackedRepo>()
       for (const r of next) if (!unique.has(r.repoId)) unique.set(r.repoId, r)
@@ -364,8 +370,10 @@ export function createWorktreeTracker(
           const probeChanged = s.repo.probePath !== r.probePath
           const membersChanged = s.repo.memberPaths.join('\0') !== r.memberPaths.join('\0')
           s.repo = r
+          // Forgetting what was sent makes the next publish send it, cached or fresh.
+          if (options?.replay) s.last = null
           if (probeChanged) void list(s)
-          else if (membersChanged) void publish(s)
+          else if (membersChanged || options?.replay) void publish(s)
           continue
         }
         const fresh: RepoState = {

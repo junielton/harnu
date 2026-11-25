@@ -80,8 +80,8 @@ export function registerWorktreeTracker(getWindow: () => PushTarget | null): () 
     const win = getWindow()
     if (win && !win.isDestroyed()) win.webContents.send('worktrees:changed', { repoId, entries })
   })
-  ipcMain.handle('worktrees:track', (_e, repos: unknown) => {
-    tracker.track(sanitizeRepos(repos))
+  ipcMain.handle('worktrees:track', (_e, repos: unknown, options?: { replay?: unknown }) => {
+    tracker.track(sanitizeRepos(repos), { replay: options?.replay === true })
   })
   return () => tracker.close()
 }

@@ -12,6 +12,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-25
 
+### Fixed
+
+- Worktrees with no session no longer disappear from the sidebar after the window reloads.
+
 ### Changed
 
 - The sidebar is now a flat checkout tree. Each repository or folder has one header, with the main checkout first and its worktrees flat below it, and each checkout's sessions under it, joined by a thin guide line. Parent-directory groups and the indented worktree lineage are no longer drawn (**Set parent folder** is still in the menu).
