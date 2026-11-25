@@ -385,6 +385,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 - **A cold start now reads as "loading", not "empty", even on a remembered drill-in screen.** With drill-in on and a remembered folder or repo screen, the sidebar used to show only the Back row over a blank list while your folders were still loading, and the main pane showed "Welcome to Harnu" as if you had no folders. Now the "Loading folders…" spinner appears right under the Back row, so you keep your place, and the main pane stays on its ready screen until folders load; then your remembered screen comes back exactly as before. The "nothing yet" and "no matches" messages show under the Back row too, instead of a blank body. The welcome screen still appears when loading finishes with no folders.
 - **Session cards in the Fleet rail now sit centred.** The gap between a card and the rail's right border was wider than the gap on the left, because room for the scrollbar was always reserved on the right even when nothing scrolled. The same room is now reserved on the left too, so both gaps match with or without a visible scrollbar, and cards still don't change width when the scrollbar appears.
 
+- **The spec skill now works in a repo that has no spec template.** The skill used to expect `docs/specs/TEMPLATE.md` to exist in the repo, so writing a spec outside Harnu's own repo meant copying the template in by hand. The template now travels with the skill, and the skill uses the repo's own template when there is one and its own copy otherwise.
+
 ## 2026-11-06
 
 ### Added
