@@ -251,7 +251,7 @@ describe('consistency (BUG-78 AC14, mounted surfaces)', () => {
     store.select(ID)
 
     const side = mount(SidebarFolder, {
-      props: { folder, headerless: true },
+      props: { folder },
       global: { plugins: [i18n] }
     })
     const row = side.find(`[data-session-row][data-session-id="${ID}"]`)

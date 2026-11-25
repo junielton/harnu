@@ -5,7 +5,9 @@ import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
 import { i18n } from '@renderer/i18n'
 import Sidebar from '../src/renderer/src/components/Sidebar.vue'
+import FolderMenu from '../src/renderer/src/components/FolderMenu.vue'
 import { useSessionsStore, type Session } from '../src/renderer/src/stores/sessions'
+import { useUiStore } from '../src/renderer/src/stores/ui'
 import type { FolderEntry, UserProject } from '../src/preload'
 
 /**
@@ -14,6 +16,9 @@ import type { FolderEntry, UserProject } from '../src/preload'
  * scrollbar (AC-24) is measured and captured in the running app. Neutral
  * vocabulary only.
  */
+
+// …and no scrollIntoView.
+Element.prototype.scrollIntoView ??= () => {}
 
 const APP = '/w/org-a/api-gateway'
 const WT = '/w/org-a/wt/PROJ-231-rate-limit'
@@ -88,7 +93,15 @@ function installWindow(disk: FolderEntry[], hidden: string[] = []): void {
       hiddenPaths = [...hiddenPaths, path]
       return { projects, hiddenPaths }
     }),
+    userProjectsUnhide: vi.fn(async (path: string) => {
+      hiddenPaths = hiddenPaths.filter((p) => p !== path)
+      return { projects, hiddenPaths }
+    }),
     orchestratorListArmed: vi.fn(async () => []),
+    // What opening the folder menu probes.
+    userProjectsListBornFromCandidates: vi.fn(async () => []),
+    worktreeMdProbe: vi.fn(async () => ({ manifestPath: '', exists: false, repoRoot: APP })),
+    modesList: vi.fn(async () => []),
     probeGit: vi.fn(async () => []),
     getPathForFile: vi.fn(() => null)
   }
@@ -293,7 +306,45 @@ describe('AC-21 Focus on one folder', () => {
   })
 })
 
+describe('AC-21 the folder menu is the other way in', () => {
+  const item = (): HTMLElement | undefined =>
+    [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (el) => el.textContent?.trim() === 'Focus this folder'
+    )
+
+  async function openMenu(path: string): Promise<void> {
+    useUiStore().openFolderMenu({ projectPath: path, x: 10, y: 10 })
+    await flushPromises()
+  }
+
+  it('offers Focus for another folder and not for the focused one', async () => {
+    const store = await boot()
+    const menu = mount(FolderMenu, { global: { plugins: [i18n] }, attachTo: document.body })
+
+    await openMenu(WT)
+    item()!.click()
+    await flushPromises()
+    // A checkout's menu focuses its whole folder.
+    expect(store.sidebarFocus).toBe(APP)
+    expect(trees()).toEqual([`${APP} + ${WT}`])
+
+    await openMenu(WT)
+    expect(item()).toBeUndefined()
+    useUiStore().closeFolderMenu()
+    await openMenu(WEB)
+    expect(item()).toBeDefined()
+    menu.unmount()
+  })
+})
+
 describe('AC-23 Focus follows the selection and survives a restart', () => {
+  it('ignores a stored value that is not a path', async () => {
+    localStorage.setItem(FOCUS_KEY, '{"kind":"folder"}')
+    await boot()
+    expect(back()).toBeNull()
+    expect(trees()).toHaveLength(4)
+  })
+
   it('leaves and restores focus', async () => {
     let store = await boot()
     await focusFolder(APP)

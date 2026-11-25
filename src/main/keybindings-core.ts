@@ -71,7 +71,6 @@ export type ShortcutActionId =
   | 'session.closeTerminal'
   | 'sidebar.jump'
   | 'sidebar.rescan'
-  | 'sidebar.cycleDrillDepth'
   | 'sidebar.toggleCollapseAll'
   | 'sidebar.hiddenFolders'
   | 'folder.rename'
@@ -367,7 +366,6 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   // fires over a focused terminal although it has no menu item.
   def('sidebar.jump', 'sidebar', 'Cmd+Shift+F'),
   def('sidebar.rescan', 'sidebar', null),
-  def('sidebar.cycleDrillDepth', 'sidebar', null),
   def('sidebar.toggleCollapseAll', 'sidebar', null),
   def('sidebar.hiddenFolders', 'sidebar', null),
   def('sidebar.cursor.down', 'sidebar', 'ArrowDown', { palette: false }),

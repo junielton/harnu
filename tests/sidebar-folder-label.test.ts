@@ -34,10 +34,10 @@ function makeSession(over: Partial<Session> & { sessionId: string }): Session {
   } as Session
 }
 
-/** Mount a headerless `SidebarFolder` (rows render without expanding the folder). */
+/** Mount one checkout's rows (`SidebarFolder` renders them whatever `expanded` says). */
 function mountFolder(folder: Folder): VueWrapper {
   return mount(SidebarFolder, {
-    props: { folder, headerless: true },
+    props: { folder },
     global: { plugins: [i18n] }
   })
 }

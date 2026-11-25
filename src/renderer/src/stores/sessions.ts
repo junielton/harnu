@@ -925,120 +925,13 @@ export const useSessionsStore = defineStore('sessions', () => {
     return last
   })
 
-  /** Legacy boolean drill-in preference, read once for migration (see DRILL_DEPTH_KEY). */
-  const DRILL_MODE_KEY = 'om2tab.sidebarDrillMode'
-
-  /** localStorage key for the drill-in navigation depth preference. */
-  const DRILL_DEPTH_KEY = 'om2tab.sidebarDrillDepth'
-
-  /** localStorage key for the drill-in navigation stack (T289 — where you were). */
-  const DRILL_STACK_KEY = 'om2tab.sidebarDrillStack'
-
   /**
-   * Deepest reachable drill level. The hierarchy is group → folder → sessions,
-   * so two pushes exhaust it; there is no level 3.
+   * Focus on one folder (design.md §6 "Sidebar tree → Focus"): the focused folder's primary
+   * checkout path, or null for the full list. Persisted; dropped when it no longer resolves.
    */
-  const DRILL_MAX_DEPTH = 2
-
-  /**
-   * One entry of the drill-in navigation stack — a group's member-folder list
-   * (by namespaced group key), or a single folder's session list. `drillStack`
-   * is empty at the root screen.
-   * See docs/specs/2026-07-19-sidebar-drill-in-navigation.md.
-   */
-  type DrillNode = { kind: 'group'; key: string } | { kind: 'folder'; path: string }
-
-  /**
-   * One-shot migration off the pre-2026-07-29 boolean preference: an operator
-   * who already ran drill-in gets depth 2, which is exactly the behavior that
-   * boolean produced. Only consulted when the depth key is absent, and never
-   * written back — `persistedRef` owns the new key from here on.
-   */
-  function legacyDrillDepthDefault(): number {
-    try {
-      return localStorage.getItem(DRILL_MODE_KEY) === 'true' ? DRILL_MAX_DEPTH : 0
-    } catch {
-      return 0
-    }
-  }
-
-  /**
-   * How many drill-in screens the sidebar may push before rows fall back to
-   * the classic inline tree (docs/specs/2026-07-29-sidebar-drill-depth-levels.md).
-   * `0` is the classic tree; `1` drills into a group and renders its folders
-   * inline; `2` is one screen at a time all the way to a folder's sessions.
-   */
-  const drillDepth = persistedRef<number>(DRILL_DEPTH_KEY, legacyDrillDepthDefault(), {
-    validate: (v) => Number.isInteger(v) && v >= 0 && v <= DRILL_MAX_DEPTH
+  const sidebarFocus = persistedRef<string | null>('om2tab.sidebarFocus', null, {
+    validate: (v) => v === null || typeof v === 'string'
   })
-
-  /**
-   * Whether the sidebar shows the drill-in navigator instead of the classic
-   * tree. Derived from {@link drillDepth} so every pre-existing consumer
-   * (`App.vue`'s shortcut gate, `Sidebar.vue`'s classic-tree `v-if`) keeps
-   * working untouched.
-   */
-  const drillModeEnabled = computed(() => drillDepth.value > 0)
-
-  /** Shape guard for one stored {@link DrillNode} — a corrupt entry invalidates the whole stack. */
-  function isDrillNode(v: unknown): v is DrillNode {
-    if (typeof v !== 'object' || v === null) return false
-    const n = v as Record<string, unknown>
-    if (n.kind === 'group') return typeof n.key === 'string' && n.key.length > 0
-    if (n.kind === 'folder') return typeof n.path === 'string' && n.path.length > 0
-    return false
-  }
-
-  /**
-   * The current drill-in navigation path — persisted (T289), so reopening the
-   * app lands on the screen you left instead of bouncing back to the root.
-   *
-   * Persistence is deliberately in two halves. This `persistedRef` only
-   * validates the stored SHAPE; whether each node still points at a real
-   * folder/group can't be known at store-construction time (the model loads
-   * asynchronously). {@link reconcileDrillStack} runs that resolution check
-   * once `init()` has the folders, and empties the stack if any node is gone —
-   * so a stale entry can never strand the sidebar on a screen that renders
-   * nothing.
-   */
-  const drillStack = persistedRef<DrillNode[]>(DRILL_STACK_KEY, [], {
-    validate: (v) => Array.isArray(v) && v.every(isDrillNode)
-  })
-
-  /**
-   * Whether one restored {@link DrillNode} still names a screen worth landing
-   * on. A group must still be RENDERING (`groupInVisible`); a folder must still
-   * be known AND not one the user dismissed.
-   *
-   * The two halves are deliberately asymmetric. A folder is checked against
-   * `folders.value` rather than `visibleFolders`, because `folderScreen`
-   * renders off exactly that lookup — and because a folder that merely went
-   * `stale` overnight (no recent session, not pinned) is still a legitimate
-   * place to be; demanding visibility there would empty the stack every
-   * morning. `hidden` is the one exclusion that must be honored: the user
-   * explicitly dismissed that folder, and restoring straight onto its screen
-   * would resurface it as the sidebar's entire content (the leak shape
-   * `docs/lessons/code-patterns/001` describes — a new projection over the
-   * folder model forgetting a visibility axis the existing views apply).
-   */
-  function drillNodeStillResolves(node: DrillNode): boolean {
-    if (node.kind === 'group') return groupInVisible(node.key) !== null
-    return findFolderByPath(node.path) !== null && !manuallyHiddenPaths.value.has(node.path)
-  }
-
-  /**
-   * Drop a restored {@link drillStack} that no longer resolves. Called from
-   * `init()` after the folder model is loaded: every node must still pass
-   * {@link drillNodeStillResolves}, otherwise the whole stack is emptied (a
-   * partial stack would put the operator on a screen whose parent no longer
-   * exists). Also clamped to the current {@link drillDepth}, matching
-   * `cycleDrillDepth`'s truncation.
-   */
-  function reconcileDrillStack(): void {
-    if (drillStack.value.length === 0) return
-    const resolves = drillStack.value.every(drillNodeStillResolves)
-    drillStack.value = resolves ? drillStack.value.slice(0, drillDepth.value) : []
-  }
 
   /**
    * Sidebar GROUP aliases (T88), keyed by namespaced group key → custom label.
@@ -1099,7 +992,7 @@ export const useSessionsStore = defineStore('sessions', () => {
    * Sidebar density preset (design.md §4 "Row density"). Scales the sidebar's
    * own row heights, session-row gap, and left indent — Comfortable (default)
    * or Compact — without touching any surface outside the sidebar. Persisted to
-   * localStorage; read by `SidebarFolder` / `SidebarDrillView` via
+   * localStorage; read by the sidebar tree's rows via
    * `densityMetrics`.
    */
   const sidebarDensity = persistedRef<SidebarDensity>(SIDEBAR_DENSITY_KEY, 'comfortable', {
@@ -2586,9 +2479,11 @@ export const useSessionsStore = defineStore('sessions', () => {
     closedUnderFilter.value = next
   }
 
+  const listedFolders = computed<Folder[]>(() => listableVisibleFolders())
+
   const sortedListedFolders = computed<Folder[]>(() =>
     sortFolders(
-      filterQuery.value.trim() ? filteredFolders.value : listableVisibleFolders(),
+      filterQuery.value.trim() ? filteredFolders.value : listedFolders.value,
       folderSort.value
     )
   )
@@ -2606,12 +2501,17 @@ export const useSessionsStore = defineStore('sessions', () => {
     const ctx = buildClassifyCtx()
     return listableFolders.value.filter((folder) => {
       const zone = classifyFolder(folder, ctx)
-      return zone === 'pinned' || zone === 'active'
+      // A focused folder that went quiet overnight is still where the operator is.
+      return (
+        zone === 'pinned' ||
+        zone === 'active' ||
+        (zone === 'stale' && folder.path === sidebarFocus.value)
+      )
     })
   }
 
-  // The legacy drill and jump list retains parent-directory groups. Grouping
-  // can change their parent hints, so give it its own group objects.
+  // The jump list retains parent-directory groups. Grouping can change their
+  // parent hints, so give it its own group objects.
   const visibleFolders = computed<Array<Folder | FolderGroup<Folder>>>(() =>
     groupByParentDir(
       repoNodes.value.map((node) => (isFolderGroup(node) ? { ...node } : node)),
@@ -2717,12 +2617,94 @@ export const useSessionsStore = defineStore('sessions', () => {
     return !!filterQuery.value.trim() || idleWorktreesOpen.has(key)
   }
 
-  const collapseLevel = computed(() =>
-    treeCollapseLevel(sidebarTree.value, checkoutHasRows, checkoutsFolded.has)
+  // ── Focus on one folder ─────────────────────────────────────────────────────
+
+  /** Every checkout of the focused folder (the repo's, or the one standalone folder). */
+  const focusMemberPaths = computed<ReadonlySet<string> | null>(() => {
+    const path = sidebarFocus.value
+    if (path === null) return null
+    const repoId = findFolderByPath(path)?.repoId
+    if (!repoId) return new Set([path])
+    return new Set(folders.value.filter((f) => f.repoId === repoId).map((f) => f.path))
+  })
+
+  /** The focused folder's tree, held open. Null while it loads or a filter leaves nothing of it. */
+  const focusedTree = computed<TreeFolder | null>(() => {
+    const members = focusMemberPaths.value
+    const node =
+      members && sidebarTree.value.find((entry) => entry.paths.some((path) => members.has(path)))
+    if (!node) return null
+    return node.open ? node : { ...node, open: true }
+  })
+
+  /** What the list draws: the focused folder alone, else every folder. */
+  const drawnTree = computed<TreeFolder[]>(() => {
+    if (sidebarFocus.value === null) return sidebarTree.value
+    return focusedTree.value ? [focusedTree.value] : []
+  })
+
+  /** What waits in the other folders: each counts once, at its hottest session. */
+  const focusElsewhere = computed(() => {
+    const members = focusMemberPaths.value
+    const levels = new Map<string, number>()
+    if (members) {
+      for (const folder of listedFolders.value) {
+        if (members.has(folder.path)) continue
+        const key = folder.repoId || folder.path
+        levels.set(key, Math.max(levels.get(key) ?? 0, folderRingLevel(folder.path)))
+      }
+    }
+    const at = (level: number): number => [...levels.values()].filter((l) => l === level).length
+    return { others: levels.size, needsYou: at(3), failed: at(2) }
+  })
+
+  function enterFocus(path: string): void {
+    const node = sidebarTree.value.find((entry) => entry.paths.includes(path))
+    // The arrow cursor may sit on a row that is about to leave the screen.
+    keyboardCursor.value = null
+    sidebarFocus.value = node?.primary.path ?? path
+  }
+
+  function leaveFocus(): void {
+    sidebarFocus.value = null
+  }
+
+  function isInFocus(path: string): boolean {
+    return focusMemberPaths.value?.has(path) === true
+  }
+
+  function leaveFocusOutside(path: string): void {
+    if (focusMemberPaths.value && !focusMemberPaths.value.has(path)) leaveFocus()
+  }
+
+  // A focus that no longer resolves (folder gone, or dismissed) is dropped, but only once the
+  // model has loaded: a cold boot must not forget it while the folders are still on their way.
+  watch(
+    () => {
+      const path = sidebarFocus.value
+      return (
+        path !== null &&
+        !foldersLoading.value &&
+        (!findFolderByPath(path) || manuallyHiddenPaths.value.has(path))
+      )
+    },
+    (gone) => {
+      if (gone) leaveFocus()
+    }
   )
 
+  // Focused, the folder is always open, so level 1 is as low as it goes; one with no checkout
+  // rows has nothing else to fold.
+  const collapseLevel = computed<CollapseLevel>(() => {
+    if (sidebarFocus.value === null) {
+      return treeCollapseLevel(sidebarTree.value, checkoutHasRows, checkoutsFolded.has)
+    }
+    const node = focusedTree.value
+    return node?.git ? treeCollapseLevel([node], checkoutHasRows, checkoutsFolded.has) : 1
+  })
+
   const sidebarCursorRows = computed(() =>
-    flattenSidebarTree(sidebarTree.value, {
+    flattenSidebarTree(drawnTree.value, {
       hasRows: checkoutHasRows,
       checkoutFolded: checkoutsFolded.has,
       idleOpen: isIdleWorktreesOpen,
@@ -3057,6 +3039,8 @@ export const useSessionsStore = defineStore('sessions', () => {
    */
   function select(id: string): void {
     useUiStore().closeAllTakeovers()
+    const folder = findFolderBySessionId(id)
+    if (folder) leaveFocusOutside(folder.path)
     selectedId.value = id
     selectedFolderPath.value = null
   }
@@ -3200,16 +3184,16 @@ export const useSessionsStore = defineStore('sessions', () => {
   /**
    * Jump to a FOLDER: OPEN it (select it, so its `FolderView` renders in the
    * main pane — "search means take me there", not "highlight it in the tree"),
-   * expand the repo group it renders under, expand the folder itself, re-target
-   * the drill-in stack when drill-in is on, then raise the scroll-into-view +
-   * flash signals `Sidebar.vue` consumes.
+   * expand the repo group it renders under, expand the folder itself (leaving
+   * Focus when it is another folder), then raise the scroll-into-view + flash
+   * signals `Sidebar.vue` consumes.
    *
    * The selection closes any open takeover for the same reason `select()` does:
    * a takeover renders BEFORE `FolderView` in `App.vue`'s chain, so leaving one
    * up would land the jump behind it and the palette would look dead.
    *
    * The session twin of this is plain `select(sessionId)` — the
-   * `watch(selectedId)` below already does the expand + re-drill + reveal for
+   * `watch(selectedId)` below already does the expand + reveal for
    * EVERY selection, so a session jump must not duplicate any of it (see
    * `jumpToSession`).
    */
@@ -3218,10 +3202,6 @@ export const useSessionsStore = defineStore('sessions', () => {
     useUiStore().closeAllTakeovers()
     selectFolder(path)
     revealCheckout(path)
-    if (drillModeEnabled.value) {
-      revealDrillGroup(path)
-      drillStack.value = drillNodeStackForFolder(path)
-    }
     recordJumpVisit(path)
     revealFolderPath.value = path
     raiseJumpFlash(`folder:${path}`)
@@ -3229,7 +3209,7 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   /**
    * Jump to a SESSION. `select()` carries the whole reveal contract already
-   * (expand group + folder + teammate group, re-drill, scroll into view, record
+   * (expand group + folder + teammate group, scroll into view, record
    * the visit); this only adds the flash on top.
    */
   function jumpToSession(sessionId: string): void {
@@ -3990,7 +3970,8 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   function toggleTreeFolder(key: string): void {
     const folder = sidebarTree.value.find((node) => node.key === key)
-    if (!folder) return
+    // The focused folder is always open.
+    if (!folder || focusedTree.value?.key === key) return
     if (folder.group) {
       if (folder.open) {
         for (const path of folder.paths) forgetPeeks(path)
@@ -4037,6 +4018,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   function revealCheckout(path: string): void {
     const folder = findFolderByPath(path)
     if (!folder) return
+    leaveFocusOutside(path)
     folder.expanded = true
     const node = sidebarTree.value.find((entry) => entry.paths.includes(path))
     if (node?.group && collapsedGroupsSet.has(node.key)) collapsedGroupsSet.delete(node.key)
@@ -4068,7 +4050,10 @@ export const useSessionsStore = defineStore('sessions', () => {
         forgetPeeks(node.primary.path)
       }
     }
-    if (level === 0) collapseAll()
+    if (level === 0) {
+      leaveFocus()
+      collapseAll()
+    }
   }
 
   /** Expand every folder's session list (spec §5 — expand all). Shelved sections open with them (U2.3b). */
@@ -4507,15 +4492,6 @@ export const useSessionsStore = defineStore('sessions', () => {
     toggleIdleWorktrees
   })
 
-  function revealDrillGroup(path: string): void {
-    for (const node of visibleFolders.value) {
-      if (isFolderGroup(node) && node.folders.some((folder) => folder.path === path)) {
-        collapsedGroupsSet.delete(node.key)
-        break
-      }
-    }
-  }
-
   /** Locate `{ folder }` for a session UUID. */
   function findFolderBySessionId(sessionId: string): Folder | null {
     for (const f of folders.value) {
@@ -4577,7 +4553,7 @@ export const useSessionsStore = defineStore('sessions', () => {
    * group, and teammate group, plus raising the scroll-into-view
    * signal, is no longer done here: the `watch(selectedId, …)` below does
    * that for every selection, not just this "jump to session" entry point
-   * (reactive-sidebar-sync, 2026-07-19 — see docs/specs/2026-07-19-sidebar-drill-in-navigation.md).
+   * (reactive-sidebar-sync, 2026-07-19).
    *
    * Returns whether the session was found (BUG-173): `false` is the "owner not
    * loaded" signal a caller may route to a fallback. Existing callers ignore it.
@@ -4601,75 +4577,6 @@ export const useSessionsStore = defineStore('sessions', () => {
       if (isFolderGroup(node) && node.key === key) return node
     }
     return null
-  }
-
-  /**
-   * Resolve the drill-in screen path for a session's folder: `[group, folder]`
-   * when the folder renders under a group, else `[folder]`. Shared by
-   * `cycleDrillDepth` (jump-on-enable) and the auto re-drill branch of the
-   * `selectedId` watcher below.
-   */
-  function drillNodeStackForSession(sessionId: string): DrillNode[] {
-    const folder = findFolderBySessionId(sessionId)
-    if (!folder) return []
-    for (const node of visibleFolders.value) {
-      if (isFolderGroup(node) && node.folders.some((f) => f.path === folder.path)) {
-        return [
-          { kind: 'group', key: node.key },
-          { kind: 'folder', path: folder.path }
-        ].slice(0, drillDepth.value) as DrillNode[]
-      }
-    }
-    return [{ kind: 'folder', path: folder.path }].slice(0, drillDepth.value) as DrillNode[]
-  }
-
-  /**
-   * The folder-grain twin of {@link drillNodeStackForSession} (T288): the
-   * drill-in screen path for a folder itself, `[group, folder]` when it renders
-   * under a group and `[folder]` otherwise. Same depth clamp, so depth 1 stops
-   * on the owning group screen (where the folder renders inline).
-   */
-  function drillNodeStackForFolder(path: string): DrillNode[] {
-    for (const node of visibleFolders.value) {
-      if (isFolderGroup(node) && node.folders.some((f) => f.path === path)) {
-        return [
-          { kind: 'group', key: node.key },
-          { kind: 'folder', path }
-        ].slice(0, drillDepth.value) as DrillNode[]
-      }
-    }
-    return [{ kind: 'folder', path }].slice(0, drillDepth.value) as DrillNode[]
-  }
-
-  /**
-   * Advance the drill-in depth one step, wrapping `0 → 1 → 2 → 0`. Entering a
-   * non-zero level with a session selected drills straight to that session's
-   * screen for the new depth (the resolver clamps, so depth 1 stops at the
-   * owning group and the folder expands inline there). Lowering the depth
-   * truncates the stack so the operator is never left on a screen the new
-   * level cannot reach.
-   */
-  function cycleDrillDepth(): void {
-    drillDepth.value = (drillDepth.value + 1) % (DRILL_MAX_DEPTH + 1)
-    if (drillDepth.value === 0) {
-      drillStack.value = []
-      return
-    }
-    drillStack.value = selectedId.value
-      ? drillNodeStackForSession(selectedId.value)
-      : drillStack.value.slice(0, drillDepth.value)
-  }
-
-  function drillIntoGroup(key: string): void {
-    drillStack.value = [...drillStack.value, { kind: 'group', key }]
-  }
-
-  function drillIntoFolder(path: string): void {
-    drillStack.value = [...drillStack.value, { kind: 'folder', path }]
-  }
-
-  function drillBack(): void {
-    drillStack.value = drillStack.value.slice(0, -1)
   }
 
   /**
@@ -4702,11 +4609,6 @@ export const useSessionsStore = defineStore('sessions', () => {
           (s) => !s.teamName && hex.length > 0 && s.sessionId.startsWith(hex)
         )
         teammatesExpandedSet.add(leader ? leader.sessionId : folder.path)
-      }
-
-      if (drillModeEnabled.value) {
-        revealDrillGroup(folder.path)
-        drillStack.value = drillNodeStackForSession(id)
       }
 
       // T288: "recently visited" is folder-grained — every selection lands the
@@ -6158,10 +6060,6 @@ export const useSessionsStore = defineStore('sessions', () => {
       foldersLoading.value = false
     }
 
-    // T289: the drill stack is restored from localStorage at construction time,
-    // but only now can we tell whether its nodes still resolve.
-    reconcileDrillStack()
-
     cleanupFns.push(
       window.api.onProjectAdded(() => {
         void reloadModelDebounced()
@@ -6499,6 +6397,13 @@ export const useSessionsStore = defineStore('sessions', () => {
     visibleFolders,
     repoNodes,
     sidebarTree,
+    drawnTree,
+    sidebarFocus,
+    focusedTree,
+    focusElsewhere,
+    enterFocus,
+    leaveFocus,
+    isInFocus,
     sidebarSessionRows,
     folderRingLevel,
     sidebarCursorRows,
@@ -6621,15 +6526,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     markSessionExited,
     toggleFolder,
     toggleGroup,
-    drillDepth,
-    drillModeEnabled,
-    drillStack,
     groupInVisible,
-    cycleDrillDepth,
-    drillIntoGroup,
-    drillIntoFolder,
-    drillBack,
-    reconcileDrillStack,
     groupAliases,
     setGroupAlias,
     expandAll,

@@ -68,7 +68,7 @@ function sessionFolder(): Folder {
 async function mountSidebar(v: MissionView): Promise<void> {
   seed(v)
   wrapper = mount(SidebarFolder, {
-    props: { folder: sessionFolder(), headerless: true },
+    props: { folder: sessionFolder() },
     global: { plugins: [i18n] },
     attachTo: document.body
   })

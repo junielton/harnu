@@ -287,14 +287,13 @@ can give each one a chord (see
 
 Every item of the session right-click menu, closing a folder terminal, the
 new-session command for the active folder, and the sidebar header's
-buttons (rescan, drill depth, collapse levels, hidden folders) can be given a
+buttons (rescan, collapse levels, hidden folders) can be given a
 shortcut too; none has one out of the box. Their command ids are
 `session.newInFolder`, `session.fork`, `session.restart`, `session.copyId`,
 `session.copyTranscriptPath`, `session.copyResumeCommand`,
 `session.copyContextDigest`, `session.toggleNoFlicker`, `session.toggleArchived`,
 `session.delete`, `session.retryBoot`, `session.dismiss`, `session.closeTerminal`,
-`sidebar.rescan`, `sidebar.cycleDrillDepth`, `sidebar.toggleCollapseAll` and
-`sidebar.hiddenFolders`. A session action works on the **selected** session and
+`sidebar.rescan`, `sidebar.toggleCollapseAll` and `sidebar.hiddenFolders`. A session action works on the **selected** session and
 only when the right-click menu would offer it there (no Fork on a session that is
 still starting, for example). Remote Control and Promote to Orchestrator stay
 click-only on purpose: they show a disclosure you should read first.

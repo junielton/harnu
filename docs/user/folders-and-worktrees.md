@@ -20,7 +20,7 @@ The list has three levels and no more: **folder → checkout → session**.
 
 Worktrees with no listed session fold into a single quiet **n idle worktrees** row. Click it to list them; click one of them to open its folder view, or right-click it for its menu. The main checkout is never folded away, and a worktree that gains a session leaves the fold on its own.
 
-**The header.** Click it (or press Enter) to open the folder's view; it opens the folder too and never collapses it. The chevron that replaces the count on hover is what collapses. The header stays on screen while its checkouts scroll. Its ring takes the hottest session inside: waiting on you, then failed, then working; an idle folder shows an empty ring. Markers from any checkout stay visible on it: new agent panes you haven't seen, **agents blocked** and **new sessions start as Orchestrator** (the tooltip names the checkout). If two headers resolve to the same name, a small `· parent` hint tells them apart.
+**The header.** Click it (or press Enter) to open the folder's view; it opens the folder too and never collapses it. The chevron that replaces the count on hover is what collapses, and the target button beside it is [Focus](#focus-on-one-folder). The header stays on screen while its checkouts scroll. Its ring takes the hottest session inside: waiting on you, then failed, then working; an idle folder shows an empty ring. Markers from any checkout stay visible on it: new agent panes you haven't seen, **agents blocked** and **new sessions start as Orchestrator** (the tooltip names the checkout). If two headers resolve to the same name, a small `· parent` hint tells them apart.
 
 **Checkout rows.** Click (or press Enter) to fold or unfold that checkout's sessions. A folded row shows its session count; on hover the count turns into a chevron, in the same place. The row has no buttons of its own: right-click it for **New session**, **Show older (n)**, **Show archived (n)** and the rest of the folder menu.
 
@@ -42,29 +42,25 @@ When a session cuts a new worktree (you dispatched an agent that called `create_
 
 The record is still kept, and you can set or fix it by hand: right-click a worktree and use **Set parent folder** (pick any sibling worktree of the same repo) or **Clear parent folder**.
 
-## Sidebar toolbar and drill-in navigation
+## Focus on one folder
 
-Everything lives on one line at the top of the sidebar, right-aligned: Rescan folders, a three-level drill-in depth control, the collapse button, Hidden folders (with a count badge), then — after a thin divider — Search. The folder list starts directly underneath.
+When one repository has all your attention, **Focus** narrows the list to it. Hover a folder header and click the target button that appears beside the chevron (or reach it with Tab), or right-click any row of the folder and pick **Focus this folder**.
+
+- The list now holds that folder alone, with all its checkouts and sessions. It stays open: there is nothing to collapse on its header.
+- **All folders**, the row pinned at the top, brings the full list back; the whole row is the button. On its right it counts what is waiting elsewhere, for example **7 others · 1 needs you · 1 failed**. Each other folder counts once, at its most urgent state.
+- **Needs attention** and the bottom dock still cover every folder. Selecting a session of another folder, from anywhere (a Needs attention row, the jump palette, a notification, the command palette), leaves Focus so you can see where you landed. `Esc` does not leave it.
+- The collapse button still works; its last step (**folders folded**) leaves Focus.
+- Focus is remembered across restarts. It is dropped if the folder no longer exists or you hide it.
+
+## Sidebar toolbar
+
+Everything lives on one line at the top of the sidebar, right-aligned: Rescan folders, the collapse button, Hidden folders (with a count badge), then — after a thin divider — Search. The folder list starts directly underneath.
 
 **Rescan folders** forces a fresh scan of disk and reconciles the sidebar with what's actually there. You shouldn't normally need it — a background watcher keeps the list current — but it's the escape hatch for the rare case where the watcher misses something, and it saves you a full app restart. New sessions and folders created outside Harnu (a `claude` you start in a terminal, a new project folder) show up on their own within about a second. Rescan runs one fresh scan.
 
 The **collapse button** steps through three levels, one per click, then starts over: **everything open**, **sessions folded** (checkouts listed) and **folders folded** (headers only). The icon and tooltip say what the next click does (**Collapse sessions**, **Collapse folders**, **Expand all**), and the dots under the icon show the current level: three, two, one.
 
-By default the sidebar shows the [tree](#the-sidebar-tree) inline. The drill-in icon is a **three-level depth control**, and each click goes one level deeper before wrapping back to the start.
-
-At **level 1**, the sidebar shows one screen listing every repo group and standalone folder. Tapping a group opens it — and from there the worktrees inside list as folder rows: click one and its sessions expand in place, with its siblings still listed around it. This is the level for "I only want to see this repo right now" without also narrowing to a single worktree.
-
-At **level 2**, every tier gets its own screen: the root screen opens a group, the group screen opens a worktree, the worktree screen lists its sessions. Clicking anywhere on the back row at the top of a screen — not just its arrow — returns to the one before it; on a folder's session screen, that same row also carries a `+` to start a new session there.
-
-While drill-in is on, the collapse button is a plain **Collapse all / Expand all** at level 1, and disappears at level 2: there is nothing expanded inline for it to act on.
-
-Every row inside drill-in has the same actions its equivalent in the tree does. Right-click a row — the header at the top of a screen, or any of the rows below it — and you get the menu that row's entity owns: the folder menu (New session, New terminal, New worktree…, Rename…, Hide, and the rest) for a folder, or Rename group / Reset name / Cleanup for a repo group. There's a **⋯** for the same menu if you'd rather click than right-click. On the header row it sits after the `+` and is always visible; on the rows below it appears when you hover them, the same way session counts and other row stats do.
-
-Drill-in also remembers where you left off. Quit inside a worktree's session screen and Harnu reopens on that screen instead of back at the root. If something it pointed at is no longer somewhere you'd want to land — you removed the folder, you hid it, or the repo group stopped grouping — it quietly returns to the root screen rather than opening a screen with nothing in it or reopening on a folder you dismissed. A folder that has simply gone quiet is still restored: going a while without a session doesn't count as gone.
-
-Selecting a session anywhere — clicking a notification, picking a result in the command palette, opening a roadmap card — while drill-in is on jumps the navigator straight to that session's screen for the current level, even across a different repo or folder than the one you were looking at.
-
-Arrow-key sidebar navigation (↑/↓/←/→ and Enter) only works in the inline tree; while drill-in is on, use the mouse (or Tab) to navigate the screens. In the tree, Enter on a header opens the folder's view, on a checkout folds or unfolds it, on the idle-worktrees row lists them, and on a session selects it; → and ← open and close.
+With the keyboard, ↑ and ↓ move through the list. Enter on a header opens the folder's view, on a checkout folds or unfolds it, on the idle-worktrees row lists them, and on a session selects it; → and ← open and close.
 
 ## Finding a folder or session (the jump palette)
 
@@ -72,7 +68,7 @@ The Search button opens a small palette under the toolbar. It is a way to **go s
 
 Type, and results come back grouped as **Folders**, **Hidden** and **Sessions**, with the part you typed shown in bold and a dim hint saying where each one lives. It looks at more than the name: a folder matches on its label, its git branch and its full path, and a session matches on its summary and on your first prompt to it — so pasting a PR number or a ticket key lands on the session that worked on it.
 
-Press ↵ (or click) and Harnu expands whatever the target is buried under (folder, checkout or idle-worktrees row), scrolls to it, selects it if it's a session, re-drills to its screen if drill-in is on, and flashes the row once so you can see where you ended up.
+Press ↵ (or click) and Harnu expands whatever the target is buried under (folder, checkout or idle-worktrees row), scrolls to it, selects it if it's a session, leaves [Focus](#focus-on-one-folder) if the target is in another folder, and flashes the row once so you can see where you ended up.
 
 **Folders you've hidden are searchable here too.** A hidden hit shows an eye-off icon and an **Unhide & go** chip — one keystroke, instead of opening the Hidden list and scanning it for a name you half-remember.
 

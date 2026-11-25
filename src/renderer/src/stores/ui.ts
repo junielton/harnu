@@ -1006,8 +1006,8 @@ export const useUiStore = defineStore('ui', () => {
    * opened a view also closes it, so a persistent affordance behaves like the
    * toggle it visually is (the Topbar's own sidebar/helper buttons already do).
    *
-   * Deliberately NOT used by the menu entries (`FolderMenu`, `SessionMenu`,
-   * `SidebarDrillView`) or by `openNavigableView` — a menu item labelled
+   * Deliberately NOT used by the menu entries (`FolderMenu`, `SessionMenu`)
+   * or by `openNavigableView` — a menu item labelled
    * "Roadmap board" and a notification that navigates to a view must OPEN it,
    * never close whatever happens to be on screen.
    *

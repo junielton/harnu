@@ -47,7 +47,6 @@
       "expandAll": "Expand all",
       "collapseSessions": "Collapse sessions",
       "collapseFolders": "Collapse folders",
-      "collapseAll": "Collapse all",
       "hidden": "Hidden ({count})",
       "unhide": "Unhide"
     },
@@ -63,9 +62,13 @@
       "unhideAllFailed": "{count} folders could not be unhidden. First error: {reason}",
       "enterHint": "unhide"
     },
-    "toolbar": {
-      "drillOn": "Turn on drill-in navigation",
-      "drillLevel": "Drill-in navigation: level {level} of {max}"
+    "focus": {
+      "allFolders": "All folders",
+      "enter": "Focus this folder",
+      "enterNamed": "Focus {name}",
+      "others": "{n} other | {n} others",
+      "needsYou": "{n} needs you | {n} need you",
+      "failed": "{n} failed"
     },
     "filter": {
       "placeholder": "Filter folders…",
@@ -95,11 +98,6 @@
         "jump": "jump",
         "filterTree": "filter tree"
       }
-    },
-    "drill": {
-      "back": "Back",
-      "worktreeCount": "{n} worktrees",
-      "folderCount": "{n} folders"
     },
     "resize": "Resize sidebar",
     "hide": "Hide sidebar",
@@ -725,6 +723,7 @@
     "searchTruncated": "Showing the first 500 matches — refine your search."
   },
   "folderMenu": {
+    "focus": "Focus this folder",
     "showOlder": "Show older ({n})",
     "showArchived": "Show archived ({n})",
     "label": "Folder actions",
@@ -1411,10 +1410,7 @@
   "repoGroup": {
     "renameRepo": "Rename repo",
     "cleanUp": "Clean up",
-    "menuLabel": "Group actions",
-    "rename": "Rename group",
-    "resetName": "Reset name",
-    "cleanup": "Cleanup…"
+    "resetName": "Reset name"
   },
   "dialog": {
     "close": "Close",
@@ -1779,7 +1775,6 @@
       "session_closeTerminal": "Close the folder terminal",
       "sidebar_jump": "Jump to a folder or session",
       "sidebar_rescan": "Rescan folders",
-      "sidebar_cycleDrillDepth": "Cycle the sidebar drill depth",
       "sidebar_toggleCollapseAll": "Collapse or expand all folders",
       "sidebar_hiddenFolders": "Show hidden folders",
       "sidebar_cursor_down": "Sidebar cursor: down",

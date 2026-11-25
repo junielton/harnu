@@ -47,7 +47,6 @@
       "expandAll": "Expandir tudo",
       "collapseSessions": "Recolher sessões",
       "collapseFolders": "Recolher pastas",
-      "collapseAll": "Recolher tudo",
       "hidden": "Ocultas ({count})",
       "unhide": "Reexibir"
     },
@@ -63,9 +62,13 @@
       "unhideAllFailed": "{count} pastas não puderam ser reexibidas. Primeiro erro: {reason}",
       "enterHint": "reexibir"
     },
-    "toolbar": {
-      "drillOn": "Ativar navegação drill-in",
-      "drillLevel": "Navegação drill-in: nível {level} de {max}"
+    "focus": {
+      "allFolders": "Todas as pastas",
+      "enter": "Focar nesta pasta",
+      "enterNamed": "Focar em {name}",
+      "others": "{n} outra | {n} outras",
+      "needsYou": "{n} precisa de você | {n} precisam de você",
+      "failed": "{n} falhou | {n} falharam"
     },
     "filter": {
       "placeholder": "Filtrar pastas…",
@@ -95,11 +98,6 @@
         "jump": "ir",
         "filterTree": "filtrar árvore"
       }
-    },
-    "drill": {
-      "back": "Voltar",
-      "worktreeCount": "{n} worktrees",
-      "folderCount": "{n} pastas"
     },
     "resize": "Redimensionar barra lateral",
     "hide": "Ocultar barra lateral",
@@ -725,6 +723,7 @@
     "searchTruncated": "Mostrando os primeiros 500 resultados — refine a busca."
   },
   "folderMenu": {
+    "focus": "Focar nesta pasta",
     "showOlder": "Mostrar antigas ({n})",
     "showArchived": "Mostrar arquivadas ({n})",
     "label": "Ações da pasta",
@@ -1411,10 +1410,7 @@
   "repoGroup": {
     "renameRepo": "Renomear repositório",
     "cleanUp": "Limpar",
-    "menuLabel": "Ações do grupo",
-    "rename": "Renomear grupo",
-    "resetName": "Resetar nome",
-    "cleanup": "Limpeza…"
+    "resetName": "Resetar nome"
   },
   "dialog": {
     "close": "Fechar",
@@ -1779,7 +1775,6 @@
       "session_closeTerminal": "Fechar o terminal da pasta",
       "sidebar_jump": "Ir para uma pasta ou sessão",
       "sidebar_rescan": "Reescanear pastas",
-      "sidebar_cycleDrillDepth": "Alternar a profundidade de navegação da barra lateral",
       "sidebar_toggleCollapseAll": "Recolher ou expandir todas as pastas",
       "sidebar_hiddenFolders": "Mostrar pastas ocultas",
       "sidebar_cursor_down": "Cursor da barra lateral: baixo",

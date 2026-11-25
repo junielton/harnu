@@ -68,7 +68,7 @@ function preview(event: MouseEvent, path: string): void {
     <div data-folder-content :data-open="tree.open" class="sidebar-disclosure" :inert="!tree.open">
       <div class="sidebar-disclosure-content">
         <div class="pt-0.5 pb-2">
-          <SidebarFolder v-if="!tree.git" :folder="tree.primary" embedded />
+          <SidebarFolder v-if="!tree.git" :folder="tree.primary" />
           <!-- The group rail (design.md "Group rail") is painted on this box: the
                checkout row and its sessions. -->
           <div
@@ -114,7 +114,7 @@ function preview(event: MouseEvent, path: string): void {
             </button>
             <div v-if="hasRows" class="sidebar-disclosure" :data-open="!folded" :inert="folded">
               <div class="sidebar-disclosure-content">
-                <SidebarFolder :folder="folder" embedded />
+                <SidebarFolder :folder="folder" />
               </div>
             </div>
           </div>

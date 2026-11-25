@@ -88,9 +88,10 @@ textarea,
   border-radius: inherit;
 }
 
-/* Needs attention and the dock heads are full-width buttons against a scroller or an island
-   edge, which would clip a ring drawn outside them: theirs sits inside (design.md "Bottom dock"). */
+/* Needs attention, the Focus back row and the dock heads are full-width buttons against a scroller
+   or an island edge, which would clip a ring drawn outside them: theirs sits inside. */
 [data-attention] button:focus-visible:not(.no-default-ring),
+[data-focus-back]:focus-visible:not(.no-default-ring),
 [data-dock-head]:focus-visible:not(.no-default-ring) {
   outline-offset: -2px;
 }
@@ -1099,7 +1100,8 @@ textarea,
 }
 
 .sidebar-tree-scroll :is([data-sidebar-row], [data-folder-path], [data-session-id]) {
-  scroll-margin-top: var(--sidebar-tree-header-height);
+  /* The sticky folder header, and under Focus the back row above it. */
+  scroll-margin-top: calc(var(--sidebar-tree-header-height) + var(--sidebar-tree-back-height, 0px));
 }
 
 .sidebar-disclosure {

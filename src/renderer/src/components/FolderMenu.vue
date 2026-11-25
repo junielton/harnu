@@ -29,6 +29,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   SquareTerminal,
+  Target,
   Globe,
   Tag,
   Trash2,
@@ -414,20 +415,34 @@ const repoEntries = computed<MenuItem[]>(() => {
   return items
 })
 
+const canFocus = computed(() => {
+  const path = menuState.value.projectPath
+  return !!path && !sessions.isInFocus(path) && !sessions.manuallyHiddenPaths.has(path)
+})
+
 const entries = computed<MenuItem[]>(() => [
   {
     id: 'new-session',
     label: t('sidebar.newSession'),
     icon: Plus,
     onSelect: (path) => {
-      if (sessions.drillModeEnabled) {
-        const folder = sessions.findFolderByPath(path)
-        if (folder && !folder.expanded) sessions.toggleFolder(path)
-      } else sessions.revealCheckout(path)
+      sessions.revealCheckout(path)
       ui.openNewSession(path)
     }
   },
   ...peekEntries.value,
+  // Focus on one folder (design.md §6 "Sidebar tree → Focus"): not for the folder already
+  // focused, nor for a hidden one, which the list does not draw.
+  ...(canFocus.value
+    ? [
+        {
+          id: 'focus-folder',
+          label: t('folderMenu.focus'),
+          icon: Target,
+          onSelect: (path: string): void => sessions.enterFocus(path)
+        } satisfies MenuItem
+      ]
+    : []),
   ...repoEntries.value,
   {
     id: 'new-terminal',

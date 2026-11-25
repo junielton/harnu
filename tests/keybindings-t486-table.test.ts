@@ -67,7 +67,6 @@ const SPEC_ROWS: Record<string, SpecRow> = {
   'session.closeTerminal': unbound('sessions'),
   'sidebar.jump': { group: 'sidebar', defaultKeys: 'Cmd+Shift+F', menu: false, shield: false },
   'sidebar.rescan': unbound('sidebar'),
-  'sidebar.cycleDrillDepth': unbound('sidebar'),
   'sidebar.toggleCollapseAll': unbound('sidebar'),
   'sidebar.hiddenFolders': unbound('sidebar'),
 
@@ -143,7 +142,8 @@ const SPEC_ROWS: Record<string, SpecRow> = {
 }
 
 /** How many rows each unit adds (§11) — a row dropped from `SPEC_ROWS` fails here. */
-const U2_IDS = 20
+// 20 in §3.2 + §3.3, less the drill-depth command removed with drill-in.
+const U2_IDS = 19
 const U3_IDS = 21
 const U4A_IDS = 6
 const U4B_IDS = 5 + 22
@@ -163,7 +163,7 @@ describe('AC-11 — the §3 ids exist with their §3 values', () => {
     })
   }
 
-  it('adds the 20 §3.2 + §3.3 ids, 21 §3.4, 6 §3.5 popover, 5 §3.6, 22 Settings-tab and 5 §3.7 ids', () => {
+  it('adds the 19 §3.2 + §3.3 ids, 21 §3.4, 6 §3.5 popover, 5 §3.6, 22 Settings-tab and 5 §3.7 ids', () => {
     expect(Object.keys(SPEC_ROWS)).toHaveLength(U2_IDS + U3_IDS + U4A_IDS + U4B_IDS + U5B_IDS)
   })
 
