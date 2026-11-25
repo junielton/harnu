@@ -15,12 +15,17 @@
  *   drain checks (title, spec, body) is untouched. The session the drain starts is bound when it boots.
  * - **A board dispatch, and the drain's boot** ({@link bindCardSession}): the card carries the step it
  *   is the work of, so the session bound to it is attached to that step. The session id the drain binds
- *   is the synthetic one it spawned; the real id is awaited, since the scoped credential carries the id
- *   the session really has. A card with no step on it binds nothing, and is dispatched as it always was.
+ *   is the synthetic one it spawned; the real id is awaited (`session-boot.ts`), written on the card, and
+ *   attached, since the scoped credential carries the id the session really has. A card with no step on it
+ *   gets its real id and nothing else.
  *
  * {@link noteCardSpawn} is the other half of the scoping: just before a card's session is spawned, it
- * leaves the note `pty:create` turns into the session's credential (S-25's pending spawn), keyed by the
- * folder the session spawns in.
+ * leaves the note `pty:create` turns into the session's credential (S-25's pending spawn), matched by the
+ * card's boot prompt.
+ *
+ * **Born attached.** A session's first turn can come before any of the above has run, so a scoped
+ * credential's first call attaches it too ({@link ensureScopedAttached}). **Never silent**: a bind that
+ * fails is a `surprise` on the mission Log and a notice in Activity ({@link reportBindFailure}).
  *
  * **A step the leader does itself gets no card**, and nothing here is called for it: a card exists only
  * because a step was dispatched. A verifier started for a step is attached to the mission but gets no
@@ -38,11 +43,12 @@ import {
   updateFrontmatterFields,
   type CardSubstrate
 } from '../roadmap-core'
-import { dropPendingSpawn, registerPendingSpawn } from '../mcp/scope'
+import { registerCardSpawn, type Scope } from '../mcp/scope'
+import { awaitSessionBoot, type BootedSession } from '../mcp/session-boot'
 import { findStepCard, planStepCard, type CardFile } from './cards'
 import type { StepV4 } from './model'
 import { readMissionRecord } from './record-store'
-import { attachDispatchedWorker, resolveStepId } from './sessions'
+import { attachDispatchedWorker, logBindSurprise, resolveStepId } from './sessions'
 
 // ---- The board, as the dispatch needs it ---------------------------------------------------------
 
@@ -56,6 +62,8 @@ export interface BoardIo {
   create(slug: string, content: string): Promise<boolean>
   /** Replace a card file that exists. */
   write(slug: string, content: string): Promise<boolean>
+  /** Move a card's `session:` from `from` to `to`; nothing when it no longer says `from`. */
+  moveSession(slug: string, from: string, to: string): Promise<void>
   /** Run `fn` with no other card id being minted on this board, so two creates never share an id. */
   lock<T>(fn: () => Promise<T>): Promise<T>
 }
@@ -77,6 +85,11 @@ export async function realBoardIo(folder: string): Promise<BoardIo> {
       return null
     }
   }
+  const read = async (slug: string): Promise<CardFile | null> => {
+    const file = fileOf(slug)
+    const content = file ? await readFile(file) : null
+    return content === null ? null : { slug, content }
+  }
   return {
     async readAll() {
       let names: string[] = []
@@ -92,11 +105,7 @@ export async function realBoardIo(folder: string): Promise<BoardIo> {
       }
       return out
     },
-    async read(slug) {
-      const file = fileOf(slug)
-      const content = file ? await readFile(file) : null
-      return content === null ? null : { slug, content }
-    },
+    read,
     async create(slug, content) {
       return (await ipc.createCardFile(folder, slug, content)).ok
     },
@@ -109,6 +118,12 @@ export async function realBoardIo(folder: string): Promise<BoardIo> {
       } catch {
         return false
       }
+    },
+    async moveSession(slug, from, to) {
+      const current = await read(slug)
+      if (!current || parseCard(current.content, slug).session !== from) return
+      const res = await ipc.writeCardFields(folder, slug, { session: to })
+      if (!res.ok) console.warn(`[dispatch] ${slug} kept its synthetic session id: ${res.code}`)
     },
     lock: (fn) => ipc.withCardIdMintLock(repoKey, fn)
   }
@@ -336,28 +351,128 @@ export async function stampCardForStep(
   return { ok: true, stamped: true }
 }
 
+// ---- A bind that fails is loud ------------------------------------------------------------------------
+
+/** What could not be bound, as the Log and the notice name it. */
+export interface BindFailure {
+  folder: string
+  /** `CODE: what to do`. */
+  reason: string
+  missionId?: string
+  stepId?: string
+  card?: string
+}
+
+/** One Activity notice, in the shape `notify.push` takes. */
+export interface BindNotice {
+  folderPath: string
+  title: string
+  description: string
+  kind: 'warning'
+}
+
+export type BindNotifier = (notice: BindNotice) => unknown
+
+let bindNotifier: BindNotifier | null = null
+
+/** How a notice reaches Activity; registered once by the shell that owns the command bridge. */
+export function setBindNotifier(fn: BindNotifier | null): void {
+  bindNotifier = fn
+}
+
+/**
+ * A dispatched session could not be attached to its step: a `surprise` on the mission Log and a notice
+ * in Activity, both naming the card. Never throws, and one half failing never loses the other.
+ */
+export async function reportBindFailure(
+  failure: BindFailure,
+  notify: BindNotifier | null = bindNotifier
+): Promise<void> {
+  const { folder, missionId, stepId, card, reason } = failure
+  const subject = card !== undefined ? `Card ${card}` : `Step ${stepId ?? '?'}`
+  console.warn(`[dispatch] ${subject} was not attached to its step: ${reason}`)
+  if (missionId !== undefined && stepId !== undefined) {
+    try {
+      const logged = await logBindSurprise(folder, missionId, {
+        stepId,
+        reason,
+        ...(card !== undefined ? { card } : {})
+      })
+      if (!logged.ok) console.warn(`[dispatch] the surprise was not logged: ${logged.error}`)
+    } catch (err) {
+      console.warn('[dispatch] the surprise was not logged:', err)
+    }
+  }
+  try {
+    await notify?.({
+      folderPath: folder,
+      title: `${subject}: its session was not attached`,
+      description: reason,
+      kind: 'warning'
+    })
+  } catch (err) {
+    console.warn('[dispatch] the notice was not posted:', err)
+  }
+}
+
+// ---- A scoped session's first call ---------------------------------------------------------------------
+
+const attachFailures = new Set<string>()
+
+/**
+ * Born attached (AC-11): a session holding a step's scoped credential may call before its transcript
+ * landed, so before the dispatch path attached it. The credential is Harnu's own proof of who it is and
+ * what it was started for, so the first call attaches it. A session the record already knows is left
+ * alone: one the mission released stays released. A failure is reported once and the call goes on to
+ * its own refusal.
+ */
+export async function ensureScopedAttached(
+  scope: Extract<Scope, { role: 'worker' | 'verifier' }>
+): Promise<void> {
+  const failed = async (reason: string): Promise<void> => {
+    if (attachFailures.has(scope.sessionId)) return
+    attachFailures.add(scope.sessionId)
+    await reportBindFailure({
+      folder: scope.folder,
+      missionId: scope.missionId,
+      stepId: scope.stepId,
+      reason
+    })
+  }
+  try {
+    const read = await readMissionRecord(repoRoot(scope.folder), scope.missionId)
+    // No such mission, an unconverted or a closed one: the verb says so itself.
+    if (!read.ok || read.source !== 'v4' || read.record.status === 'closed') return
+    if (read.record.sessions.some((s) => s.id === scope.sessionId)) return
+    const done = await dispatchStep(
+      scope.folder,
+      {
+        missionId: scope.missionId,
+        stepId: scope.stepId,
+        sessionId: scope.sessionId,
+        role: scope.role,
+        to: 'session'
+      },
+      await realBoardIo(scope.folder)
+    )
+    if (!done.ok) await failed(done.error)
+  } catch (err) {
+    await failed(err instanceof Error ? err.message : String(err))
+  }
+}
+
 // ---- A card's session boots: the worker is attached --------------------------------------------------
 
-/** A session that materialized: the report the renderer sends when a synthetic id becomes a real one. */
-export interface BootedSession {
-  syntheticId: string
-  sessionId: string
-  folder: string
-}
+export type { BootedSession }
 
 export interface BindCardDeps {
   board?: BoardIo
-  /** Wait for a synthetic session id to become the real one. Absent: the id given is the real one. */
+  /** Wait for a synthetic session id to become the real one. Default: `session-boot.ts`. */
   waitForBoot?: (syntheticId: string, timeoutMs: number) => Promise<BootedSession | null>
   /** How long to wait for it. A queued boot may be slow; default 15 minutes. */
   timeoutMs?: number
 }
 
-/**
- * How a synthetic session id becomes the real one. The shell that owns the command bridge registers it
- * once (the manifest drain's), so the one place a card is bound to its session (`bindSessionCore`, used by
- * the board and the drain alike) can wait for the real id without owning a bridge.
- */
 let bootWaiter: BindCardDeps['waitForBoot'] | null = null
 export function setBootWaiter(fn: BindCardDeps['waitForBoot'] | null): void {
   bootWaiter = fn ?? null
@@ -370,9 +485,10 @@ export type CardSessionBound =
   { ok: true; bound: false } | (StepDispatched & { bound: true }) | DispatchRefusal
 
 /**
- * A session was bound to a card: when the card is the work of a step, attach the session as that step's
- * worker (and bind the card, so the step names it and it carries the marked block). A card with no step
- * on it binds nothing. The drain binds the synthetic id it spawned, so the real one is awaited first.
+ * A session was bound to a card. The drain and the board bind the synthetic id they spawned, so the
+ * real one is awaited first and written on the card (AC-14). When the card is the work of a step, the
+ * session is then attached as that step's worker (and the card bound, so the step names it and it
+ * carries the marked block). A card with no step on it binds nothing.
  */
 export async function bindCardSession(
   folder: string,
@@ -381,23 +497,37 @@ export async function bindCardSession(
   deps: BindCardDeps = {}
 ): Promise<CardSessionBound> {
   const board = deps.board ?? (await realBoardIo(folder))
-  const file = await board.read(slug)
-  if (!file) return { ok: true, bound: false }
-  const card = parseCard(file.content, file.slug)
-  if (card.malformed || !card.mission || !card.step) return { ok: true, bound: false }
+  const stepCard = async (): Promise<{
+    mission: string
+    step: string
+    substrate?: string
+  } | null> => {
+    const file = await board.read(slug)
+    if (!file) return null
+    const card = parseCard(file.content, file.slug)
+    if (card.malformed || !card.mission || !card.step) return null
+    return { mission: card.mission, step: card.step, substrate: card.substrate }
+  }
 
   let realId = sessionId
-  const waitForBoot = deps.waitForBoot ?? bootWaiter
-  if (sessionId.startsWith(SYNTHETIC_PREFIX) && waitForBoot) {
+  if (sessionId.startsWith(SYNTHETIC_PREFIX)) {
+    const waitForBoot = deps.waitForBoot ?? bootWaiter ?? awaitSessionBoot
     const booted = await waitForBoot(sessionId, deps.timeoutMs ?? BOOT_WAIT_MS)
     if (!booted) {
-      return refusal(
-        'SESSION_NOT_BOOTED',
-        `the session for ${slug} did not boot in time, so it was not attached to ${card.step}. Attach it from the Mission dropdown.`
-      )
+      const card = await stepCard()
+      return card
+        ? refusal(
+            'SESSION_NOT_BOOTED',
+            `the session for ${slug} did not boot in time, so it was not attached to ${card.step}. Attach it from the Mission dropdown.`
+          )
+        : { ok: true, bound: false }
     }
     realId = booted.sessionId
+    await board.moveSession(slug, sessionId, realId)
   }
+  // Read now, not before the wait: the boot may have taken minutes.
+  const card = await stepCard()
+  if (!card) return { ok: true, bound: false }
   const to =
     card.substrate !== undefined && isCardSubstrate(card.substrate) ? card.substrate : 'session'
   const done = await dispatchStep(
@@ -417,75 +547,106 @@ export async function bindCardSession(
 
 // ---- The credential of a card's session ---------------------------------------------------------------
 
+/** Where a card's session is about to spawn, and with what boot prompt. */
+export interface CardSpawn {
+  /** Left out when the card is cut into a worktree that does not exist yet. */
+  spawnFolder?: string
+  /** The folder whose board holds the card. */
+  home: string
+  slug: string
+  /** The boot prompt the session is spawned with: what tells its note from another card's. */
+  prompt?: string
+}
+
 /**
- * Just before the session of card `slug` spawns in `spawnFolder`: when the card is the work of an open
- * step, leave the note `pty:create` turns into the session's credential (a worker of that step), so a
+ * Leave the note `pty:create` turns into the session's credential (a worker of the card's step), so a
  * session the drain or the board starts holds the scoped verbs of its step and not the whole server.
- * `home` is the folder whose board holds the card (a worktree spawn has another folder than its card).
- * `false` when the card has no step, or the step cannot be dispatched to: the spawn is unscoped, as before.
+ * Returns the function that takes the note back, or `null` when the card has no step or the step cannot
+ * be dispatched to: the spawn is unscoped, as before, and the bind says why.
  */
+async function noteSpawnOfCard(at: CardSpawn, boardArg?: BoardIo): Promise<(() => void) | null> {
+  try {
+    const board = boardArg ?? (await realBoardIo(at.home))
+    const file = await board.read(at.slug)
+    if (!file) return null
+    const card = parseCard(file.content, file.slug)
+    if (card.malformed || !card.mission || !card.step) return null
+    const found = await findStep(at.home, card.mission, card.step)
+    if (!found.ok) return null
+    return registerCardSpawn({
+      spawn: { role: 'worker', missionId: found.missionId, stepId: found.step.id },
+      ...(at.spawnFolder !== undefined ? { folder: at.spawnFolder } : {}),
+      ...(at.prompt !== undefined ? { prompt: at.prompt } : {})
+    })
+  } catch {
+    return null
+  }
+}
+
+/** Note the credential of card `slug`, whose session spawns in `spawnFolder`. `false`: nothing noted. */
 export async function noteCardSpawn(
   spawnFolder: string,
   home: string,
   slug: string,
-  boardArg?: BoardIo
+  boardArg?: BoardIo,
+  prompt?: string
 ): Promise<boolean> {
-  try {
-    const board = boardArg ?? (await realBoardIo(home))
-    const file = await board.read(slug)
-    if (!file) return false
-    const card = parseCard(file.content, file.slug)
-    if (card.malformed || !card.mission || !card.step) return false
-    const found = await findStep(home, card.mission, card.step)
-    if (!found.ok) return false
-    registerPendingSpawn(spawnFolder, {
-      role: 'worker',
-      missionId: found.missionId,
-      stepId: found.step.id
-    })
-    return true
-  } catch {
-    return false
-  }
+  return (await noteSpawnOfCard({ spawnFolder, home, slug, prompt }, boardArg)) !== null
 }
 
 // ---- The board's and the drain's side of it ------------------------------------------------------------
 
 /**
  * A card was bound to its session (`bindSessionCore`, the one place the board's Dispatch button and the
- * manifest drain both bind through). When the card is the work of a step, the session is attached to the
- * step as a worker once it has booted. Detached on purpose: a boot may queue for minutes and the caller
- * never waits on it; a failure is said in the log, and the operator can attach the session from the
- * Mission dropdown. Never throws.
+ * manifest drain both bind through). The session's real id is written on the card and, when the card is
+ * the work of a step, the session is attached to the step as a worker once it has booted. Detached on
+ * purpose: a boot may queue for minutes and the caller never waits on it; a failure is reported on the
+ * mission Log and in Activity. Never throws.
  */
 export function bindStepSession(folder: string, slug: string, sessionId: string): void {
-  const warn = (why: string): void =>
-    console.warn(`[dispatch] ${slug} was not attached to its step: ${why}`)
-  void bindCardSession(folder, slug, sessionId)
-    .then((res) => {
-      if (!res.ok) warn(res.error)
+  const failed = async (reason: string): Promise<void> => {
+    const file = await (await realBoardIo(folder)).read(slug)
+    const card = file ? parseCard(file.content, file.slug) : null
+    await reportBindFailure({
+      folder,
+      card: slug,
+      reason,
+      ...(card?.mission && card.step ? { missionId: card.mission, stepId: card.step } : {})
     })
-    .catch((err) => warn(err instanceof Error ? err.message : String(err)))
+  }
+  void bindCardSession(folder, slug, sessionId)
+    .then(async (res) => {
+      if (!res.ok) await failed(res.error)
+    })
+    .catch((err) => failed(err instanceof Error ? err.message : String(err)))
+    .catch((err) => console.warn(`[dispatch] ${slug} was not attached to its step:`, err))
 }
 
 /**
- * The board's Dispatch button plans the dispatch before it spawns. When the card is the work of a step and
- * is dispatched into this folder (a session or a teammate), leave the credential note for the session it
- * is about to spawn. A card cut into a worktree is not noted: where it spawns is not known until the
- * worktree exists (the drain, which cuts it itself, does note it). `false` when nothing was noted.
+ * The board's Dispatch button plans the dispatch before it spawns. When the card is the work of a step,
+ * leave the credential note for the session it is about to spawn, matched by the planned prompt. A card
+ * cut into a worktree is noted with no folder (the worktree does not exist yet), so only the prompt can
+ * claim it. `false` when nothing was noted.
  */
 export async function noteBoardCardSpawn(
   folder: string,
   slug: string,
-  boardArg?: BoardIo
+  boardArg?: BoardIo,
+  prompt?: string
 ): Promise<boolean> {
   try {
     const board = boardArg ?? (await realBoardIo(folder))
     const file = await board.read(slug)
     if (!file) return false
     const substrate = parseCard(file.content, file.slug).substrate
-    if (substrate === 'worktree' || substrate === 'internal') return false
-    return await noteCardSpawn(folder, folder, slug, board)
+    if (substrate === 'internal') return false
+    const elsewhere = substrate === 'worktree'
+    if (elsewhere && !prompt) return false
+    const noted = await noteSpawnOfCard(
+      { home: folder, slug, prompt, ...(elsewhere ? {} : { spawnFolder: folder }) },
+      board
+    )
+    return noted !== null
   } catch {
     return false
   }
@@ -494,28 +655,26 @@ export async function noteBoardCardSpawn(
 /**
  * What the manifest drain's shell does around a card's session, in the order the drain calls it:
  * `planned` (the card is next), `cut` (its worktree exists, for a worktree card), then `beforeSpawn`
- * (leave the credential note, in the folder it spawns in). The drain's `spawnSession` is not told which
- * card it is spawning for, so the card waits here by the folder its session spawns in (one card is
- * dispatched at a time within a pass). Attaching the session is `bindStepSession`'s, from the bind. A
- * card with no step is untouched by all of it.
+ * (leave the credential note, for the folder and prompt it spawns with). The drain's `spawnSession` is
+ * not told which card it is spawning for, so the card waits here by the folder its session spawns in
+ * (one card is dispatched at a time within a pass). Attaching the session is `bindStepSession`'s, from
+ * the bind. A card with no step is untouched by all of it.
  */
 export function createDrainBinder(): {
   planned(folder: string, slug: string): void
   cut(worktreePath: string, home: string, slug: string): void
   /** Take the card waiting for `spawnFolder` and leave its note. The returned function undoes the note. */
-  beforeSpawn(spawnFolder: string): Promise<() => void>
+  beforeSpawn(spawnFolder: string, prompt?: string): Promise<() => void>
 } {
   const dispatching = new Map<string, { home: string; slug: string }>()
   return {
     planned: (folder, slug) => void dispatching.set(folder, { home: folder, slug }),
     cut: (worktreePath, home, slug) => void dispatching.set(worktreePath, { home, slug }),
-    async beforeSpawn(spawnFolder) {
+    async beforeSpawn(spawnFolder, prompt) {
       const card = dispatching.get(spawnFolder)
       dispatching.delete(spawnFolder)
-      const noted = card ? await noteCardSpawn(spawnFolder, card.home, card.slug) : false
-      return () => {
-        if (noted) dropPendingSpawn(spawnFolder)
-      }
+      const undo = card ? await noteSpawnOfCard({ ...card, spawnFolder, prompt }) : null
+      return () => undo?.()
     }
   }
 }

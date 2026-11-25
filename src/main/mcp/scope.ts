@@ -27,7 +27,7 @@
  * defaults to its own, and a mission or folder that is not the one in its credential is refused. Every
  * refusal is `CODE: what to do next`.
  *
- * Pure apart from the pending-spawn registry at the bottom (an in-memory map). The server recognises a
+ * Pure apart from the pending-spawn registry at the bottom (an in-memory list). The server recognises a
  * bearer (`mcp/server.ts`), the argv injection is `pty.ts`'s, and the files a config lives in are the
  * server's; this module only says who a credential is and what that caller may do.
  */
@@ -294,29 +294,108 @@ export interface PendingSpawn {
 }
 
 const PENDING_TTL_MS = 120_000
-const pending = new Map<string, { spawn: PendingSpawn; expires: number }>()
+/** A card's note is matched by its exact boot prompt, so it can outlast the operator's confirm. */
+const CARD_TTL_MS = 30 * 60_000
+
+interface Note {
+  spawn: PendingSpawn
+  expires: number
+  /** The folder it spawns in; absent for a card whose worktree does not exist yet. */
+  folder?: string
+  /** A card's boot prompt, trimmed: the one thing that tells two cards of a folder apart. */
+  prompt?: string
+  /** `create_session`'s: only the agent-controlled spawn it asked for may take it. */
+  agentOnly?: boolean
+}
+
+let notes: Note[] = []
 const keyOf = (folder: string): string => path.resolve(folder)
 
+const live = (now: number): Note[] => (notes = notes.filter((n) => n.expires > now))
+
 /**
- * Remember that the next agent-controlled spawn in `folder` is a worker or a verifier. One create_session
- * is in flight per folder (the single-occupancy reservation), so the folder is a sound key, and a later
+ * Remember that the next agent spawn in `folder` is a worker or a verifier. One create_session is in
+ * flight per folder (the single-occupancy reservation), so the folder is a sound key, and a later
  * call for the same folder replaces an earlier one that never spawned.
  */
-export function registerPendingSpawn(folder: string, spawn: PendingSpawn, now = Date.now()): void {
-  pending.set(keyOf(folder), { spawn, expires: now + PENDING_TTL_MS })
-}
-
-/** Take (and forget) the pending spawn of `folder`, or `undefined` when none is waiting or it expired. */
-export function takePendingSpawn(folder: string, now = Date.now()): PendingSpawn | undefined {
+export function registerPendingSpawn(
+  folder: string,
+  spawn: PendingSpawn,
+  now = Date.now(),
+  opts: { agentOnly?: boolean } = {}
+): void {
   const key = keyOf(folder)
-  const found = pending.get(key)
-  pending.delete(key)
-  return found && found.expires > now ? found.spawn : undefined
+  notes = live(now).filter((n) => n.folder !== key || n.prompt !== undefined)
+  notes.push({
+    spawn,
+    folder: key,
+    expires: now + PENDING_TTL_MS,
+    ...(opts.agentOnly ? { agentOnly: true } : {})
+  })
 }
 
-/** Forget the pending spawn of `folder` (a create_session that failed before it spawned). */
+/**
+ * Remember that the session a card's dispatch is about to spawn is a worker of the card's step. Cards
+ * share a folder and boot one after another, so a note is told apart by the boot prompt (a later note
+ * for the same prompt replaces the earlier one). `folder` is left out when the card is cut into a
+ * worktree that does not exist yet. Returns the function that takes the note back.
+ */
+export function registerCardSpawn(
+  note: { spawn: PendingSpawn; folder?: string; prompt?: string },
+  now = Date.now()
+): () => void {
+  const prompt = note.prompt?.trim()
+  const folder = note.folder === undefined ? undefined : keyOf(note.folder)
+  notes = live(now).filter((n) =>
+    prompt ? n.prompt !== prompt : n.folder !== folder || n.prompt !== undefined
+  )
+  const added: Note = {
+    spawn: note.spawn,
+    expires: now + (prompt ? CARD_TTL_MS : PENDING_TTL_MS),
+    ...(folder !== undefined ? { folder } : {}),
+    ...(prompt ? { prompt } : {})
+  }
+  notes.push(added)
+  return () => {
+    notes = notes.filter((n) => n !== added)
+  }
+}
+
+/**
+ * Take (and forget) the note of a spawn in `folder`, or `undefined` when none is for it or it expired.
+ * `claim` is what the spawn says of itself. An agent-controlled spawn (`create_session`) takes only a
+ * note of its folder that is not a card's. Any other agent spawn is a card's dispatch: it takes the
+ * note of its boot prompt first, whatever folder it spawns in, and else a note of its folder that
+ * names no prompt. With no `claim`, any note of the folder.
+ */
+export function takePendingSpawn(
+  folder: string,
+  now = Date.now(),
+  claim?: { agentControlled?: boolean; prompt?: string }
+): PendingSpawn | undefined {
+  const key = keyOf(folder)
+  const waiting = live(now)
+  const inFolder = (n: Note): boolean => n.folder === key
+  const unprompted = (n: Note): boolean => inFolder(n) && n.prompt === undefined
+  const prompt = claim?.prompt?.trim()
+  let found: Note | undefined
+  if (!claim) found = waiting.find(inFolder)
+  else if (claim.agentControlled) found = waiting.find(unprompted)
+  else {
+    const byPrompt = (n: Note): boolean => !!prompt && n.prompt === prompt
+    found =
+      waiting.find((n) => inFolder(n) && byPrompt(n)) ??
+      waiting.find(byPrompt) ??
+      waiting.find((n) => unprompted(n) && !n.agentOnly)
+  }
+  if (found) notes = notes.filter((n) => n !== found)
+  return found?.spawn
+}
+
+/** Forget the notes of `folder` that are not a card's (a create_session that failed before it spawned). */
 export function dropPendingSpawn(folder: string): void {
-  pending.delete(keyOf(folder))
+  const key = keyOf(folder)
+  notes = notes.filter((n) => n.folder !== key || n.prompt !== undefined)
 }
 
 /** What the spawned session is told about itself: one line, in its system prompt, never a user turn. */

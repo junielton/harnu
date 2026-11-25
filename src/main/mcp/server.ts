@@ -129,6 +129,7 @@ import {
   verifyScopedBearer,
   type Scope
 } from './scope'
+import { ensureScopedAttached } from '../missions/dispatch'
 import { inFlightFolderFor } from './agent-inflight-registry'
 import { snapshotInheritOnce, addInheritOnce, closeInheritOnce } from './inherit-once-registry'
 import { pushShadowEntry } from '../responder-registry'
@@ -938,6 +939,11 @@ export async function actuate(
   ctx: ToolHandlerCtx
 ): Promise<CallToolResult> {
   if (!def.handler) return errorResult('NO_HANDLER')
+  // BUG-296: a step's session is born attached, even when it calls before its dispatch bound it.
+  const proven = callerOfCall.getStore()
+  if (proven?.kind === 'scoped' && proven.scope.role !== 'observer') {
+    await ensureScopedAttached(proven.scope)
+  }
 
   // Reads never mutate, so they never derive a callId and skip the registry
   // entirely — dedup only ever applies to a MUTATING verb's retry.

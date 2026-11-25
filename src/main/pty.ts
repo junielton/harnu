@@ -43,6 +43,7 @@ import { injectHookSettings } from './hook-settings-blob'
 import { forceDowngradePermission } from './mcp/agent-boot'
 import { orderMcpArgs } from './mcp/config-file'
 import { scopedSpawnLine, takePendingSpawn, type PendingSpawn, type Scope } from './mcp/scope'
+import { noteSessionRekey, noteSpawnedSessionId } from './mcp/session-boot'
 import type { SpawnOwner } from './companion/session-table'
 import { PtySessionIndex } from './pty-session-index'
 import {
@@ -1007,6 +1008,9 @@ export function registerPtyHandlers(getWindow: () => BrowserWindow | null): void
     // recognizes) — and the System Monitor keeps showing `synthetic-<uuid>` forever.
     const rec = ptyId ? ptys.get(ptyId) : undefined
     if (rec) applyRekeyToRecord(rec, toKey)
+    // BUG-296: the transcript of this synthetic row exists now. A card the drain or the board
+    // dispatched has no other report of it (only agent-controlled rows are reported materialized).
+    if (ptyId) noteSessionRekey(fromKey, toKey, rec?.stageFolder ?? '')
     // T474: a terminal that named the synthetic session as its owner now names the real one.
     terminalRegistry.rekeyOwner(fromKey, toKey)
     // T389 P1W3: the binding of this PTY now reads the new key; a claim for it is satisfied.
@@ -1123,9 +1127,9 @@ export function liveSessionKeys(): ReadonlySet<string> {
 }
 
 /**
- * The current session key for a possibly re-keyed one (BUG-197): a roadmap card stays
- * bound to its `synthetic-…` id forever, so the WIP liveness check follows the alias to
- * the real key. Identity when the key was never re-keyed.
+ * The current session key for a possibly re-keyed one (BUG-197): a roadmap card can still hold a
+ * `synthetic-…` id (its transcript never landed, or the app restarted before it was moved to the real
+ * one), so the WIP liveness check follows the alias to the real key. Identity when never re-keyed.
  */
 export function resolveSessionAlias(sessionKey: string): string {
   return sessionIndex.resolveAlias(sessionKey)
@@ -1619,9 +1623,16 @@ export async function createPty(opts: CreateOpts, deps: CreatePtyDeps): Promise<
       // A card a manifest drain or the board dispatches for a step is `spawnedBy: 'agent'` without being
       // `agentControlled`: it takes the note too (Missions v4 S-26), so it holds its step's verbs only.
       if ((opts.agentControlled || opts.spawnedBy === 'agent') && !opts.readOnly) {
-        scopedSpawn = takePendingSpawn(opts.cwd ?? '')
+        scopedSpawn = takePendingSpawn(opts.cwd ?? '', Date.now(), {
+          agentControlled: !!opts.agentControlled,
+          prompt: opts.bootOverride?.prePrompt
+        })
       }
-      if (scopedSpawn) effectiveClaudeSessionId = effectiveClaudeSessionId ?? randomUUID()
+      if (scopedSpawn) {
+        effectiveClaudeSessionId = effectiveClaudeSessionId ?? randomUUID()
+        // BUG-296: main knows the real id from here on, whatever row the renderer later binds it to.
+        if (opts.sessionKey) noteSpawnedSessionId(opts.sessionKey, effectiveClaudeSessionId)
+      }
     }
     if (kind === 'claude-new') {
       // A caller-minted uuid (T245) is emitted as `--session-id`; without one

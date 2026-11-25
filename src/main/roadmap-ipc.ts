@@ -939,7 +939,7 @@ export function registerRoadmapHandlers(getWindow: () => Electron.BrowserWindow 
       const plan = await planDispatchCore(args?.folder ?? '', args?.slug, args?.labels)
       // Missions v4 S-26: a card that is the work of a step spawns a session holding that step's verbs.
       if (plan.ok && typeof args?.slug === 'string') {
-        await noteBoardCardSpawn(args?.folder ?? '', args.slug)
+        await noteBoardCardSpawn(args?.folder ?? '', args.slug, undefined, plan.prompt)
       }
       return plan
     }
