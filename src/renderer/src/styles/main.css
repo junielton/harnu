@@ -1148,3 +1148,92 @@ textarea,
   display: none;
 }
 /* floating-panels:end */
+
+.sidebar-tree-scroll {
+  scrollbar-gutter: stable;
+}
+
+.sidebar-tree-scroll :is([data-sidebar-row], [data-folder-path], [data-session-id]) {
+  scroll-margin-top: var(--sidebar-tree-header-height);
+}
+
+.sidebar-tree-head[data-current='true'] {
+  background-image: linear-gradient(var(--color-accent-soft), var(--color-accent-soft));
+}
+
+.sidebar-disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur) var(--ease);
+}
+
+.sidebar-disclosure[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+.sidebar-disclosure-content {
+  min-height: 0;
+  overflow: clip;
+}
+
+.sidebar-tree-guide::before {
+  position: absolute;
+  inset: 0 auto 0 20px;
+  width: 1px;
+  background: var(--color-border-2);
+  pointer-events: none;
+  content: '';
+}
+
+.sidebar-tree-guide[data-guide-last='true']::before {
+  bottom: 2px;
+}
+
+.sidebar-row[data-focused='true'] {
+  position: relative;
+  outline: 2px solid var(--color-accent-line);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.sidebar-tree-head[data-focused='true'] {
+  position: sticky;
+  z-index: 3;
+}
+
+/* Preserve the existing hover and selected paint across the row and its overlays. */
+.sidebar-session-tint {
+  --sidebar-row-tint: transparent;
+  background-color: var(--sidebar-row-tint);
+}
+
+.sidebar-session-tint:hover,
+.agent-row:hover {
+  --sidebar-row-tint: rgba(255, 255, 255, 0.025);
+  background-color: var(--sidebar-row-tint);
+}
+
+.sidebar-session-tint[data-selected='true'] {
+  --sidebar-row-tint: var(--color-accent-soft);
+}
+
+.sidebar-trailing {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.sidebar-trailing-scrim,
+.sidebar-mission-full {
+  background:
+    linear-gradient(var(--sidebar-row-tint), var(--sidebar-row-tint)), var(--color-sidebar);
+}
+
+.sidebar-trailing-scrim {
+  position: absolute;
+  inset: 0 0 0 -24px;
+  mask-image: linear-gradient(to right, transparent, var(--color-sidebar) 24px);
+}

@@ -186,6 +186,8 @@ export interface FolderMenuState {
   open: boolean
   /** Absolute path of the project this menu targets. */
   projectPath: string | null
+  /** Repo header that opened this menu, when applicable. */
+  groupKey?: string
   /** Anchor coordinates (viewport). */
   x: number
   y: number
@@ -769,14 +771,19 @@ export const useUiStore = defineStore('ui', () => {
    * and folder menu are all mutually exclusive — only one can be visible
    * at a time.
    */
-  function openFolderMenu(opts: { projectPath: string; x: number; y: number }): void {
+  function openFolderMenu(opts: {
+    projectPath: string
+    x: number
+    y: number
+    groupKey?: string
+  }): void {
     preview.value = { open: false, sessionId: null, folderPath: null, rect: null }
     dialog.value = null
     palette.value = { open: false }
     sidebarHiddenPopover.value = { open: false, anchorRect: null }
     sidebarJumpPalette.value = { open: false }
     menu.value = { open: false, sessionId: null, x: 0, y: 0 }
-    folderMenu.value = { open: true, projectPath: opts.projectPath, x: opts.x, y: opts.y }
+    folderMenu.value = { open: true, ...opts }
   }
 
   function closeFolderMenu(): void {
@@ -1004,7 +1011,7 @@ export const useUiStore = defineStore('ui', () => {
    * toggle it visually is (the Topbar's own sidebar/helper buttons already do).
    *
    * Deliberately NOT used by the menu entries (`FolderMenu`, `SessionMenu`,
-   * `RepoGroupHeader`) or by `openNavigableView` — a menu item labelled
+   * `SidebarDrillView`) or by `openNavigableView` — a menu item labelled
    * "Roadmap board" and a notification that navigates to a view must OPEN it,
    * never close whatever happens to be on screen.
    *

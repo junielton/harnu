@@ -112,7 +112,7 @@ describe('SidebarShelvedSection', () => {
     expect(dimmed.attributes('style')).toContain('opacity: 0.62')
     // Compact single line (24 px Comfortable), at the folder indent.
     expect(first.attributes('style')).toContain('height: 24px')
-    expect(first.attributes('style')).toContain('padding: 0px 12px 0px 28px')
+    expect(first.attributes('style')).toContain('padding: 0px 12px 0px 14px')
   })
 
   it('the row height and the indent follow the sidebar density', async () => {

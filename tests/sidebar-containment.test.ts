@@ -21,7 +21,8 @@ const css = readFileSync('src/renderer/src/styles/main.css', 'utf8')
 const sidebar = readFileSync('src/renderer/src/components/Sidebar.vue', 'utf8')
 const folder = readFileSync('src/renderer/src/components/SidebarFolder.vue', 'utf8')
 const card = readFileSync('src/renderer/src/components/FleetBoardCard.vue', 'utf8')
-const repoHeader = readFileSync('src/renderer/src/components/RepoGroupHeader.vue', 'utf8')
+const shelved = readFileSync('src/renderer/src/components/SidebarShelvedSection.vue', 'utf8')
+const treeFolder = readFileSync('src/renderer/src/components/SidebarTreeFolder.vue', 'utf8')
 
 /** The declaration block of the first `selector { … }` in the stylesheet. */
 function block(selector: string): string {
@@ -69,18 +70,16 @@ describe('BUG-269 containment wiring', () => {
     expect(openingTag(sidebar, 'data-sidebar\n')).toMatch(/class="[^"]*\bsidebar-contain\b/)
   })
 
-  it('every session row carries .sidebar-row-cv and keeps its fixed inline height', () => {
-    const tag = openingTag(folder, 'data-session-row')
-    // The marker class is in the opening tag of the row, which is the element whose
-    // height the template pins: the two must travel together.
-    const row = folder.slice(
-      folder.indexOf('data-session-row'),
-      folder.indexOf('data-session-row') + 2500
-    )
-    expect(tag).toBeTruthy()
-    expect(row).toMatch(/class="sidebar-row sidebar-row-cv /)
-    expect(row).toMatch(/height: `\$\{metrics\.sessionRowHeight\}px`/)
-  })
+  it.each([folder, shelved])(
+    'session rows carry .sidebar-row-cv and a fixed inline height (%#)',
+    (source) => {
+      const start = source.indexOf('data-session-row')
+      const row = source.slice(start, start + 2500)
+      expect(openingTag(source, 'data-session-row')).toBeTruthy()
+      expect(row).toMatch(/class="sidebar-row sidebar-row-cv /)
+      expect(row).toMatch(/height: `\$\{metrics\.sessionRowHeight\}px`/)
+    }
+  )
 
   it('every Fleet card carries .fleet-card-cv', () => {
     expect(openingTag(card, 'data-dsqa="fleet-card"')).toMatch(/class="fleet-card-cv /)
@@ -98,7 +97,7 @@ describe('BUG-269 invariant: layout containment is safe only while nothing in th
   for (const [name, source] of [
     ['Sidebar.vue', sidebar],
     ['SidebarFolder.vue', folder],
-    ['RepoGroupHeader.vue', repoHeader]
+    ['SidebarTreeFolder.vue', treeFolder]
   ] as const) {
     it(`${name}: no fixed-position element outside a <Teleport>`, () => {
       const template = withoutTeleports(source.slice(source.indexOf('<template>')))

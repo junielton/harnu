@@ -45,6 +45,8 @@
       "rescan": "Rescan folders",
       "rescanFailed": "Rescan failed",
       "expandAll": "Expand all",
+      "collapseSessions": "Collapse sessions",
+      "collapseFolders": "Collapse folders",
       "collapseAll": "Collapse all",
       "hidden": "Hidden ({count})",
       "unhide": "Unhide"
@@ -117,7 +119,11 @@
       "workingGuard": "This teammate is being driven by its team lead right now. Resuming it here could conflict with the lead's writes — continue anyway?"
     },
     "agentBlockedBadge": "Agents blocked — no agent can act in this folder",
-    "lineageBadge": "{n} worktree(s) cut from here — click to collapse/expand"
+    "tree": {
+      "idleWorktrees": "{count} idle worktree | {count} idle worktrees",
+      "foldFolder": "Collapse {name}",
+      "openFolder": "Expand {name}"
+    }
   },
   "board": {
     "blockedFor": "blocked {time}",
@@ -730,6 +736,8 @@
     "searchTruncated": "Showing the first 500 matches — refine your search."
   },
   "folderMenu": {
+    "showOlder": "Show older ({n})",
+    "showArchived": "Show archived ({n})",
     "label": "Folder actions",
     "newTerminal": "New terminal",
     "bootOptions": "Startup options…",
@@ -1412,6 +1420,8 @@
     "save": "Save"
   },
   "repoGroup": {
+    "renameRepo": "Rename repo",
+    "cleanUp": "Clean up",
     "menuLabel": "Group actions",
     "rename": "Rename group",
     "resetName": "Reset name",

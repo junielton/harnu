@@ -7,7 +7,7 @@ import { isFolderGroup, type FolderGroup, type GroupSource } from '../stores/fol
 
 /**
  * The Folder menu's and the repo-group menu's actions, shared by `FolderMenu.vue`,
- * `RepoGroupHeader.vue`, `SidebarDrillView.vue` (its group menu) and the keyboard
+ * `SidebarDrillView.vue` (its group menu) and the keyboard
  * bindings in `App.vue` (T486 §3.4, AC-37): a menu item and its keybinding run
  * the same function, never a copy. Folder actions take the target folder's path,
  * group actions the target group.
@@ -226,17 +226,13 @@ export function useFolderMenuActions(): FolderMenuActions {
     }
   }
 
-  /**
-   * The folder row's older / archived peek. A collapsed folder expands first
-   * (revealing inside a closed folder would be invisible); the toggle then
-   * reveals. Collapsing clears the peek (store `forgetPeeks`), so a collapsed
-   * folder is always un-revealed and the toggle stays unambiguous. In drill mode
-   * the folder screen shows its sessions whatever `expanded` says, so the classic
-   * tree's state is left alone.
-   */
+  /** Reveal the owning checkout before showing an older or archived peek. */
   function peek(folderPath: string, kind: 'older' | 'archived'): void {
-    const folder = sessions.findFolderByPath(folderPath)
-    if (folder && !folder.expanded && !sessions.drillModeEnabled) sessions.toggleFolder(folderPath)
+    const revealed =
+      kind === 'older'
+        ? sessions.isOlderRevealed(folderPath)
+        : sessions.isArchivedRevealed(folderPath)
+    if (!revealed && !sessions.drillModeEnabled) sessions.revealCheckout(folderPath)
     if (kind === 'older') sessions.toggleRevealOlder(folderPath)
     else sessions.toggleRevealArchived(folderPath)
   }
@@ -319,14 +315,10 @@ export function useFolderMenuActions(): FolderMenuActions {
     return path && visible(action, path) ? path : null
   }
 
-  /**
-   * F2's target (§3.10): the cursor's folder row, else the active folder. A
-   * session or group cursor row is a no-op — a session renames with `Cmd+R`, a
-   * group with `repoGroup.rename`.
-   */
+  /** F2 targets a path-backed folder row, including a standalone Git header. */
   function renameTarget(): string | null {
     const c = cursorRow()
-    if (c) return c.kind === 'folder' && sessions.findFolderByPath(c.id) ? c.id : null
+    if (c) return c.kind !== 'session' && sessions.findFolderByPath(c.id) ? c.id : null
     return activeFor('rename')
   }
 
