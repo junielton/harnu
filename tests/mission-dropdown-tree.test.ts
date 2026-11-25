@@ -576,3 +576,83 @@ describe('AC-4 — the tree is a keyboard tree', () => {
     expect(treeKeyAction(rows, 'gone', 'ArrowDown')).toBeNull()
   })
 })
+
+describe('the timeline and the time under each title (T810)', () => {
+  const seed: Seed = {
+    milestones: [
+      { id: 'mls-1', title: 'Trusted test set', state: 'done' },
+      { id: 'mls-2', title: 'Scoring tool', state: 'in-progress' },
+      { id: 'mls-3', title: 'Two fixes', state: 'not-started' }
+    ],
+    steps: [
+      {
+        id: 'stp-1',
+        milestone: 'mls-1',
+        title: 'Pick specs',
+        state: 'done',
+        criteria: [['Picked', true]]
+      },
+      { id: 'stp-2', milestone: 'mls-2', title: 'Score slices', state: 'running' },
+      { id: 'stp-3', milestone: 'mls-2', title: 'Score proofs', state: 'running' },
+      { id: 'stp-4', milestone: 'mls-3', title: 'Fix a rule', state: 'todo' }
+    ],
+    current: 'mls-2'
+  }
+  const now = Date.parse('2026-11-19T12:00:00')
+
+  function mountTimeline(): VueWrapper {
+    const detail = detailOf(seed)
+    detail.steps[1].startedAt = '2026-11-19T11:35:00'
+    const w = mount(MissionDropdownTree, {
+      props: {
+        detail,
+        askLeader: null,
+        now,
+        settledAt: { 'stp-1': { 'ac-1': '2026-11-12T16:40:00' } }
+      },
+      global: { plugins: [i18n] }
+    })
+    wrapper = w
+    return w
+  }
+
+  it('draws a line on every item but the last of its level, green only when done', () => {
+    const w = mountTimeline()
+    const classesOf = (sel: string): string[][] => w.findAll(sel).map((e) => e.classes())
+    const milestones = classesOf('[data-test="milestone"]')
+    expect(milestones.map((c) => c.includes('mission-tl--line'))).toEqual([true, true, false])
+    expect(milestones.map((c) => c.includes('mission-tl--done'))).toEqual([true, false, false])
+    for (const c of milestones) {
+      expect(c).toEqual(expect.arrayContaining(['mission-tl', 'mission-tl--milestone']))
+    }
+    const steps = classesOf('[data-test="step"]')
+    expect(steps.map((c) => c.includes('mission-tl--line'))).toEqual([true, false])
+    for (const c of steps) {
+      expect(c).toEqual(expect.arrayContaining(['mission-tl', 'mission-tl--step']))
+    }
+  })
+
+  it('writes the record’s own times, and no line where it holds none', () => {
+    const w = mountTimeline()
+    const row = (id: string) => w.get(`[data-test$="-row"][data-row="${id}"]`)
+    expect(row('mls-1').get('[data-test="milestone-time"]').text()).toBe('Done · 12 Nov, 16:40')
+    expect(row('mls-2').get('[data-test="milestone-time"]').text()).toBe(
+      'Started 19 Nov, 11:35 · 25 min'
+    )
+    expect(row('mls-3').get('[data-test="milestone-time"]').text()).toBe('Not started')
+    expect(row('stp-2').get('[data-test="step-time"]').text()).toBe('Running for 25 min')
+    expect(row('stp-3').find('[data-test="step-time"]').exists()).toBe(false)
+  })
+
+  it('keeps the hover off the toggle column, and the step line when the step opens', async () => {
+    const w = mountTimeline()
+    for (const r of w.findAll('[role="treeitem"]')) {
+      expect(r.classes()).toContain('mission-row')
+      expect(r.classes()).not.toContain('hover:bg-surface-2')
+    }
+    await w.get('[data-row="stp-2"]').trigger('click')
+    const item = w.get('[data-test="step"]')
+    expect(item.find('[data-test="step-body"]').exists()).toBe(true)
+    expect(item.classes()).toContain('mission-tl--line')
+  })
+})

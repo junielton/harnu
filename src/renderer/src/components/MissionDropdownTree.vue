@@ -4,8 +4,13 @@
  * draws" 3 and "Keyboard and focus"; mockup `docs/design/mission-dropdown/`, states `mid`, `ask`, `dots`).
  *
  * Milestone ▸ step ▸ criteria as a keyboard `role="tree"`. Only the current milestone is open; the others are
- * one line. There is no timeline line and no "Steps and timeline" disclosure, so the dropdown reads and writes
- * no `om2tab.missionPane.sections` value. Inside an open milestone the owed steps come first, then at most
+ * one row. There is no "Steps and timeline" disclosure, so the dropdown reads and writes no
+ * `om2tab.missionPane.sections` value.
+ *
+ * The timeline (T810) is CSS only (`.mission-tl*` in `main.css`): each item draws a line from under its own
+ * toggle to just above the next one's, so it follows any height; a done item's line is green and the last
+ * item of a level has none. Under each title sits the record's own time (`lib/mission-dropdown-tree.ts`),
+ * or nothing. Inside an open milestone the owed steps come first, then at most
  * three running steps, the rest behind "{n} more steps". A step row has the glyph, the title (it wraps), the
  * PR number as a link and the "Yours" chip when the operator owes it, and no "Blocked" chip: the flag glyph and
  * its label say it. A mission with no milestones draws its steps as one list; optional milestones stay under
@@ -42,7 +47,16 @@ import {
   type SessionLinkLike,
   type SummaryPart
 } from '../lib/mission-pane-view'
-import { capRunning, treeKeyAction, type TreeRow } from '../lib/mission-dropdown-tree'
+import {
+  capRunning,
+  criterionTimes,
+  milestoneTime,
+  stepTime,
+  timeText,
+  treeKeyAction,
+  type SettleTimes,
+  type TreeRow
+} from '../lib/mission-dropdown-tree'
 import type { RawLink } from '../lib/mission-dropdown-links'
 import { walkEntryAvailable, type WalkSource } from '../lib/walk-entry'
 
@@ -52,6 +66,8 @@ const props = defineProps<{
   askLeader: string | null
   /** The links the session wrote, which give a step's PR number its address. */
   sessionLinks?: readonly SessionLinkLike[]
+  /** When each settled criterion was settled (the view's `settledAt`): the time lines read it. */
+  settledAt?: SettleTimes
   now?: number
 }>()
 
@@ -60,7 +76,7 @@ const emit = defineEmits<{
   walk: [source: WalkSource]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const tree = computed(() =>
   capRunning(
@@ -69,6 +85,34 @@ const tree = computed(() =>
     props.detail.steps.map((s) => s.id)
   )
 )
+
+/** The time under each title: worded once per view, and `null` where the record holds no stamp. */
+const times = computed(() => {
+  const now = props.now ?? Date.now()
+  const settled = props.settledAt ?? {}
+  const word = (line: Parameters<typeof timeText>[2]): string | null =>
+    timeText(t, locale.value, line)
+  const milestones = new Map(
+    props.detail.milestones.map((m) => [
+      m.id,
+      word(milestoneTime(props.detail, m.id, settled, now))
+    ])
+  )
+  const steps = new Map(
+    props.detail.steps.map((s) => {
+      const c = criterionTimes(s, settled)
+      return [
+        s.id,
+        {
+          line: word(stepTime(s, now)),
+          openSince: word(c.openSince),
+          lastVerified: word(c.lastVerified)
+        }
+      ]
+    })
+  )
+  return { milestones, steps }
+})
 
 /** The operator's choices. An absent key means "as the server's current milestone says". */
 const milestoneOpen = reactive<Record<string, boolean>>({})
@@ -143,9 +187,15 @@ function summaryText(part: SummaryPart): string {
 }
 const summaryLength = (m: PaneMilestoneRow): number => milestoneSummary(m).length
 
+/** A milestone draws its line only when another milestone row follows it. */
+function milestoneLine(index: number): boolean {
+  const next = blocks.value[index + 1]
+  return next !== undefined && !next.toggle
+}
+
 // ---- Test it ----------------------------------------------------------------------------------------------
 
-/** The ghost, compact "Ask" button. */
+/** The ghost, compact "Ask" button. Alone at the right end, its padding and border hang past the edge. */
 const ASK_BTN =
   'inline-flex h-5 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent bg-transparent px-2 text-[11px] font-medium leading-none text-text-3 transition hover:bg-surface-2 hover:text-text'
 
@@ -257,12 +307,12 @@ defineExpose({ openStep, openAsk })
     ref="root"
     role="tree"
     class="flex flex-col rounded-sm border-t border-border"
-    style="gap: 1px; padding: 8px 14px 10px"
+    style="padding: 8px 14px 10px"
     :aria-label="$t('missionDropdown.tree.label')"
     data-test="tree"
     @keydown="onKeydown"
   >
-    <template v-for="block in blocks" :key="block.key">
+    <template v-for="(block, bi) in blocks" :key="block.key">
       <!-- Optional milestones sit under one collapsed line (outside the count). -->
       <button
         v-if="block.toggle"
@@ -279,7 +329,17 @@ defineExpose({ openStep, openAsk })
       <div
         v-else
         class="flex flex-col rounded-sm"
-        style="gap: 1px"
+        :class="
+          block.milestone
+            ? [
+                'mission-tl mission-tl--milestone',
+                {
+                  'mission-tl--line': milestoneLine(bi),
+                  'mission-tl--done': block.milestone.state === 'done'
+                }
+              ]
+            : ''
+        "
         :data-test="block.milestone ? 'milestone' : 'loose'"
         :data-milestone="block.milestone?.id"
       >
@@ -289,12 +349,13 @@ defineExpose({ openStep, openAsk })
             :tabindex="tabStop === block.milestone.id ? 0 : -1"
             :aria-expanded="isOpen(block.milestone)"
             aria-level="1"
-            class="grid cursor-pointer items-center rounded-sm text-text-3 transition hover:bg-surface-2"
+            class="mission-row grid cursor-pointer items-start rounded-sm text-text-3"
             style="
               grid-template-columns: 10px 12px minmax(0, 1fr) auto;
               column-gap: 8px;
               padding: 7px 6px;
               font-size: 12.5px;
+              line-height: 16px;
             "
             data-test="milestone-row"
             :data-row="block.milestone.id"
@@ -303,7 +364,7 @@ defineExpose({ openStep, openAsk })
             @focus="activeId = block.milestone.id"
             @click="toggleMilestone(block.milestone)"
           >
-            <span class="flex text-text-4" data-test="chevron">
+            <span class="flex h-4 items-center text-text-4" data-test="chevron">
               <ChevronDown v-if="isOpen(block.milestone)" :size="10" :stroke-width="1.5" />
               <ChevronRight v-else :size="10" :stroke-width="1.5" />
             </span>
@@ -311,16 +372,24 @@ defineExpose({ openStep, openAsk })
               kind="milestone"
               :state="block.milestone.state"
               :current="block.milestone.current"
+              class="mt-0.5"
               data-test="milestone-glyph"
             />
-            <span class="min-w-0 [overflow-wrap:anywhere]">
+            <span class="flex min-w-0 flex-col gap-px [overflow-wrap:anywhere]">
               <span :class="block.milestone.current ? 'font-medium text-text' : ''">{{
                 block.milestone.title
               }}</span>
               <span
+                v-if="times.milestones.get(block.milestone.id)"
+                class="tabular-nums text-text-4"
+                style="font-size: 10.5px; font-weight: 400; line-height: 14px"
+                data-test="milestone-time"
+                >{{ times.milestones.get(block.milestone.id) }}</span
+              >
+              <span
                 v-if="block.milestone.waitsFor"
                 class="block text-text-4"
-                style="font-size: 11px; margin-top: 1px"
+                style="font-size: 11px; line-height: 14px"
                 data-test="waits-for"
                 >{{
                   block.milestone.waitsForMore.length === 0
@@ -343,7 +412,7 @@ defineExpose({ openStep, openAsk })
         <div
           v-if="!block.milestone || isOpen(block.milestone)"
           class="flex min-w-0 flex-col rounded-sm"
-          :style="block.milestone ? 'margin-left: 18px; padding-bottom: 6px; gap: 1px' : 'gap: 1px'"
+          :style="block.milestone ? 'margin-left: 30px; padding-bottom: 6px' : undefined"
           :role="block.milestone ? 'group' : undefined"
           data-test="milestone-body"
           :data-milestone="block.milestone?.id"
@@ -379,7 +448,7 @@ defineExpose({ openStep, openAsk })
             <button
               v-if="askLeader && !walkEntryAvailable(milestoneWalk(block.milestone))"
               type="button"
-              :class="ASK_BTN"
+              :class="[ASK_BTN, '-mr-[9px]']"
               :title="$t('missionDropdown.ask.openTitle')"
               :aria-expanded="askFor === block.milestone.id"
               data-test="ask-open"
@@ -435,19 +504,29 @@ defineExpose({ openStep, openAsk })
             @close="askFor = null"
           />
 
-          <template v-for="s in visibleSteps(block.key, block.groups)" :key="s.id">
+          <div
+            v-for="(s, si) in visibleSteps(block.key, block.groups)"
+            :key="s.id"
+            class="mission-tl mission-tl--step rounded-sm"
+            :class="{
+              'mission-tl--line': si < visibleSteps(block.key, block.groups).length - 1,
+              'mission-tl--done': s.state === 'done'
+            }"
+            data-test="step"
+          >
             <div class="rounded-sm" style="margin: 0 -6px">
               <div
                 role="treeitem"
                 :tabindex="tabStop === s.id ? 0 : -1"
                 :aria-expanded="!!stepOpen[s.id]"
                 aria-level="2"
-                class="grid w-full cursor-pointer items-center rounded-sm text-left text-text-2 transition hover:bg-surface-2"
+                class="mission-row grid w-full cursor-pointer items-start rounded-sm text-left text-text-2"
                 style="
                   grid-template-columns: 10px 12px minmax(0, 1fr) auto;
                   column-gap: 7px;
-                  padding: 5px 6px;
+                  padding: 6px 6px;
                   font-size: 12px;
+                  line-height: 16px;
                 "
                 data-test="step-row"
                 :data-row="s.id"
@@ -457,16 +536,23 @@ defineExpose({ openStep, openAsk })
                 @focus="activeId = s.id"
                 @click="toggleStep(s.id)"
               >
-                <span class="flex text-text-4" data-test="chevron">
+                <span class="flex h-4 items-center text-text-4" data-test="chevron">
                   <ChevronDown v-if="stepOpen[s.id]" :size="10" :stroke-width="1.5" />
                   <ChevronRight v-else :size="10" :stroke-width="1.5" />
                 </span>
-                <MissionDot kind="step" :state="s.state" :blocked="s.blocked" />
-                <span class="min-w-0 [overflow-wrap:anywhere]" data-test="step-title">{{
-                  s.title
-                }}</span>
+                <MissionDot kind="step" :state="s.state" :blocked="s.blocked" class="mt-0.5" />
+                <span class="flex min-w-0 flex-col gap-px [overflow-wrap:anywhere]">
+                  <span data-test="step-title">{{ s.title }}</span>
+                  <span
+                    v-if="times.steps.get(s.id)?.line"
+                    class="tabular-nums text-text-4"
+                    style="font-size: 10.5px; line-height: 14px"
+                    data-test="step-time"
+                    >{{ times.steps.get(s.id)?.line }}</span
+                  >
+                </span>
                 <span
-                  class="flex flex-wrap items-center rounded-sm"
+                  class="flex h-4 flex-wrap items-center rounded-sm"
                   style="gap: 6px; font-size: 10.5px"
                   data-test="step-meta"
                 >
@@ -504,9 +590,11 @@ defineExpose({ openStep, openAsk })
               :mission-id="detail.id"
               :step="s"
               :raw-links="rawLinksOf(s.id)"
+              :open-since="times.steps.get(s.id)?.openSince ?? null"
+              :last-verified="times.steps.get(s.id)?.lastVerified ?? null"
               @walk="emit('walk', $event)"
             />
-          </template>
+          </div>
 
           <button
             v-if="block.groups.folded.length > 0"

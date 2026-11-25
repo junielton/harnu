@@ -511,7 +511,7 @@
         "withAge": "{head} · {age}"
       },
       "clear": "Done, continue",
-      "links": "Links",
+      "linksCount": "Links · {n}",
       "evidence": "Evidence",
       "evidenceTitle": "Open the evidence in the viewer",
       "worktreeTitle": "Show this worktree in the sidebar",
@@ -604,6 +604,22 @@
       "mission": {
         "label": "Test the whole mission",
         "tip": "Walk through the whole mission by hand"
+      }
+    },
+    "time": {
+      "done": "Done · {date}",
+      "started": "Started {date} · {age}",
+      "notStarted": "Not started",
+      "running": "Running for {age}",
+      "blocked": "Blocked for {age} · since {date}",
+      "openSince": "Open since {date}",
+      "lastVerified": "Last one verified {date}",
+      "age": {
+        "underMinute": "<1 min",
+        "minutes": "{n} min",
+        "hours": "{h} h",
+        "hoursMinutes": "{h} h {m} min",
+        "days": "{n} day | {n} days"
       }
     }
   },

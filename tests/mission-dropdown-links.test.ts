@@ -240,6 +240,9 @@ async function mountLinks(
   )
   wrapper = w
   await flushPromises()
+  // Links are closed by default (T810): every case below reads them open.
+  const toggle = w.find('[data-test="links-toggle"]')
+  if (toggle.exists()) await toggle.trigger('click')
   return w
 }
 
@@ -257,10 +260,32 @@ afterEach(() => {
 const links = (w: VueWrapper) => w.findAll('[data-test="step-link"]')
 const kindOf = (w: VueWrapper, k: string) => w.findAll(`[data-test="step-link"][data-kind="${k}"]`)
 
+describe('links are folded behind their count (T810)', () => {
+  it('are closed by default under "Links · N", and a button (Enter, Space, click) opens and closes them', async () => {
+    const w = await mountLinks([
+      { kind: 'pr', ref: PR },
+      { kind: 'url', ref: 'http://localhost:5173/score-report' }
+    ])
+    const toggle = w.get('[data-test="links-toggle"]')
+    // `mountLinks` opened it: close it again and read the closed state.
+    await toggle.trigger('click')
+    // A native <button>: Enter and Space press it with no key handler of our own.
+    expect(toggle.element.tagName).toBe('BUTTON')
+    expect(toggle.attributes('type')).toBe('button')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(toggle.text()).toBe('Links · 2')
+    expect(links(w)).toHaveLength(0)
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(links(w)).toHaveLength(2)
+  })
+})
+
 describe('label and click target of each link kind', () => {
   it('the pull request opens its address and never toggles the step', async () => {
     const onParent = vi.fn()
     const w = await mountLinks([{ kind: 'pr', ref: PR }], [], onParent)
+    onParent.mockClear() // opening the links was a click of its own
     const pr = kindOf(w, 'pr')
     expect(pr).toHaveLength(1)
     expect(pr[0].text()).toBe('#21')
@@ -419,7 +444,7 @@ describe('label and click target of each link kind', () => {
     ])
     expect(links(w)).toHaveLength(0)
     expect(w.find('[data-test="step-links"]').exists()).toBe(false)
-    expect(w.text()).not.toContain(enMessages.missionDropdown.step.links)
+    expect(w.find('[data-test="links-toggle"]').exists()).toBe(false)
     expect(w.find('[data-test="step-links-empty"]').exists()).toBe(false)
   })
 
@@ -437,7 +462,7 @@ describe('label and click target of each link kind', () => {
     const en = enMessages.missionDropdown.step
     const pt = ptMessages.missionDropdown.step
     for (const key of [
-      'links',
+      'linksCount',
       'evidence',
       'copy',
       'copied',

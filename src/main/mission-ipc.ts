@@ -277,6 +277,12 @@ export type MissionV4ViewReply =
        * pull request badges from it. Absent in a reply built without facts.
        */
       stepFacts?: Record<string, { pr?: string; workerWorking?: boolean }>
+      /**
+       * When each settled criterion was settled, by step id then criterion id: the record's own stamp. A
+       * fact is dated nowhere and an open criterion has none. The dropdown's time lines read it (T810);
+       * `detail`, and so `mission_get`, does not carry it.
+       */
+      settledAt?: Record<string, Record<string, string>>
       /** What the end dialog warns about, counted with the facts (the close door's own reply has none). */
       closeWarnings: V4CloseWarning[]
       /** The Done when a session staged for the operator to approve, or `null`. */
@@ -451,6 +457,23 @@ export async function runPaneDoor(raw: unknown): Promise<Record<string, unknown>
   return doorReply(await runDoor(raw))
 }
 
+/** The stamp of every criterion the detail reads as settled by one (see `settledAt` on the reply). */
+function settleTimesOf(
+  record: MissionV4,
+  detail: MissionDetail
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {}
+  for (const step of detail.steps) {
+    const acs = record.steps.find((s) => s.id === step.id)?.acs ?? []
+    for (const c of step.criteria) {
+      if (!c.settled || c.via === 'fact') continue
+      const at = acs.find((a) => a.id === c.id)?.settled?.at
+      if (at) (out[step.id] ??= {})[c.id] = at
+    }
+  }
+  return out
+}
+
 /**
  * Missions v4 S-16a (V-1, V-3) — the view of one mission for the Mission dropdown. It READS and never
  * writes, even for a mission that exists only as a v3 file: no v4 record, no sidecar, no ledger row,
@@ -528,6 +551,7 @@ export async function buildMissionV4View(
           }
         ])
       ),
+      settledAt: settleTimesOf(record, detail),
       closeWarnings: closeWarningsOf(record, inputs),
       // An older mission's staging reads from its file with the reason its owner gave; once converted by copy,
       // the record's own staged Done when stands in (the conversion writes it).

@@ -6,11 +6,17 @@
  * server's states, counts and current milestone and computes none of them. What this module adds is two
  * rules of its own: how many running steps an open milestone shows before "{n} more steps", and what each
  * key does on the tree's rows.
+ *
+ * It also reads the TIMELINE (T810): the segments of the head's progress bar and the time line under each
+ * title. Times are the record's own stamps (a step's `startedAt`, a blocker's `raisedAt`, a criterion's
+ * settle); where the record holds none there is no line. Nothing records when a step entered review, so a
+ * step in review has no line.
  */
 import {
   milestoneGlyph,
   stepGlyph,
   type GlyphKind,
+  type MissionV4Reply,
   type PaneMilestoneRow,
   type PaneStepRow,
   type PaneTree
@@ -128,4 +134,144 @@ export function treeKeyAction(rows: readonly TreeRow[], from: string, key: strin
     default:
       return null
   }
+}
+
+// ---- the timeline: progress segments and the time under each title ------------------------------------------
+
+type Detail = MissionV4Reply['detail']
+type Step = Detail['steps'][number]
+
+/** When each settled criterion was settled, by step id then criterion id (the view's `settledAt`). */
+export type SettleTimes = Readonly<Record<string, Readonly<Record<string, string>>>>
+
+/** What a time line says; the renderer words it. `at` is the record's stamp, as written. */
+export type TimeLine =
+  | { kind: 'done' | 'openSince' | 'lastVerified'; at: string }
+  | { kind: 'started' | 'blocked'; at: string; ageMs: number }
+  | { kind: 'running'; ageMs: number }
+  | { kind: 'notStarted' }
+
+/** The stamps that parse, oldest first. */
+function stamps(values: ReadonlyArray<string | null | undefined>): string[] {
+  return values
+    .filter((v): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v)))
+    .sort((a, b) => Date.parse(a) - Date.parse(b))
+}
+
+const since = (at: string, now: number): number => Math.max(0, now - Date.parse(at))
+
+/** The latest settle among a step's settled criteria. */
+const settlesOf = (step: Step, settledAt: SettleTimes): Array<string | undefined> =>
+  step.criteria.filter((c) => c.settled).map((c) => settledAt[step.id]?.[c.id])
+
+/**
+ * A milestone's line: "Done" with the last settle of its steps, "Started" from the first step that started,
+ * or "Not started".
+ */
+export function milestoneTime(
+  detail: Detail,
+  milestoneId: string,
+  settledAt: SettleTimes,
+  now: number
+): TimeLine | null {
+  const state = detail.milestones.find((m) => m.id === milestoneId)?.state
+  if (state === 'not-started') return { kind: 'notStarted' }
+  const own = detail.steps.filter((s) => s.milestone === milestoneId)
+  if (state === 'done') {
+    const at = stamps(own.flatMap((s) => settlesOf(s, settledAt))).pop()
+    return at === undefined ? null : { kind: 'done', at }
+  }
+  const at = stamps(own.map((s) => s.startedAt))[0]
+  return at === undefined ? null : { kind: 'started', at, ageMs: since(at, now) }
+}
+
+/**
+ * A step's line: how long it has been blocked (from its oldest blocker), else how long it has run. A step in
+ * review, to do or done has none.
+ */
+export function stepTime(step: Step, now: number): TimeLine | null {
+  if (step.state === 'done') return null
+  if (step.blocked) {
+    const at = stamps(step.blockers.map((b) => b.raisedAt))[0]
+    return at === undefined ? null : { kind: 'blocked', at, ageMs: since(at, now) }
+  }
+  if (step.state !== 'running') return null
+  const at = stamps([step.startedAt])[0]
+  return at === undefined ? null : { kind: 'running', ageMs: since(at, now) }
+}
+
+/** The lines of an open step's criteria: one for the open ones, one for the folded verified line. */
+export function criterionTimes(
+  step: Step,
+  settledAt: SettleTimes
+): { openSince: TimeLine | null; lastVerified: TimeLine | null } {
+  const started = stamps([step.startedAt])[0]
+  const latest = stamps(settlesOf(step, settledAt)).pop()
+  return {
+    openSince: started === undefined ? null : { kind: 'openSince', at: started },
+    lastVerified: latest === undefined ? null : { kind: 'lastVerified', at: latest }
+  }
+}
+
+/** One segment of the progress bar. */
+export interface Segment {
+  id: string
+  state: 'done' | 'current' | 'todo'
+}
+
+/** One segment per required milestone, in plan order; none for a mission with no milestones. */
+export function milestoneSegments(detail: Detail): Segment[] {
+  const current = detail.progress.current?.id
+  return detail.milestones
+    .filter((m) => !m.optional)
+    .map((m) => ({
+      id: m.id,
+      state: m.state === 'done' ? 'done' : m.id === current ? 'current' : 'todo'
+    }))
+}
+
+type Translate = (key: string, values?: Record<string, unknown>, plural?: number) => string
+
+/** "<1 min", "25 min", "1 h 10 min", "6 days". */
+export function formatAge(t: Translate, ms: number): string {
+  const minutes = Math.max(0, Math.floor(ms / 60_000))
+  if (minutes < 1) return t('missionDropdown.time.age.underMinute')
+  if (minutes < 60) return t('missionDropdown.time.age.minutes', { n: minutes })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    const rest = minutes % 60
+    return rest === 0
+      ? t('missionDropdown.time.age.hours', { h: hours })
+      : t('missionDropdown.time.age.hoursMinutes', { h: hours, m: rest })
+  }
+  const days = Math.floor(hours / 24)
+  return t('missionDropdown.time.age.days', { n: days }, days)
+}
+
+/** "12 Nov, 16:40" in the reader's locale, or `null` for a stamp that does not parse. */
+export function formatStamp(iso: string, locale: string): string | null {
+  const at = new Date(iso)
+  if (!Number.isFinite(at.getTime())) return null
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-GB' : locale, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).format(at)
+}
+
+/** The sentence of a time line, or `null` when there is nothing to say. */
+export function timeText(t: Translate, locale: string, line: TimeLine | null): string | null {
+  if (line === null) return null
+  if (line.kind === 'notStarted') return t('missionDropdown.time.notStarted')
+  if (line.kind === 'running') {
+    return t('missionDropdown.time.running', { age: formatAge(t, line.ageMs) })
+  }
+  const date = formatStamp(line.at, locale)
+  if (date === null) return null
+  if (line.kind === 'started' || line.kind === 'blocked') {
+    return t(`missionDropdown.time.${line.kind}`, { date, age: formatAge(t, line.ageMs) })
+  }
+  return t(`missionDropdown.time.${line.kind}`, { date })
 }

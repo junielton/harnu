@@ -6,8 +6,9 @@
  * What the operator reads when they open a step in the tree, top to bottom: the blocker (the reason, the exact
  * ask, what it unblocks, how long it has waited, and "Done, continue" only when the blocker is the operator's),
  * "Criteria" (the settled ones folded into one line, the open ones with who settles each and the button that is
- * the operator's), and "Links" (the pull request, a worktree as its branch name, one "Evidence" link, an
- * address on this machine). A door that fails shows one red box with what to do under the last block.
+ * the operator's), and "Links · N" (the pull request, a worktree as its branch name, one "Evidence" link, an
+ * address on this machine), closed until the operator opens it. The criteria hang on the timeline too, their
+ * box as its node, each with the record's own time under it (T810; the tree words them). A door that fails shows one red box with what to do under the last block.
  *
  * It READS the row `buildPaneTree` made and computes no state: which criteria are settled, what blocks the step
  * and where a pull request opens were decided there, from the server's view. The only things it does are the
@@ -24,6 +25,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Check,
+  ChevronRight,
   Copy,
   FileText,
   Flag,
@@ -58,6 +60,10 @@ const props = defineProps<{
   step: PaneStepRow
   /** The links the record holds for this step: the paths (a worktree, the evidence) are read from them. */
   rawLinks: readonly RawLink[]
+  /** "Open since …" under each open criterion, or `null` when the step has no start. */
+  openSince?: string | null
+  /** "Last one verified …" under the folded line, or `null` when the record dates no settle. */
+  lastVerified?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -124,6 +130,9 @@ const walkSource = computed<WalkSource>(() => ({
 const canWalk = computed(() => walkEntryAvailable(walkSource.value))
 
 // ---- the links ---------------------------------------------------------------------------------------------
+
+/** Links are folded behind their count until the operator opens them. */
+const linksOpen = ref(false)
 
 /** The folder the step belongs to: the viewer pane opens in it, and a tooltip's path is relative to it. */
 const root = computed<string | null>(
@@ -337,32 +346,62 @@ const CHIP =
       </div>
       <div
         v-if="step.verified > 0"
-        class="grid items-start text-text-2"
-        style="grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; font-size: 11.5px"
+        class="mission-tl mission-tl--criterion mission-tl--done grid items-start text-text-2"
+        :class="{ 'mission-tl--line': step.open.length > 0 }"
+        style="
+          grid-template-columns: 12px minmax(0, 1fr);
+          column-gap: 8px;
+          font-size: 11.5px;
+          line-height: 16px;
+        "
         data-test="criteria-verified"
       >
-        <MissionDot kind="criterion" state="settled" />
-        <span>{{ $t('missionDropdown.step.verified', { n: step.verified }, step.verified) }}</span>
+        <MissionDot kind="criterion" state="settled" class="mt-0.5" />
+        <span class="flex min-w-0 flex-col gap-px">
+          <span>{{
+            $t('missionDropdown.step.verified', { n: step.verified }, step.verified)
+          }}</span>
+          <span
+            v-if="lastVerified"
+            class="tabular-nums text-text-4"
+            style="font-size: 10.5px; line-height: 14px"
+            data-test="verified-time"
+            >{{ lastVerified }}</span
+          >
+        </span>
       </div>
       <div
-        v-for="c in step.open"
+        v-for="(c, ci) in step.open"
         :key="c.id"
-        class="grid items-start text-text"
+        class="mission-tl mission-tl--criterion grid items-start text-text"
+        :class="{ 'mission-tl--line': ci < step.open.length - 1 }"
         style="
           grid-template-columns: 12px minmax(0, 1fr) auto;
           column-gap: 8px;
           row-gap: 4px;
           font-size: 11.5px;
+          line-height: 16px;
         "
         data-test="criterion-row"
         :data-criterion="c.id"
         :data-settler="c.settler"
         data-settled="false"
       >
-        <MissionDot kind="criterion" state="open" />
-        <span class="min-w-0 [overflow-wrap:anywhere]" data-test="criterion">{{ c.text }}</span>
+        <MissionDot kind="criterion" state="open" class="mt-0.5" />
+        <span class="flex min-w-0 flex-col gap-px [overflow-wrap:anywhere]">
+          <span data-test="criterion">{{ c.text }}</span>
+          <span
+            v-if="openSince"
+            class="tabular-nums text-text-4"
+            style="font-size: 10.5px; line-height: 14px"
+            data-test="criterion-time"
+            >{{ openSince }}</span
+          >
+        </span>
+        <!-- With a button, the 20px button is centred on the 16px first line. -->
         <span
-          class="flex flex-wrap items-center justify-end rounded-sm @max-[379px]:col-start-2 @max-[379px]:row-start-2 @max-[379px]:justify-start"
+          class="flex min-h-4 flex-wrap items-center justify-end rounded-sm @max-[379px]:col-start-2 @max-[379px]:row-start-2 @max-[379px]:my-0 @max-[379px]:justify-start"
+          :class="c.canMark ? '-my-0.5' : ''"
           style="gap: 6px"
           data-test="criterion-who"
         >
@@ -403,15 +442,36 @@ const CHIP =
       >
     </div>
 
-    <!-- Links: only what opens something; no link, no heading. A path is never drawn, only copied. -->
+    <!-- Links: only what opens something; no link, no heading. A path is never drawn, only copied. The row
+         that names them is a button, closed by default. -->
     <div v-if="links.length > 0" class="flex flex-col" style="gap: 6px" data-test="step-links">
-      <span
-        class="uppercase text-text-4"
-        style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em"
-        data-test="step-links-title"
-        >{{ $t('missionDropdown.step.links') }}</span
+      <span class="inline-flex self-start rounded-sm">
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded-sm uppercase text-text-4 transition hover:text-text-2"
+          style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em"
+          :aria-expanded="linksOpen"
+          data-test="links-toggle"
+          @click="linksOpen = !linksOpen"
+        >
+          <ChevronRight
+            :size="10"
+            :stroke-width="1.5"
+            class="shrink-0 transition-transform motion-reduce:transition-none"
+            :class="linksOpen ? 'rotate-90' : ''"
+            aria-hidden="true"
+          />
+          <span data-test="step-links-title">{{
+            $t('missionDropdown.step.linksCount', { n: links.length })
+          }}</span>
+        </button>
+      </span>
+      <div
+        v-if="linksOpen"
+        class="flex flex-wrap rounded-sm"
+        style="gap: 6px"
+        data-test="links-list"
       >
-      <div class="flex flex-wrap rounded-sm" style="gap: 6px">
         <template v-for="l in links" :key="l.key">
           <!-- An address: a link to the browser. The pull request never toggles the step. -->
           <span v-if="l.url" class="inline-flex max-w-full rounded-sm">
@@ -522,7 +582,7 @@ const CHIP =
 
       <!-- A worktree that is not in the sidebar: say so, and offer to add it. -->
       <div
-        v-if="offered"
+        v-if="linksOpen && offered"
         class="flex flex-wrap items-center rounded-sm border border-border-2 bg-surface-2 text-text-2"
         style="gap: 6px 8px; padding: 6px 8px; font-size: 11.5px"
         role="group"

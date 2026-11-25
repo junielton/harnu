@@ -77,7 +77,7 @@ svg.i.i14 {
 /* ── The stage: a window with the Topbar, a dimmed page and the dropdown ─────────────── */
 .stage {
   position: relative;
-  height: 760px; /* no token: the frame the index embeds */
+  height: 100vh; /* the stage is the window: the dropdown sizes from it */
   overflow: hidden;
   background: var(--color-bg);
 }
@@ -332,11 +332,10 @@ svg.i.i14 {
   position: absolute;
   top: 46px; /* 40px Topbar + 6px gap */
   left: var(--dd-left, 8px);
-  width: min(
-    420px,
-    calc(100vw - 16px)
-  ); /* no token: dropdown width; 8px viewport margin each side */
-  max-height: min(640px, calc(760px - 56px)); /* no token: in the app, min(640px, 100vh - 56px) */
+  /* no token: 45% of the window, between 420 and 760px, 8px clear of each edge */
+  width: min(clamp(420px, 45vw, 760px), calc(100vw - 16px));
+  /* no token: the window less 46px above and a 16px gap below */
+  max-height: calc(100vh - 62px);
   display: flex;
   flex-direction: column;
   background: var(--color-surface);
@@ -370,6 +369,22 @@ svg.i.i14 {
   min-height: 0;
   container: dd / inline-size;
   flex: 1 1 auto;
+}
+/* with a tree, the head and the next card stay put and only the tree scrolls */
+.dd-body:has(> .tree) {
+  display: flex;
+  flex-direction: column;
+}
+.dd-body:has(> .tree) > :not(.tree) {
+  flex: none;
+}
+.dd-body:has(> .tree) > .tree {
+  flex: 1 1 auto;
+  min-height: 96px; /* no token: three rows */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-2) transparent;
 }
 .dd-foot {
   border-top: 1px solid var(--color-border);
@@ -412,6 +427,28 @@ svg.i.i14 {
   display: block;
   height: 100%;
   background: var(--color-green);
+}
+.progress .track.seg {
+  display: flex;
+  gap: 3px; /* no token: between segments */
+  background: none;
+  border: 0;
+  overflow: visible;
+}
+.progress .sg {
+  flex: 1;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+}
+.progress .sg.done {
+  background: var(--color-green);
+  border-color: var(--color-green);
+}
+.progress .sg.cur {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-line);
 }
 .progress .count {
   font-size: 11.5px;
@@ -566,7 +603,7 @@ svg.i.i14 {
 .card.row .body {
   min-width: 0;
 }
-/* wide: the button rises to the eyebrow's line, at the right; the text takes the full width under it */
+/* wide: the button sits at the right of the eyebrow and the text, centred on the pair */
 @container dd (min-width: 380px) {
   .card.row .grid {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -574,17 +611,15 @@ svg.i.i14 {
   .card.row .eb {
     grid-column: 1;
     grid-row: 1;
-    align-self: baseline;
+  }
+  .card.row .body {
+    grid-column: 1;
+    grid-row: 2;
   }
   .card.row .acts {
     grid-column: 2;
-    grid-row: 1;
-    align-self: baseline;
-    margin-block: -4px 0; /* the button's text shares the eyebrow's baseline; its box hangs up into the card's padding */
-  }
-  .card.row .body {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
   }
 }
 /* narrow: eyebrow, text, then the button under the text */
@@ -666,23 +701,100 @@ svg.i.i14 {
   padding: 8px 14px 10px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
 }
 .ms {
   display: grid;
   grid-template-columns: 10px 12px minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   gap: 8px;
   width: calc(100% + 12px);
   margin: 0 -6px;
   padding: 7px 6px;
   border-radius: var(--radius-sm);
   font-size: 12.5px;
+  line-height: 16px;
   color: var(--color-text-3);
 }
-.ms:hover,
-.st:hover {
+/* the hover starts after the toggle column, so it never covers the timeline */
+.ms,
+.st {
+  position: relative;
+  isolation: isolate;
+}
+.ms::after,
+.st::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 18px; /* no token: row padding + toggle + 2px */
+  z-index: -1;
+  border-radius: var(--radius-sm);
+}
+.ms:hover::after,
+.st:hover::after,
+.ms:focus-visible::after,
+.st:focus-visible::after {
   background: var(--color-surface-2);
+}
+/* everything on a row sits on the title's first line */
+.ms > .chev,
+.st > .chev,
+.ms > .n,
+.st > .r {
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+}
+.ms > .g,
+.st > .g {
+  margin-top: 2px;
+}
+.tt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.when {
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 14px;
+  color: var(--color-text-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the timeline: each item draws a 2px line from under its own toggle to just above the next one's,
+   so it follows any height. A toggle's centre is at 5px, a criterion box's at 6px. */
+.tl {
+  position: relative;
+}
+.tl:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--color-text-4) 55%, transparent);
+  pointer-events: none;
+}
+.tl.done:not(:last-child)::before {
+  background: var(--color-green);
+}
+.tree > .tl::before {
+  top: 24px;
+  bottom: -6px;
+}
+.ms-body > .tl::before {
+  top: 23px;
+  bottom: -5px;
+}
+/* the fold line is not an item: the last step draws no line */
+.ms-body > .tl:nth-last-child(2)::before {
+  content: none;
+}
+.crit > .tl::before {
+  left: 5px;
+  top: 16px;
+  bottom: -6px;
 }
 .ms .t {
   overflow-wrap: anywhere;
@@ -700,7 +812,7 @@ svg.i.i14 {
   color: var(--color-text-4);
 }
 .ms-body {
-  margin-left: 18px; /* chevron slot + gap, so rows align under the glyph */
+  margin-left: 30px; /* the milestone's line never crosses a step's chevron */
   padding-bottom: 6px;
 }
 .ms-sum {
@@ -715,19 +827,24 @@ svg.i.i14 {
   font-size: 11px;
   color: var(--color-text-4);
 }
+/* alone at the right end, the ghost button's text ends where the counts and "Yours" do */
+.ms-sum > .btn.ghost {
+  margin-right: -8px;
+}
 .ms-sum .l .bad {
   color: var(--color-red);
 }
 .st {
   display: grid;
   grid-template-columns: 10px 12px minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   gap: 7px;
   width: calc(100% + 12px);
   margin: 0 -6px;
-  padding: 5px 6px;
+  padding: 6px 6px;
   border-radius: var(--radius-sm);
   font-size: 12px;
+  line-height: 16px;
   color: var(--color-text-2);
 }
 .st .t {
@@ -804,10 +921,16 @@ svg.i.i14 {
   flex-direction: column;
   gap: 6px;
 }
+.verified > .g,
+.cr > .bx {
+  margin-top: 2px;
+}
 .verified {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  line-height: 16px;
   font-size: 11.5px;
   color: var(--color-text-2);
 }
@@ -816,6 +939,7 @@ svg.i.i14 {
   grid-template-columns: 12px minmax(0, 1fr) auto;
   gap: 4px 8px;
   font-size: 11.5px;
+  line-height: 16px;
   align-items: start;
 }
 .cr .bx {
@@ -823,9 +947,12 @@ svg.i.i14 {
   height: 12px;
   border: 1.5px solid var(--color-text-3);
   border-radius: var(--radius-sm);
-  margin-top: 1px;
+}
+.cr .who:has(.btn) {
+  margin-block: -2px; /* the 20px button is centred on the 16px line */
 }
 .cr .who {
+  min-height: 16px;
   font-size: 10.5px;
   color: var(--color-text-4);
   display: inline-flex;
@@ -836,6 +963,31 @@ svg.i.i14 {
   .cr .who {
     grid-column: 2;
   }
+}
+/* links stay folded behind their count */
+.lkt > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+}
+.lkt > summary::-webkit-details-marker {
+  display: none;
+}
+.lkt > summary:hover {
+  color: var(--color-text-2);
+}
+.lkt .lkchev {
+  display: inline-flex;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.lkt[open] .lkchev {
+  transform: rotate(90deg);
+}
+.lkt[open] > summary {
+  margin-bottom: 6px;
 }
 .links {
   display: flex;

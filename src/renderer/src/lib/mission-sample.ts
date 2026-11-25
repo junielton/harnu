@@ -99,6 +99,9 @@ interface CriterionSpec {
   settled?: boolean
 }
 
+/** When the sample's settled criteria were settled (the time lines read it). */
+const SETTLED_AT = '2026-11-14T15:20:00.000Z'
+
 const step = (s: StepSpec): Record<string, unknown> => {
   const criteria = (s.criteria ?? []).map((c, i) => ({
     id: `${s.id}-c${i + 1}`,
@@ -249,6 +252,16 @@ function buildMission(spec: MissionSpec): MissionV4ViewReply {
       blockers: [],
       sessions: []
     },
+    settledAt: Object.fromEntries(
+      allSteps.map((s) => [
+        s.id,
+        Object.fromEntries(
+          (s.criteria ?? []).flatMap((c, i) =>
+            c.settled && c.by !== 'fact' ? [[`${s.id}-c${i + 1}`, SETTLED_AT]] : []
+          )
+        )
+      ])
+    ),
     closeWarnings: spec.closeWarnings ?? openMatters(allSteps),
     pendingDoneWhen: spec.pendingDoneWhen ?? null,
     sessions: sessions.map((s) => ({
@@ -379,7 +392,8 @@ function measureMission(over: Partial<MissionSpec> = {}, allDone = false): Missi
   ].map((title, i) => ({
     id: `stp-${i + 1}`,
     title,
-    state: 'done' as const
+    state: 'done' as const,
+    criteria: [{ text: 'A second reader agrees', by: 'session' as const, settled: true }]
   }))
   const m2 = scoringSteps()
   const m3: StepSpec[] = [

@@ -1,6 +1,6 @@
 {
   "status": "approved",
-  "approvedAt": "2026-11-17",
+  "approvedAt": "2026-11-24",
   "project": "harnu",
   "card": null,
   "tokensFrom": "src/renderer/src/styles/themes.css (@theme block = dark; :root[data-theme='light'] = tokens-light.css) + src/renderer/src/styles/main.css (font tokens)",
@@ -15,7 +15,7 @@
       "id": "mission-dropdown",
       "title": "Mission dropdown (anchored to the Topbar pill)",
       "status": "approved",
-      "approvedAt": "2026-11-17",
+      "approvedAt": "2026-11-24",
       "states": [
         "mid",
         "closed",
@@ -33,13 +33,13 @@
         "dots"
       ],
       "targets": ["src/renderer/src/components/MissionPill.vue", "new MissionDropdown.vue"],
-      "notes": "Everything about a mission in one dropdown under the Topbar pill. 1280 = a wide window; 360 = a narrow one. The EN/PT-BR and Dark/Light switch at the bottom right of the frame is mockup chrome, not product. Sample data: one made-up mission (3 milestones, 21 steps); sessions are not shown to the user."
+      "notes": "Amended and approved 2026-11-24: sized from the window, a segmented progress bar, a timeline and a time line at every level, links folded, only the tree scrolls. Everything about a mission in one dropdown under the Topbar pill. 1280 = a wide window; 360 = a narrow one. The EN/PT-BR and Dark/Light switch at the bottom right of the frame is mockup chrome, not product. Sample data: one made-up mission (3 milestones, 21 steps); sessions are not shown to the user."
     },
     {
       "id": "entry",
       "title": "Entry for guided walks (Test it on a step, a milestone and the whole mission)",
       "status": "approved",
-      "approvedAt": "2026-11-17",
+      "approvedAt": "2026-11-24",
       "states": ["step-open", "milestone", "mission", "closed"],
       "targets": ["MissionDropdown*.vue (Test it control)"],
       "notes": "The Mission dropdown with the Test it control. A stub: the walk milestone replaces what it calls."

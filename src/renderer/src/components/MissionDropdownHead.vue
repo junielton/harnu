@@ -4,7 +4,8 @@
  * `docs/design/mission-dropdown/`, states `mid`, `multi` and `chooser`).
  *
  * The mission title (wraps, never cut) and ONE progress row: a 6px bar carrying the server's numbers and the
- * count text on the same row. It draws no "Mission" title, no state tag and no "Ready to close" badge: the next
+ * count text on the same row. A mission with milestones draws the bar as one segment per milestone (done,
+ * current, not started); one without draws a single fill. It draws no "Mission" title, no state tag and no "Ready to close" badge: the next
  * card and the green pill already say it. Only when the session leads several missions does a one-line switch
  * sit above the title ("Mission 1 of 3 · Change"); it swaps the head for a `radiogroup` of those missions
  * (title, "{done} of {total} milestones · {n} for you", a check on the current one). With one mission there is
@@ -23,6 +24,7 @@ import {
   type LedMissionRow,
   type MissionV4Reply
 } from '../lib/mission-pane-view'
+import { milestoneSegments, type Segment } from '../lib/mission-dropdown-tree'
 
 const props = withDefaults(
   defineProps<{
@@ -45,6 +47,14 @@ const { t } = useI18n()
 const numbers = computed(() => missionNumbers(props.detail))
 const percent = computed(() => progressPercent(numbers.value.done, numbers.value.total))
 const countLine = computed(() => dropdownProgressLine(t, props.detail))
+const segments = computed(() =>
+  numbers.value.unit === 'milestones' ? milestoneSegments(props.detail) : []
+)
+const SEGMENT: Record<Segment['state'], string> = {
+  done: 'border-green bg-green',
+  current: 'border-accent-line bg-accent-soft',
+  todo: 'border-border-2 bg-surface-2'
+}
 
 const several = computed(() => props.led.length > 1)
 const position = computed(() => {
@@ -211,7 +221,12 @@ function onGroupKey(e: KeyboardEvent): void {
         data-test="mission-progress-row"
       >
         <div
-          class="h-1.5 min-w-10 flex-1 overflow-hidden rounded-sm border border-border bg-surface-2"
+          class="h-1.5 min-w-10 flex-1"
+          :class="
+            segments.length > 0
+              ? 'flex gap-[3px]'
+              : 'overflow-hidden rounded-sm border border-border bg-surface-2'
+          "
           role="progressbar"
           :aria-label="$t('missionDropdown.head.barLabel')"
           aria-valuemin="0"
@@ -221,6 +236,15 @@ function onGroupKey(e: KeyboardEvent): void {
           data-test="mission-progress"
         >
           <span
+            v-for="seg in segments"
+            :key="seg.id"
+            class="h-full min-w-0 flex-1 rounded-sm border"
+            :class="SEGMENT[seg.state]"
+            data-test="mission-segment"
+            :data-state="seg.state"
+          />
+          <span
+            v-if="segments.length === 0"
             class="block h-full bg-green"
             :style="{ width: `${percent}%` }"
             data-test="mission-bar-fill"

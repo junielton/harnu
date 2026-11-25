@@ -24,7 +24,7 @@ Click the pill, or press Enter or Space while it has the focus, to open the **Mi
 
 Two other places open it on the mission they name: a row of the **Activity** list and **Open mission** on a **Your move** card (see "Elsewhere in Harnu"). The dropdown is not part of the helper stack, so it takes no room from the other panes.
 
-It is at most 420 pixels wide and keeps 8 pixels from the window's edges; on a narrower window it is the width of the window. When the content is taller than the window, the content scrolls and the **Close mission…** line at its foot stays in view (in a window shorter than 420 pixels it scrolls with the content). Nothing scrolls sideways.
+It sizes itself from your window: 45% of its width, never under 420 pixels or over 760, and always 8 pixels clear of the window's edges (on a window narrower than that it is the width of the window). It grows as tall as the window allows. When a mission is longer than that, only the tree scrolls: the title, the progress bar, the next step and the **Close mission…** line at the foot stay in view. In a window shorter than 420 pixels everything scrolls together. Nothing scrolls sideways.
 
 ### What the dropdown shows
 
@@ -35,7 +35,7 @@ When the session leads more than one mission, a line above the title says **Miss
 From top to bottom:
 
 - the mission's **title**, which wraps instead of being cut;
-- a **progress bar** with the count beside it: **4 of 21 steps done**, or **1 of 10 milestones done** when the mission has milestones;
+- a **progress bar** with the count beside it: **4 of 21 steps done**, or **1 of 10 milestones done** when the mission has milestones. With milestones the bar has one segment for each: green when done, a blue tint for the current one, an outline for the rest;
 - **one card with the next thing you owe**, described below;
 - the **tree** of the mission;
 - **Close mission…** at the foot.
@@ -54,11 +54,21 @@ The card under the title is **one** card, and it holds the first of these that a
 - **A session asking to join**, with **Allow** and **Deny** (see below).
 - When nothing waits on you, the card says what is running instead ("2 steps are running. Nothing for you right now.").
 
-The button sits to the right of the text when the dropdown is at least 380 pixels wide, and under the text when it is narrower.
+The button sits to the right of the text, centred beside it, when the dropdown is at least 380 pixels wide, and under the text when it is narrower.
 
 ### The tree
 
 Under the card, the mission is a tree: milestone, then step, then criteria. Every row has a chevron: click it to open or close the row. The keyboard works too: Up and Down move between rows, Right and Left open and close the row, Home and End jump to the first and last, Enter or Space opens or closes it.
+
+A thin **timeline** joins the rows of each level, from one chevron (or criterion box) to the next. The stretch under a finished item is green; the rest is grey.
+
+Under a title you also see **when**, taken from the mission's own record:
+
+- a milestone: **Done · 12 Nov, 16:40**, **Started 13 Nov, 09:10 · 6 days** or **Not started**;
+- a step: **Running for 25 min**, or **Blocked for 40 min · since 19 Nov, 10:12**;
+- criteria: **Open since …** under each open one, and **Last one verified …** under the verified line.
+
+When the record holds no time, there is no line. A step waiting for review has none, because nothing records when it got there; a criterion that Harnu checks by itself carries no verification time either.
 
 - **Only the current milestone opens by itself.** That is the first milestone that is neither done nor optional. Open any other one with its chevron.
 - Under an open milestone, a summary line counts what is **running**, **waiting for review** and **blocked** ("4 running · 9 waiting for review · 1 blocked"). Steps that have not started are not counted. A milestone's count on the right is its finished steps out of its steps ("4/4").
@@ -73,7 +83,7 @@ Titles and step names wrap, so a long one never pushes a button out of sight.
 
 ### An open step
 
-Click a step to open it. It shows up to three parts, in this order: the blocker, its criteria and the links.
+Click a step to open it. It shows up to three parts, in this order: the blocker, its criteria and the links. The links start folded behind **Links · N** (N is how many there are); click it, or press Enter or Space on it, to open them.
 
 **The blocker**, when something stops the step. A red box says **Blocked · waiting for you · 40m** (how long it has been waiting) when it is yours to clear, or **Blocked · waiting for the session** when the session has to move. Under it is what is wrong, the exact thing that is needed, and what starts once it is done. When the blocker is yours, **Done, continue** clears it. Do that after you have done the thing; the box goes away and the step carries on. A blocker that belongs to the session has no button, because there is nothing for you to press.
 

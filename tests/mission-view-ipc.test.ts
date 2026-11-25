@@ -317,6 +317,29 @@ describe("the view carries the pane's data", () => {
     ])
   })
 
+  it('carries the settle times of the criteria a stamp settled, and none for a fact or an open one', async () => {
+    const rec = record()
+    rec.steps[1].acs = [
+      {
+        id: 'ac-1',
+        text: 'The layout is confirmed',
+        by: 'operator',
+        settled: { at: '2026-11-14T12:30:00Z', by: 'operator' }
+      },
+      { id: 'ac-2', text: 'The footer is confirmed', by: 'operator' }
+    ]
+    seed(rec)
+    const reply = await ipc.buildMissionV4View(
+      { folder: root, sessionId: LEADER },
+      { facts: factsDeps({ numbers: { 12: pr({ state: 'MERGED' }) } }) }
+    )
+    if (reply.state !== 'mission') throw new Error(JSON.stringify(reply))
+    // stp-1 is settled by a fact, which the record dates nowhere; ac-2 is open.
+    expect(reply.settledAt).toEqual({ 'stp-2': { 'ac-1': '2026-11-14T12:30:00Z' } })
+    // `mission_get`'s own detail does not grow a field.
+    expect(reply.detail.steps[1].criteria[0]).not.toHaveProperty('settledAt')
+  })
+
   it('has no unfinished-steps warning for a mission whose only step a merged pull request settled', async () => {
     seed(record({ steps: [record().steps[0]] }))
     const reply = await ipc.buildMissionV4View(

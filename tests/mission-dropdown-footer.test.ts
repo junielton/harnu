@@ -186,3 +186,26 @@ describe('AC-3b — a dialog opened from the dropdown', () => {
     expect((q('[data-test="mission-dropdown"]') as HTMLElement).hasAttribute('inert')).toBe(false)
   })
 })
+
+describe('T810 — the head and the next card stay put; only the tree scrolls', () => {
+  const body = (): HTMLElement => q('[data-test="mission-dropdown-body"]') as HTMLElement
+  const tree = (): HTMLElement => q('[data-test="tree"]') as HTMLElement
+  const has = (el: HTMLElement, name: string): boolean => el.className.split(' ').includes(name)
+
+  it('makes the tree the scroller, with the head and the next card fixed above it', async () => {
+    await openSample('default')
+    expect(has(body(), 'flex-col')).toBe(true)
+    expect(has(tree(), 'overflow-y-auto')).toBe(true)
+    expect(has(tree(), 'scrollable')).toBe(true)
+    for (const sel of ['[data-test="mission-head"]', '[data-test="next-card"]']) {
+      expect(has(q(sel) as HTMLElement, 'shrink-0'), sel).toBe(true)
+    }
+  })
+
+  it('pins nothing in a window under 420px of height', async () => {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 })
+    await openSample('default')
+    expect(has(body(), 'flex-col')).toBe(false)
+    expect(has(tree(), 'overflow-y-auto')).toBe(false)
+  })
+})
