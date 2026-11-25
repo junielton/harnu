@@ -3,6 +3,7 @@ import {
   decideDocRead,
   gateHookOutput,
   parseMinLines,
+  clampMinLines,
   wholeFileReadTarget,
   DOC_READER_DEFAULT_MIN_LINES,
   type GateInput,
@@ -62,9 +63,35 @@ describe('decideDocRead — Read', () => {
     })
   })
 
-  it('allows a targeted read (offset or limit) of a large doc', () => {
-    expect(decideDocRead(read('/repo/docs/big.md', { offset: 100 }), opts).action).toBe('allow')
-    expect(decideDocRead(read('/repo/docs/big.md', { limit: 50 }), opts).action).toBe('allow')
+  it('allows a read of a large doc whose limit is at most the threshold', () => {
+    expect(decideDocRead(read('/repo/docs/big.md', { limit: 50 }), opts)).toEqual({
+      action: 'allow',
+      why: 'targeted'
+    })
+    expect(decideDocRead(read('/repo/docs/big.md', { offset: 900, limit: 350 }), opts)).toEqual({
+      action: 'allow',
+      why: 'targeted'
+    })
+  })
+
+  it('span cap: offset alone, or a limit above the threshold, is a full read', () => {
+    expect(decideDocRead(read('/repo/docs/big.md', { offset: 100 }), opts).action).toBe('deny')
+    expect(decideDocRead(read('/repo/docs/big.md', { offset: 1, limit: 5000 }), opts).action).toBe(
+      'deny'
+    )
+    expect(decideDocRead(read('/repo/docs/big.md', { limit: 351 }), opts).action).toBe('deny')
+    expect(decideDocRead(read('/repo/docs/big.md', { limit: 0 }), opts).action).toBe('deny')
+    expect(decideDocRead(read('/repo/docs/big.md', { limit: '50' }), opts).action).toBe('deny')
+  })
+
+  it('span cap: an uncapped read of a small doc or a code file still passes', () => {
+    expect(decideDocRead(read('/repo/docs/small.md', { offset: 10 }), opts).action).toBe('allow')
+    expect(decideDocRead(read('/repo/src/big.ts', { limit: 5000 }), opts).action).toBe('allow')
+  })
+
+  it('the deny message states the span cap', () => {
+    const d = decideDocRead(read('/repo/docs/big.md'), opts)
+    expect(d.action === 'deny' && d.reason).toContain('limit at most 350 lines')
   })
 
   it('leaves code files alone in v1, however large', () => {
@@ -176,5 +203,17 @@ describe('gateHookOutput', () => {
     expect(out.hookSpecificOutput.hookEventName).toBe('PreToolUse')
     expect(out.hookSpecificOutput.permissionDecision).toBe('deny')
     expect(out.hookSpecificOutput.permissionDecisionReason).toContain('1200 lines')
+  })
+})
+
+describe('clampMinLines', () => {
+  it('keeps an in-range integer, rounds, clamps and defaults', () => {
+    expect(clampMinLines(500)).toBe(500)
+    expect(clampMinLines(499.6)).toBe(500)
+    expect(clampMinLines(1)).toBe(50)
+    expect(clampMinLines(10_000_000)).toBe(100_000)
+    expect(clampMinLines(Number.NaN)).toBe(DOC_READER_DEFAULT_MIN_LINES)
+    expect(clampMinLines('400')).toBe(DOC_READER_DEFAULT_MIN_LINES)
+    expect(clampMinLines(undefined)).toBe(DOC_READER_DEFAULT_MIN_LINES)
   })
 })

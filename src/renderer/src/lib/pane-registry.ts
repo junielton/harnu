@@ -125,5 +125,20 @@ export const paneRegistry: Record<AnyHelperPane['type'], PaneRegistryEntry> = {
   // the verb handler (`browser/verbs-core.ts`) and the plan layer, not here.
   browser: {
     persistable: true
+  },
+  // Guided walks S-3 — the walk pane. Non-PTY and reproducible from `payload.walkId` / `payload.runId`, so it
+  // persists like the memory pane and a restart restores it from the record under `.harnu/walks/`. One pane per
+  // WALK (`dedupKey`): opening a walk twice reveals the pane that has it. No `maxInstances` on purpose: the
+  // registry's cap recycles the OLDEST pane silently, and a walk the operator is in the middle of must never be.
+  walk: {
+    persistable: true,
+    dedupKey: (p) => (p as HelperPane).payload?.walkId as string | undefined
+  },
+  // Guided walks S-4 — the Walks library. Non-PTY, reads the repo's walks itself and holds nothing, so it persists
+  // like the Mission pane. ONE per worktree (a constant `dedupKey`): the header icon, the folder menu and the Topbar
+  // all reveal the same pane.
+  walks: {
+    persistable: true,
+    dedupKey: () => 'walks'
   }
 }

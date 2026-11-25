@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, powerMonitor } from 'electron'
 import { readFileSync, promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { getTaskStates } from './hook-bridge'
+import { getUnsavedFiles } from './unsaved-drafts'
 import {
   DEFAULT_QUIT_STRINGS,
   QUIT_DIALOG_MAX_NAMES,
@@ -79,13 +80,14 @@ export function guardQuit(
     const decision = decideQuitConfirm({
       taskStates: getTaskStates(),
       confirmEnabled: prefs.confirmOnQuit,
-      reason: bypassReason ?? 'user'
+      reason: bypassReason ?? 'user',
+      unsavedFiles: getUnsavedFiles()
     })
     if (!decision.confirm) return
     event.preventDefault()
     if (dialogOpen) return
     dialogOpen = true
-    promptAndQuit(decision.sessionIds, getWindow())
+    promptAndQuit(decision.sessionIds, decision.unsavedFiles, decision.allowDontAsk, getWindow())
       .catch((err) => {
         // The dialog itself failed: the operator asked to quit and must not be stuck in the app.
         console.error('[quit-guard] dialog failed — quitting without asking', err)
@@ -100,11 +102,17 @@ export function guardQuit(
   }
 }
 
-async function promptAndQuit(sessionIds: string[], win: BrowserWindow | null): Promise<void> {
+async function promptAndQuit(
+  sessionIds: string[],
+  unsavedFiles: string[],
+  allowDontAsk: boolean,
+  win: BrowserWindow | null
+): Promise<void> {
   const { labels, strings } = await askRenderer(win, sessionIds)
   const content = buildQuitDialogContent({
     appName: app.name,
     names: resolveSessionNames(sessionIds, labels),
+    unsavedNames: unsavedFiles,
     strings
   })
   const options = {
@@ -115,8 +123,10 @@ async function promptAndQuit(sessionIds: string[], win: BrowserWindow | null): P
     buttons: content.buttons,
     defaultId: content.defaultId,
     cancelId: content.cancelId,
-    checkboxLabel: content.checkboxLabel,
-    checkboxChecked: false,
+    // No checkbox when there is nothing to tick: unsaved files never offer "don't ask again".
+    ...(content.checkboxLabel
+      ? { checkboxLabel: content.checkboxLabel, checkboxChecked: false }
+      : {}),
     noLink: true
   }
   const result =
@@ -124,7 +134,7 @@ async function promptAndQuit(sessionIds: string[], win: BrowserWindow | null): P
       ? await dialog.showMessageBox(win, options)
       : await dialog.showMessageBox(options)
   if (result.response === content.cancelId) return // Cancel: keep the app, window and PTYs alive
-  if (result.checkboxChecked) persistPrefs({ ...prefs, confirmOnQuit: false })
+  if (allowDontAsk && result.checkboxChecked) persistPrefs({ ...prefs, confirmOnQuit: false })
   approved = true
   app.quit()
 }

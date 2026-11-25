@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 /**
  * Poller unit tests (plan-usage-widget spec §14). The imperative shell in
- * `usage.ts` is exercised with `electron` and `node:child_process` mocked: we
+ * `usage.ts` is exercised with `electron` and the spawn runner mocked: we
  * capture the registered IPC + app handlers and drive a controllable fake
  * `claude -p "/usage"` spawn. `vi.resetModules()` + dynamic import gives each
  * test fresh module state.
@@ -23,7 +23,13 @@ const h = vi.hoisted(() => ({
   removeListener: vi.fn()
 }))
 
-vi.mock('node:child_process', () => ({ execFile: h.execFile }))
+vi.mock('../src/main/spawn-runner', async () => {
+  const { runFileFromExecFile } = await import('./support/fake-run-file')
+  return {
+    runFile: (...a: unknown[]) =>
+      runFileFromExecFile(h.execFile as never)(...(a as [string, string[], unknown]))
+  }
+})
 vi.mock('electron', () => ({
   app: {
     on: (ev: string, cb: () => void) => h.appHandlers.set(ev, cb),

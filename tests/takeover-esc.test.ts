@@ -52,7 +52,6 @@ function open(ui: ReturnType<typeof useUiStore>, id: ViewId): void {
     systemMonitor: () => ui.openSystemMonitor(),
     scheduler: () => ui.openScheduler(),
     containers: () => ui.openContainers(),
-    campaignMap: () => ui.openCampaignMap('cmp-0000000a'),
     review: () => ui.openReview('/repos/alpha', null)
   }
   openers[id]()
@@ -66,7 +65,6 @@ const VIEWS: ViewId[] = [
   'systemMonitor',
   'scheduler',
   'containers',
-  'campaignMap',
   'review'
 ]
 

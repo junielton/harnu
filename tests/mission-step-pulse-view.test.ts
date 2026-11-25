@@ -1,14 +1,12 @@
 /**
- * T547 — the renderer's step pulse: a live sign of movement inside the CURRENT
- * step ("21 commits · active 2m ago"), a PR line with its CI state, and the
- * pill tooltip. The headline ("Step N of M") must not change because of it.
+ * T547 — the renderer's step pulse model: a live sign of movement inside the CURRENT
+ * step, and a PR line with its CI state. The headline ("Step N of M") must not change because
+ * of it. (The line that printed it, in the rail and the pill tooltip, is gone, S-37.)
  */
 import { describe, it, expect } from 'vitest'
 import {
   buildMissionModel,
   PULSE_QUIET_AFTER_MS,
-  pulseParts,
-  pulseText,
   type StepModel
 } from '../src/renderer/src/lib/mission-view'
 import { FIXTURE_NOW, fixtureView } from './helpers/mission-v3-view'
@@ -120,41 +118,6 @@ describe('a stalled step still reads stalled (AC-4)', () => {
       pulse: { commits: 1, lastCommitAt: null, lastActivityAt: ago(PULSE_QUIET_AFTER_MS) }
     })
     expect(current(v).pulse?.kind).toBe('moving')
-  })
-})
-
-describe('pulseParts — what the line prints', () => {
-  it('lists commits then activity; zero or unknown commits are left out', () => {
-    expect(pulseParts({ kind: 'moving', commits: 21, ageMs: 2 * MIN })).toEqual([
-      { key: 'commits', n: 21 },
-      { key: 'active', age: '2m' }
-    ])
-    expect(pulseParts({ kind: 'moving', commits: 0, ageMs: 10_000 })).toEqual([
-      { key: 'activeNow' }
-    ])
-    expect(pulseParts({ kind: 'quiet', commits: null, ageMs: 45 * MIN })).toEqual([
-      { key: 'quiet', age: '45m' }
-    ])
-    expect(pulseParts({ kind: 'quiet', commits: 4, ageMs: null })).toEqual([
-      { key: 'commits', n: 4 },
-      { key: 'quietNever' }
-    ])
-  })
-})
-
-describe('pulseText', () => {
-  // A stand-in for vue-i18n's `t`: the key, its named values and the plural count.
-  const t = (key: string, named: Record<string, unknown>, plural?: number): string =>
-    `${key.replace('mission.pulse.', '')}[${Object.values(named).join(',')}${plural === undefined ? '' : `;${plural}`}]`
-
-  it('joins the parts with a middle dot', () => {
-    expect(pulseText(t, { kind: 'moving', commits: 21, ageMs: 2 * MIN })).toBe(
-      'commits[21;21] · active[2m]'
-    )
-  })
-
-  it('is empty when the pulse has nothing to say', () => {
-    expect(pulseText(t, { kind: 'moving', commits: null, ageMs: null })).toBe('')
   })
 })
 

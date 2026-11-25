@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, session, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, session, dialog, utilityProcess } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
@@ -57,7 +57,8 @@ import {
   setBundledSkillsArgsProvider,
   setCompanionSpawnProvider,
   dropOperatorScreenModels,
-  livePtyDescriptors
+  livePtyDescriptors,
+  waitForSessionReady
 } from './pty'
 import { registerBrowserIpc, closeBrowserIpc } from './browser/browser-ipc'
 import {
@@ -72,11 +73,17 @@ import {
 } from './browser/folder-flag-ipc'
 import { pageSchemeEntry } from './browser/page-service'
 import { registerMonitorHandlers, stopHeartbeat, stopFullSamplerForced } from './monitor/sampler'
+import { isStallMonitorDisabled, startStallMonitor } from './monitor/stall-monitor'
+import { fromUtilityProcess, startSpawnRunner } from './spawn-runner'
+import { getStallMonitor, setStallMonitor } from './monitor/stall-registry'
+import type { IpcMainLike } from './monitor/stall-owner'
 import { registerHarnuFeaturesHandlers, harnuPreamble } from './harnu-features'
 import {
   registerBundledSkillsHandlers,
   injectBundledSkillArgs,
-  cleanStaleLegacyStaging
+  cleanStaleLegacyStaging,
+  pruneStagedSkillsLive,
+  setDocReaderEndpointProvider
 } from './bundled-skills'
 import { registerModsAuditHandlers } from './mods-audit'
 import { registerAppLocaleHandlers } from './app-locale'
@@ -127,6 +134,8 @@ import { setInterceptFolders } from './responder-registry'
 import { registerSessionOpHandlers } from './session-ops'
 import { registerMarkdownReadHandlers } from './markdown-read'
 import { registerMarkdownWriteHandlers } from './markdown-write'
+import { registerNotesHandlers } from './notes'
+import { registerUnsavedDraftsIpc, watchRendererReset } from './unsaved-drafts'
 import { registerMarkdownWatchHandlers, closeAllMarkdownWatchers } from './markdown-watch'
 import { registerCanvasAssetHandlers } from './canvas-assets'
 import { registerCanvasReadHandlers } from './canvas-read'
@@ -138,6 +147,7 @@ import { registerMemoryLocationHandlers } from './memory-location-ipc'
 import { registerRoadmapHandlers, closeRoadmapWatcher } from './roadmap-ipc'
 import { registerHelpersHandlers } from './helpers-ipc'
 import { registerSessionArchive } from './session-archive-ipc'
+import { registerYourMove, closeYourMove } from './your-move/ipc'
 import { registerSettingsHandlers, closeSettingsWatcher } from './settings'
 import { registerClaudeConfigHandlers } from './claude-config'
 import { registerPushHandlers } from './push'
@@ -147,7 +157,9 @@ import {
   registerHookBridge,
   closeHookBridge,
   hookSettingsBlobJson,
-  getTaskStates
+  getHookBridgeEndpoint,
+  getTaskStates,
+  setMissionSummaryHandler
 } from './hook-bridge'
 import { registerCompanionHost, closeCompanionHost } from './companion/host'
 import {
@@ -199,6 +211,12 @@ import { registerExternal } from './external'
 // server composes; `worktree-ipc` owns git worktree add + auto-adopt; `mcp/server`
 // is the loopback HTTP MCP surface itself. Registration order matters — see below.
 import { registerCommandBridge, closeCommandBridge } from './command-bridge-ipc'
+import { configureWalkRuntime, createBridgeRuntime, walkServiceFor } from './walk/walk-service'
+import { walksDir } from './walk/walk-store'
+import { registerWalkIpc } from './walk/walk-ipc'
+import { makeWalkEnv, openWalkFromApp } from './mcp/tool-handlers'
+import { walkExtend, walkReport } from './mcp/walk-handlers'
+import { markdownKnownRoots } from './markdown-read'
 import { registerTerminalIpc } from './terminal-ipc'
 import { registerManifestDrain } from './manifest-drain-shell'
 import { pokeManifestDrain } from './manifest-drain'
@@ -207,15 +225,22 @@ import { registerWorktreeHandlers, adoptExistingFolder } from './worktree-ipc'
 import { registerReaperHandlers } from './reaper/reaper-ipc'
 import { registerContainersHandlers } from './containers/containers-ipc'
 import { registerGcHandlers } from './gc/gc-ipc'
-import { registerScheduler, setSchedulerCompanionProvider } from './scheduler-shell'
-import { reconcileStewardsOnBoot, registerStewardWiring } from './steward-bridge'
+import {
+  registerScheduler,
+  retireStewardsOnBoot,
+  setSchedulerCompanionProvider
+} from './scheduler-shell'
 import { companionSpawnProvider } from './companion/spawn-inject'
 import { gcStagedDirs } from './companion/staging'
 import { registerPrStack } from './pr-stack'
 import { registerGithubBudget, stopGithubBudget } from './github-budget'
-import { registerMissionIpc } from './mission-ipc'
-import { registerMergeBatchIpc } from './merge-batch-ipc'
-import { registerCampaignIpc } from './campaign-ipc'
+import {
+  answerMissionSummaryHook,
+  registerMissionIpc,
+  setMissionHandoffStarter,
+  startMissionObserver
+} from './mission-ipc'
+import { bridgeStarter } from './missions/handoff'
 import { registerReviewHandlers } from './review-ipc'
 import { resolveCliFolderArg } from './cli-folder-arg'
 import { registerMcpServer, closeMcpServer } from './mcp/server'
@@ -253,6 +278,20 @@ function getRendererUrl(): string {
 }
 
 /**
+ * Offer every `[harnu-walk]` turn still waiting in a walk outbox again (spec S-2): the repos Harnu knows,
+ * each once (worktrees of one repo share a walks directory).
+ */
+async function replayWalkTurns(): Promise<void> {
+  const seen = new Set<string>()
+  for (const folder of await markdownKnownRoots()) {
+    const dir = walksDir(folder)
+    if (seen.has(dir)) continue
+    seen.add(dir)
+    await walkServiceFor(folder).replay()
+  }
+}
+
+/**
  * Whether a navigation target is the renderer itself. In dev we allow anything
  * on the dev-server origin (HMR rewrites the path/query); in prod we require
  * the exact built `index.html` file path. Anything else (an external link, a
@@ -287,6 +326,8 @@ function isAllowedExternalProtocol(url: string): boolean {
 }
 
 let mainWindow: BrowserWindow | null = null
+/** Stops the mission observer's cadence (Missions v4 S-3); `null` until it starts. */
+let stopMissionObserver: (() => void) | null = null
 
 /**
  * Singleton watcher handle, lazily started on the first `folders:load` call.
@@ -361,6 +402,8 @@ function createWindow(): void {
   // T579: the X button. `before-quit` carries the same guard for Ctrl+Q / the app menu; once
   // the operator picks "Quit anyway" both pass, so a quit attempt asks once.
   mainWindow.on('close', (event) => guardQuit(event, () => mainWindow))
+  // A reloaded / crashed renderer lost its unsaved-drafts registry; drop main's stale copy.
+  watchRendererReset(mainWindow.webContents)
   // Windows logoff / shutdown: never hold the session hostage.
   mainWindow.on('session-end', () => bypassQuitConfirm('system-shutdown'))
 
@@ -515,6 +558,31 @@ process.on('unhandledRejection', (reason) => {
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.harnu.app')
 
+  // T697: the stall monitor starts first so every IPC handler and interval registered after this
+  // line names itself when it holds the main thread. `HARNU_STALL_MONITOR=off` switches it off.
+  if (!isStallMonitorDisabled()) {
+    setStallMonitor(
+      startStallMonitor({
+        logDir: app.getPath('userData'),
+        ipcMain: ipcMain as unknown as IpcMainLike
+      })
+    )
+  }
+
+  // BUG-266: from here on, child processes are forked by a small helper process, never by this one (a
+  // fork of the main process holds the thread that carries keystrokes for 10-370 ms). Started now, while
+  // this process is still small. `HARNU_SPAWN_INLINE=1` keeps the old in-process behaviour as an escape hatch.
+  if (process.env.HARNU_SPAWN_INLINE !== '1') {
+    startSpawnRunner(() =>
+      fromUtilityProcess(
+        utilityProcess.fork(join(__dirname, 'spawn-helper.js'), [], {
+          serviceName: 'harnu-spawn-helper',
+          stdio: 'ignore'
+        })
+      )
+    )
+  }
+
   // Per-repo data dir copy (legacy `.capy/` → `.harnu/`), AFTER the userData migration
   // above and BEFORE any memory/roadmap/mission watcher below binds. Capped by a time
   // ceiling: past it boot carries on and the copy finishes in the background.
@@ -580,6 +648,11 @@ app.whenReady().then(async () => {
   // Same known-folder containment + extension allowlist + size cap as the reader
   // (atomic tmp+rename); never writes outside the known roots.
   registerMarkdownWriteHandlers()
+  // Quick notes: one scratch markdown note per repo per day, resolved (and created on
+  // first open) in the repo's main checkout; the renderer opens the file as a markdown pane.
+  registerNotesHandlers()
+  // Unsaved markdown drafts the renderer reports, so a quit guard can name them.
+  registerUnsavedDraftsIpc()
   // T171: ref-counted live-reload watcher for markdown panes. Only watches
   // files a mounted MarkdownPane has registered; broadcasts a path-only
   // `markdown:changed` signal the renderer re-reads via `markdown:read`.
@@ -615,8 +688,9 @@ app.whenReady().then(async () => {
   registerGithubBudget()
   // T370 (T358 S9): mission progress read + the operator doors.
   registerMissionIpc()
-  registerMergeBatchIpc()
-  registerCampaignIpc()
+  // Missions v4 S-3: reading a mission writes nothing. This is what records what the missions' links
+  // show (ledger rows, remembered progress): a pass on a cadence, and one after a linked session ends.
+  stopMissionObserver = startMissionObserver()
   // T164 U2: branch-vs-base diff + the evidence header's receipts, plus the
   // per-repo blast-radius list (operator-owned, never reachable from an MCP verb).
   registerReviewHandlers(() => mainWindow)
@@ -634,6 +708,8 @@ app.whenReady().then(async () => {
   registerHelpersHandlers()
   // T655: the main-owned session archive (sidebar Archive + the `archive_session` verb).
   registerSessionArchive(() => mainWindow)
+  // Your move (U1): the judge, the card store and the Settings pane's IPC. Off until chosen.
+  registerYourMove(() => mainWindow)
   registerSettingsHandlers(() => mainWindow)
   // T579: confirm before quitting while agents are working (prefs IPC + OS-shutdown bypass).
   registerQuitConfirm()
@@ -675,11 +751,10 @@ app.whenReady().then(async () => {
   // (installs observer hooks into ~/.claude/settings.json unless disabled);
   // async + best-effort, degrades to the activity heuristic if it can't install.
   void registerHookBridge(() => mainWindow)
-    // Campaign ch.5a: once the bridge is listening, answer the steward's hooks and re-point every
-    // steward's `.claude/settings.local.json` hooks at the live port/token (both change per boot).
     .then(async () => {
-      registerStewardWiring()
-      await reconcileStewardsOnBoot()
+      // Missions v4 S-16b: the summary a `SessionStart` (compact) hook in every spawned session fetches
+      // after a compaction. It prints something only for the open leader of an open v4 mission.
+      setMissionSummaryHandler(answerMissionSummaryHook)
     })
     .catch((err) => console.error('[hook-bridge] register failed', err))
   // Harnu mod host (T389). Dark by default: it only listens when the developer mode file asks for
@@ -703,10 +778,16 @@ app.whenReady().then(async () => {
   // appends `--plugin-dir <staged>`. Nothing is enabled on a fresh install, so the
   // provider is a pass-through until the operator turns a skill on in the panel.
   registerBundledSkillsHandlers()
+  // T2: the doc-reader feature stages an http hook to the live Hook Bridge (same port and
+  // per-boot token as the steward hooks); with the bridge down it stages nothing.
+  setDocReaderEndpointProvider(() => getHookBridgeEndpoint())
   // T389 P4W1: Settings → Mods. Read-only; spawns nothing until the tab is opened.
   registerModsAuditHandlers()
   // Drop the dead pre-rename `<hash>/capy/` staging dirs the userData migration carried over.
   void cleanStaleLegacyStaging().catch(() => {})
+  // T616: drop the staged skill dirs of folders that are gone (and what piled up before this
+  // existed). Never fails boot; the Cleanup cycle repeats it.
+  void pruneStagedSkillsLive().catch(() => {})
   setBundledSkillsArgsProvider((args, cwd) => injectBundledSkillArgs(args, cwd))
   // T389: the companion mod — the second, unconditional `--plugin-dir` plus a spawn token. The
   // provider answers null (spawn exactly as before) unless the mode is on, the CLI version is
@@ -755,6 +836,9 @@ app.whenReady().then(async () => {
   // it overrides pty's `--mcp-config` provider, so it must run AFTER
   // `registerPtyHandlers` set the default (order satisfied above).
   const cmdBridge = registerCommandBridge(() => mainWindow)
+  // Missions v4 S-16b: the hand-off door starts its session the way the operator's own dispatch does
+  // (`session.dispatchCard` over this bridge, never the agent-controlled `session.create`).
+  setMissionHandoffStarter(bridgeStarter(cmdBridge.bridge))
   // The digest engine (registered above) posts its "Memory digest failed" notice over this bridge.
   setDigestNoticeBridge(cmdBridge.bridge)
   // T474: terminal lifecycle IPC. After the bridge, so its `renderer:ready` listener runs once
@@ -785,6 +869,12 @@ app.whenReady().then(async () => {
   // so a worker's own self-disable notice (streak or vanished folder) goes
   // through the ordinary notify.push path — no new transport.
   registerScheduler(() => mainWindow, cmdBridge.bridge)
+  // Missions v4 S-27: no mission has a steward any more. Once the Scheduler has loaded, delete the
+  // workers and hooks an older Harnu left behind and raise ONE Activity notice naming the missions.
+  // Never touches a mission file.
+  void retireStewardsOnBoot({ dispatch: (c, p) => cmdBridge.bridge.dispatch(c, p) }).catch((err) =>
+    console.error('[steward] retirement failed', err)
+  )
 
   // T45: the renderer pulls the launch folder (`harnu .`) once it's mounted and
   // subscribed to `folders:adopted`, so the pin lands instead of racing startup.
@@ -801,6 +891,51 @@ app.whenReady().then(async () => {
   })
   // T564 U2: page events ride the command bridge to a session as a user turn.
   bindBrowserBridge(cmdBridge.bridge)
+  // Guided walks (S-2): a `[harnu-walk]` turn rides the user-turn route (the `walk` source) and wakes a parked
+  // session; one no session could take waits in the run's outbox on disk and is offered again here, a little
+  // after the renderer announces itself, so a restart does not lose it.
+  // S-3: the pane exists now, so `walk_open` asks the renderer for it directly (and learns whether it answered).
+  const walkBridgeRuntime = createBridgeRuntime(cmdBridge.bridge, waitForSessionReady)
+  // S-7: "Test it" in the Mission dropdown delivers its request the same way and starts a session the way the
+  // hand-off does (the operator's own dispatch, never the agent-controlled `session.create`).
+  const walkIpc = registerWalkIpc(() => mainWindow, {
+    deliver: (turn) => walkBridgeRuntime.deliver(turn),
+    startSession: bridgeStarter(cmdBridge.bridge)
+  })
+  configureWalkRuntime({
+    ...walkBridgeRuntime,
+    openPane: (a) => walkIpc.openPane(a)
+  })
+  ipcMain.on('renderer:ready', () => {
+    setTimeout(() => {
+      void replayWalkTurns().catch((err) => console.warn('[walk] replay failed', err))
+    }, 3000)
+  })
+  // Dev only: a door so a capture or a smoke case can open a walk without an agent. Not registered in a packaged build, and answers only to the app's own renderer.
+  if (!app.isPackaged || IS_DEV) {
+    ipcMain.handle(
+      'walk:dev-open',
+      async (e, args: { folder: string; script: unknown; sessionId?: string }) => {
+        if (!isRendererUrl(e.senderFrame?.url ?? ''))
+          return { ok: false, error: 'NOT_THE_RENDERER' }
+        return openWalkFromApp(args.folder, args.script, await markdownKnownRoots(), args.sessionId)
+      }
+    )
+    // The agent's two writes (`walk_report`, `walk_extend`) from the app itself, so a capture or a smoke case can play
+    // the session's part without an MCP client. Same dev-only, renderer-only door as above.
+    ipcMain.handle(
+      'walk:dev-call',
+      async (
+        e,
+        args: { folder: string; verb: 'report' | 'extend'; args: Record<string, unknown> }
+      ) => {
+        if (!isRendererUrl(e.senderFrame?.url ?? ''))
+          return { ok: false, error: 'NOT_THE_RENDERER' }
+        const env = makeWalkEnv(args.folder, await markdownKnownRoots())
+        return args.verb === 'report' ? walkReport(args.args, env) : walkExtend(args.args, env)
+      }
+    )
+  }
   void registerMcpServer(() => mainWindow, {
     bridge: cmdBridge.bridge,
     confirm: mcpConfirm.confirm
@@ -1221,6 +1356,9 @@ app.on('before-quit', async (event) => {
   // best-effort. Defer Electron's actual quit until the watcher is closed
   // so chokidar's file descriptors are released cleanly.
   stopHibernationSweep()
+  // Below the guard: a cancelled quit keeps every service alive, and the observer is never restarted.
+  stopMissionObserver?.()
+  closeYourMove()
   killAllPtys()
   killAllSpeech()
   cancelKokoroInstall()
@@ -1239,6 +1377,7 @@ app.on('before-quit', async (event) => {
   }
   stopHeartbeat()
   stopFullSamplerForced()
+  void getStallMonitor()?.stop()
   // MCP teardown (fail-closed): deny every parked agent confirm + reject every
   // in-flight CommandBridge dispatch synchronously, so nothing actuates during
   // shutdown. The server's async close (stop listener + SSE connections + delete

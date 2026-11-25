@@ -15,15 +15,58 @@
  * clears from the zone); the × dismisses (`markSessionSeen` — stamps last-
  * viewed = now, dropping the row). Tokens only — Section-label eyebrow,
  * `--color-warning` dot, `--border` divider (design.md §6, folder-first).
+ *
+ * Since T702 the shell (eyebrow + chevron, scrolling body, resize handle, persisted size and
+ * collapsed state) is the generic `SidebarSection`; this file only decides WHEN the zone shows and
+ * WHAT is in it. Nothing in the shell knows about Return here.
+ *
+ * Your move (design.md §6 "RETURN HERE in Your move mode Live"): when the setting is Live the zone
+ * lists the global queue of Your move cards instead (`YourMoveCard`), oldest first, with the count
+ * and the oldest clock in the eyebrow. It is global on purpose: the zone sits outside the drill
+ * view, so a card from another project shows whichever folder the sidebar is drilled into. In Off
+ * and Observe nothing about the legacy rows changes. Cards have no ×: see `YourMoveCard.vue`.
  */
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
 import { useSessionsStore } from '../stores/sessions'
 import type { Session } from '../stores/sessions'
+import { useYourMoveStore } from '../stores/your-move'
+import { formatClock, pageOfQueue, QUEUE_PAGE } from '../lib/your-move-view'
 import { sessionTitle } from '../lib/session-label'
+import SidebarSection from './SidebarSection.vue'
+import YourMoveCard from './YourMoveCard.vue'
 
 const sessions = useSessionsStore()
+const yourMove = useYourMoveStore()
 const { t } = useI18n()
+
+onMounted(() => void yourMove.init())
+
+const live = computed(() => yourMove.mode === 'live')
+const visible = computed(() =>
+  live.value ? yourMove.count > 0 : sessions.forgottenSessions.length > 0
+)
+const count = computed(() => (live.value ? yourMove.count : sessions.forgottenSessions.length))
+const oldestClock = computed(() =>
+  yourMove.oldestAt === null ? '' : formatClock(yourMove.now - yourMove.oldestAt)
+)
+
+/**
+ * The queue renders one page at a time (BUG-271): a real queue held 1,594 cards, and every one of
+ * them was a live row in the sidebar. "More" reveals the next page after the ones already shown.
+ */
+const shown = ref(QUEUE_PAGE)
+const page = computed(() => pageOfQueue(yourMove.queue, shown.value))
+const showMore = (): void => {
+  shown.value += QUEUE_PAGE
+}
+
+/** One card open at a time: the zone is a narrow strip, and a second one would crowd the list. */
+const expandedId = ref<string | null>(null)
+const toggle = (id: string): void => {
+  expandedId.value = expandedId.value === id ? null : id
+}
 
 /** Row label — the shared session name (BUG-78, the sidebar row's own), else the
  *  "New session" placeholder. */
@@ -33,38 +76,65 @@ function labelFor(s: Session): string {
 </script>
 
 <template>
-  <div
-    v-if="sessions.forgottenSessions.length > 0"
-    class="flex shrink-0 flex-col"
-    style="max-height: 168px"
+  <!-- The whole zone renders only when there is something to show (calm-tech); its size and
+       collapsed state live in the section store, so they survive it hiding and coming back.
+       Height: until dragged, content-sized and capped (Live `min(380px, 45vh)`, legacy 168px). -->
+  <SidebarSection
+    v-if="visible"
+    id="return"
+    :label="$t('sidebar.returnHere.title')"
+    :tone="live ? 'warning' : 'default'"
+    :auto-max-height="live ? 'min(380px, 45vh)' : '168px'"
     data-island="sidebar-return"
   >
-    <!-- 1px zone divider (--border) separating the folder list from RETURN HERE. Off, it is the
-         rule above the zone (the dock draws its own below); Floating panels hides it, the island
-         gap does that job. -->
-    <div data-return-divider class="shrink-0 border-t border-border" aria-hidden="true" />
+    <!-- Title · count (· oldest clock in Your move mode Live). `contents` keeps the three spans
+         flex children of the eyebrow while giving the tests one node to read the whole line from. Only the
+         title gives way when the sidebar is narrow (ellipsis); the rest stays whole (BUG-276). -->
+    <template #eyebrow>
+      <span class="contents" data-testid="your-move-eyebrow">
+        <span class="min-w-0 truncate">{{ $t('sidebar.returnHere.title') }}</span>
+        <span class="shrink-0" aria-hidden="true">·</span>
+        <span class="shrink-0 tabular-nums">{{ count }}</span>
+        <template v-if="live">
+          <span class="shrink-0" aria-hidden="true">·</span>
+          <span class="shrink-0 tabular-nums">{{ oldestClock }}</span>
+        </template>
+      </span>
+    </template>
 
-    <!-- Section-label eyebrow (design.md §6) — uppercase 10.5px / 500 / 0.06em /
-         --text-4, mirroring the FOLDERS / ACTIVE ELSEWHERE eyebrows. Not
-         collapsible: the zone is a transient nudge, gone the moment it's empty. -->
-    <div
-      class="flex shrink-0 items-center text-text-4"
-      style="
-        padding: 8px 12px 4px 12px;
-        gap: 4px;
-        font-size: 10.5px;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-      "
-    >
-      <span>{{ $t('sidebar.returnHere.title') }}</span>
-      <span aria-hidden="true">·</span>
-      <span class="tabular-nums">{{ sessions.forgottenSessions.length }}</span>
+    <!-- Your move cards -->
+    <div v-if="live" style="padding-top: 2px; padding-bottom: 2px">
+      <YourMoveCard
+        v-for="c in page.cards"
+        :key="c.id"
+        :card="c"
+        :expanded="expandedId === c.id"
+        @toggle="toggle(c.id)"
+      />
+      <button
+        v-if="page.hidden > 0"
+        type="button"
+        class="block cursor-pointer text-left text-text-3 transition hover:text-text"
+        style="
+          font-size: 11.5px;
+          border-radius: var(--radius-sm);
+          padding: 4px 10px;
+          margin: 0 8px 6px 8px;
+        "
+        data-testid="your-move-more"
+        @click="showMore"
+      >
+        {{
+          $t('yourMove.queue.more', {
+            n: $n(page.next),
+            left: $n(page.hidden)
+          })
+        }}
+      </button>
     </div>
 
-    <!-- Flat list of forgotten sessions: the only part that scrolls (the eyebrow stays put). -->
-    <div class="scrollable min-h-0 flex-1 overflow-y-auto" style="padding-bottom: 4px">
+    <!-- Flat list of forgotten sessions -->
+    <div v-else style="padding-bottom: 4px">
       <button
         v-for="s in sessions.forgottenSessions"
         :key="s.sessionId"
@@ -104,5 +174,5 @@ function labelFor(s: Session): string {
         </span>
       </button>
     </div>
-  </div>
+  </SidebarSection>
 </template>

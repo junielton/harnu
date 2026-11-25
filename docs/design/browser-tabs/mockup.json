@@ -1,0 +1,109 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-11-19",
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css (@theme block = default dark) + src/renderer/src/styles/main.css (font and radius-xs tokens)",
+  "viewports": [560, 360],
+  "targets": ["src/renderer/src/components/BrowserPane.vue"],
+  "screens": [
+    {
+      "id": "browser-pane",
+      "title": "Browser pane with tabs, start page and load error",
+      "status": "approved",
+      "approvedAt": "2026-11-19",
+      "states": [
+        "single",
+        "start",
+        "new-tab",
+        "load-error",
+        "tabs",
+        "tab-menu",
+        "overflow",
+        "overflow-list",
+        "agent",
+        "agent-hover"
+      ],
+      "targets": ["src/renderer/src/components/BrowserPane.vue"],
+      "notes": "One tab = today's header plus a + button. Two or more tabs = the strip takes the title's place. Every tab of a pane shares the pane's cookie partition. A pane or tab with no address shows the start page; a failed load shows Harnu's error page instead of a blank view. The address field focus has one border (global focus ring opted out). The agent connection is one pulsing icon; hovering it shows who is connected and what it is doing (paused and disconnected keep their text pill, since they need to be seen). 2026-11-19: overflow and overflow-list redrawn at 8 tabs (the spec's cap); at 360px +5, at 560px all eight icons and no +N. Re-approved by the operator 2026-11-19."
+    }
+  ],
+  "parts": [],
+  "flows": [
+    {
+      "id": "open-a-tab",
+      "title": "Open a second tab and type an address",
+      "steps": [
+        {
+          "screen": "browser-pane",
+          "state": "single",
+          "via": "+ in the header"
+        },
+        {
+          "screen": "browser-pane",
+          "state": "new-tab",
+          "via": "type an address, Enter"
+        },
+        {
+          "screen": "browser-pane",
+          "state": "tabs"
+        }
+      ]
+    },
+    {
+      "id": "close-others",
+      "title": "Close the other tabs from a tab's menu",
+      "steps": [
+        {
+          "screen": "browser-pane",
+          "state": "tabs",
+          "via": "right-click the Dashboard tab"
+        },
+        {
+          "screen": "browser-pane",
+          "state": "tab-menu",
+          "via": "Close other tabs"
+        },
+        {
+          "screen": "browser-pane",
+          "state": "single"
+        }
+      ]
+    },
+    {
+      "id": "start-page",
+      "title": "Open the browser with no address and pick a running server",
+      "steps": [
+        {
+          "screen": "browser-pane",
+          "state": "start",
+          "via": "click example-web under Running in this folder"
+        },
+        {
+          "screen": "browser-pane",
+          "state": "single"
+        }
+      ]
+    },
+    {
+      "id": "overflow",
+      "title": "Reach a tab that does not fit",
+      "steps": [
+        {
+          "screen": "browser-pane",
+          "state": "overflow",
+          "via": "+4"
+        },
+        {
+          "screen": "browser-pane",
+          "state": "overflow-list",
+          "via": "pick a tab"
+        },
+        {
+          "screen": "browser-pane",
+          "state": "overflow"
+        }
+      ]
+    }
+  ]
+}

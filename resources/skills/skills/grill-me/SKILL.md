@@ -31,16 +31,15 @@ and leave the _residue_ in the document, not in the chat. A grilling that ends w
 
 ## Phase 0 — Load the plan
 
-The target, in order: a spec or plan path the operator gave, the spec attached to the
-mission as scope (`mission_get` → `scope`), a `docs/specs/**/spec.md` the conversation
+The target, in order: a spec or plan path the operator gave, the spec linked to the
+mission (`mission_get` → `links`, kind `doc`), a `docs/specs/**/spec.md` the conversation
 is about, or the plan in the conversation. Read it whole, plus what it cites (PRD,
 ADR, mockup). Then run `memory_query` on its main nouns: "why did we choose X?" is
 often already recorded, and asking the operator a question they answered last month
 is the worst kind of grilling.
 
-If the target is only in the conversation (there is no spec file yet), the placement
-rules below still apply to a spec that gets written later: keep the placed items in a
-list and hand them to whoever writes it; report that no file existed.
+A target only in the conversation (no spec file yet) still gets the placement rules: keep the
+placed items in a list for whoever writes the spec, and report that no file existed.
 
 Show a one-message map before the first question: the design tree as you see it, in
 5–10 lines, and which branches you will probe first. Then ask question 1.
@@ -82,12 +81,16 @@ Rules for the writes:
 
 - **Append-only on the spec.** New rows and new lines; never reword or delete an
   existing row. Touch no section outside the three above.
-- Rows go in the tables the spec already has. If the spec has no Open decisions or
-  Amendments table, add the table at the end with the standard header and say so; do
-  not invent another layout.
-- If the mission has a decision node for a `D-n` you wrote as resolved, you still never
-  write `chosen`: tell the operator to press **Choose…** on that step in the Mission
-  popover. Do not create nodes.
+- Rows go in the tables the spec already has; with no Open decisions or Amendments table,
+  add it at the end with the standard header and say so. Invent no other layout.
+- **The mission, only when a step is gated.** Pass your own `sessionId` on every mission call.
+  A `D-n` you wrote as resolved is one `mission_log` (`kind: 'decision'`, that `stepId`, your
+  `sessionId`). One you wrote as `open` with no blocker yet is an operator blocker
+  (`mission_set_blocker`, `owner: 'operator'`): `mission_set_blocker { stepId, reason, ask, unblocks,
+owner: 'operator', sessionId }`, the `reason` the question and its options (load
+  `../mission/references/writing-contract.md`). The operator's blocker is theirs: you never call
+  `mission_clear_blocker` on it (refused `OPERATOR_ONLY`); tell them to say **Done, continue** in the
+  Mission dropdown. A `D-n` that gates no step, or a repo with no mission, gets neither.
 - If the target is not a file (no spec), nothing is written; every item goes on the
   closing list instead, with the exact row it would have been.
 
@@ -108,20 +111,17 @@ Written to the spec:
 Could not place:
 - "Support for the old export format" — a constraint with no home in this spec; belongs in a PRD or a card.
 
-Owed by you: Choose… on D-6's decision node (if one exists). Nothing is enacted.
+Owed by you: "Done, continue" on D-6's blocker in the Mission dropdown (if one exists). Nothing is enacted.
 ```
 
 "Written" lists only what the file now contains — re-read the spec before sending, so
-the list matches the rows. "Could not place" is never omitted; when empty, say `none`.
-Offer a board card for any unplaced item; only offer.
+the list matches the rows. "Could not place" is never omitted (say `none` when empty); offer a
+board card for any unplaced item, only offer.
 
 ## Red flags
 
-| Thought                                           | Reality                                                      |
-| ------------------------------------------------- | ------------------------------------------------------------ |
-| "Let me ask these four together, they're related" | Four questions, four messages.                               |
-| "I'll batch the spec edits at the end"            | A crash or a compaction loses them. Place after each answer. |
-| "I'll tidy the spec while I'm in there"           | Append-only. A tidy-up is a separate, requested change.      |
-| "This answer changes the AC, I'll just edit it"   | Amendments row; the operator sees the history.               |
-| "They agreed, so let's start building"            | A grilling enacts nothing.                                   |
-| "I'll just look at the final list in my head"     | Re-read the file; list what is actually there.               |
+| Thought                                         | Reality                                                      |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| "I'll batch the spec edits at the end"          | A crash or a compaction loses them. Place after each answer. |
+| "This answer changes the AC, I'll just edit it" | Amendments row; the operator sees the history.               |
+| "They agreed, so let's start building"          | A grilling enacts nothing.                                   |

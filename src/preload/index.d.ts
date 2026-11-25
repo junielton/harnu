@@ -15,7 +15,11 @@ import type {
   BrowserNotice,
   BrowserOverlayRect,
   BrowserPaneState,
-  BrowserRect
+  BrowserRect,
+  WalkLoad,
+  WalkIpcError,
+  WalkTick,
+  WalkCriterion
 } from './index'
 
 // Re-export the preload's public types so the renderer can pull everything
@@ -41,7 +45,11 @@ export type {
   ExplorerEntry,
   ExplorerListing,
   ExplorerSearchResult,
-  ExtensionThemeWire
+  ExtensionThemeWire,
+  WalkLoad,
+  WalkIpcError,
+  WalkTick,
+  WalkCriterion
 }
 
 declare global {

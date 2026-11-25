@@ -1,7 +1,7 @@
 import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import type { McpConfirmPending } from '../../../preload'
 import { i18n } from '../i18n'
-import { playNotificationSound } from '../lib/notification-sound'
+import { playNotificationSound, type SoundFamily } from '../lib/notification-sound'
 
 /**
  * Parked MCP-confirm queue (T44 S4c) — the async sibling of the Approval Inbox
@@ -54,9 +54,18 @@ export interface McpConfirmQueue {
   ) => Promise<void>
 }
 
+export interface McpConfirmQueueOptions {
+  /**
+   * May this sound family play (the Sound switch plus the family's mute, `soundAllowed` over the
+   * notify prefs)? Injected by `sessions.ts` — the queue never reaches back into a store. Omitted =
+   * always allowed (a queue built without a prefs source, e.g. in a unit test).
+   */
+  soundAllowed?: (family: SoundFamily) => boolean
+}
+
 /** Build the parked MCP-confirm queue (no store readers needed — parked confirms
  *  carry no owning session/folder to enrich; their `prompt` is the summary). */
-export function useMcpConfirmQueue(): McpConfirmQueue {
+export function useMcpConfirmQueue(opts: McpConfirmQueueOptions = {}): McpConfirmQueue {
   // Map<confirmId, wire>. Reassigned on every mutation so the fold-in computeds
   // (attentionCount / inboxCount) + the inbox list pick up the change.
   const parkedConfirms = ref<Map<string, McpConfirmPending>>(new Map())
@@ -80,8 +89,8 @@ export function useMcpConfirmQueue(): McpConfirmQueue {
    * `mode === 'parked'` already in the map is a no-op (still parked, nothing
    * changed). A genuinely new parked confirm — OR one re-arriving after a D3
    * dismissal — fires the **transversal security-confirm rule** (design.md §6
-   * — "Security confirms — sound + attention"): the chime (ALWAYS — Decision 2,
-   * a security cue, never gated on the per-state notify prefs) + OS window
+   * — "Safety confirms — attention"): the `ask` sound (gated only by the Sound switch and the
+   * Asks-you mute, never by the per-state notify prefs — T154) + OS window
    * attention + a click-to-inbox native notification. `seenParkedIds` gates the
    * chime specifically (not the row add) so a dismissal re-arrival still shows
    * the row without re-chiming.
@@ -98,7 +107,9 @@ export function useMcpConfirmQueue(): McpConfirmQueue {
     if (seenParkedIds.has(p.id)) return
     seenParkedIds.add(p.id)
     try {
-      playNotificationSound()
+      // T154: a parked approval ASKS the operator. The sound obeys the Sound switch and the Asks-you
+      // mute; the attention flash and the native notification below do not.
+      if (opts.soundAllowed?.('ask') ?? true) playNotificationSound('ask')
       window.api.requestAttention()
       window.api.notify({
         title: i18n.global.t('agentConfirm.notifyTitle'),

@@ -20,6 +20,7 @@ export type DialogId =
   | 'newFolder'
   | 'openSubfolder'
   | 'renameFolder'
+  | 'notesPicker'
   | 'trustedHosts'
   | 'renameRepo'
   | 'memoryLocation'
@@ -47,7 +48,6 @@ export type ViewId =
   | 'review'
   | 'scheduler'
   | 'containers'
-  | 'campaignMap'
 
 /**
  * The params each `ViewId` needs to render, keyed so that opening a view with
@@ -69,8 +69,6 @@ export interface ViewParams {
   scheduler: Record<string, never>
   /** T331 — global, like `cleanup`: every docker stack on the machine, not one folder's. */
   containers: Record<string, never>
-  /** T607 — global like `scheduler`: the campaign names its own folder; the map reads it by id. */
-  campaignMap: { campaignId: string }
 }
 
 /**
@@ -103,7 +101,7 @@ export interface NavTargetParams {
   repoLabel?: string
   /** T164: the card whose intent the review pane renders, when one is bound. */
   cardSlug?: string
-  /** BUG-173: the mission whose popover `'mission'` asks the pill to open. */
+  /** BUG-173: the mission an Activity row names; `'mission'` opens the Mission dropdown for it. */
   missionId?: string
 }
 
@@ -123,6 +121,7 @@ export type SettingsTabId =
   | 'mods'
   | 'memory'
   | 'hibernationPolicy'
+  | 'yourMove'
   | 'usageHistory'
   | 'changelog'
   | 'claudeCode'
@@ -152,6 +151,7 @@ const SETTINGS_TABS: Record<SettingsTabId, true> = {
   mods: true,
   memory: true,
   hibernationPolicy: true,
+  yourMove: true,
   usageHistory: true,
   changelog: true,
   claudeCode: true,
@@ -476,8 +476,6 @@ export const useUiStore = defineStore('ui', () => {
     systemMonitor: { scope: 'global', titleKey: 'systemMonitor.title' },
     scheduler: { scope: 'global', titleKey: 'scheduler.title' },
     containers: { scope: 'global', titleKey: 'containers.title' },
-    // T607: `campaign.map.title` / `campaign.map.close` (the shell derives the close key).
-    campaignMap: { scope: 'global', titleKey: 'campaign.map.title' },
     // T245 AC-6: the review companion is scoped to the review, so the review
     // ending is what disposes it — see `fireReviewClosed` below.
     review: { scope: 'folder', titleKey: 'review.title', onClose: () => fireReviewClosed() }
@@ -628,14 +626,6 @@ export const useUiStore = defineStore('ui', () => {
   const schedulerOpen = computed(() => activeView.value?.id === 'scheduler')
   const containersOpen = computed(() => activeView.value?.id === 'containers')
 
-  /** T607: the Campaign map takeover and the campaign it shows. */
-  const campaignMap = computed<{ open: boolean; campaignId: string | null }>(() => {
-    const v = activeView.value
-    return v?.id === 'campaignMap'
-      ? { open: true, campaignId: v.params.campaignId }
-      : { open: false, campaignId: null }
-  })
-
   /**
    * Repo path to scroll `CleanupView` to on open (Reaper PR4, repo-group
    * context-menu entry). Cosmetic scroll-to-group only — no filter prop
@@ -730,6 +720,12 @@ export const useUiStore = defineStore('ui', () => {
   function openRenameFolder(path: string): void {
     folderActionPath.value = path
     openDialog('renameFolder')
+  }
+
+  /** Open the Quick notes picker for the repo folder `path` (lists its daily notes). */
+  function openNotesPicker(path: string): void {
+    folderActionPath.value = path
+    openDialog('notesPicker')
   }
 
   /** Open the "Trusted dev hosts" dialog for `path` (T571, spec §7.2). */
@@ -972,18 +968,6 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /**
-   * Open the Campaign map takeover (T607) for one campaign, by id. Global scope like Cleanup:
-   * the map reads the campaign from the campaigns store, so there is no folder to compare.
-   */
-  function openCampaignMap(campaignId: string): void {
-    openView('campaignMap', { campaignId })
-  }
-
-  function closeCampaignMap(): void {
-    closeView('campaignMap')
-  }
-
-  /**
    * Open the PR Stack Canvas for a folder (T198). Per repo, like `openRoadmap`
    * — `folderPath` anchors it to a folder whose repo owns the PRs, `repoLabel`
    * is the header title. Any worktree of the repo opens the same canvas.
@@ -1122,10 +1106,10 @@ export const useUiStore = defineStore('ui', () => {
         return
       }
       case 'mission': {
-        // Not a takeover: select the owner first (the caller's job), then ask
-        // the missions store to have the pill open this mission's popover.
+        // Not a takeover: select the owner first (the caller's job), then open the Mission dropdown under the
+        // Topbar pill, which follows the selected session (Mission dropdown S-7).
         if (!params?.missionId) return
-        useMissionsStore().requestPopover(params.missionId)
+        useMissionsStore().openMissionDropdown(params.missionId)
         return
       }
     }
@@ -1211,7 +1195,6 @@ export const useUiStore = defineStore('ui', () => {
     cleanupOpen,
     schedulerOpen,
     containersOpen,
-    campaignMap,
     prStack,
     review,
     anyTakeoverOpen,
@@ -1227,6 +1210,7 @@ export const useUiStore = defineStore('ui', () => {
     openNewFolder,
     openOpenSubfolder,
     openRenameFolder,
+    openNotesPicker,
     openTrustedHosts,
     openRenameRepo,
     openMemoryLocation,
@@ -1262,8 +1246,6 @@ export const useUiStore = defineStore('ui', () => {
     closeCleanup,
     openContainers,
     closeContainers,
-    openCampaignMap,
-    closeCampaignMap,
     openPrStack,
     closePrStack,
     openReview,

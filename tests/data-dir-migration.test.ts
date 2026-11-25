@@ -429,7 +429,7 @@ describe('boot runner (AC-3)', () => {
 
 describe('mission worktree-link resolution (AC-4 call site)', () => {
   it('resolves a stored `.capy/…` ref under the current data dir', async () => {
-    const { linkPath } = await import('../src/main/mcp/tool-handlers')
+    const { linkPath } = await import('../src/main/missions/derive')
     expect(linkPath('/repo', '.capy/out/x.md')).toBe('/repo/.harnu/out/x.md')
     expect(linkPath('/repo', 'docs/a.md')).toBe('/repo/docs/a.md')
     expect(linkPath('/repo', '/abs/.capy/x.md')).toBe('/abs/.capy/x.md')

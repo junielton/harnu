@@ -271,6 +271,30 @@ it('loader validates a problem and names every defect', async () => {
   })
 })
 
+it('hidden.dest must stay inside the checkout', async () => {
+  const { loadCorpus } = await import('../scripts/eval/bakeoff/corpus.mjs')
+  const load = (dest: string, rootName: string): Record<string, unknown> => {
+    const { root } = problemCopy((p) => void (p.hidden.dest = dest), { rootName })
+    return loadCorpus(root, { split: 'dev' })
+  }
+
+  for (const [i, dest] of [
+    '../outside/',
+    '..',
+    'tests/../../outside/',
+    '/tmp/outside/'
+  ].entries()) {
+    expect(load(dest, `escape-${i}`), dest).toMatchObject({
+      problems: [],
+      errors: [{ code: 'FILE_MISSING', file: JSON_FILE, field: 'hidden.dest' }]
+    })
+  }
+
+  for (const [i, dest] of ['tests/', './tests/unit/', '.', 'a/../tests/', '..tests/'].entries()) {
+    expect(load(dest, `inside-${i}`), dest).toMatchObject({ errors: [] })
+  }
+})
+
 it('content hash ignores provenance and follows every other byte', async () => {
   const { contentHash } = await import('../scripts/eval/bakeoff/corpus.mjs')
   const base = problemCopy(undefined, { rootName: 'a' })

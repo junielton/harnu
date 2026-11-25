@@ -106,6 +106,11 @@
       "title": "Return here",
       "dismiss": "Mark as seen"
     },
+    "section": {
+      "collapse": "Collapse {name}",
+      "expand": "Expand {name}",
+      "resize": "Resize {name}"
+    },
     "teammates": {
       "show": "Show {n} teammates",
       "hide": "Hide teammates",
@@ -143,19 +148,38 @@
     "openInEditorVSCodeHint": "Couldn't launch the VS Code CLI (`code`). In VS Code, open the Command Palette and run \"Shell Command: Install 'code' command in PATH\", then try again.",
     "openInEditorBadCommand": "The custom editor command is empty or malformed. Check Settings → General → Editor.",
     "openExplorer": "Browse files",
+    "notes": "New note for today",
+    "notesAll": "Right-click: all notes…",
     "githubPulls": "Pull requests on GitHub",
     "roadmapBoard": "Roadmap board",
     "prStack": "PR Stack",
     "providerBadgeTitle": "Running on {name} (custom endpoint), not the Anthropic API",
     "orchestratorBadge": "Orchestrator",
     "orchestratorBadgeTitle": "Orchestrator — this session coordinates work on this repo",
-    "review": "Review this branch"
+    "review": "Review this branch",
+    "walks": "Walks"
   },
   "helperStack": {
     "label": "Helper panes",
     "paneLabel": "Helper pane",
     "hide": "Hide panel",
     "show": "Show panel"
+  },
+  "sessionTuck": {
+    "strip": "Show session {name}",
+    "needsYou": "Needs you",
+    "hint": "Click or drag to bring it back",
+    "armedHint": "Release to tuck the session away",
+    "floor": "40% · session floor",
+    "state": {
+      "working": "Working",
+      "idle": "Idle",
+      "needsInput": "Waiting for your approval",
+      "stuck": "Stuck",
+      "failed": "Failed",
+      "completed": "Finished",
+      "archived": "Archived"
+    }
   },
   "agentTerminal": {
     "connectedTo": "Connected to {session}",
@@ -208,6 +232,13 @@
     "unsaved": {
       "title": "Unsaved changes",
       "discard": "Discard & continue"
+    },
+    "unsavedDialog": {
+      "title": "Unsaved changes",
+      "body": "{name} has changes that are not saved.",
+      "save": "Save",
+      "discard": "Don't save",
+      "cancel": "Cancel"
     },
     "changedOnDisk": {
       "title": "This file changed on disk",
@@ -358,6 +389,301 @@
     "copyCode": "Copy code",
     "copied": "Copied"
   },
+  "missionDropdown": {
+    "pill": {
+      "none": "No mission"
+    },
+    "shell": {
+      "label": "Mission"
+    },
+    "head": {
+      "barLabel": "Mission progress",
+      "count": {
+        "milestones": "{done} of {total} milestone done | {done} of {total} milestones done",
+        "steps": "{done} of {total} step done | {done} of {total} steps done"
+      },
+      "switchLabel": "Mission {n} of {m} · Change",
+      "switchCount": "Mission {n} of {m}",
+      "change": "Change",
+      "leads": "This session leads {n} missions",
+      "choose": "Choose the mission to show",
+      "sub": {
+        "milestones": "{done} of {total} milestone | {done} of {total} milestones",
+        "steps": "{done} of {total} step | {done} of {total} steps",
+        "forYou": "{count} · {n} for you"
+      }
+    },
+    "next": {
+      "label": "What is next",
+      "you": "Your next step",
+      "calm": "Next step",
+      "running": "{n} step is running. Nothing for you right now. | {n} steps are running. Nothing for you right now.",
+      "idle": "Nothing is running. Nothing for you right now.",
+      "more": "{n} more waiting on you",
+      "less": "Show less",
+      "openStep": "Open step",
+      "close": "Close mission…",
+      "kind": {
+        "main-failing": "Fix",
+        "unblock": "Unblock",
+        "accept": "Accept",
+        "rescope": "Done when",
+        "settle": "Check",
+        "review": "Review",
+        "close": "Close",
+        "attach": "Join"
+      },
+      "doneWhenEyebrow": "New Done when proposed",
+      "doneWhenHint": "Approve makes it the end of the mission. Decline keeps the current one.",
+      "approve": "Approve",
+      "decline": "Decline",
+      "requestEyebrow": "Asks to join",
+      "requestText": "{session} asks to join “{mission}”. If you allow it, it works on the mission. It does not lead it.",
+      "allow": "Allow",
+      "deny": "Deny",
+      "already": "Someone already answered this, so nothing changed.",
+      "error": "Harnu could not save your answer. Try again in a moment."
+    },
+    "tree": {
+      "label": "Steps of the mission",
+      "waitsFor": "Waits for “{title}”",
+      "waitsForMany": "Waits for {titles}",
+      "running": "{n} running",
+      "waitingReview": "{n} waiting for review",
+      "blocked": "{n} blocked",
+      "nothingRunning": "Nothing running",
+      "allDone": "Every step is done",
+      "more": "{n} more step | {n} more steps",
+      "less": "Show less",
+      "optional": "{n} optional milestone | {n} optional milestones",
+      "chipYours": "Yours",
+      "noCriteria": "No criteria yet.",
+      "openLink": "Open {label}"
+    },
+    "state": {
+      "milestone": {
+        "not-started": "Not started",
+        "in-progress": "In progress",
+        "waiting-review": "Waiting for review",
+        "done": "Done"
+      },
+      "step": {
+        "todo": "To do",
+        "running": "Running",
+        "waiting-review": "Waiting for review",
+        "done": "Done",
+        "blocked": "Blocked"
+      },
+      "criterion": {
+        "open": "Not settled yet",
+        "settled": "Settled"
+      }
+    },
+    "ask": {
+      "open": "Ask",
+      "openTitle": "Ask the session about this milestone",
+      "placeholder": "What is still missing to finish this milestone?",
+      "label": "Question about “{title}”",
+      "hint": "Goes to the prompt of {name}. The answer shows in that session.",
+      "cancel": "Cancel",
+      "send": "Send",
+      "done": "Added to the prompt of {name}. Press Enter there to send it. The answer shows in that session.",
+      "notRunning": "{name} is not running. Resume it, then send the question again.",
+      "close": "Close"
+    },
+    "step": {
+      "criteria": "Criteria",
+      "verified": "{n} criterion verified | {n} criteria verified",
+      "by": {
+        "fact": "Checked automatically",
+        "session": "Checked by a second session",
+        "operator": "You",
+        "person": "Waiting for {person}",
+        "personUnnamed": "Waiting for another person"
+      },
+      "selfCheck": "The session says it is done. Not checked yet.",
+      "mark": "Mark done",
+      "markPerson": "Mark approved",
+      "markPersonTitle": "Mark {person} as having approved this",
+      "blocked": {
+        "you": "Blocked · waiting for you",
+        "session": "Blocked · waiting for the session",
+        "withAge": "{head} · {age}"
+      },
+      "clear": "Done, continue",
+      "links": "Links",
+      "evidence": "Evidence",
+      "evidenceTitle": "Open the evidence in the viewer",
+      "worktreeTitle": "Show this worktree in the sidebar",
+      "titleWithPath": "{title} · {path}",
+      "copy": "Copy the path",
+      "copied": "Path copied",
+      "removed": "removed — branch kept",
+      "addOffer": "This folder is not in the sidebar. Add it?",
+      "add": "Add",
+      "addCancel": "Not now",
+      "page": "Page · {address}",
+      "openLink": "Open {label}",
+      "error": {
+        "NOT_FOUND": "That changed while you were looking. The latest is shown. Check it and try again if you still need to.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. The latest is shown. Try again.",
+        "MISSION_CLOSED": "This mission is closed, so nothing in it can change.",
+        "SETTLES_ITSELF": "Harnu checks this one by itself. You do not mark it.",
+        "other": "Harnu could not save that. Try again in a moment. If it keeps happening, close the dropdown and open it again."
+      }
+    },
+    "empty": {
+      "title": "This session has no mission.",
+      "loading": "Reading the mission…",
+      "refusedTitle": "This mission cannot be read right now.",
+      "retry": "Retry",
+      "pickerTitle": "Open missions in this folder",
+      "ledBy": "led by {name}",
+      "unled": "nobody leads it",
+      "attach": "Attach",
+      "confirm": {
+        "text": "Attach this session to “{title}”? It will be part of the mission, but it will not lead it.",
+        "cancel": "Cancel",
+        "yes": "Attach"
+      },
+      "start": "Start a new mission",
+      "startDone": "Added to this session’s prompt. Press Enter there to send it.",
+      "startError": "This session is not running. Resume it, then try again.",
+      "none": "There is no open mission in this folder to attach to.",
+      "sampleOpen": "See a sample mission",
+      "requestThisSession": "This session",
+      "error": {
+        "NOT_FOUND": "This mission is no longer there. Pick another one.",
+        "MISSION_NOT_FOUND": "This mission is no longer there. Pick another one.",
+        "MISSION_CLOSED": "This mission was closed, so a session cannot join it.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. Try again.",
+        "other": "Harnu could not attach this session. Try again in a moment."
+      }
+    },
+    "sample": {
+      "label": "Sample mission",
+      "note": "Made-up data. Nothing you press here is saved.",
+      "chooser": "State",
+      "leave": "Leave the sample",
+      "state": {
+        "default": "Default",
+        "waiting": "Waiting on you",
+        "step-open": "A step open",
+        "step-blocked": "A step blocked",
+        "all-steps": "Every step shown",
+        "ask": "Asking about a milestone",
+        "clear": "Nothing waiting",
+        "done": "Done, ready to close",
+        "other-session": "Another session",
+        "simple": "Small task",
+        "simple-signoff": "Small task, sign-offs",
+        "big": "Large mission",
+        "big-waiting": "Large mission, waiting on you",
+        "no-mission": "No mission",
+        "attach-request": "Asks to join",
+        "closed": "Mission closed"
+      },
+      "hint": {
+        "waiting": "Press “{label}” in the next-step card.",
+        "all-steps": "Press “{label}” under the open milestone.",
+        "big-waiting": "Press “{label}” in the next-step card."
+      }
+    },
+    "footer": {
+      "close": "Close mission…"
+    },
+    "testIt": {
+      "label": "Test it",
+      "aria": "Test it · {what}",
+      "step": {
+        "tip": "Walk through this step by hand"
+      },
+      "milestone": {
+        "tip": "Walk through this milestone by hand"
+      },
+      "mission": {
+        "label": "Test the whole mission",
+        "tip": "Walk through the whole mission by hand"
+      }
+    }
+  },
+  "missionPane": {
+    "pill": {
+      "count": "{done}/{total}",
+      "forYou": "{n} for you",
+      "readyToClose": "ready to close",
+      "joined": "{count} · {tail}",
+      "title": "{title} — {label}"
+    },
+    "progress": {
+      "steps": "{done} of {total} step done | {done} of {total} steps done",
+      "milestones": "{done} of {total} milestone done | {done} of {total} milestones done"
+    },
+    "state": {
+      "open": "Open",
+      "ready-to-close": "Ready to close",
+      "closed": "Closed"
+    },
+    "next": {
+      "text": {
+        "mainFailing": {
+          "ask": "Fix the main branch: it broke after “{title}”",
+          "why": "Everything that merges next starts from a broken base"
+        },
+        "settle": {
+          "ask": "Mark done: {text}",
+          "whyLast": "It is the last thing open on this step",
+          "whyMore": "{n} more thing is open on this step | {n} more things are open on this step"
+        },
+        "review": {
+          "askOne": "Look over the pull request for “{title}”",
+          "askMany": "Look over {n} pull requests",
+          "whyOne": "The step cannot finish until you do",
+          "whyMany": "{n} steps cannot finish until you do"
+        },
+        "close": {
+          "askRequested": "Close the mission: the session says it is ready",
+          "askReady": "Close the mission: every step is done",
+          "why": "The mission is finished once you close it"
+        },
+        "doneWhen": {
+          "ask": "Approve or decline the new Done when",
+          "why": "A session proposed it. It becomes the mission’s end only if you approve."
+        },
+        "attach": {
+          "ask": "Let another session join this mission",
+          "why": "It asked to work on it and waits for your answer"
+        },
+        "unblock": {
+          "whyStep": "The step cannot go on until then",
+          "whyMission": "The mission cannot go on until then"
+        }
+      }
+    },
+    "sessions": {
+      "unnamed": "Session {id}"
+    },
+    "close": {
+      "title": "Close this mission?",
+      "body": "{title} leaves the Topbar and cannot be reopened. The mission file stays on disk as the record.",
+      "how": "How to close it",
+      "confirm": "Close mission",
+      "doneWhen": "Closing as delivered confirms this Done when: “{text}”",
+      "matters": {
+        "unfinished-steps": "{count} step is not done | {count} steps are not done",
+        "open-blockers": "{count} blocker is still open | {count} blockers are still open",
+        "staged-done-when": "A new Done when is waiting for your approval",
+        "attach-requests": "{count} session is waiting to join | {count} sessions are waiting to join",
+        "other": "{count} other matter is still open | {count} other matters are still open"
+      },
+      "error": {
+        "NOT_FOUND": "That changed while you were looking. The dropdown shows the latest. Check it and try again if you still need to.",
+        "WRITE_CONFLICT": "The mission changed at the same moment. The dropdown shows the latest. Try again.",
+        "MISSION_CLOSED": "This mission is already closed, so there is nothing left to close.",
+        "other": "Harnu could not close the mission. Nothing changed. Try again in a moment."
+      }
+    }
+  },
   "memoryPane": {
     "label": "Project memory",
     "reload": "Reload memory",
@@ -440,6 +766,11 @@
     "setParentFolder": "Set parent folder",
     "clearParentFolder": "Clear parent folder",
     "setParentFolderFailed": "Couldn't update the parent folder",
+    "notes": {
+      "label": "Notes",
+      "today": "New note for today",
+      "all": "All notes…"
+    },
     "modes": {
       "label": "Modes",
       "learning": "Learning",
@@ -447,7 +778,8 @@
     },
     "blockAgent": "Block agent control",
     "unblockAgent": "Unblock agent control",
-    "prStack": "PR Stack"
+    "prStack": "PR Stack",
+    "walks": "Walks"
   },
   "memoryLocation": {
     "intro": "Choose where Harnu stores your project memory — inside each repo, or in one central place outside it (a Google Drive folder, an Obsidian vault, an external disk). Overrides live only in Harnu's config, never in your repos.",
@@ -946,6 +1278,7 @@
     "statusRunning": "running",
     "statusDone": "done",
     "count": "{n} agents",
+    "doneFold": "{n} done",
     "toggle": "Toggle agents"
   },
   "actions": {
@@ -1054,6 +1387,22 @@
     "save": "Save",
     "failed": "Couldn't rename folder"
   },
+  "notes": {
+    "openFailed": "Couldn't open the note",
+    "noFolder": "Select a folder first to write a note.",
+    "picker": {
+      "title": "Notes",
+      "searchPlaceholder": "Search notes by date",
+      "empty": "No notes match.",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "loadFailed": "Couldn't load notes.",
+      "hints": {
+        "move": "move",
+        "open": "open"
+      }
+    }
+  },
   "renameRepo": {
     "title": "Rename group",
     "close": "Close",
@@ -1139,7 +1488,11 @@
     "andMore": "and {n} more",
     "quitAnyway": "Quit anyway",
     "cancel": "Cancel",
-    "dontAskAgain": "Don't ask again"
+    "dontAskAgain": "Don't ask again",
+    "unsavedOne": "1 file has unsaved changes",
+    "unsavedMany": "{count} files have unsaved changes",
+    "unsavedDetail": "Quitting {app} now discards them.",
+    "quitWithoutSaving": "Quit without saving"
   },
   "settings": {
     "title": "Settings",
@@ -1165,6 +1518,7 @@
       "mods": "Mods",
       "memory": "Memory",
       "hibernationPolicy": "Hibernation policy",
+      "yourMove": "Your move",
       "usageHistory": "Usage history",
       "changelog": "Changelog",
       "claudeCode": "Claude Code",
@@ -1304,6 +1658,13 @@
     "notifications": {
       "label": "OS notifications",
       "sound": "Sound",
+      "soundHint": "Each kind of event has its own sound, so you can tell them apart by ear. Asks you: input needed, approvals, a mission waiting on you. Finished: a turn ended. Broke: a session failed or main is red. Just so you know: reviews, usage, budget, a new version.",
+      "soundFamilies": {
+        "ask": "Asks you",
+        "done": "Finished",
+        "fail": "Broke",
+        "info": "Just so you know"
+      },
       "description": "Get a native system notification when a background session needs your input or finishes. Suppressed for the session you're already looking at.",
       "needsInput": "Needs input",
       "completed": "Completed",
@@ -1389,6 +1750,8 @@
       "view_toggleHelper": "Toggle the right split panel",
       "project_switch": "Switch project",
       "folder_add": "Add folder",
+      "notes_openToday": "New note for today",
+      "notes_open": "All notes…",
       "view_review": "Review the active folder's branch",
       "view_roadmap": "Toggle the roadmap board",
       "view_prStack": "Toggle the PR Stack",
@@ -1476,6 +1839,7 @@
       "view_settings_mods": "Open Settings: Mods",
       "view_settings_memory": "Open Settings: Memory",
       "view_settings_hibernationPolicy": "Open Settings: Hibernation policy",
+      "view_settings_yourMove": "Open Settings: Your move",
       "view_settings_usageHistory": "Open Settings: Usage history",
       "view_settings_changelog": "Open Settings: Changelog",
       "view_settings_claudeCode": "Open Settings: Claude Code",
@@ -1492,6 +1856,7 @@
       "pane_close": "Close the focused pane",
       "terminal_toggle": "Toggle the terminal pane",
       "layout_cycleSplitOrientation": "Cycle the split layout (auto, side by side, stacked)",
+      "session_toggleTuck": "Tuck the session away or bring it back",
       "app_reload": "Reload the window",
       "app_devtools": "Toggle DevTools",
       "app_quit": "Quit Harnu",
@@ -1505,7 +1870,11 @@
       "browser_reload": "Browser pane: reload",
       "browser_back": "Browser pane: back",
       "browser_forward": "Browser pane: forward",
-      "browser_focusAddress": "Browser pane: focus the address bar"
+      "browser_focusAddress": "Browser pane: focus the address bar",
+      "browser_tab_new": "Browser pane: new tab",
+      "browser_tab_close": "Browser pane: close the tab",
+      "browser_tab_next": "Browser pane: next tab",
+      "browser_tab_prev": "Browser pane: previous tab"
     }
   },
   "notifications": {
@@ -2103,6 +2472,12 @@
       "label": "Also outside Harnu",
       "occupied": "A skill folder for {name} already exists and was not created by Harnu. Nothing was changed.",
       "failed": "Could not install {name} outside Harnu."
+    },
+    "feature": {
+      "threshold": "Threshold",
+      "linesSuffix": "lines",
+      "thresholdHint": "Docs longer than this are read by the doc-reader agent. Empty uses the default ({n} lines).",
+      "globalThresholdHint": "Threshold: {n} lines by default. Set a project’s own under its scope."
     }
   },
   "modsAudit": {
@@ -2515,6 +2890,22 @@
     "effortLabel": "Effort"
   },
   "systemMonitor": {
+    "stalls": {
+      "title": "Responsiveness",
+      "summary": "no stalls over 50 ms in the last hour | one stall over 50 ms in the last hour | {count} stalls over 50 ms in the last hour",
+      "threadMain": "Main process",
+      "threadRenderer": "Renderer",
+      "busy": "Busy",
+      "busyApproxHint": "A lower bound: the share of the last minute spent in tasks over 50 ms. This platform cannot read the thread's CPU.",
+      "over50": "> 50 ms",
+      "over100": "> 100 ms",
+      "over250": "> 250 ms",
+      "offenders": "Top offenders",
+      "none": "Nothing over 50 ms in the last hour",
+      "unattributed": "unattributed",
+      "times": "×{count}",
+      "off": "The stall monitor is off (HARNU_STALL_MONITOR=off)."
+    },
     "title": "System Monitor",
     "close": "Close monitor",
     "expand": "Expand {name}",
@@ -2585,6 +2976,100 @@
       "hint": "How long a session can sit idle before the periodic sweep parks it, regardless of the session count."
     },
     "minutesSuffix": "min"
+  },
+  "yourMove": {
+    "eyebrow": "Your move",
+    "intro": "Harnu can read a session when it stops and tell you when the ball is yours: a question, a decision, a manual step. Each check is a few short, isolated Claude calls.",
+    "mode": {
+      "label": "Mode",
+      "off": "Off",
+      "observe": "Observe",
+      "live": "Live",
+      "hint": {
+        "off": "Nothing is checked and nothing is spent.",
+        "observe": "Harnu checks sessions and stores what it finds in the list below. Nothing shows in the sidebar and nothing makes a sound.",
+        "live": "Harnu checks sessions and lists what it finds as cards in the Return here zone of the sidebar, with a running clock, until you deal with each one."
+      },
+      "cost": "Each check uses your own Claude quota: about US$ 0.002 and several seconds."
+    },
+    "inspect": {
+      "label": "Inspect now",
+      "button": "Inspect selected session",
+      "hintNone": "Select a session in the sidebar first.",
+      "hint": "Reads what the selected session wrote since the last check and judges it once.",
+      "running": "Checking…",
+      "outcome": {
+        "judged": "Checked",
+        "empty": "Nothing new to check",
+        "skipped": "Skipped: the mode is Off, the folder is blocked or switched off, or the session is archived",
+        "failed": "Failed: {reason}",
+        "first-sight": "First look: Harnu will read from here on"
+      }
+    },
+    "list": {
+      "eyebrow": "Stored cards · {count}",
+      "empty": "No cards yet. Choose Observe, then let a session stop, or use Inspect now.",
+      "session": "session {id}",
+      "closed": "closed · {reason}",
+      "range": "{from}–{to} of {total}",
+      "prev": "Previous page",
+      "next": "Next page"
+    },
+    "kind": {
+      "decide": "Decide",
+      "go_no_go": "Go / no-go",
+      "provide": "Provide",
+      "do": "Do",
+      "check": "Check"
+    },
+    "lane": {
+      "observe": "Observe",
+      "live": "Live",
+      "mid-turn": "Mid-turn"
+    },
+    "buttons": {
+      "openSession": "Open session",
+      "openLink": "Open link",
+      "openMission": "Open mission",
+      "go": "Go",
+      "noGo": "No-go",
+      "done": "Done",
+      "looksRight": "Looks right",
+      "somethingWrong": "Something's wrong",
+      "recommended": "Recommended"
+    },
+    "exits": {
+      "notForMe": "Not for me",
+      "alreadyHandled": "Already handled",
+      "failed": "Could not save that. The card is still here; try again."
+    },
+    "queue": {
+      "more": "Show {n} more · {left} not shown"
+    },
+    "card": {
+      "blocks": "Blocks: {what}",
+      "clock": "Waiting {time}"
+    },
+    "delivery": {
+      "wakeTimeout": "Your answer was not delivered: the session did not wake up in time.",
+      "processGone": "Your answer was not delivered: the session is no longer running.",
+      "notConfirmed": "Your answer was sent but the session never showed it. Check the session.",
+      "refused": "Your answer was not delivered: it cannot be typed into a session."
+    },
+    "system": {
+      "stopped": "Session stopped: {reason}",
+      "couldNotCheck": "Could not check this session: {reason}",
+      "planReady": "The session has a plan waiting for your approval"
+    },
+    "closedBy": {
+      "answered": "answered",
+      "judge": "answer seen in the session",
+      "not-for-me": "not for me",
+      "already-handled": "already handled",
+      "source-resolved": "resolved at the source",
+      "archived": "session archived",
+      "folder-removed": "folder removed"
+    }
   },
   "cleanup": {
     "title": "Cleanup",
@@ -4458,21 +4943,6 @@
     "subtitle": "{workers} workers · {running} running",
     "newWorker": "New worker",
     "footerNote": "Checks every 30s · max 2 workers at once · nothing runs while Harnu is closed",
-    "stewards": {
-      "title": "Stewards",
-      "aria": "Stewards — one per mission, read-only",
-      "running": "Running",
-      "paused": "Paused",
-      "awaitingClose": "Awaiting close",
-      "summaryRunning": "{n} running",
-      "summaryAwaiting": "{n} awaiting close",
-      "closeHint": "Close a delivered mission to retire its steward.",
-      "lastWake": "Last wake {age} ago",
-      "noTick": "No tick yet",
-      "pausedReason": "Paused — {reason}",
-      "unknownMission": "Mission {id}",
-      "hint": "A steward belongs to its mission. Pause it from the mission’s popover."
-    },
     "emptyTitle": "No workers yet",
     "emptyBody": "A worker runs one prompt in one folder, on a cadence, without opening a session. Good for watching a repo, answering review comments, or checking something on a timer.",
     "list": {
@@ -4618,9 +5088,6 @@
     }
   },
   "mission": {
-    "pillTitle": "Mission “{title}” — {state}. Click for progress",
-    "pillTitleWithPulse": "Mission “{title}” — {state} · {pulse}. Click for progress",
-    "progress": "Progress",
     "headline": {
       "single": "Step {n} of {m}",
       "range": "Steps {n}–{to} of {m}",
@@ -4631,85 +5098,7 @@
       "range": "{n}–{to}/{m}",
       "done": "{m}/{m} ✓"
     },
-    "header": {
-      "counts": "{done} done · {verified} verified",
-      "leftBehind": "· {n} left behind",
-      "onBranch": "on a branch"
-    },
-    "state": {
-      "active": "in progress",
-      "blocked": "blocked",
-      "needsYou": "needs you",
-      "stale": "stale",
-      "totalChanged": "in progress, steps added",
-      "rescopePending": "re-scope awaiting your approval",
-      "delivered": "delivered, awaiting your close"
-    },
-    "visual": {
-      "verified": "Verified",
-      "done": "Done, not verified",
-      "running": "Running",
-      "waiting": "Waiting",
-      "blocked": "Blocked",
-      "todo": "To do",
-      "locked": "Locked",
-      "leftBehind": "Left behind"
-    },
-    "side": {
-      "title": "Side steps",
-      "show": "Show side steps",
-      "hide": "Hide side steps",
-      "metaOpen": "{open} open",
-      "metaBoth": "{open} open · {done} done",
-      "discoveredFrom": "discovered from {origin}",
-      "open": "Open"
-    },
-    "decision": {
-      "blocks": "Blocks {steps}",
-      "options": "Options",
-      "choose": "Choose…",
-      "pickFirst": "Pick an option first",
-      "chose": "Chose {option}"
-    },
-    "gates": {
-      "label": "Step gates",
-      "name": {
-        "pr": "PR merged",
-        "ci": "CI green on PR",
-        "main": "main green after merge",
-        "verifier": "Verifier verdict"
-      },
-      "state": {
-        "green": "green",
-        "red": "red",
-        "running": "in progress",
-        "off": "not yet",
-        "na": "n/a"
-      },
-      "short": {
-        "pr": "PR",
-        "ci": "CI",
-        "main": "main",
-        "verifier": "verifier"
-      },
-      "tooltip": "{gate}: {state}",
-      "tooltipStale": "{gate}: {state} (last known)"
-    },
-    "sub": {
-      "totalChanged": "Total: {total} steps (was {was}) — {n} added",
-      "delivered": "Delivered — awaiting your close"
-    },
-    "approveRescope": "Approve re-scope",
-    "close": "Close mission",
-    "checks": {
-      "add": "+ check",
-      "placeholder": "What to check by hand",
-      "delete": "Delete check",
-      "due": "due",
-      "tick": "Tick “{label}”"
-    },
     "end": {
-      "open": "End mission…",
       "title": "End this mission?",
       "body": "{title} leaves the Topbar and the sidebar and can’t be reopened. The mission file stays on disk as the record.",
       "choice": "How to end it",
@@ -4741,139 +5130,19 @@
         "rescopeStaged": "A re-scope is staged"
       }
     },
-    "verification": {
-      "existence": "Existence check",
-      "verifier": "Verifier",
-      "human": "Human"
-    },
-    "proof": {
-      "claimed": "Claimed",
-      "proven": "Proven"
-    },
-    "added": "Added",
-    "addedCaption": "Added — reason: {reason}",
-    "rescopeBadge": "Re-scope pending",
-    "endCaption": "End: {kind} · {target} · evidence: {evidence}",
-    "verifiedCaption": "Verified by {who} — {verdict}",
-    "verifiedByYou": "you",
-    "blocked": "Blocked",
-    "blockedBody": "— {reason}. Unblocks when {unblocks} · {owner}",
-    "blockerOwner": {
-      "agent": "agent",
-      "operator": "you"
-    },
-    "stale": "Stale",
-    "staleBody": "— no evidence in {duration}.",
-    "rescopeTitle": "End changed, awaiting approval.",
-    "was": "was:",
-    "now": "now:",
     "you": {
-      "label": "You",
-      "clear": "Nothing — you’re clear.",
       "rescope": "Approve the new declared end ({kind}: {target}).",
       "close": "Close the mission when you’re satisfied — its end is verified.",
       "blocker": "Unblock: {reason} — unblocks when {unblocks}.",
       "checks": "Tick the due check on {steps}. | Tick {count} due checks on {steps}.",
       "humanSteps": "Confirm the human step: {steps}. | Confirm the human steps: {steps}.",
       "reviewImport": "Review the imported end — it is a placeholder until you approve a re-scope.",
-      "stewardPaused": "Steward paused {age}: {reason}",
-      "mergeBatch": "{n} PRs ready to merge in order: {chain}",
       "mainRed": "main is red after #{pr} — {step} is merged, but its merge commit fails CI on main.",
       "approvals": "Answer the pending approvals ({count}) from {session} in the Approval Inbox.",
       "needsInput": "{session} is waiting on you — open it and answer.",
       "decide": "Decide: {title}"
     },
-    "markVerified": "Mark verified",
-    "unmark": "Unmark",
-    "openQuestions": "Open questions",
-    "pulse": {
-      "commits": "{n} commit | {n} commits",
-      "active": "active {age} ago",
-      "activeNow": "active just now",
-      "quiet": "no activity for {age}",
-      "quietNever": "no activity seen yet"
-    },
-    "pr": {
-      "line": "PR #{n} · {state}",
-      "state": {
-        "open": "open",
-        "draft": "draft",
-        "merged": "merged"
-      },
-      "ci": {
-        "passing": "CI green",
-        "failing": "CI red",
-        "pending": "CI running"
-      }
-    },
-    "child": {
-      "working": "working",
-      "workingHelpers": "working · helpers",
-      "needsInput": "needs-input",
-      "idle": "idle",
-      "parked": "parked",
-      "failed": "failed",
-      "unknown": "not found",
-      "goTo": "Go to session",
-      "notLoaded": "Session not loaded yet",
-      "notLoadedBody": "It shows up once the sidebar has loaded it.",
-      "elsewhere": "+{n} session | +{n} sessions"
-    },
     "doorFailed": "Mission action refused",
-    "steward": {
-      "label": "Steward",
-      "lastAction": "{what}",
-      "noAction": "no action yet",
-      "ago": "{age} ago",
-      "next": "next: {when}",
-      "nextEvents": "on the next event",
-      "paused": "paused",
-      "pause": "Pause steward…",
-      "resume": "Resume steward",
-      "pauseDialog": {
-        "title": "Pause the steward?",
-        "body": "It stops waking on events and on its 20-minute beat until you resume it. Nothing is lost — the mission keeps its state.",
-        "reason": "Reason",
-        "reasonPlaceholder": "Goes to the mission’s Log and the You list",
-        "confirm": "Pause steward",
-        "cancel": "Cancel",
-        "dismiss": "Cancel and keep the steward running"
-      }
-    },
-    "mergeBatch": {
-      "title": "Merge {n} PRs in order",
-      "who": "{steward} merges one, then works between merges",
-      "stewardWord": "Steward",
-      "ciGreen": "· CI green",
-      "rebase": "rebase --onto #{pr}",
-      "recheck": "re-check gates",
-      "stopOnRed": "stop on red",
-      "action": "Merge {n} in order…",
-      "confirm": "Merge {n} in order",
-      "merging": "Merging…",
-      "mergeRest": "Merge the rest…",
-      "cancel": "Cancel",
-      "close": "Close",
-      "dismiss": "Cancel — nothing is merged",
-      "running": "Merging in order — this waits on the steward and on CI between merges, so it can take a few minutes.",
-      "stoppedAt": "Stopped at #{pr}",
-      "merged": "Merged: {list}",
-      "remaining": "Still to merge: {list}",
-      "done": "Merged {n} PRs in order.",
-      "reason": {
-        "closed": "#{pr} is not open any more.",
-        "red": "#{pr} has failing checks.",
-        "not-ready": "#{pr} is not ready — a draft, or no passing checks yet.",
-        "pending": "#{pr} still has checks running.",
-        "wrong-base": "#{pr} does not merge into the default branch — retarget it first.",
-        "conflict": "#{pr} conflicts with its base.",
-        "steward-skipped": "The steward did not run after the last merge, so #{pr} was not rebased or re-checked.",
-        "steward-timeout": "The steward did not finish in time after the last merge, so #{pr} was not rebased or re-checked.",
-        "mission-closed": "The mission was closed — #{pr} was not merged.",
-        "paused": "The steward was paused — #{pr} was not merged.",
-        "merge-failed": "GitHub refused the merge of #{pr}: {detail}"
-      }
-    },
     "recordFailedTitle": "Some memory wasn’t recorded",
     "recordFailed": "The mission is closed, but memory refused: {drafts}",
     "sidebarChip": "Mission: {headline}",
@@ -4881,136 +5150,14 @@
     "cue": {
       "one": "Mission “{title}” needs you: {what}",
       "many": "{n} missions need you",
-      "reviewAll": "Review all {n}",
-      "ownerMissing": "The owner session isn’t open here — click to review this mission instead.",
+      "ownerMissing": "The owner session isn’t open here — click to see why this mission can’t open.",
+      "ownerMissingTitle": "Can’t open “{title}” from here",
+      "ownerMissingBody": "Its owner session isn’t open in this window. Open that session, then use its Mission pill.",
       "itemAria": "Open mission {title}"
     },
-    "review": {
-      "title": "Missions that need you",
-      "intro": "Close the finished ones in one go, or open any of them to handle it.",
-      "groups": {
-        "ready": "Ready to close",
-        "finished": "Finished, close never requested",
-        "finishedHint": "Nobody verified the end of these, so none is pre-selected.",
-        "other": "Waiting on you for something else"
-      },
-      "selectAllReady": "Select all ready",
-      "selected": "{count} selected",
-      "closeSelected": "Close {count} as delivered…",
-      "empty": "No mission needs you right now.",
-      "openMission": "Open",
-      "ownerMissing": "The owner session isn’t open here, so this mission can’t be opened from the review.",
-      "dismiss": "Close the review"
-    },
-    "bulk": {
-      "title": "Close {count} mission as delivered? | Close {count} missions as delivered?",
-      "body": "They leave the Topbar and the sidebar and can’t be reopened. Each mission file stays on disk as the record.",
-      "reason": "Reason (optional)",
-      "reasonPlaceholder": "Goes to every mission’s Log",
-      "confirm": "Close {count} mission | Close {count} missions",
-      "cancel": "Cancel",
-      "dismiss": "Cancel and keep the missions open",
-      "closing": "Closing {done} of {total}…",
-      "done": "{count} mission closed | {count} missions closed",
-      "partial": "{failed} of {total} could not be closed"
-    },
-    "back": {
-      "campaign": "Campaign",
-      "chapter": "Chapter {n} of {m}",
-      "sideQuest": "Side quest"
-    },
-    "ledger": {
-      "label": "Ledger",
-      "ago": "{age} ago",
-      "kind": {
-        "dispatched": "Dispatched",
-        "worktree": "Worktree",
-        "pr-opened": "PR opened",
-        "pr-merged": "PR merged",
-        "ci": "CI",
-        "verified": "Verified",
-        "session-died": "Session ended",
-        "compaction": "Compacted"
-      }
-    }
-  },
-  "campaign": {
-    "pill": {
-      "single": "Ch. {n}/{m}",
-      "range": "Ch. {n}–{to}/{m}",
-      "done": "Ch. {m}/{m} ✓",
-      "step": {
-        "single": "Step {n}/{m}",
-        "range": "Steps {n}–{to}/{m}",
-        "done": "Step {m}/{m} ✓"
-      },
-      "forYou": "{n} for you",
-      "radiant": "{done}/{total}",
-      "title": "{title} — campaign, {label}"
-    },
-    "headline": {
-      "single": "Chapter {n} of {m}",
-      "range": "Chapters {n}–{to} of {m}",
-      "done": "Chapter {m} of {m} ✓"
-    },
-    "counts": "{done} done · {inReview} in review · {running} running · {locked} locked · {side} side ({sideDone} done, {sideOpen} open)",
-    "radiant": "{done} / {total} units",
-    "declaredEnd": "End: {target}",
-    "group": {
-      "main": "Main quest",
-      "side": "Side quests",
-      "locked": "Locked",
-      "mainMeta": "{n} of {m}",
-      "sideMeta": "{n} open"
-    },
-    "state": {
-      "done": "done",
-      "inReview": "in review",
-      "running": "running",
-      "locked": "locked",
-      "todo": "to do"
-    },
-    "objectives": "Objectives",
-    "objectivesStepsOf": "{done} of {total} steps",
-    "openChapter": "Open chapter →",
-    "noMission": "No mission yet — this chapter has not started.",
-    "missionNotOpen": "This chapter’s mission is closed.",
-    "sideQuest": "Side quest",
-    "sideNotRequired": "not required for the end",
-    "discoveredFrom": "Discovered from chapter {n} · {title}",
-    "lockedUntil": "Locked until its prerequisites are done.",
-    "you": {
-      "chapterTag": "ch. {n}"
-    },
-    "end": {
-      "open": "End campaign…",
-      "unavailable": "Ending a campaign from here isn’t available yet — end its chapters’ missions instead."
-    },
-    "map": {
-      "title": "Campaign map",
-      "close": "Close campaign map",
-      "open": "Open map",
-      "here": "▼ You are here",
-      "missing": "This campaign isn’t available — it may have been closed.",
-      "tileLabel": "Chapter {n}: {title} — {state}",
-      "dockLabel": "Side quest: {title} — {state}",
-      "waitsFor": "Waits for {what}",
-      "waitsForChapter": "chapter {n}",
-      "gatesLegend": "gates: PR · CI · main · verifier",
-      "ledger": {
-        "owed": "{n} owed",
-        "open": "Open"
-      },
-      "steward": {
-        "title": "Steward",
-        "empty": "No steward yet"
-      },
-      "side": {
-        "meta": "{total} · {done} done · {open} open"
-      },
-      "focus": {
-        "back": "Back"
-      }
+    "unreadable": {
+      "title": "A mission file can't be read",
+      "body": "{files}. The mission it holds stays hidden until the file is fixed or removed."
     }
   },
   "harnuMod": {
@@ -5109,13 +5256,34 @@
     },
     "label": "Browser pane",
     "newTab": "New tab",
+    "tabs": {
+      "new": "New tab ({keys})",
+      "newPlain": "New tab",
+      "limit": "Tab limit reached (8)",
+      "strip": "Tabs",
+      "close": "Close tab",
+      "closeNamed": "Close {title}",
+      "agentDriving": "The agent is driving this tab",
+      "more": "{count} more tabs",
+      "moreList": "All tabs",
+      "open": "open",
+      "untitled": "New tab",
+      "menu": {
+        "newRight": "New tab to the right",
+        "reload": "Reload",
+        "duplicate": "Duplicate",
+        "move": "Move to a new pane",
+        "closeOthers": "Close other tabs",
+        "close": "Close tab"
+      }
+    },
     "menu": "More actions",
     "back": "Back",
     "forward": "Forward",
     "reload": "Reload",
     "stop": "Stop",
     "address": "Address",
-    "addressPlaceholder": "Enter an address",
+    "addressPlaceholder": "Type an address and press Enter",
     "pauseAgent": "Pause agent for 10 min",
     "resumeAgent": "Resume agent",
     "devtools": "Open DevTools",
@@ -5145,7 +5313,8 @@
       "reading": "reading",
       "driving": "driving",
       "pausedLabel": "Agent paused",
-      "connectedPrefix": "Connected to"
+      "drivingTab": "Driving this tab · {host}",
+      "drivingTabBare": "Driving this tab"
     },
     "notice": {
       "blocked": "Blocked: {scheme}: addresses cannot be opened",
@@ -5155,7 +5324,8 @@
       "crashed": "The page stopped responding",
       "dismiss": "Dismiss",
       "offline": "Blocked: this panel is offline, so it cannot open other addresses. Turn on Network on to follow links out.",
-      "agentInput": "Ignored — a session just acted on this page"
+      "agentInput": "Ignored — a session just acted on this page",
+      "tabLimit": "Tab limit reached (8). Close a tab to open more."
     },
     "zoom": {
       "in": "Zoom in",
@@ -5191,6 +5361,43 @@
     "noticeDownloaded": "Saved {name}",
     "noticeDownloadCancelled": "Download cancelled",
     "noticeDownloadFailed": "The download failed",
+    "start": {
+      "running": "Running in this folder",
+      "recent": "Recent"
+    },
+    "loadError": {
+      "reload": "Reload",
+      "reloadWhenUp": "Reload when it is up",
+      "waiting": "Waiting for {target}…",
+      "refusedLocal": {
+        "title": "{host} refused to connect",
+        "hint": "Nothing is answering on port {port}. Start the server, then reload."
+      },
+      "refused": {
+        "title": "{host} refused to connect",
+        "hint": "The site may be down. Try again in a moment."
+      },
+      "notFound": {
+        "title": "{host}'s address could not be found",
+        "hint": "Check the address for a typo."
+      },
+      "timeout": {
+        "title": "{host} took too long to respond",
+        "hint": "The site may be slow or unreachable from this network."
+      },
+      "offline": {
+        "title": "No internet connection",
+        "hint": "Check your connection, then reload."
+      },
+      "cert": {
+        "title": "The connection to {host} is not secure",
+        "hint": "Its certificate was not accepted, so the page was not loaded."
+      },
+      "other": {
+        "title": "{host} could not be loaded",
+        "hint": "The page failed to load."
+      }
+    },
     "discarded": {
       "titleIdle": "Paused to save memory",
       "titleRestored": "Not loaded yet",
@@ -5287,7 +5494,6 @@
       "review": "Review",
       "cleanup": "Cleanup",
       "steward": "Steward",
-      "mergeBatch": "Merge batch",
       "outside": "Outside Harnu"
     },
     "tag": {
@@ -5304,7 +5510,6 @@
       "review": "Review",
       "cleanup": "Cleanup · merge checks",
       "steward": "Steward",
-      "mergeBatch": "Merge batch",
       "delivered": "{n} delivered mission | {n} delivered missions",
       "outside": "Outside Harnu · sessions, scripts, monitors"
     },
@@ -5383,5 +5588,336 @@
         "body": "Harnu paused its GitHub checks until {time} (in {minutes} min)."
       }
     }
+  },
+  "testWalk": {
+    "textSize": {
+      "smaller": "Smaller text (Ctrl/Cmd -)",
+      "bigger": "Larger text (Ctrl/Cmd +)"
+    },
+    "label": "Guided walk",
+    "title": "Walk",
+    "progress": "Check {n} of {total}",
+    "roadmapOpen": "See all checks",
+    "closeRoadmap": "Back to the check",
+    "source": {
+      "missionStep": "Mission · {mission} · step “{name}”",
+      "missionMilestone": "Mission · {mission} · milestone “{name}”",
+      "missionAll": "Mission · {mission} · the whole mission",
+      "branch": "{branch} → {base}",
+      "card": "Card · {slug}",
+      "feature": "{text}",
+      "rerunChip": "Re-run · run {n}",
+      "openPr": "Open the PR",
+      "openMission": "Open the Mission",
+      "copyPr": "Copy the PR link"
+    },
+    "action": {
+      "start": "Start with {n}",
+      "done": "Done",
+      "tryAgain": "Try again",
+      "failed": "Failed",
+      "back": "Back",
+      "skip": "Skip",
+      "explain": "Explain more",
+      "followAnyway": "Follow anyway (unverified)",
+      "treatAsFailed": "Treat as failed",
+      "continueWithout": "Continue without the check",
+      "send": "Send",
+      "cancelForm": "Back to the step",
+      "pickSkipped": "Check them now",
+      "closeOut": "Close out",
+      "rerun": "Re-run",
+      "export": "Export markdown"
+    },
+    "roadmap": {
+      "sub": "{total} checks",
+      "subEarlier": "{total} checks · {earlier} already verified",
+      "eyes": "Your eyes only",
+      "icheck": "I check",
+      "earlier": "Verified earlier",
+      "added": "added",
+      "leftOut": "{n} left out · {owners}",
+      "owner": {
+        "ours": "ours",
+        "optional": "optional",
+        "decision": "decision"
+      },
+      "rerunOffer": "Re-run the saved walk ({verified} of {total} passed)?",
+      "rerunAction": "Re-run"
+    },
+    "section": {
+      "do": "Do",
+      "where": "Where",
+      "see": "You should see",
+      "check": "I’ll check"
+    },
+    "not": "Not",
+    "nothing": "Nothing from here: {why}",
+    "blocks": "Checks {from} to {to} depend on this one",
+    "blocksWhy": "Checks {from} to {to} {why}",
+    "blocksOne": "Check {from} depends on this one",
+    "blocksOneWhy": "Check {from} {why}",
+    "pathApprox": "path approximate",
+    "linkNote": {
+      "login": "behind a login, not opened",
+      "unchecked": "not checked"
+    },
+    "copy": {
+      "label": "Copy",
+      "copied": "Copied",
+      "value": "Copy {what}",
+      "command": "the command",
+      "path": "the path",
+      "url": "the address",
+      "text": "the text",
+      "error": "the error text",
+      "summary": "the summary"
+    },
+    "image": {
+      "expected": "Expected",
+      "capture": "Captured",
+      "enlarge": "Enlarge",
+      "close": "Close",
+      "escToClose": "Esc to close"
+    },
+    "table": {
+      "item": "Item",
+      "shows": "Shows",
+      "source": "Source"
+    },
+    "lost": "I didn’t get this step",
+    "undoLead": "First undo the last run:",
+    "working": {
+      "checking": "Running my check on check {n}",
+      "quiet": "This takes a moment. You do not need to do anything.",
+      "waited": "No answer yet. You can go on without my check; it is recorded as unverified."
+    },
+    "form": {
+      "title": "What did you see?",
+      "placeholder": "One line is enough",
+      "paste": "Paste a screenshot",
+      "pasteKey": "Ctrl+V",
+      "attached": "Pasted image {n}",
+      "remove": "Remove",
+      "secret": "This looks like a secret. Remove it before you send.",
+      "saveFailed": "The screenshot could not be saved."
+    },
+    "retry": {
+      "reported": "You reported",
+      "eyebrow": "My one correction",
+      "again": "Same step, again",
+      "waiting": "Waiting for my correction",
+      "door": {
+        "mission": "Still wrong? Send it to the step’s builder",
+        "pr": "Still wrong? Draft a comment for the PR",
+        "feature": "Still wrong? Make a bug card"
+      },
+      "doorSent": "Sent. The session will take it from here."
+    },
+    "evidence": {
+      "title": "You said Done. My check disagrees.",
+      "ran": "I ran",
+      "expected": "Expected",
+      "found": "Found",
+      "nonBlocking": "Nothing later depends on this check, so you can follow anyway. It is recorded as unverified.",
+      "blocking": "Later checks depend on this one, so it stays open until it passes."
+    },
+    "explain": {
+      "why": "Why this matters",
+      "extra": "Extra checks · {n}",
+      "hint": "Done closes the step with these. Unticked ones are listed at the end.",
+      "teach": "Behind this check",
+      "does": "What it does",
+      "where": "Where it lives",
+      "idea": "The idea behind it",
+      "whyTeach": "Why it behaves this way",
+      "ask": "Ask for more",
+      "asking": "Asking…",
+      "tick": "Tick “{text}”"
+    },
+    "simpler": {
+      "eyebrow": "Said more simply",
+      "asking": "Asking…"
+    },
+    "skipped": {
+      "title": "Skipped checks · {n}",
+      "sub": "Look at them now, or close the walk and leave them open.",
+      "close": "Close out with {n} skipped",
+      "retry": "Check now"
+    },
+    "closeout": {
+      "title": "Walk finished",
+      "sub": "{verified} verified · {unverified} unverified · {skipped} skipped",
+      "subFailed": "{verified} verified · {unverified} unverified · {skipped} skipped · {failed} failed",
+      "how": {
+        "agreed": "you confirmed · my check agreed",
+        "eyes": "you confirmed · nothing to check from here",
+        "continued": "you continued without my check",
+        "followed": "followed anyway · my check found {evidence}",
+        "ended": "ended before my check answered",
+        "earlier": "verified earlier · {evidence}",
+        "earlierCaveat": "right in the open PR · {evidence}",
+        "skipped": "skipped",
+        "failed": "failed",
+        "failedLine": "failed · “{line}”",
+        "disagreed": "my check disagreed",
+        "notReached": "not reached"
+      },
+      "owed": "Still yours",
+      "owedMore": {
+        "one": "{parts} is listed above.",
+        "other": "{parts} are listed above."
+      },
+      "part": {
+        "skipped": {
+          "one": "{n} skipped check",
+          "other": "{n} skipped checks"
+        },
+        "failed": {
+          "one": "{n} failed check",
+          "other": "{n} failed checks"
+        },
+        "unverified": {
+          "one": "{n} unverified check",
+          "other": "{n} unverified checks"
+        }
+      },
+      "recheck": "Re-check “{n}” after #{pr} merges",
+      "criterion": {
+        "open": "criterion still open: {why}",
+        "settled": "criterion settled",
+        "settledByWalk": "criterion settled by this walk",
+        "unavailable": "mission not available"
+      },
+      "criterionWhy": {
+        "none": "no check of this walk answered it",
+        "person": "another person approves it",
+        "session": "a second session settles it",
+        "fact": "Harnu reads it from the pull request or CI",
+        "caveat": "my check did not agree, or you continued without it",
+        "nothingFromHere": "only your Done, with nothing for me to check",
+        "preClosed": "it was marked verified before the walk",
+        "failed": "the check failed",
+        "skipped": "the check was skipped",
+        "notReached": "the walk ended before that check",
+        "notWritten": "the walk could not write it"
+      },
+      "criteria": "Mission criteria",
+      "neverTick": "Done alone never settles a criterion: tick it in the Mission.",
+      "openMission": "Open in the Mission",
+      "nothingOwed": "Nothing owed",
+      "unticked": "Extra checks you did not tick",
+      "saved": "Saved in Walks",
+      "savedBody": "Reopen this run or re-run the same checks later.",
+      "openWalks": "Open Walks",
+      "export": "Export markdown",
+      "copy": "Copy summary",
+      "partAnd": " and "
+    },
+    "end": {
+      "title": "End the walk and see the close-out?",
+      "confirm": "End the walk",
+      "cancel": "Keep walking"
+    },
+    "empty": {
+      "title": "No walk open",
+      "body": "Ask a session to start one: say “walk me through what we just built”, or “test PR #48 with me”. The Test it control in the Mission does the same for a mission."
+    },
+    "error": {
+      "title": "The session is gone",
+      "body": "I cannot serve the next check. Your progress is saved: {done} of {total} checked.",
+      "resume": "Resume the session",
+      "copyProgress": "Copy progress",
+      "errText": "Error: no session could take the turn",
+      "resumeFailed": "The session could not be resumed."
+    },
+    "turn": {
+      "sent": "Walk answer sent to ‹{session}›"
+    },
+    "waking": "Waking the session…"
+  },
+  "walkEntry": {
+    "sent": "Asked the mission's leader to write the walk",
+    "started": "Started a session to write the walk",
+    "failed": "Could not ask for a walk"
+  },
+  "walksLibrary": {
+    "label": "Walks",
+    "title": "Walks",
+    "sub": "{n} walks · saved on this machine",
+    "subOne": "1 walk · saved on this machine",
+    "rerun": "Re-run",
+    "open": "Open",
+    "list": "Saved walks",
+    "source": {
+      "mission": "Mission",
+      "pr": "PR #{number} · {author}",
+      "prNoAuthor": "PR #{number}",
+      "feature": "Feature",
+      "branch": "Branch {branch}",
+      "card": "Card · {slug}"
+    },
+    "outcome": {
+      "passed": "{verified} of {total} passed",
+      "inProgress": "in progress, check {check} of {total}",
+      "notWalked": "not walked yet"
+    },
+    "empty": {
+      "title": "No walks yet",
+      "body": "A walk is saved here after you run one. Ask a session to start one, or use Test it in the Mission.",
+      "command": "/step-by-step PR #48",
+      "hint": "Or just say: “walk me through what we just built”.",
+      "copy": "Copy",
+      "copied": "Copied"
+    },
+    "menu": {
+      "more": "More actions",
+      "delete": "Delete…"
+    },
+    "delete": {
+      "ask": "Delete “{title}” and its {runs}? This cannot be undone.",
+      "askLive": "Delete “{title}” and its {runs}? A run is in progress and goes with it. This cannot be undone.",
+      "askNone": "Delete “{title}”? This cannot be undone.",
+      "confirm": "Delete",
+      "cancel": "Keep it",
+      "failed": "The walk could not be deleted."
+    },
+    "runs": {
+      "one": "1 run",
+      "other": "{n} runs"
+    },
+    "past": {
+      "back": "Walks",
+      "readOnly": "Read-only",
+      "run": "Run {n} · {date}",
+      "runLive": "Run {n} · in progress",
+      "runs": "Runs of this walk",
+      "sub": "{passed} passed · {failed} failed · {skipped} skipped",
+      "subUnverified": "{n} not confirmed",
+      "subNotReached": "{n} not reached",
+      "wrote": "You wrote",
+      "agent": "My check found",
+      "correction": "My correction",
+      "shot": "Pasted image {n}",
+      "openShot": "Open the screenshot"
+    },
+    "rerunSub": "Same {total} checks · run {n}",
+    "lastTime": {
+      "passed": "last time: passed",
+      "failed": "last time: failed",
+      "skipped": "last time: skipped",
+      "unverified": "last time: not confirmed"
+    },
+    "lastTimeHint": {
+      "passed": "Last time: passed",
+      "failed": "Last time: failed",
+      "failedLine": "Last time: failed · “{line}”",
+      "skipped": "Last time: skipped",
+      "unverified": "Last time: not confirmed"
+    },
+    "export": {
+      "failed": "The walk could not be exported."
+    },
+    "rerunFailed": "The walk could not be re-run."
   }
 }

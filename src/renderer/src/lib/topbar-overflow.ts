@@ -10,10 +10,12 @@ export type TopbarActionId =
   | 'roadmap'
   | 'pr-stack'
   | 'review'
+  | 'walks'
   | 'open-folder'
   | 'editor'
   | 'github-pulls'
   | 'explorer'
+  | 'notes'
   | 'terminal'
   | 'browser'
   | 'split-layout'
@@ -25,10 +27,12 @@ export const TOPBAR_BAR_ORDER: readonly TopbarActionId[] = [
   'roadmap',
   'pr-stack',
   'review',
+  'walks',
   'open-folder',
   'editor',
   'github-pulls',
   'explorer',
+  'notes',
   'terminal',
   'browser',
   'split-layout',
@@ -42,8 +46,10 @@ export const TOPBAR_OVERFLOW_ORDER: readonly TopbarActionId[] = [
   'editor',
   'explorer',
   'split-layout',
+  'notes',
   'browser',
   'terminal',
+  'walks',
   'review',
   'pr-stack',
   'roadmap',
@@ -59,6 +65,9 @@ export const TOPBAR_ACTION_GAP_PX = 2
 const SLOT_PX = TOPBAR_ACTION_PX + TOPBAR_ACTION_GAP_PX
 /** The title never truncates below this; actions leave the bar before it goes any lower. */
 export const TOPBAR_MIN_TITLE_PX = 96
+
+/** The least the title keeps when the badges and the Mission pill (which never shrink) need its room: a stub with an ellipsis. */
+export const TOPBAR_TITLE_YIELD_PX = 24
 /** A hidden action comes back only when it fits with this much to spare. */
 export const TOPBAR_HYSTERESIS_PX = 8
 /** What is left of the breadcrumb at the very end: its icon, the gap and the `›`. */
@@ -123,23 +132,48 @@ export interface BudgetInput {
   extrasWidth: number
 }
 
+/** Everything in the header that is not the title's floor, the action cluster or the `…` slot. */
+function fixedWidth(input: BudgetInput): number {
+  const gaps = (input.hasCrumb ? 3 : 2) * TOPBAR_REGION_GAP_PX
+  return (
+    input.paddingX +
+    TOPBAR_TOGGLE_PX +
+    TOPBAR_BELL_PX +
+    gaps +
+    (input.hasCrumb ? TOPBAR_CRUMB_MIN_PX : 0) +
+    input.extrasWidth
+  )
+}
+
+/**
+ * The title's floor: {@link TOPBAR_MIN_TITLE_PX} while the header has room for it, the badges and the `…` button,
+ * and less (down to {@link TOPBAR_TITLE_YIELD_PX}) when it has not. The badges and the Mission pill cannot shrink,
+ * so at the app's narrowest the title is what gives way, after the breadcrumb (already at its minimum) and the
+ * actions (already in the `…` menu), instead of the pill being squeezed or the cluster pushed out.
+ */
+export function titleFloor(input: BudgetInput): number {
+  const room = input.headerWidth - fixedWidth(input) - SLOT_PX
+  return Math.min(TOPBAR_MIN_TITLE_PX, Math.max(TOPBAR_TITLE_YIELD_PX, room))
+}
+
+/**
+ * The title region's `min-width`: the title's floor plus the badges (the Mission pill included), so while the header
+ * has room nothing in the region is squeezed. It is capped at what the header can give the region once the toggle,
+ * the bell, the gaps and the `…` button are paid for: past that the region may not push the cluster out of the header,
+ * and the title (down to its stub) and then the pill, last, give way inside it.
+ */
+export function regionMin(input: BudgetInput): number {
+  const cap = input.headerWidth - (fixedWidth(input) - input.extrasWidth) - SLOT_PX
+  return Math.max(TOPBAR_TITLE_YIELD_PX, Math.min(titleFloor(input) + input.extrasWidth, cap))
+}
+
 /**
  * The width left for the action cluster (the bell excluded: it never overflows): the header minus its
  * padding, the toggle, the bell, the gaps between regions, the breadcrumb's minimum, the badges and the
- * title's floor.
+ * title's floor ({@link titleFloor}).
  */
 export function clusterBudget(input: BudgetInput): number {
-  const gaps = (input.hasCrumb ? 3 : 2) * TOPBAR_REGION_GAP_PX
-  return (
-    input.headerWidth -
-    input.paddingX -
-    TOPBAR_TOGGLE_PX -
-    TOPBAR_BELL_PX -
-    gaps -
-    (input.hasCrumb ? TOPBAR_CRUMB_MIN_PX : 0) -
-    input.extrasWidth -
-    TOPBAR_MIN_TITLE_PX
-  )
+  return input.headerWidth - fixedWidth(input) - titleFloor(input)
 }
 
 /**
@@ -162,4 +196,6 @@ export interface TopbarActionView {
   toggle: boolean
   disabled?: boolean
   run: () => void
+  /** A right-click on the bar button runs this (the notes button's "All notes…"). Not offered in the `…` menu. */
+  secondary?: () => void
 }
