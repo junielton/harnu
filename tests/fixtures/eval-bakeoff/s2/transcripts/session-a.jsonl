@@ -1,0 +1,5 @@
+{"type":"user","message":{"role":"user","content":"go"}}
+{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Task","input":{}}],"usage":{"input_tokens":1000,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000,"output_tokens":50}}}
+{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"more of msg_1"}],"usage":{"input_tokens":1000,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000,"output_tokens":50}}}
+{"type":"assistant","message":{"id":"msg_2","role":"assistant","content":[{"type":"text","text":"second"}],"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":5000,"output_tokens":7}}}
+{"type":"assistant","message":{"id":"msg_tr
