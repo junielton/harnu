@@ -754,6 +754,8 @@ describe('a v3 mission read through the v4 view keeps what main did', () => {
     )
     await store.refresh()
     expect(store.chipFor(OWNER)?.text).toBe('2/5 · 1 for you')
+    // The sidebar's hover text draws the count by itself, then the alert icon and the number owed.
+    expect(store.chipFor(OWNER)?.progress).toBe('2/5')
     // There is no v3/v4 switch any more: every record opens the pane.
     expect('isV3Mission' in store).toBe(false)
   })

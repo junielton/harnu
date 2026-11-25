@@ -83,6 +83,12 @@ function distance(theme: string, a: string, b: string): number {
   return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2])
 }
 
+/** The OKLab distance with lightness left out: how far apart two colours are in hue and chroma. */
+function hueDistance(theme: string, a: string, b: string): number {
+  const [x, y] = [a, b].map((t) => oklab(rgb(resolve(theme, t))))
+  return Math.hypot(x[1] - y[1], x[2] - y[2])
+}
+
 describe('the derived rail and bar tokens', () => {
   it.each(Object.entries(DERIVED))('%s is today’s expression in the base', (name, value) => {
     expect(base[name]).toBe(value)
@@ -112,14 +118,26 @@ describe.each(LIGHT)('%s', (theme) => {
     expect(contrast(theme, '--color-rail-working', '--color-border-2')).toBeGreaterThanOrEqual(1.7)
   })
 
+  // Rail and guide are only 1.76:1 to 2.18:1 apart in lightness: hue carries the difference, so a
+  // grey rail that met the ratios above would still read as one more guide line.
+  it('keeps the working rail a different hue from the tree guide', () => {
+    expect(hueDistance(theme, '--color-rail-working', '--color-border-2')).toBeGreaterThanOrEqual(
+      0.07
+    )
+  })
+
   it('draws a selected bar that is not the colour of failed or of needs-you', () => {
     expect(contrast(theme, '--color-bar-selected', SIDEBAR)).toBeGreaterThanOrEqual(3)
     expect(distance(theme, '--color-bar-selected', '--color-red')).toBeGreaterThanOrEqual(0.15)
     expect(distance(theme, '--color-bar-selected', '--color-warning')).toBeGreaterThanOrEqual(0.15)
   })
 
-  it.each(['--color-text-4', '--color-warning'])('reads %s as text on the sidebar', (token) => {
-    expect(contrast(theme, token, SIDEBAR)).toBeGreaterThanOrEqual(4.5)
+  it.each([
+    // The quietest labels keep a margin over the 4.5:1 line.
+    ['--color-text-4', 4.6],
+    ['--color-warning', 4.5]
+  ])('reads %s as text on the sidebar', (token, floor) => {
+    expect(contrast(theme, token, SIDEBAR)).toBeGreaterThanOrEqual(floor)
     // Hover rows and cards sit on the other surfaces: never under the 3:1 floor.
     for (const surface of ['--color-bg', '--color-surface', '--color-surface-2']) {
       expect(contrast(theme, token, surface), surface).toBeGreaterThanOrEqual(3)

@@ -274,7 +274,8 @@ async function paint(row: Locator): Promise<Record<string, string>> {
       [
         '--color-text',
         '--color-text-2',
-        '--color-accent',
+        // Before the accent: a dark theme resolves both to one colour.
+        '--color-bar-selected',
         '--color-border-2',
         '--color-green'
       ].find((token) => probe(token) === color) ?? color
@@ -387,7 +388,7 @@ test('no row moves between states', async () => {
 
 const TRANSPARENT = 'rgba(0, 0, 0, 0)'
 
-test('the selected session and the current header paint the accent bar and no fill', async () => {
+test('the selected session and the current header paint the selected bar and no fill', async () => {
   const rows: [string, Locator, () => Promise<void>, string, string][] = [
     [
       'session row',
@@ -420,7 +421,7 @@ test('the selected session and the current header paint the accent bar and no fi
     ] as const) {
       await enter()
       const painted = await paint(row)
-      expect(painted.bar, `${name}: ${state}`).toBe(`2px --color-accent x=${x2}`)
+      expect(painted.bar, `${name}: ${state}`).toBe(`2px --color-bar-selected x=${x2}`)
       expect(painted.background, `${name}: ${state} fill`).toBe(fill)
       expect(painted.label, `${name}: ${state} label`).toBe('--color-text')
       await blur()
@@ -428,7 +429,7 @@ test('the selected session and the current header paint the accent bar and no fi
 
     await keyboardFocus(row)
     const focused = await paint(row)
-    expect(focused.bar, `${name}: focus + selected`).toBe(`3px --color-accent x=${x3}`)
+    expect(focused.bar, `${name}: focus + selected`).toBe(`3px --color-bar-selected x=${x3}`)
     expect(focused.background, `${name}: focus + selected fill`).toBe(fill)
     expect(focused.outline, `${name}: focus + selected outline`).toBe('none none')
     await blur()
