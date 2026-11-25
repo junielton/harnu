@@ -116,6 +116,31 @@ describe('registerWorktreeTracker', () => {
     close()
   })
 
+  it('worktrees:track with replay sends a repo it already tracks again', async () => {
+    h.listWorktrees.mockResolvedValue([
+      { path: '/r', head: 'a', branch: 'main', bare: false, detached: false }
+    ])
+    const send = vi.fn()
+    const close = mod.registerWorktreeTracker(() => ({
+      isDestroyed: () => false,
+      webContents: { send }
+    }))
+    const handler = h.ipcHandlers.get('worktrees:track')!
+    const repos = [{ repoId: join(dir, '.git'), probePath: '/r', memberPaths: ['/r'] }]
+    await handler({}, repos)
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    // The same set again, from the same page: nothing to say.
+    await handler({}, repos)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(send).toHaveBeenCalledTimes(1)
+    // A reloaded page asks for a replay: it gets the cached list, with no new git call.
+    await handler({}, repos, { replay: true })
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+    expect(send.mock.calls[1]).toEqual(send.mock.calls[0])
+    expect(h.listWorktrees).toHaveBeenCalledTimes(1)
+    close()
+  })
+
   it('a malformed track payload is treated as an empty set', async () => {
     const close = mod.registerWorktreeTracker(() => null)
     const handler = h.ipcHandlers.get('worktrees:track')!
