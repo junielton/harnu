@@ -94,11 +94,13 @@ async function reset(page) {
   await tidy(page)
 }
 
-/** The sidebar row of the seeded repo's main checkout, expanding its repo group when collapsed. */
+/** The sidebar row of the seeded repo's main checkout, opening its folder when collapsed. */
 async function repoRow(page, seed) {
   const row = page.locator(`[data-folder-path="${seed.repo}"] button.sidebar-row`).first()
-  if (!(await row.isVisible().catch(() => false))) {
-    await page.locator('button.sidebar-row').first().click()
+  const folder = page.locator(`[data-tree-folder]:has([data-folder-path="${seed.repo}"])`).first()
+  await row.waitFor({ state: 'attached', timeout: 15000 })
+  if ((await folder.locator('[data-folder-content]').getAttribute('data-open')) === 'false') {
+    await folder.locator('[data-folder-chevron]').click()
     await row.waitFor({ state: 'visible', timeout: 5000 })
     await page.waitForTimeout(500)
   }
@@ -198,17 +200,9 @@ async function selectOwnerSession({ page, seed }) {
   ensureOwnerTranscript(seed)
   const row = await repoRow(page, seed)
   const session = page.locator(`button[data-session-id="${MISSION_OWNER_SESSION}"]`)
-  // The session rows sit in the folder's collapsible child list. A collapsed list is still
-  // "visible" to Playwright (zero height, overflow shown), so ask the browser whether the row is
-  // actually the topmost thing at its own centre; expand the folder when it is not.
+  // The session rows sit under the checkout row, which folds them: unfold it when it is folded.
   await session.waitFor({ state: 'attached', timeout: 15000 })
-  const reachable = () =>
-    session.evaluate((el) => {
-      const r = el.getBoundingClientRect()
-      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
-      return r.height > 0 && !!top && el.contains(top)
-    })
-  if (!(await reachable())) {
+  if ((await row.getAttribute('aria-expanded')) === 'false') {
     await row.click()
     await page.waitForTimeout(800)
   }

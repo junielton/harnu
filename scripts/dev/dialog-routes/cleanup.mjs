@@ -27,10 +27,10 @@ const DIALOG = '[role="dialog"]'
 /**
  * Open the Cleanup takeover and wait for its first scan; idempotent.
  *
- * Reached through the repo group's "Group actions" menu → "Cleanup…", NOT the footer pill: the
+ * Reached through the repo folder header's menu → "Clean up", NOT the footer pill: the
  * pill only renders while something is reclaimable, and on a machine with no Docker build cache
  * (a CI runner) a scan that has not finished yet leaves it absent — the first CI run timed out
- * waiting for it. The group menu entry is always there for a repo group.
+ * waiting for it. The header menu entry is always there for a repo folder.
  */
 async function ensureCleanup(page) {
   if (
@@ -39,12 +39,12 @@ async function ensureCleanup(page) {
       .isVisible()
       .catch(() => false))
   ) {
-    const header = page.locator('aside button.sidebar-row:has(svg.lucide-git-branch)').first()
+    const header = page.locator('aside [data-folder-head][data-sidebar-row^="group:repo:"]').first()
     await header.waitFor({ state: 'visible', timeout: 30_000 })
     await header.click({ button: 'right' })
-    const menu = page.getByRole('menu', { name: 'Group actions' })
+    const menu = page.getByRole('menu', { name: 'Folder actions' })
     await menu.waitFor({ state: 'visible' })
-    await menu.getByRole('menuitem', { name: /^Cleanup/ }).click()
+    await menu.getByRole('menuitem', { name: /^Clean up/ }).click()
   }
   // The scan is done once the summary is no longer "scanning" and a body (hero or all-clean) rendered.
   await page.locator('[data-testid="cleanup-body"]').waitFor({ state: 'visible', timeout: 60_000 })

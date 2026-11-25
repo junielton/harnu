@@ -15,10 +15,10 @@
  *   - `close` defaults to {@link closeAllDialogs}; it MUST leave no dialog open so the next route
  *     can run in the same app instance, in any order.
  *
- * Selector notes (what is brittle): folder rows are found by `[data-folder-path]` (the folder's
- * absolute path, so it depends on the seed); the repo group header is the sidebar row that carries
- * the git-branch icon; menu items are found by their English accessible name — a locale change
- * would break them, which is why the driver runs in `en`.
+ * Selector notes (what is brittle): checkout rows are found by `[data-folder-path]` (the checkout's
+ * absolute path, so it depends on the seed); a repo's folder header is the `[data-folder-head]` whose
+ * row id starts with `group:repo:`; menu items are found by their English accessible name — a locale
+ * change would break them, which is why the driver runs in `en`.
  */
 
 /** Selector for an open dialog card. */
@@ -97,6 +97,22 @@ async function activate(item, page, { roving = false } = {}) {
 }
 
 /**
+ * The sidebar row of a checkout. A worktree with no listed session sits in its repo's folded
+ * "idle worktrees" row, so that row is opened first.
+ */
+async function checkoutRow(page, folderPath) {
+  const row = page.locator(`[data-folder-path="${folderPath}"] > button`).first()
+  if ((await row.count()) === 0) {
+    await page
+      .locator(`[data-tree-folder][data-tree-paths*="${folderPath}"] [data-idle-row]`)
+      .first()
+      .click()
+  }
+  await row.waitFor({ state: 'visible' })
+  return row
+}
+
+/**
  * Right-click a pinned folder / worktree row in the sidebar and click a menu item.
  * @param {import('@playwright/test').Page} page
  * @param {string} folderPath absolute path of the folder row (`seed.repo`, `seed.linkedWorktree`, …)
@@ -104,8 +120,7 @@ async function activate(item, page, { roving = false } = {}) {
  */
 async function folderMenu(page, folderPath, item) {
   await dismissMenus(page)
-  const row = page.locator(`[data-folder-path="${folderPath}"] > button`).first()
-  await row.waitFor({ state: 'visible' })
+  const row = await checkoutRow(page, folderPath)
   await row.click({ button: 'right' })
   const menu = page.getByRole('menu', { name: 'Folder actions' })
   await menu.waitFor({ state: 'visible' })
@@ -118,7 +133,7 @@ async function folderMenu(page, folderPath, item) {
  */
 async function newWorktreeItem(page, folderPath) {
   await dismissMenus(page)
-  const row = page.locator(`[data-folder-path="${folderPath}"] > button`).first()
+  const row = await checkoutRow(page, folderPath)
   await row.click({ button: 'right' })
   const menu = page.getByRole('menu', { name: 'Folder actions' })
   await menu.waitFor({ state: 'visible' })
@@ -135,11 +150,11 @@ async function newWorktreeItem(page, folderPath) {
 }
 
 /**
- * The repo group header: the sidebar row that carries the git-branch icon and the repo label
- * (the first row of the folder tree). Right-click opens the "Group actions" menu.
+ * The repo folder header of the sidebar tree (the first repo in the list). Right-click opens the
+ * "Folder actions" menu, which carries the repo entries.
  */
 async function groupHeader(page) {
-  return page.locator('aside button.sidebar-row:has(svg.lucide-git-branch)').first()
+  return page.locator('aside [data-folder-head][data-sidebar-row^="group:repo:"]').first()
 }
 
 /** @type {Array<{ id: string, file: string, reach: 'seed' | 'reference' | 'not-seedable', note?: string, open: (ctx: any) => Promise<void>, close?: (ctx: any) => Promise<void> }>} */
@@ -168,15 +183,15 @@ export const ROUTES_FOLDER_GLOBAL = [
     id: 'RenameRepoDialog',
     file: 'RenameRepoDialog.vue',
     reach: 'seed',
-    note: 'Right-click the repo group header → "Rename group".',
+    note: 'Right-click the repo folder header → "Rename repo".',
     async open({ page }) {
       await dismissMenus(page)
       const header = await groupHeader(page)
       await header.waitFor({ state: 'visible' })
       await header.click({ button: 'right' })
-      const menu = page.getByRole('menu', { name: 'Group actions' })
+      const menu = page.getByRole('menu', { name: 'Folder actions' })
       await menu.waitFor({ state: 'visible' })
-      await activate(menu.getByRole('menuitem', { name: 'Rename group' }), page)
+      await activate(menu.getByRole('menuitem', { name: /^Rename repo/ }), page, { roving: true })
       await settleDialog(page)
     }
   },
@@ -194,11 +209,9 @@ export const ROUTES_FOLDER_GLOBAL = [
     id: 'NewSessionDialog',
     file: 'NewSessionDialog.vue',
     reach: 'seed',
-    note: 'The "+" (New session) button on the `www` folder row. One of five openers (spec §1.2).',
+    note: 'Folder menu on `www` → "New session". One of five openers (spec §1.2).',
     async open({ page, seed }) {
-      const row = page.locator(`[data-folder-path="${seed.repo}"] > button`).first()
-      await row.hover()
-      await row.getByRole('button', { name: 'New session' }).click()
+      await folderMenu(page, seed.repo, /^New session/)
       await settleDialog(page)
     }
   },

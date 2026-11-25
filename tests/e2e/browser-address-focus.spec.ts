@@ -38,7 +38,9 @@ test.describe('browser address field focus (browser-tabs S-1)', () => {
 
   test('one border', async () => {
     // Open a browser pane in the seeded folder, the way an operator does.
-    await page.locator(`[data-folder-path="${seed.repo}"]`).first().click()
+    await page
+      .locator(`[data-tree-folder]:has([data-folder-path="${seed.repo}"]) [data-folder-head]`)
+      .click()
     await page.getByRole('button', { name: 'Browser', exact: true }).first().click()
 
     const address = page.getByTestId('browser-address')
