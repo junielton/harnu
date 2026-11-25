@@ -266,9 +266,7 @@ Theme tokens are read from CSS variables at terminal-construction time, but a `w
 | Activity bell (Topbar notification popover, T152)  | `src/renderer/src/components/ActivityBell.vue`                                   |
 | Empty state ("Ready to start")                     | `src/renderer/src/components/EmptyState.vue`                                     |
 | Folder View (main pane, T212)                      | `src/renderer/src/components/FolderView.vue` + `folder-view-format.ts`           |
-| Folder View — sessions section                     | `src/renderer/src/components/FolderViewSessions.vue`                             |
-| Folder View — roadmap section                      | `src/renderer/src/components/FolderViewRoadmap.vue`                              |
-| Folder View — worktrees section                    | `src/renderer/src/components/FolderViewWorktrees.vue`                            |
+| Folder View — roadmap line                         | `src/renderer/src/components/FolderViewRoadmap.vue`                              |
 | Transcript / xterm host                            | `src/renderer/src/components/TerminalPane.vue`                                   |
 | Onboarding hero                                    | `src/renderer/src/components/Onboarding.vue`                                     |
 | Add folder dialog (§6 — Dialog)                    | `src/renderer/src/components/AddFolderDialog.vue`                                |

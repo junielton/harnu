@@ -1123,111 +1123,19 @@
     "disclaimer": "O Harnu é um projeto independente, sem afiliação ou endosso da Anthropic."
   },
   "folderView": {
-    "whereWeLeftOff": "Onde paramos",
-    "sessions": "Sessões",
-    "noSessions": "Nenhuma sessão aqui ainda.",
     "newSession": "Nova sessão",
-    "older": "Antigas ({n})",
-    "archived": "Arquivadas ({n})",
-    "roadmap": "Roadmap",
-    "sessionBound": "sessão vinculada",
-    "worktrees": "Worktrees deste repo",
-    "siblingWorktrees": "Worktrees irmãs",
-    "scope": {
-      "thisFolder": "esta pasta",
-      "repo": "repo",
-      "thisFolderHint": "Só esta pasta — suas próprias sessões, branch e working tree.",
-      "repoHint": "O repo inteiro — toda worktree dele mostra exatamente isto."
-    },
-    "owned": {
-      "rail": {
-        "dispatched": "Despachado",
-        "dispatchedAt": "Despachado · {age}",
-        "commits": "Commits",
-        "commitsCount": "{n} commits",
-        "commitsLatest": "{n} commits · último {sha}",
-        "pr": "PR",
-        "prNumber": "PR #{n}",
-        "merge": "Merge",
-        "merged": "Merged"
-      },
-      "pr": {
-        "merged": "merged",
-        "closed": "fechada",
-        "isDraft": "rascunho",
-        "changesRequested": "mudanças pedidas",
-        "approved": "aprovada",
-        "inReview": "em review"
-      },
-      "meta": {
-        "status": "Status",
-        "ownerSession": "Sessão dona",
-        "git": "Git",
-        "unpushed": "sem push",
-        "cutFrom": "Cortada de"
-      }
-    },
-    "thisWorktree": "esta",
-    "cutFromHere": "cortada daqui",
+    "terminalHere": "Terminal aqui",
+    "browseFiles": "Navegar arquivos",
     "openRoadmap": "Board do roadmap",
     "openPrStack": "PR Stack",
-    "browseFiles": "Navegar arquivos",
     "openFolder": "Abrir pasta",
-    "terminalHere": "Terminal aqui",
-    "fanout": {
-      "title": "Worktrees em andamento",
-      "colBranch": "Branch",
-      "colCard": "Card",
-      "colSessions": "Sessões",
-      "colGit": "Git",
-      "colPr": "PR",
-      "sessionsLive": "{n} · {live} ativas",
-      "noCard": "Nenhum card está executando esta branch",
-      "prState": {
-        "checksPassing": "checks passando",
-        "checksFailing": "checks falhando",
-        "checksRunning": "checks rodando",
-        "changesRequested": "mudanças solicitadas",
-        "draft": "rascunho #{n}",
-        "merged": "merge feito #{n}",
-        "closed": "fechada #{n}",
-        "open": "aberta #{n}"
-      },
-      "expand": "Ver detalhes",
-      "collapse": "Ocultar detalhes",
-      "detail": {
-        "branch": "Branch",
-        "path": "Caminho",
-        "card": "Card",
-        "git": "Git",
-        "gitClean": "em dia com a base",
-        "gitUnavailable": "Não foi possível ler o status do git",
-        "pr": "Pull request",
-        "prNumber": "#{n}",
-        "noPr": "Nenhum pull request aberto para esta branch",
-        "open": "Abrir esta worktree",
-        "isSelf": "Você está nesta worktree"
-      }
-    },
-    "kpi": {
-      "needYou": "esperam você",
-      "needYouAcross": "Em {n} worktrees",
-      "needYouBreakdown": "{sessions} sessões · {prs} PRs com mudanças solicitadas",
-      "needYouPrsUnavailable": "{sessions} sessões · estado das PRs indisponível",
-      "inFlight": "em andamento",
-      "inFlightK": "Worktrees com sessão ativa",
-      "inFlightSub": "{total} worktrees no total · {idle} paradas",
-      "inReview": "em revisão",
-      "roadmapK": "Roadmap · {inProgress} em progresso · {ready} prontos",
-      "sessionsHere": "sessões aqui",
-      "sessionsHereK": "Neste checkout · {older} anteriores",
-      "sessionsHereSub": "Onde as orquestrações começam"
-    },
-    "activity": {
-      "title": "Atividade · 14d",
-      "sessions": "{n} sessões",
-      "today": "hoje · {n}",
-      "chartLabel": "Sessões iniciadas por dia no repositório, últimos 14 dias"
+    "moreActions": "Mais ações da pasta",
+    "moreTitle": "Mais: {actions}",
+    "roadmap": "Roadmap",
+    "road": {
+      "inProgress": "{n} em andamento",
+      "ready": "{n} prontos",
+      "inReview": "{n} em revisão"
     }
   },
   "empty": {

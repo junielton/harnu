@@ -537,7 +537,7 @@ fleet-wide like the sidebar itself.
 
 ### Editor marks (brand glyphs, T581)
 
-The Topbar "Open in {editor}" button (and the Folder View action) shows the **configured editor's own
+The Topbar "Open in {editor}" button (and the Folder View's More menu item) shows the **configured editor's own
 mark** so the button says which editor it launches. This is the one place §5's Lucide-only rule is
 relaxed, under these rules:
 
@@ -546,7 +546,7 @@ relaxed, under these rules:
   OS or a fetched URL.
 - **Colour:** `fill="currentColor"`, never the brand colour — the mark inherits the toolbar's
   `--text-3` → `--text` pair exactly like a Lucide icon, so the cluster stays one visual family.
-- **Size:** 14px in the Topbar (26×26 button), 13px in the Folder View action bar — the same box as the
+- **Size:** 14px in the Topbar (26×26 button), 14px in the Folder View's More menu — the same box as the
   Lucide glyph it replaces. The mark is `aria-hidden`; the button's `aria-label` carries the name.
 - **Presets with a mark:** VS Code, Cursor, Zed, Sublime Text, JetBrains (IntelliJ IDEA / WebStorm),
   Neovim, Helix. A preset with no Simple Icons mark falls back to the generic `code` Lucide glyph.
@@ -14404,8 +14404,7 @@ codebase is a bug to fix.
   --radius: 7px;
   --radius-lg: 10px;
 
-  /* Folder View scroll caps. Unused once the slim Folder View lands (§6 "Folder View"); its slice removes them here and in themes.css */
-  --fv-fanout-max-h: 380px;
+  /* Scroll cap of the lists inside the Cleanup confirm dialogs; the name predates the slim Folder View */
   --fv-rail-list-max-h: 280px;
 
   /* Cleanup layout dimensions (§4, §6 "Workspace GC — unified Cleanup") */
