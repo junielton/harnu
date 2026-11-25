@@ -5,22 +5,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * Sidebar redesign S-5 — the "All folders" back row of Focus. Whatever the width,
- * the counts that need the operator stay readable, and the keyboard keeps its
- * place going in and out. jsdom has no box model and no native key activation, so
- * both are driven in the built app. Requires `npm run build` first.
+ * Sidebar redesign S-5 — the "All folders" back row of Focus (design.md §6 "Sidebar
+ * tree → Focus"). One line at every width: whole parts drop as it narrows, nothing is
+ * ever cut, and the counts that need the operator never go. The keyboard keeps its
+ * place going in and out. jsdom has no box model and no native key activation, so both
+ * are driven in the built app. Requires `npm run build` first.
  */
 
-/** Two other folders need the operator and two failed, so both counts read as plurals. */
-const FOLDERS = [
-  { name: 'api-gateway', state: null },
-  { name: 'portal', state: 'needs-input' },
-  { name: 'web-api', state: 'needs-input' },
-  { name: 'example-web', state: 'failed' },
-  { name: 'proj', state: 'failed' }
-] as const
+/** The focused folder and fifteen others, enough for the widest counts. */
+const NAMES = ['api-gateway', ...Array.from({ length: 15 }, (_, i) => `service-${i + 1}`)]
 
-const id = (index: number): string => `aaaaaaa${index}-0000-4000-8000-000000000001`
+const id = (index: number): string =>
+  `aaaaaa${String(index).padStart(2, '0')}-0000-4000-8000-000000000001`
 
 interface VueApp {
   config: {
@@ -42,7 +38,7 @@ let page: Page
 
 function seed(): string {
   const home = mkdtempSync(join(tmpdir(), 'harnu-focus-back-'))
-  const projects = FOLDERS.map(({ name }, index) => {
+  const projects = NAMES.map((name, index) => {
     const path = join(home, 'Workspace', 'org', name)
     mkdirSync(path, { recursive: true })
     const dir = join(home, '.claude', 'projects', path.replace(/[^a-zA-Z0-9]/g, '-'))
@@ -93,42 +89,96 @@ async function ensureFocused(): Promise<void> {
   await head('api-gateway').locator('[data-focus-button]').click()
 }
 
-/** How each phrase of the back row is drawn: whole on screen, or cut by a box around it. */
-function phrases(
-  texts: string[]
-): Promise<Array<{ text: string; whole: boolean; line: number } | null>> {
-  return page.locator('[data-focus-back]').evaluate((row, texts) => {
-    const nodes: Text[] = []
-    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text)
-    const all = nodes.map((n) => n.data).join('')
-    // A start on a boundary belongs to the node that follows, an end to the node before.
-    const at = (offset: number, end = false): [Text, number] => {
-      for (const node of nodes) {
-        if (offset < node.data.length || (end && offset === node.data.length)) return [node, offset]
-        offset -= node.data.length
-      }
-      throw new Error('offset past the row')
-    }
-    const box = row.getBoundingClientRect()
-    return texts.map((text) => {
-      const start = all.indexOf(text)
-      if (start < 0) return null
-      const range = document.createRange()
-      range.setStart(...at(start))
-      range.setEnd(...at(start + text.length, true))
-      const r = range.getBoundingClientRect()
-      let whole = r.width > 0 && r.left >= box.left && r.right <= box.right + 0.5
-      whole &&= r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5
-      for (let el = range.startContainer.parentElement; el && el !== row; el = el.parentElement) {
-        if (getComputedStyle(el).overflowX === 'visible') continue
-        const clip = el.getBoundingClientRect()
-        whole &&= r.left >= clip.left - 0.5 && r.right <= clip.right + 0.5
-      }
-      return { text, whole, line: Math.round(r.top - box.top) }
-    })
-  }, texts)
+/** The first `needs` other folders wait on the operator, the next `failed` have failed. */
+async function setCounts(needs: number, failed: number): Promise<void> {
+  await page.evaluate(
+    ([ids, needs, failed]) => {
+      const vue = (document.querySelector('#app') as unknown as { __vue_app__: VueApp }).__vue_app__
+      const sessions = vue.config.globalProperties.$pinia._s.get('sessions')!
+      ;(ids as string[]).forEach((sessionId, i) => {
+        const state =
+          i < (needs as number)
+            ? 'needs-input'
+            : i < (needs as number) + (failed as number)
+              ? 'failed'
+              : undefined
+        sessions.findSessionById(sessionId)!.taskState = state
+      })
+    },
+    [NAMES.slice(1).map((_, i) => id(i + 1)), needs, failed] as const
+  )
+  await page.waitForTimeout(300)
 }
+
+/** What the back row draws, and how. */
+const drawn = (): Promise<{
+  level: string | null
+  text: string
+  cut: string[]
+  ellipsis: string[]
+  lines: number
+  height: number
+  title: string | null
+  label: string | null
+  colors: Record<string, string>
+}> =>
+  page.locator('[data-focus-back]').evaluate((row) => {
+    const box = row.getBoundingClientRect()
+    const texts: string[] = []
+    const cut: string[] = []
+    const tops: number[] = []
+    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement!
+      if (!node.textContent || getComputedStyle(parent).visibility !== 'visible') continue
+      texts.push(node.textContent)
+      if (!node.textContent.trim()) continue
+      const range = document.createRange()
+      range.selectNodeContents(node)
+      const r = range.getBoundingClientRect()
+      tops.push(r.top + r.height / 2)
+      let whole = r.left >= box.left - 0.5 && r.right <= box.right - 13.5
+      for (let el: Element | null = parent; el && el !== row; el = el.parentElement) {
+        if (getComputedStyle(el).overflowX === 'visible') continue
+        whole &&= r.right <= el.getBoundingClientRect().right + 0.5
+      }
+      if (!whole) cut.push(node.textContent)
+    }
+    const color = (selector: string): string => {
+      const el = row.querySelector(selector)
+      return el ? getComputedStyle(el).color : ''
+    }
+    const token = (name: string): string => {
+      const probe = document.createElement('span')
+      probe.style.color = `var(${name})`
+      document.body.appendChild(probe)
+      const value = getComputedStyle(probe).color
+      probe.remove()
+      return value
+    }
+    return {
+      level: row.getAttribute('data-focus-back-level'),
+      text: texts.join('').replace(/\s+/g, ' ').trim(),
+      cut,
+      ellipsis: [row, ...row.querySelectorAll('*')]
+        .filter((el) => getComputedStyle(el).textOverflow === 'ellipsis')
+        .map((el) => el.textContent ?? ''),
+      // Text centres more than half a line apart are on different lines.
+      lines: tops.filter((top, i) => tops.findIndex((t) => Math.abs(t - top) < 6) === i).length,
+      height: box.height,
+      title: row.getAttribute('title'),
+      label: row.getAttribute('aria-label'),
+      colors: {
+        label: color('[data-focus-back-label]'),
+        others: color('[data-focus-back-others]'),
+        needs: color('[data-focus-back-needs]'),
+        failed: color('[data-focus-back-failed]'),
+        text3: token('--color-text-3'),
+        warning: token('--color-warning'),
+        red: token('--color-red')
+      }
+    }
+  })
 
 test.beforeAll(async () => {
   root = seed()
@@ -137,19 +187,7 @@ test.beforeAll(async () => {
   await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].setContentSize(1440, 900)
   )
-  await expect(page.locator('[data-session-row]')).toHaveCount(FOLDERS.length, { timeout: 30_000 })
-  await page.evaluate(
-    (states) => {
-      const vue = (document.querySelector('#app') as unknown as { __vue_app__: VueApp }).__vue_app__
-      const sessions = vue.config.globalProperties.$pinia._s.get('sessions')!
-      for (const [sessionId, state] of states) {
-        sessions.findSessionById(sessionId)!.taskState = state
-      }
-    },
-    FOLDERS.flatMap((folder, index) =>
-      folder.state ? [[id(index), folder.state] as [string, string]] : []
-    )
-  )
+  await expect(page.locator('[data-session-row]')).toHaveCount(NAMES.length, { timeout: 30_000 })
 })
 
 test.afterAll(async () => {
@@ -173,35 +211,76 @@ test('Enter into Focus and back keeps the keyboard on its place', async () => {
   await expect(focusButton).toHaveCSS('opacity', '1')
 })
 
-test('at the default width the back row reads in one line', async () => {
-  await setWidthAndLocale(268, 'en')
-  await ensureFocused()
+const CASES = [
+  [
+    'en',
+    268,
+    1,
+    1,
+    '1',
+    'All folders1 needs you · 1 failed',
+    'All folders, 15 others, 1 needs you, 1 failed'
+  ],
+  ['en', 200, 1, 1, '2', '1 needs you · 1 failed', 'All folders, 15 others, 1 needs you, 1 failed'],
+  [
+    'pt-BR',
+    268,
+    1,
+    1,
+    '1',
+    'Pastas1 precisa de você · 1 falhou',
+    'Pastas, 15 outras, 1 precisa de você, 1 falhou'
+  ],
+  [
+    'pt-BR',
+    200,
+    1,
+    1,
+    '2',
+    '1 precisa de você · 1 falhou',
+    'Pastas, 15 outras, 1 precisa de você, 1 falhou'
+  ],
+  [
+    'pt-BR',
+    200,
+    12,
+    3,
+    '3',
+    '12 precisam · 3 falharam',
+    'Pastas, 15 outras, 12 precisam de você, 3 falharam'
+  ],
+  [
+    'en',
+    420,
+    12,
+    3,
+    '0',
+    'All folders15 others · 12 need you · 3 failed',
+    'All folders, 15 others, 12 need you, 3 failed'
+  ],
+  ['en', 268, 0, 0, '0', 'All folders15 others', 'All folders, 15 others']
+] as const
 
-  const [label, others, needs, failed] = await phrases([
-    'All folders',
-    '4 others',
-    '2 need you',
-    '2 failed'
-  ])
-  for (const phrase of [label, others, needs, failed]) expect(phrase?.whole).toBe(true)
-  expect(Math.abs(needs!.line - label!.line)).toBeLessThanOrEqual(2)
-})
-
-for (const [locale, texts] of [
-  ['en', ['All folders', '2 need you', '2 failed']],
-  ['pt-BR', ['Todas as pastas', '2 precisam de você', '2 falharam']]
-] as const) {
-  test(`at the minimum width both operator counts stay whole (${locale})`, async () => {
+for (const [locale, width, needs, failed, level, text, full] of CASES) {
+  test(`one line at ${width}px, ${needs} waiting and ${failed} failed (${locale})`, async () => {
     await setWidthAndLocale(268, 'en')
     await ensureFocused()
-    await setWidthAndLocale(200, locale)
+    await setCounts(needs, failed)
+    await setWidthAndLocale(width, locale)
 
-    const drawn = await phrases([...texts])
-    expect(drawn.map((phrase) => [phrase?.text, phrase?.whole])).toEqual(
-      texts.map((text) => [text, true])
-    )
-    const row = await page.locator('[data-focus-back]').boundingBox()
-    expect(row!.height).toBe(35)
+    await expect.poll(async () => (await drawn()).level).toBe(level)
+    const row = await drawn()
+    expect(row.text).toBe(text)
+    expect(row.cut).toEqual([])
+    expect(row.ellipsis).toEqual([])
+    expect(row.lines).toBe(1)
+    expect(row.height).toBe(35)
+    expect(row.title).toBe(full)
+    expect(row.label).toBe(full)
+    if (needs) expect(row.colors.needs).toBe(row.colors.warning)
+    if (failed) expect(row.colors.failed).toBe(row.colors.red)
+    expect(row.colors.label).toBe(row.colors.text3)
+    expect(row.colors.others).toBe(row.colors.text3)
     expect(
       await page.locator('.sidebar-tree-scroll').evaluate((el) => el.scrollWidth - el.clientWidth)
     ).toBe(0)
