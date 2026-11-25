@@ -152,6 +152,9 @@ const checkoutRow = (w: VueWrapper, path: string): ReturnType<VueWrapper['get']>
 beforeEach(() => {
   setActivePinia(createPinia())
   localStorage.clear()
+  // jsdom has neither; the sidebar's reveal-and-flash watchers call both.
+  vi.stubGlobal('CSS', { escape: (value: string) => value })
+  Element.prototype.scrollIntoView = () => {}
 })
 
 afterEach(() => {
@@ -160,6 +163,7 @@ afterEach(() => {
   document.body.innerHTML = ''
   delete (window as unknown as { api?: unknown }).api
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('sidebar flat checkout tree (S-1)', () => {

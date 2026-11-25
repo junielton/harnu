@@ -70,6 +70,21 @@ watch(
   }
 )
 
+// A repo that loses its last other worktree becomes a standalone folder, whose
+// open state is its own: carry the header's over, so it does not snap shut. Lives
+// here, not in the store, so the tree is only built while it is on screen.
+watch(
+  () => sessions.sidebarTree,
+  (next, previous) => {
+    if (sessions.filterQuery.trim()) return
+    for (const node of next) {
+      if (node.group) continue
+      const was = previous?.find((old) => old.group && old.paths.includes(node.primary.path))
+      if (was?.open) node.primary.expanded = true
+    }
+  }
+)
+
 // BUG-31 fix: `activateSession` raises this once it has already expanded the
 // folder (and any teammate group) the target session lives behind — scroll
 // the now-rendered row into view, then consume the signal. `nextTick` lets

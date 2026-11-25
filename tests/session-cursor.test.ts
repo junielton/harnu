@@ -23,7 +23,8 @@ function build(visible: Array<Folder | FolderGroup<Folder>>) {
   const hasRows = (folder: Folder) => folder.sessions.length > 0
   const tree = computed(() => {
     void changed.value
-    return buildSidebarTree(visible, { sort: 'name', aliasFromBranchPaths: new Set(), hasRows })
+    const order = visible.flatMap((n) => ('folders' in n ? n.folders : [n]))
+    return buildSidebarTree(visible, { order, aliasFromBranchPaths: new Set(), hasRows })
   })
   const toggleTreeFolder = vi.fn((key: string) => {
     const node = tree.value.find((folder) => folder.key === key)!

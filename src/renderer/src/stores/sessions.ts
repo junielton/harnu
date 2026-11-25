@@ -2695,17 +2695,6 @@ export const useSessionsStore = defineStore('sessions', () => {
     )
   )
 
-  // A repo that loses its last other worktree becomes a standalone folder, whose
-  // open state is its own: carry the header's over, so it does not snap shut.
-  watch(sidebarTree, (next, previous) => {
-    if (filterQuery.value.trim()) return
-    for (const node of next) {
-      if (node.group) continue
-      const was = previous?.find((old) => old.group && old.paths.includes(node.primary.path))
-      if (was?.open) node.primary.expanded = true
-    }
-  })
-
   function isIdleWorktreesOpen(key: string): boolean {
     return !!filterQuery.value.trim() || idleWorktreesOpen.has(key)
   }
