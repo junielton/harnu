@@ -971,11 +971,13 @@ useShortcuts(
     },
     {
       // The approvals chord: the dock's Needs you section, expanding a collapsed sidebar;
-      // pressed again it folds the section.
+      // pressed again it folds the section. A pane expanded to the window hides the sidebar,
+      // so an open section is not on screen there and the chord opens instead of folding.
       id: 'inbox.toggle',
       scope: 'global',
       keys: kb('inbox.toggle'),
-      handler: () => layout.toggleNeedsYou()
+      handler: () =>
+        expandMode.value === 'everything' ? layout.openNeedsYou() : layout.toggleNeedsYou()
     },
     // --- T486 §3.5: the Topbar / footer popovers. Unbound. Each runs its button's own
     // call; a popover is enabled only while its button is rendered (it anchors there),

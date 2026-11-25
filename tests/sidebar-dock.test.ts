@@ -42,6 +42,7 @@ import App from '../src/renderer/src/App.vue'
 import Sidebar from '../src/renderer/src/components/Sidebar.vue'
 import { useSessionsStore, type Session } from '../src/renderer/src/stores/sessions'
 import { useLayoutStore } from '../src/renderer/src/stores/layout'
+import { useHelpersStore } from '../src/renderer/src/stores/helpers'
 import { useYourMoveStore } from '../src/renderer/src/stores/your-move'
 import { PARK_TTL_MS } from '../src/main/mcp/confirm-core'
 import { DESCRIPTOR_BY_ID, KEYBINDINGS } from '../src/main/keybindings-core'
@@ -380,5 +381,23 @@ describe('reaching Needs you', () => {
       ).toBe(false)
     }
     expect(DESCRIPTOR_BY_ID['inbox.toggle'].defaultKeys).toBe('Cmd+Shift+A')
+  })
+
+  it('the shortcut leaves a pane expanded to the window instead of folding what it hides', async () => {
+    const w = await ready()
+    const helpers = useHelpersStore()
+    // jsdom has no scrollIntoView; selecting a session reveals its row with it.
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+    useSessionsStore().select('s1')
+    const pane = helpers.addShellHelper(FOLDER, FOLDER)
+    await head(w, 'needs-you').trigger('click')
+    helpers.toggleExpandPane(FOLDER, pane)
+    await flushPromises()
+    expect(helpers.expandedPaneIdForCurrentWorktree).toBe(pane)
+
+    binding('inbox.toggle').handler()
+    await flushPromises()
+    expect(helpers.expandedPaneIdForCurrentWorktree).toBeNull()
+    expect(isOpen(w, 'needs-you')).toBe(true)
   })
 })
