@@ -32,6 +32,8 @@ const meta = computed(() => {
     data-dsqa-part="back-row"
     class="sticky top-0 z-[4] mb-1.5 flex h-[35px] w-full shrink-0 cursor-pointer items-center gap-1.5 border-b border-border bg-sidebar px-3.5 text-left text-[12px] whitespace-nowrap text-text-3 transition-colors duration-(--dur-fast) ease-(--ease) hover:text-text"
     @click="sessions.leaveFocus()"
+    @keydown.enter.stop
+    @keydown.space.stop
   >
     <ChevronLeft :size="14" :stroke-width="1.7" class="shrink-0" aria-hidden="true" />
     <span class="flex min-w-0 flex-1 items-baseline justify-between gap-1.5">

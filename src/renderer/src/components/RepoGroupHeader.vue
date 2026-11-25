@@ -183,6 +183,8 @@ function preview(event: MouseEvent): void {
       :title="$t('sidebar.focus.enter')"
       :aria-label="$t('sidebar.focus.enterNamed', { name: tree.label })"
       @click.stop="sessions.enterFocus(tree.primary.path)"
+      @keydown.enter.stop
+      @keydown.space.stop
     >
       <Target :size="13" :stroke-width="1.6" aria-hidden="true" />
     </button>
