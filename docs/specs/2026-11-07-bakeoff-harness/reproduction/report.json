@@ -1,0 +1,788 @@
+{
+  "roundId": "20261113-164650",
+  "split": "dev",
+  "status": "done",
+  "dryRun": false,
+  "models": {
+    "contestant": "claude-opus-5-5",
+    "operator": "claude-sonnet-5-5",
+    "judge": "claude-sonnet-5-5"
+  },
+  "pins": {
+    "harnu-spec": "6bab507f5e2b32ac19e816679a4472c8b7c0378b",
+    "superpowers": "bb92a77741419a4ab5f06e711a283343f1ada0c3",
+    "tlc-spec-driven": "8658b6658c762b9e5efd3956ed35a51c41bdf6c3"
+  },
+  "repeats": 2,
+  "judges": 3,
+  "measures": {
+    "hiddenPassRate": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [100, 96.22641509433963],
+          "mean": 98.11320754716982,
+          "spread": 3.773584905660371
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [98.11320754716981, 94.33962264150944],
+          "mean": 96.22641509433961,
+          "spread": 3.773584905660371
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [100, 88.67924528301887],
+          "mean": 94.33962264150944,
+          "spread": 11.320754716981128
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 98.11320754716982,
+          "spread": 3.773584905660371,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 96.22641509433961,
+          "spread": 3.773584905660371,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 94.33962264150944,
+          "spread": 11.320754716981128,
+          "n": 1
+        }
+      ]
+    },
+    "coverage": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [97.91666666666667, 90.27777777777779],
+          "mean": 94.09722222222223,
+          "spread": 7.638888888888886
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [96.52777777777779, 90.97222222222221],
+          "mean": 93.75,
+          "spread": 5.555555555555571
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [92.3611111111111, 76.38888888888889],
+          "mean": 84.375,
+          "spread": 15.972222222222214
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 94.09722222222223,
+          "spread": 7.638888888888886,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 93.75,
+          "spread": 5.555555555555571,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 84.375,
+          "spread": 15.972222222222214,
+          "n": 1
+        }
+      ]
+    },
+    "decisionsLeft": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [3.3333333333333335, 3.6666666666666665],
+          "mean": 3.5,
+          "spread": 0.33333333333333304
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [2.6666666666666665, 6],
+          "mean": 4.333333333333333,
+          "spread": 3.3333333333333335
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [4, 7.666666666666667],
+          "mean": 5.833333333333334,
+          "spread": 3.666666666666667
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 3.5,
+          "spread": 0.33333333333333304,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 4.333333333333333,
+          "spread": 3.3333333333333335,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 5.833333333333334,
+          "spread": 3.666666666666667,
+          "n": 1
+        }
+      ]
+    },
+    "contradictions": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [1.6666666666666667, 0.3333333333333333],
+          "mean": 1,
+          "spread": 1.3333333333333335
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [0, 1.3333333333333333],
+          "mean": 0.6666666666666666,
+          "spread": 1.3333333333333333
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [0.6666666666666666, 1.6666666666666667],
+          "mean": 1.1666666666666667,
+          "spread": 1
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 1,
+          "spread": 1.3333333333333335,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 0.6666666666666666,
+          "spread": 1.3333333333333333,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 1.1666666666666667,
+          "spread": 1,
+          "n": 1
+        }
+      ]
+    },
+    "executableShare": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [1, 1],
+          "mean": 1,
+          "spread": 0
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [0.9315476190476191, 1],
+          "mean": 0.9657738095238095,
+          "spread": 0.06845238095238093
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [1, 1],
+          "mean": 1,
+          "spread": 0
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 1,
+          "spread": 0,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 0.9657738095238095,
+          "spread": 0.06845238095238093,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 1,
+          "spread": 0,
+          "n": 1
+        }
+      ]
+    },
+    "builderGuesses": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [3, 4.333333333333333],
+          "mean": 3.6666666666666665,
+          "spread": 1.333333333333333
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [3.3333333333333335, 5.333333333333333],
+          "mean": 4.333333333333333,
+          "spread": 1.9999999999999996
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [4.666666666666667, 7],
+          "mean": 5.833333333333334,
+          "spread": 2.333333333333333
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 3.6666666666666665,
+          "spread": 1.333333333333333,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 4.333333333333333,
+          "spread": 1.9999999999999996,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 5.833333333333334,
+          "spread": 2.333333333333333,
+          "n": 1
+        }
+      ]
+    },
+    "assumptions": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [17, 14],
+          "mean": 15.5,
+          "spread": 3
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [13, 14],
+          "mean": 13.5,
+          "spread": 1
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [16, 16],
+          "mean": 16,
+          "spread": 0
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 15.5,
+          "spread": 3,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 13.5,
+          "spread": 1,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 16,
+          "spread": 0,
+          "n": 1
+        }
+      ]
+    },
+    "tokensTotal": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [5198258, 3921903],
+          "mean": 4560080.5,
+          "spread": 1276355
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [2126820, 1611789],
+          "mean": 1869304.5,
+          "spread": 515031
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [2756954, 2591465],
+          "mean": 2674209.5,
+          "spread": 165489
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 4560080.5,
+          "spread": 1276355,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 1869304.5,
+          "spread": 515031,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 2674209.5,
+          "spread": 165489,
+          "n": 1
+        }
+      ]
+    },
+    "tokensOutput": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [120427, 93051],
+          "mean": 106739,
+          "spread": 27376
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [50778, 43956],
+          "mean": 47367,
+          "spread": 6822
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [69182, 53069],
+          "mean": 61125.5,
+          "spread": 16113
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 106739,
+          "spread": 27376,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 47367,
+          "spread": 6822,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 61125.5,
+          "spread": 16113,
+          "n": 1
+        }
+      ]
+    },
+    "wallMs": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [756453, 572207],
+          "mean": 664330,
+          "spread": 184246
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [302952, 262813],
+          "mean": 282882.5,
+          "spread": 40139
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [381234, 285885],
+          "mean": 333559.5,
+          "spread": 95349
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 664330,
+          "spread": 184246,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 282882.5,
+          "spread": 40139,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 333559.5,
+          "spread": 95349,
+          "n": 1
+        }
+      ]
+    },
+    "operatorTurns": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [7, 4],
+          "mean": 5.5,
+          "spread": 3
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [3, 4],
+          "mean": 3.5,
+          "spread": 1
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [4, 3],
+          "mean": 3.5,
+          "spread": 1
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 5.5,
+          "spread": 3,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 3.5,
+          "spread": 1,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 3.5,
+          "spread": 1,
+          "n": 1
+        }
+      ]
+    },
+    "subAgents": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [8, 5],
+          "mean": 6.5,
+          "spread": 3
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [1, 1],
+          "mean": 1,
+          "spread": 0
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [0, 0],
+          "mean": 0,
+          "spread": 0
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 6.5,
+          "spread": 3,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 1,
+          "spread": 0,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 0,
+          "spread": 0,
+          "n": 1
+        }
+      ]
+    },
+    "specLines": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [263, 233],
+          "mean": 248,
+          "spread": 30
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [494, 238],
+          "mean": 366,
+          "spread": 256
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [239, 173],
+          "mean": 206,
+          "spread": 66
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 248,
+          "spread": 30,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 366,
+          "spread": 256,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 206,
+          "spread": 66,
+          "n": 1
+        }
+      ]
+    },
+    "specWords": {
+      "rows": [
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "harnu-spec",
+          "values": [3815, 2782],
+          "mean": 3298.5,
+          "spread": 1033
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "superpowers",
+          "values": [2512, 2125],
+          "mean": 2318.5,
+          "spread": 387
+        },
+        {
+          "problem": "sqlite-utils-json-key",
+          "contestant": "tlc-spec-driven",
+          "values": [2930, 2271],
+          "mean": 2600.5,
+          "spread": 659
+        }
+      ],
+      "summary": [
+        {
+          "contestant": "harnu-spec",
+          "mean": 3298.5,
+          "spread": 1033,
+          "n": 1
+        },
+        {
+          "contestant": "superpowers",
+          "mean": 2318.5,
+          "spread": 387,
+          "n": 1
+        },
+        {
+          "contestant": "tlc-spec-driven",
+          "mean": 2600.5,
+          "spread": 659,
+          "n": 1
+        }
+      ]
+    }
+  },
+  "runs": [
+    {
+      "contestant": "harnu-spec",
+      "done": 2,
+      "incomplete": 0,
+      "failed": 0,
+      "judgesInvalidReply": 0,
+      "flakyHiddenTests": 0
+    },
+    {
+      "contestant": "superpowers",
+      "done": 2,
+      "incomplete": 0,
+      "failed": 0,
+      "judgesInvalidReply": 0,
+      "flakyHiddenTests": 0
+    },
+    {
+      "contestant": "tlc-spec-driven",
+      "done": 2,
+      "incomplete": 0,
+      "failed": 0,
+      "judgesInvalidReply": 0,
+      "flakyHiddenTests": 0
+    }
+  ],
+  "details": [
+    {
+      "problem": "sqlite-utils-json-key",
+      "contestant": "harnu-spec",
+      "repeat": 1,
+      "failedHiddenTests": [],
+      "judgeNotes": [
+        "Very thorough spec: every request and operator atom is stated with a named helper, signatures, error substrings and a named test or command per AC. The only wrinkle is the loose 'no other flag conflicts' phrasing in R-10, which is resolved in the same paragraph and in S-2/AC-14. Little is left to the builder.",
+        "Very thorough spec with nearly every behavior pinned down and a named test or command for each AC. The only atom not fully met is O-14, because memory's existing traceback on non-object rows and invalid JSON is deliberately retained. Wording of messages is left free beyond required substrings.",
+        "Very thorough spec: nearly every atom is pinned down with named tests and commands. Remaining gaps are small: no explicit version-bump prohibition, and stdin is covered only through test cases. The AC-23 grep proof is weak on docs content but is machine-runnable, and AC-20 uses cog --check on README.md which the spec itself says has no cog block."
+      ]
+    },
+    {
+      "problem": "sqlite-utils-json-key",
+      "contestant": "harnu-spec",
+      "repeat": 2,
+      "failedHiddenTests": [
+        "tests.test_hidden_bakeoff::test_key_on_top_level_list_is_an_error",
+        "tests.test_hidden_bakeoff::test_rows_from_file_key_on_top_level_list_raises"
+      ],
+      "judgeNotes": [
+        "Very thorough spec with executable proofs on every acceptance criterion and the operator rulings carried through. The main divergence from the hidden atoms is O-7: the spec lets --key pass a top-level list through unchanged, where the sheet expects an error. O-13 (memory table names) is never mentioned.",
+        "The spec is very thorough, with a pinned contract, named tests and executable proofs for every AC. It deliberately has --key on a top-level list return it unchanged, which contradicts the O-7 atom (error). Memory table-name stability is never mentioned.",
+        "Very thorough spec: nearly every behaviour is pinned, with a named test or command for each of the 20 ACs. The one real miss against the atoms is O-7: the spec returns a top-level list unchanged for --key too, where the answer sheet wants an error (RowsFromFileBadJSON). It also never mentions memory table naming (O-13)."
+      ]
+    },
+    {
+      "problem": "sqlite-utils-json-key",
+      "contestant": "superpowers",
+      "repeat": 1,
+      "failedHiddenTests": [
+        "tests.test_hidden_bakeoff::test_docs_cli_and_python_api_mention_options"
+      ],
+      "judgeNotes": [
+        "The bundle is very complete: the plan and spec agree on the interface, the error cases and the option combinations, and almost every requirement has a named test or command. The only real gap is that O-13 (memory table name stays the file stem) is implied by test fixtures and never stated. No contradictions found; no explicit acceptance-criteria list, so I counted the goals and Review Focus items.",
+        "Very complete spec: nearly every operator decision is stated and backed by named parametrized tests with exact commands. Only the memory table-name rule and the python-api.rst/version handling are left implicit. The 'zero decisions' count is low and there are no internal contradictions.",
+        "The spec is very complete, with concrete tests for nearly every rule and exact error-content requirements. Gaps are minor: memory table naming, the explicit no-version-bump rule and the python-api.rst edit. Docs checks are the only non-test criteria."
+      ]
+    },
+    {
+      "problem": "sqlite-utils-json-key",
+      "contestant": "superpowers",
+      "repeat": 2,
+      "failedHiddenTests": [
+        "tests.test_hidden_bakeoff::test_key_object_value_is_one_row",
+        "tests.test_hidden_bakeoff::test_rows_from_file_auto_key_on_top_level_list_is_a_no_op",
+        "tests.test_hidden_bakeoff::test_top_level_list_unchanged_with_auto_key"
+      ],
+      "judgeNotes": [
+        "Spec is very precise and nearly every behavior has a named test. It diverges from the hidden atoms on the object-value case under --key and on --auto-key with a top-level list (it errors rather than no-op), and never mentions memory table names. Several of these are stated as explicit author choices, so they count as contradicted/partial against the answer sheet rather than ambiguous.",
+        "Strong spec with explicit tests for most atoms. Its main divergences from the hidden atoms are that a top-level list under --auto-key is an error (O-7 expects a no-op) and that an object value under --key is an error (O-4 expects one row). O-7 should arguably be contradicted, and R-8 is only partly safe because the spec's default path is unchanged but --auto-key on a list errors.",
+        "The spec is detailed and nearly fully testable, but it diverges from the hidden atoms on two points: a top-level list with --auto-key is an error rather than a no-op, and an object value under --key is an error rather than one row. Docs are covered, but the spec leaves the changelog to the maintainer instead of forbidding edits, and the memory table-name behaviour is not stated."
+      ]
+    },
+    {
+      "problem": "sqlite-utils-json-key",
+      "contestant": "tlc-spec-driven",
+      "repeat": 1,
+      "failedHiddenTests": [],
+      "judgeNotes": [
+        "Very thorough spec with a traceable 1:1 check list; nearly every observable behavior is settled. Gaps are stdin, and the non-flatten option interactions (--pk/--alter/--convert/--stop-after) which lack explicit checks. The 38 'executable' count treats grep/cog/git-diff proofs as machine-runnable alongside named tests, and the test proofs are named tests that don't yet exist but are specified exactly.",
+        "Very thorough spec: every request atom and nearly every operator decision is stated, and every criterion maps to a named test or command. Gaps are stdin behavior, an explicit memory table-name rule, and little proof for the --convert, --stop-after, --alter and --pk interactions. Minor traceability slip: JKEY-36 is assigned to T5 though T2/T3 regenerate the reference file.",
+        "Very thorough spec: every operator decision is recorded and each of 38 acceptance criteria has a named test or a command. The gaps are stdin handling and an explicit memory file-stem table-name rule; the extra options (--stop-after, --alter, --convert) are only covered by a general assumption row.. A [tool] placeholder in the tasks file's execution protocol is a leftover but changes no behavior."
+      ]
+    },
+    {
+      "problem": "sqlite-utils-json-key",
+      "contestant": "tlc-spec-driven",
+      "repeat": 2,
+      "failedHiddenTests": [
+        "tests.test_hidden_bakeoff::test_docs_cli_and_python_api_mention_options",
+        "tests.test_hidden_bakeoff::test_key_object_value_is_one_row",
+        "tests.test_hidden_bakeoff::test_rows_from_file_auto_key_on_top_level_list_is_a_no_op",
+        "tests.test_hidden_bakeoff::test_rows_from_file_explicit_non_json_format_raises[Format.CSV]",
+        "tests.test_hidden_bakeoff::test_rows_from_file_explicit_non_json_format_raises[Format.TSV]",
+        "tests.test_hidden_bakeoff::test_top_level_list_unchanged_with_auto_key"
+      ],
+      "judgeNotes": [
+        "Spec is very thorough and executable, but it chose different behaviour from the answer sheet on three points: --key with an object value, --auto-key on a top-level list, and Python non-JSON formats. It leaves stdin, memory table names, and the remaining flag interplay unstated. Every check names a test or command; the context and spec disagree on whether the defaults were confirmed.",
+        "Very thorough and fully test-named, but its confirmed assumptions diverge from the hidden operator sheet: an object value under --key is an error, a top-level list under a key option is an error, and Python explicit CSV/TSV/NL is ignored instead of raising ValueError. Stdin, memory table names, convert/alter/stop-after and python-api.rst are not settled.",
+        "The spec is very thorough and gives exact messages and named tests for nearly every check, but it deliberately diverges from the atoms on --key with an object value and on top-level lists with --auto-key. Stdin, memory table names and the non-flatten options are never mentioned. Docs scope omits python-api.rst; every check has a runnable proof, though some tests are named rather than asserted on output."
+      ]
+    }
+  ],
+  "budget": {
+    "cap": 400000000,
+    "spent": 18613277,
+    "remaining": 381386723,
+    "status": "done",
+    "byPhase": {
+      "contestant": 10676804,
+      "operator": 180601,
+      "judge": 376856,
+      "build": 7349784,
+      "discarded": 29232
+    },
+    "byContestant": {
+      "harnu-spec": 9251215,
+      "superpowers": 3849265,
+      "tlc-spec-driven": 5506953,
+      "unattributed": 5844
+    }
+  },
+  "confounds": [
+    "Bundles keep their structure: contestant names are replaced and front matter is stripped, but the structural shape of an artifact (an acceptance-criteria table, a plan checklist) can still identify the method to a judge.",
+    "Judges run from a neutral directory, but the default work root path contains the word `harnu` for every contestant alike, so it cannot say which contestant is being scored.",
+    "Real-CLI `--resume` behaviour and \"no MCP server loads under `--strict-mcp-config`\" are first exercised by the dry run; rounds that use a fake `claude` prove neither.",
+    "The operator is simulated from a written answer sheet, so a question the sheet does not cover gets its default answer rather than a human judgement.",
+    "Judges share one model and read one contestant at a time; their scores are not calibrated against a human grader.",
+    "Hidden tests measure one reference behaviour: a spec that legitimately decides otherwise scores lower.",
+    "Run-to-run spread comes from few repeats, so it is a coarse noise estimate, not a statistical test."
+  ]
+}

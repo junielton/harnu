@@ -1,0 +1,26 @@
+{
+  "id": "cobra-flag-value-subcommand",
+  "split": "dev",
+  "kind": "bug",
+  "language": "go",
+  "target": {
+    "repo": "https://github.com/spf13/cobra",
+    "commit": "cc7e235fc26cfd0b5ae36c960f399eea4badaa3e"
+  },
+  "setup": ["GOBIN=\"$PWD/.bin\" go install gotest.tools/gotestsum@v1.12.0", "go mod download"],
+  "versions": "go version",
+  "test": "go test ./...",
+  "hidden": {
+    "cmd": ".bin/gotestsum --junitfile \"$BAKEOFF_JUNIT\" -- -count=1 -run TestHiddenBakeoff .",
+    "files": ["hidden_bakeoff_test.go"],
+    "dest": ".",
+    "compileErrorPattern": "(undefined:|cannot use|build failed|syntax error)"
+  },
+  "provenance": {
+    "authoredAt": "2026-11-10T00:02:50.741Z",
+    "authoredBy": "bake-off author sandbox session",
+    "reviewedAt": "2026-11-13T16:41:18.614Z",
+    "reviewedBy": "junielton",
+    "sandbox": true
+  }
+}

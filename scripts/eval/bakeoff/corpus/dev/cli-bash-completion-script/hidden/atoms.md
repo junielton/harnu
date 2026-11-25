@@ -1,0 +1,16 @@
+| id   | requirement                                                                                                                                                                                          |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R-1  | The bash completion script is refactored for readability, as a follow-up to #2298.                                                                                                                   |
+| R-2  | The bash script runs the `compgen` command for word completion, fixing the bug where it was missing.                                                                                                 |
+| O-1  | Only candidates that start with the word being completed are offered; other candidates are left out.                                                                                                 |
+| O-2  | Matching is a case-sensitive prefix match, and a word that is already a full candidate still offers it and longer candidates.                                                                        |
+| O-3  | Subcommands at any depth and flags are filtered the same way.                                                                                                                                        |
+| O-4  | An empty current word offers every candidate.                                                                                                                                                        |
+| O-5  | No matching candidate, or no output from the application, results in no candidates offered.                                                                                                          |
+| O-6  | For `name:description` lines, matching uses the name only; the first colon separates name from description.                                                                                          |
+| O-7  | Descriptions are still shown when several candidates are listed; their layout is free.                                                                                                               |
+| O-8  | The application receives the words before the current one and `--generate-shell-completion` last; the current word is sent only when it starts with `-`, and words after the cursor are never sent.  |
+| O-9  | The application's stderr stays discarded and never reaches the terminal or the candidates.                                                                                                           |
+| O-10 | bash 3 stays supported: no associative arrays, and completion works when `_init_completion` is not defined, through `_get_comp_words_by_ref`.                                                        |
+| O-11 | Internal names are free, but the script registers a completion function for the application's name with `complete`, renders through `fmt.Sprintf` with no format errors, and parses under `bash -n`. |
+| O-12 | Only the bash script changes; the zsh, fish and PowerShell scripts and the Go code stay as they are.                                                                                                 |
