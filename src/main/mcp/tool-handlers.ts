@@ -150,8 +150,10 @@ import {
   dispatchAck,
   dispatchStep,
   realBoardIo,
+  asksForVerifier,
   reportBindFailure,
-  stampCardForStep
+  stampCardForStep,
+  verifierRefusal
 } from '../missions/dispatch'
 import { awaitSessionBoot, spawnedSessionId } from './session-boot'
 import {
@@ -1032,6 +1034,7 @@ async function bindCreatedStepSession(
   booted: { syntheticId: string; sessionId: string },
   bridge: CommandBridge
 ): Promise<Record<string, unknown>> {
+  const sessionId = spawnedSessionId(booted.syntheticId) ?? booted.sessionId
   let reason: string
   try {
     const done = await dispatchStep(
@@ -1039,7 +1042,7 @@ async function bindCreatedStepSession(
       {
         missionId: spawn.missionId,
         stepId: spawn.stepId,
-        sessionId: spawnedSessionId(booted.syntheticId) ?? booted.sessionId,
+        sessionId,
         role: spawn.role,
         to: 'session'
       },
@@ -1050,27 +1053,20 @@ async function bindCreatedStepSession(
   } catch (err) {
     reason = err instanceof Error ? err.message : String(err)
   }
-  await reportStepBindFailure(folder, spawn, reason, bridge)
+  await reportStepBindFailure(folder, spawn, reason, bridge, sessionId)
   return { bindError: reason }
 }
 
-/** The report of a step session that could not be attached, naming the step's card when it has one. */
+/** The report of a step session that could not be attached. */
 async function reportStepBindFailure(
   folder: string,
   spawn: PendingSpawn,
   reason: string,
-  bridge: CommandBridge
+  bridge: CommandBridge,
+  sessionId: string
 ): Promise<void> {
-  const read = await readMissionRecord(repoRoot(folder), spawn.missionId).catch(() => null)
-  const card = read?.ok ? read.record.steps.find((s) => s.id === spawn.stepId)?.card : undefined
   await reportBindFailure(
-    {
-      folder,
-      missionId: spawn.missionId,
-      stepId: spawn.stepId,
-      reason,
-      ...(card ? { card } : {})
-    },
+    { folder, missionId: spawn.missionId, stepId: spawn.stepId, reason, sessionId },
     (notice) => bridge.dispatch('notify.push', notice)
   )
 }
@@ -1230,7 +1226,8 @@ const createSessionHandler: Handler = async (args, ctx) => {
                   folder,
                   stepSpawn,
                   'SESSION_NOT_BOOTED: the session did not boot in time. Attach it from the Mission dropdown.',
-                  bridge
+                  bridge,
+                  spawnedSessionId(syntheticId) ?? syntheticId
                 )
               })
               .catch((err) => console.warn('[create_session] the late bind failed:', err))
@@ -2478,6 +2475,8 @@ function manifestCardRequestsFromArgs(args: Record<string, unknown>): ManifestCa
  *  (the confirm path surfaces the same codes via the parked disclosure text). */
 function manifestBuildErrorMessage(err: ManifestBuildError): string {
   switch (err.code) {
+    case 'verifier-role':
+      return verifierRefusal(err.slug)
     case 'card-done':
       return `CARD_CLOSED: card "${err.slug}" is already done — a manifest cannot include a closed card.`
     case 'contains-secret':
@@ -2620,6 +2619,11 @@ const submitManifestHandler: Handler = async (args, ctx) => {
   if (ctx.deadlineFlag?.fired) return errorResult('DEADLINE_FIRED')
   const caller = declaredCaller(args)
   if (!caller.ok) return errorResult(caller.error)
+  // An entry that asks for a verifier is refused whole: its session would be started as the builder.
+  const verifierEntry = (Array.isArray(args.cards) ? args.cards : [])
+    .map(asRecord)
+    .find((c) => asksForVerifier(c.role))
+  if (verifierEntry) return errorResult(verifierRefusal(strField(verifierEntry, 'slug') ?? '?'))
 
   // T104 §2.2: the Allow actuation. `ctx.opts.manifest` is populated ONLY by
   // `parkMutationConfirm`'s `actuateAllow` (reached only under "Ask before

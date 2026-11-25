@@ -129,7 +129,7 @@ import {
   verifyScopedBearer,
   type Scope
 } from './scope'
-import { ensureScopedAttached } from '../missions/dispatch'
+import { ensureScopedAttached, verifierRefusal } from '../missions/dispatch'
 import { inFlightFolderFor } from './agent-inflight-registry'
 import { snapshotInheritOnce, addInheritOnce, closeInheritOnce } from './inherit-once-registry'
 import { pushShadowEntry } from '../responder-registry'
@@ -427,6 +427,8 @@ function manifestCardRequestsFrom(args: Record<string, unknown>): ManifestCardRe
 /** T104: a dirigible message for why `submit_manifest` couldn't resolve one card. */
 function manifestBuildErrorMessage(err: { code: string; slug: string }): string {
   switch (err.code) {
+    case 'verifier-role':
+      return verifierRefusal(err.slug)
     case 'card-done':
       return `CARD_CLOSED: card "${err.slug}" is already done — a manifest cannot include a closed card.`
     case 'contains-secret':

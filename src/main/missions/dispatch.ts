@@ -44,7 +44,7 @@ import {
   type CardSubstrate
 } from '../roadmap-core'
 import { registerCardSpawn, type Scope } from '../mcp/scope'
-import { awaitSessionBoot, type BootedSession } from '../mcp/session-boot'
+import { awaitSessionBoot, spawnedSessionId, type BootedSession } from '../mcp/session-boot'
 import { findStepCard, planStepCard, type CardFile } from './cards'
 import type { StepV4 } from './model'
 import { readMissionRecord } from './record-store'
@@ -60,10 +60,12 @@ export interface BoardIo {
   read(slug: string): Promise<CardFile | null>
   /** Write a NEW card file; `false` when it could not (the slug is taken, or the write failed). */
   create(slug: string, content: string): Promise<boolean>
-  /** Replace a card file that exists. */
-  write(slug: string, content: string): Promise<boolean>
-  /** Move a card's `session:` from `from` to `to`; nothing when it no longer says `from`. */
-  moveSession(slug: string, from: string, to: string): Promise<void>
+  /**
+   * Change a card that exists: `change` gets what the file says now and returns what it should say, or
+   * `null` to leave it. Read and write happen with no other writer of the card in between (BUG-296).
+   * `false` when the card could not be read or written.
+   */
+  rewrite(slug: string, change: (content: string) => string | null): Promise<boolean>
   /** Run `fn` with no other card id being minted on this board, so two creates never share an id. */
   lock<T>(fn: () => Promise<T>): Promise<T>
 }
@@ -76,6 +78,7 @@ export async function realBoardIo(folder: string): Promise<BoardIo> {
   const ipc = await import('../roadmap-ipc')
   const fs = await import('node:fs')
   const path = await import('node:path')
+  const { withPageFileLock } = await import('../mcp/memory-store')
   const { roadmapDir, repoKey } = await ipc.resolveRoadmap(folder)
   const fileOf = (slug: string): string | null => ipc.resolveCardFile(roadmapDir, slug)
   const readFile = async (file: string): Promise<string | null> => {
@@ -109,21 +112,21 @@ export async function realBoardIo(folder: string): Promise<BoardIo> {
     async create(slug, content) {
       return (await ipc.createCardFile(folder, slug, content)).ok
     },
-    async write(slug, content) {
+    async rewrite(slug, change) {
       const file = fileOf(slug)
       if (!file) return false
-      try {
-        await ipc.atomicWrite(file, content)
-        return true
-      } catch {
-        return false
-      }
-    },
-    async moveSession(slug, from, to) {
-      const current = await read(slug)
-      if (!current || parseCard(current.content, slug).session !== from) return
-      const res = await ipc.writeCardFields(folder, slug, { session: to })
-      if (!res.ok) console.warn(`[dispatch] ${slug} kept its synthetic session id: ${res.code}`)
+      return withPageFileLock(file, async () => {
+        const content = await readFile(file)
+        if (content === null) return false
+        const next = change(content)
+        if (next === null || next === content) return true
+        try {
+          await ipc.atomicWrite(file, next)
+          return true
+        } catch {
+          return false
+        }
+      })
     },
     lock: (fn) => ipc.withCardIdMintLock(repoKey, fn)
   }
@@ -241,19 +244,31 @@ export async function dispatchStep(
   if (args.role === 'worker') {
     const planned = await board.lock(async (): Promise<CardOutcome | null | DispatchRefusal> => {
       const cards = await board.readAll()
-      const plan = planStepCard({
-        missionId: found.missionId,
-        step: args.card !== undefined ? { ...step, card: args.card } : step,
-        dispatch: { to: args.to ?? 'session' },
-        cards,
-        provenance: { at }
-      })
+      const planOver = (all: readonly CardFile[]): ReturnType<typeof planStepCard> =>
+        planStepCard({
+          missionId: found.missionId,
+          step: args.card !== undefined ? { ...step, card: args.card } : step,
+          dispatch: { to: args.to ?? 'session' },
+          cards: all,
+          provenance: { at }
+        })
+      const plan = planOver(cards)
       if (plan.action === 'refused') return refusal(plan.code, plan.message)
       if (plan.action === 'none') return null
+      const late: { refused?: DispatchRefusal } = {}
       const written =
         plan.action === 'create'
           ? await board.create(plan.slug, plan.content)
-          : await board.write(plan.slug, plan.content)
+          : await board.rewrite(plan.slug, (content) => {
+              // Planned again over what the card says now: it may have changed since the board was read.
+              const fresh = planOver(
+                cards.map((c) => (c.slug === plan.slug ? { slug: c.slug, content } : c))
+              )
+              if (fresh.action === 'bind') return fresh.content
+              if (fresh.action === 'refused') late.refused = refusal(fresh.code, fresh.message)
+              return null
+            })
+      if (late.refused) return late.refused
       if (!written) {
         return refusal(
           'CARD_WRITE_FAILED',
@@ -340,12 +355,13 @@ export async function stampCardForStep(
     return { ok: true, stamped: false }
   }
   if (args.dryRun) return { ok: true, stamped: true }
-  const next = updateFrontmatterFields(file.content, {
-    mission: found.missionId,
-    milestone: found.step.milestone ?? null,
-    step: found.step.id
-  })
-  if (!(await board.write(plan.slug, next))) {
+  const stamp = (content: string): string =>
+    updateFrontmatterFields(content, {
+      mission: found.missionId,
+      milestone: found.step.milestone ?? null,
+      step: found.step.id
+    })
+  if (!(await board.rewrite(plan.slug, stamp))) {
     return refusal('CARD_WRITE_FAILED', `the card ${plan.slug} could not be written to the board.`)
   }
   return { ok: true, stamped: true }
@@ -361,6 +377,8 @@ export interface BindFailure {
   missionId?: string
   stepId?: string
   card?: string
+  /** The session that was not attached: more than one path may find it out, and one says it. */
+  sessionId?: string
 }
 
 /** One Activity notice, in the shape `notify.push` takes. */
@@ -380,15 +398,50 @@ export function setBindNotifier(fn: BindNotifier | null): void {
   bindNotifier = fn
 }
 
+const REPORTED_CAP = 512
+const reported = new Set<string>()
+
+/** `true` the first time `key` is seen. Bounded, oldest first. */
+function firstReport(key: string): boolean {
+  if (reported.has(key)) return false
+  reported.add(key)
+  if (reported.size > REPORTED_CAP) reported.delete(reported.values().next().value as string)
+  return true
+}
+
+/** The card of a step: the one the step names, else the one stamped for it. */
+async function stepCardName(
+  folder: string,
+  missionId: string,
+  stepId: string
+): Promise<string | undefined> {
+  try {
+    const read = await readMissionRecord(repoRoot(folder), missionId)
+    const named = read.ok ? read.record.steps.find((s) => s.id === stepId)?.card : undefined
+    if (named) return named
+    const cards = await (await realBoardIo(folder)).readAll()
+    return findStepCard(cards, { missionId, stepId })?.slug
+  } catch {
+    return undefined
+  }
+}
+
 /**
- * A dispatched session could not be attached to its step: a `surprise` on the mission Log and a notice
- * in Activity, both naming the card. Never throws, and one half failing never loses the other.
+ * A dispatched session could not be attached to its step: one `surprise` on the mission Log and one
+ * notice in Activity per session, both naming the card, whichever path finds it out first. Never
+ * throws, and one half failing never loses the other.
  */
 export async function reportBindFailure(
   failure: BindFailure,
   notify: BindNotifier | null = bindNotifier
 ): Promise<void> {
-  const { folder, missionId, stepId, card, reason } = failure
+  const { folder, missionId, stepId, sessionId, reason } = failure
+  if (sessionId !== undefined && !firstReport(`${missionId}/${stepId}/${sessionId}`)) return
+  const card =
+    failure.card ??
+    (missionId !== undefined && stepId !== undefined
+      ? await stepCardName(folder, missionId, stepId)
+      : undefined)
   const subject = card !== undefined ? `Card ${card}` : `Step ${stepId ?? '?'}`
   console.warn(`[dispatch] ${subject} was not attached to its step: ${reason}`)
   if (missionId !== undefined && stepId !== undefined) {
@@ -415,30 +468,56 @@ export async function reportBindFailure(
   }
 }
 
-// ---- A scoped session's first call ---------------------------------------------------------------------
+// ---- A verifier is not a card's session ----------------------------------------------------------------
 
-const attachFailures = new Set<string>()
+/** Why a manifest entry or a board card that asks for a verifier is refused, and what to do instead. */
+export const verifierRefusal = (slug: string): string =>
+  `VERIFIER_NOT_DISPATCHABLE: card "${slug}" asks for role verifier, and submit_manifest and the board only start workers. Start the verifier with create_session({ folder, missionId, stepId, role: 'verifier' }). Nothing was dispatched.`
+
+export const asksForVerifier = (role: unknown): boolean =>
+  typeof role === 'string' && role.trim().toLowerCase() === 'verifier'
+
+/** The drain retries a refused card on every pass: say it once in a while, not every time. */
+const VERIFIER_NOTICE_MS = 10 * 60_000
+const verifierNoticed = new Map<string, number>()
+
+/** Tell the operator why the board did not dispatch `slug`. Never throws. */
+export async function noticeVerifierRefused(folder: string, slug: string): Promise<void> {
+  const key = `${folder}/${slug}`
+  if (Date.now() - (verifierNoticed.get(key) ?? 0) < VERIFIER_NOTICE_MS) return
+  verifierNoticed.set(key, Date.now())
+  try {
+    await bindNotifier?.({
+      folderPath: folder,
+      title: `Card ${slug}: not dispatched`,
+      description: verifierRefusal(slug),
+      kind: 'warning'
+    })
+  } catch (err) {
+    console.warn('[dispatch] the notice was not posted:', err)
+  }
+}
+
+// ---- A scoped session's first call ---------------------------------------------------------------------
 
 /**
  * Born attached (AC-11): a session holding a step's scoped credential may call before its transcript
  * landed, so before the dispatch path attached it. The credential is Harnu's own proof of who it is and
  * what it was started for, so the first call attaches it. A session the record already knows is left
- * alone: one the mission released stays released. A failure is reported once and the call goes on to
- * its own refusal.
+ * alone: one the mission released stays released. A failure is reported and the call goes on to its
+ * own refusal.
  */
 export async function ensureScopedAttached(
   scope: Extract<Scope, { role: 'worker' | 'verifier' }>
 ): Promise<void> {
-  const failed = async (reason: string): Promise<void> => {
-    if (attachFailures.has(scope.sessionId)) return
-    attachFailures.add(scope.sessionId)
-    await reportBindFailure({
+  const failed = (reason: string): Promise<void> =>
+    reportBindFailure({
       folder: scope.folder,
       missionId: scope.missionId,
       stepId: scope.stepId,
+      sessionId: scope.sessionId,
       reason
     })
-  }
   try {
     const read = await readMissionRecord(repoRoot(scope.folder), scope.missionId)
     // No such mission, an unconverted or a closed one: the verb says so itself.
@@ -481,14 +560,43 @@ export function setBootWaiter(fn: BindCardDeps['waitForBoot'] | null): void {
 const SYNTHETIC_PREFIX = 'synthetic-'
 const BOOT_WAIT_MS = 15 * 60_000
 
+/** A bind that failed, with the step it was for when the card said so. */
+export type BindRefusal = DispatchRefusal & { missionId?: string; stepId?: string }
+
 export type CardSessionBound =
-  { ok: true; bound: false } | (StepDispatched & { bound: true }) | DispatchRefusal
+  { ok: true; bound: false } | (StepDispatched & { bound: true }) | BindRefusal
+
+/** What a card says of the step it is the work of. */
+type CardStep =
+  | { kind: 'step'; mission: string; step: string; substrate?: string }
+  | { kind: 'plain' }
+  /** Missing, empty or not a card: nothing can be said of it, which is never "no step". */
+  | { kind: 'unreadable' }
+
+async function readCardStep(board: BoardIo, slug: string): Promise<CardStep> {
+  const file = await board.read(slug)
+  if (!file) return { kind: 'unreadable' }
+  const card = parseCard(file.content, file.slug)
+  if (card.malformed) return { kind: 'unreadable' }
+  if (!card.mission || !card.step) return { kind: 'plain' }
+  return { kind: 'step', mission: card.mission, step: card.step, substrate: card.substrate }
+}
+
+/** The refusal of a bind, carrying the step the card named at any time. */
+function bindRefusal(code: string, message: string, ...seen: CardStep[]): BindRefusal {
+  const known = seen.find((c) => c.kind === 'step')
+  return {
+    ...refusal(code, message),
+    ...(known?.kind === 'step' ? { missionId: known.mission, stepId: known.step } : {})
+  }
+}
 
 /**
  * A session was bound to a card. The drain and the board bind the synthetic id they spawned, so the
  * real one is awaited first and written on the card (AC-14). When the card is the work of a step, the
  * session is then attached as that step's worker (and the card bound, so the step names it and it
- * carries the marked block). A card with no step on it binds nothing.
+ * carries the marked block). A card with no step on it binds nothing; a card that cannot be read, or
+ * lost its step on the way, is a failure and never a card with no step.
  */
 export async function bindCardSession(
   folder: string,
@@ -497,37 +605,40 @@ export async function bindCardSession(
   deps: BindCardDeps = {}
 ): Promise<CardSessionBound> {
   const board = deps.board ?? (await realBoardIo(folder))
-  const stepCard = async (): Promise<{
-    mission: string
-    step: string
-    substrate?: string
-  } | null> => {
-    const file = await board.read(slug)
-    if (!file) return null
-    const card = parseCard(file.content, file.slug)
-    if (card.malformed || !card.mission || !card.step) return null
-    return { mission: card.mission, step: card.step, substrate: card.substrate }
-  }
+  const before = await readCardStep(board, slug)
 
   let realId = sessionId
   if (sessionId.startsWith(SYNTHETIC_PREFIX)) {
     const waitForBoot = deps.waitForBoot ?? bootWaiter ?? awaitSessionBoot
     const booted = await waitForBoot(sessionId, deps.timeoutMs ?? BOOT_WAIT_MS)
     if (!booted) {
-      const card = await stepCard()
-      return card
-        ? refusal(
+      const now = await readCardStep(board, slug)
+      return now.kind === 'plain' && before.kind !== 'step'
+        ? { ok: true, bound: false }
+        : bindRefusal(
             'SESSION_NOT_BOOTED',
-            `the session for ${slug} did not boot in time, so it was not attached to ${card.step}. Attach it from the Mission dropdown.`
+            `the session for ${slug} did not boot in time, so it was not attached to its step. Attach it from the Mission dropdown.`,
+            now,
+            before
           )
-        : { ok: true, bound: false }
     }
     realId = booted.sessionId
-    await board.moveSession(slug, sessionId, realId)
+    await board.rewrite(slug, (content) =>
+      parseCard(content, slug).session === sessionId
+        ? updateFrontmatterFields(content, { session: realId })
+        : null
+    )
   }
-  // Read now, not before the wait: the boot may have taken minutes.
-  const card = await stepCard()
-  if (!card) return { ok: true, bound: false }
+  // Read now, not only before the wait: the boot may have taken minutes.
+  const card = await readCardStep(board, slug)
+  if (card.kind === 'plain' && before.kind !== 'step') return { ok: true, bound: false }
+  if (card.kind !== 'step') {
+    return bindRefusal(
+      'CARD_UNREADABLE',
+      `the card ${slug} could not be read as the work of its step once its session booted, so the session was not attached. Check the card, then attach the session from the Mission dropdown.`,
+      before
+    )
+  }
   const to =
     card.substrate !== undefined && isCardSubstrate(card.substrate) ? card.substrate : 'session'
   const done = await dispatchStep(
@@ -542,7 +653,9 @@ export async function bindCardSession(
     },
     board
   )
-  return done.ok ? { ...done, bound: true } : done
+  return done.ok
+    ? { ...done, bound: true }
+    : { ...done, missionId: card.mission, stepId: card.step }
 }
 
 // ---- The credential of a card's session ---------------------------------------------------------------
@@ -604,24 +717,28 @@ export async function noteCardSpawn(
  * mission Log and in Activity. Never throws.
  */
 export function bindStepSession(folder: string, slug: string, sessionId: string): void {
-  const failed = async (reason: string): Promise<void> => {
-    const file = await (await realBoardIo(folder)).read(slug)
-    const card = file ? parseCard(file.content, file.slug) : null
-    // A card with no step was never to be attached: only its real session id could not be written.
-    if (card && (!card.mission || !card.step)) {
-      console.warn(`[dispatch] ${slug} kept its synthetic session id: ${reason}`)
-      return
+  const failed = async (reason: string, step?: BindRefusal): Promise<void> => {
+    let at = step?.missionId ? { missionId: step.missionId, stepId: step.stepId } : undefined
+    if (!at) {
+      const card = await readCardStep(await realBoardIo(folder), slug)
+      // A card with no step was never to be attached: only its real session id could not be written.
+      if (card.kind === 'plain') {
+        console.warn(`[dispatch] ${slug} kept its synthetic session id: ${reason}`)
+        return
+      }
+      if (card.kind === 'step') at = { missionId: card.mission, stepId: card.step }
     }
     await reportBindFailure({
       folder,
       card: slug,
       reason,
-      ...(card?.mission && card.step ? { missionId: card.mission, stepId: card.step } : {})
+      sessionId: spawnedSessionId(sessionId) ?? sessionId,
+      ...at
     })
   }
   void bindCardSession(folder, slug, sessionId)
     .then(async (res) => {
-      if (!res.ok) await failed(res.error)
+      if (!res.ok) await failed(res.error, res)
     })
     .catch((err) => failed(err instanceof Error ? err.message : String(err)))
     .catch((err) => console.warn(`[dispatch] ${slug} was not attached to its step:`, err))

@@ -2049,7 +2049,17 @@ export const MCP_TOOLS: McpToolDef[] = [
                 .string()
                 .min(1)
                 .optional()
-                .describe('The step of `missionId` this card is the work of (stp-<n>).')
+                .describe('The step of `missionId` this card is the work of (stp-<n>).'),
+              role: z
+                .enum(['worker', 'verifier'])
+                .optional()
+                .describe(
+                  "A card's session is a worker. `verifier` is refused (VERIFIER_NOT_DISPATCHABLE): start a verifier with create_session({ missionId, stepId, role: 'verifier' })."
+                )
+            })
+            .refine((c) => c.role !== 'verifier', {
+              message:
+                "VERIFIER_NOT_DISPATCHABLE: a verifier starts only through create_session({ missionId, stepId, role: 'verifier' }); submit_manifest and the board only start workers"
             })
             .refine((c) => (c.missionId === undefined) === (c.stepId === undefined), {
               message:

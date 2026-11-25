@@ -133,6 +133,8 @@ let started: Started[] = []
 /** Boots waiting for the serial queue, when a test holds them back. */
 let held: Array<() => Promise<void>> = []
 let holdBoots = false
+/** The transcript lands before the dispatch binds the card: the boot is known first. */
+let rekeyAtBoot = false
 let notices: Array<Record<string, unknown>> = []
 let synthetic = 0
 
@@ -198,7 +200,10 @@ const bridge = {
       // BUG-23: a dispatch answers with the synthetic id at once; the boot is queued.
       const row = newRow(payload.folderPath as string, payload.prompt as string, false)
       if (holdBoots) held.push(() => boot(row))
-      else await boot(row)
+      else {
+        await boot(row)
+        if (rekeyAtBoot) rekey(started[started.length - 1])
+      }
       return { sessionId: row.syntheticId }
     }
     return {}
@@ -505,11 +510,13 @@ beforeEach(async () => {
   started = []
   held = []
   holdBoots = false
+  rekeyAtBoot = false
   notices = []
 })
 
 afterEach(async () => {
   held = []
+  vi.restoreAllMocks()
 })
 
 // ---- BUG-296: the reproduction ---------------------------------------------------------------------
@@ -766,5 +773,191 @@ describe('card gets the real id', () => {
     await vi.waitFor(async () => expect((await cardOf(slug)).session).toBe(sessionId), {
       timeout: 10_000
     })
+  })
+})
+
+// ---- The boot is known before the bind ----------------------------------------------------------
+
+/** The card file of `slug`. */
+async function cardFile(slug: string): Promise<string> {
+  const { roadmapDir } = await resolveRoadmap(repo)
+  return path.join(roadmapDir, `${slug}.md`)
+}
+
+/**
+ * Hold the `dispatched-with` append between its read and its write, long enough for everything the
+ * bind does to land in between unless the two are kept apart.
+ */
+async function slowAppend(slug: string, ms = 600): Promise<void> {
+  const file = await cardFile(slug)
+  const real = fs.writeFile.bind(fs)
+  let held = false
+  vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+    if (!held && String(target).startsWith(file) && String(data).includes('dispatched-with:')) {
+      held = true
+      await new Promise((r) => setTimeout(r, ms))
+    }
+    return real(target, data, options)
+  })
+}
+
+describe('card gets the real id: the boot is known before the bind', () => {
+  it('card gets the real id: the dispatched-with note and the bind never overwrite each other', async () => {
+    const id = await newMission()
+    const slug = await newCard('Add the CSV exporter')
+    await slowAppend(slug)
+    rekeyAtBoot = true
+    await drain([{ slug, missionId: id, stepId: 'stp-1' }])
+    const sessionId = sessionIdOf(started[0])
+    // Past the held append, whatever order the two writers ran in.
+    await new Promise((r) => setTimeout(r, 1_500))
+
+    const content = await fs.readFile(await cardFile(slug), 'utf8')
+    expect(parseCard(content, slug).session).toBe(sessionId)
+    expect(content).toContain('dispatched-with:')
+    expect(content).toContain('<!-- mission:begin stp-1 -->')
+    await expectRunningWorker(id, 'stp-1', sessionId)
+    expect(notices).toEqual([])
+  })
+})
+
+// ---- A failed bind says it once -------------------------------------------------------------------
+
+const surprises = async (id: string): Promise<number> =>
+  (await readLog(id)).split('\u00b7 surprise').length - 1
+
+const bindNotices = (): Array<Record<string, unknown>> =>
+  notices.filter((n) => String(n.title).includes('not attached'))
+
+describe('a failed bind is loud: exactly once', () => {
+  async function closeCard(slug: string): Promise<void> {
+    const file = await cardFile(slug)
+    await fs.writeFile(
+      file,
+      (await fs.readFile(file, 'utf8')).replace(/^status: .*$/m, 'status: done')
+    )
+  }
+
+  it('a failed bind is loud: a drained session that also calls says it once, naming the card', async () => {
+    const id = await newMission()
+    const slug = await newCard('Add the CSV exporter')
+    holdBoots = true
+    await drain([{ slug, missionId: id, stepId: 'stp-1' }])
+    await vi.waitFor(async () =>
+      expect(await fs.readFile(await cardFile(slug), 'utf8')).toContain('dispatched-with:')
+    )
+    await closeCard(slug)
+    for (const start of held.splice(0)) await start()
+    const [row] = started
+    const c = await clientOf(row)
+    await callOn(c, 'mission_get', { folder: row.folder, missionId: id })
+    rekey(row)
+    await new Promise((r) => setTimeout(r, 800))
+
+    expect(await surprises(id)).toBe(1)
+    expect(bindNotices()).toHaveLength(1)
+    expect(String(bindNotices()[0].title)).toContain(slug)
+  })
+
+  it('a failed bind is loud: create_session whose session also calls says it once', async () => {
+    const id = await newMission()
+    const slug = await newCard('Add the CSV exporter')
+    const { stampCardForStep } = await import('../src/main/missions/dispatch')
+    await stampCardForStep(repo, { slug, missionId: id, stepId: 'stp-1' })
+    await closeCard(slug)
+    const { reply } = await createSession({ missionId: id, stepId: 'stp-1' }, async (row) => {
+      const c = await clientOf(row)
+      await callOn(c, 'mission_get', { folder: row.folder, missionId: id })
+    })
+    await new Promise((r) => setTimeout(r, 300))
+
+    expect(reply.body.bindError).toMatch(/CARD_CLOSED/)
+    expect(await surprises(id)).toBe(1)
+    expect(bindNotices()).toHaveLength(1)
+    expect(String(bindNotices()[0].title)).toContain(slug)
+  })
+
+  it('a failed bind is loud: a card that cannot be read once the session booted', async () => {
+    const id = await newMission()
+    const slug = await newCard('Add the CSV exporter')
+    await drain([{ slug, missionId: id, stepId: 'stp-1' }])
+    const file = await cardFile(slug)
+    await vi.waitFor(async () =>
+      expect(await fs.readFile(file, 'utf8')).toContain('dispatched-with:')
+    )
+    // The read that finds the card empty, as one made in the middle of another write did.
+    await fs.writeFile(file, '')
+    rekey(started[0])
+
+    await vi.waitFor(() => expect(bindNotices()).toHaveLength(1), { timeout: 5_000 })
+    expect(String(bindNotices()[0].title)).toContain(slug)
+    await vi.waitFor(async () => expect(await surprises(id)).toBe(1))
+    expect(await readLog(id)).toContain('CARD_UNREADABLE')
+  })
+})
+
+// ---- A verifier starts only through create_session ------------------------------------------------
+
+describe('three paths attach: a verifier starts only through create_session', () => {
+  /** A card whose frontmatter asks for a verifier, stamped for the step by hand. */
+  async function verifierCard(id: string): Promise<string> {
+    const slug = await newCard('Check the CSV exporter')
+    const { stampCardForStep } = await import('../src/main/missions/dispatch')
+    await stampCardForStep(repo, { slug, missionId: id, stepId: 'stp-1' })
+    const file = await cardFile(slug)
+    await fs.writeFile(
+      file,
+      (await fs.readFile(file, 'utf8')).replace(/^---\n/, '---\nrole: verifier\n')
+    )
+    return slug
+  }
+
+  const stampedNothing = async (slug: string): Promise<void> => {
+    const content = await fs.readFile(await cardFile(slug), 'utf8')
+    expect(content).not.toMatch(/^approved:/m)
+  }
+
+  it('three paths attach: a manifest entry asking for a verifier is refused over MCP', async () => {
+    const id = await newMission()
+    const slug = await newCard('Check the CSV exporter')
+    await okOn(mainClient, 'move_card', { folder: repo, slug, to: 'ready' })
+    const r = await callOn(mainClient, 'submit_manifest', {
+      folder: repo,
+      cards: [{ slug, missionId: id, stepId: 'stp-1', role: 'verifier' }]
+    }).catch((err: Error) => ({ isError: true, text: err.message }))
+    expect(r.isError, r.text).toBe(true)
+    expect(r.text).toContain('create_session')
+    await stampedNothing(slug)
+    expect(started).toHaveLength(0)
+  })
+
+  it('three paths attach: the manifest handler refuses it too, from the entry or from the card', async () => {
+    const id = await newMission()
+    const plain = await newCard('Add the CSV exporter')
+    const byEntry = await callHandler('submit_manifest', {
+      cards: [{ slug: plain, role: 'verifier' }]
+    })
+    expect(byEntry.isError).toBe(true)
+    expect(byEntry.text).toMatch(/VERIFIER_NOT_DISPATCHABLE.*create_session/s)
+    await stampedNothing(plain)
+
+    const slug = await verifierCard(id)
+    const byCard = await callHandler('submit_manifest', { cards: [{ slug }] })
+    expect(byCard.isError).toBe(true)
+    expect(byCard.text).toMatch(/VERIFIER_NOT_DISPATCHABLE.*create_session/s)
+    expect(byCard.text).toContain(slug)
+    await stampedNothing(slug)
+  })
+
+  it('three paths attach: the board refuses a verifier card and says to use create_session', async () => {
+    const id = await newMission()
+    const slug = await verifierCard(id)
+    const plan = await boardIpc('roadmap:planDispatch', { folder: repo, slug, labels: LABELS })
+    expect(plan.ok).toBe(false)
+    await vi.waitFor(() => expect(notices).toHaveLength(1))
+    expect(String(notices[0].title)).toContain(slug)
+    expect(String(notices[0].description)).toContain('create_session')
+    expect(started).toHaveLength(0)
+    expect((await readRecord(id)).steps[0].links).toEqual([])
   })
 })

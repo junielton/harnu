@@ -270,6 +270,8 @@ export interface RoadmapCard {
   mission?: string
   milestone?: string
   step?: string
+  /** Read only to refuse it: a card's session is a worker, so `verifier` is never dispatched. */
+  role?: string
   /** Provenance (fail-closed). */
   provenance: CardProvenance
   /** Free markdown body (the spec / boot-prompt source). */
@@ -479,6 +481,7 @@ export function parseCard(content: string, slug: string): RoadmapCard {
   const mission = readOptionalScalar(fm, 'mission')
   const milestone = readOptionalScalar(fm, 'milestone')
   const step = readOptionalScalar(fm, 'step')
+  const role = readOptionalScalar(fm, 'role')
 
   return {
     id,
@@ -506,6 +509,7 @@ export function parseCard(content: string, slug: string): RoadmapCard {
     ...(mission ? { mission } : {}),
     ...(milestone ? { milestone } : {}),
     ...(step ? { step } : {}),
+    ...(role ? { role } : {}),
     provenance: readProvenance(fm, hasProvBlock),
     body: doc.body,
     malformed: false
