@@ -301,7 +301,7 @@ const SECONDARY = 'border-border-2 text-text-2 hover:bg-surface-2 hover:text-tex
       </h1>
       <span
         v-if="isGit"
-        class="flex min-w-8 shrink-100 items-baseline gap-1 overflow-hidden font-mono text-[11.5px] text-text-3"
+        class="flex min-w-8 shrink-9 items-baseline gap-1 overflow-hidden font-mono text-[11.5px] text-text-3"
         :title="folder.gitBranch || undefined"
       >
         <GitBranch :size="12" :stroke-width="1.6" class="mb-px shrink-0 self-center" />
