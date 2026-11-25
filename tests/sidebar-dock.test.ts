@@ -305,6 +305,38 @@ describe('the bottom dock', () => {
     expect(allow.attributes('aria-label')).toContain(script)
   })
 
+  // A browser may break a line after any hyphen, which read `--step` as `--` and `step`. Each word
+  // is a box of its own, so a line breaks between words and only splits a word wider than the row.
+  it('wraps the command between words, keeping its spacing and line breaks', async () => {
+    const script = 'npm run migrate -- --step 3\n  npm run seed:limits'
+    const w = await mountSidebar()
+    useSessionsStore().addPendingApproval({
+      ...approval(),
+      toolName: 'Bash',
+      toolInput: { command: script }
+    })
+    await nextTick()
+    const command = w.get('[data-dock="needs-you"] [data-approval-command]').element
+    expect(command.textContent).toBe(`Bash(${script})`)
+    const words = [...command.querySelectorAll('[data-command-word]')]
+    expect(words.map((word) => word.textContent)).toContain('--step')
+    for (const word of words) {
+      expect(word.textContent).not.toMatch(/\s/)
+      expect([...word.classList]).toEqual(expect.arrayContaining(['inline-block', 'max-w-full']))
+    }
+  })
+
+  // Both rows start with a 7px dot beside a 12.5px / 1.4 line: 5px down centres it (4px sat 1.25px high).
+  it('centres the dot of an approval and of a parked confirm on the first text line', async () => {
+    const w = await mountSidebar()
+    const store = useSessionsStore()
+    store.parkedConfirms = new Map([[confirm().id, confirm()]])
+    store.addPendingApproval(approval())
+    await nextTick()
+    const dots = w.findAll('[data-dock="needs-you"] [data-dock-body] .rounded-full.bg-warning')
+    expect(dots.map((dot) => (dot.element as HTMLElement).style.marginTop)).toEqual(['5px', '5px'])
+  })
+
   it('falls back to the wire summary when the approval carries no tool input', async () => {
     const w = await mountSidebar()
     useSessionsStore().addPendingApproval(approval())

@@ -32,6 +32,9 @@ const command = computed(
     ) || props.approval.summary
 )
 
+/** Words and the whitespace between them, in order: each word is drawn as a box of its own. */
+const commandParts = computed(() => command.value.split(/(\s+)/).filter(Boolean))
+
 /** T389 P4W3: the session was not started by Harnu (a corroborated outside binding). */
 const outside = computed(() => {
   const st = companion.stateFor(props.approval.sessionId)
@@ -67,11 +70,18 @@ function openSession(): void {
         :aria-label="$t('approvalInbox.openSessionAria', { tool: command })"
         @click="openSession"
       >
+        <!-- `pre-wrap` keeps the template's own whitespace, so the tags below touch. A word is an
+             inline block: a line breaks between words, never after a flag's hyphens. -->
         <span
           data-approval-command
           class="w-full whitespace-pre-wrap font-mono text-text [overflow-wrap:anywhere]"
           style="font-size: 12.5px; line-height: 1.4"
-          >{{ command }}</span
+          ><template v-for="(part, i) in commandParts" :key="i"
+            ><span v-if="part.trim()" data-command-word class="inline-block max-w-full">{{
+              part
+            }}</span
+            ><template v-else>{{ part }}</template></template
+          ></span
         >
         <span
           v-if="approval.folderAlias || approval.sessionSummary || outside"

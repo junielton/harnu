@@ -9390,8 +9390,9 @@ the order toggle have nothing to act on. What the dock inherits is the row anato
   `needs-input`, 7px, centred on the first text line: `margin-top: 5px`) beside one column that holds,
   top to bottom (`gap: 6px`):
   1. the **tool call** (`Bash(rm -rf build)` — a technical string, **untranslated**, mono `12.5px` /
-     `1.4`, `--text`), **whole**: it wraps (`white-space: pre-wrap`, `overflow-wrap: anywhere`) and is
-     never clamped, truncated or ellipsised — this is what the operator is approving. It is built from the
+     `1.4`, `--text`), **whole**: it wraps (`white-space: pre-wrap`, `overflow-wrap: anywhere`) between
+     words — each word is its own `inline-block`, so a line never breaks after a flag's hyphens; only a
+     word wider than the row is split — and is never clamped, truncated or ellipsised — this is what the operator is approving. It is built from the
      wire's full tool input with the same function the main process summarises with, not from the
      shortened `summary`; a long command makes a tall row, which the dock body scrolls, so Allow is
      reached after the whole of it;
@@ -9399,7 +9400,7 @@ the order toggle have nothing to act on. What the dock inherits is the row anato
   3. **Allow** and **Deny**, left-aligned with the text, wrapping if the column is too narrow for both.
 
   Clicking the **body** (the two text blocks) opens the tab (inspection). The parked-confirm row
-  (`McpConfirmRow`, collapsed state) keeps a 2-line clamp on its prompt line and `items-start`: it has
+  (`McpConfirmRow`, collapsed state) places its dot the same way, keeps a 2-line clamp on its prompt line and `items-start`: it has
   no buttons until expanded, and expanding shows the full disclosure (the T08 contract).
 
 - **Allow/Deny buttons:** combinations of existing tokens, **no new color**. **Allow**
