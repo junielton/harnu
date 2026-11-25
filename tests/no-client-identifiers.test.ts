@@ -68,7 +68,9 @@ const ALLOWED_UPPER_PREFIXES = [
   'GUID', // prose, not a key
   'ISO', // ISO-8601, a standard's name
   'PR', // PR-123 in examples
+  'JKEY', // a requirement id a contestant coined in its own spec, quoted in a judge note of the S-10 reproduction report
   'PROJ', // neutral placeholder (CLAUDE.md)
+  'PYI', // a PyInstaller log tag (`PYI-3853`), quoted from a public upstream issue in the bake-off corpus
   'TASK', // neutral placeholder, pre-existing
   'UPDATE', // constant names
   'XYZ', // the "unknown client" placeholder used to describe this gate itself
@@ -97,6 +99,8 @@ const ALLOWED_LOWER_PREFIXES = [
   'rv',
   // `pt`: a Tailwind padding utility (`pt-18`), not a tracker key.
   'pt',
+  // `ubuntu`: a CI runner name (`ubuntu-22.04-arm`), quoted from a public upstream issue in the bake-off corpus.
+  'ubuntu',
   // `top`: a Tailwind inset utility (`top-14`, the canvas toolbar's own row), not a tracker key.
   'top',
   // `from`: a Tailwind gradient-stop utility (`from-50%`, the mission gate dots' half-filled ring), not a

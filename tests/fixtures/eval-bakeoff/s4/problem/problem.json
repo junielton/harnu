@@ -1,0 +1,23 @@
+{
+  "id": "demo",
+  "split": "dev",
+  "kind": "bug",
+  "language": "javascript",
+  "target": { "inline": "source" },
+  "setup": [],
+  "versions": "echo v1",
+  "test": "true",
+  "hidden": {
+    "files": ["emit-junit.mjs"],
+    "dest": "tests/",
+    "cmd": "node tests/emit-junit.mjs",
+    "compileErrorPattern": "ImportError"
+  },
+  "provenance": {
+    "authoredAt": "2026-11-09T00:00:00.000Z",
+    "authoredBy": "fixture",
+    "sandbox": true,
+    "reviewedAt": null,
+    "reviewedBy": null
+  }
+}

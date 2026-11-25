@@ -1,0 +1,212 @@
+diff --git a/Readme.md b/Readme.md
+index 6391ee7d..cdbd97df 100644
+--- a/Readme.md
++++ b/Readme.md
+@@ -719,10 +719,10 @@ The callback hook can be `async`, in which case you call `.parseAsync` rather th
+ 
+ The supported events are:
+ 
+-- `preAction`: called before action handler for this command and its subcommands
+-- `postAction`: called after action handler for this command and its subcommands
+-
+-The hook is passed the command it was added to, and the command running the action handler.
++| event name | when hook called | callback parameters |
++| :-- | :-- | :-- |
++| `preAction`, `postAction` |  before/after action handler for this command and its nested subcommands |   `(thisCommand, actionCommand)` |
++| `preSubcommand` | before parsing direct subcommand  | `(thisCommand, subcommand)` |
+ 
+ ## Automated help
+ 
+diff --git a/Readme_zh-CN.md b/Readme_zh-CN.md
+index e6a5a6a5..c50626f5 100644
+--- a/Readme_zh-CN.md
++++ b/Readme_zh-CN.md
+@@ -696,10 +696,10 @@ program
+ 
+ 支持的事件有：
+ 
+-- `preAction`：在本命令或其子命令的处理函数执行前
+-- `postAction`：在本命令或其子命令的处理函数执行后
+-
+-钩子函数的参数为添加上钩子的命令，及实际执行的命令。
++| 事件名称 | 触发时机 | 参数列表 |
++| :-- | :-- | :-- |
++| `preAction`, `postAction` | 本命令或其子命令的处理函数执行前/后 |   `(thisCommand, actionCommand)` |
++| `preSubcommand` | 在其直接子命令解析之前调用  | `(thisCommand, subcommand)` |
+ 
+ ## 自动化帮助信息
+ 
+diff --git a/examples/hook.js b/examples/hook.js
+index ed8ef9d4..3518ee07 100644
+--- a/examples/hook.js
++++ b/examples/hook.js
+@@ -1,14 +1,14 @@
+ #!/usr/bin/env node
+ 
+ // const commander = require('commander'); // (normal include)
+-const commander = require('../'); // include commander in git clone of commander repo
+-const program = new commander.Command();
++const { Command, Option } = require('../'); // include commander in git clone of commander repo
++const program = new Command();
+ 
+ // This example shows using some hooks for life cycle events.
+ 
+ const timeLabel = 'command duration';
+ program
+-  .option('-p, --profile', 'show how long command takes')
++  .option('--profile', 'show how long command takes')
+   .hook('preAction', (thisCommand) => {
+     if (thisCommand.opts().profile) {
+       console.time(timeLabel);
+@@ -21,7 +21,7 @@ program
+   });
+ 
+ program
+-  .option('-t, --trace', 'display trace statements for commands')
++  .option('--trace', 'display trace statements for commands')
+   .hook('preAction', (thisCommand, actionCommand) => {
+     if (thisCommand.opts().trace) {
+       console.log('>>>>');
+@@ -32,25 +32,34 @@ program
+     }
+   });
+ 
+-program.command('delay')
+-  .option('--message <value>', 'custom message to display', 'Thanks for waiting')
+-  .argument('[seconds]', 'how long to delay', '1')
+-  .action(async(waitSeconds, options) => {
+-    await new Promise(resolve => setTimeout(resolve, parseInt(waitSeconds) * 1000));
+-    console.log(options.message);
++program
++  .option('--env <filename>', 'specify environment file')
++  .hook('preSubcommand', (thisCommand, subcommand) => {
++    if (thisCommand.opts().env) {
++      // One use case for this hook is modifying environment variables before
++      // parsing the subcommand, say by reading .env file.
++      console.log(`Reading ${thisCommand.opts().env}...`);
++      process.env.PORT = 80;
++      console.log(`About to call subcommand: ${subcommand.name()}`);
++    }
+   });
+ 
+-program.command('hello')
+-  .option('-e, --example')
+-  .action(() => console.log('Hello, world'));
++program.command('start')
++  .argument('[script]', 'script name', 'server.js')
++  .option('-d, --delay <seconds>', 'how long to delay before starting')
++  .addOption(new Option('-p, --port <number>', 'port number').default(8080).env('PORT'))
++  .action(async(script, options) => {
++    if (options.delay) {
++      await new Promise(resolve => setTimeout(resolve, parseInt(options.delay) * 1000));
++    }
++    console.log(`Starting ${script} on port ${options.port}`);
++  });
+ 
+ // Some of the hooks or actions are async, so call parseAsync rather than parse.
+ program.parseAsync().then(() => {});
+ 
+ // Try the following:
+-//    node hook.js hello
+-//    node hook.js --profile hello
+-//    node hook.js --trace hello --example
+-//    node hook.js delay
+-//    node hook.js --trace delay 5 --message bye
+-//    node hook.js --profile delay
++//    node hook.js start
++//    node hook.js --trace start --port 9000 test.js
++//    node hook.js --profile start --delay 5
++//    node hook.js --env=production.env start
+diff --git a/lib/command.js b/lib/command.js
+index d1d0c4f9..3cfc3ba3 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -399,7 +399,7 @@ class Command extends EventEmitter {
+    */
+ 
+   hook(event, listener) {
+-    const allowedValues = ['preAction', 'postAction'];
++    const allowedValues = ['preSubcommand', 'preAction', 'postAction'];
+     if (!allowedValues.includes(event)) {
+       throw new Error(`Unexpected value for event passed to hook : '${event}'.
+ Expecting one of '${allowedValues.join("', '")}'`);
+@@ -1054,11 +1054,16 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     const subCommand = this._findCommand(commandName);
+     if (!subCommand) this.help({ error: true });
+ 
+-    if (subCommand._executableHandler) {
+-      this._executeSubCommand(subCommand, operands.concat(unknown));
+-    } else {
+-      return subCommand._parseCommand(operands, unknown);
+-    }
++    let hookResult;
++    hookResult = this._chainOrCallSubCommandHook(hookResult, subCommand, 'preSubcommand');
++    hookResult = this._chainOrCall(hookResult, () => {
++      if (subCommand._executableHandler) {
++        this._executeSubCommand(subCommand, operands.concat(unknown));
++      } else {
++        return subCommand._parseCommand(operands, unknown);
++      }
++    });
++    return hookResult;
+   }
+ 
+   /**
+@@ -1185,6 +1190,27 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     return result;
+   }
+ 
++  /**
++   *
++   * @param {Promise|undefined} promise
++   * @param {Command} subCommand
++   * @param {string} event
++   * @return {Promise|undefined}
++   * @api private
++   */
++
++  _chainOrCallSubCommandHook(promise, subCommand, event) {
++    let result = promise;
++    if (this._lifeCycleHooks[event] !== undefined) {
++      this._lifeCycleHooks[event].forEach((hook) => {
++        result = this._chainOrCall(result, () => {
++          return hook(this, subCommand);
++        });
++      });
++    }
++    return result;
++  }
++
+   /**
+    * Process arguments in context of this command.
+    * Returns action result, in case it is a promise.
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index 6aa791bf..dbe7c57c 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -265,7 +265,7 @@ export interface OutputConfiguration {
+ }
+ 
+ export type AddHelpTextPosition = 'beforeAll' | 'before' | 'after' | 'afterAll';
+-export type HookEvent = 'preAction' | 'postAction';
++export type HookEvent = 'preSubcommand' | 'preAction' | 'postAction';
+ export type OptionValueSource = 'default' | 'env' | 'config' | 'cli';
+ 
+ export interface OptionValues {
+diff --git a/typings/index.test-d.ts b/typings/index.test-d.ts
+index a908a1a1..94c0b53d 100644
+--- a/typings/index.test-d.ts
++++ b/typings/index.test-d.ts
+@@ -90,6 +90,12 @@ expectType<commander.Command>(program.hook('preAction', (thisCommand, actionComm
+   expectType<commander.Command>(thisCommand);
+   expectType<commander.Command>(actionCommand);
+ }));
++expectType<commander.Command>(program.hook('preSubcommand', () => {}));
++expectType<commander.Command>(program.hook('preSubcommand', (thisCommand, subcommand) => {
++  // implicit parameter types
++  expectType<commander.Command>(thisCommand);
++  expectType<commander.Command>(subcommand);
++}));
+ 
+ // action
+ expectType<commander.Command>(program.action(() => {}));

@@ -22,6 +22,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 ### Fixed
 
 - Worktrees with no session no longer disappear from the sidebar after the window reloads.
+- **The bake-off author sandbox keeps skill references out of its working copy.** The mission v4 mockup files and tests that name the skill are excluded from the sandbox archive.
 - Opening the Usage Dashboard no longer freezes Harnu when the turn ledger is large. The ledger, which corrects the estimated cost with the totals Claude Code measured, is now read off the main process, so typing and terminal output keep flowing while the dashboard loads. In tests with a large ledger and measured costs in use, the app could previously stop responding for more than a minute. The numbers are the same as before.
 
 ### Changed

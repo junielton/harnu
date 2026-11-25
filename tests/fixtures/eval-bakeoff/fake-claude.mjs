@@ -133,7 +133,8 @@ async function main() {
     usage: USAGE
   }
   const projectDir = join(projects, cwd.replace(/[^a-zA-Z0-9]/g, '-'))
-  mkdirSync(projectDir, { recursive: true })
+  // The real CLI leaves an empty `memory/` in every project directory it touches.
+  mkdirSync(join(projectDir, 'memory'), { recursive: true })
   appendFileSync(
     join(projectDir, `${sessionId}.jsonl`),
     `${JSON.stringify({ type: 'assistant', sessionId, message })}\n`

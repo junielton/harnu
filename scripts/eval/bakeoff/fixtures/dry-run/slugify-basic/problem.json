@@ -1,0 +1,23 @@
+{
+  "id": "slugify-basic",
+  "split": "dev",
+  "kind": "feature",
+  "language": "javascript",
+  "target": { "inline": "source" },
+  "setup": [],
+  "versions": "node --version",
+  "test": "node --test test/index.test.js",
+  "hidden": {
+    "files": ["slugify.hidden.test.js"],
+    "dest": "test/",
+    "cmd": "node --test --test-reporter=junit --test-reporter-destination=\"$BAKEOFF_JUNIT\" test/slugify.hidden.test.js",
+    "compileErrorPattern": "(SyntaxError|Cannot find module)"
+  },
+  "provenance": {
+    "authoredAt": "2026-11-09T00:00:00Z",
+    "authoredBy": "bakeoff dry-run fixture",
+    "sandbox": false,
+    "reviewedAt": "2026-11-09T00:00:00Z",
+    "reviewedBy": "bakeoff dry-run fixture"
+  }
+}
