@@ -163,7 +163,8 @@ describe('FolderView', () => {
     wrapper = mountView()
     await flushPromises()
     const git = wrapper.get('[data-test="folder-view-git"]')
-    expect(git.text()).toBe('no changes')
+    // design.md "Folder View" and the approved screen say `clean`.
+    expect(git.text()).toBe('clean')
     expect(git.classes()).toContain('text-text-4')
   })
 

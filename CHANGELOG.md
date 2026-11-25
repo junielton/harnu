@@ -25,6 +25,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- A folder with nothing to commit now reads **clean** in the Folder View and in the folder hover card (it read “no changes”).
 - **The Folder View is slimmer.** Clicking a folder header now shows its name, branch, git summary, path, its actions and, when the repo has a board, one roadmap line. The KPI tiles, the worktrees table, the sessions list, "Where we left off", the activity chart, the card the branch owns and the roadmap's card list are gone from it. PR Stack, Open in your editor and Open folder moved under the **…** button.
 - Drill-in is gone: the depth button in the sidebar header, its screens and the `sidebar.cycleDrillDepth` shortcut are replaced by **Focus on one folder**. A shortcut you had bound to it is now ignored.
 - The Fleet rail on the right is gone, with its minimized strip, divider, state filter, order toggle and mission-grants strip: fleet state is in the sidebar, and grants are listed and revoked in **Settings → MCP**. The `Cmd/Ctrl+Shift+B` shortcut and the commands that only drove the rail are removed. The interceptor still records its preview (shadow) log, but its **Would-have** list and the **Review shadow log** button are gone from the screen for now.

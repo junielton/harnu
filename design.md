@@ -9266,7 +9266,8 @@ count, and last activity (`folderActivity` → `relativeTime`).
   `foldersGitStatus(path)` — **its own probe, throttled/cached 5s, outside** `git-probe.ts`'s
   hot `rev-parse`. Shows the cheap fields **right away** and the expensive ones with a "…"/skeleton
   until resolved; failure (not a repo, no upstream) **omits** the fields, never breaks the
-  card. `dirty` in `--warning` when > 0; ahead/behind in `--text-3` (`↑n ↓n`).
+  card. `dirty` in `--warning` when > 0, and `clean` (`preview.folder.clean`) in `--text-4` at 0;
+  ahead/behind in `--text-3` (`↑n ↓n`). The [Folder View](#folder-view-folderviewvue) reuses these keys.
 
 **Hot cue (T79 S3 — "where we left off" in 1s):** below the session count, separated by
 a `border-t --border` (`margin-top 8px`, `padding-top 8px`), a block with an **eyebrow**
