@@ -28,8 +28,8 @@ import {
  */
 
 /**
- * T628: what expanding a helper pane to the window hides. `everything` collapses the sidebar, the
- * session area and the Fleet rail; `session-only` collapses the session area alone.
+ * T628: what expanding a helper pane to the window hides. `everything` collapses the sidebar and
+ * the session area; `session-only` collapses the session area alone.
  */
 export const EXPAND_HIDES = ['everything', 'session-only'] as const
 export type ExpandHides = (typeof EXPAND_HIDES)[number]

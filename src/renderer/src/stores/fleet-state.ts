@@ -235,10 +235,10 @@ export function resolveActivity(
  * own `needs-input` (an unresolved `AskUserQuestion`/`ExitPlanMode`), gated on
  * {@link FleetSignals.isLive} (BUG-53): a dead session cannot be blocked on you,
  * its tail just describes where it died. `isLive` is OPTIONAL here (unlike
- * {@link FleetSignals}) — callers that don't resolve it (e.g. `fleet-board.ts`,
- * `session-dot.ts`) keep their prior behaviour; only `undefined !== false`, so
- * omitting it never newly suppresses a needs-you. The single source every surface
- * reads so the sidebar dot and the board agree on "asking for me".
+ * {@link FleetSignals}) — callers that don't resolve it (e.g. `session-dot.ts`,
+ * the Needs attention list) keep their prior behaviour; only `undefined !== false`,
+ * so omitting it never newly suppresses a needs-you. The single source every surface
+ * reads so the sidebar dot and Needs attention agree on "asking for me".
  */
 export function isNeedsInput(sig: {
   taskState?: TaskState

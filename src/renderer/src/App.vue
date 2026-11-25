@@ -35,7 +35,6 @@ import FolderMenu from './components/FolderMenu.vue'
 import SessionPreview from './components/SessionPreview.vue'
 import FolderPreview from './components/FolderPreview.vue'
 import CommandPalette from './components/CommandPalette.vue'
-import InboxRail from './components/InboxRail.vue'
 import McpConfirmOverlay from './components/McpConfirmOverlay.vue'
 import ToastStack from './components/ToastStack.vue'
 import HelperStack from './components/HelperStack.vue'
@@ -52,12 +51,7 @@ import {
   applyExpandToRing,
   HELPER_SPLIT_RATIO_DEFAULT
 } from './stores/helpers'
-import {
-  useLayoutStore,
-  helperPanelVisible,
-  inboxRailWidthFor,
-  slowDurationMs
-} from './stores/layout'
+import { useLayoutStore, helperPanelVisible, slowDurationMs } from './stores/layout'
 import { useSettingsStore } from './stores/settings'
 import { useClaudeChangelogStore } from './stores/claudeChangelog'
 import { useCompanionStore } from './stores/companion'
@@ -139,9 +133,9 @@ const folderMenuActions = useFolderMenuActions()
 // palette-over-dialog mutex transition keeps the union true, so we push/pop only
 // on the real idle↔overlay edge. `preview` is excluded (decorative, no keys).
 //
-// The Inbox rail is deliberately ABSENT from this union (T83 S0). It is a column,
-// not an overlay: it is on screen essentially always, so listing it here would
-// pin the 'modal' scope permanently and kill every global shortcut in the app.
+// The sidebar's dock (approvals included) is deliberately ABSENT from this union: it is
+// part of a column that is on screen essentially always, not an overlay, so listing it
+// would pin the 'modal' scope and kill every global shortcut in the app.
 const anyOverlayOpen = computed(
   () =>
     ui.dialog !== null ||
@@ -186,28 +180,6 @@ watch(
   },
   { immediate: true }
 )
-
-/**
- * NO auto-summon — and its absence is deliberate, so don't add one back.
- *
- * This file used to `watch(sessions.actionableInboxCount)` and call
- * `layout.summonInboxRail()` on the rising edge (T83 §5.6). That existed for
- * one reason: a minimized rail rendered nothing but an icon, so an arriving
- * confirm would have been invisible and the rail had to force itself open.
- *
- * The minimized strip now renders the whole fleet as minicards (InboxRail.vue
- * + design.md §7 "Fleet state ring"), so that premise is gone. With the signal
- * preserved at 44px, forcing the layout open stops being a rescue and becomes
- * an interruption — the exact modal behaviour T83 set out to delete.
- * `minimized` and `hidden` are therefore HARD states: the operator put the
- * rail away, and it stays away until the operator brings it back.
- *
- * What did NOT change: sound and OS attention are still emitted at their own
- * source (session-mcp-confirms.ts), the head badge still counts, and
- * `layout.summonInboxRail()` still exists for the OS-notification deep-link
- * (`sessions.ts` → `onNotifyActivateInbox`) — that one is a real operator
- * gesture, not an automatic yank.
- */
 
 // Which axis the session-area / helper-stack divider drags on (T627): X when the two sit side by
 // side, Y when they are stacked. `startRatio` is the active orientation's ratio at mousedown.
@@ -257,29 +229,6 @@ watch(mainRowEl, (el) => {
   mainRowObserver.observe(el)
 })
 onUnmounted(() => mainRowObserver?.disconnect())
-
-// Inbox-rail drag-resize. The rail is the RIGHTMOST column, so dragging its
-// divider left must GROW it — hence `startX - clientX` (the sidebar's handler is
-// the mirror image). The store clamps to [260, 440].
-let railDragging: { startX: number; startWidth: number } | null = null
-
-function onInboxRailDividerMouseDown(ev: MouseEvent): void {
-  ev.preventDefault()
-  railDragging = { startX: ev.clientX, startWidth: layout.inboxRailWidth }
-  document.addEventListener('mousemove', onInboxRailDividerMouseMove)
-  document.addEventListener('mouseup', onInboxRailDividerMouseUp)
-}
-
-function onInboxRailDividerMouseMove(ev: MouseEvent): void {
-  if (!railDragging) return
-  layout.setInboxRailWidth(railDragging.startWidth + (railDragging.startX - ev.clientX))
-}
-
-function onInboxRailDividerMouseUp(): void {
-  railDragging = null
-  document.removeEventListener('mousemove', onInboxRailDividerMouseMove)
-  document.removeEventListener('mouseup', onInboxRailDividerMouseUp)
-}
 
 function onMainDividerMouseDown(ev: MouseEvent): void {
   const wt = helpers.currentWorktreePath
@@ -344,7 +293,7 @@ function onMainDividerMouseMove(ev: MouseEvent): void {
 }
 
 // Double-click resets the helper-stack split to its default, like the sidebar
-// and Fleet-rail dividers reset their widths. Only the orientation in force is reset.
+// divider resets its width. Only the orientation in force is reset.
 function onMainDividerDblClick(): void {
   const wt = helpers.currentWorktreePath
   if (!wt) return
@@ -633,6 +582,16 @@ const expandMode = computed<'everything' | 'session-only' | null>(() =>
 /** The sidebar is out of the way: collapsed by the operator, or hidden by the expanded view. */
 const sidebarHidden = computed(() => layout.sidebarCollapsed || expandMode.value === 'everything')
 
+// A gesture that opens the dock (design.md §6 "Bottom dock") has to show the sidebar: an
+// expand-to-window hides it without collapsing it, so leave that view too.
+watch(
+  () => layout.sidebarRevealRequest,
+  () => {
+    const wt = helpers.currentWorktreePath
+    if (wt && expandMode.value === 'everything') helpers.exitExpand(wt)
+  }
+)
+
 /**
  * T790 — the session area is tucked away: the operator pulled the divider past the floor (or used the
  * chord) and the helper stack owns the main area. Only while the stack is actually on screen: with no
@@ -687,8 +646,7 @@ watch(
     expandMode,
     sessionTucked,
     () => helpers.maximizedPaneIdForCurrentWorktree,
-    () => layout.sidebarCollapsed,
-    () => layout.inboxRailState
+    () => layout.sidebarCollapsed
   ],
   () => void layout.beginLayoutMotion(),
   { flush: 'pre' }
@@ -769,20 +727,6 @@ watch(
   },
   { flush: 'pre' }
 )
-
-/**
- * The Inbox rail renders unless it's `hidden` — it is fleet-global, so unlike the
- * helper stack it does NOT depend on the selected session/worktree (that's the
- * whole point: you must see a blocked session while looking at another folder).
- * Suppressed during Onboarding only, where there is no fleet to have a queue for.
- */
-const showInboxRail = computed(() => !showOnboarding.value && layout.inboxRailState !== 'hidden')
-// The rail's full header (order toggle, filter, "Show all") renders only here —
-// the minimized strip and the hidden rail have none of those buttons.
-const inboxRailExpanded = computed(
-  () => showInboxRail.value && layout.inboxRailState === 'expanded'
-)
-const inboxRailPx = computed(() => inboxRailWidthFor(layout.inboxRailState, layout.inboxRailWidth))
 
 // Reveal-on-appear: spawning the first pane into an empty worktree (Split, fork,
 // "open in new tab") clears a stale `helperCollapsed` so the freshly-created
@@ -1026,55 +970,24 @@ useShortcuts(
       handler: () => keybindings.openInEditor()
     },
     {
+      // The approvals chord: the dock's Needs you section, expanding a collapsed sidebar;
+      // pressed again it folds the section. A pane expanded to the window hides the sidebar,
+      // so an open section is not on screen there and the chord opens instead of folding.
       id: 'inbox.toggle',
       scope: 'global',
       keys: kb('inbox.toggle'),
-      // Expand/minimize the Inbox rail (T83 §5.6). Same helper the Topbar button +
-      // the palette action call. Never hides the rail — see `nextInboxRailStateOnToggle`.
-      handler: () => layout.toggleInboxRail()
+      handler: () =>
+        expandMode.value === 'everything' ? layout.openNeedsYou() : layout.toggleNeedsYou()
     },
+    // --- T486 §3.5: the Topbar / footer popovers. Unbound. Each runs its button's own
+    // call; a popover is enabled only while its button is rendered (it anchors there),
+    // and its open flag lives in the ui store, so the popover's own Esc still closes it.
     {
-      id: 'view.fleetRail',
-      scope: 'global',
-      keys: kb('view.fleetRail'),
-      // T153: the sidebar's folders↔board toggle was removed — retarget this
-      // shortcut to the Fleet rail (same helper `⌘⇧A`/`inbox.toggle` calls).
-      handler: () => layout.toggleInboxRail()
-    },
-    // --- T486 §3.5: the Fleet rail's header buttons and the Topbar / footer
-    // popovers. Unbound. Each runs its button's own call; a popover is enabled
-    // only while its button is rendered (it anchors there), and its open flag
-    // lives in the ui store, so the popover's own Esc still closes it.
-    {
-      // Expand (never toggle) — the minimized strip's button and "Open approvals".
+      // "Open approvals": opens, never folds.
       id: 'inbox.open',
       scope: 'global',
       keys: kb('inbox.open'),
-      handler: () => layout.setInboxRailState('expanded')
-    },
-    {
-      // Its button is in the expanded rail's header only.
-      id: 'inbox.toggleOrder',
-      scope: 'global',
-      keys: kb('inbox.toggleOrder'),
-      enabled: () => inboxRailExpanded.value,
-      handler: () => layout.toggleInboxRailOrder()
-    },
-    {
-      id: 'inbox.filter',
-      scope: 'global',
-      keys: kb('inbox.filter'),
-      enabled: () => ui.popoverAnchors.inboxFilter,
-      handler: () => ui.togglePopover('inboxFilter')
-    },
-    {
-      // The "Show all" buttons render only in the expanded rail, while a state
-      // is filtered out.
-      id: 'inbox.showAll',
-      scope: 'global',
-      keys: kb('inbox.showAll'),
-      enabled: () => inboxRailExpanded.value && layout.inboxRailHiddenStates.size > 0,
-      handler: () => layout.clearInboxRailStateFilter()
+      handler: () => layout.openNeedsYou()
     },
     {
       id: 'view.activity',
@@ -2415,44 +2328,6 @@ onUnmounted(() => {
           </div>
         </div>
       </main>
-
-      <!--
-        Inbox rail (T83 S0) — the fourth column. A SIBLING of <main>, so it spans
-        the full height beside the Topbar rather than living inside a session view:
-        the approval queue is fleet-wide and must stay on screen across folder
-        switches, takeovers (board / usage dashboard), and the empty state.
-
-        It is NOT teleported and NOT in the floating-surface mutex — it's a column,
-        not an overlay. See `ui.ts` (the mutex it deliberately left) and
-        `layout.ts#summonInboxRail`.
-      -->
-      <template v-if="showInboxRail">
-        <div
-          v-if="layout.inboxRailState === 'expanded'"
-          data-lm
-          class="group flex w-1.5 shrink-0 cursor-col-resize justify-end"
-          :class="{ 'lm-collapse-w': expandMode === 'everything' }"
-          data-float-divider
-          role="separator"
-          aria-orientation="vertical"
-          :aria-label="$t('approvalInbox.rail.resize')"
-          @mousedown="onInboxRailDividerMouseDown"
-          @dblclick="layout.resetInboxRailWidth()"
-        >
-          <div class="h-full w-px bg-border-2 transition-colors group-hover:bg-accent-line" />
-        </div>
-        <div
-          data-lm
-          class="flex min-h-0 shrink-0 flex-col"
-          :class="{ 'lm-collapse-w': expandMode === 'everything' }"
-          :inert="expandMode === 'everything'"
-          data-rail-column
-          :data-rail-state="layout.inboxRailState"
-          :style="{ width: `${inboxRailPx}px` }"
-        >
-          <InboxRail />
-        </div>
-      </template>
     </div>
 
     <StatusFooter />

@@ -94,13 +94,21 @@ Harnu only shows that panel when it is sure: the transcript must hold no convers
 
 If the panel ever shows for a session you want to open, press **Resume anyway**. The terminal opens and runs `claude --resume` regardless, so you see exactly what Claude Code says — including its error, if there is one. The choice lasts until you quit Harnu. If the transcript later gains a conversation, the panel gives way to the terminal on its own.
 
+## Needs attention
+
+When a session needs your input or has failed, it is listed in **Needs attention**, pinned between the sidebar toolbar and the folder list, so it never scrolls away. It collects these from every folder, whatever the list below is showing or the filter says. Sessions waiting for input come first, then failed ones; inside each group the newest session is on top, and activity never moves a row.
+
+Each row is one line: a state ring, the session's name and its folder. Hover it to see why it is there (the pending command, what it was doing, or what failed). Click it to jump to the session; its folder and checkout open. The list shows up to six rows and scrolls beyond that. Click the heading to fold it; Harnu remembers. When nothing needs you the whole block is gone.
+
+A session that is merely stuck (working but quiet) is not listed; its dot in the tree says so.
+
 ## Return here: sessions waiting on you
 
-The **Return here** box sits at the bottom of the sidebar, above the dock. It is global: it stays put whichever project the sidebar is drilled into, so a question from one project is never hidden while you are working in another. It works the same with Floating panels on or off.
+**Return here** is a section at the bottom of the sidebar, above **Add folder** and under **Needs you** (see [Approvals](approval-inbox.md)). It shows only when it has something, and it starts folded: one line with the count and how long the oldest has been waiting. Click it to open it. It is global: a question from one project is never hidden while you are working in another. It works the same with Floating panels on or off.
 
-With [Your move](settings.md#your-move) set to **Off** or **Observe**, it lists the sessions you probably forgot: waiting for input and not looked at for about ten minutes. With **Live**, it lists **cards** instead, one for each thing only you can unblock, oldest first. The heading shows how many there are and how long the oldest has been waiting, for example `RETURN HERE · 3 · 2h 14m`. The box grows to about 380 pixels (or 45% of the window height, whichever is smaller) and the cards scroll inside it; the heading stays in place.
+With [Your move](settings.md#your-move) set to **Off** or **Observe**, it lists the sessions you probably forgot: waiting for input and not looked at for about ten minutes. With **Live**, it lists **cards** instead, one for each thing only you can unblock, oldest first. The heading shows how many there are and how long the oldest has been waiting. Open, the section grows to about 380 pixels (or 45% of the window height, whichever is smaller) and the cards scroll inside it; the heading stays in place.
 
-The box shows the first 25 cards. When more are waiting, a **Show 25 more · 1,569 not shown** button at the end of the list adds the next 25, in the same order, and the heading still counts every open card. A card's clock counts seconds during its first minute and minutes after that (`02m`, `1h 02m`, `2d 03h 04m`).
+The section shows the first 25 cards. When more are waiting, a **Show 25 more · 1,569 not shown** button at the end of the list adds the next 25, in the same order, and the heading still counts every open card. A card's clock counts seconds during its first minute and minutes after that (`02m`, `1h 02m`, `2d 03h 04m`).
 
 Each card shows its kind (Decide, Go / no-go, Provide, Do or Check), the project and session it comes from, a clock that counts up from the moment it was filed, and what is being asked. Click the card to expand it: you then see the context, what it blocks, and its buttons.
 
@@ -110,18 +118,9 @@ Each card shows its kind (Decide, Go / no-go, Provide, Do or Check), the project
 - For now the answer buttons take you to the session instead of answering for you. Answering from the card comes in a later release.
 - Every card also has two exits that tell the session nothing: **Not for me** (a false alarm) and **Already handled** (it was real, but someone else dealt with it or it no longer matters). Harnu keeps them as separate labels.
 
-There is no × on a card. A card leaves the box when you use one of the exits, or when the thing it was about is resolved: you answered in the session, a mission stopped owing it, or you archived the session or removed its folder. For now the answer buttons only open the session and never close the card; answering from a card comes in a later release.
+There is no × on a card. A card leaves the section when you use one of the exits, or when the thing it was about is resolved: you answered in the session, a mission stopped owing it, or you archived the session or removed its folder. For now the answer buttons only open the session and never close the card; answering from a card comes in a later release.
 
 Everything a card says was written by a model, so Harnu shows it as plain text and only follows a link that starts with `http://` or `https://`.
-
-### Resize or collapse the box
-
-The Return here box is a sidebar _section_, so you can make room either way:
-
-- **Resize.** Drag the top edge of the box (the boundary with the folder list) up to give it more room, or down to give the folder list more. Double-click the edge to put the box back to its default size. The box never gets smaller than its heading plus one row, the folder list always keeps at least about 160 pixels, and the dock at the bottom never moves.
-- **Collapse.** Click the small chevron at the right end of the heading to fold the box down to the heading alone: the title, the count and the oldest clock stay visible, so you can still see something is waiting. Click it again to open the box. The chevron works with the keyboard too.
-
-Harnu remembers the size and whether the box is collapsed, including across restarts and across the box disappearing when nothing is waiting.
 
 ## Jump from the transcript to a file
 
@@ -185,11 +184,11 @@ Drag a pane's header to resize it. Split panes follow the same rule as the main 
 
 Maximize works inside the split. **Expand to window** goes one step further: the pane takes the whole working area, with only the Topbar and the footer left around it. Click the expand button in any pane's header (right before maximize). To leave, click the same button again, press `Esc`, or press `Cmd/Ctrl+Shift+M`. Inside a terminal `Esc` still belongs to the program running there (Claude Code cancels with it), so from a terminal use the button or `Cmd/Ctrl+Shift+M`.
 
-- **What gets out of the way** is **Settings → Appearance → Layout → Expand hides**. **Everything** (the default) collapses the sidebar, the session and the Fleet rail. **Session only** collapses just the session and leaves the sidebar and the Fleet rail where they are. The other panes in the split collapse to nothing while one is expanded. The choice is remembered across restarts (it is saved in `settings.json` as `expandHides`).
+- **What gets out of the way** is **Settings → Appearance → Layout → Expand hides**. **Everything** (the default) collapses the sidebar and the session. **Session only** collapses just the session and leaves the sidebar where it is. The other panes in the split collapse to nothing while one is expanded. The choice is remembered across restarts (it is saved in `settings.json` as `expandHides`).
 - **Nothing restarts.** The pane is not moved or reloaded: a shell keeps its scrollback and its process, and a browser page stays loaded. The session terminal keeps its size while it is hidden, so it does not redraw when you come back.
 - **It is not remembered.** Expanded is per folder, and switching to another folder or restarting puts the layout back to normal. Closing the expanded pane also leaves the expanded view. `F6` visits only the expanded pane.
 - **The shortcut.** Bind **Expand the focused pane to the window** in Settings → Keyboard Shortcuts to toggle it from the keyboard for any focused pane; it has no default key, because `Cmd/Ctrl+Shift+M` stays maximize (and exits the expanded view).
-- **Motion.** Maximize, expand, minimizing or restoring the Fleet rail, collapsing the sidebar and switching the split layout now animate for about a fifth of a second instead of snapping; dragging a divider never does. A browser pane shows a still picture of its page while the layout moves and goes live again right after. With **Reduce motion** on in your operating system, everything snaps as before.
+- **Motion.** Maximize, expand, collapsing the sidebar and switching the split layout now animate for about a fifth of a second instead of snapping; dragging a divider never does. A browser pane shows a still picture of its page while the layout moves and goes live again right after. With **Reduce motion** on in your operating system, everything snaps as before.
 
 ### Tucking the session away
 
@@ -197,7 +196,7 @@ Want the whole window for the split, say a guided walk next to a browser pane on
 
 - **Pull, and it resists.** The divider stops at the 40% limit. Keep pulling about 80 pixels further and it **arms**: the divider turns accent-coloured, the session dims, and a hint says **Release to tuck the session away**, with a dashed line marking where the limit is. Let go while it is armed and the session tucks away; let go earlier and it springs back to the limit. It works the same side by side (you drag left) and stacked (you drag up).
 - **The split takes the whole area.** The session keeps running underneath, its terminal is not resized or redrawn, and its scrollback is intact when you bring it back. While the session is tucked the panes of the split sit **side by side**, whichever layout you use; they go back to their usual arrangement when the session returns.
-- **A thin strip stays behind.** Where the session was, a narrow strip (on the left edge, or along the top when stacked) shows the session's state dot. Point at it and it widens a little and tells you the session's name, what it is doing and **Click or drag to bring it back**, plus the shortcut. When the session **needs you** (an approval, a question) the strip turns amber, the dot blinks and a **Needs you** tag appears. Harnu never opens the session by itself for that: the strip and the Approval Inbox carry the message.
+- **A thin strip stays behind.** Where the session was, a narrow strip (on the left edge, or along the top when stacked) shows the session's state dot. Point at it and it widens a little and tells you the session's name, what it is doing and **Click or drag to bring it back**, plus the shortcut. When the session **needs you** (an approval, a question) the strip turns amber, the dot blinks and a **Needs you** tag appears. Harnu never opens the session by itself for that: the strip and **Needs you** carry the message.
 - **With Floating panels on** (Settings → Appearance), the strip is its own small panel: a thin 4px rounded bar that keeps the same gap to the sidebar and to the split as every other panel. The bar's colour is the session's state (grey when idle, green while it works, red when it failed) and turns amber and blinks when the session needs you; the **Needs you** tag is left out because it would not fit, so rely on the colour and on the hover note. The bar widens a little when you point at it, and the area you can click is as wide as the classic strip's.
 - **Bring it back.** Click the strip, or focus it with `Tab` and press `Enter` or `Space`: the session returns at exactly its 40% size. Or press the strip and drag it out: the session returns and follows your pointer (between 40% and 80%). `Cmd/Ctrl+Shift+J` and **Tuck the session away or bring it back** in the command palette (rebind it in Settings → Keyboard Shortcuts) tuck the session and bring it back from the keyboard. Closing the last pane of the split also brings the session back, so you are never left with an empty window.
 - **Per folder, not remembered.** Tucked belongs to the folder you tucked it in: switching to another folder shows that folder's session as usual, and a restart starts with the session shown. It does not get in the way of maximize or expand to window: while a pane is expanded the strip hides with the session, and when you leave the expanded view the session is still tucked. While a pane is expanded the shortcut only leaves the expanded view, like `Cmd/Ctrl+Shift+M`.
@@ -227,7 +226,7 @@ The toggle's chord is taken from every terminal before the program sees it, so i
 
 ## The command palette
 
-`Cmd/Ctrl+K` opens a spotlight-style search over your recent sessions, folders, and every action Harnu has a command for. It's the fastest way to jump around once you have more than a couple of folders pinned. Empty, it shows your most recent sessions, a short list of everyday actions (new session, add folder, resume your last session, toggle the Approval Inbox rail, open approvals), then your folders and sessions. As you type it fuzzy-matches folders by name, sessions by their summary or first prompt, and actions by name — every action listed in Settings → Keyboard Shortcuts, including the ones with no shortcut yet (type "rename", "fork", "close the open view"). An action only appears when it can run right now: "Restart the session" needs a selected session, "Close the open view" needs an open view. Each action row shows its shortcut on the right, and follows your rebinds. Choosing an action runs exactly what its shortcut or menu item runs. Most actions work on the selected session or the active folder; a few follow the sidebar's keyboard cursor first, just like their shortcut: "Rename the folder…" renames the folder row the cursor is on, "Open the session to the side" opens the session row the cursor is on, and the repo-group actions ("Rename group", "Reset name (group)", "Cleanup… (repo)") work on the group row the cursor is on. With the cursor on no such row, they fall back to the active folder, the selected session, or the active folder's group. A few actions are never listed: opening the palette itself, the sidebar's arrow-key cursor, the keyboard context menu (`Shift+F10`), the Fleet rail shortcut (`Cmd/Ctrl+Shift+B`, which does the same as toggling the Approval Inbox rail), the pane actions that act on whichever pane has focus (`F6`, `Shift+F6`, maximize and close the focused pane), since the palette holds focus while it is open, and the app commands the system handles itself (reload, developer tools, quit, full screen). Arrow keys move the selection, Enter activates it, Esc closes it.
+`Cmd/Ctrl+K` opens a spotlight-style search over your recent sessions, folders, and every action Harnu has a command for. It's the fastest way to jump around once you have more than a couple of folders pinned. Empty, it shows your most recent sessions, a short list of everyday actions (new session, add folder, resume your last session, open or fold Needs you, open approvals), then your folders and sessions. As you type it fuzzy-matches folders by name, sessions by their summary or first prompt, and actions by name — every action listed in Settings → Keyboard Shortcuts, including the ones with no shortcut yet (type "rename", "fork", "close the open view"). An action only appears when it can run right now: "Restart the session" needs a selected session, "Close the open view" needs an open view. Each action row shows its shortcut on the right, and follows your rebinds. Choosing an action runs exactly what its shortcut or menu item runs. Most actions work on the selected session or the active folder; a few follow the sidebar's keyboard cursor first, just like their shortcut: "Rename the folder…" renames the folder row the cursor is on, "Open the session to the side" opens the session row the cursor is on, and the repo-group actions ("Rename group", "Reset name (group)", "Cleanup… (repo)") work on the group row the cursor is on. With the cursor on no such row, they fall back to the active folder, the selected session, or the active folder's group. A few actions are never listed: opening the palette itself, the sidebar's arrow-key cursor, the keyboard context menu (`Shift+F10`), the pane actions that act on whichever pane has focus (`F6`, `Shift+F6`, maximize and close the focused pane), since the palette holds focus while it is open, and the app commands the system handles itself (reload, developer tools, quit, full screen). Arrow keys move the selection, Enter activates it, Esc closes it.
 
 ## Going back and forward
 
@@ -263,8 +262,7 @@ a binding written as `Cmd+K` is `⌘K` on a Mac and `Ctrl+K` elsewhere.
 | `Cmd/Ctrl+W`       | Close/deselect the current session tab                                          |
 | `Cmd/Ctrl+B`       | Toggle the left sidebar                                                         |
 | `Cmd/Ctrl+Alt+B`   | Toggle the right split panel                                                    |
-| `Cmd/Ctrl+Shift+A` | Toggle the Approval Inbox rail                                                  |
-| `Cmd/Ctrl+Shift+B` | Toggle the Fleet rail                                                           |
+| `Cmd/Ctrl+Shift+A` | Open the sidebar's Needs you section; again to fold it                          |
 | `Cmd/Ctrl+Shift+D` | Review the active folder's branch                                               |
 | `Cmd/Ctrl+Shift+P` | Switch project (currently opens the command palette)                            |
 | `Cmd/Ctrl+Shift+F` | Jump to a folder or session (press again to close)                              |
@@ -320,21 +318,17 @@ folder belongs to. Blocking agents, letting agents read terminals, **Modes** and
 parent-folder pick stay click-only: the first two change what agents may do, the
 others need you to pick from a list.
 
-The Fleet rail's header buttons and the popovers in the Topbar and the footer
-can be given a shortcut as well, again with none out of the box:
-`inbox.open` (Open approvals — expands the rail, whether it was minimized or
-hidden), `inbox.toggleOrder` (flip the rail's newest-first / oldest-first
-order), `inbox.filter` (the **Filter states** popover), `inbox.showAll` (**Show
-all**, while a state is filtered out), `view.activity` (the Activity bell),
-`view.missionProgress` (the mission pill, such as "4/21 · 3 for you"), `view.pastedImages`
-(the pasted-images pill), `view.claudeStatus` (the Claude service status dot)
-and `view.usagePanel` (the plan-usage meters). Pressing a popover's shortcut
-again closes it, and `Esc` closes it exactly as when you opened it with a
-click. These shortcuts only work while their button is on screen — the
-pasted-images pill shows only once the session has screenshots, the mission
-pill only while the session has an open mission, the plan-usage meters only
-while plan usage is available, and the order, filter and **Show all** buttons
-only while the Fleet rail is expanded.
+**Open approvals** and the popovers in the Topbar and the footer can be given a
+shortcut as well, again with none out of the box: `inbox.open` (Open approvals —
+opens Needs you, expanding the sidebar if it is collapsed), `view.activity` (the
+Activity bell), `view.missionProgress` (the mission pill, such as "4/21 · 3 for
+you"), `view.pastedImages` (the pasted-images pill), `view.claudeStatus` (the
+Claude service status dot) and `view.usagePanel` (the plan-usage meters).
+Pressing a popover's shortcut again closes it, and `Esc` closes it exactly as
+when you opened it with a click. These shortcuts only work while their button is
+on screen — the pasted-images pill shows only once the session has screenshots,
+the mission pill only while the session has an open mission, and the plan-usage
+meters only while plan usage is available.
 
 Every Settings tab has a command id too: `view.settings.general`,
 `view.settings.keybindings`, `view.settings.appearance` and so on, one per tab in

@@ -35,7 +35,6 @@ export type ShortcutActionId =
   | 'session.new'
   | 'app.search'
   | 'inbox.toggle'
-  | 'view.fleetRail'
   | 'view.toggleSidebar'
   | 'view.toggleHelper'
   | 'project.switch'
@@ -97,9 +96,6 @@ export type ShortcutActionId =
   | 'repoGroup.resetName'
   | 'repoGroup.cleanup'
   | 'inbox.open'
-  | 'inbox.toggleOrder'
-  | 'inbox.filter'
-  | 'inbox.showAll'
   | 'view.activity'
   | 'view.missionProgress'
   | 'view.pastedImages'
@@ -316,8 +312,6 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   // Opens the palette itself, so it is never listed in it.
   def('app.search', 'app', 'Cmd+K', { ...MENU, palette: false }),
   def('inbox.toggle', 'views', 'Cmd+Shift+A', { paletteFeatured: true }),
-  // Alias of `inbox.toggle` — listing it would show the same action twice.
-  def('view.fleetRail', 'views', 'Cmd+Shift+B', { palette: false }),
   def('view.toggleSidebar', 'views', 'Cmd+B', MENU),
   def('view.toggleHelper', 'views', 'Cmd+Alt+B', MENU),
   def('project.switch', 'app', 'Cmd+Shift+P', { ...MENU, palette: false }),
@@ -406,13 +400,10 @@ export const KEYBINDINGS: readonly KeyBindingDescriptor[] = [
   def('repoGroup.rename', 'folders', null),
   def('repoGroup.resetName', 'folders', null),
   def('repoGroup.cleanup', 'folders', null),
-  // T486 §3.5 — the Fleet rail's header buttons and the Topbar / footer
+  // T486 §3.5 — "Open approvals" (the dock's Needs you) and the Topbar / footer
   // popovers (their open flags live in `stores/ui.ts`). All unbound.
   // "Open approvals" stays in the empty palette, as it was before T486.
   def('inbox.open', 'views', null, { paletteFeatured: true }),
-  def('inbox.toggleOrder', 'views', null),
-  def('inbox.filter', 'views', null),
-  def('inbox.showAll', 'views', null),
   def('view.activity', 'views', null),
   def('view.missionProgress', 'views', null),
   def('view.pastedImages', 'views', null),

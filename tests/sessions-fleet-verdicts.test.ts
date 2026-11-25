@@ -2,18 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import type { FolderEntry } from '../src/preload'
-import { buildBoard, type BoardSession } from '../src/renderer/src/components/fleet-board'
 import {
+  isNeedsInput,
   STUCK_AFTER_MS,
-  classifyFleetState,
-  resolveActivity
+  classifyFleetState
 } from '../src/renderer/src/stores/fleet-state'
 import { FORGOTTEN_THRESHOLD_MS } from '../src/renderer/src/stores/closure-core'
-import { sessionTitle } from '../src/renderer/src/lib/session-label'
-import { i18n } from '../src/renderer/src/i18n'
 
 /**
- * BUG-265: `supervisionLoad` and `boardBuckets` fold one cached verdict per session instead of looping
+ * BUG-265: `supervisionLoad` and `attentionSessions` fold one cached verdict per session instead of looping
  * over the whole fleet. This pins that the cached form is the SAME function of the same inputs as the loop
  * it replaced: the reference below is that loop, verbatim, and a seeded stream of the events the app really
  * receives (hook, registry, transcript append, approvals, archive, selection, the 30 s clock, the inline
@@ -85,7 +82,7 @@ function installWindow(disk: FolderEntry[]): void {
   cb.onHook = undefined
 }
 
-describe('supervisionLoad / boardBuckets are the loop they replaced (BUG-265)', () => {
+describe('supervisionLoad / attentionSessions are the loop they replaced (BUG-265)', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(T0)
@@ -148,58 +145,35 @@ describe('supervisionLoad / boardBuckets are the loop they replaced (BUG-265)', 
       return n
     }
 
-    const matches = (text: string, q: string): boolean =>
-      text.toLowerCase().includes(q.toLowerCase())
-    const referenceBoard = (): unknown => {
-      const q = store.filterQuery.trim()
-      const now = store.nowTick
-      const slices: BoardSession[] = []
+    // Needs attention, read the slow way: every folder, whatever the inline filter shows;
+    // needs-input first, then failed, newest created first.
+    const referenceAttention = (): unknown => {
+      const found: Array<{ sessionId: string; state: string; created: number }> = []
       for (const f of store.folders) {
         for (const s of f.sessions) {
           if (s.isSidechain || s.isShellTerminal) continue
-          if (store.archivedIds.has(s.sessionId)) continue
-          if (q) {
-            const hit =
-              matches(f.alias, q) ||
-              (f.gitBranch ? matches(f.gitBranch, q) : false) ||
-              matches(s.summary, q) ||
-              matches(s.firstPrompt, q) ||
-              matches(sessionTitle(s, store.allSessions, i18n.global.t), q)
-            if (!hit) continue
-          }
-          const activity = resolveActivity(
-            {
-              taskState: s.taskState,
-              transcriptState: s.transcriptState,
-              stagnation: s.stagnation,
-              registryState: store.registryStates.get(s.sessionId),
-              status: s.status,
-              modifiedMs: Date.parse(s.modified),
-              liveAgentCount: (s.agents ?? []).filter((a) => a.status === 'running').length,
-              lastEventMs: lastEvent.get(s.sessionId),
-              isLive:
-                store.isSessionLive(s.sessionId) ||
-                store.registryStates.has(s.sessionId) ||
-                lastEvent.has(s.sessionId)
-            },
-            { nowMs: now, stuckAfterMs: STUCK_AFTER_MS }
-          )
-          slices.push({
-            sessionId: s.sessionId,
+          if (store.archivedIds.has(s.sessionId) || s.status === 'archived') continue
+          const needs = isNeedsInput({
             taskState: s.taskState,
-            transcriptState: s.transcriptState,
-            status: s.status,
-            isSidechain: s.isSidechain,
-            modified: s.modified,
-            created: s.created,
-            activity,
-            folderAlias: f.alias
+            transcriptState: s.transcriptState
+          })
+          if (!needs && s.taskState !== 'failed') continue
+          found.push({
+            sessionId: s.sessionId,
+            state: needs ? 'needs-input' : 'failed',
+            created: Date.parse(s.created)
           })
         }
       }
-      return JSON.parse(JSON.stringify(buildBoard(slices, 'newest-first')))
+      found.sort(
+        (a, b) =>
+          Number(a.state === 'failed') - Number(b.state === 'failed') ||
+          b.created - a.created ||
+          a.sessionId.localeCompare(b.sessionId)
+      )
+      return found.map(({ sessionId, state }) => ({ sessionId, state }))
     }
-    const actualBoard = (): unknown => JSON.parse(JSON.stringify(store.boardBuckets))
+    const actualAttention = (): unknown => JSON.parse(JSON.stringify(store.attentionSessions))
 
     const rnd = mulberry32(20261113)
     const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)]
@@ -214,8 +188,8 @@ describe('supervisionLoad / boardBuckets are the loop they replaced (BUG-265)', 
       expect(store.supervisionLoad, `supervisionLoad after ${log.slice(-6).join(' > ')}`).toBe(
         referenceLoad()
       )
-      expect(actualBoard(), `boardBuckets after ${log.slice(-6).join(' > ')}`).toEqual(
-        referenceBoard()
+      expect(actualAttention(), `attentionSessions after ${log.slice(-6).join(' > ')}`).toEqual(
+        referenceAttention()
       )
     }
     check('initial')
@@ -351,8 +325,8 @@ describe('supervisionLoad / boardBuckets are the loop they replaced (BUG-265)', 
     installWindow(disk)
     const store = useSessionsStore()
     await store.init()
-    const bucketOf = (id: string): string | undefined =>
-      store.boardBuckets.find((b) => b.sessions.some((x) => x.sessionId === id))?.state
+    const activity = (id: string): string =>
+      store.activityOf(store.findSessionById(id)!, Date.now())
 
     // 5 min on: transcript growth is past the 3 min quiet threshold, and a block is still fresh
     // (it ages into "return here" only after 10 min unseen).
@@ -366,7 +340,7 @@ describe('supervisionLoad / boardBuckets are the loop they replaced (BUG-265)', 
       updatedAt: Date.now()
     } as never)
     expect(store.supervisionLoad).toBe(1)
-    expect(bucketOf('s-0-0')).toBe('working')
+    expect(activity('s-0-0')).toBe('working')
 
     cb.onSessionRegistry!({
       sessionId: 's-0-1',
@@ -374,23 +348,24 @@ describe('supervisionLoad / boardBuckets are the loop they replaced (BUG-265)', 
       updatedAt: Date.now()
     } as never)
     expect(store.supervisionLoad).toBe(2)
-    // The footer count reads the registry's block; the board's `needs-input` bucket never did (it reads
-    // the hook and transcript states), so this card stays `idle` there. Unchanged by BUG-265.
-    expect(bucketOf('s-0-1')).toBe('idle')
+    // The footer count reads the registry's block; Needs attention does not (it reads the hook and
+    // transcript states, as the row's dot does), so it is not listed there. Unchanged by BUG-265.
+    expect(activity('s-0-1')).toBe('idle')
+    expect(store.attentionSessions).toEqual([])
 
     cb.onSessionRegistry!({ sessionId: 's-0-0', taskState: null, updatedAt: Date.now() } as never)
     expect(store.supervisionLoad).toBe(1)
-    expect(bucketOf('s-0-0')).toBe('idle')
+    expect(activity('s-0-0')).toBe('idle')
 
     // A hook says working, but its last sign of life is 10 min old: stuck, not counted.
     cb.onHook!({ sessionId: 's-0-2', taskState: 'working', ts: Date.now() - 10 * 60_000 } as never)
-    expect(bucketOf('s-0-2')).toBe('stuck')
+    expect(activity('s-0-2')).toBe('stuck')
     expect(store.supervisionLoad).toBe(1)
 
     // A fresh liveness ping for THAT session revives it, and nobody else.
     cb.onLiveness!({ sessionId: 's-0-2', ts: Date.now() } as never)
-    expect(bucketOf('s-0-2')).toBe('working')
+    expect(activity('s-0-2')).toBe('working')
     expect(store.supervisionLoad).toBe(2)
-    expect(bucketOf('s-0-0')).toBe('idle')
+    expect(activity('s-0-0')).toBe('idle')
   })
 })

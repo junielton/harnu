@@ -8,7 +8,6 @@ import { setActivePinia, createPinia } from 'pinia'
 import { i18n } from '@renderer/i18n'
 import Sidebar from '../src/renderer/src/components/Sidebar.vue'
 import Topbar from '../src/renderer/src/components/Topbar.vue'
-import InboxRail from '../src/renderer/src/components/InboxRail.vue'
 import { useSettingsStore } from '../src/renderer/src/stores/settings'
 
 /**
@@ -228,7 +227,7 @@ describe('grid alignment', () => {
     expect(declsFor(rules, '[data-columns]').padding).toBe('var(--float-gap)')
   })
 
-  it('marks the sidebar toolbar, the Topbar and the Fleet rail header as the three band heads', async () => {
+  it('marks the sidebar toolbar and the Topbar as the two band heads', async () => {
     wrapper = mount(Sidebar, { global: { plugins: [i18n] } })
     await flushPromises()
     const sidebarBand = wrapper.findAll('[data-island-band]')
@@ -250,18 +249,6 @@ describe('grid alignment', () => {
     expect(topbarBand).toHaveLength(1)
     expect(topbarBand[0].attributes('data-island')).toBe('topbar')
     wrapper.unmount()
-
-    wrapper = mount(InboxRail, { global: { plugins: [i18n] } })
-    await flushPromises()
-    const railBand = wrapper.findAll('[data-island-band]')
-    expect(railBand).toHaveLength(1)
-    expect(railBand[0].attributes('data-island')).toBeUndefined()
-    expect(railBand[0].attributes('data-island-head')).toBe('rail-header')
-    const railList = wrapper.get('[data-island="rail-list"]')
-    expect(railList.element.firstElementChild).toBe(railBand[0].element)
-    const railIslands = wrapper.findAll('[data-island]').map((n) => n.attributes('data-island'))
-    expect(railIslands[0]).toBe('rail-list')
-    expect(railIslands[railIslands.length - 1]).toBe('rail-would-have')
   })
 })
 
@@ -273,7 +260,7 @@ describe('T658 gap, radius and joined heads', () => {
     expect(themes).toMatch(/--radius:\s*7px/)
   })
 
-  it('drives the five column dividers from --float-gap, and keeps the 6px hit area with the layout off', () => {
+  it('drives the column dividers from --float-gap, and keeps the 6px hit area with the layout off', () => {
     const rules = parseRules(floatingCss())
     expect(declsFor(rules, "[data-float-divider][aria-orientation='vertical']").width).toBe(
       'var(--float-gap)'
@@ -283,10 +270,10 @@ describe('T658 gap, radius and joined heads', () => {
     )
     const app = read('src/renderer/src/App.vue')
     const stack = read('src/renderer/src/components/HelperStack.vue')
-    expect(app.match(/data-float-divider/g)).toHaveLength(4)
+    expect(app.match(/data-float-divider/g)).toHaveLength(3)
     expect(stack.match(/data-float-divider/g)).toHaveLength(1)
     // Off, the dividers keep their Tailwind hit area (the floating rules do not apply).
-    expect(app.match(/shrink-0 cursor-(col|row)-resize[^"]*"/g)?.length).toBeGreaterThanOrEqual(4)
+    expect(app.match(/shrink-0 cursor-(col|row)-resize[^"]*"/g)?.length).toBeGreaterThanOrEqual(3)
     expect(app).not.toMatch(/class="group flex w-1 shrink-0/)
   })
 
@@ -294,7 +281,7 @@ describe('T658 gap, radius and joined heads', () => {
     const rules = parseRules(floatingCss())
     const head = declsFor(rules, '[data-island-head]')
     expect(head.height).toBe('calc(var(--float-band) - 1px) !important')
-    // Neither head paints a background or border of its own island any more.
+    // The head paints no background or border of its own island.
     const bg = rules.find((r) =>
       r.selectors.some((s) => s.includes("[data-island='sidebar-list']"))
     )
@@ -302,17 +289,33 @@ describe('T658 gap, radius and joined heads', () => {
     expect(bg?.selectors.join(' ')).not.toContain('rail-header')
   })
 
-  it('renders the Return here zone between the list island and the dock, capped and scrolling', () => {
+  it('gives each dock section its own island between the list island and Add folder', () => {
     const sidebar = read('src/renderer/src/components/Sidebar.vue')
-    const list = sidebar.indexOf('data-island="sidebar-list"')
-    const ret = sidebar.indexOf('<SidebarReturnZone />')
-    const dock = sidebar.indexOf('data-island="sidebar-dock"')
-    expect(list).toBeGreaterThan(-1)
-    expect(ret).toBeGreaterThan(list)
-    expect(dock).toBeGreaterThan(ret)
-    const zone = read('src/renderer/src/components/SidebarReturnZone.vue')
-    // the cap is the section's default height (T702); the scroller belongs to the shell
-    expect(zone).toMatch(/auto-max-height="live \? 'min\(380px, 45vh\)'/)
-    expect(read('src/renderer/src/components/SidebarSection.vue')).toContain('overflow-y-auto')
+    const order = [
+      'data-island="sidebar-list"',
+      '<SidebarNeedsYou />',
+      '<SidebarReturnZone />',
+      'data-island="sidebar-dock"'
+    ].map((marker) => sidebar.indexOf(marker))
+    expect(order.every((index) => index > -1)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+
+    const rules = parseRules(floatingCss())
+    const painted = rules.find((r) =>
+      r.selectors.some((s) => s.includes("[data-island='sidebar-dock']"))
+    )
+    const clipped = rules.find(
+      (r) =>
+        r.decls.overflow === 'hidden' &&
+        r.selectors.some((s) => s.includes("[data-island='session']"))
+    )
+    for (const island of ['sidebar-needs-you', 'sidebar-return']) {
+      expect(painted?.selectors.join(' '), `${island} background`).toContain(island)
+      expect(clipped?.selectors.join(' '), `${island} clip`).toContain(island)
+    }
+    // The body is capped and scrolls inside, so an open section never pushes Add folder off.
+    const section = read('src/renderer/src/components/SidebarDockSection.vue')
+    expect(section).toContain('max-height: min(380px, 45vh)')
+    expect(section).toContain('overflow-y-auto')
   })
 })

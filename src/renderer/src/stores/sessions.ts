@@ -69,11 +69,11 @@ import {
   resolveActivity,
   classifyFleetState,
   STUCK_AFTER_MS,
+  isNeedsInput,
   type FleetActivity,
   type FleetState
 } from './fleet-state'
 import { sortSessions, type SessionSortMode } from '../components/session-sort'
-import { buildBoard, type BoardBucket, type BoardSession } from '../components/fleet-board'
 import { sortFolders, type FolderSortMode } from '../components/folder-sort'
 import { isSidebarDensity, type SidebarDensity } from '../components/sidebar-density'
 import { buildSessionRows, teamHex } from '../components/teammate-grouping'
@@ -191,6 +191,15 @@ export interface SessionAgent {
  * input into the session the human is driving.
  */
 export type SpawnOrigin = 'operator' | 'agent'
+
+/** Why a session is in the Needs attention strip. */
+export type AttentionState = 'needs-input' | 'failed'
+
+/** One Needs attention row. */
+export interface AttentionEntry {
+  sessionId: string
+  state: AttentionState
+}
 
 export interface Session {
   /** UUID; also the filename of the JSONL transcript. */
@@ -2283,18 +2292,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     })
   )
 
-  /** "Needs you" total for the Approval Inbox badge (rail header + minimized strip):
-   *  parked hook approvals + parked MCP confirms. All are rows in the "Needs you"
-   *  tab (unlike the read-only "Would-have" shadow log). */
+  /** "Needs you" total: parked hook approvals + parked MCP confirms, the rows of the
+   *  dock's Needs you section. */
   const inboxCount = computed<number>(() => pendingApprovalCount.value + parkedConfirmCount.value)
-
-  /** Drives the rail's rising-edge auto-summon (App.vue): a real approval/confirm
-   *  force-expands a minimized rail. Currently identical to `inboxCount` — kept as
-   *  a separate name so a future informational-only (non-actionable) inbox term
-   *  can be added without also changing the auto-summon trigger. */
-  const actionableInboxCount = computed<number>(
-    () => pendingApprovalCount.value + parkedConfirmCount.value
-  )
 
   /**
    * Per-session verdicts (BUG-265). The aggregates below used to loop over every session and classify
@@ -2349,7 +2349,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   })
 
   /**
-   * The Claude sessions the fleet counts and the board shows: no sidechains, no folder terminals. Reads
+   * The Claude sessions the fleet counts and Needs attention lists: no sidechains, no folder terminals. Reads
    * those two flags of every session once, and again only when one of them (or the membership) changes.
    */
   const fleetSessionIds = computed<string[]>(() => {
@@ -2865,7 +2865,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
-   * Creation-time anchors for the Fleet rail's sort (T459): `realId` → the
+   * Creation-time anchors for the Needs attention sort (T459): `realId` → the
    * `created` of the synthetic placeholder it replaced. When the synthetic row
    * is DROPPED and a different (disk) row survives (`absorbSyntheticIntoRealRow`,
    * `collapseResolvedSynthetics`), the survivor's own `created` is the JSONL's
@@ -2885,67 +2885,49 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   /**
-   * Fleet status board projection (fleet-status-board spec §4.3): the same
-   * `folders` data the zones read, re-grouped by session state into urgency
-   * buckets. Resolves `folderAlias` once per folder, drops sidechains, honours
-   * the inline `filterQuery` per-card, then delegates ordering/grouping to the
-   * pure `buildBoard`. Cards inside a bucket are in CREATION order (T459 —
-   * never moved by activity), newest first unless the rail's invert toggle
-   * (`layout.inboxRailOrder`) says otherwise. Orthogonal to the zones — never
-   * touches folder-zones.ts.
+   * One Needs attention candidate per session, cached per session (BUG-265): `null` unless the
+   * session needs input or has failed. The same two verdicts as the row's own dot (`dotFor`).
    */
-  /**
-   * One board card per session, cached per session (BUG-265): `null` when the session is filtered out of
-   * the board by the inline filter. Reads only this session, its folder and its activity verdict.
-   */
-  const boardSliceOf = createKeyedComputeds<BoardSession | null>((id) => {
-    const entry = sessionIndex.value.get(id)
-    if (!entry) return null
-    const s = entry.session
-    const f = entry.folder
-    const q = filterQuery.value.trim()
-    if (q) {
-      const hit =
-        matchesFilter(f.alias, q) ||
-        (f.gitBranch ? matchesFilter(f.gitBranch, q) : false) ||
-        matchesFilter(s.summary, q) ||
-        matchesFilter(s.firstPrompt, q) ||
-        matchesFilter(sessionTitle(s, allSessions.value, i18n.global.t), q)
-      if (!hit) return null
-    }
-    return {
-      sessionId: s.sessionId,
-      taskState: s.taskState,
-      transcriptState: s.transcriptState,
-      status: s.status,
-      isSidechain: s.isSidechain,
-      modified: s.modified,
-      created: creationAnchors.get(s.sessionId) ?? s.created,
-      // `activityVerdicts` reads the shared 30 s clock, so `stuck` still ages in on the tick.
-      activity: activityVerdicts.get(id),
-      folderAlias: f.alias
-    }
+  const attentionOf = createKeyedComputeds<{
+    state: AttentionState
+    created: number
+  } | null>((id) => {
+    const s = sessionById(id)
+    if (!s || s.status === 'archived') return null
+    const state = isNeedsInput(s) ? 'needs-input' : s.taskState === 'failed' ? 'failed' : null
+    if (!state) return null
+    const created = Date.parse(creationAnchors.get(id) ?? s.created)
+    return { state, created: Number.isFinite(created) ? created : -Infinity }
   })
 
-  const boardBuckets = computed<BoardBucket[]>(() => {
-    // Archived sessions are "put away" everywhere else in the sidebar (hidden from the tree, excluded
-    // from attentionCount) — keep them out of the board too, so archiving still removes a session from
-    // view. The set is replaced wholesale on every change: reading the ref once is the dependency.
+  /**
+   * The Needs attention strip (design.md §6 "Needs attention"): needs-input first, then failed,
+   * newest created first inside each; activity never moves a row. Every folder, whatever the
+   * inline filter shows, and never an archived session.
+   */
+  const attentionSessions = computed<AttentionEntry[]>(() => {
     const archived = toRaw(archivedIds.value)
-    const slices: BoardSession[] = []
+    const found: Array<AttentionEntry & { created: number }> = []
     for (const id of fleetSessionIds.value) {
       if (archived.has(id)) continue
-      const slice = boardSliceOf.get(id)
-      if (slice) slices.push(slice)
+      const verdict = attentionOf.get(id)
+      if (verdict) found.push({ sessionId: id, ...verdict })
     }
-    return buildBoard(slices, useLayoutStore().inboxRailOrder)
+    const rank = (e: AttentionEntry): number => (e.state === 'needs-input' ? 0 : 1)
+    found.sort(
+      (a, b) =>
+        rank(a) - rank(b) ||
+        (a.created === b.created ? 0 : b.created > a.created ? 1 : -1) ||
+        (a.sessionId < b.sessionId ? -1 : 1)
+    )
+    return found.map(({ sessionId, state }) => ({ sessionId, state }))
   })
 
   // The per-session caches hold one computed per id: drop the ids that left the model.
   watch(sessionIndex, (index) => {
     fleetStateVerdicts.prune(index)
     activityVerdicts.prune(index)
-    boardSliceOf.prune(index)
+    attentionOf.prune(index)
     hasParkedFor.prune(index)
     isViewingFor.prune(index)
   })
@@ -4566,6 +4548,22 @@ export const useSessionsStore = defineStore('sessions', () => {
     // The index is rebuilt once per change of the fleet's membership (first folder wins, as a scan did),
     // so a hook event or a transcript append finds its session in O(1) instead of scanning every folder.
     return sessionIndex.value.get(sessionId)?.session ?? null
+  }
+
+  /**
+   * The name of the tree header a session sits under: the repo's, not the worktree's. A folder
+   * the tree is not drawing (filtered or hidden) still gets its repo's name.
+   */
+  function folderHeaderLabelOf(sessionId: string): string {
+    const folder = sessionIndex.value.get(sessionId)?.folder
+    if (!folder) return ''
+    const listed = sidebarTree.value.find((entry) => entry.paths.includes(folder.path))
+    if (listed) return listed.label
+    const main = folder.repoId
+      ? folders.value.find((f) => f.repoId === folder.repoId && f.isMainWorktree)
+      : undefined
+    const renamed = folder.repoId ? groupAliases.value[groupKey('repo', folder.repoId)] : undefined
+    return renamed?.trim() || (main ?? folder).alias
   }
 
   /** Resolve a session's owning folder alias (for the notification body). */
@@ -6367,10 +6365,8 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
 
     if (typeof window.api.onNotifyActivateInbox === 'function') {
-      // Clicking the OS notification used to open the Inbox modal; it now summons
-      // the rail (T83 S0). Same intent — "put the queue in front of me" — minus
-      // the overlay.
-      cleanupFns.push(window.api.onNotifyActivateInbox(() => useLayoutStore().summonInboxRail()))
+      // Clicking the OS notification of a parked confirm opens the dock's Needs you section.
+      cleanupFns.push(window.api.onNotifyActivateInbox(() => useLayoutStore().openNeedsYou()))
     }
     // T31: the Sentinel auto-denied a catastrophic command — a danger toast + OS
     // attention so the operator knows WHY a command didn't run (not silent magic).
@@ -6516,7 +6512,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     toggleCheckoutFold,
     toggleIdleWorktrees,
     revealCheckout,
-    boardBuckets,
+    attentionSessions,
     triageQueue,
     dismissedFolders,
     manuallyHiddenPaths,
@@ -6616,6 +6612,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     findSessionById,
     fleetStateFor,
     folderAliasOf,
+    folderHeaderLabelOf,
     activateSession,
     newSessionInCurrentContext,
     registerCloseHandler,
@@ -6707,7 +6704,6 @@ export const useSessionsStore = defineStore('sessions', () => {
     parkedConfirmCount,
     resolveParkedConfirm,
     inboxCount,
-    actionableInboxCount,
     agentsExpanded,
     isAgentsExpanded,
     isAgentsDoneExpanded,

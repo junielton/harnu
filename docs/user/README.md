@@ -7,7 +7,7 @@ Harnu is a desktop app that turns the sprawl of running and idle Claude Code ses
 - [Getting started](getting-started.md) — install, first launch, adopting a folder, starting your first session.
 - [Sessions](sessions.md) — new / resume / fork, the terminal pane, splits, the command palette, shortcuts.
 - [Folders and worktrees](folders-and-worktrees.md) — the checkout tree, pin vs. hide, git worktrees, the `WORKTREE.md` manifest.
-- [Fleet rail](approval-inbox.md) — the fleet's live state at a glance, confirms, "always allow this verb here", mission grants (budget + TTL), the hook interceptor, and the Topbar Activity bell.
+- [Approvals](approval-inbox.md) — Needs you in the sidebar, confirms, "always allow this verb here", mission grants (budget + TTL), the hook interceptor, and the Topbar Activity bell.
 - [Agent control](agent-control.md) — what a session can do from inside Harnu via its MCP server (the human-readable counterpart to `docs/harnu-features.md`, which is written for the agent, not for you).
 - [Bundled skills](bundled-skills.md) — the skills Harnu ships, the per-skill on/off panel, per-project overrides, and the opt-in install outside Harnu.
 - [Mods](mods.md) — Settings → Mods: the mods your sessions can load and what each one can do, read from its source. Read-only; it points at where each mod is switched on or off.

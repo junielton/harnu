@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * Topbar Activity bell (T152) — the notification history's new home, out of
- * the Fleet rail (design.md — Fleet rail reorg §2.4). Global: lives in
+ * Topbar Activity bell (T152) — the notification history (design.md §6
+ * "Activity bell"). Global: lives in
  * `Topbar.vue`'s right cluster, OUTSIDE the `v-if="sessions.selectedSession"`
  * guard, so it's reachable with no session selected. Badge = the raw record
  * count (`notifications.list.length`) — there's no read/unread state
@@ -73,7 +73,7 @@ function relativeTimeMs(ts: number): string {
 }
 
 /** Kind → fill color for the row's inner `kind-bar` (BUG-42) — same semantic
- *  map InboxRail used before the Activity section moved here. */
+ *  map as the toasts'. */
 function kindBarClass(kind: NotificationKind): string {
   switch (kind) {
     case 'success':

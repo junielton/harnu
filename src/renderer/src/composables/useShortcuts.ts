@@ -284,7 +284,7 @@ function splitHostileKey(chordStr: string): string | null {
  * True iff the held modifiers EXACTLY match `declared` (none extra, none missing).
  * `useMagicKeys` combos are SUBSET matches — `control+b` stays true while
  * `control+shift+b` is held — so without this Ctrl+Shift+B would spuriously fire the
- * Ctrl+B binding (collapsing the sidebar) on top of `view.fleetRail` (BUG-21).
+ * Ctrl+B binding (collapsing the sidebar) on top of the Ctrl+Shift+B one (BUG-21).
  *
  * "Held" is read from the key press itself (`shiftKey`, `ctrlKey`, …), not from
  * `useMagicKeys`' modifier refs: those drift from the keyboard whenever a modifier's

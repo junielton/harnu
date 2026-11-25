@@ -14,6 +14,8 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Added
 
+- **Needs attention** at the top of the sidebar lists the sessions that need your input or have failed, from every folder, one line each: waiting ones first. Click a row to go to the session. It disappears when nothing needs you.
+- **Needs you** and **Return here** now sit at the bottom of the sidebar, above Add folder, folded to a line with the count and the age of the oldest item, and gone while empty. `Cmd/Ctrl+Shift+A`, the **Open approvals** command and a click on the system notification open Needs you (and expand a collapsed sidebar); it never opens by itself. In a very narrow sidebar, Allow and Deny move under the command so you can still read it.
 - A checkout with something happening in it now has a thin coloured bar down its left edge, covering its row and its sessions: dim green while an agent works there, amber when a session needs you, red when one failed. Idle and finished checkouts show nothing, and neighbouring checkouts never share a bar.
 
 ### Fixed
@@ -22,6 +24,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
+- The Fleet rail on the right is gone, with its minimized strip, divider, state filter, order toggle and mission-grants strip: fleet state is in the sidebar, and grants are listed and revoked in **Settings → MCP**. The `Cmd/Ctrl+Shift+B` shortcut and the commands that only drove the rail are removed. The interceptor still records its preview (shadow) log, but its **Would-have** list and the **Review shadow log** button are gone from the screen for now.
 - Hover, selection and keyboard focus in the sidebar now show a bar on the left and brighten the row label, without filling the row or moving its contents.
 - The sidebar is now a flat checkout tree. Each repository or folder has one header, with the main checkout first and its worktrees flat below it, and each checkout's sessions under it, joined by a thin guide line. Parent-directory groups and the indented worktree lineage are no longer drawn (**Set parent folder** is still in the menu).
 - Worktrees with no listed session fold into one **n idle worktrees** row. The main checkout always keeps its own row, and a worktree that gains a session comes out of the fold on its own.

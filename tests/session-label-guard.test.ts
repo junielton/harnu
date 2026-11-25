@@ -85,13 +85,13 @@ const ALLOWLIST: AllowEntry[] = [
     reason: 'a sort key, not a label — changing it would reorder the sidebar'
   },
   {
-    file: 'components/ApprovalRow.vue',
-    reason: '`approval.summary` is the tool-call summary ("Bash(ls)"), not a session'
+    file: 'components/SidebarAttention.vue',
+    lineIncludes: 'pending?.summary',
+    reason: 'the tooltip\'s pending tool call ("Bash(ls)"), not a session name'
   },
   {
-    file: 'components/InboxRail.vue',
-    lineIncludes: '{{ row.summary }}',
-    reason: "a shadow-log row's tool-call summary, not a session"
+    file: 'components/ApprovalRow.vue',
+    reason: '`approval.summary` is the tool-call summary ("Bash(ls)"), not a session'
   },
   {
     file: 'composables/useSessionActions.ts',

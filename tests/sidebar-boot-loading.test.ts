@@ -274,7 +274,6 @@ describe('App onboarding while folders load (BUG-257)', () => {
       'CloudSessionPanel',
       'Onboarding',
       'TakeoverHost',
-      'InboxRail',
       'HelperStack',
       'TerminalPane',
       'SessionPreview',

@@ -377,14 +377,8 @@ Comfortable; its Compact column is derived from the values Compact already used.
 | Sidebar — minimum width                | 200px                                                         | Drag-resize floor                                                                                                                                                                                                                                                                                                                                                                  |
 | Sidebar — default width                | 268px                                                         | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
 | Sidebar — maximum width                | 480px                                                         | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — minimum width             | 260px                                                         | **Removed by the sidebar redesign (§6 "Bottom dock")**, with the three rows below. Drag-resize floor (4th column, T83)                                                                                                                                                                                                                                                             |
-| Inbox rail — default width             | 300px                                                         | Initial width / reset on double-click                                                                                                                                                                                                                                                                                                                                              |
-| Inbox rail — maximum width             | 440px                                                         | Drag-resize ceiling                                                                                                                                                                                                                                                                                                                                                                |
-| Inbox rail — minimized strip           | 44px                                                          | Fixed width of the `minimized` state (icon + badge; does not resize)                                                                                                                                                                                                                                                                                                               |
 | Resizable divider — hit area           | 6px                                                           | Handle drag area (`w-1.5`), shared by the sidebar and the split                                                                                                                                                                                                                                                                                                                    |
 | Resizable divider — visible stripe     | 1px                                                           | Colored stripe (`w-px`) flush to the side panel's edge inside the 6px hit area                                                                                                                                                                                                                                                                                                     |
-| Sidebar section — minimum height       | 88px                                                          | Drag floor of a resizable sidebar section (`SidebarSection`, §6 "Sidebar sections"): its eyebrow (28px) plus one row (60px, the height of one collapsed Your move card)                                                                                                                                                                                                            |
-| Sidebar section — collapsed height     | 28px                                                          | A collapsed section is its eyebrow row only; the chevron expands it again                                                                                                                                                                                                                                                                                                          |
 | Sidebar list — minimum height          | `min(160px, 40vh)`                                            | The folder list keeps at least this much room while a section is dragged taller; the dock is never pushed off-screen                                                                                                                                                                                                                                                               |
 | Footer / status bar — height           | 24px (`h-6`)                                                  | Full-width footer, fixed to the bottom of the shell                                                                                                                                                                                                                                                                                                                                |
 | Settings dialog — size                 | width `min(92vw, 940px)` · height `min(80vh, 720px)`          | **Fixed-size** dialog derived from the window — switching tabs or searching does not resize it (nav + pane scroll independently)                                                                                                                                                                                                                                                   |
@@ -404,13 +398,9 @@ math), not visual tokens — they live as constants in
 `src/renderer/src/stores/layout.ts` (`SIDEBAR_WIDTH_MIN/DEFAULT/MAX`), not in
 `themes.css`. The divider width uses the Tailwind utility `w-1.5`.
 
-The **Inbox rail** (the 4th column, §6 → "Inbox rail") follows exactly the same
-anatomy: width + state persisted **globally** (`om2tab.inboxRailWidth`,
-`om2tab.inboxRailState`), clamped `[260, 440]`, default `300`, constants in
-`layout.ts` (`INBOX_RAIL_WIDTH_MIN/DEFAULT/MAX`). **Global, not per-worktree**
-like the helper-stack (which persists in `helpers.json`): the approvals queue belongs to the
-**fleet**, so it needs to stay visible precisely while you're looking at
-_another_ folder.
+There is no fourth column: the **Inbox rail** and its persisted width and state were removed by the
+sidebar redesign. Pending approvals sit in the sidebar's [bottom dock](#bottom-dock), which is
+fleet-wide like the sidebar itself.
 
 ---
 
@@ -493,7 +483,7 @@ _another_ folder.
 | `timer`                                  | PR Stack card: the bare auto-merge armed marker beside the age                                                                                                                                                                         |
 | `dollar-sign`                            | Session cost (footer / status bar)                                                                                                                                                                                                     |
 | `triangle-alert`                         | Near `/compact` (footer — `exceeds200k` or context ≥95)                                                                                                                                                                                |
-| `inbox`                                  | Inbox rail ("Needs you" queue — minimized strip of the 4th column + "Open approvals" palette action)                                                                                                                                   |
+| `inbox`                                  | Removed with the Inbox rail (sidebar redesign); the dock heads carry no icon                                                                                                                                                           |
 | `image`                                  | Pasted-images pill/popover (footer — gallery of screenshots pasted into the session)                                                                                                                                                   |
 | `reply`                                  | Re-attach an image (re-injects the screenshot into the running session's prompt)                                                                                                                                                       |
 | `link`                                   | Links pill/popover (footer — the links of a session, newest first)                                                                                                                                                                     |
@@ -1070,8 +1060,8 @@ remains a **pure observer** (only reads the StopFailure body, never decides).
 **Dead synthetic — boot failed.** An agent-created synthetic session
 (MCP `create_session`) that **never turned into a PTY/transcript** within the boot
 deadline (120s) is marked **`failed`** by the reaper, with `failureReason: 'boot_timeout'`. It
-leaves the Fleet board's **WORKING** section (moves to the `errored` bucket) and
-the dot's `working` reading, and shows the **solid red dot `--red`** (same as §6 "Session
+stops reading as `working` (the dot, the ring and the rail turn to `failed`, and Needs attention
+lists it), and shows the **solid red dot `--red`** (same as §6 "Session
 status" `failed`) + a **`Failed to start`** badge (`--red` variant, same anatomy
 as the StopFailure badge — **no new token**, reuses `--red`/`--red-soft`). It never
 hangs around as "working" (that was the symptom of BUG-23: eternal rows reading "New session ·
@@ -1113,19 +1103,19 @@ same tokens. Content:
   is off, a `--text-4` `12px` text — "No folders intercepted yet — add one below
   or turn on Trust all folders." — makes clear that **nothing is being held yet**
   (never a silent no-op).
-- **"Review shadow log":** an `--accent` text link (`hover opacity 0.8`) that opens
-  the Approval Inbox (the "Would-have" tab is the interceptor's own preview).
+- **No link to the shadow log** (the interceptor's own preview): its list left with the Fleet
+  rail, and its view comes back in Settings (card T809).
 
 **Sentinel — auto-deny.** A safety net above the interceptor: a resolver that
 **auto-DENIES** a small, conservative set of catastrophic commands (`rm -rf /`,
 `dd` to disk, `mkfs`, fork bomb, `chmod 777 /`, force-push to `main`/`master`,
 `curl | sh`) **before** the Approval Inbox holds them. Only acts in a folder's `active`
 on-ramp mode (respects the ramp); in `shadow`/off-ramp it only logs a "would-deny" in the
-"Would-have" tab. It's **deny-only** (never grants anything) and conservative (a false positive costs a
+shadow log. It's **deny-only** (never grants anything) and conservative (a false positive costs a
 retry, never data). When it denies, it fires a **`danger` toast** (`--red`/`--red-soft`,
 title "Blocked a dangerous command" + the reason) + OS attention — so you know _why_
-a command didn't run (never silent magic). Each block shows up in the
-"Would-have" tab (`by:'sentinel'`).
+a command didn't run (never silent magic). Each block is recorded in the
+shadow log (`by:'sentinel'`).
 
 Technical nouns (`shadow`, `active`, `tool call`, `worktree`) stay untranslated.
 No new token — reuses `--accent`/`--accent-soft`, `--text-3`/`--text-4`,
@@ -2320,7 +2310,7 @@ left padding): no width change, no shift. `title`/`aria-label` spell the full te
 
 #### Folder ring
 
-The folder header's 16px badge is the [Fleet state ring](#fleet-state-ring-fleet-rail)
+The folder header's 16px badge is the [Fleet state ring](#fleet-state-ring)
 (`fleet-ring`), taking the **hottest** session of the folder: `needs-input` → `errored` → `working`
 (`stuck` counts as working) → idle. Idle (and a folder whose sessions are all done) shows the faint
 track only, in `--border-2`, with no dot. It is the folder's one state signal: a header never gets a
@@ -2415,7 +2405,10 @@ attention` in Section-label type (10.5px / 600, `.06em`, uppercase) `--warning`,
   error) is the tooltip. A click selects the session, expands its folder and checkout, and leaves
   Focus when the session is outside the focused folder.
 - **Order:** needs input first, then failed; inside a tier, newest created first.
-- **Height:** at most 168px (six rows), then the rows scroll; the head stays put.
+- **Height:** at most 168px (six rows), then the rows scroll; the head stays put. It keeps its full
+  height while the dock opens (the dock bodies scroll first) and folds down to its head only on a
+  window too short for both dock heads, Add folder and the folder list's minimum.
+- **Keyboard focus:** the standard ring, drawn inside the row and the head (so is the dock heads').
 
 #### Bottom dock
 
@@ -2427,17 +2420,21 @@ own under Floating panels).
   `padding: 8px 12px`, `gap: 6px`, 12px / 500 `--text-2`, `tabular-nums`; the count `--warning` / 600,
   the age (oldest item's) 11px `--text-4`; chevron 12px `--text-4` pushed right, rotates 90° when
   open. Hover `--surface-2`. **Folded by default**: label, count and age are the whole signal.
+  The age reads as the Your move clock (`11m`, `1h 02m`); an item starts when the approval or
+  confirm was parked, the card was filed, or the forgotten session last wrote. A section that
+  empties folds again, so it never comes back already open.
 - **A section with nothing in it is not rendered at all.**
 - **Open body:** content-sized, at most `min(380px, 45vh)`, scrolls inside; the head stays put. The
   folder list keeps at least `min(160px, 40vh)`.
-- **Needs you** holds everything the Fleet rail's Needs you section held: pending approval rows,
-  parked agent confirms and hot proposals, with the same anatomy and the same disclosure rules (§6
+- **Narrow sidebar:** below 260px an approval row's Allow and Deny drop under its text, so the
+  command keeps at least 60px of width.
+- **Needs you** holds the pending approval rows and the parked agent confirms, with the same anatomy and the same disclosure rules (§6
   "Needs you rows"). It never opens itself; the OS notification deep-link, `⌘⇧A` and the "Open
   approvals" palette action open it (and expand a collapsed sidebar).
 - **Return here** holds the rows or the Your move cards described below, unchanged inside.
 - **The Fleet rail is gone** (4th column, its minimized strip, the mission-grants strip, the fleet
   cards and Would-have). Fleet state is read from the tree (rings, dots, rails) and Needs attention;
-  grants are listed and revoked in Settings → Control server; the interceptor's preview log leaves
+  grants are listed and revoked in Settings → MCP; the interceptor's preview log leaves
   the main screen.
 
 #### Focus (one folder)
@@ -2474,16 +2471,9 @@ axis is orthogonal to `taskState` — it answers "have you seen this session's
 current state?"). The goal is that a blocked-and-abandoned session doesn't get
 lost.
 
-**Calm-tech — only when there's something.** The whole zone (divider + eyebrow +
-list) renders **only when the forgotten set is non-empty**. Zero persistent
-chrome: it vanishes the instant the last session is seen/dispatched.
-
-**Eyebrow** (Section-label): reuses the Section-label typography (uppercase
-`10.5px`, weight 500, `letter-spacing 0.06em`, `--text-4`) with title + count —
-`RETURN HERE · 2` (the middot is decorative, `aria-hidden`). Since T702 the zone is the
-first **sidebar section** (§6 "Sidebar sections"): a chevron at the right end of the eyebrow
-collapses it to the eyebrow row, and its top edge is a resize handle. The title, count and
-clock stay visible while collapsed.
+**Calm-tech — only when there's something.** The section renders **only when the
+forgotten set is non-empty**. Zero persistent chrome: it vanishes the instant the
+last session is seen/dispatched.
 
 **Flat list** (this axis is **per session**, not per folder). Each row (height
 `28px`, `padding: 0 8px 0 12px`, `gap 8px`, `font-size 12.5px`) is a `<button>`
@@ -2499,27 +2489,19 @@ owning folder
   **dismiss** (× on the right, `role="button"` — never a `<button>` nested in a
   `<button>`; `--text-3` → `--text` on hover, `@click.stop` so it doesn't jump
   along) → `markSessionSeen(id)` (stamps last-viewed = now → the predicate
-  flips and the row leaves). **Zone divider**: a 1px `--border` top rule
-  (`data-section-divider`, no margin), separating the folder list above from `RETURN HERE`; the
-  dock below draws its own top rule. **Height**: until the operator drags the handle the zone is
-  content-sized and at most `168px` tall (about four rows plus the eyebrow); the eyebrow stays put
-  and only the rows scroll, so a long list never pushes the dock off-screen. Once dragged, the stored
-  height replaces that cap (§6 "Sidebar sections"). The folder list keeps the remaining height.
-  **No new tokens** — Section-label, `--color-warning`, `--border`, all
-  already exist.
+  flips and the row leaves). Height, scrolling and the top rule are the dock section's
+  ([bottom dock](#bottom-dock)). **No new tokens.**
 
 ##### `RETURN HERE` in Your move mode Live (the queue of cards)
 
 When the Your move setting is **Live**, the zone stops listing forgotten sessions and lists the
 **cards** of the global Your move queue instead. In Off and Observe it keeps the rows above
 unchanged; the legacy `needs-input` rows retire in the answering unit. The island, its
-`data-island="sidebar-return"` attribute, the divider and the position are the same in both
+`data-island="sidebar-return"` attribute and the position are the same in both
 layouts. The zone is global: it never filters by the folder the sidebar is drilled into, so a card
 from another project shows while the list is drilled (R-3).
 
-- **Eyebrow.** Same Section-label typography, in `--color-warning`: `RETURN HERE · 3 · 2h 14m`
-  (title, count, the oldest card's running clock; the middots are decorative, `aria-hidden`). The
-  eyebrow stays put; only the cards scroll.
+- **Head.** The dock head: `Return here`, the count and the oldest card's running clock.
 - **Order.** Oldest first (`openedAt` ascending). Only open cards of the `live` lane. The selected
   session's cards are listed too.
 - **Page.** The zone renders the first **25** cards of that order and nothing else, however many
@@ -2562,10 +2544,8 @@ from another project shows while the list is drilled (R-3).
   written), the card stays open and shows one `--color-red` line (`11.5px`, `yourMove.exits.failed`)
   right under the two exits; both exits keep working, and the next click retries and clears the line.
   A card that was already gone shows nothing: the list just refreshes.
-- **Height.** Until the operator drags the handle: content-sized, `max-height: min(380px, 45vh)`,
-  the cards scroll inside, the eyebrow does not. That leaves the folder list usable on a short
-  window (45vh at most) and still shows about three collapsed cards. A dragged height replaces the
-  cap (§6 "Sidebar sections"); the cards and the legacy rows are the section's body, untouched.
+- **Height.** The dock section's: content-sized, `max-height: min(380px, 45vh)`, the cards
+  scroll inside and the head does not. That leaves the folder list usable on a short window.
 - **No new tokens**: `--color-warning`, `--color-warning-soft`, `--color-warning-line`,
   `--color-accent`, `--color-red` already exist.
 
@@ -2721,7 +2701,7 @@ peek are different things and keep their own names.
 
 ### Session name
 
-Every surface that names a session — sidebar row, top bar, fleet card, triage
+Every surface that names a session — sidebar row, top bar, Needs attention row, triage
 and `RETURN HERE` rows, Approval Inbox, jump palette, `⌘K` palette, footer,
 folder view, cloud panel, mission dropdown, notifications — resolves it
 through **one** function, `sessionTitle()` (`lib/session-label.ts`, BUG-78), so
@@ -2741,7 +2721,7 @@ Nothing left → empty, and each surface appends **its own** fallback:
 
 | Surface                                                | Fallback                       |
 | ------------------------------------------------------ | ------------------------------ |
-| Sidebar row, fleet card, Fleet minicard                | `session.unnamed` ("Untitled") |
+| Sidebar row, Needs attention row                       | `session.unnamed` ("Untitled") |
 | Triage queue, `RETURN HERE` row, footer                | `session.newPlaceholder`       |
 | Jump palette, `⌘K` palette, folder view, OS/toast body | the session id                 |
 | Top bar, Approval Inbox, cloud panel, recents          | none (empty)                   |
@@ -2765,19 +2745,19 @@ besides those:
 #### Layout containment (long lists)
 
 The sidebar keeps every session row in the DOM — including the rows of collapsed
-folders, which sit behind a zero-height clip rather than `display: none` — and the
-Fleet rail renders one card per live session. On a large workspace that is ~15k
+folders, which sit behind a zero-height clip rather than `display: none`. On a large
+workspace that is ~15k
 elements, and without containment a style or layout pass walked all of them
-(measured: 100–240 ms per pass while a key was held in a terminal). Three
-containment helpers in `main.css` bound that cost. **None of them changes a row's
+(measured: 100–240 ms per pass while a key was held in a terminal). elements, and without containment a style or layout pass walked all of them
+(measured: 100–240 ms per pass while a key was held in a terminal). Two
+containment helpers bound that cost. **None of them changes a row's
 size, position or paint** — the check is a pixel-identical before/after in an
 isolated instance.
 
-| Helper             | Applied to                       | Declaration                                                         | Why this shape                                                                                                                                                              |
-| ------------------ | -------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.sidebar-row-cv`  | session row (`data-session-row`) | `content-visibility: auto`                                          | Rows have a fixed inline height (28 / 24 px by density), so no `contain-intrinsic-size` is needed and scroll positions cannot shift.                                        |
-| `.fleet-card-cv`   | Fleet card root (`fleet-card`)   | `content-visibility: auto; contain-intrinsic-block-size: auto 64px` | A card's height depends on its optional second line; `auto 64px` means "64px until it has rendered once, then its real height", so the scrollbar does not jump.             |
-| `.sidebar-contain` | the sidebar `<aside>`            | `contain: layout style`                                             | A fixed-width layout root: a change elsewhere in the window never re-walks the folder list. Deliberately **no** `paint` (it would clip the jump palette) and **no** `size`. |
+| Helper             | Applied to                       | Declaration                | Why this shape                                                                                                                                                              |
+| ------------------ | -------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.sidebar-row-cv`  | session row (`data-session-row`) | `content-visibility: auto` | Rows have a fixed inline height (28 / 24 px by density), so no `contain-intrinsic-size` is needed and scroll positions cannot shift.                                        |
+| `.sidebar-contain` | the sidebar `<aside>`            | `contain: layout style`    | A fixed-width layout root: a change elsewhere in the window never re-walks the folder list. Deliberately **no** `paint` (it would clip the jump palette) and **no** `size`. |
 
 Rules for anyone touching these surfaces:
 
@@ -2901,8 +2881,8 @@ terminal:
   kills the shell's PTY and removes the row). Selected reuses the session rows'
   anatomy: background `rgba(217,119,87,0.08)` + `2px --accent` bar on the left.
 
-Terminals **don't** count toward the folder's count badge, don't appear on the
-Fleet board, and have no status dot or OS notifications (a shell exiting isn't
+Terminals **don't** count toward the folder's count badge, don't appear in
+Needs attention, and have no status dot or OS notifications (a shell exiting isn't
 a "completed task"). In the topbar the title is fixed as `Terminal` (not
 editable).
 
@@ -3032,7 +3012,7 @@ cutoff).
     still resolves correctly outside the grouped/nested zone). This keeps an
     open terminal from losing its sidebar row out from under the operator.
   - An orphaned-but-hidden teammate that is `working` or `needs-input` still
-    surfaces through the Fleet rail, which reads from `sessions.allSessions`
+    surfaces in Needs attention when it needs input or fails, which reads every session
     independently of this grouping — hiding it from the sidebar tree never
     makes it unreachable.
 
@@ -3070,9 +3050,8 @@ confirmation is only for the active case.
 
 ### Roadmap board (lifecycle kanban)
 
-The **wide, side-by-side-columns panel** that the Fleet status board above
-explicitly is **not**. These are **two deliberately separate boards**: the
-sidebar's Fleet board answers _"who needs me NOW?"_ (attention, narrow,
+A **wide, side-by-side-columns panel**, deliberately separate from the sidebar: the
+sidebar (the tree and Needs attention) answers _"who needs me NOW?"_ (attention, narrow,
 vertical stack); the Roadmap board answers _"where is each piece of the PLAN?"_
 (lifecycle, wide, columns). The Roadmap board is a **VIEW derived from Project
 Memory** (`.harnu/memory/roadmap/`, T79): **1 card = 1 `.md` file with frontmatter
@@ -3242,7 +3221,7 @@ always starting empty.
 
 1. **Line 1 — live state dot + title + provenance.** The **6px dot** of a card with a
    linked `session` reflects that session's **`classifyFleetState`** (S3), reusing the
-   **`FleetBoardCard` state tokens** (the SAME engine as the sidebar dot — it
+   **sidebar dot's state tokens** (the SAME engine as the sidebar dot — it
    never diverges): `working` (`anim-pulse-dot` `--green`), `needs-you`
    (`anim-attention-dot` `--warning`; `return-here` doubles here), `stuck` (hollow ring
    `--red`), `idle` (`--text-4`). No session → hollow ring `--text-4` (placeholder).
@@ -3521,8 +3500,7 @@ a glance, not just another rendered column.
 
 **Performance at scale.** No virtualization library exists anywhere in the
 renderer today — introducing one is real new surface, not a drop-in. V1
-follows the same precedent the Footer fleet rail's "Show all" filter and the
-Usage Dashboard's ranked lists already use: a capped, paginated render (top-N
+follows the same precedent the Usage Dashboard's ranked lists already use: a capped, paginated render (top-N
 per column/sub-list + a "Show all" toggle) rather than a full virtual-scroll
 list. Revisit with a real virtualization pass only if measured jank at the
 operator's actual scale proves the cap insufficient.
@@ -4049,9 +4027,9 @@ context menus.
 
 ### Resizable divider (handle)
 
-A vertical, draggable bar that separates two panels. Used in three places with the same
-anatomy: between the **sidebar and the content**, between the **terminal and the
-helper-stack** (split), and between the **content and the Fleet rail** (expanded only).
+A vertical, draggable bar that separates two panels. Used in two places with the same
+anatomy: between the **sidebar and the content**, and between the **terminal and the
+helper-stack** (split).
 
 - **Anatomy — hit area vs. visible line.** Two layers. The **hit area** (drag target) is the
   outer 6px `<div>` (`w-1.5`, `cursor-col-resize`, `shrink-0`), transparent — it sits on the
@@ -4061,11 +4039,10 @@ helper-stack** (split), and between the **content and the Fleet rail** (expanded
   in the hit column: a centered line leaves a strip of `--bg` on each side of it, and next to
   a `--sidebar` panel that strip reads as a second bar (BUG-247). So the hit column aligns
   its line toward the panel it belongs to — `justify-start` for the sidebar (panel on the
-  left), `justify-end` for the helper stack and the Fleet rail (panel on the right). The
+  left), `justify-end` for the helper stack (panel on the right). The
   remaining 5px of `--bg` sit on the content side, where the content's own `--bg` continues
   them, so they are not an edge. The hit area keeps its full 6px width; only the line moves.
-- **Collapsed / minimized.** A collapsed sidebar and a minimized Fleet rail render **no
-  divider** (`v-if`): the minimized rail's own `border-l` is then the only edge.
+- **Collapsed.** A collapsed sidebar renders **no divider** (`v-if`).
   With Floating panels on the dividers change look and the gap is kept in these states; see
   "Floating panels layout (T626)" below.
 - **Background:** only the 1px stripe is colored — `--border-2` (default) →
@@ -4073,7 +4050,7 @@ helper-stack** (split), and between the **content and the Fleet rail** (expanded
 - **Cursor:** `col-resize` when hovering over it.
 - **Drag:** adjusts the width in real time. In the sidebar, the `clientX` delta is
   added to the initial width and clamped to `[200, 480]` (see §4 — Layout dimensions).
-- **Double-click:** resets to the default — 268px for the sidebar, 300px for the Fleet rail,
+- **Double-click:** resets to the default — 268px for the sidebar,
   the 0.65 content/helper split for the helper stack.
 - **Motion:** only the background color transition (`--dur` / `--ease`); the width
   tracks the pointer 1:1 during the drag, **no** easing animation (an animated drag
@@ -4095,7 +4072,7 @@ The session area and the helper stack sit **side by side** (today's layout) or *
   `auto` (default), `side-by-side`, `stacked`. Persisted in `settings.json` as `splitLayout`
   (absent = `auto`), like the other settings-store values; an unknown value reads as `auto`.
 - **`auto` rule.** Measured on the **main area** (the box that holds the session area and the
-  helper stack, i.e. the window minus the sidebar and the Fleet rail), as the ratio
+  helper stack, i.e. the window minus the sidebar), as the ratio
   `height / width`. It resolves to **stacked** once the area is **taller than wide by 5%**
   (`height / width > 1.05`) and back to **side by side** once it is **wider than tall by 5%**
   (`height / width < 0.95`). Between the two (0.95 … 1.05) the previous result holds, so a
@@ -4156,19 +4133,19 @@ it does without this section: the setting adds no pixel to the default layout.
 - **Gap = 4px, everywhere.** `--float-gap` is the empty space between two islands' outer borders
   AND between an island and the window edge (top, left, right, and the bottom edge above the
   footer). The row of columns carries `padding: var(--float-gap)`. **One token moves every gap**:
-  the frame padding, the gaps in the sidebar and Fleet rail stacks, the Topbar margin, the three
-  column dividers, the helper-pane gap (flex gap side by side, width splitter when stacked) and the
-  Fleet rail divider all read `--float-gap`. Nothing hardcodes a pixel value.
+  the frame padding, the gaps in the sidebar stack, the Topbar margin, the
+  column dividers and the helper-pane gap (flex gap side by side, width splitter when stacked)
+  all read `--float-gap`. Nothing hardcodes a pixel value.
 - **Radius.** Every island is rounded with `--float-radius` (4px), a token of its own that sits next
   to `--float-gap`. The global `--radius` stays 7px, so buttons, inputs, popovers and every surface
   inside an island are unchanged. `--radius-sm` (5px) is used only for surfaces **inside** an
-  island (rows, minicards, buttons), unchanged.
+  island (rows, buttons), unchanged.
 - **Border.** Each island has its **own** 1px `--border` on all four sides and never shares an edge
   with another island. A flat inner divider that used to separate two regions of one box
-  (`border-t` over the Fleet rail sections, the Return here zone's top rule) is replaced by the island gap and is not drawn.
-- **Joined heads.** The sidebar toolbar and the Fleet rail header are **not** islands: each is the
-  **head of its list island** (T659). Toolbar + folder list are ONE island (`sidebar-list`), header +
-  fleet list are ONE island (`rail-list`), with no gap between them; the head's own `border-b` stays
+  (`border-t` over a dock section) is replaced by the island gap and is not drawn.
+- **Joined heads.** The sidebar toolbar is **not** an island: it is the
+  **head of its list island** (T659). Toolbar + folder list are ONE island (`sidebar-list`), with no
+  gap between them; the head's own `border-b` stays
   as the **inner divider rule**. A head carries `data-island-head` (and `data-island-band`) instead
   of `data-island`. Because it sits inside the island's 1px top border, a head is
   `calc(var(--float-band) - 1px)` tall, which puts its inner rule on the Topbar's bottom edge.
@@ -4193,7 +4170,7 @@ middle column is the Topbar over a row holding the session area and the helper s
 - **Below the band.** The first island under each column starts at the same y: band + gap
   (`4 + 42 + 4 = 50px` from the window top). Under a joined head the list simply continues; below
   the Topbar it is the session area and the first helper pane in the middle column.
-- **Columns are separated by the dividers.** The vertical dividers (no Fleet rail divider) are exactly
+- **Columns are separated by the dividers.** The vertical dividers are exactly
   `--float-gap` wide (4px; the column dividers carry `data-float-divider`, and the floating
   rule sets their width/height from the token), so the divider **is** the gap and the drag handle at
   once. With the layout off they keep the 6px `w-1.5` / `h-1.5` hit area. Between two helper panes the gap is `--float-gap` as well
@@ -4228,58 +4205,11 @@ side border. It keeps `--surface` and a 1px `--border` **top rule**. The islands
 - Rows keep their full-width anatomy inside the island; the left bar and the group rail sit just
   inside the island border.
 
-##### Sidebar sections (T702)
+##### Sidebar sections (T702) — removed by the sidebar redesign
 
-`SidebarSection.vue` is the generic shell for a section stacked **between the list island and the
-dock**: an eyebrow with a chevron, a body that scrolls, and a resize handle on its top edge. It
-holds no section logic (Return here is its first user and nothing in the shell knows about it); a
-second section mounts the same way:
-
-```vue
-<SidebarSection id="queue" :label="$t('sidebar.queue.title')" data-island="sidebar-queue">
-  <template #eyebrow>{{ $t('sidebar.queue.title') }} · {{ n }}</template>
-  <QueueRows />
-</SidebarSection>
-```
-
-- **Anatomy, top to bottom.** A transparent wrapper (`data-section="<id>"`, `position: relative`)
-  holding (1) the **handle**, absolutely placed above the island, and (2) the **island** (the
-  element that carries `data-island`, the border and the rounded corners, `overflow: hidden` in
-  Floating panels). Inside the island: the 1px `--border` top rule (`data-section-divider`; hidden by
-  Floating panels, where the gap separates the islands), the **eyebrow**, then the **body**.
-- **Eyebrow.** The Section-label (uppercase `10.5px` / 500 / `0.06em`, padding `8px 12px 4px`,
-  `gap 4px`, `--text-4`; `tone="warning"` makes it `--color-warning`). The `eyebrow` slot is the
-  title and whatever the section shows beside it (count, clock). The **chevron** is a 16×16px
-  `<button>` pushed to the right end (`ml-auto`): lucide `ChevronDown` (expanded) / `ChevronRight`
-  (collapsed), 12px, stroke `1.8`, `--text-3` → `--text` and `--surface-2` on hover, the ghost
-  button radius. It carries `aria-expanded` and an `aria-controls` pointing at the body, and its
-  label is `sidebar.section.collapse` / `.expand` ("Collapse {name}" / "Expand {name}"). Enter and
-  Space toggle it, as on any button; focus keeps the standard focus ring.
-- **Collapsed.** The island is the eyebrow row only (28px, plus the 1px rule when the layout is
-  off), with symmetric `6px 12px` padding so the text sits on the row's vertical center (expanded
-  it is `8px 12px 4px`, because it heads a body); the body is hidden (`v-show`, so a card's expanded state survives) and the handle is not
-  rendered, since there is nothing to resize. The list island takes the freed height.
-- **Handle.** The horizontal variant of the T627 divider (§6 "Resizable divider (handle)"): a
-  `<div role="separator" aria-orientation="horizontal">`, `h-1.5 w-full cursor-row-resize`, the
-  visible line `h-px w-full`, **transparent at rest** (the section's own top rule already draws the
-  edge) and `--accent-line` on hover with the `--dur-fast` / `--ease` color transition, flush against
-  the island's top edge (`items-end`). With Floating panels on it takes the divider rules of that
-  layout instead: its height is `--float-gap`, it sits **in the gap**, no line at rest and the
-  36px × 2px grip on hover. Dragging **up** makes the section taller; the height tracks the pointer
-  1:1 and there is no easing. Double-click clears the stored height, so the section goes back to its
-  default (content-sized, up to its default cap).
-- **Bounds.** The height is clamped to `[88px, max]` (`max` is the section's prop, `640px` by
-  default) **and** to what leaves the folder list `min(160px, 40vh)`: the ceiling is the section's
-  height at drag start plus the list island's spare height at that moment. When the window gets
-  shorter the section yields first (down to its 88px floor), then the list; the dock never moves.
-  A stored height above the ceiling is clamped when it is applied, never rewritten.
-- **Persistence.** One `localStorage` key per section id, `om2tab.sidebarSection.<id>`, holding
-  `{"height": number | null, "collapsed": boolean}`. `null` means "never dragged" (content-sized).
-  Reads and writes sit in `try/catch`; a missing, corrupt or out-of-range value reads as the
-  default. The state lives in a module-level store, so it survives the section's component
-  unmounting when the section hides itself because it is empty and reappearing later.
-- **No new tokens.** `--border`, `--accent-line`, `--text-3`, `--text-4`, `--surface-2`,
-  `--float-gap`, `--dur-fast` and `--ease` already exist.
+There is no resizable section between the list island and the Add folder island any more: its one
+user, Return here, is a section of the [bottom dock](#bottom-dock), with no resize handle and no
+stored height.
 
 ##### Sidebar dock (slot)
 
@@ -4296,21 +4226,14 @@ and Settings today, and it must accept more sections later without a layout chan
   and `--float-gap` above the footer.
 - Off, the dock is the same footer it always was: one section, a 1px `--border` top rule.
 
-##### Fleet rail sections (slots) — removed by the sidebar redesign
-
-There is no Fleet rail column: no `rail-*` island, and the Fleet rail rows of this layout section
-(grid, collapsed and hidden states, minimize motion) no longer apply.
-
 ##### Collapsed and hidden states keep the gap
 
 A divider that disappears must never take the gap with it. With the switch on:
 
-| State                | What supplies the `--float-gap`                                                              |
-| -------------------- | -------------------------------------------------------------------------------------------- |
-| Fleet rail minimized | The rail column carries `margin-left: var(--float-gap)` (its divider is not rendered).       |
-| Fleet rail hidden    | The row's own padding is the gap to the window edge.                                         |
-| Sidebar collapsed    | The row's own padding is the gap to the window edge (the divider is not rendered).           |
-| Helper stack closed  | The session area simply spans the middle column; the divider next to the rail is unaffected. |
+| State               | What supplies the `--float-gap`                                                    |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| Sidebar collapsed   | The row's own padding is the gap to the window edge (the divider is not rendered). |
+| Helper stack closed | The session area simply spans the middle column.                                   |
 
 ##### Motion
 
@@ -4407,9 +4330,9 @@ hides is the **Expand hides** setting.
   pane is expanded at a time; expanding another pane re-targets directly.
 - **Expand hides (Settings → Appearance → Layout, a two-option segmented control after Floating panels;
   `settings.json` key `expandHides`).** `everything`
-  (default): the sidebar, the session area and the Fleet rail collapse, and only the Topbar, the
-  pane and the footer remain. `session-only`: only the session area collapses; the sidebar and
-  the Fleet rail stay. Both variants also collapse the other helper panes to nothing (no 24px
+  (default): the sidebar and the session area collapse, and only the Topbar, the
+  pane and the footer remain. `session-only`: only the session area collapses; the sidebar
+  stays. Both variants also collapse the other helper panes to nothing (no 24px
   strips, unlike maximize), and the dividers that touched a collapsed column collapse with it.
 - **No remount, no move.** The pane is never re-parented. It grows because everything around it
   collapses (`.lm-collapse`, below), so an xterm keeps the same `Terminal` and PTY, and a browser
@@ -7054,8 +6977,7 @@ silently instead.
 The durable **history** of every toast the Toast section above describes — the
 memory `Toast` doesn't have. A toast auto-dismisses in 6s (or on explicit
 dismiss); once it's gone there was, until T83 S1, no record it ever happened.
-This history used to live as a stacked section inside the Inbox rail (T83 S1
-through T151); **T152 moved it out** into a **notification bell in the
+This history is not part of the approvals queue (**T152**): it lives in a **notification bell in the
 Topbar's right cluster** (`ActivityBell.vue`), anchored **outside** the
 `v-if="sessions.selectedSession"` guard — the history is fleet-global, not
 per-worktree, so it belongs somewhere that's reachable with no session
@@ -7074,7 +6996,7 @@ now lives where every desktop notification center lives, a bell in the chrome.
   340px wide, `max-height: 520px`, `bg-surface` / `border-2` / `shadow-pop` /
   `radius` — the `FolderPreview` popover convention); click-outside or `Esc`
   closes it. **Never steals focus** — no autofocus, no focus trap, same
-  discipline as the Inbox rail.
+  discipline as the dock's Needs you section.
 - **No read/unread state.** `dismiss(id)` (removes one record) and
   `clearAll()` (empties the list) replace the old `markRead`/`unreadCount` —
   being in the list **is** the "not yet handled" signal, so the badge is
@@ -8195,7 +8117,7 @@ content, the card was widened to `min(92vw, 940px)`.
   - **v1 scope:** only settings that live **directly** on the dialog's own tabs
     (General → Interface language / Interface scale / Font size / Session state
     hooks / statusLine / OS notifications / Sound; Appearance → Theme; Interceptor →
-    Hook responder mode / Trust all folders / Review shadow log) have an anchor. Fields
+    Hook responder mode / Trust all folders) have an anchor. Fields
     inside sub-panes
     (Claude Boot / Claude config / Endpoints / MCP) appear only as a **tab
     match** (via keywords), not as a setting result. Search resets on every open.
@@ -9350,7 +9272,7 @@ modal). Opened via `⌘K` (Cmd+K / Ctrl+K).
 - Selected item (keyboard cursor): `bg-accent-soft text-text`, `2px --accent` bar on the left, `padding-left: 14px` to compensate
 - Empty state: `--text-4` 12.5px text, padding `20px 16px`, center-aligned
 - Sections (in order): **Recents** (top 3 sessions by mtime desc, only with empty input) → **Actions** → **Folders** → **Sessions**
-- **Actions come from the keybindings table** (T486 U6). One row per table action with `palette !== false` that has a renderer registration and whose `enabled()` holds right now; a disabled action is not listed. Label = the action's table label; trailing accelerator = its resolved chord (mono 10.5px, `--text-4`, the `<kbd>` platform rendering), live on rebind, absent when unbound. With an empty input only the **featured** actions show (`paletteFeatured`: New session, Toggle the Approval Inbox rail, Add folder, Resume last session, Open approvals); typing searches every listed action. Activating a row runs the action's registered handler (`invokeShortcut`), the same one its chord and menu item run. Icon per group: Sessions `Sparkles`, Sidebar `Search`, Folders `Folder`, Views `LayoutGrid`, Panes `PanelRight`, Takeovers `Maximize2`, App `Command`
+- **Actions come from the keybindings table** (T486 U6). One row per table action with `palette !== false` that has a renderer registration and whose `enabled()` holds right now; a disabled action is not listed. Label = the action's table label; trailing accelerator = its resolved chord (mono 10.5px, `--text-4`, the `<kbd>` platform rendering), live on rebind, absent when unbound. With an empty input only the **featured** actions show (`paletteFeatured`: New session, Open or fold Needs you, Add folder, Resume last session, Open approvals); typing searches every listed action. Activating a row runs the action's registered handler (`invokeShortcut`), the same one its chord and menu item run. Icon per group: Sessions `Sparkles`, Sidebar `Search`, Folders `Folder`, Views `LayoutGrid`, Panes `PanelRight`, Takeovers `Maximize2`, App `Command`
 - Filter: fuse.js, `threshold: 0.4`, key `label`. Sessions use their name (§"Session name", fallback: the session id) as the label
 - Internal shortcuts: `↑/↓` moves the cursor; `Enter` activates; `Esc` closes; typing filters
 
@@ -9384,27 +9306,27 @@ in `App.vue` and coordinated by the `ui` store with a **mutex** (one at a time).
 stacking order is fixed — the higher the `z-index`, the higher priority
 the surface:
 
-| Surface              | Component                  | `z-index`         | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| -------------------- | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Hover preview        | `SessionPreview.vue`       | 40                | `pointer-events: auto` — interactive/scrollable card (T86 §3.9); row+card hover zone with grace delay                                                                                                                                                                                                                                                                                                                                      |
-| Hover preview        | `FolderPreview.vue`        | 40                | Folder card. Peer of `SessionPreview` — they share the `ui.preview` slot (a `sessionId` **or** a `folderPath`); `pointer-events: auto` (T86 §3.9)                                                                                                                                                                                                                                                                                          |
-| Context menu         | `SessionMenu.vue`          | 50                | Suppresses preview on open                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Footer fleet popover | `StatusFooter.vue`         | 50                | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal. Open flag in the `ui` store (`ui.popovers.usagePanel`, see "Anchored popovers" below)                                                                                                                                                                                                                                                  |
-| Sidebar jump palette | `SidebarJumpPalette.vue`   | 50                | T288. Peer of the menus in the `ui` mutex (`ui.sidebarJumpPalette`), but the ONLY surface here NOT `<Teleport>`ed to `<body>`: it is `position: absolute` inside the sidebar `<aside>` so it tracks the sidebar's width and clipping. Not modal — closes on Esc / click-outside / the Search button                                                                                                                                        |
-| Dialog (modal)       | `AddFolderDialog.vue`      | 60                | Suppresses menu + preview                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Dialog (modal)       | `SettingsDialog.vue`       | 60                | Peer of `AddFolderDialog` — they share the dialog slot (z-60) via the `ui.dialog` mutex; only one dialog open at a time                                                                                                                                                                                                                                                                                                                    |
-| Dialog (modal)       | `ClaudeBootDialog.vue`     | 60                | Per-folder Claude Boot. Peer of the dialogs via `ui.dialog === 'claudeBoot'` (+ `ui.claudeBootPath`); opened from `FolderMenu`                                                                                                                                                                                                                                                                                                             |
-| Dialog (modal)       | `NewSessionDialog.vue`     | 60                | Launch-options before creating a session. Peer via `ui.dialog === 'newSession'` (+ `ui.newSessionPath`); opened from "+ New session"                                                                                                                                                                                                                                                                                                       |
-| Dialog (modal)       | `RemoveWorktreeDialog.vue` | 60                | **Destructive** worktree-removal confirmation. Peer via `ui.dialog === 'removeWorktree'` (+ `ui.removeWorktreeTarget`); opened from the `FolderMenu`'s destructive item (linked worktree only)                                                                                                                                                                                                                                             |
-| Dialog (modal)       | `NewWorktreeDialog.vue`    | 60                | **Non-destructive** worktree plan + creation (dry-run preview → progress stepper in the same card). Peer via `ui.dialog === 'newWorktree'` (+ `ui.newWorktreePath`); opened from the `FolderMenu`'s `New worktree…` item (git folder only)                                                                                                                                                                                                 |
-| Dialog (modal)       | `NewFolderDialog.vue`      | 60                | Creates + pins a subfolder **non-destructively**. Peer via `ui.dialog === 'newFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `New folder…` item                                                                                                                                                                                                                                                                        |
-| Dialog (modal)       | `OpenSubfolderDialog.vue`  | 60                | Searchable subfolder picker (recursive, depth-capped) → pins the chosen one. Peer via `ui.dialog === 'openSubfolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Open subfolder…` item                                                                                                                                                                                                                                     |
-| Dialog (modal)       | `RenameFolderDialog.vue`   | `--z-dialog` (60) | Renames a folder's alias. Peer via `ui.dialog === 'renameFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Rename…` item                                                                                                                                                                                                                                                                                                 |
-| Dialog (modal)       | `NotesPickerDialog.vue`    | `--z-dialog` (60) | Lists a repo's daily notes (search + ↑/↓/↵). Peer via `ui.dialog === 'notesPicker'` (+ `ui.folderActionPath`)                                                                                                                                                                                                                                                                                                                              |
-| Image lightbox       | `ImageLightbox.vue`        | 60                | Full-viewport viewer for one pasted screenshot. Its index lives in the `ui` store (`ui.imageLightboxIndex`, T486 U4a) beside the anchored popovers' flags, but **outside the mutex** — a single entry point: a tile in the footer's images popover. While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it, and closing that popover ends it                                                       |
-| Dialog (modal)       | `RenameRepoDialog.vue`     | `--z-dialog` (60) | Renames a repo-group's alias. Peer via `ui.dialog === 'renameRepo'` (+ `ui.renameRepoTarget`); opened from the `RepoGroupHeader`'s context-menu `Rename repo` item                                                                                                                                                                                                                                                                         |
-| Agent-action confirm | `McpConfirmOverlay.vue`    | 65                | **Fail-CLOSED** confirm for a mutation requested by an MCP agent (`onMcpConfirmPending`). **Auto-shows** from its own local state (doesn't enter the `ui` mutex — it's a security gate, can't be suppressed by another surface) and **doesn't close** on Esc / click-outside: the verdict-producing exits are Allow, Deny, or the timeout (denies) — **Dismiss** is a non-verdict exit, "not now". Reuses the Inbox rail's visual language |
-| Command palette      | `CommandPalette.vue`       | **70**            | Suppresses dialog + menu + preview                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Surface              | Component                  | `z-index`         | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------- | -------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hover preview        | `SessionPreview.vue`       | 40                | `pointer-events: auto` — interactive/scrollable card (T86 §3.9); row+card hover zone with grace delay                                                                                                                                                                                                                                                                                                                                         |
+| Hover preview        | `FolderPreview.vue`        | 40                | Folder card. Peer of `SessionPreview` — they share the `ui.preview` slot (a `sessionId` **or** a `folderPath`); `pointer-events: auto` (T86 §3.9)                                                                                                                                                                                                                                                                                             |
+| Context menu         | `SessionMenu.vue`          | 50                | Suppresses preview on open                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Footer fleet popover | `StatusFooter.vue`         | 50                | Anchored above-right of the footer; closes on click-outside / `Esc`. Peer of the menus — not modal. Open flag in the `ui` store (`ui.popovers.usagePanel`, see "Anchored popovers" below)                                                                                                                                                                                                                                                     |
+| Sidebar jump palette | `SidebarJumpPalette.vue`   | 50                | T288. Peer of the menus in the `ui` mutex (`ui.sidebarJumpPalette`), but the ONLY surface here NOT `<Teleport>`ed to `<body>`: it is `position: absolute` inside the sidebar `<aside>` so it tracks the sidebar's width and clipping. Not modal — closes on Esc / click-outside / the Search button                                                                                                                                           |
+| Dialog (modal)       | `AddFolderDialog.vue`      | 60                | Suppresses menu + preview                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Dialog (modal)       | `SettingsDialog.vue`       | 60                | Peer of `AddFolderDialog` — they share the dialog slot (z-60) via the `ui.dialog` mutex; only one dialog open at a time                                                                                                                                                                                                                                                                                                                       |
+| Dialog (modal)       | `ClaudeBootDialog.vue`     | 60                | Per-folder Claude Boot. Peer of the dialogs via `ui.dialog === 'claudeBoot'` (+ `ui.claudeBootPath`); opened from `FolderMenu`                                                                                                                                                                                                                                                                                                                |
+| Dialog (modal)       | `NewSessionDialog.vue`     | 60                | Launch-options before creating a session. Peer via `ui.dialog === 'newSession'` (+ `ui.newSessionPath`); opened from "+ New session"                                                                                                                                                                                                                                                                                                          |
+| Dialog (modal)       | `RemoveWorktreeDialog.vue` | 60                | **Destructive** worktree-removal confirmation. Peer via `ui.dialog === 'removeWorktree'` (+ `ui.removeWorktreeTarget`); opened from the `FolderMenu`'s destructive item (linked worktree only)                                                                                                                                                                                                                                                |
+| Dialog (modal)       | `NewWorktreeDialog.vue`    | 60                | **Non-destructive** worktree plan + creation (dry-run preview → progress stepper in the same card). Peer via `ui.dialog === 'newWorktree'` (+ `ui.newWorktreePath`); opened from the `FolderMenu`'s `New worktree…` item (git folder only)                                                                                                                                                                                                    |
+| Dialog (modal)       | `NewFolderDialog.vue`      | 60                | Creates + pins a subfolder **non-destructively**. Peer via `ui.dialog === 'newFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `New folder…` item                                                                                                                                                                                                                                                                           |
+| Dialog (modal)       | `OpenSubfolderDialog.vue`  | 60                | Searchable subfolder picker (recursive, depth-capped) → pins the chosen one. Peer via `ui.dialog === 'openSubfolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Open subfolder…` item                                                                                                                                                                                                                                        |
+| Dialog (modal)       | `RenameFolderDialog.vue`   | `--z-dialog` (60) | Renames a folder's alias. Peer via `ui.dialog === 'renameFolder'` (+ `ui.folderActionPath`); opened from the `FolderMenu`'s `Rename…` item                                                                                                                                                                                                                                                                                                    |
+| Dialog (modal)       | `NotesPickerDialog.vue`    | `--z-dialog` (60) | Lists a repo's daily notes (search + ↑/↓/↵). Peer via `ui.dialog === 'notesPicker'` (+ `ui.folderActionPath`)                                                                                                                                                                                                                                                                                                                                 |
+| Image lightbox       | `ImageLightbox.vue`        | 60                | Full-viewport viewer for one pasted screenshot. Its index lives in the `ui` store (`ui.imageLightboxIndex`, T486 U4a) beside the anchored popovers' flags, but **outside the mutex** — a single entry point: a tile in the footer's images popover. While open it owns `Esc` + outside-clicks; closing it also closes the footer popover behind it, and closing that popover ends it                                                          |
+| Dialog (modal)       | `RenameRepoDialog.vue`     | `--z-dialog` (60) | Renames a repo-group's alias. Peer via `ui.dialog === 'renameRepo'` (+ `ui.renameRepoTarget`); opened from the `RepoGroupHeader`'s context-menu `Rename repo` item                                                                                                                                                                                                                                                                            |
+| Agent-action confirm | `McpConfirmOverlay.vue`    | 65                | **Fail-CLOSED** confirm for a mutation requested by an MCP agent (`onMcpConfirmPending`). **Auto-shows** from its own local state (doesn't enter the `ui` mutex — it's a security gate, can't be suppressed by another surface) and **doesn't close** on Esc / click-outside: the verdict-producing exits are Allow, Deny, or the timeout (denies) — **Dismiss** is a non-verdict exit, "not now". Reuses the Needs you rows' visual language |
+| Command palette      | `CommandPalette.vue`       | **70**            | Suppresses dialog + menu + preview                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 Rule: when introducing a new floating surface, **add a row here
 in the same commit**. Raw `z-index` in components (with no table entry) is a bug.
@@ -9415,8 +9337,8 @@ comboboxes' dropdown panels) — see §6 "Dialog" → Layers. A migrated dialog'
 the rows that still say `60` / `65` / `70` are surfaces that have not moved onto the `Dialog` shell yet.
 
 **Anchored popovers (T486 U4a).** The popovers that hang off a button — the Topbar's
-Activity bell and Mission pill, the footer's pasted images, Claude service status and
-plan usage, and the Fleet rail's state filter — keep their open flag in the `ui` store
+Activity bell and Mission pill, and the footer's pasted images, Claude service status and
+plan usage — keep their open flag in the `ui` store
 (`ui.popovers[id]`, `POPOVER_IDS`), not in the component, so a keybinding can open each
 one and `ui.anyPopoverOpen` (any of them, or the image lightbox) can tell the App's Esc
 binding that a popover owns this Esc. They stay **outside the mutex** above, exactly as
@@ -9424,12 +9346,12 @@ before the lift: opening one never closes the palette, a dialog or a menu, and o
 footer pair (pasted images ↔ plan usage) close each other. Each component keeps its own
 bubble-phase `Esc` and click-outside handlers. Each also reports its **anchor**
 (`ui.setPopoverAnchor`) while its button is rendered: a popover cannot open without one,
-and losing it (the images pill hiding at zero, the rail minimizing, the mission ending)
+and losing it (the images pill hiding at zero, the mission ending)
 closes the popover, so `anyPopoverOpen` is never true with nothing on screen. A new
 anchored popover joins `POPOVER_IDS` in the same commit.
 The rule cuts **both ways**: the Approval Inbox **left** this table in
 T83 (it was `ApprovalInbox.vue`, z-65, `ui.inbox` mutex) because it stopped being an
-overlay — it became the **Inbox rail**, a column (below). It's not a forgotten row.
+overlay. Its queue now sits in the sidebar's [bottom dock](#bottom-dock). It's not a forgotten row.
 
 ### Inbox rail ("Fleet rail" — 4th column)
 
@@ -9616,7 +9538,7 @@ overlay's markup — and **only then** the Allow (`bg-green-soft`/`text-green`) 
 **always** see the exact commands before approving — there's never a one-click Allow
 over hidden commands. Parked confirms **count** toward the Inbox badge
 (`inboxCount`) and the `attentionCount` (window title + OS badge) — they're
-**actionable**, unlike the "Would-have" section's read-only entries. An
+**actionable**. An
 `mcp:confirm:resolved` (respond / TTL / cancel / quit) **removes** the row; **there's no
 re-hydration channel** — a renderer reload discards the parked rows from the UI (the
 confirm stays alive in the main process, and the agent keeps polling `get_approval`).
@@ -10033,8 +9955,8 @@ from `/proc`: every number is derived from the payload that already arrives.
 
 **Layout.** A two-column grid inside the body: `grid-cols-[320px_1fr]`, stacking to one
 column when the **monitor's own width** drops below ~1000px (a container query on the
-body, `@max-[1000px]:grid-cols-1` — not the window width, because the app sidebar and the
-Fleet rail already take a third of a 1280px window; the sidebar then sits above the KPI
+body, `@max-[1000px]:grid-cols-1` — not the window width, because the app sidebar
+already takes part of a 1280px window; the sidebar then sits above the KPI
 strip, its border moving from the right edge to the bottom). The left column is `bg-sidebar` with a
 `border-r border-border`, `p-4`, `gap-4`. The right column is `p-4` (`px-[18px]`), `gap-3.5`,
 `min-w-0`. A KPI value never wraps (`whitespace-nowrap`), and its legend wraps item by item.
@@ -10164,7 +10086,7 @@ no cell ever paints over its neighbour.
 **Narrow tables** (a container query on the table). Below ~960px the **Last 60s column drops
 out** (`grid-cols-[minmax(160px,1fr)_130px_52px_minmax(280px,1.8fr)]`) so State keeps its room.
 Below ~760px — the case in a 1280px window, where the monitor is only ~700px wide next to the
-app sidebar and the Fleet rail — the columns tighten again to
+app sidebar — the columns tighten again to
 `grid-cols-[minmax(130px,0.8fr)_120px_46px_minmax(250px,1.6fr)]` and the **branch hides** (it
 stays in the name's tooltip). At every width the State column stays inside its own track and
 inside the 36px row: it never overlaps the CPU column and never makes a row taller.
@@ -12683,7 +12605,7 @@ text-text-3`, 10px/600, `tabular-nums`), with `−` as U+2212 so it is the width
   to GitHub is a different risk class. This is the same copy-the-command idiom
   as the Cleanup tombstone's restore-hint button.
 - A **live Harnu session** on the linked worktree shows the 6px pulsing dot
-  (`.anim-pulse-dot`, §7), same as the fleet rail.
+  (`.anim-pulse-dot`, §7), same as the sidebar.
 
 **Draft worktree node** — the same card at 240px, `border-dashed`, transparent
 background, a `House` icon and the literal word `worktree` where the PR number
@@ -14178,44 +14100,36 @@ the folder branch only.
 Short movement, ease-out, rarely noticed. **If the user notices the animation,
 it ran too long.**
 
-| Action                       | Duration               | Easing      | Description                                                                                                                                                                                               |
-| ---------------------------- | ---------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hover row                    | 100ms                  | ease        | Background fade + scale 1.003 (**not** sidebar tree rows: §6 "Row states")                                                                                                                                |
-| Select                       | 120ms                  | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
-| Review selection bar         | `--dur`                | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
-| Expand project               | 220ms                  | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
-| Sidebar row state bar        | `--dur-fast`           | `--ease`    | The left bar changes colour; nothing else moves or fills (§6 "Row states")                                                                                                                                |
-| Group rail in / out          | `--dur` / `--dur-slow` | `--ease`    | The checkout rail appears over `--dur` and leaves over `--dur-slow` (§6 "Group rail"); none under reduced motion                                                                                          |
-| Overlay (dialog/menu)        | 140ms                  | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
-| Divider hover                | 140ms                  | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
-| Pulse (active status)        | 1.8s loop              | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
-| Agent activity pulse         | 1.8s loop              | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
-| Terminal cursor              | 1s                     | steps(1)    | Blinking accent block                                                                                                                                                                                     |
-| Chart bar (BI)               | `--dur`                | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
-| Copy button reveal           | `--dur-fast`           | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
-| Copy → copied                | 1.5s                   | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
-| Fleet card entrance          | 620ms                  | custom¹     | Whole card fades + slides 22px from the right, as one unit (`.card-enter`)                                                                                                                                |
-| Fleet card ring fade         | 900ms                  | custom¹     | Border ring eases in after the entrance settles (suppressed during the slide)                                                                                                                             |
-| Fleet rail section           | `--dur-slow`           | `--ease`    | Needs-you / Would-have collapse via `grid-template-rows: 1fr↔0fr` (`.collapsible`)                                                                                                                        |
-| Rescan spin                  | 0.7s loop              | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
-| Pasted-images pill bump      | 300ms                  | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
-| Lightbox image swap          | `--dur`                | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
-| Jump flash                   | `--dur-slow`           | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
-| PR focus ring                | `--dur-slow`           | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
-| Pane maximize / restore      | `--dur-slow`           | `--ease`    | The maximized pane grows and the others shrink to their 24px strip by `flex`; one pass (T628). Reduced motion: snaps                                                                                      |
-| Expand to window / restore   | `--dur-slow`           | `--ease`    | The collapsed columns and panes go to 0 (`.lm-collapse`: size, opacity, margin, border) while the expanded pane grows; no remount (T628). Reduced motion: snaps                                           |
-| Fleet rail minimize / expand | `--dur-slow`           | `--ease`    | The rail column animates `width` between 300px (or the dragged width) and the 44px strip (T628). Reduced motion: snaps                                                                                    |
-| Sidebar collapse / expand    | `--dur-slow`           | `--ease`    | The sidebar and its divider animate `width` to 0 and back, with `opacity` (T628). Reduced motion: snaps                                                                                                   |
-| Split orientation switch     | `--dur-slow`           | `--ease`    | The session area and the helper stack slide and scale from their old box to the new one (FLIP, one pass) (T628). Reduced motion: snaps                                                                    |
-
-¹ `cubic-bezier(0.22, 0.61, 0.36, 1)` — a touch snappier than the default
-`--ease`, since this is a list-insertion cue that must read as immediate, not
-a decorative overlay entrance.
+| Action                     | Duration               | Easing      | Description                                                                                                                                                                                               |
+| -------------------------- | ---------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hover row                  | 100ms                  | ease        | Background fade + scale 1.003 (**not** sidebar tree rows: §6 "Row states")                                                                                                                                |
+| Select                     | 120ms                  | ease-out    | Background cross-fade + accent bar appears                                                                                                                                                                |
+| Review selection bar       | `--dur`                | `--ease`    | The bar enters with `.anim-fade-in` (T257); no keyframe of its own. Reduced motion: handled globally                                                                                                      |
+| Expand project             | 220ms                  | ease-out    | Chevron rotate + max-height reveal                                                                                                                                                                        |
+| Sidebar row state bar      | `--dur-fast`           | `--ease`    | The left bar changes colour; nothing else moves or fills (§6 "Row states")                                                                                                                                |
+| Group rail in / out        | `--dur` / `--dur-slow` | `--ease`    | The checkout rail appears over `--dur` and leaves over `--dur-slow` (§6 "Group rail"); none under reduced motion                                                                                          |
+| Overlay (dialog/menu)      | 140ms                  | ease-out    | Fade + translateY 2px → 0                                                                                                                                                                                 |
+| Divider hover              | 140ms                  | ease-out    | Background `--border-2` → `--accent-line` (width follows the pointer with no easing)                                                                                                                      |
+| Pulse (active status)      | 1.8s loop              | ease-in-out | Breathing halo (`pulse-ring`)                                                                                                                                                                             |
+| Agent activity pulse       | 1.8s loop              | ease-in-out | `pulse-ring` on the agent connection chip's dot while `reading`/`typing`; `.anim-pulse-dot--accent` swaps the halo to `--accent-soft`, no new keyframe. Reduced motion: no pulse                          |
+| Terminal cursor            | 1s                     | steps(1)    | Blinking accent block                                                                                                                                                                                     |
+| Chart bar (BI)             | `--dur`                | `--ease`    | Bar height animates when the period/data changes (`UsageChart`)                                                                                                                                           |
+| Copy button reveal         | `--dur-fast`           | `--ease`    | Opacity 0 → 1 on block hover / button focus-visible (T121 copy affordance)                                                                                                                                |
+| Copy → copied              | 1.5s                   | steps(1)    | Icon swaps `copy` → `check`, then reverts to idle (no cross-fade — a hard icon swap)                                                                                                                      |
+| Rescan spin                | 0.7s loop              | linear      | `refresh-cw` icon rotates continuously while a manual rescan is in flight (Sidebar toolbar, `.anim-spin`)                                                                                                 |
+| Pasted-images pill bump    | 300ms                  | `--ease`    | Scale 1 → 1.16 → 1 + accent fill/border cross-fade at the peak (`.anim-pill-bump`). One pass, no overshoot; fires only when a new screenshot lands for the session already on screen                      |
+| Lightbox image swap        | `--dur`                | `--ease`    | Opacity cross-fade on the shown image (`.anim-fade-in`, keyed by filename) — no slide, no parallax                                                                                                        |
+| Jump flash                 | `--dur-slow`           | `--ease`    | `--accent-soft` background decaying to transparent, one pass, on the sidebar row a jump-palette jump landed on (`.anim-jump-flash`). Says WHICH of the rows now on screen you asked for                   |
+| PR focus ring              | `--dur-slow`           | `--ease`    | `--accent` 2px ring on the PR Stack card a transcript link focused: held 2s, then `box-shadow` fades out (`.pr-focus-ring`, a transition not a keyframe). Reduced motion: appears/disappears with no fade |
+| Pane maximize / restore    | `--dur-slow`           | `--ease`    | The maximized pane grows and the others shrink to their 24px strip by `flex`; one pass (T628). Reduced motion: snaps                                                                                      |
+| Expand to window / restore | `--dur-slow`           | `--ease`    | The collapsed columns and panes go to 0 (`.lm-collapse`: size, opacity, margin, border) while the expanded pane grows; no remount (T628). Reduced motion: snaps                                           |
+| Sidebar collapse / expand  | `--dur-slow`           | `--ease`    | The sidebar and its divider animate `width` to 0 and back, with `opacity` (T628). Reduced motion: snaps                                                                                                   |
+| Split orientation switch   | `--dur-slow`           | `--ease`    | The session area and the helper stack slide and scale from their old box to the new one (FLIP, one pass) (T628). Reduced motion: snaps                                                                    |
 
 ### Layout motion (T628)
 
 Size changes of the big layout containers animate briefly instead of snapping: pane maximize and
-restore, expand to window and back, Fleet rail minimize and expand, sidebar collapse and expand, and
+restore, expand to window and back, sidebar collapse and expand, and
 the split orientation switch. All use `--dur-slow` and `--ease` (never a new duration or curve).
 
 - **Transient, never ambient.** The transitions exist only while `[data-app-shell][data-layout-motion]`
@@ -14224,7 +14138,7 @@ the split orientation switch. All use `--dur-slow` and `--ease` (never a new dur
   as before. Elements opt in with `data-lm`; `transition` lists only the properties a collapse or a
   resize changes (`flex`, `width`, `height`, `opacity`, `margin`, `border-width`, `padding`).
 - **Collapse classes.** `.lm-collapse` (a flex item sized by `flex`: the session area, the helper
-  stack, a pane), `.lm-collapse-w` (sized by `width`: the sidebar, the Fleet rail column, a vertical
+  stack, a pane), `.lm-collapse-w` (sized by `width`: the sidebar, a vertical
   divider) and `.lm-collapse-h` (a horizontal divider) bring an element to zero size with `overflow:
 hidden`, `opacity: 0`, no margin or border, and `pointer-events: none`. They replace `display: none` /
   `v-show`, which cannot animate. The floating-panels rules are untouched; the collapse classes win over them
@@ -14241,20 +14155,13 @@ hidden`, `opacity: 0`, no margin or border, and `pointer-events: none`. They rep
   existing reduce block in `main.css`, not a second one), the layout store never sets the flag and the
   browser pane is never frozen: the layout snaps as it did before.
 
-### Fleet state ring (Fleet rail)
+### Fleet state ring
 
-**Since the sidebar redesign** the ring is drawn by the sidebar: on each folder header
-(§6 "Sidebar tree → Folder ring"), on each Needs attention row and on a pending Needs you row. The
-Fleet rail it was designed for is gone; the anatomy, states and geometry below are unchanged, and
-"idle" (no ring layer on the old rail) draws the track alone in `--color-border-2`.
+The ring is drawn by the sidebar: on each folder header (§6 "Sidebar tree → Folder ring") and on
+each Needs attention row. "Idle" draws the track alone in `--color-border-2`.
 
-Each session in the [Fleet rail](#inbox-rail-fleet-rail--4th-column)
-carries a **16px ring badge** on the left of its card — the ring IS the state.
-It also renders alone, with no card body around it, as the
-[minimized rail's minicards](#inbox-rail-fleet-rail--4th-column), and
-that is the whole reason it exists in this form: a badge that needs no title,
-branch or timestamp to be read is a **complete** signal, so it survives at
-28px where a card body cannot.
+It is a **16px ring badge** that IS the state: a badge that needs no title, branch or
+timestamp to be read is a **complete** signal.
 
 **Anatomy** — three stacked circles, the classic CSS-spinner construction,
 defined once in `main.css` as `fleet-ring` + `fleet-ring--<state>` and never
@@ -14395,8 +14302,8 @@ equal.** No artificial enthusiasm, no emoji, no exclamation marks.
 - **Harnu mod** — the user-facing name is "Harnu mod" ("the Harnu mod", "mods"), never
   "companion". State lines are short and lowercase-led, with no trailing period:
   "Harnu mod: live", "Harnu mod: legacy — turned off by a setting or by your
-  organization's policy". `live`, `legacy` and `off` stay in English (state nouns, like
-  the fleet board's). A cause is named **only when it was observed**: "blocked by your
+  organization's policy". `live`, `legacy` and `off` stay in English (state nouns).
+  A cause is named **only when it was observed**: "blocked by your
   organization's policy" needs the CLI's own refusal text, a probe that only shows mods are
   off reads the neutral "turned off by a setting or by your organization's policy", and
   anything else reads "the mod did not load". Never promise protection, and never imply
