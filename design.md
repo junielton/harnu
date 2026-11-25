@@ -2426,8 +2426,9 @@ own under Floating panels).
 - **A section with nothing in it is not rendered at all.**
 - **Open body:** content-sized, at most `min(380px, 45vh)`, scrolls inside; the head stays put. The
   folder list keeps at least `min(160px, 40vh)`.
-- **Narrow sidebar:** below 260px an approval row's Allow and Deny drop under its text, so the
-  command keeps at least 60px of width.
+- **Approval rows stack at every width** (approved screen: `screens/sidebar.html`, dock open): the
+  command takes its own line(s), and Allow and Deny sit **under** it, never beside it. The command is
+  shown **whole** (see "Needs you rows"), so no width of the sidebar can hide what is being approved.
 - **Needs you** holds the pending approval rows and the parked agent confirms, with the same anatomy and the same disclosure rules (§6
   "Needs you rows"). It never opens itself; the OS notification deep-link, `⌘⇧A` and the "Open
   approvals" palette action open it (and expand a collapsed sidebar).
@@ -9385,19 +9386,21 @@ the order toggle have nothing to act on. What the dock inherits is the row anato
 #### Needs you rows
 
 - **"Needs you" row (`ApprovalRow`):** amber dot `bg-warning` (same as
-  `needs-input`, `margin-top: 4px` to sit level with the first text line) + the
-  **tool summary** (`Bash(rm -rf build)` — technical string assembled in the
-  main process, **untranslated**, mono `12.5px`) + `<folder alias> · <session
-summary>` (`--text-4` `11px`). **2-line clamp** on both lines (`line-clamp-2`,
-  `line-height: 1.4`) — BUG-36: this used to be single-line `truncate`, which
-  crowded the Allow/Deny buttons against clipped mid-word text on any
-  realistic tool summary. Clicking the **body** opens the tab (inspection). On
-  the right, **Allow** and **Deny**, row alignment `items-start` (not
-  `items-center`) with `margin-top: 2px` on the button pair so they don't sit
-  flush against a row that's wrapped to 2 lines. The parked-confirm row
-  (`McpConfirmRow`, collapsed state) gets the same clamp-2 + `items-start`
-  treatment on its prompt line — Allow/Deny stay hidden until expanded either
-  way (the T08 disclosure contract, unaffected by this fix).
+  `needs-input`, 7px, centred on the first text line: `margin-top: 5px`) beside one column that holds,
+  top to bottom (`gap: 6px`):
+  1. the **tool call** (`Bash(rm -rf build)` — a technical string, **untranslated**, mono `12.5px` /
+     `1.4`, `--text`), **whole**: it wraps (`white-space: pre-wrap`, `overflow-wrap: anywhere`) and is
+     never clamped, truncated or ellipsised — this is what the operator is approving. It is built from the
+     wire's full tool input with the same function the main process summarises with, not from the
+     shortened `summary`; a long command makes a tall row, which the dock body scrolls, so Allow is
+     reached after the whole of it;
+  2. `<folder alias> · <session summary>` (`--text-4` `11px` / `1.4`, `line-clamp-2`), 2px under the call;
+  3. **Allow** and **Deny**, left-aligned with the text, wrapping if the column is too narrow for both.
+
+  Clicking the **body** (the two text blocks) opens the tab (inspection). The parked-confirm row
+  (`McpConfirmRow`, collapsed state) keeps a 2-line clamp on its prompt line and `items-start`: it has
+  no buttons until expanded, and expanding shows the full disclosure (the T08 contract).
+
 - **Allow/Deny buttons:** combinations of existing tokens, **no new color**. **Allow**
   = `bg-green-soft` / `text-green`; **Deny** = `bg-red-soft` / `text-red`
   (same anatomy as `SessionMenu`'s destructive item). `check` / `x` icons,

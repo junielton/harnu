@@ -266,15 +266,52 @@ describe('the bottom dock', () => {
     expect(returns.text()).toContain('Pick the cache backend m2')
   })
 
-  // At 200px the buttons used to squeeze the command to nothing; the row wraps them instead.
-  it('keeps the command readable beside Allow and Deny in a narrow sidebar', async () => {
+  // Beside the buttons the command got 68px of a 268px sidebar and read `Bash(npm run…`, next to a
+  // one-click Allow. It has its own line(s) now, at every width, and the buttons sit under it.
+  it('puts the command on its own line with Allow and Deny under it', async () => {
     const w = await mountSidebar()
     useSessionsStore().addPendingApproval(approval())
     await nextTick()
-    const row = w.get('[data-dock="needs-you"] [data-dock-body] .flex-wrap')
-    const [, text, buttons] = [...row.element.children] as HTMLElement[]
-    expect(text.style.flex).toBe('1 1 60px')
-    expect(buttons.classList.contains('ml-auto')).toBe(true)
+    const command = w.get('[data-dock="needs-you"] [data-approval-command]')
+    const actions = w.get('[data-dock="needs-you"] [data-approval-actions]')
+    const column = actions.element.parentElement!
+    expect(column.classList.contains('flex-col')).toBe(true)
+    expect(column.contains(command.element)).toBe(true)
+    expect(
+      command.element.compareDocumentPosition(actions.element) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(actions.findAll('button').map((b) => b.text())).toEqual(['Allow', 'Deny'])
+  })
+
+  it('shows the whole command, however long, with nothing clamped or cut', async () => {
+    const script = 'npm run migrate -- --step 3 --database api_gateway_staging --force --yes'
+    const w = await mountSidebar()
+    useSessionsStore().addPendingApproval({
+      ...approval(),
+      toolName: 'Bash',
+      toolInput: { command: script },
+      // What the main process sends: its short form, cut at 48 characters.
+      summary: `Bash(${script.slice(0, 47)}…)`
+    })
+    await nextTick()
+    const command = w.get('[data-dock="needs-you"] [data-approval-command]')
+    expect(command.text()).toBe(`Bash(${script})`)
+    const classes = command.classes().join(' ')
+    expect(classes).not.toMatch(/line-clamp|truncate|ellipsis/)
+    expect(classes).toContain('whitespace-pre-wrap')
+    expect(classes).toContain('[overflow-wrap:anywhere]')
+    // The buttons name the same whole command to a screen reader.
+    const [allow] = w.get('[data-dock="needs-you"] [data-approval-actions]').findAll('button')
+    expect(allow.attributes('aria-label')).toContain(script)
+  })
+
+  it('falls back to the wire summary when the approval carries no tool input', async () => {
+    const w = await mountSidebar()
+    useSessionsStore().addPendingApproval(approval())
+    await nextTick()
+    expect(w.get('[data-dock="needs-you"] [data-approval-command]').text()).toBe(
+      'Bash(npm run migrate)'
+    )
   })
 
   it('renders nothing for an empty section and never reopens it by itself', async () => {
