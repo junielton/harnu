@@ -31,7 +31,7 @@ const rows = computed(() =>
   sessions.attentionSessions.map((entry) => {
     const s = sessions.findSessionById(entry.sessionId)
     const title = (s && sessionTitle(s, sessions.allSessions, t)) || t('session.newPlaceholder')
-    const folder = sessions.folderAliasOf(entry.sessionId)
+    const folder = sessions.folderHeaderLabelOf(entry.sessionId)
     const state = t(entry.state === 'failed' ? 'session.statusFailed' : 'session.statusNeedsInput')
     return {
       ...entry,
@@ -49,13 +49,13 @@ const rows = computed(() =>
     v-if="rows.length > 0"
     data-attention
     data-dsqa-part="attention"
-    class="shrink-0 border-b border-border"
+    class="flex min-h-[37px] flex-col overflow-hidden border-b border-border"
     style="padding: 6px 0 4px"
   >
     <button
       type="button"
       data-attention-head
-      class="flex w-full cursor-pointer items-center whitespace-nowrap text-left text-warning"
+      class="flex w-full shrink-0 cursor-pointer items-center whitespace-nowrap text-left text-warning"
       style="
         gap: 6px;
         padding: 5px 12px;
@@ -63,7 +63,7 @@ const rows = computed(() =>
         font-weight: 600;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        line-height: 14px;
+        line-height: 1.45;
       "
       :aria-expanded="layout.attentionOpen"
       @click="layout.attentionOpen = !layout.attentionOpen"
@@ -83,7 +83,7 @@ const rows = computed(() =>
     <div
       v-show="layout.attentionOpen"
       data-attention-body
-      class="scrollable overflow-y-auto"
+      class="scrollable min-h-0 overflow-y-auto"
       style="max-height: 168px"
     >
       <button

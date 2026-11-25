@@ -88,6 +88,13 @@ textarea,
   border-radius: inherit;
 }
 
+/* Needs attention and the dock heads are full-width buttons against a scroller or an island
+   edge, which would clip a ring drawn outside them: theirs sits inside (design.md "Bottom dock"). */
+[data-attention] button:focus-visible:not(.no-default-ring),
+[data-dock-head]:focus-visible:not(.no-default-ring) {
+  outline-offset: -2px;
+}
+
 .scrollable {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;

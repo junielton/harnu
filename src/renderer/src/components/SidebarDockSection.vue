@@ -69,7 +69,7 @@ const age = computed(() => formatClock(now.value - props.oldestAt))
       type="button"
       data-dock-head
       class="flex w-full min-w-0 shrink-0 cursor-pointer items-baseline whitespace-nowrap text-left tabular-nums text-text-2 transition hover:bg-surface-2"
-      style="gap: 6px; padding: 8px 12px; font-size: 12px; font-weight: 500; line-height: 17px"
+      style="gap: 6px; padding: 8px 12px; font-size: 12px; font-weight: 500; line-height: 1.45"
       :aria-expanded="open"
       :aria-controls="bodyId"
       @click="$emit('toggle')"
@@ -79,9 +79,7 @@ const age = computed(() => formatClock(now.value - props.oldestAt))
         {{ ' ' }}
         <span class="shrink-0 text-warning" style="font-weight: 600">{{ count }}</span>
         {{ ' ' }}
-        <span class="shrink-0 text-text-4" style="font-size: 11px; font-weight: 400">{{
-          age
-        }}</span>
+        <span class="shrink-0 text-text-4" style="font-size: 11px">{{ age }}</span>
       </span>
       <ChevronRight
         data-dock-chevron

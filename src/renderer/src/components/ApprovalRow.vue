@@ -39,15 +39,20 @@ function openSession(): void {
 </script>
 
 <template>
-  <div class="flex items-start border-b border-border" style="gap: 10px; padding: 10px 16px">
+  <!-- In a sidebar narrower than 260px the buttons drop under the text, so the command being
+       approved keeps at least 60px instead of being squeezed out. -->
+  <div
+    class="flex flex-wrap items-start border-b border-border"
+    style="gap: 6px 10px; padding: 10px 16px"
+  >
     <span
       class="shrink-0 rounded-full bg-warning"
       style="width: 7px; height: 7px; margin-top: 4px"
     />
     <button
       type="button"
-      class="flex min-w-0 flex-1 flex-col items-start text-left"
-      style="gap: 2px"
+      class="flex min-w-0 flex-col items-start text-left"
+      style="flex: 1 1 60px; gap: 2px"
       :aria-label="$t('approvalInbox.openSessionAria', { tool: approval.summary })"
       @click="openSession"
     >
@@ -70,7 +75,7 @@ function openSession(): void {
         </template>
       </span>
     </button>
-    <div class="flex shrink-0" style="gap: 6px; margin-top: 2px">
+    <div class="ml-auto flex shrink-0" style="gap: 6px; margin-top: 2px">
       <button
         type="button"
         class="inline-flex items-center bg-green-soft text-green transition hover:opacity-80"

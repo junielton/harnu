@@ -4550,6 +4550,22 @@ export const useSessionsStore = defineStore('sessions', () => {
     return sessionIndex.value.get(sessionId)?.session ?? null
   }
 
+  /**
+   * The name of the tree header a session sits under: the repo's, not the worktree's. A folder
+   * the tree is not drawing (filtered or hidden) still gets its repo's name.
+   */
+  function folderHeaderLabelOf(sessionId: string): string {
+    const folder = sessionIndex.value.get(sessionId)?.folder
+    if (!folder) return ''
+    const listed = sidebarTree.value.find((entry) => entry.paths.includes(folder.path))
+    if (listed) return listed.label
+    const main = folder.repoId
+      ? folders.value.find((f) => f.repoId === folder.repoId && f.isMainWorktree)
+      : undefined
+    const renamed = folder.repoId ? groupAliases.value[groupKey('repo', folder.repoId)] : undefined
+    return renamed?.trim() || (main ?? folder).alias
+  }
+
   /** Resolve a session's owning folder alias (for the notification body). */
   function folderAliasOf(sessionId: string): string {
     return sessionIndex.value.get(sessionId)?.folderAlias ?? ''
@@ -6596,6 +6612,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     findSessionById,
     fleetStateFor,
     folderAliasOf,
+    folderHeaderLabelOf,
     activateSession,
     newSessionInCurrentContext,
     registerCloseHandler,

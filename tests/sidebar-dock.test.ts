@@ -265,6 +265,17 @@ describe('the bottom dock', () => {
     expect(returns.text()).toContain('Pick the cache backend m2')
   })
 
+  // At 200px the buttons used to squeeze the command to nothing; the row wraps them instead.
+  it('keeps the command readable beside Allow and Deny in a narrow sidebar', async () => {
+    const w = await mountSidebar()
+    useSessionsStore().addPendingApproval(approval())
+    await nextTick()
+    const row = w.get('[data-dock="needs-you"] [data-dock-body] .flex-wrap')
+    const [, text, buttons] = [...row.element.children] as HTMLElement[]
+    expect(text.style.flex).toBe('1 1 60px')
+    expect(buttons.classList.contains('ml-auto')).toBe(true)
+  })
+
   it('renders nothing for an empty section and never reopens it by itself', async () => {
     const w = await mountSidebar()
     const store = useSessionsStore()

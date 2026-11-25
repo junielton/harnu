@@ -175,6 +175,37 @@ describe('Needs attention', () => {
     expect(rows(w)).toEqual(['needs-new', 'needs-old', 'failed-old'])
   })
 
+  // jsdom has no box model: what the list island reserves is pinned, the pixels are measured live.
+  it('reserves its full height in the list island, so an open dock body scrolls first', async () => {
+    const { w, store } = await boot()
+    const reserved = (): string => w.get('[data-island="sidebar-list"]').attributes('style') ?? ''
+    // 37px head plus four 28px rows on top of the folder list's own minimum, capped so that both
+    // dock heads and Add folder (111px) stay on screen.
+    expect(reserved()).toContain('calc(min(160px, 40vh) + 149px)')
+    expect(reserved()).toContain('calc(100% - 111px)')
+
+    await w.get('[data-attention-head]').trigger('click')
+    expect(reserved()).toContain('calc(min(160px, 40vh) + 37px)')
+
+    for (const f of store.folders) for (const s of f.sessions) s.taskState = 'working'
+    await nextTick()
+    expect(reserved()).not.toContain('calc(')
+  })
+
+  it('names the folder of the tree, not the worktree, also when the filter hides it', async () => {
+    const { w, store } = await boot()
+    const folderOf = (id: string): string =>
+      w.get(`[data-attention-session="${id}"] [data-attention-folder]`).text()
+
+    // needs-new works in a worktree of api-gateway: the header's name is what places it.
+    expect(folderOf('needs-new')).toBe('api-gateway')
+    expect(folderOf('failed-new')).toBe('example-web')
+
+    store.setFilterQuery('no such folder')
+    await nextTick()
+    expect(folderOf('needs-new')).toBe('api-gateway')
+  })
+
   it('orders by creation, never by activity, with an unreadable date last (T459)', async () => {
     const { w, store } = await boot([
       entry(PLAIN, [

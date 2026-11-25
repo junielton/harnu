@@ -6,7 +6,7 @@ Harnu's optional **hook interceptor** parks its decisions in the same place — 
 
 ## Needs you
 
-**Needs you** sits above **Add folder**. It shows only while something is waiting, and it starts folded: one line with the number of pending items and how long the oldest has been waiting. Click it to open the list; the list scrolls inside its own box when it is long. It never opens by itself. A new request plays its sound and raises a system notification and the number goes up, but nothing on screen moves until you ask.
+**Needs you** sits above **Add folder**. It shows only while something is waiting, and it starts folded: one line with the number of pending items and how long the oldest has been waiting. Click it to open the list; the list scrolls inside its own box when it is long, and in a very narrow sidebar Allow and Deny sit under the command. It never opens by itself. A new request plays its sound and raises a system notification and the number goes up, but nothing on screen moves until you ask.
 
 Three things open it, and each one also expands the sidebar if you had collapsed it:
 

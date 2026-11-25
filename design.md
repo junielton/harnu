@@ -2409,7 +2409,10 @@ attention` in Section-label type (10.5px / 600, `.06em`, uppercase) `--warning`,
   error) is the tooltip. A click selects the session, expands its folder and checkout, and leaves
   Focus when the session is outside the focused folder.
 - **Order:** needs input first, then failed; inside a tier, newest created first.
-- **Height:** at most 168px (six rows), then the rows scroll; the head stays put.
+- **Height:** at most 168px (six rows), then the rows scroll; the head stays put. It keeps its full
+  height while the dock opens (the dock bodies scroll first) and folds down to its head only on a
+  window too short for both dock heads, Add folder and the folder list's minimum.
+- **Keyboard focus:** the standard ring, drawn inside the row and the head (so is the dock heads').
 
 #### Bottom dock
 
@@ -2427,6 +2430,8 @@ own under Floating panels).
 - **A section with nothing in it is not rendered at all.**
 - **Open body:** content-sized, at most `min(380px, 45vh)`, scrolls inside; the head stays put. The
   folder list keeps at least `min(160px, 40vh)`.
+- **Narrow sidebar:** below 260px an approval row's Allow and Deny drop under its text, so the
+  command keeps at least 60px of width.
 - **Needs you** holds everything the Fleet rail's Needs you section held: pending approval rows,
   parked agent confirms, with the same anatomy and the same disclosure rules (§6
   "Needs you rows"). It never opens itself; the OS notification deep-link, `⌘⇧A` and the "Open
