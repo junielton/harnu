@@ -311,3 +311,26 @@ test('an agent row keeps its type and skill: the title gives way first', async (
   await setSidebarWidth(200)
   expect(await overflow()).toBe(0)
 })
+
+test('teammate and finished-agent rows keep their text on the row centre', async () => {
+  await setSidebarWidth(268)
+  const off = await page.locator('.sidebar-tree-scroll').evaluate((list) =>
+    [
+      ...list.querySelectorAll('[data-teammate-row], [data-dsqa="sidebar-agents-done-fold"]')
+    ].flatMap((row) => {
+      const mid = row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2
+      const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
+      const out: Array<{ text: string; off: number }> = []
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue
+        const range = document.createRange()
+        range.selectNodeContents(node)
+        const r = range.getBoundingClientRect()
+        out.push({ text: node.textContent.trim().slice(0, 12), off: r.top + r.height / 2 - mid })
+      }
+      return out
+    })
+  )
+  expect(off.length).toBeGreaterThanOrEqual(3)
+  expect(off.filter((item) => Math.abs(item.off) > 0.75)).toEqual([])
+})
