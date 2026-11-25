@@ -45,6 +45,8 @@
       "rescan": "Reescanear pastas",
       "rescanFailed": "Falha ao reescanear",
       "expandAll": "Expandir tudo",
+      "collapseSessions": "Recolher sessões",
+      "collapseFolders": "Recolher pastas",
       "collapseAll": "Recolher tudo",
       "hidden": "Ocultas ({count})",
       "unhide": "Reexibir"
@@ -117,7 +119,11 @@
       "workingGuard": "Esse teammate está sendo dirigido pelo time-lead agora. Retomar aqui pode conflitar com as escritas dele — continuar mesmo assim?"
     },
     "agentBlockedBadge": "Agentes bloqueados — nenhum agente pode agir nesta pasta",
-    "lineageBadge": "{n} worktree(s) criadas a partir daqui — clique para recolher/expandir"
+    "tree": {
+      "idleWorktrees": "{count} worktree inativa | {count} worktrees inativas",
+      "foldFolder": "Recolher {name}",
+      "openFolder": "Expandir {name}"
+    }
   },
   "board": {
     "blockedFor": "bloqueada há {time}",
@@ -730,6 +736,8 @@
     "searchTruncated": "Mostrando os primeiros 500 resultados — refine a busca."
   },
   "folderMenu": {
+    "showOlder": "Mostrar antigas ({n})",
+    "showArchived": "Mostrar arquivadas ({n})",
     "label": "Ações da pasta",
     "newTerminal": "Novo terminal",
     "bootOptions": "Opções de inicialização…",
@@ -1412,6 +1420,8 @@
     "save": "Salvar"
   },
   "repoGroup": {
+    "renameRepo": "Renomear repositório",
+    "cleanUp": "Limpar",
     "menuLabel": "Ações do grupo",
     "rename": "Renomear grupo",
     "resetName": "Resetar nome",

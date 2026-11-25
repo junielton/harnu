@@ -6,13 +6,22 @@ A session is one Claude Code conversation, backed by a real `claude` process and
 
 There are three ways a session comes into existence, and they behave differently:
 
-- **New session** — the **+** on a folder row (or `Cmd/Ctrl+N`) starts a brand-new `claude` process in that folder with no history. Only one "new session in progress" placeholder is allowed per folder at a time.
+- **New session** — **New session** in a checkout's right-click menu (or `Cmd/Ctrl+N`) starts a brand-new `claude` process in that folder with no history. Only one "new session in progress" placeholder is allowed per folder at a time.
 - **Resume** — clicking any past session row spawns `claude --resume <id>` in its original working directory, restoring the full conversation from the on-disk transcript. This is what you're doing every time you click a session that already exists.
 - **Fork** — right-click a session and choose **Fork** to spawn `claude --resume <id> --fork-session`. This loads the source session's entire history but immediately diverges into a new, independent session id — the original is untouched. Unlike New session, forking doesn't dedupe, so you can stack as many forks off one session as you want. You can't fork a session that hasn't started yet (a still-booting "new session" placeholder).
 
 Every session row carries a status dot so you can tell what's going on without opening it: **green** (pulsing) means Claude is actively working, **amber** means it's waiting on you (a question, or an approval), **red** means it failed or has gone quiet mid-task ("stuck"), **gray** is idle, and a **checkmark** means it finished. A session that's been quiet a while may also get parked to reclaim memory — see "Hibernated sessions" below.
 
 A session whose own turn has ended but whose background **subagent** is still running keeps the green "working" dot until the last subagent finishes (once the Harnu mod's task state switch is on; see [Troubleshooting](troubleshooting.md#a-sessions-dot-stays-working-or-needs-input-after-it-stopped)). Background shell commands and monitors do not hold it.
+
+## Session rows
+
+A session row in the sidebar reads, left to right: its status dot, its title, then at the right edge anything that needs saying.
+
+- **No age, context or branch** on the row: hover it and the preview shows them.
+- **Mission chip.** The session leading a mission shows **⚠ n**, the number of things that mission is waiting on you for. Hover the row for the full text, drawn over the end of the title.
+- **Orchestrator crown**, in its own place at the far right.
+- **Subagents and teammates.** A count chip appears on hover; click it to list or hide them under the session.
 
 ## The terminal pane
 
@@ -129,9 +138,9 @@ Right-click any session row for:
 - Per-session toggles: **No flicker**, **Remote Control** (bridges the session to your phone), **Promote/Demote Orchestrator** (see below)
 - **Archive** (reversible, just hides it from the default view) and **Delete** (destructive — asks for confirmation, removes the transcript from disk)
 
-From the keyboard, `Shift+F10` opens the same menu for the row under the sidebar's keyboard cursor (or, with no cursor, the selected session; with no session, the active folder's menu), anchored at that row, with its first item focused — arrow keys and Enter take it from there. On a repo group row it does nothing: the group's menu can't be opened from the keyboard yet, but its three actions (rename, reset name, clean up) are commands you can bind — see [Shortcuts](#shortcuts). On a Mac keyboard press `Fn+Shift+F10`, unless you set the F-keys to act as standard function keys.
+From the keyboard, `Shift+F10` opens the same menu for the row under the sidebar's keyboard cursor (or, with no cursor, the selected session; with no session, the active folder's menu), anchored at that row, with its first item focused — arrow keys and Enter take it from there. On a folder header it opens the folder's menu (with **Rename repo**, **Reset name** and **Clean up** for a repository); those three are also commands you can bind, see [Shortcuts](#shortcuts). On the idle-worktrees row it does nothing. On a Mac keyboard press `Fn+Shift+F10`, unless you set the F-keys to act as standard function keys.
 
-`F2` renames a folder: with the keyboard cursor on a folder row it opens **Rename folder** for that folder; with no cursor row, it renames the active folder. On a session row or a repo group row it does nothing — rename a session with `Cmd/Ctrl+R`. On most Mac keyboards `F2` is the brightness key, so press `Fn+F2` unless you set the F-keys to act as standard function keys. (VS Code on macOS renames with Enter; in Harnu, Enter opens the cursor row, so rename stays on `F2` on every platform.)
+`F2` renames a folder: with the keyboard cursor on a checkout row (or the header of a single folder) it opens **Rename folder** for that folder; with no cursor row, it renames the active folder. On a session row or a repository header it does nothing: rename a session with `Cmd/Ctrl+R`. On most Mac keyboards `F2` is the brightness key, so press `Fn+F2` unless you set the F-keys to act as standard function keys. (VS Code on macOS renames with Enter; in Harnu, Enter opens the cursor row, so rename stays on `F2` on every platform.)
 
 ### Promoting a session to Orchestrator
 
@@ -266,8 +275,8 @@ can give each one a chord (see
 **Folder** menu, so a chord you bind works even while the terminal has focus.
 
 Every item of the session right-click menu, closing a folder terminal, the
-**+** that starts a new session in the active folder, and the sidebar header's
-buttons (rescan, drill depth, collapse all, hidden folders) can be given a
+new-session command for the active folder, and the sidebar header's
+buttons (rescan, drill depth, collapse levels, hidden folders) can be given a
 shortcut too; none has one out of the box. Their command ids are
 `session.newInFolder`, `session.fork`, `session.restart`, `session.copyId`,
 `session.copyTranscriptPath`, `session.copyResumeCommand`,
@@ -279,9 +288,9 @@ only when the right-click menu would offer it there (no Fork on a session that i
 still starting, for example). Remote Control and Promote to Orchestrator stay
 click-only on purpose: they show a disclosure you should read first.
 
-The folder right-click menu works the same way. Its items, the folder row's
-**Show older** / **Show archived** toggles and the repo group menu have these
-command ids, all without a shortcut except `folder.rename` (`F2`):
+The folder right-click menu works the same way. Its items, including **Show
+older** / **Show archived** and the repository entries on a folder header, have
+these command ids, all without a shortcut except `folder.rename` (`F2`):
 `folder.rename`, `folder.newFolderTerminal`, `folder.toggleBranchAlias`,
 `folder.bootOptions`, `folder.projectMemory`, `folder.memoryLocation`,
 `folder.newSubfolder`, `folder.openSubfolder`, `folder.newWorktree`,
@@ -292,9 +301,9 @@ command ids, all without a shortcut except `folder.rename` (`F2`):
 `repoGroup.cleanup`. A folder action works on the **active** folder (only
 `folder.rename` follows the keyboard cursor first) and only when the menu would
 offer it there — New worktree only in a git repo, Remove worktree only on a
-linked worktree, which still asks before removing anything. A repo group action
-works on the group under the keyboard cursor, or else the group the active folder
-belongs to. Blocking agents, letting agents read terminals, **Modes** and the
+linked worktree, which still asks before removing anything. A repository action
+works on the header under the keyboard cursor, or else the repository the active
+folder belongs to. Blocking agents, letting agents read terminals, **Modes** and the
 parent-folder pick stay click-only: the first two change what agents may do, the
 others need you to pick from a list.
 

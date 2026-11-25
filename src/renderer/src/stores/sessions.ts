@@ -41,6 +41,14 @@ import { useLiveRegistry } from './session-live-registry'
 import { useSessionAutoname } from './session-autoname'
 import { useSidebarCursor } from './session-cursor'
 import {
+  buildSidebarTree,
+  flattenSidebarTree,
+  reuseTree,
+  treeCollapseLevel,
+  type CollapseLevel,
+  type TreeFolder
+} from '../lib/sidebar-tree'
+import {
   applyGitListings,
   mergeFolders,
   pickGitMeta,
@@ -68,7 +76,8 @@ import { sortSessions, type SessionSortMode } from '../components/session-sort'
 import { buildBoard, type BoardBucket, type BoardSession } from '../components/fleet-board'
 import { sortFolders, type FolderSortMode } from '../components/folder-sort'
 import { isSidebarDensity, type SidebarDensity } from '../components/sidebar-density'
-import { teamHex } from '../components/teammate-grouping'
+import { buildSessionRows, teamHex } from '../components/teammate-grouping'
+import { dotFor } from '../components/session-dot'
 import { isForkSyntheticLike, sessionTitle } from '../lib/session-label'
 import { injectionLedger } from './injection-ledger'
 import { createNavHistory } from '../lib/nav-history'
@@ -2557,54 +2566,178 @@ export const useSessionsStore = defineStore('sessions', () => {
     return matched
   })
 
+  const checkoutsFolded = persistedSet<string>('om2tab.checkoutsFolded')
+  const idleWorktreesOpen = persistedSet<string>('om2tab.idleWorktreesOpen')
   /**
-   * The single flat sidebar list (BUG-39 — replaces the old `pinnedZone` +
-   * `activeZone` split): every visible folder (pinned ∪ active, minus hidden)
-   * classified, sorted, grouped by shared repo (`groupByRepo`), then by shared
-   * DIRECT parent directory (`groupByParentDir`, T182) — all in ONE pass.
-   *
-   * The single pass is the duplicate-header fix: the old two independent
-   * `groupByRepo` calls (one per zone) each produced their own group header for
-   * a repo with members split across both zones; one combined pass yields
-   * exactly one. Both stages emit the same `FolderGroup` node, and neither ever
-   * puts a group inside a group — that's what caps the list at one level of
-   * indentation (T70's anti-VS-Code rule).
-   *
-   * When the inline filter is active it overrides classification entirely: all
-   * matching folders render here regardless of pinned/active status (spec §5.2).
+   * A text filter forces every repo folder open so its matches show. These are
+   * the ones the operator closed again since the current query was typed, by the
+   * chevron or the collapse shortcut; a new query shows everything again.
    */
-  const visibleFolders = computed<Array<Folder | FolderGroup<Folder>>>(() => {
-    // An active filter forces every group open (a collapsed group would hide
-    // matches): pass no collapsed set.
-    if (filterQuery.value.trim())
-      return groupByParentDir(
-        groupByRepo(
-          sortFolders(filteredFolders.value, folderSort.value),
-          undefined,
-          groupAliases.value,
-          shelvedByRepo.value
-        ),
-        undefined,
-        groupAliases.value
-      )
+  const closedUnderFilter = ref<ReadonlySet<string>>(new Set())
+  watch(filterQuery, () => {
+    closedUnderFilter.value = new Set()
+  })
+
+  function setClosedUnderFilter(key: string, closed: boolean): void {
+    if (closedUnderFilter.value.has(key) === closed) return
+    const next = new Set(closedUnderFilter.value)
+    if (closed) next.add(key)
+    else next.delete(key)
+    closedUnderFilter.value = next
+  }
+
+  const sortedListedFolders = computed<Folder[]>(() =>
+    sortFolders(
+      filterQuery.value.trim() ? filteredFolders.value : listableVisibleFolders(),
+      folderSort.value
+    )
+  )
+
+  const repoNodes = computed(() =>
+    groupByRepo(
+      sortedListedFolders.value,
+      filterQuery.value.trim() ? undefined : collapsedGroups.value,
+      groupAliases.value,
+      shelvedByRepo.value
+    )
+  )
+
+  function listableVisibleFolders(): Folder[] {
     const ctx = buildClassifyCtx()
-    return groupByParentDir(
-      groupByRepo(
-        sortFolders(
-          listableFolders.value.filter((f) => {
-            const status = classifyFolder(f, ctx)
-            return status === 'pinned' || status === 'active'
-          }),
-          folderSort.value
-        ),
-        collapsedGroups.value,
-        groupAliases.value,
-        shelvedByRepo.value
-      ),
-      collapsedGroups.value,
+    return listableFolders.value.filter((folder) => {
+      const zone = classifyFolder(folder, ctx)
+      return zone === 'pinned' || zone === 'active'
+    })
+  }
+
+  // The legacy drill and jump list retains parent-directory groups. Grouping
+  // can change their parent hints, so give it its own group objects.
+  const visibleFolders = computed<Array<Folder | FolderGroup<Folder>>>(() =>
+    groupByParentDir(
+      repoNodes.value.map((node) => (isFolderGroup(node) ? { ...node } : node)),
+      filterQuery.value.trim() ? undefined : collapsedGroups.value,
       groupAliases.value
     )
+  )
+
+  // Per folder, cached (the BUG-265 shape): a change in one folder's sessions
+  // recomputes that folder alone. The tree and the header ring read only
+  // primitives from these, so a transcript append that changes no verdict wakes
+  // neither.
+  function buildFolderRows(folder: Folder): ReturnType<typeof buildSessionRows<Session>> {
+    return buildSessionRows(
+      sessionsForDisplay(folder),
+      teammateLeadCandidates(folder),
+      selectedId.value
+    )
+  }
+  const folderRows = createKeyedComputeds<ReturnType<typeof buildSessionRows<Session>>>((path) => {
+    const folder = findFolderByPath(path)
+    return folder ? buildFolderRows(folder) : { rows: [], teammatesByLeader: new Map() }
   })
+
+  function sidebarSessionRows(folder: Folder): ReturnType<typeof buildSessionRows<Session>> {
+    // A folder object the model does not hold (a detached copy) is computed on the spot.
+    return findFolderByPath(folder.path) === folder
+      ? folderRows.get(folder.path)
+      : buildFolderRows(folder)
+  }
+
+  const folderHasRows = createKeyedComputeds<boolean>((path) => {
+    const folder = findFolderByPath(path)
+    return (
+      !!folder &&
+      (sidebarSessionRows(folder).rows.length > 0 || terminalsForFolder(folder).length > 0)
+    )
+  })
+
+  function checkoutHasRows(folder: Folder): boolean {
+    return folderHasRows.get(folder.path)
+  }
+
+  /**
+   * The folder ring's level for one checkout: 3 needs input, 2 failed, 1 working
+   * (stuck included), 0 nothing. Only sessions the tree can list count, so the
+   * ring never points at a row that is not there; the age filter already keeps
+   * every live one. A folder terminal counts only for the state its own row
+   * shows (an idle shell is not "working").
+   */
+  const folderRingLevels = createKeyedComputeds<number>((path) => {
+    const folder = findFolderByPath(path)
+    if (!folder) return 0
+    let level = 0
+    for (const session of sessionsForDisplay(folder)) {
+      if (archivedIds.value.has(session.sessionId) || session.status === 'archived') continue
+      const dot = dotFor(
+        session.taskState,
+        session.status,
+        activityOf(session, closureNow.value),
+        session.transcriptState
+      )
+      if (dot === 'needs-input') return 3
+      if (dot === 'failed') level = 2
+      else if (dot === 'working' || dot === 'stuck') level = Math.max(level, 1)
+    }
+    for (const terminal of terminalsForFolder(folder)) {
+      if (terminal.taskState === 'needs-input') return 3
+      if (terminal.taskState === 'working') level = Math.max(level, 1)
+    }
+    return level
+  })
+
+  function folderRingLevel(path: string): number {
+    return folderRingLevels.get(path)
+  }
+
+  watch(
+    () => folders.value.map((folder) => folder.path),
+    (paths) => {
+      const keep = new Set(paths)
+      folderRows.prune(keep)
+      folderHasRows.prune(keep)
+      folderRingLevels.prune(keep)
+    }
+  )
+
+  // The previous tree is handed back entry by entry while nothing it draws
+  // changed, so an unrelated session update re-renders no header or checkout row.
+  const sidebarTree = computed<TreeFolder[]>((previous) =>
+    reuseTree(
+      previous,
+      buildSidebarTree(repoNodes.value, {
+        order: sortedListedFolders.value,
+        aliasFromBranchPaths: aliasFromBranchPaths.value,
+        hasRows: checkoutHasRows,
+        closed: closedUnderFilter.value
+      })
+    )
+  )
+
+  function isIdleWorktreesOpen(key: string): boolean {
+    return !!filterQuery.value.trim() || idleWorktreesOpen.has(key)
+  }
+
+  const collapseLevel = computed(() =>
+    treeCollapseLevel(sidebarTree.value, checkoutHasRows, checkoutsFolded.has)
+  )
+
+  const sidebarCursorRows = computed(() =>
+    flattenSidebarTree(sidebarTree.value, {
+      hasRows: checkoutHasRows,
+      checkoutFolded: checkoutsFolded.has,
+      idleOpen: isIdleWorktreesOpen,
+      sessionIds: (folder) => {
+        const { rows, teammatesByLeader } = sidebarSessionRows(folder)
+        const ordered = rows.flatMap(({ session }) => [
+          session,
+          ...(isTeammatesExpanded(session.sessionId)
+            ? (teammatesByLeader.get(session.sessionId) ?? [])
+            : [])
+        ])
+        return [...ordered, ...terminalsForFolder(folder)].map((session) => session.sessionId)
+      }
+    })
+  )
 
   // ── Always-listed git worktrees (T388, sidebar-liveness spec §4.B B2) ──────
 
@@ -2689,6 +2822,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     )
   }
   let lastTrackKey = trackKey([])
+  // The main process outlives a page reload and only pushes changes, so this
+  // page's first set asks for everything it already holds.
+  let replayListings = true
   const TRACK_DEBOUNCE_MS = 500
   let trackTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -2705,7 +2841,9 @@ export const useSessionsStore = defineStore('sessions', () => {
       gitWorktrees.value = kept
       applyWorktreeListings()
     }
-    void window.api.worktreesTrack(repos).catch((err: unknown) => {
+    const options = { replay: replayListings }
+    replayListings = false
+    void window.api.worktreesTrack(repos, options).catch((err: unknown) => {
       console.warn('[sessions] worktreesTrack failed:', err)
     })
   }
@@ -3013,8 +3151,7 @@ export const useSessionsStore = defineStore('sessions', () => {
    * a PTY); it only brings the folder into view.
    */
   function revealFolder(path: string): void {
-    const folder = findFolderByPath(path)
-    if (folder) folder.expanded = true
+    revealCheckout(path)
     revealFolderPath.value = path
   }
 
@@ -3095,18 +3232,12 @@ export const useSessionsStore = defineStore('sessions', () => {
    * `jumpToSession`).
    */
   function jumpToFolder(path: string): void {
-    const folder = findFolderByPath(path)
-    if (!folder) return
+    if (!findFolderByPath(path)) return
     useUiStore().closeAllTakeovers()
     selectFolder(path)
-    for (const node of visibleFolders.value) {
-      if (isFolderGroup(node) && node.folders.some((f) => f.path === path)) {
-        collapsedGroupsSet.delete(node.key)
-        break
-      }
-    }
-    folder.expanded = true
+    revealCheckout(path)
     if (drillModeEnabled.value) {
+      revealDrillGroup(path)
       drillStack.value = drillNodeStackForFolder(path)
     }
     recordJumpVisit(path)
@@ -3122,6 +3253,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   function jumpToSession(sessionId: string): void {
     if (!findSessionById(sessionId)) return
     select(sessionId)
+    revealSessionRow(sessionId)
     raiseJumpFlash(`session:${sessionId}`)
   }
 
@@ -3359,7 +3491,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       (s) => s.synthetic === true && s.taskState !== 'completed' && s.taskState !== 'failed'
     )
     if (existing) {
-      folder.expanded = true
+      showNewRow(folder)
       // BUG-102 — a "+ New session" click is a focus intent: route through the
       // shared primitive so it closes any open takeover too, not just the folder
       // selection.
@@ -3397,7 +3529,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     // Insert at the top so it appears immediately above the real sessions.
     folder.sessions.unshift(synthetic)
     bornSyntheticIds.add(sessionId)
-    folder.expanded = true
+    showNewRow(folder)
     // BUG-102 — same focus intent as the dedupe branch above: the operator asked
     // for a session, so every takeover and the folder view must step aside.
     select(sessionId)
@@ -3479,7 +3611,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     } else if (trimmedPrompt.length > 0) {
       pendingAgentPrompts.set(sessionId, prePrompt)
     }
-    folder.expanded = true
+    showNewRow(folder)
     // T113: the background drain spawns with `select: false` — selection is how
     // a MANUAL dispatch boots (TerminalPane activates on select), but the drain
     // must never steal focus; its caller queues the boot via `enqueueAgentBoot`.
@@ -3568,7 +3700,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       ...(bootOverride && Object.keys(bootOverride).length ? { bootOverride } : {})
     }
     folder.sessions.unshift(synthetic)
-    folder.expanded = true
+    showNewRow(folder)
 
     // Record the token-bound migrate's metadata so the right synthetic (this
     // agent's, never a coexisting user one) is upgraded when its JSONL lands.
@@ -3740,7 +3872,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
       folder.sessions.unshift(synthetic)
       bornSyntheticIds.add(sessionId)
-      folder.expanded = true
+      showNewRow(folder)
       // BUG-102 — a fork is a focus intent too; route through `select()` so it
       // closes any open takeover and never leaves a folder selection behind.
       select(sessionId)
@@ -3815,7 +3947,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       ...(command ? { shellCommand: { cmd: command.cmd, args: [...command.args] } } : {})
     }
     folder.sessions.push(terminal)
-    folder.expanded = true
+    showNewRow(folder)
     // BUG-102 — opening a folder terminal is a focus intent too: it was the one
     // mint site `select()` never reached, so it alone left a takeover or the
     // folder view stuck on top of the freshly-opened shell.
@@ -3872,6 +4004,89 @@ export const useSessionsStore = defineStore('sessions', () => {
    */
   function toggleGroup(key: string): void {
     collapsedGroupsSet.toggle(key)
+  }
+
+  function toggleTreeFolder(key: string): void {
+    const folder = sidebarTree.value.find((node) => node.key === key)
+    if (!folder) return
+    if (folder.group) {
+      if (folder.open) {
+        for (const path of folder.paths) forgetPeeks(path)
+      }
+      // Under a filter the choice lasts only as long as the query.
+      if (filterQuery.value.trim()) setClosedUnderFilter(key, folder.open)
+      else toggleGroup(key)
+    } else toggleFolder(folder.primary.path)
+  }
+
+  function setCheckoutFolded(path: string, folded: boolean): void {
+    if (folded) {
+      if (!checkoutsFolded.has(path)) checkoutsFolded.add(path)
+      forgetPeeks(path)
+    } else if (checkoutsFolded.has(path)) checkoutsFolded.delete(path)
+  }
+
+  function toggleCheckoutFold(path: string): void {
+    setCheckoutFolded(path, !checkoutsFolded.has(path))
+  }
+
+  function toggleIdleWorktrees(key: string): void {
+    if (!filterQuery.value.trim()) idleWorktreesOpen.toggle(key)
+  }
+
+  /**
+   * A row was just added to this folder (new, forked, dispatched or agent
+   * session, terminal): open the folder and unfold its checkout so the row is
+   * not born hidden. A collapsed repo header stays collapsed, as it did before.
+   */
+  function showNewRow(folder: Folder): void {
+    folder.expanded = true
+    setCheckoutFolded(folder.path, false)
+  }
+
+  /** Re-reveal a session that may already be selected (the selection watcher stays quiet then). */
+  function revealSessionRow(sessionId: string): void {
+    const folder = findFolderBySessionId(sessionId)
+    if (!folder) return
+    revealCheckout(folder.path)
+    revealSessionId.value = sessionId
+  }
+
+  function revealCheckout(path: string): void {
+    const folder = findFolderByPath(path)
+    if (!folder) return
+    folder.expanded = true
+    const node = sidebarTree.value.find((entry) => entry.paths.includes(path))
+    if (node?.group && collapsedGroupsSet.has(node.key)) collapsedGroupsSet.delete(node.key)
+    if (node) setClosedUnderFilter(node.key, false)
+    if (node?.idle.some((checkout) => checkout.path === path) && !idleWorktreesOpen.has(node.key)) {
+      idleWorktreesOpen.add(node.key)
+    }
+    setCheckoutFolded(path, false)
+  }
+
+  function setCollapseLevel(level: CollapseLevel): void {
+    if (level === 2) {
+      for (const key of collapsedGroups.value) {
+        if (key.startsWith('repo:')) collapsedGroupsSet.delete(key)
+      }
+      checkoutsFolded.clear()
+      closedUnderFilter.value = new Set()
+      expandAll()
+      return
+    }
+    for (const node of sidebarTree.value) {
+      if (level === 1 && node.git) {
+        for (const path of node.paths) setCheckoutFolded(path, true)
+      } else if (node.group) {
+        if (!collapsedGroupsSet.has(node.key)) collapsedGroupsSet.add(node.key)
+        if (filterQuery.value.trim()) setClosedUnderFilter(node.key, true)
+      } else {
+        node.primary.expanded = false
+        forgetPeeks(node.primary.path)
+      }
+    }
+    if (level === 0) collapseAll()
   }
 
   /** Expand every folder's session list (spec §5 — expand all). Shelved sections open with them (U2.3b). */
@@ -3973,13 +4188,14 @@ export const useSessionsStore = defineStore('sessions', () => {
       if (!ack.ok) return failed(ack.message)
       markShelvedFolderPresent(member.worktreePath)
       await gc.refresh()
+      revealCheckout(member.worktreePath)
       if (resumeSessionId) {
         for (const f of folders.value) {
           if (
             isInsidePath(f.path, member.worktreePath) &&
             f.sessions.some((x) => x.sessionId === resumeSessionId)
           ) {
-            f.expanded = true
+            revealCheckout(f.path)
           }
         }
         select(resumeSessionId)
@@ -4292,11 +4508,6 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   // --- Sidebar keyboard cursor (T-4.6) --------------------------------------
-  // Owned by the `useSidebarCursor` composable (T25 wave 4): it walks the visible
-  // tree and moves the cursor over it. High read-coupling but strictly
-  // one-directional — the `visibleFolders` computed, display helpers, and
-  // select/toggle actions are all injected. `findFolderBySessionId` stays in
-  // the store (also used by `activateSession`) and is injected here.
   const {
     keyboardCursor,
     cursorDown,
@@ -4306,17 +4517,22 @@ export const useSessionsStore = defineStore('sessions', () => {
     cursorActivate,
     setCursorToSession
   } = useSidebarCursor({
-    visibleFolders,
-    sessionsForDisplay,
-    terminalsForFolder,
-    findFolderByPath,
-    findFolderBySessionId,
+    rows: sidebarCursorRows,
     select,
     selectFolder,
-    isFolderSelected: (path: string) => selectedFolderPath.value === path,
-    toggleFolder,
-    toggleGroup
+    toggleTreeFolder,
+    setCheckoutFolded,
+    toggleIdleWorktrees
   })
+
+  function revealDrillGroup(path: string): void {
+    for (const node of visibleFolders.value) {
+      if (isFolderGroup(node) && node.folders.some((folder) => folder.path === path)) {
+        collapsedGroupsSet.delete(node.key)
+        break
+      }
+    }
+  }
 
   /** Locate `{ folder }` for a session UUID. */
   function findFolderBySessionId(sessionId: string): Folder | null {
@@ -4377,6 +4593,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
     setCursorToSession(sessionId)
     select(sessionId)
+    revealSessionRow(sessionId)
     return true
   }
 
@@ -4479,14 +4696,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       const folder = findFolderBySessionId(id)
       if (!folder) return
 
-      for (const node of visibleFolders.value) {
-        if (isFolderGroup(node) && node.folders.some((f) => f.path === folder.path)) {
-          collapsedGroupsSet.delete(node.key)
-          break
-        }
-      }
-
-      folder.expanded = true
+      revealCheckout(folder.path)
 
       if (session.teamName) {
         const hex = teamHex(session.teamName)
@@ -4497,6 +4707,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
 
       if (drillModeEnabled.value) {
+        revealDrillGroup(folder.path)
         drillStack.value = drillNodeStackForSession(id)
       }
 
@@ -6290,6 +6501,21 @@ export const useSessionsStore = defineStore('sessions', () => {
     folders,
     foldersLoading,
     visibleFolders,
+    repoNodes,
+    sidebarTree,
+    sidebarSessionRows,
+    folderRingLevel,
+    sidebarCursorRows,
+    checkoutHasRows,
+    isCheckoutFolded: checkoutsFolded.has,
+    isIdleWorktreesOpen,
+    collapseLevel,
+    setCollapseLevel,
+    toggleTreeFolder,
+    setCheckoutFolded,
+    toggleCheckoutFold,
+    toggleIdleWorktrees,
+    revealCheckout,
     boardBuckets,
     triageQueue,
     dismissedFolders,

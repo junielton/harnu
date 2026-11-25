@@ -131,11 +131,10 @@ onBeforeUnmount(() => {
     <button
       class="sidebar-row flex w-full cursor-pointer items-center text-left text-text-4 transition hover:bg-surface hover:text-text-3"
       :style="{
-        height: `${metrics.folderRowHeight}px`,
-        padding: '0 12px 0 28px',
-        gap: '4px',
-        fontSize: '12.5px',
-        marginTop: '2px'
+        height: `${metrics.checkoutRowHeight}px`,
+        padding: '0 12px 0 14px',
+        gap: `${metrics.gap}px`,
+        fontSize: '12.5px'
       }"
       :aria-expanded="open"
       :title="t('sidebar.shelved.tooltip', members.length, { named: { n: members.length } })"
@@ -154,7 +153,7 @@ onBeforeUnmount(() => {
           }"
         />
       </span>
-      <Archive :size="12" :stroke-width="1.6" class="shrink-0" style="margin-right: 2px" />
+      <Archive :size="12" :stroke-width="1.6" class="shrink-0" />
       <span class="eyebrow">{{ t('sidebar.shelved.label') }}</span>
       <span class="eyebrow" aria-hidden="true">·</span>
       <span class="tabular-nums" style="font-size: 10.5px">{{ members.length }}</span>
@@ -169,8 +168,8 @@ onBeforeUnmount(() => {
           :class="menu.open && menu.member?.id === m.id ? 'bg-surface' : ''"
           :style="{
             height: `${metrics.childRowHeight}px`,
-            padding: '0 12px 0 28px',
-            gap: '4px',
+            padding: '0 12px 0 14px',
+            gap: `${metrics.gap}px`,
             fontSize: '12.5px'
           }"
           role="button"
@@ -186,7 +185,7 @@ onBeforeUnmount(() => {
           <span
             class="flex min-w-0 flex-1 items-center transition-opacity"
             :style="{
-              gap: '4px',
+              gap: `${metrics.gap}px`,
               opacity: isRestoring(m) ? 1 : 0.62,
               transitionDuration: 'var(--dur)',
               transitionTimingFunction: 'var(--ease)'
@@ -256,10 +255,11 @@ onBeforeUnmount(() => {
         <!-- Sessions of the worktree: ordinary rows, dimmed. Clicking one restores, then resumes. -->
         <template v-if="openRows.has(m.id)">
           <button
-            v-for="s in m.sessions"
+            v-for="(s, index) in m.sessions"
             :key="s.sessionId"
             data-session-row
-            class="sidebar-row relative flex w-full cursor-pointer items-center text-left transition"
+            :data-guide-last="index === m.sessions.length - 1 || undefined"
+            class="sidebar-row sidebar-row-cv sidebar-tree-guide sidebar-session-tint relative flex w-full cursor-pointer items-center text-left transition"
             :class="
               restoringSession(m) === s.sessionId ? 'text-text' : 'text-text-2 hover:text-text'
             "
@@ -269,28 +269,14 @@ onBeforeUnmount(() => {
             :title="t('sidebar.shelved.sessionTooltip')"
             :style="{
               height: `${metrics.sessionRowHeight}px`,
-              paddingLeft: `${metrics.sessionIndent.nested}px`,
+              paddingLeft: `${metrics.sessionIndent}px`,
               paddingRight: '12px',
               gap: `${metrics.gap}px`,
               fontSize: '12.5px',
-              fontWeight: restoringSession(m) === s.sessionId ? 500 : 400,
-              background:
-                restoringSession(m) === s.sessionId ? 'var(--color-accent-soft)' : 'transparent'
+              fontWeight: restoringSession(m) === s.sessionId ? 500 : 400
             }"
             @click="onResume(m, s)"
             @contextmenu="(e) => contextMenu.open(e, s.sessionId)"
-            @mouseenter="
-              (e) => {
-                if (restoringSession(m) !== s.sessionId)
-                  (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.025)'
-              }
-            "
-            @mouseleave="
-              (e) => {
-                if (restoringSession(m) !== s.sessionId)
-                  (e.currentTarget as HTMLElement).style.background = 'transparent'
-              }
-            "
           >
             <span
               v-if="restoringSession(m) === s.sessionId"
@@ -298,10 +284,9 @@ onBeforeUnmount(() => {
               style="width: 2px; height: 100%; border-radius: 0 2px 2px 0"
               aria-hidden="true"
             />
-            <span class="shrink-0" style="width: 12px; height: 12px" aria-hidden="true" />
             <span
               class="flex shrink-0 items-center justify-center"
-              style="width: 14px; height: 14px"
+              style="width: 12px; height: 12px"
               :style="{ opacity: restoringSession(m) === s.sessionId ? 1 : 0.62 }"
             >
               <span
@@ -328,6 +313,7 @@ onBeforeUnmount(() => {
               :style="{ opacity: restoringSession(m) === s.sessionId ? 1 : 0.62 }"
               >{{ labelFor(s) }}</span
             >
+            <span data-icon-slot class="w-3.5 shrink-0" aria-hidden="true" />
           </button>
         </template>
       </div>

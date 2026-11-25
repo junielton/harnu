@@ -1,233 +1,180 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
-import {
-  ChevronRight,
-  Folder as FolderIcon,
-  GitBranch,
-  PencilLine,
-  RotateCcw,
-  Trash2
-} from 'lucide-vue-next'
-import { useI18n } from 'vue-i18n'
-import { useSessionsStore } from '../stores/sessions'
-import { useFolderMenuActions } from '../composables/useFolderMenuActions'
-import type { FolderGroup } from '../stores/folder-zones'
-import type { Folder } from '../stores/sessions'
+import { computed } from 'vue'
+import { BotOff, Crown, EyeOff, PanelRight } from 'lucide-vue-next'
+import { useHoverPreview } from '../composables/useHoverPreview'
+import { checkoutLabel, treeHeaderCursor, type TreeFolder } from '../lib/sidebar-tree'
+import { useHelpersStore } from '../stores/helpers'
+import { useSessionsStore, type Folder } from '../stores/sessions'
+import { useUiStore } from '../stores/ui'
+import { densityMetrics } from './sidebar-density'
+import SidebarValueSlot from './SidebarValueSlot.vue'
 
 /**
- * Collapsible header for a sidebar group — 2+ visible folders that belong
- * together (spec §5.3, design.md §6), either as worktrees of one repo
- * (`source: 'repo'`) or as folders sharing a direct parent directory
- * (`source: 'path'`, T182). Reuses the existing sidebar-row anatomy
- * (Section-label typography, no new tokens); the only per-source difference is
- * the 13px icon. The chevron is 13px like the section menu. Clicking the row
- * toggles every member folder via `toggleGroup(key)`.
- *
- * T88: the label prefers a group alias (the grouping functions resolve it), a
- * right-click context menu renames/resets that alias, and a dim `parentHint`
- * disambiguates two groups that resolve to the same label.
+ * The folder header of the sidebar tree (design.md §6 "Sidebar tree → Folder
+ * header"): one per repo or standalone folder — state ring, name, the signals
+ * of any of its checkouts, and the shared value slot. A click selects the
+ * folder's Folder View and opens it; only the chevron collapses.
  */
-const props = defineProps<{ group: FolderGroup<Folder> }>()
+const props = defineProps<{ tree: TreeFolder }>()
 
 const sessions = useSessionsStore()
-// T486 §3.4: the menu items' functions, shared with their keybindings (AC-37).
-const actions = useFolderMenuActions()
-const { t } = useI18n()
+const ui = useUiStore()
+const helpers = useHelpersStore()
+const hoverPreview = useHoverPreview()
 
+const metrics = computed(() => densityMetrics(sessions.sidebarDensity))
+const members = computed(() => props.tree.group?.folders ?? [props.tree.primary])
+const allHidden = computed(() =>
+  props.tree.paths.every((path) => sessions.manuallyHiddenPaths.has(path))
+)
+const current = computed(() => props.tree.paths.includes(sessions.selectedFolderPath ?? ''))
+const cursor = computed(() => treeHeaderCursor(props.tree))
 const focused = computed(
-  () => sessions.keyboardCursor?.kind === 'group' && sessions.keyboardCursor.id === props.group.key
+  () =>
+    sessions.keyboardCursor?.kind === cursor.value.kind &&
+    sessions.keyboardCursor.id === cursor.value.id
+)
+const paneFolders = computed(() => members.value.filter((folder) => paneCount(folder) > 0))
+const unseen = computed(() =>
+  paneFolders.value.reduce((count, folder) => count + paneCount(folder), 0)
+)
+const blocked = computed(() =>
+  members.value.filter((folder) => sessions.agentDeniedPaths.has(folder.path))
+)
+const orchestrators = computed(() =>
+  members.value.filter((folder) => sessions.orchestratorDefaultPaths.has(folder.path))
+)
+/** A non-git folder has no checkout to count: it shows its sessions only while folded. */
+const count = computed(() => {
+  if (props.tree.git) return props.tree.checkoutCount
+  return props.tree.open
+    ? undefined
+    : sessions.sidebarSessionRows(props.tree.primary).rows.length || undefined
+})
+
+/** A non-git folder with nothing under it cannot fold; a repo always has checkouts. */
+const foldable = computed(() => props.tree.git || sessions.checkoutHasRows(props.tree.primary))
+
+/** The hottest session of any checkout: needs input, then failed, then working. */
+const ringStates = ['idle', 'working', 'errored', 'needs-input'] as const
+const ring = computed(
+  () =>
+    ringStates[Math.max(0, ...members.value.map((folder) => sessions.folderRingLevel(folder.path)))]
 )
 
-function toggle(): void {
-  sessions.toggleGroup(props.group.key)
+const ringLabel = {
+  idle: 'session.statusIdle',
+  working: 'session.statusActive',
+  errored: 'session.statusFailed',
+  'needs-input': 'session.statusNeedsInput'
+} as const
+
+function paneCount(folder: Folder): number {
+  return helpers.unseenAgentPaneCount(folder.path)
 }
 
-// ── Context menu (T88 — Rename repo / Reset name) ─────────────────────────
-const menu = ref<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 })
-const menuRef = ref<HTMLElement | null>(null)
-/** Whether the menu shows Reset name (an alias exists) / Clean up (a repo group). */
-const showsResetName = computed<boolean>(() => actions.groupVisible('resetName', props.group))
-const showsCleanup = computed<boolean>(() => actions.groupVisible('cleanup', props.group))
-
-function openMenu(e: MouseEvent): void {
-  e.preventDefault()
-  // Clamp against the right/bottom edges so a small menu near the viewport edge
-  // stays on-screen (approx size — up to three short rows: Rename, Reset name
-  // when aliased, Cleanup).
-  const MENU_W = 172
-  const MENU_H = 108
-  const margin = 8
-  const x = Math.min(e.clientX, window.innerWidth - MENU_W - margin)
-  const y = Math.min(e.clientY, window.innerHeight - MENU_H - margin)
-  menu.value = { open: true, x: Math.max(margin, x), y: Math.max(margin, y) }
-  window.addEventListener('mousedown', onDismiss, true)
-  window.addEventListener('keydown', onMenuKeydown, true)
-  window.addEventListener('wheel', closeMenu, { passive: true })
+function signalLabel(label: string, folders: Folder[]): string {
+  return props.tree.checkoutCount > 1
+    ? `${label} · ${folders.map(checkoutLabel).join(', ')}`
+    : label
 }
 
-function closeMenu(): void {
-  if (!menu.value.open) return
-  menu.value = { open: false, x: 0, y: 0 }
-  window.removeEventListener('mousedown', onDismiss, true)
-  window.removeEventListener('keydown', onMenuKeydown, true)
-  window.removeEventListener('wheel', closeMenu)
+function select(): void {
+  if (!props.tree.open) sessions.toggleTreeFolder(props.tree.key)
+  sessions.selectFolder(props.tree.primary.path)
 }
 
-function onDismiss(e: MouseEvent): void {
-  if (menuRef.value?.contains(e.target as Node)) return
-  closeMenu()
+function openMenu(event: MouseEvent): void {
+  ui.openFolderMenu({
+    projectPath: props.tree.primary.path,
+    x: event.clientX,
+    y: event.clientY,
+    groupKey: props.tree.group?.key
+  })
 }
 
-function onMenuKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape') {
-    e.stopPropagation()
-    e.preventDefault()
-    closeMenu()
-  }
+function preview(event: MouseEvent): void {
+  hoverPreview.enterFolder(
+    props.tree.primary.path,
+    (event.currentTarget as HTMLElement).getBoundingClientRect()
+  )
 }
-
-function rename(): void {
-  actions.group.rename(props.group)
-  closeMenu()
-}
-
-function resetName(): void {
-  actions.group.resetName(props.group)
-  closeMenu()
-}
-
-function openCleanup(): void {
-  actions.group.cleanup(props.group)
-  closeMenu()
-}
-
-onBeforeUnmount(() => {
-  window.removeEventListener('mousedown', onDismiss, true)
-  window.removeEventListener('keydown', onMenuKeydown, true)
-  window.removeEventListener('wheel', closeMenu)
-})
 </script>
 
 <template>
-  <button
-    class="sidebar-row group flex w-full cursor-pointer items-center text-left text-text transition hover:bg-surface"
-    style="height: 26px; padding: 0 12px 0 8px; gap: 4px; font-size: 12.5px; font-weight: 500"
-    :data-focused="focused ? 'true' : null"
-    :data-sidebar-row="`group:${group.key}`"
-    @click="toggle"
-    @contextmenu="openMenu"
+  <div
+    data-folder-head
+    data-dsqa-part="folder-header"
+    :data-folder-path="tree.git ? undefined : tree.primary.path"
+    :data-sidebar-row="`${cursor.kind}:${cursor.id}`"
+    :data-focused="focused ? 'true' : undefined"
+    :data-current="current || undefined"
+    class="sidebar-tree-head sidebar-row group sticky top-0 z-[3] flex w-full items-center gap-2 bg-sidebar pr-3"
+    :style="{ height: `${metrics.folderRowHeight}px` }"
+    @click="select"
+    @contextmenu.prevent="openMenu"
+    @mouseenter="preview"
+    @mouseleave="hoverPreview.leave()"
   >
-    <span
-      class="flex shrink-0 items-center justify-center text-text-4"
-      style="width: 16px; height: 16px"
+    <button
+      type="button"
+      class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch pl-3 text-left text-[12.5px] font-medium text-text"
+      :class="allHidden && 'opacity-50'"
+      :aria-current="current ? 'page' : undefined"
     >
-      <ChevronRight
-        :size="13"
-        :stroke-width="1.8"
-        class="transition-transform"
-        :style="{
-          transform: group.expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-          transitionDuration: 'var(--dur)',
-          transitionTimingFunction: 'var(--ease)'
-        }"
-      />
-    </span>
-    <GitBranch
-      v-if="group.source === 'repo'"
-      :size="13"
-      :stroke-width="1.6"
-      class="shrink-0 text-text-3"
-      style="margin-right: 2px"
-    />
-    <FolderIcon
-      v-else
-      :size="13"
-      :stroke-width="1.6"
-      class="shrink-0 text-text-3"
-      style="margin-right: 2px"
-    />
-    <span class="flex-1 truncate">{{ group.label }}</span>
-    <!-- T88 disambiguator: dim parent-dir hint when two groups share a label. -->
-    <span
-      v-if="group.parentHint"
-      class="shrink-0 truncate text-text-4"
-      style="font-size: 10.5px; max-width: 45%"
-      :title="group.parentHint"
-      >· {{ group.parentHint }}</span
-    >
-    <!-- Member count — "Stats sob demanda" (T118): hover-only while the group is
-         expanded (the member rows below count themselves); visible while
-         collapsed (the only hint of how many worktrees are hidden) and under the
-         keyboard cursor. -->
-    <span
-      class="shrink-0 text-text-4 tabular-nums transition-opacity"
-      :class="
-        group.expanded && !focused
-          ? 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-          : 'opacity-100'
+      <EyeOff v-if="allHidden" :size="16" :stroke-width="1.6" class="shrink-0 text-text-4" />
+      <span
+        v-else
+        class="fleet-ring"
+        :class="`fleet-ring--${ring}`"
+        role="img"
+        :aria-label="$t(ringLabel[ring])"
+      >
+        <span class="fleet-ring-track" />
+        <span v-if="ring === 'working'" class="fleet-ring-arc" />
+        <span v-if="ring !== 'idle'" class="fleet-ring-dot" />
+      </span>
+      <span class="flex min-w-0 flex-1 items-baseline gap-2">
+        <span class="truncate">{{ tree.label }}</span>
+        <span v-if="tree.parentHint" class="truncate text-[10.5px] text-text-4"
+          >· {{ tree.parentHint }}</span
+        >
+      </span>
+      <span
+        v-if="unseen"
+        data-signal="agent-panes"
+        class="flex shrink-0 items-center gap-[3px] rounded-full border border-accent-line bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent tabular-nums"
+        :title="signalLabel($t('sidebar.agentPaneBadge', { n: unseen }), paneFolders)"
+        :aria-label="signalLabel($t('sidebar.agentPaneBadge', { n: unseen }), paneFolders)"
+      >
+        <PanelRight :size="11" :stroke-width="1.6" aria-hidden="true" />
+        {{ unseen }}
+      </span>
+      <span
+        v-if="blocked.length"
+        data-signal="agent-blocked"
+        class="shrink-0 text-text-4"
+        :title="signalLabel($t('sidebar.agentBlockedBadge'), blocked)"
+        :aria-label="signalLabel($t('sidebar.agentBlockedBadge'), blocked)"
+        ><BotOff :size="11" :stroke-width="1.6" aria-hidden="true"
+      /></span>
+      <span
+        v-if="orchestrators.length"
+        data-signal="orchestrator-default"
+        class="shrink-0 text-accent"
+        :title="signalLabel($t('sidebar.orchestratorDefaultIndicator'), orchestrators)"
+        :aria-label="signalLabel($t('sidebar.orchestratorDefaultIndicator'), orchestrators)"
+        ><Crown :size="11" :stroke-width="1.6" aria-hidden="true"
+      /></span>
+    </button>
+    <SidebarValueSlot
+      :count="count"
+      :open="foldable ? tree.open : undefined"
+      :label="
+        $t(tree.open ? 'sidebar.tree.foldFolder' : 'sidebar.tree.openFolder', { name: tree.label })
       "
-      style="font-size: 10.5px"
-      >{{ group.folders.length }}</span
-    >
-  </button>
-
-  <!-- Group context menu (T88): Rename / Reset name. Inline + Teleported;
-       dismissed on Esc / click-outside / wheel — same idiom as FolderMenu. -->
-  <Teleport to="body">
-    <div
-      v-if="menu.open"
-      ref="menuRef"
-      class="anim-fade-in-scale fixed border border-border-2 bg-surface"
-      style="
-        min-width: 172px;
-        padding: 4px;
-        border-radius: 7px;
-        box-shadow: var(--shadow-pop);
-        z-index: 50;
-        transform-origin: top left;
-      "
-      :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
-      role="menu"
-      :aria-label="t('repoGroup.menuLabel')"
-    >
-      <button
-        role="menuitem"
-        class="flex w-full items-center text-left text-text-2 transition hover:bg-surface-2 hover:text-text focus:bg-surface-2 focus:text-text focus:outline-none"
-        style="gap: 9px; padding: 6px 8px; font-size: 12px; border-radius: 4px; outline: none"
-        @click="rename"
-      >
-        <PencilLine :size="13" :stroke-width="1.6" class="shrink-0" />
-        <span class="flex-1 truncate">{{ t('repoGroup.rename') }}</span>
-      </button>
-      <button
-        v-if="showsResetName"
-        role="menuitem"
-        class="flex w-full items-center text-left text-text-2 transition hover:bg-surface-2 hover:text-text focus:bg-surface-2 focus:text-text focus:outline-none"
-        style="gap: 9px; padding: 6px 8px; font-size: 12px; border-radius: 4px; outline: none"
-        @click="resetName"
-      >
-        <RotateCcw :size="13" :stroke-width="1.6" class="shrink-0" />
-        <span class="flex-1 truncate">{{ t('repoGroup.resetName') }}</span>
-      </button>
-      <button
-        v-if="showsCleanup"
-        role="menuitem"
-        class="flex w-full items-center text-left text-text-2 transition hover:bg-surface-2 hover:text-text focus:bg-surface-2 focus:text-text focus:outline-none"
-        style="gap: 9px; padding: 6px 8px; font-size: 12px; border-radius: 4px; outline: none"
-        @click="openCleanup"
-      >
-        <Trash2 :size="13" :stroke-width="1.6" class="shrink-0" />
-        <span class="flex-1 truncate">{{ t('repoGroup.cleanup') }}</span>
-      </button>
-    </div>
-  </Teleport>
+      :class="allHidden && 'opacity-50'"
+      @toggle="sessions.toggleTreeFolder(tree.key)"
+    />
+  </div>
 </template>
-
-<style scoped>
-.sidebar-row[data-focused='true'] {
-  outline: 2px solid var(--color-accent-line);
-  outline-offset: 1px;
-  position: relative;
-  z-index: 1;
-}
-</style>

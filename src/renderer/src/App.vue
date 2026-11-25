@@ -156,12 +156,12 @@ watch(anyOverlayOpen, (open) => {
 })
 
 /**
- * Arrow-key / Enter sidebar cursor navigation walks `visibleFolders` (the
- * classic tree). Drill-in mode (2026-07-19) shows a different screen at a
- * time and doesn't render that structure, so retrofitting the cursor to
- * follow it is out of scope here — these shortcuts simply no-op while drill
- * mode is on. Click-based navigation through the drill screens (SidebarDrillView)
- * works fully regardless.
+ * Arrow-key / Enter sidebar cursor navigation walks the flat checkout tree
+ * (`sessions.sidebarCursorRows`: folder headers, checkout rows, the idle-worktrees
+ * row and sessions). Drill-in mode shows a different screen at a time and doesn't
+ * render that tree, so these shortcuts simply no-op while drill mode is on.
+ * Click-based navigation through the drill screens (SidebarDrillView) works
+ * fully regardless.
  */
 function sidebarCursorNavAllowed(): boolean {
   return !sessions.drillModeEnabled
@@ -1457,7 +1457,23 @@ useShortcuts(
       keys: kb('session.contextMenu'),
       keysGuard: notInTextEntry,
       enabled: () => sessionActions.contextMenuEnabled(),
-      handler: () => sessionActions.openContextMenu()
+      handler: () => {
+        sessionActions.openContextMenu()
+        const cursor = sessions.keyboardCursor
+        if (sessions.drillModeEnabled || cursor?.kind !== 'group') return
+        const tree = sessions.sidebarTree.find((folder) => folder.key === cursor.id)
+        if (!tree) return
+        const row = document.querySelector(
+          `[data-sidebar-row="${CSS.escape(`group:${tree.key}`)}"]`
+        )
+        const rect = row?.getBoundingClientRect()
+        ui.openFolderMenu({
+          projectPath: tree.primary.path,
+          groupKey: tree.group?.key,
+          x: rect?.left ?? 8,
+          y: rect?.bottom ?? 42
+        })
+      }
     },
     {
       id: 'session.restart',

@@ -139,13 +139,14 @@ describe('Sidebar toolbar', () => {
     expect(icon().classes()).not.toContain('anim-spin')
   })
 
-  it('the Collapse-all icon changes glyph with the expand/collapse state, not just the tooltip', async () => {
+  it('the collapse-cycle icon changes glyph with the derived level', async () => {
     installWindow([
       { path: '/repos/alpha', alias: 'alpha', gitBranch: '', pinned: true, sessions: [] } as never
     ])
     const sessionsStore = useSessionsStore()
     await sessionsStore.reloadModel()
     const folder = sessionsStore.folders.find((f) => f.path === '/repos/alpha')!
+    folder.pinned = true
     folder.expanded = false
 
     const w = mount(Sidebar, { global: { plugins: [i18n] } })
@@ -155,7 +156,7 @@ describe('Sidebar toolbar', () => {
     folder.expanded = true
     await w.vm.$nextTick()
     const expandedIconHtml = w
-      .get(`[title="${w.vm.$t('sidebar.menu.collapseAll')}"]`)
+      .get(`[title="${w.vm.$t('sidebar.menu.collapseFolders')}"]`)
       .find('svg')
       .html()
 

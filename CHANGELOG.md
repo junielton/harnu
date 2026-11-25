@@ -10,6 +10,22 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 > Ids such as `T212` or `BUG-64` refer to the maintainer's internal board, and links
 > to `docs/specs/…` mockups point to files kept out of the public repository.
 
+## 2026-11-25
+
+### Fixed
+
+- Worktrees with no session no longer disappear from the sidebar after the window reloads.
+
+### Changed
+
+- The sidebar is now a flat checkout tree. Each repository or folder has one header, with the main checkout first and its worktrees flat below it, and each checkout's sessions under it, joined by a thin guide line. Parent-directory groups and the indented worktree lineage are no longer drawn (**Set parent folder** is still in the menu).
+- Worktrees with no listed session fold into one **n idle worktrees** row. The main checkout always keeps its own row, and a worktree that gains a session comes out of the fold on its own.
+- A folder header shows a ring for the hottest session inside it, stays on screen while you scroll its checkouts, and opens the folder's view when clicked. Only its chevron collapses it. Clicking a checkout folds or unfolds its sessions.
+- Counts and chevrons share one slot at the right edge: you see the count at rest and the chevron on hover or keyboard focus, with nothing moving.
+- The mission chip on a session row is now just **⚠ n** (what the mission owes you); hover the row for the full text. The orchestrator crown has its own place at the right edge, and the subagent count is what opens and closes the subagent rows.
+- The collapse button in the sidebar toolbar now steps through three levels (everything open, sessions folded, folders folded), with dots under the icon showing the level. It works the same while a text filter is on, and a folder you close then stays closed until you change the filter.
+- **New session**, **Show older** and **Show archived** moved from the folder row's hover icons into the checkout's right-click menu. **Rename repo**, **Reset name** and **Clean up** are in the folder header's right-click menu.
+
 ## 2026-11-24
 
 ### Added

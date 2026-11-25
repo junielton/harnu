@@ -161,7 +161,7 @@ describe('AC-35 — folder.rename (F2)', () => {
     expect(actions.renameTarget()).toBe('/plain/beta')
   })
 
-  it('does nothing on a session or group cursor row', () => {
+  it('ignores sessions and repo groups, and accepts a path-backed Git header', () => {
     const sessions = useSessionsStore()
     const actions = withSetup(() => useFolderMenuActions())
     sessions.selectFolder('/plain/beta')
@@ -169,6 +169,8 @@ describe('AC-35 — folder.rename (F2)', () => {
     expect(actions.renameTarget()).toBeNull()
     sessions.keyboardCursor = { kind: 'group', id: GROUP_KEY }
     expect(actions.renameTarget()).toBeNull()
+    sessions.keyboardCursor = { kind: 'group', id: '/repos/alpha' }
+    expect(actions.renameTarget()).toBe('/repos/alpha')
   })
 
   it('ignores the cursor in drill mode', () => {
@@ -317,12 +319,13 @@ describe('folder actions target the active folder (§3.10)', () => {
   it('toggleOlder expands a collapsed folder before revealing, like the row peek', () => {
     const sessions = useSessionsStore()
     const actions = withSetup(() => useFolderMenuActions())
-    const toggleFolder = vi.spyOn(sessions, 'toggleFolder')
+    const revealCheckout = vi.spyOn(sessions, 'revealCheckout')
     const reveal = vi.spyOn(sessions, 'toggleRevealOlder')
     const folder = sessions.findFolderByPath('/plain/beta')!
     folder.expanded = false
     actions.run.toggleOlder('/plain/beta')
-    expect(toggleFolder).toHaveBeenCalledWith('/plain/beta')
+    expect(revealCheckout).toHaveBeenCalledWith('/plain/beta')
+    expect(folder.expanded).toBe(true)
     expect(reveal).toHaveBeenCalledWith('/plain/beta')
   })
 
@@ -330,11 +333,12 @@ describe('folder actions target the active folder (§3.10)', () => {
     const sessions = useSessionsStore()
     const actions = withSetup(() => useFolderMenuActions())
     sessions.drillDepth = 1
-    const toggleFolder = vi.spyOn(sessions, 'toggleFolder')
+    const revealCheckout = vi.spyOn(sessions, 'revealCheckout')
     const reveal = vi.spyOn(sessions, 'toggleRevealOlder')
     sessions.findFolderByPath('/plain/beta')!.expanded = false
     actions.run.toggleOlder('/plain/beta')
-    expect(toggleFolder).not.toHaveBeenCalled()
+    expect(revealCheckout).not.toHaveBeenCalled()
+    expect(sessions.findFolderByPath('/plain/beta')?.expanded).toBe(false)
     expect(reveal).toHaveBeenCalledWith('/plain/beta')
   })
 
@@ -400,10 +404,9 @@ describe('repo-group actions (§3.10)', () => {
 describe('AC-37 — the menus and the bindings share one function', () => {
   const read = (p: string): string => readFileSync(resolve(__dirname, '..', p), 'utf8')
 
-  it('the three menus call the composable, not the store actions directly', () => {
+  it('the folder and drill menus call the composable, not the store actions directly', () => {
     for (const p of [
       'src/renderer/src/components/FolderMenu.vue',
-      'src/renderer/src/components/RepoGroupHeader.vue',
       'src/renderer/src/components/SidebarDrillView.vue'
     ]) {
       const src = read(p)
@@ -413,6 +416,11 @@ describe('AC-37 — the menus and the bindings share one function', () => {
       expect(src, p).not.toContain("setGroupAlias(props.group.key, '')")
     }
     const menu = read('src/renderer/src/components/FolderMenu.vue')
+    expect(menu).toContain('folderActions.group.rename(group)')
+    expect(menu).toContain('folderActions.group.resetName(group)')
+    expect(menu).toContain('folderActions.group.cleanup(group)')
+    expect(menu).toContain('folderActions.run.toggleOlder')
+    expect(menu).toContain('folderActions.run.toggleArchived')
     for (const call of [
       'ui.openRenameFolder(',
       'ui.openClaudeBoot(',

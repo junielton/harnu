@@ -12,19 +12,14 @@ import { useFolderMenuActions } from '../composables/useFolderMenuActions'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useMissionsStore, type ChipModel } from '../stores/missions'
-import { TONE_TEXT_CLASS } from '../lib/mission-view'
+import SidebarMissionDetail from './SidebarMissionDetail.vue'
 import { relativeTime } from '../composables/useRelativeTime'
 import { dotFor, type Dot } from './session-dot'
 import { failureBadge, type FailureBadge } from './failure-badge'
 import { humanizeDuration } from './usage-format'
 import { displayAlias } from './folder-alias'
-import { buildSessionRows, shouldConfirmTeammateSelect } from './teammate-grouping'
-import {
-  densityMetrics,
-  sessionIndentFor,
-  childIndentFor,
-  type SidebarRowContext
-} from './sidebar-density'
+import { shouldConfirmTeammateSelect } from './teammate-grouping'
+import { densityMetrics } from './sidebar-density'
 import {
   Archive,
   Bot,
@@ -37,7 +32,6 @@ import {
   Crown,
   EyeOff,
   Folder as FolderIcon,
-  GitFork,
   Moon,
   PanelRight,
   Plus,
@@ -47,43 +41,11 @@ import {
   X
 } from 'lucide-vue-next'
 
-/**
- * One folder row in the sidebar tree (folder-first model, spec §5). A folder
- * IS what a worktree was — an absolute path that directly hosts sessions. The
- * row shows a folder icon, the alias, and the session count; its sessions
- * (sorted via the global sort preference) and a "+ New session" affordance
- * render underneath when expanded. The active session's git branch is surfaced
- * in the footer status bar (`StatusFooter.vue`), not on these rows.
- *
- * The `nested` prop is set when this row lives inside a `RepoGroupHeader`
- * disclosure, indenting it one level so the repo group reads as a parent.
- *
- * The `headerless` prop (drill-in navigation, 2026-07-19) hides this folder's
- * own row entirely and forces its children container permanently open,
- * ignoring `folder.expanded` — the drill-in screen's own back-row already
- * names the folder, so this component only contributes its session/teammate/
- * terminal rows.
- *
- * T191 lineage props: `lineageChildCount` (set on a MOTHER row) shows the
- * `git-fork` badge + count and makes it clickable to collapse/expand the
- * children — `lineageExpanded` drives its chevron-less open/closed read, and
- * `toggle-lineage` is emitted on click (the parent, `Sidebar.vue`, owns the
- * persisted collapse state). `lineageChild` (set on a CHILD row) adds one more
- * indent step on top of whatever `nested` already contributes — the sidebar
- * never stacks a repo-group nesting AND a lineage nesting into more than the
- * single extra level either produces alone in practice (D3), but the prop is
- * additive so a future caller isn't blocked from composing them.
- */
 const props = defineProps<{
   folder: Folder
-  nested?: boolean
   headerless?: boolean
-  lineageChildCount?: number
-  lineageExpanded?: boolean
-  lineageChild?: boolean
+  embedded?: boolean
 }>()
-
-const emit = defineEmits<{ 'toggle-lineage': [] }>()
 
 const sessions = useSessionsStore()
 const helpers = useHelpersStore()
@@ -194,43 +156,18 @@ function fBadgeLabel(s: Session): string {
     : base
 }
 
-const expanded = computed(() => props.headerless || props.folder.expanded)
+const expanded = computed(() => props.embedded || props.headerless || props.folder.expanded)
 // Display label (T52): a custom alias wins; else, when auto-alias is on for this
 // folder and its branch differs from the dir-name, the branch; else the basename.
 const label = computed(() =>
   displayAlias(props.folder, sessions.aliasFromBranchPaths.has(props.folder.path))
 )
 
-// Sessions ordered by the global sort preference (display only — never mutates
-// folder.sessions). The new-session row and session rows live under this list.
-const sessionList = computed(() => sessions.sessionsForDisplay(props.folder))
-
-/**
- * Teammate grouping (T99 — design.md "Teammate group (sidebar)"). Derived
- * AFTER `sessionList` (never inside `sortSessions`, which stays pure): pulls
- * teammate sessions out of the flat run and nests them under their team
- * lead's row. When the lead isn't in this folder at all, the group is
- * orphaned and hidden — except the currently selected teammate, which
- * `buildSessionRows` keeps as a flat row (T168).
- *
- * The lead lookup searches `leaderCandidates` — the folder's FULL session list,
- * ignoring the age window `sessionList` applies — so a lead that went idle the
- * moment it dispatched its team (the common case) is still found and nested
- * under, instead of the group falling orphaned the moment it ages out of view.
- */
-const leaderCandidates = computed(() => sessions.teammateLeadCandidates(props.folder))
-const sessionRows = computed(() =>
-  buildSessionRows(sessionList.value, leaderCandidates.value, sessions.selectedId)
-)
+const sessionRows = computed(() => sessions.sidebarSessionRows(props.folder))
 
 /** A leader row's teammates (empty when it doesn't lead a team). */
 function teammatesOf(sessionId: string): Session[] {
   return sessionRows.value.teammatesByLeader.get(sessionId) ?? []
-}
-
-/** Stable `:key` for a session row. */
-function rowKey(row: { session: Session }): string {
-  return row.session.sessionId
 }
 
 function isTeammatesExpanded(leaderSessionId: string): boolean {
@@ -296,42 +233,7 @@ const peekActions = computed(() =>
 // means the drill-in folder screen, which uses the small `drill` indent (its
 // back-row header already names the folder — no classic offset warranted).
 const metrics = computed(() => densityMetrics(sessions.sidebarDensity))
-const rowContext = computed<SidebarRowContext>(() =>
-  props.headerless ? 'drill' : props.nested ? 'nested' : 'flat'
-)
-
-// Indents: folder row pl 8 (or 28 when nested under a repo group) — unchanged,
-// its own chevron needs the room. Session rows + "+ new session" + terminals
-// share the density × context session indent; agent/teammate child rows go one
-// level deeper (session indent + delta). T191: `lineageChild` adds one more
-// +20 step on top of whatever the row already resolves to, for a worktree
-// nested under its mother's fork badge (design.md § "Worktree lineage") — an
-// ADDITIVE offset, not a new density context, so it composes with any density
-// preset without widening `SidebarRowContext`'s own union.
-const LINEAGE_CHILD_INDENT = 20
-const folderPaddingLeft = computed(
-  () => (props.nested ? 28 : 8) + (props.lineageChild ? LINEAGE_CHILD_INDENT : 0)
-)
-const sessionPaddingLeft = computed(
-  () =>
-    sessionIndentFor(sessions.sidebarDensity, rowContext.value) +
-    (props.lineageChild ? LINEAGE_CHILD_INDENT : 0)
-)
-const childPaddingLeft = computed(
-  () =>
-    childIndentFor(sessions.sidebarDensity, rowContext.value) +
-    (props.lineageChild ? LINEAGE_CHILD_INDENT : 0)
-)
-
-// The empty agent-toggle slot a session row reserves before its status slot
-// (design.md §6 "Row anatomy & indentation", slot 2). Terminal rows reserve the
-// SAME column so a terminal's label starts exactly where its folder's session
-// labels start — a terminal is a child of the folder, not a sibling of it.
-const TOGGLE_SLOT = 12
-/** Left edge of the label column shared by session and terminal rows. */
-const rowLabelPaddingLeft = computed(
-  () => sessionPaddingLeft.value + TOGGLE_SLOT + metrics.value.gap + 14 + metrics.value.gap
-)
+const rowLabelPaddingLeft = computed(() => metrics.value.sessionIndent + 12 + metrics.value.gap)
 
 function toggle(): void {
   sessions.toggleFolder(props.folder.path)
@@ -347,11 +249,6 @@ function onFolderClick(): void {
   const alreadySelected = sessions.selectedFolderPath === props.folder.path
   sessions.selectFolder(props.folder.path)
   if (!expanded.value || alreadySelected) toggle()
-}
-
-/** T191: the mother badge's click handler — collapses/expands its children. */
-function toggleLineage(): void {
-  emit('toggle-lineage')
 }
 
 /**
@@ -379,7 +276,7 @@ function sessionFocused(sessionId: string): boolean {
   return !!c && c.kind === 'session' && c.id === sessionId
 }
 
-// Stats sob demanda (T118 — design.md §6): the folder row's trailing cluster
+// On-demand stats (T118 — design.md §6): the folder row's trailing cluster
 // (peeks + `+` + the T71 bot badge) rests hidden and fades in on pointer hover
 // (`group-hover`), keyboard focus (`group-focus-within` for the real DOM focus,
 // plus the roving `data-focused` cursor), or while a peek is revealed — an
@@ -403,11 +300,6 @@ function chipRevealClass(s: Session, force = false): string {
     : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
 }
 
-// Mission chip (T370; Mission v3 — design.md §6 "Mission progress" → Sidebar
-// indicator): the last entry of the trailing cluster, the server's headline in
-// its compact form, in the pill's own tone. Hover-revealed like the subagent
-// chip, unless the operator owes the mission something — then pinned visible
-// like StopFailure. An empty headline renders no chip.
 const missions = useMissionsStore()
 missions.ensureStarted()
 
@@ -416,6 +308,10 @@ missions.ensureStarted()
 function missionOf(s: Session): ChipModel | null {
   return missions.chipFor(s.sessionId)
 }
+
+const displayRows = computed(() =>
+  sessionRows.value.rows.map(({ session }) => ({ session, mission: missionOf(session) }))
+)
 
 function missionChipLabel(m: ChipModel): string {
   return t(m.needsYou ? 'mission.sidebarChipNeedsYou' : 'mission.sidebarChip', {
@@ -432,28 +328,17 @@ function agentsOf(s: Session): SessionAgent[] {
 // helpers decide when to render it and when its scrim (which masks the label
 // tail so a chip reads cleanly over it) is revealed.
 function hasTrailingChips(s: Session): boolean {
-  return (
-    !!fBadge(s) ||
-    agentsOf(s).length > 0 ||
-    sessions.isSessionOrchestratorOn(s.sessionId) ||
-    teammatesOf(s.sessionId).length > 0 ||
-    !!missionOf(s)
-  )
+  return !!fBadge(s) || agentsOf(s).length > 0 || teammatesOf(s.sessionId).length > 0
 }
 
 /** Chips that render regardless of hover — their scrim must always show. */
 function hasAlwaysOnChip(s: Session): boolean {
-  return (
-    !!fBadge(s) ||
-    sessions.isSessionOrchestratorOn(s.sessionId) ||
-    isTeammatesExpanded(s.sessionId) ||
-    missionOf(s)?.needsYou === true
-  )
+  return !!fBadge(s) || sessions.isAgentsExpanded(s.sessionId) || isTeammatesExpanded(s.sessionId)
 }
 
 /** Reveal class for the trailing scrim — matches "any chip is visible". */
 function trailingScrimClass(s: Session): string {
-  return sessions.selectedId === s.sessionId || hasAlwaysOnChip(s)
+  return sessions.selectedId === s.sessionId || sessionFocused(s.sessionId) || hasAlwaysOnChip(s)
     ? 'opacity-100'
     : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
 }
@@ -467,11 +352,12 @@ function agentRowsOf(s: Session): ReturnType<typeof agentRowPlan<SessionAgent>> 
   return agentRowPlan(agentsOf(s), sessions.isAgentsDoneExpanded(s.sessionId))
 }
 
-/** Max-height (px) for the animated agent list: one child row per planned row. */
-function agentsListMaxHeight(s: Session): string {
-  return sessions.isAgentsExpanded(s.sessionId)
-    ? `${agentRowsOf(s).length * metrics.value.childRowHeight}px`
-    : '0'
+function lastSession(s: Session): boolean {
+  return !terminalList.value.length && sessionRows.value.rows.at(-1)?.session === s
+}
+
+function hasExpandedTeammates(s: Session): boolean {
+  return isTeammatesExpanded(s.sessionId) && teammatesOf(s.sessionId).length > 0
 }
 
 function agentOrigin(a: SessionAgent): string {
@@ -480,8 +366,8 @@ function agentOrigin(a: SessionAgent): string {
 
 /**
  * Select a teammate row — a real session, same action as any session row, but
- * gated when it's currently `working` (T99 — design.md "Guarda de teammate
- * ativo"): the team lead may be driving it right now, and a local
+ * gated when it's currently `working` (T99): the team lead may be driving
+ * it right now, and a local
  * `claude --resume` would be a second writer on the same JSONL.
  */
 function onSelectTeammate(session: Session): void {
@@ -496,16 +382,16 @@ function onSelectTeammate(session: Session): void {
 <template>
   <!-- data-folder-path: lets the Sidebar scroll this folder into view after a
        CLI-driven `harnu .` adoption (reveal signal, T69 fix).  -->
-  <div :data-folder-path="folder.path" style="margin-bottom: 2px">
+  <div :data-folder-path="embedded ? undefined : folder.path" :class="!embedded && 'mb-0.5'">
     <!-- Folder row -->
     <button
-      v-if="!headerless"
+      v-if="!headerless && !embedded"
       class="sidebar-row group flex w-full cursor-pointer items-center text-left text-text transition hover:bg-surface"
       style="gap: 4px; font-size: 12.5px; font-weight: 500"
       :style="{
-        height: `${metrics.folderRowHeight}px`,
+        height: `${metrics.checkoutRowHeight}px`,
         margin: '0',
-        paddingLeft: `${folderPaddingLeft}px`,
+        paddingLeft: '8px',
         paddingRight: '12px',
         // T212: a selected folder is highlighted the same way a selected session
         // row is — the two selections are peers, so they must read as peers.
@@ -597,27 +483,6 @@ function onSelectTeammate(session: Session): void {
         <Crown :size="11" :stroke-width="1.6" aria-hidden="true" />
       </span>
 
-      <!-- T191: mother badge — shown only when this folder cut ≥1 visible worktree
-           (D2, structural: no badge for an idle orchestrator with zero children).
-           role=button (not a nested <button>) since the folder row is itself one.
-           Clicking collapses/expands the children; the count stays visible either
-           way (D5 — collapsing never hides the information). -->
-      <span
-        v-if="lineageChildCount && lineageChildCount > 0"
-        role="button"
-        tabindex="0"
-        class="flex shrink-0 items-center text-text-4 transition hover:text-text-2"
-        style="gap: 3px; font-size: 10.5px"
-        :title="$t('sidebar.lineageBadge', { n: lineageChildCount })"
-        :aria-label="$t('sidebar.lineageBadge', { n: lineageChildCount })"
-        @click.stop="toggleLineage"
-        @keydown.enter.stop="toggleLineage"
-        @keydown.space.stop.prevent="toggleLineage"
-      >
-        <GitFork :size="11" :stroke-width="1.6" aria-hidden="true" />
-        <span class="tabular-nums">{{ lineageChildCount }}</span>
-      </span>
-
       <!-- Inline action cluster (spec 2026-06-24): older / archived peeks + new
            session, replacing the old session-count badge. role=button (not a
            <button>) since the folder row is itself a <button>. Rests hidden;
@@ -660,18 +525,22 @@ function onSelectTeammate(session: Session): void {
       </span>
     </button>
 
-    <!-- Children container -->
-    <div
-      class="overflow-hidden transition-[max-height] duration-300 ease-out"
-      :style="{ maxHeight: expanded ? '2000px' : '0' }"
-    >
-      <template v-for="row in sessionRows.rows" :key="rowKey(row)">
-        <template v-for="s in [row.session]" :key="s.sessionId">
+    <div :class="!embedded && 'sidebar-disclosure'" :data-open="expanded" :inert="!expanded">
+      <div :class="!embedded && 'sidebar-disclosure-content'">
+        <template v-for="{ session: s, mission } in displayRows" :key="s.sessionId">
           <button
             data-session-row
-            class="sidebar-row sidebar-row-cv group relative flex w-full cursor-pointer items-center text-left transition"
-            :class="
-              sessions.selectedId === s.sessionId ? 'text-text' : 'text-text-2 hover:text-text'
+            data-dsqa-part="session-row"
+            class="sidebar-row sidebar-row-cv sidebar-session-tint group relative flex w-full cursor-pointer items-center text-left transition"
+            :class="[
+              sessions.selectedId === s.sessionId ? 'text-text' : 'text-text-2 hover:text-text',
+              embedded && 'sidebar-tree-guide'
+            ]"
+            :data-guide-last="
+              (lastSession(s) &&
+                !hasExpandedTeammates(s) &&
+                !(agentsOf(s).length && sessions.isAgentsExpanded(s.sessionId))) ||
+              undefined
             "
             :data-session-id="s.sessionId"
             :data-sidebar-row="`session:${s.sessionId}`"
@@ -681,31 +550,22 @@ function onSelectTeammate(session: Session): void {
               height: `${metrics.sessionRowHeight}px`,
               width: '100%',
               margin: '0',
-              paddingLeft: `${sessionPaddingLeft}px`,
+              paddingLeft: `${metrics.sessionIndent}px`,
               paddingRight: '12px',
               gap: `${metrics.gap}px`,
               fontSize: '12.5px',
-              fontWeight: sessions.selectedId === s.sessionId ? 500 : 400,
-              background:
-                sessions.selectedId === s.sessionId ? 'var(--color-accent-soft)' : 'transparent'
+              fontWeight: sessions.selectedId === s.sessionId ? 500 : 400
             }"
             @click="sessions.select(s.sessionId)"
             @contextmenu="(e) => onSessionContext(e, s.sessionId)"
             @mouseenter="
-              (e) => {
-                const el = e.currentTarget as HTMLElement
-                if (sessions.selectedId !== s.sessionId)
-                  el.style.background = 'rgba(255,255,255,0.025)'
-                hoverPreview.enter(s.sessionId, el.getBoundingClientRect())
-              }
+              (e) =>
+                hoverPreview.enter(
+                  s.sessionId,
+                  (e.currentTarget as HTMLElement).getBoundingClientRect()
+                )
             "
-            @mouseleave="
-              (e) => {
-                if (sessions.selectedId !== s.sessionId)
-                  (e.currentTarget as HTMLElement).style.background = 'transparent'
-                hoverPreview.leave()
-              }
-            "
+            @mouseleave="hoverPreview.leave()"
           >
             <!-- Accent bar (selected) -->
             <span
@@ -715,36 +575,7 @@ function onSelectTeammate(session: Session): void {
               aria-hidden="true"
             />
 
-            <span
-              class="flex shrink-0 items-center justify-center"
-              style="width: 12px; height: 12px"
-            >
-              <ChevronRight
-                v-if="agentsOf(s).length"
-                :size="11"
-                :stroke-width="1.8"
-                class="cursor-pointer text-text-4 transition-transform hover:text-text"
-                :style="{
-                  transform: sessions.isAgentsExpanded(s.sessionId)
-                    ? 'rotate(90deg)'
-                    : 'rotate(0deg)',
-                  transitionDuration: 'var(--dur)',
-                  transitionTimingFunction: 'var(--ease)'
-                }"
-                role="button"
-                :aria-label="$t('agent.toggle')"
-                @click.stop="sessions.toggleAgents(s.sessionId)"
-              />
-            </span>
-
-            <!-- Status slot — fixed 14×14, centered (design.md §6 "Row anatomy
-               & indentation"). Holds EXACTLY ONE glyph below (a 6px dot or an
-               11px icon); the fixed box keeps every row's label starting at the
-               same x, whatever status it carries. -->
-            <span
-              class="flex shrink-0 items-center justify-center"
-              style="width: 14px; height: 14px"
-            >
+            <span class="flex size-3 shrink-0 items-center justify-center">
               <Cloud
                 v-if="!s.resumable"
                 :size="11"
@@ -808,240 +639,276 @@ function onSelectTeammate(session: Session): void {
               />
             </span>
 
-            <span
-              class="min-w-0 flex-1 truncate"
-              :style="isArchived(s) || !s.resumable || s.hibernated ? { opacity: 0.62 } : undefined"
-              >{{ labelFor(s) }}</span
-            >
-
-            <!-- Trailing chips overlay (design.md §6 "Trailing chips overlay
+            <span class="relative min-w-0 flex-1 self-stretch flex items-center">
+              <span
+                class="truncate"
+                :class="(isArchived(s) || !s.resumable || s.hibernated) && 'opacity-[.62]'"
+                >{{ labelFor(s) }}</span
+              >
+              <!-- A real space, so the title and the overlaid mission text never read as one word. -->
+              {{ ' ' }}
+              <SidebarMissionDetail
+                v-if="mission && !mission.owed && !hasTrailingChips(s)"
+                :chip="mission"
+                class="right-0"
+              />
+              <!-- Trailing chips overlay (design.md §6 "Trailing chips overlay
                the label"). Absolutely positioned so it reserves NO horizontal
                column — the label spans the full row and truncates beneath it.
                A short left-fading scrim masks the label tail so a chip reads
                cleanly over it. `pointer-events: none` on the cluster; only the
                interactive teammate toggle re-enables them. -->
-            <span
-              v-if="hasTrailingChips(s)"
-              class="sidebar-trailing"
-              :style="{ gap: `${metrics.gap}px` }"
-            >
               <span
-                class="sidebar-trailing-scrim transition-opacity"
-                :class="trailingScrimClass(s)"
-                aria-hidden="true"
-              />
-
-              <!-- StopFailure reason badge (stopfailure-badges spec §4.6) -->
-              <span
-                v-if="fBadge(s)"
-                class="relative shrink-0 truncate tabular-nums"
-                :class="fBadge(s)!.variant === 'red' ? 'text-red' : 'text-warning'"
-                style="font-size: 10px; max-width: 150px"
-                :title="fBadgeLabel(s)"
-                >{{ fBadgeLabel(s) }}</span
+                v-if="hasTrailingChips(s)"
+                class="sidebar-trailing"
+                :style="{ gap: `${metrics.gap}px` }"
               >
-
-              <!-- Subagent-count chip — hover-only (T118); the left chevron
-                 keeps signaling that agents exist. -->
-              <span
-                v-if="agentsOf(s).length"
-                class="relative flex shrink-0 items-center text-text-4 transition-opacity"
-                :class="chipRevealClass(s)"
-                style="font-size: 10.5px; gap: 2px"
-                :aria-label="$t('agent.count', { n: agentsOf(s).length })"
-                :title="$t('agent.count', { n: agentsOf(s).length })"
-              >
-                <Bot :size="11" :stroke-width="1.6" />
-                <span class="tabular-nums">{{ agentsOf(s).length }}</span>
-              </span>
-
-              <!-- Orchestrator role badge (T98): inert, "status not an action"
-                 like the folder-level agent-control badge — real state lives in
-                 `orchestrator-guard.ts`'s armed.json, mirrored via
-                 `sessions.isSessionOrchestratorOn`. -->
-              <span
-                v-if="sessions.isSessionOrchestratorOn(s.sessionId)"
-                class="relative flex shrink-0 items-center text-accent"
-                :title="$t('sidebar.orchestratorBadge')"
-                :aria-label="$t('sidebar.orchestratorBadge')"
-              >
-                <Crown :size="11" :stroke-width="1.6" aria-hidden="true" />
-              </span>
-
-              <!-- Teammate-group chip (T99): click to expand/collapse the nested
-                 teammate rows below this lead's row. Hover-only while collapsed;
-                 pinned visible while expanded — it is the collapse control (T118). -->
-              <span
-                v-if="teammatesOf(s.sessionId).length"
-                role="button"
-                tabindex="0"
-                class="relative flex shrink-0 cursor-pointer items-center transition"
-                style="gap: 2px; font-size: 10.5px; pointer-events: auto"
-                :class="[
-                  isTeammatesExpanded(s.sessionId)
-                    ? 'text-accent'
-                    : 'text-text-4 hover:text-text-2',
-                  chipRevealClass(s, isTeammatesExpanded(s.sessionId))
-                ]"
-                :title="
-                  teammatesToggleLabel(
-                    isTeammatesExpanded(s.sessionId),
-                    teammatesOf(s.sessionId).length
-                  )
-                "
-                :aria-label="
-                  teammatesToggleLabel(
-                    isTeammatesExpanded(s.sessionId),
-                    teammatesOf(s.sessionId).length
-                  )
-                "
-                @click.stop="toggleTeammatesExpanded(s.sessionId)"
-                @keydown.enter.stop.prevent="toggleTeammatesExpanded(s.sessionId)"
-                @keydown.space.stop.prevent="toggleTeammatesExpanded(s.sessionId)"
-              >
-                <Users :size="11" :stroke-width="1.6" />
-                <span class="tabular-nums">{{ teammatesOf(s.sessionId).length }}</span>
-              </span>
-
-              <!-- Mission chip (Mission v3): the compact headline in the pill's
-                 tone, last in the cluster. Pinned when the operator owes it. -->
-              <span
-                v-if="missionOf(s)"
-                class="relative flex shrink-0 items-center tabular-nums transition-opacity"
-                :class="[
-                  TONE_TEXT_CLASS[missionOf(s)!.tone],
-                  chipRevealClass(s, missionOf(s)!.needsYou)
-                ]"
-                style="font-size: 10.5px; gap: 3px"
-                :title="missionChipLabel(missionOf(s)!)"
-                :aria-label="missionChipLabel(missionOf(s)!)"
-                data-dsqa="sidebar-mission-chip"
-                :data-tone="missionOf(s)!.tone"
-              >
-                <TriangleAlert
-                  v-if="missionOf(s)!.needsYou && missionOf(s)!.tone === 'warning'"
-                  :size="10"
-                  :stroke-width="2"
+                <span
+                  class="sidebar-trailing-scrim transition-opacity"
+                  :class="trailingScrimClass(s)"
                   aria-hidden="true"
                 />
-                {{ missionOf(s)!.compact }}
+
+                <!-- StopFailure reason badge (stopfailure-badges spec §4.6) -->
+                <span
+                  v-if="fBadge(s)"
+                  class="relative shrink-0 truncate tabular-nums"
+                  :class="fBadge(s)!.variant === 'red' ? 'text-red' : 'text-warning'"
+                  style="font-size: 10px; max-width: 150px"
+                  :title="fBadgeLabel(s)"
+                  >{{ fBadgeLabel(s) }}</span
+                >
+
+                <span
+                  v-if="agentsOf(s).length"
+                  class="relative flex shrink-0 items-center text-text-4 transition-opacity"
+                  :class="chipRevealClass(s, sessions.isAgentsExpanded(s.sessionId))"
+                  style="font-size: 10.5px; gap: 2px; pointer-events: auto"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="$t('agent.toggle')"
+                  :aria-expanded="sessions.isAgentsExpanded(s.sessionId)"
+                  :title="$t('agent.count', { n: agentsOf(s).length })"
+                  @click.stop="sessions.toggleAgents(s.sessionId)"
+                  @keydown.enter.stop.prevent="sessions.toggleAgents(s.sessionId)"
+                  @keydown.space.stop.prevent="sessions.toggleAgents(s.sessionId)"
+                >
+                  <Bot :size="11" :stroke-width="1.6" />
+                  <span class="tabular-nums">{{ agentsOf(s).length }}</span>
+                </span>
+
+                <!-- Teammate-group chip (T99): click to expand/collapse the nested
+                 teammate rows below this lead's row. Hover-only while collapsed;
+                 pinned visible while expanded — it is the collapse control (T118). -->
+                <span
+                  v-if="teammatesOf(s.sessionId).length"
+                  role="button"
+                  tabindex="0"
+                  class="relative flex shrink-0 cursor-pointer items-center transition"
+                  style="gap: 2px; font-size: 10.5px; pointer-events: auto"
+                  :class="[
+                    isTeammatesExpanded(s.sessionId)
+                      ? 'text-accent'
+                      : 'text-text-4 hover:text-text-2',
+                    chipRevealClass(s, isTeammatesExpanded(s.sessionId))
+                  ]"
+                  :aria-expanded="isTeammatesExpanded(s.sessionId)"
+                  :title="
+                    teammatesToggleLabel(
+                      isTeammatesExpanded(s.sessionId),
+                      teammatesOf(s.sessionId).length
+                    )
+                  "
+                  :aria-label="
+                    teammatesToggleLabel(
+                      isTeammatesExpanded(s.sessionId),
+                      teammatesOf(s.sessionId).length
+                    )
+                  "
+                  @click.stop="toggleTeammatesExpanded(s.sessionId)"
+                  @keydown.enter.stop.prevent="toggleTeammatesExpanded(s.sessionId)"
+                  @keydown.space.stop.prevent="toggleTeammatesExpanded(s.sessionId)"
+                >
+                  <Users :size="11" :stroke-width="1.6" />
+                  <span class="tabular-nums">{{ teammatesOf(s.sessionId).length }}</span>
+                </span>
+
+                <SidebarMissionDetail v-if="mission" :chip="mission" class="right-full" />
               </span>
+            </span>
+
+            <span
+              v-if="mission"
+              class="flex shrink-0 items-center gap-[3px] self-stretch text-[10.5px] text-warning tabular-nums"
+              :class="mission.owed ? 'relative' : 'absolute right-0'"
+              :title="missionChipLabel(mission)"
+              :aria-label="missionChipLabel(mission)"
+              data-dsqa="sidebar-mission-chip"
+              :data-tone="mission.tone"
+            >
+              <template v-if="mission.owed">
+                <TriangleAlert :size="11" :stroke-width="1.7" aria-hidden="true" />
+                <!-- Half a pixel down: puts the 10.5px digits on the title's baseline. -->
+                <span data-mission-count class="relative top-[0.5px]">{{ mission.owed }}</span>
+                <SidebarMissionDetail v-if="!hasTrailingChips(s)" :chip="mission" class="right-0" />
+              </template>
+            </span>
+            <span
+              data-icon-slot
+              data-dsqa-part="session-trailing-icon"
+              class="flex h-3.5 w-3.5 shrink-0 items-center justify-center"
+            >
+              <Crown
+                v-if="sessions.isSessionOrchestratorOn(s.sessionId)"
+                :size="12"
+                :stroke-width="1.6"
+                class="text-warning opacity-85"
+                :aria-label="$t('sidebar.orchestratorBadge')"
+                :title="$t('sidebar.orchestratorBadge')"
+              />
             </span>
           </button>
 
           <!-- Nested agents (issue #9) -->
           <div
             v-if="agentsOf(s).length"
-            class="overflow-hidden transition-[max-height] duration-300 ease-out"
-            :style="{ maxHeight: agentsListMaxHeight(s) }"
+            class="sidebar-disclosure"
+            :data-open="sessions.isAgentsExpanded(s.sessionId)"
+            :inert="!sessions.isAgentsExpanded(s.sessionId)"
           >
-            <template
-              v-for="agentRow in agentRowsOf(s)"
-              :key="agentRow.kind === 'fold' ? 'fold' : agentRow.agent.agentId"
-            >
-              <button
-                v-if="agentRow.kind === 'fold'"
-                type="button"
-                class="agent-row flex w-full items-center text-left text-text-3 transition hover:text-text-2"
-                data-dsqa="sidebar-agents-done-fold"
-                :aria-expanded="agentRow.expanded"
-                :style="{
-                  height: `${metrics.childRowHeight}px`,
-                  paddingLeft: `${childPaddingLeft}px`,
-                  paddingRight: '12px',
-                  gap: '7px',
-                  fontSize: '11.5px'
-                }"
-                @click.stop="sessions.toggleAgentsDone(s.sessionId)"
+            <div class="sidebar-disclosure-content">
+              <template
+                v-for="(agentRow, index) in agentRowsOf(s)"
+                :key="agentRow.kind === 'fold' ? 'fold' : agentRow.agent.agentId"
               >
-                <ChevronRight
-                  :size="11"
-                  :stroke-width="1.8"
-                  class="shrink-0 text-text-4 transition-transform"
+                <button
+                  v-if="agentRow.kind === 'fold'"
+                  type="button"
+                  class="agent-row flex w-full items-center text-left text-text-3 transition hover:text-text-2"
+                  data-dsqa="sidebar-agents-done-fold"
+                  :class="embedded && 'sidebar-tree-guide relative'"
+                  :data-guide-last="
+                    (lastSession(s) &&
+                      !hasExpandedTeammates(s) &&
+                      index === agentRowsOf(s).length - 1) ||
+                    undefined
+                  "
+                  :aria-expanded="agentRow.expanded"
                   :style="{
-                    transform: agentRow.expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                    transitionDuration: 'var(--dur)',
-                    transitionTimingFunction: 'var(--ease)'
+                    height: `${metrics.childRowHeight}px`,
+                    paddingLeft: `${metrics.childIndent}px`,
+                    paddingRight: '12px',
+                    gap: `${metrics.gap}px`,
+                    fontSize: '11.5px'
                   }"
-                  aria-hidden="true"
-                />
-                <span class="flex-1 truncate">{{
-                  $t('agent.doneFold', { n: agentRow.count })
-                }}</span>
-              </button>
-              <div
-                v-else
-                class="agent-row flex w-full items-center text-left text-text-2 transition"
-                :style="{
-                  height: `${metrics.childRowHeight}px`,
-                  paddingLeft: `${childPaddingLeft}px`,
-                  paddingRight: '12px',
-                  gap: '7px',
-                  fontSize: '11.5px'
-                }"
-                :title="agentRow.agent.task || agentLabel(agentRow.agent)"
-              >
-                <CornerDownRight :size="11" :stroke-width="1.6" class="shrink-0 text-text-4" />
-                <Bot :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
-                <span
-                  class="flex-1 truncate"
-                  :style="{ flex: agentRow.agent.status === 'running' ? '1 0 96px' : '1 0 112px' }"
-                  >{{ agentLabel(agentRow.agent) }}</span
+                  @click.stop="sessions.toggleAgentsDone(s.sessionId)"
                 >
-                <span
-                  v-if="agentTypeChip(agentRow.agent)"
-                  class="truncate font-mono text-text-4"
-                  style="font-size: 10px; max-width: 72px; min-width: 0"
-                  data-dsqa="sidebar-agent-type-chip"
-                  :title="agentTypeChip(agentRow.agent)"
-                  >{{ agentTypeChip(agentRow.agent) }}</span
-                >
-                <span
-                  v-if="agentOrigin(agentRow.agent)"
-                  class="truncate font-mono text-text-4"
-                  style="font-size: 10px; max-width: 120px; min-width: 0"
-                  :title="agentOrigin(agentRow.agent)"
-                  >{{ agentOrigin(agentRow.agent) }}</span
-                >
-                <span
-                  v-if="agentRow.agent.status === 'running'"
-                  class="flex shrink-0 items-center text-green"
-                  style="gap: 5px"
-                >
-                  <span
-                    class="anim-pulse-dot rounded-full bg-green"
-                    style="width: 6px; height: 6px"
+                  <ChevronRight
+                    :size="11"
+                    :stroke-width="1.8"
+                    class="shrink-0 text-text-4 transition-transform"
+                    :style="{
+                      transform: agentRow.expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                      transitionDuration: 'var(--dur)',
+                      transitionTimingFunction: 'var(--ease)'
+                    }"
+                    aria-hidden="true"
                   />
-                  <span style="font-size: 10.5px">{{ $t('agent.statusRunning') }}</span>
-                </span>
-              </div>
-            </template>
+                  <span class="flex-1 truncate leading-[14px]">{{
+                    $t('agent.doneFold', { n: agentRow.count })
+                  }}</span>
+                </button>
+                <div
+                  v-else
+                  class="agent-row flex w-full items-center text-left text-text-2 transition"
+                  :class="embedded && 'sidebar-tree-guide relative'"
+                  :data-guide-last="
+                    (lastSession(s) &&
+                      !hasExpandedTeammates(s) &&
+                      index === agentRowsOf(s).length - 1) ||
+                    undefined
+                  "
+                  :style="{
+                    height: `${metrics.childRowHeight}px`,
+                    paddingLeft: `${metrics.childIndent}px`,
+                    paddingRight: '12px',
+                    gap: `${metrics.gap}px`,
+                    fontSize: '11.5px'
+                  }"
+                  :title="agentRow.agent.task || agentLabel(agentRow.agent)"
+                >
+                  <CornerDownRight :size="11" :stroke-width="1.6" class="shrink-0 text-text-4" />
+                  <Bot :size="12" :stroke-width="1.6" class="shrink-0 text-text-3" />
+                  <!-- The title gives way first: it takes the spare room, and the type and skill keep
+                       their width until it is down to 48px. They shrink 1000 times faster than it, so
+                       it only goes below that when they have nothing left. -->
+                  <!-- The three font sizes in this row share one baseline: the smaller ones sit lower. -->
+                  <span class="shrink grow basis-12 truncate leading-[14px]">{{
+                    agentLabel(agentRow.agent)
+                  }}</span>
+                  <span
+                    v-if="agentTypeChip(agentRow.agent)"
+                    class="relative top-[0.5px] shrink-[1000] truncate font-mono leading-[14px] text-text-4"
+                    style="font-size: 10px; max-width: 72px; min-width: 0"
+                    data-dsqa="sidebar-agent-type-chip"
+                    :title="agentTypeChip(agentRow.agent)"
+                    >{{ agentTypeChip(agentRow.agent) }}</span
+                  >
+                  <span
+                    v-if="agentOrigin(agentRow.agent)"
+                    class="relative top-[0.5px] shrink-[1000] truncate font-mono leading-[14px] text-text-4"
+                    style="font-size: 10px; max-width: 120px; min-width: 0"
+                    :title="agentOrigin(agentRow.agent)"
+                    >{{ agentOrigin(agentRow.agent) }}</span
+                  >
+                  <span
+                    v-if="agentRow.agent.status === 'running'"
+                    class="flex shrink-0 items-center text-green"
+                    style="gap: 5px"
+                  >
+                    <span
+                      class="anim-pulse-dot rounded-full bg-green"
+                      style="width: 6px; height: 6px"
+                    />
+                    <span class="relative top-[0.5px]" style="font-size: 10.5px">{{
+                      $t('agent.statusRunning')
+                    }}</span>
+                  </span>
+                </div>
+              </template>
+            </div>
           </div>
 
           <!-- Nested teammates (T99): collapsed by default, expand via the chip
-             above. Real, selectable sessions — see "Anatomia da row de
-             teammate" (design.md). -->
+             above. Real, selectable sessions — see "Teammate group" (design.md). -->
           <div
             v-if="teammatesOf(s.sessionId).length && isTeammatesExpanded(s.sessionId)"
             class="flex flex-col"
           >
             <button
-              v-for="tm in teammatesOf(s.sessionId)"
+              v-for="(tm, index) in teammatesOf(s.sessionId)"
               :key="tm.sessionId"
               data-teammate-row
               :data-session-id="tm.sessionId"
-              class="sidebar-row group relative flex w-full cursor-pointer items-center text-left transition"
-              :class="
-                sessions.selectedId === tm.sessionId ? 'text-text' : 'text-text-2 hover:text-text'
+              :data-sidebar-row="`session:${tm.sessionId}`"
+              :data-focused="sessionFocused(tm.sessionId) ? 'true' : undefined"
+              :data-guide-last="
+                (lastSession(s) && index === teammatesOf(s.sessionId).length - 1) || undefined
               "
+              class="sidebar-row group relative flex w-full cursor-pointer items-center text-left transition"
+              :class="[
+                sessions.selectedId === tm.sessionId ? 'text-text' : 'text-text-2 hover:text-text',
+                embedded && 'sidebar-tree-guide'
+              ]"
               :style="{
                 height: `${metrics.childRowHeight}px`,
-                paddingLeft: `${childPaddingLeft}px`,
+                paddingLeft: `${metrics.childIndent}px`,
                 paddingRight: '12px',
-                gap: '7px',
+                gap: `${metrics.gap}px`,
                 fontSize: '11.5px'
               }"
               @click="onSelectTeammate(tm)"
+              @contextmenu="(e) => onSessionContext(e, tm.sessionId)"
             >
               <CornerDownRight :size="11" :stroke-width="1.6" class="shrink-0 text-text-4" />
               <!-- Status slot — fixed 13×13, centered (design.md §6). Same
@@ -1088,170 +955,100 @@ function onSelectTeammate(session: Session): void {
                   style="width: 6px; height: 6px"
                 />
               </span>
-              <span class="flex-1 truncate">{{ labelFor(tm) }}</span>
+              <span class="flex-1 truncate leading-[14px]">{{ labelFor(tm) }}</span>
               <span class="tabular-nums text-text-4" style="font-size: 10.5px">{{
                 relativeTime(tm.modified)
               }}</span>
             </button>
           </div>
         </template>
-      </template>
 
-      <!-- Terminals sub-group (plain shells bound to the folder cwd) -->
-      <template v-if="terminalList.length">
-        <!-- Eyebrow label — reuses the Section-label typography (design.md §6) -->
-        <div
-          class="flex items-center text-text-4 uppercase"
-          :style="{
-            height: `${metrics.eyebrowHeight}px`,
-            margin: '0',
-            paddingLeft: `${rowLabelPaddingLeft}px`,
-            paddingRight: '12px',
-            gap: '6px',
-            fontSize: '10.5px',
-            fontWeight: 500,
-            letterSpacing: '0.06em'
-          }"
-        >
-          <span>{{ $t('sidebar.terminals') }}</span>
-        </div>
-
-        <button
-          v-for="(term, idx) in terminalList"
-          :key="term.sessionId"
-          data-terminal-row
-          :data-session-id="term.sessionId"
-          :data-sidebar-row="`session:${term.sessionId}`"
-          :data-focused="sessionFocused(term.sessionId) ? 'true' : null"
-          class="sidebar-row group relative flex w-full cursor-pointer items-center text-left transition"
-          :class="
-            sessions.selectedId === term.sessionId ? 'text-text' : 'text-text-2 hover:text-text'
-          "
-          :style="{
-            height: `${metrics.terminalRowHeight}px`,
-            width: '100%',
-            margin: '0',
-            paddingLeft: `${sessionPaddingLeft}px`,
-            paddingRight: '12px',
-            gap: `${metrics.gap}px`,
-            fontSize: '12.5px',
-            fontWeight: sessions.selectedId === term.sessionId ? 500 : 400,
-            background:
-              sessions.selectedId === term.sessionId ? 'var(--color-accent-soft)' : 'transparent'
-          }"
-          @click="sessions.select(term.sessionId)"
-        >
-          <!-- Accent bar (selected) -->
-          <span
-            v-if="sessions.selectedId === term.sessionId"
-            class="absolute left-0 top-0 bg-accent"
-            style="width: 2px; height: 100%; border-radius: 0 2px 2px 0"
-            aria-hidden="true"
-          />
-
-          <!-- Reserved agent-toggle slot — always empty on a terminal row (a
-               shell spawns no subagents), kept so the terminal's status slot
-               and label land in the same columns as the folder's session rows
-               (design.md §6 "Row anatomy & indentation"). -->
-          <span class="shrink-0" style="width: 12px" aria-hidden="true" />
-
-          <!-- Status indicator: a screen-detected agent state (A2 two-tier
-               detection) shows the SAME status dot as a session row — amber when
-               it needs you, green while working; otherwise the terminal icon.
-               Wrapped in the session rows' fixed 14px status slot so the label
-               never shifts. -->
-          <span class="flex shrink-0 items-center justify-center" style="width: 14px">
-            <span
-              v-if="term.taskState === 'needs-input'"
-              class="anim-attention-dot rounded-full bg-warning"
-              style="width: 6px; height: 6px"
-              :aria-label="$t('session.statusNeedsInput')"
-            />
-            <span
-              v-else-if="term.taskState === 'working'"
-              class="anim-pulse-dot rounded-full bg-green"
-              style="width: 6px; height: 6px"
-              :aria-label="$t('session.statusActive')"
-            />
-            <SquareTerminal
-              v-else
-              :size="13"
-              :stroke-width="1.6"
-              :class="sessions.selectedId === term.sessionId ? 'text-text-2' : 'text-text-4'"
-            />
-          </span>
-          <span class="flex-1 truncate">{{ terminalLabel(idx) }}</span>
-
-          <!-- Close affordance (hover / selected) -->
-          <span
-            role="button"
-            tabindex="-1"
-            class="flex shrink-0 items-center justify-center rounded text-text-4 transition hover:bg-surface-2 hover:text-text"
-            :class="
-              sessions.selectedId === term.sessionId
-                ? 'opacity-100'
-                : 'opacity-0 group-hover:opacity-100'
-            "
-            style="width: 18px; height: 18px"
-            :aria-label="$t('sidebar.closeTerminal')"
-            :title="$t('sidebar.closeTerminal')"
-            @click.stop="sessions.closeFolderTerminal(term.sessionId)"
+        <!-- Terminals sub-group (plain shells bound to the folder cwd) -->
+        <template v-if="terminalList.length">
+          <!-- Eyebrow label — reuses the Section-label typography (design.md §6) -->
+          <div
+            class="relative flex items-center text-text-4 uppercase"
+            :class="embedded && 'sidebar-tree-guide'"
+            :style="{
+              height: `${metrics.eyebrowHeight}px`,
+              margin: '0',
+              paddingLeft: `${rowLabelPaddingLeft}px`,
+              paddingRight: '12px',
+              gap: `${metrics.gap}px`,
+              fontSize: '10.5px',
+              fontWeight: 500,
+              letterSpacing: '0.06em'
+            }"
           >
-            <X :size="12" :stroke-width="1.8" />
-          </span>
-        </button>
-      </template>
+            <span>{{ $t('sidebar.terminals') }}</span>
+          </div>
+
+          <button
+            v-for="(term, idx) in terminalList"
+            :key="term.sessionId"
+            data-terminal-row
+            :data-guide-last="idx === terminalList.length - 1 || undefined"
+            :data-session-id="term.sessionId"
+            :data-sidebar-row="`session:${term.sessionId}`"
+            :data-focused="sessionFocused(term.sessionId) ? 'true' : null"
+            class="sidebar-row group relative flex w-full cursor-pointer items-center text-left transition"
+            :class="[
+              sessions.selectedId === term.sessionId ? 'text-text' : 'text-text-2 hover:text-text',
+              embedded && 'sidebar-tree-guide'
+            ]"
+            :style="{
+              height: `${metrics.terminalRowHeight}px`,
+              width: '100%',
+              margin: '0',
+              paddingLeft: `${metrics.sessionIndent}px`,
+              paddingRight: '12px',
+              gap: `${metrics.gap}px`,
+              fontSize: '12.5px',
+              fontWeight: sessions.selectedId === term.sessionId ? 500 : 400,
+              background:
+                sessions.selectedId === term.sessionId ? 'var(--color-accent-soft)' : 'transparent'
+            }"
+            @click="sessions.select(term.sessionId)"
+          >
+            <!-- Accent bar (selected) -->
+            <span
+              v-if="sessions.selectedId === term.sessionId"
+              class="absolute left-0 top-0 bg-accent"
+              style="width: 2px; height: 100%; border-radius: 0 2px 2px 0"
+              aria-hidden="true"
+            />
+
+            <span class="flex size-3 shrink-0 items-center justify-center">
+              <SquareTerminal
+                :size="12"
+                :stroke-width="1.6"
+                :class="sessions.selectedId === term.sessionId ? 'text-text-2' : 'text-text-4'"
+              />
+            </span>
+            <span class="flex-1 truncate">{{ terminalLabel(idx) }}</span>
+
+            <span data-icon-slot class="flex w-3.5 shrink-0 items-center justify-center">
+              <!-- Close affordance (hover / selected) -->
+              <span
+                role="button"
+                tabindex="-1"
+                class="flex shrink-0 items-center justify-center rounded text-text-4 transition hover:bg-surface-2 hover:text-text"
+                :class="
+                  sessions.selectedId === term.sessionId
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100'
+                "
+                style="width: 18px; height: 18px"
+                :aria-label="$t('sidebar.closeTerminal')"
+                :title="$t('sidebar.closeTerminal')"
+                @click.stop="sessions.closeFolderTerminal(term.sessionId)"
+              >
+                <X :size="12" :stroke-width="1.8" />
+              </span>
+            </span>
+          </button>
+        </template>
+      </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.agent-row:hover {
-  background: rgba(255, 255, 255, 0.025);
-}
-
-/* Trailing chips overlay (design.md §6). Absolutely positioned at the row's
-   right edge so the chips reserve no horizontal column; the label spans the
-   full row and truncates beneath them. */
-.sidebar-trailing {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 12px;
-  display: flex;
-  align-items: center;
-  pointer-events: none;
-  z-index: 2;
-}
-
-/* Short left-fading scrim behind the chips — masks the truncated label tail so
-   a chip reads cleanly over it. It paints the row's own fill (its tint layered
-   over the sidebar color) and fades in over 24px via a mask, so a selected or
-   hovered row keeps one continuous background behind the chips. */
-.sidebar-trailing-scrim {
-  --scrim-tint: transparent;
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 0;
-  left: -24px;
-  background: linear-gradient(var(--scrim-tint), var(--scrim-tint)), var(--color-sidebar);
-  mask-image: linear-gradient(to right, transparent, #000 24px);
-  pointer-events: none;
-}
-
-.sidebar-row:hover:not([data-selected='true']) .sidebar-trailing-scrim {
-  --scrim-tint: rgba(255, 255, 255, 0.025);
-}
-
-.sidebar-row[data-selected='true'] .sidebar-trailing-scrim {
-  --scrim-tint: var(--color-accent-soft);
-}
-
-.sidebar-row[data-focused='true'] {
-  outline: 2px solid var(--color-accent-line);
-  outline-offset: 1px;
-  position: relative;
-  z-index: 1;
-}
-</style>

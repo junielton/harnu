@@ -174,6 +174,7 @@ export interface ChipModel {
   compact: string
   tone: 'neutral' | 'accent' | 'warning' | 'success'
   needsYou: boolean
+  owed: number
 }
 
 /** Kinds an agent or a later step waits on — they sort ahead of standing to-dos. */
@@ -635,13 +636,20 @@ export const useMissionsStore = defineStore('missions', () => {
         text: headlineText(t, m.headline),
         compact: headlineText(t, m.headline, true),
         tone: m.tone,
-        needsYou: m.needsYou
+        needsYou: m.needsYou,
+        owed: m.youRows.length
       }
     }
     const r = pickedFor(sessionId)
     if (!r) return null
     const text = missionPillText(t, r.detail)
-    return { text, compact: text, tone: missionPillTone(r.detail), needsYou: r.you.length > 0 }
+    return {
+      text,
+      compact: text,
+      tone: missionPillTone(r.detail),
+      needsYou: r.you.length > 0,
+      owed: r.you.length
+    }
   }
 
   /**

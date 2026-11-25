@@ -10,58 +10,61 @@ The sidebar is one flat list — every folder you've explicitly pinned, plus eve
 
 **Hide** is the only way to suppress a folder from the list regardless of its pin state. Hiding doesn't unpin — a pinned folder you hide stays pinned underneath, so unhiding it later brings it straight back as pinned (not relocated or lost). Manage hidden folders from the eye-off icon in the sidebar toolbar (above the folder list). The popover opens on a search box (already focused, so you can just start typing) that filters by folder name, branch and path, with an "N of M" counter on the right. Matching folders are grouped under their repo — the same label the sidebar's repo header uses — and each row shows how many sessions live in it. `↑`/`↓` move the selection, `↵` or a click on the **Unhide** chip restores that folder, and the popover stays open so you can restore several in a row. When a search narrows the list to two or more folders, the footer offers **Unhide all N** to restore the whole filtered set at once.
 
-## Groups
+## The sidebar tree
 
-Folders that belong together collapse under one **group header** instead of each taking a flat row. Two things can make folders belong together, and both render the same way:
+The list has three levels and no more: **folder → checkout → session**.
 
-- **Same repo.** A repo with **two or more visible worktrees** (your main checkout plus one or more linked worktrees; a [shelved](#shelved-worktrees) worktree counts too) groups under a header carrying a branch icon, the repo's name (or your custom alias), and the worktree count.
-- **Same parent directory.** Two or more folders sitting **directly inside the same directory** group under a header carrying a folder icon and that directory's name — even when the directory itself isn't a folder you pinned. Pin `~/work/api` and `~/work/web` and they gather under a `work` header.
+- A **folder** is one repository (its main checkout plus its worktrees) or one standalone folder. It has one header with a state ring, its name and, at the right edge, how many checkouts it holds.
+- A **checkout** is one working directory: the **main** checkout first (home icon), then the worktrees (branch icon), labelled by branch. They are all flat, at the same indent. A detached checkout shows its folder name.
+- **Sessions** sit under their checkout, joined by a thin guide line. A folder that isn't a git repository has no checkout row: its sessions sit directly under its header.
 
-Click a header to expand or collapse the group. If two groups resolve to the same display name, Harnu adds a small disambiguating hint next to each (e.g. distinguishing two groups both named `www`).
+Worktrees with no listed session fold into a single quiet **n idle worktrees** row. Click it to list them; click one of them to open its folder view, or right-click it for its menu. The main checkout is never folded away, and a worktree that gains a session leaves the fold on its own.
 
-Right-click any group header for **Rename group** (set a custom label) and **Reset name** (clear back to the default, only shown once you've set one). Repo groups additionally offer **Cleanup…**, which a parent-directory group doesn't — there's no shared git history to sweep.
+**The header.** Click it (or press Enter) to open the folder's view; it opens the folder too and never collapses it. The chevron that replaces the count on hover is what collapses. The header stays on screen while its checkouts scroll. Its ring takes the hottest session inside: waiting on you, then failed, then working; an idle folder shows an empty ring. Markers from any checkout stay visible on it: new agent panes you haven't seen, **agents blocked** and **new sessions start as Orchestrator** (the tooltip names the checkout). If two headers resolve to the same name, a small `· parent` hint tells them apart.
 
-Grouping only ever uses the **direct** parent, and a group never contains another group, so the list stays exactly one level deep. That's deliberate: pinning something broad like your home directory groups only its immediate children, instead of swallowing everything beneath it into one giant pile. A folder with no sibling under its parent just sits as a normal row.
+**Checkout rows.** Click (or press Enter) to fold or unfold that checkout's sessions. A folded row shows its session count; on hover the count turns into a chevron, in the same place. The row has no buttons of its own: right-click it for **New session**, **Show older (n)**, **Show archived (n)** and the rest of the folder menu.
+
+**Renaming a repository.** Right-click the header of a repository with two or more checkouts for **Rename repo** (a custom label), **Reset name** (only once you've set one) and **Clean up** (opens Cleanup on that repository). A repository with a single checkout uses the folder's own **Rename…**.
 
 ## Shelved worktrees
 
-When Cleanup [shelves](cleanup.md#shelving-idle-worktrees) an idle worktree, its folder is gone on purpose but the branch and the sessions are kept. Such a worktree never shows as a normal row, and never as a "ghost" folder either. It waits in a **Shelved** section (pt-BR: **Guardadas**) at the **end of its repo group**, after the live worktrees:
+When Cleanup [shelves](cleanup.md#shelving-idle-worktrees) an idle worktree, its folder is gone on purpose but the branch and the sessions are kept. Such a worktree never shows as a normal row, and never as a "ghost" folder either. It waits in a **Shelved** section (pt-BR: **Guardadas**) at the **end of its repository's folder**, after the live worktrees:
 
-- **Collapsed by default.** The row reads **Shelved · 3** (the number is always visible, even collapsed) and only appears when the repo has at least one shelved worktree. Click it to open it. Whether it is open is remembered per repo. Typing in the sidebar filter opens it when a shelved branch or session matches; **Collapse all** closes it and **Expand all** opens it. The group header's own count stays the live worktrees only.
-- **A repo with one live worktree and one shelved worktree still gets its group header**, so the section always has a place to live.
+- **Collapsed by default.** The row reads **Shelved · 3** (the number is always visible, even collapsed) and only appears when the repo has at least one shelved worktree. Click it to open it. Whether it is open is remembered per repo. Typing in the sidebar filter opens it when a shelved branch or session matches; folding the folders closes it and **Expand all** opens it. The folder header's own count stays the live worktrees only.
+- **A repo with one live worktree and one shelved worktree still counts as a repository folder**, so the section always has a place to live.
 - **One compact, dimmed line per worktree:** the branch (a detached worktree shows its folder name), a small archive icon and how long ago it was shelved (**9 d**). Hover for the full wording ("Shelved 9 days ago · branch `feat/x` kept"). Clicking the line only opens its list of sessions; it never restores anything.
-- **Click a session to resume it.** Harnu restores the worktree first (the row reads **restoring…** and the session is highlighted at once), then opens the session in its own folder, so nothing ever starts in a missing directory. The worktree then moves back into the group as a normal row. If the restore cannot work, nothing is started anywhere else, the selection stays where it was, and a message names the branch and offers **Open in Cleanup**, where the Shelved card says what to do next. Nothing was lost.
+- **Click a session to resume it.** Harnu restores the worktree first (the row reads **restoring…** and the session is highlighted at once), then opens the session in its own folder, so nothing ever starts in a missing directory. The worktree then moves back into the folder as a normal checkout row. If the restore cannot work, nothing is started anywhere else, the selection stays where it was, and a message names the branch and offers **Open in Cleanup**, where the Shelved card says what to do next. Nothing was lost.
 - **Right-click a shelved worktree** for **Restore worktree** (brings the folder back without resuming anything) and **Open in Cleanup**. A shelved worktree has no folder, so the usual folder actions (new terminal, rename, hide...) do not apply. The hover action at the right edge of the line does the same as **Restore worktree**.
 
 ## Worktree lineage
 
-When a session cuts a new worktree — you dispatched an agent that called `create_worktree`, or a roadmap card drained into one — Harnu remembers which folder asked for it. That folder (the "mother") shows a small fork badge with a live count next to its name, and the worktrees it cut render indented one level beneath it with a thin guide line down their column, instead of sitting in the group as an unrelated-looking flat row. This is what turns "12 branches in this repo" into "3 orchestrators, each with its own wave" at a glance.
+When a session cuts a new worktree (you dispatched an agent that called `create_worktree`, or a roadmap card drained into one), Harnu remembers which folder asked for it. The sidebar no longer draws that relationship: every worktree is a flat checkout row under its repository.
 
-Click the fork badge to collapse or expand the children — the count stays visible either way, so collapsing never hides how many worktrees are there. Only one level of nesting ever shows: if a worktree cut from a worktree that was itself cut from something else, it's re-parented to the original mother rather than staircasing deeper. Lineage only nests within one group — a mother in a different repo, or one you've hidden or removed, just leaves the worktree rendering flat, never orphaned or hidden.
-
-A worktree you cut yourself through the **New worktree…** dialog never gets a mother automatically — that's a human action, not a fan-out. If you want to record (or fix) the relationship by hand, right-click a worktree and use **Set parent folder** (pick any sibling worktree of the same repo) or **Clear parent folder**.
+The record is still kept, and you can set or fix it by hand: right-click a worktree and use **Set parent folder** (pick any sibling worktree of the same repo) or **Clear parent folder**.
 
 ## Sidebar toolbar and drill-in navigation
 
-Everything lives on one line at the top of the sidebar, right-aligned: Rescan folders, a three-level drill-in depth control, Collapse all, Hidden folders (with a count badge), then — after a thin divider — Search. The folder list starts directly underneath.
+Everything lives on one line at the top of the sidebar, right-aligned: Rescan folders, a three-level drill-in depth control, the collapse button, Hidden folders (with a count badge), then — after a thin divider — Search. The folder list starts directly underneath.
 
 **Rescan folders** forces a fresh scan of disk and reconciles the sidebar with what's actually there. You shouldn't normally need it — a background watcher keeps the list current — but it's the escape hatch for the rare case where the watcher misses something, and it saves you a full app restart. New sessions and folders created outside Harnu (a `claude` you start in a terminal, a new project folder) show up on their own within about a second. Rescan runs one fresh scan.
 
-By default the sidebar shows the classic tree — every folder and repo group expanded inline. The drill-in icon is a **three-level depth control**, and each click goes one level deeper before wrapping back to the start.
+The **collapse button** steps through three levels, one per click, then starts over: **everything open**, **sessions folded** (checkouts listed) and **folders folded** (headers only). The icon and tooltip say what the next click does (**Collapse sessions**, **Collapse folders**, **Expand all**), and the dots under the icon show the current level: three, two, one.
 
-At **level 1**, the sidebar shows one screen listing every repo group and standalone folder. Tapping a group opens it — and from there the worktrees inside behave exactly like the classic tree: click one and its sessions expand in place, with its siblings still listed around it. This is the level for "I only want to see this repo right now" without also narrowing to a single worktree.
+By default the sidebar shows the [tree](#the-sidebar-tree) inline. The drill-in icon is a **three-level depth control**, and each click goes one level deeper before wrapping back to the start.
+
+At **level 1**, the sidebar shows one screen listing every repo group and standalone folder. Tapping a group opens it — and from there the worktrees inside list as folder rows: click one and its sessions expand in place, with its siblings still listed around it. This is the level for "I only want to see this repo right now" without also narrowing to a single worktree.
 
 At **level 2**, every tier gets its own screen: the root screen opens a group, the group screen opens a worktree, the worktree screen lists its sessions. Clicking anywhere on the back row at the top of a screen — not just its arrow — returns to the one before it; on a folder's session screen, that same row also carries a `+` to start a new session there.
 
-Collapse all is available at levels 0 and 1, and disappears at level 2 — there is nothing expanded inline for it to act on.
+While drill-in is on, the collapse button is a plain **Collapse all / Expand all** at level 1, and disappears at level 2: there is nothing expanded inline for it to act on.
 
-Every row inside drill-in has the same actions its equivalent in the classic tree does. Right-click a row — the header at the top of a screen, or any of the rows below it — and you get the menu that row's entity owns: the folder menu (New session, New terminal, New worktree…, Rename…, Hide, and the rest) for a folder, or Rename group / Reset name / Cleanup for a repo group. There's a **⋯** for the same menu if you'd rather click than right-click. On the header row it sits after the `+` and is always visible; on the rows below it appears when you hover them, the same way session counts and other row stats do.
+Every row inside drill-in has the same actions its equivalent in the tree does. Right-click a row — the header at the top of a screen, or any of the rows below it — and you get the menu that row's entity owns: the folder menu (New session, New terminal, New worktree…, Rename…, Hide, and the rest) for a folder, or Rename group / Reset name / Cleanup for a repo group. There's a **⋯** for the same menu if you'd rather click than right-click. On the header row it sits after the `+` and is always visible; on the rows below it appears when you hover them, the same way session counts and other row stats do.
 
 Drill-in also remembers where you left off. Quit inside a worktree's session screen and Harnu reopens on that screen instead of back at the root. If something it pointed at is no longer somewhere you'd want to land — you removed the folder, you hid it, or the repo group stopped grouping — it quietly returns to the root screen rather than opening a screen with nothing in it or reopening on a folder you dismissed. A folder that has simply gone quiet is still restored: going a while without a session doesn't count as gone.
 
 Selecting a session anywhere — clicking a notification, picking a result in the command palette, opening a roadmap card — while drill-in is on jumps the navigator straight to that session's screen for the current level, even across a different repo or folder than the one you were looking at.
 
-Arrow-key sidebar navigation (↑/↓/←/→ and Enter) only works in the classic tree; while drill-in is on, use the mouse (or Tab) to navigate the screens.
+Arrow-key sidebar navigation (↑/↓/←/→ and Enter) only works in the inline tree; while drill-in is on, use the mouse (or Tab) to navigate the screens. In the tree, Enter on a header opens the folder's view, on a checkout folds or unfolds it, on the idle-worktrees row lists them, and on a session selects it; → and ← open and close.
 
 ## Finding a folder or session (the jump palette)
 
@@ -69,7 +72,7 @@ The Search button opens a small palette under the toolbar. It is a way to **go s
 
 Type, and results come back grouped as **Folders**, **Hidden** and **Sessions**, with the part you typed shown in bold and a dim hint saying where each one lives. It looks at more than the name: a folder matches on its label, its git branch and its full path, and a session matches on its summary and on your first prompt to it — so pasting a PR number or a ticket key lands on the session that worked on it.
 
-Press ↵ (or click) and Harnu expands whatever the target is buried under, scrolls to it, selects it if it's a session, re-drills to its screen if drill-in is on, and flashes the row once so you can see where you ended up.
+Press ↵ (or click) and Harnu expands whatever the target is buried under (folder, checkout or idle-worktrees row), scrolls to it, selects it if it's a session, re-drills to its screen if drill-in is on, and flashes the row once so you can see where you ended up.
 
 **Folders you've hidden are searchable here too.** A hidden hit shows an eye-off icon and an **Unhide & go** chip — one keystroke, instead of opening the Hidden list and scanning it for a name you half-remember.
 
@@ -115,7 +118,7 @@ Right-click a linked worktree (not your main checkout — that option never appe
 
 ### Worktrees you create outside Harnu
 
-A `git worktree add` on a repo that's already in your sidebar — pinned, or active on its own sessions — shows up as a row under that repo within a couple of seconds, even before any session runs in it. It's an ordinary folder row: click it to open the folder view or start a session there. `git worktree remove` (or `prune`) takes it away again. Every worktree of a repo the sidebar shows stays listed this way, including one whose sessions are all old, until you remove it; a path you hid stays hidden.
+A `git worktree add` on a repo that's already in your sidebar (pinned, or active on its own sessions) shows up under that repo within a couple of seconds, even before any session runs in it. With no session yet it sits in the **idle worktrees** row: open that row and click the worktree for its folder view, or right-click it to start a session there. `git worktree remove` (or `prune`) takes it away again. Every worktree of a repo the sidebar shows stays listed this way, including one whose sessions are all old, until you remove it; a path you hid stays hidden.
 
 Repos you haven't pinned and haven't used recently are not scanned, so their worktrees don't appear until one of their folders is pinned or active again. A worktree's branch label refreshes the next time that repo's worktree list changes — a `git switch` inside a worktree with no session in it doesn't update the label on its own.
 
@@ -143,7 +146,7 @@ Whatever you write in `setup`, `create`, or `remove` is a **POSIX-shell command*
 
 ## Clicking a folder — the folder view
 
-Clicking a folder row opens **that folder's view** in the main pane, the same way clicking a session opens the session. The first click also expands the folder so its sessions show; clicking it again just collapses it, and the view stays open.
+Clicking a folder header opens **that folder's view** in the main pane, the same way clicking a session opens the session. It also opens the folder in the sidebar, and clicking again never collapses it (use the chevron). A worktree in the idle-worktrees row opens its own view the same way.
 
 The view uses the full width of the pane, laid out as a main column plus a
 narrower **context rail** on the right. Below roughly 1100px wide the rail drops

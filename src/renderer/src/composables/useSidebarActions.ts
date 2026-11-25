@@ -48,6 +48,11 @@ export function useSidebarActions(): SidebarActions {
   }
 
   function toggleCollapseAll(): void {
+    if (!sessions.drillModeEnabled) {
+      const level = sessions.collapseLevel
+      sessions.setCollapseLevel(level === 0 ? 2 : level === 2 ? 1 : 0)
+      return
+    }
     if (anyExpanded.value) sessions.collapseAll()
     else sessions.expandAll()
   }

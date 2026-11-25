@@ -142,13 +142,13 @@ export interface ClassifyCtx {
 }
 
 /** Last `'/'`-delimited segment, trailing slashes stripped. */
-function basename(p: string): string {
+export function basename(p: string): string {
   if (!p) return ''
   return p.replace(/\/+$/, '').split('/').pop() ?? ''
 }
 
 /** Everything before the last `'/'` segment, trailing slashes stripped. */
-function dirname(p: string): string {
+export function dirname(p: string): string {
   if (!p) return ''
   const trimmed = p.replace(/\/+$/, '')
   const idx = trimmed.lastIndexOf('/')
