@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { EyeOff, GitBranch, Home } from 'lucide-vue-next'
 import { useHoverPreview } from '../composables/useHoverPreview'
-import { checkoutLabel, type TreeFolder } from '../lib/sidebar-tree'
-import { useSessionsStore } from '../stores/sessions'
+import { checkoutLabel, railState, type RailState, type TreeFolder } from '../lib/sidebar-tree'
+import { useSessionsStore, type Folder } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import { densityMetrics } from './sidebar-density'
 import RepoGroupHeader from './RepoGroupHeader.vue'
@@ -18,6 +19,7 @@ import SidebarValueSlot from './SidebarValueSlot.vue'
  */
 const props = defineProps<{ tree: TreeFolder }>()
 
+const { t } = useI18n()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const hoverPreview = useHoverPreview()
@@ -31,10 +33,26 @@ const listed = computed(() =>
       folder,
       hasRows: count > 0 || sessions.terminalsForFolder(folder).length > 0,
       folded: sessions.isCheckoutFolded(folder.path),
-      count
+      count,
+      rail: railState(sessions.folderRingLevel(folder.path))
     }
   })
 )
+
+const railLabel: Record<RailState, string> = {
+  working: 'sidebar.tree.railWorking',
+  failed: 'sidebar.tree.railFailed',
+  'needs-input': 'sidebar.tree.railNeedsInput'
+}
+
+/**
+ * The name of a checkout row that shows a rail. The label replaces the row's
+ * content, so it repeats the session count a folded row shows.
+ */
+function checkoutName(folder: Folder, rail: RailState, count: number | undefined): string {
+  const label = t(railLabel[rail], { branch: checkoutLabel(folder) })
+  return count ? t('sidebar.tree.railCount', { label, count }, count) : label
+}
 
 function isHidden(path: string): boolean {
   return sessions.manuallyHiddenPaths.has(path)
@@ -62,10 +80,15 @@ function preview(event: MouseEvent, path: string): void {
       <div class="sidebar-disclosure-content">
         <div class="pt-0.5 pb-2">
           <SidebarFolder v-if="!tree.git" :folder="tree.primary" embedded />
+          <!-- The group rail (design.md "Group rail") is painted on this box: the
+               checkout row and its sessions. -->
           <div
-            v-for="{ folder, hasRows, folded, count } in listed"
+            v-for="{ folder, hasRows, folded, count, rail } in listed"
             :key="folder.path"
             :data-folder-path="folder.path"
+            data-checkout-group
+            data-dsqa-part="checkout-group"
+            :data-group-rail="rail"
           >
             <button
               type="button"
@@ -76,6 +99,7 @@ function preview(event: MouseEvent, path: string): void {
               :data-sidebar-row="`folder:${folder.path}`"
               :data-focused="focused('folder', folder.path)"
               :aria-expanded="hasRows ? !folded : undefined"
+              :aria-label="rail && checkoutName(folder, rail, folded && count ? count : undefined)"
               class="sidebar-row relative group flex w-full items-center gap-2 pr-3 text-left text-text-4"
               :class="[hasRows && 'cursor-pointer', isHidden(folder.path) && 'opacity-50']"
               :style="{ height: `${metrics.checkoutRowHeight}px`, paddingLeft: '14px' }"

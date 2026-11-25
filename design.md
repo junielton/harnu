@@ -2394,7 +2394,8 @@ happening in this checkout" without another dot.
 - **Motion:** colour in over `--dur`, out over `--dur-slow`, `--ease`; none under reduced motion.
   `forced-colors: active` → `CanvasText`.
 - The checkout row names the state for assistive tech: "{branch}, needs you" / "failed" /
-  "agent working".
+  "agent working". Folded, the name goes on to say the session count the row shows
+  ("{branch}, agent working, 2 sessions"), because the name replaces the row's content.
 - **Accepted:** the dim green is 1.87:1 against `--sidebar` (under 3:1); the session dots still carry
   "working".
 

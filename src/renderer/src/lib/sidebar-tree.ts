@@ -106,6 +106,16 @@ export function reuseTree(previous: TreeFolder[] | undefined, next: TreeFolder[]
   return same(previous, tree) ? previous : tree
 }
 
+export type RailState = 'working' | 'failed' | 'needs-input'
+
+/**
+ * The group rail of one checkout (design.md "Group rail"), read from the same
+ * per-checkout level the folder ring takes its hottest session from.
+ */
+export function railState(level: number): RailState | undefined {
+  return ([undefined, 'working', 'failed', 'needs-input'] as const)[level]
+}
+
 export function checkoutLabel(folder: Folder): string {
   return folder.gitBranch || folder.alias
 }

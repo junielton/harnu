@@ -264,9 +264,13 @@ async function paint(row: Locator): Promise<Record<string, string>> {
       return color
     }
     const name = (color: string): string =>
-      ['--color-text', '--color-text-2', '--color-accent', '--color-border-2'].find(
-        (token) => probe(token) === color
-      ) ?? color
+      [
+        '--color-text',
+        '--color-text-2',
+        '--color-accent',
+        '--color-border-2',
+        '--color-green'
+      ].find((token) => probe(token) === color) ?? color
     const bar = getComputedStyle(el, '::before')
     const own = getComputedStyle(el)
     const button = el.tagName === 'BUTTON' ? el : (el.querySelector(':scope > button') ?? el)
@@ -285,6 +289,12 @@ test('every state paints only the bar', async () => {
   const TRANSPARENT = 'rgba(0, 0, 0, 0)'
   await blur()
 
+  // S-3: the seeded subagent makes `main` a working checkout, so both hover cases are painted.
+  const rail = (row: Locator): Promise<string | null> =>
+    row.evaluate((el) => el.parentElement!.getAttribute('data-group-rail'))
+  expect(await rail(targets()['checkout row (main)'])).toBe('working')
+  expect(await rail(targets()['checkout row (worktree)'])).toBeNull()
+
   for (const [name, row] of Object.entries(targets())) {
     const isSession = name.includes('session row')
     const isHeader = name.startsWith('folder header')
@@ -294,8 +304,11 @@ test('every state paints only the bar', async () => {
 
     await row.hover()
     const hover = await paint(row)
+    // On an active group the checkout row's hover keeps the rail's colour, 3px wide.
     expect(hover.bar, `${name}: hover bar`).toBe(
-      `2px --color-text-2 x=${isSession ? '19.5px' : '0px'}`
+      (await rail(row)) === 'working'
+        ? '3px --color-green x=0px'
+        : `2px --color-text-2 x=${isSession ? '19.5px' : '0px'}`
     )
     expect(hover.background, `${name}: hover fill`).toBe(fill)
     expect(hover.label, `${name}: hover label`).toBe('--color-text')

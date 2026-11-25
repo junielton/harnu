@@ -1217,6 +1217,46 @@ textarea,
   bottom: 2px;
 }
 
+/* Group rail (design.md "Group rail"): one per checkout, over its row and its
+   sessions. The inset keeps neighbours apart, and a `::before` on the group
+   paints under the checkout row's own bar. The state names the duration, so the
+   colour enters over --dur and leaves over --dur-slow. */
+[data-checkout-group] {
+  position: relative;
+}
+
+[data-checkout-group]::before {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+  background-color: transparent;
+  transition: background-color var(--dur-slow) var(--ease);
+}
+
+[data-checkout-group][data-group-rail='working'] {
+  --rail-color: color-mix(in oklab, var(--color-green) 40%, transparent);
+  --rail-strong: var(--color-green);
+}
+
+[data-checkout-group][data-group-rail='failed'] {
+  --rail-color: var(--color-red);
+  --rail-strong: var(--color-red);
+}
+
+[data-checkout-group][data-group-rail='needs-input'] {
+  --rail-color: var(--color-warning);
+  --rail-strong: var(--color-warning);
+}
+
+[data-checkout-group][data-group-rail]::before {
+  background-color: var(--rail-color);
+  transition-duration: var(--dur);
+}
+
 [data-row-bar='session']:hover::before {
   left: 19.5px;
   width: 2px;
@@ -1228,6 +1268,14 @@ textarea,
 [data-row-bar='header']:hover::before {
   width: 2px;
   background-color: var(--color-text-2);
+}
+
+/* On an active group, hover keeps the rail's colour. `:where` leaves keyboard
+   focus below able to win. */
+:where([data-group-rail]) > [data-row-bar='checkout']:hover::before,
+:where([data-group-rail]) > [data-row-bar='checkout'][data-menu-open='true']::before {
+  width: 3px;
+  background-color: var(--rail-strong);
 }
 
 [data-row-bar='session'][data-selected='true']::before {
@@ -1315,6 +1363,10 @@ textarea,
   [data-row-bar='header']:has(button:focus-visible) {
     outline: 2px solid Highlight;
     outline-offset: -2px;
+  }
+
+  [data-checkout-group][data-group-rail]::before {
+    background-color: CanvasText;
   }
 }
 
