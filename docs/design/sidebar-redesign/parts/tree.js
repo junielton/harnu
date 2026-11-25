@@ -177,15 +177,12 @@ function sessionRow(session, { selected = false, forced = '', view = '' } = {}) 
   </button>`
 }
 
-function checkoutGroup(
-  checkout,
-  { folded = false, view = '', goto = '', forced = '', selected = false } = {}
-) {
+function checkoutGroup(checkout, { folded = false, view = '', goto = '', forced = '' } = {}) {
   const { branch, home, sessions } = checkout
   const status = hottest(sessions)
   const canFold = sessions.length > 0
   return `<div class="grp${status === 'idle' ? '' : ` rail-${status}`}" data-dsqa-part="checkout-group">
-    <button type="button" class="co-row${selected ? ' sel' : ''}" data-dsqa-part="checkout-row"
+    <button type="button" class="co-row" data-dsqa-part="checkout-row"
       ${forced ? `data-forced="${forced}"` : ''}
       ${goto} ${canFold ? `data-toggle="checkout" aria-expanded="${!folded}"` : ''}
       aria-label="${branch}${status === 'idle' ? '' : `, ${statusLabel[status].toLowerCase()}`}">
@@ -401,6 +398,8 @@ function rowStrips() {
     ['Keyboard focus', 'focus', false],
     ['Focus + selected', 'focus', true]
   ]
+  // A checkout row is never selected (a click folds its sessions), so it has no selected cases.
+  const checkoutCases = cases.filter(([, , selected]) => !selected)
   const sample = gateway.checkouts[0].sessions[0]
   const strips = [
     [
@@ -410,19 +409,21 @@ function rowStrips() {
     ],
     [
       'Checkout · idle group',
-      (forced, selected) => checkoutGroup(gateway.checkouts[2], { folded: true, forced, selected })
+      (forced) => checkoutGroup(gateway.checkouts[2], { folded: true, forced }),
+      checkoutCases
     ],
     [
       'Checkout · active group',
-      (forced, selected) => checkoutGroup(gateway.checkouts[0], { folded: true, forced, selected })
+      (forced) => checkoutGroup(gateway.checkouts[0], { folded: true, forced }),
+      checkoutCases
     ],
     ['Folder header', (forced, current) => folderHeader(harnu, { forced, current })]
   ]
   return strips
     .map(
-      ([title, row]) => `<section class="strip">
+      ([title, row, states = cases]) => `<section class="strip">
     <h2>${title}</h2>
-    ${cases
+    ${states
       .map(
         ([label, forced, selected]) => `<div class="strip-case">
       <span class="strip-label">${label}</span><div class="strip-row" inert>${row(forced, selected)}</div>

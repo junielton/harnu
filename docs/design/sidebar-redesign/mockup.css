@@ -718,11 +718,9 @@ mk-tree {
   background-color: var(--color-text);
 }
 .s-row.sel::after,
-.co-row.sel::before,
 .fhead.cur::before {
   background-color: var(--color-accent);
 }
-.co-row.sel:is(:hover, :focus-visible, [data-forced])::before,
 .fhead.cur:is(:hover, :has(button:focus-visible), [data-forced])::before {
   background-color: var(--color-accent);
 }
