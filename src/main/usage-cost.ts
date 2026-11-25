@@ -25,14 +25,15 @@ import {
   type UsageScanRoots,
   type UsageScanWorkerData
 } from './usage-scan-worker'
+import type { MeasuredProject } from './companion/turn-ledger'
 
 /**
  * Real cost-engine shell (T47 P5). The scan of `~/.claude/projects/**\/*.jsonl` (every session's main
  * transcript plus its `<sessionId>/subagents/agent-*.jsonl` companions) runs in a worker thread
- * (`usage-scan-worker.ts`), so the main process never parses a transcript. This side asks for the merged
- * buckets, calibrates them, folds the rollups and serves them over `usageCost:*` IPC. Fail-safe
- * throughout, mirroring `usage-history.ts`: any error degrades to "no engine data", it never breaks the
- * Settings pane.
+ * (`usage-scan-worker.ts`), so the main process never parses a transcript or the turn ledger. This side
+ * asks for the merged buckets, calibrates them, folds the rollups and serves them over `usageCost:*` IPC.
+ * Fail-safe throughout, mirroring `usage-history.ts`: any error degrades to "no engine data", it never
+ * breaks the Settings pane.
  */
 
 // ---- Scan worker ----------------------------------------------------------------
@@ -99,17 +100,18 @@ function ensureWorker(f: ScanWorkerFactory): Worker {
 function scan(want: 'merged'): Promise<UsageScanMerged>
 function scan(want: 'bi'): Promise<UsageScanBi>
 function scan(want: 'flush'): Promise<void>
-function scan(want: keyof UsageScanner): Promise<unknown> {
+function scan(want: 'ledger', dir: string): Promise<MeasuredProject[]>
+function scan(want: keyof UsageScanner, dir = ''): Promise<unknown> {
   const f = factory
   if (!f) {
     localScanner ??= createUsageScanner(scanRoots())
-    return localScanner[want]()
+    return localScanner[want](dir)
   }
   return new Promise((resolve, reject) => {
     const w = ensureWorker(f)
     const id = nextId++
     pending.set(id, { resolve, reject })
-    w.postMessage({ id, want } satisfies UsageScanRequest)
+    w.postMessage({ id, want, dir } satisfies UsageScanRequest)
   })
 }
 
@@ -151,6 +153,11 @@ interface CostCalibration {
   onSkip?(s: CalibrationSkip): void
 }
 let calibration: CostCalibration | null = null
+
+/** Read the turn ledger under `dir` where the transcripts are scanned: off the main thread. */
+export function readUsageLedgerTotals(dir: string): Promise<MeasuredProject[]> {
+  return scan('ledger', dir)
+}
 
 /** Called once by the companion host; `null` removes it. The scan stays the structure and history. */
 export function setUsageCostCalibration(c: CostCalibration | null): void {

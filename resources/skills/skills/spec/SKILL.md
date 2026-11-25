@@ -93,11 +93,11 @@ mission exists: create it as _The mission_ below says. Then work in this order:
    default shown in the `default` cell, and it gates only the slices whose `gated-by:` names it;
    never write it `declined`, and never write it `resolved` on silence or on your own guess. A
    Medium spec has no Open decisions section: a decision to record makes the entry Large, so say
-   so in one line and go on as Large. Offer `harnu:grill-me` when the operator wants the spec
-   stress-tested.
-4. **Write the bundle.** Copy the template to the spec path and fill it, conventions included
-   (`gated-by:`, `NG-n` bullets, `existing:` tokens). A Complex entry also gets the files of
-   _The Complex bundle_ below. `git add` every file of the bundle, so `check` sees it tracked.
+   so in one line and go on as Large. Offer `harnu:grill-me` to stress-test the spec.
+4. **Write the bundle.** Copy the template to the spec path and fill it: the repo's own
+   `docs/specs/TEMPLATE.md` when it has one, otherwise the `TEMPLATE.md` beside this skill. Include
+   the conventions (`gated-by:`, `NG-n` bullets, `existing:` tokens). A Complex entry also gets _The
+   Complex bundle_ below. `git add` every file of the bundle, so `check` sees it tracked.
 5. **Check.** Run `check` on the spec (section below) and fix every finding, then re-run it until
    it is clean. Never flip `status: approved` while a finding stands.
 6. **Goldfish review.** Run the staged review of _Goldfish review_ below. Every finding gets its

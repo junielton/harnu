@@ -48,7 +48,7 @@ import { createTaskStateAdapter, type TaskStateAdapter } from './ingest/task-sta
 import { createTelemetryAdapter, type TelemetryAdapter } from './ingest/telemetry-adapter'
 import { telemetryStore } from '../telemetry-store'
 import { getUsageHistoryPolicy } from '../usage-history'
-import { setUsageCostCalibration } from '../usage-cost'
+import { readUsageLedgerTotals, setUsageCostCalibration } from '../usage-cost'
 import { configureTurnLedger, createTurnLedger, type TurnLedger } from './turn-ledger'
 import {
   clearPlanUsageGate,
@@ -310,7 +310,11 @@ export async function registerCompanionHost(getWindow: () => BrowserWindow | nul
   // The Usage Dashboard's scan stays the structure and the history; for a session the ledger fully
   // covers (and whose project has `telemetry` active) the CLI's own total replaces the scan price.
   setUsageCostCalibration({
-    totals: () => turnLedger!.calibrationTotals((p) => familyMode('telemetry', p) === 'active'),
+    totals: () =>
+      turnLedger!.calibrationTotals(
+        (p) => familyMode('telemetry', p) === 'active',
+        readUsageLedgerTotals
+      ),
     onSkip: (x) =>
       recordFact('telemetry', 'legacy', x.sessionId, 'calibration:skip', {
         reason: x.reason,
