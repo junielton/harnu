@@ -8,8 +8,6 @@
 // only together with the sha the operator was shown (`update-ref -d <ref> <sha>`), so a ref that
 // moved since the confirm is left alone.
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import {
   ARCHIVE_PREFIX,
   groupArchiveRefs,
@@ -17,8 +15,8 @@ import {
   type ArchiveEntry,
   type ArchiveRefInfo
 } from './archives-core'
+import { runFile } from '../spawn-runner'
 
-const runFile = promisify(execFile)
 const GIT_OPTS = { windowsHide: true, timeout: 60_000, maxBuffer: 16 << 20 } as const
 /** `git gc` can legitimately run long on a big repo. */
 const GC_OPTS = { windowsHide: true, timeout: 600_000, maxBuffer: 16 << 20 } as const

@@ -10,7 +10,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
  */
 
 const h = vi.hoisted(() => ({
-  ipcHandlers: new Map<string, (...args: unknown[]) => unknown>()
+  ipcHandlers: new Map<string, (...args: unknown[]) => unknown>(),
+  ipcListeners: new Map<string, (...args: unknown[]) => unknown>()
 }))
 
 vi.mock('electron', () => ({
@@ -27,7 +28,9 @@ vi.mock('electron', () => ({
       '/tmp/claude-1000/-home-u-Workspace-me-harnu--claude-worktrees-feat-system-monitor-s1/1a8b5504-95c7-4832-8978-9e19b4d39df4/scratchpad'
   },
   ipcMain: {
-    handle: (channel: string, cb: (...args: unknown[]) => unknown) => h.ipcHandlers.set(channel, cb)
+    handle: (channel: string, cb: (...args: unknown[]) => unknown) =>
+      h.ipcHandlers.set(channel, cb),
+    on: (channel: string, cb: (...args: unknown[]) => unknown) => h.ipcListeners.set(channel, cb)
   }
 }))
 
@@ -55,11 +58,15 @@ type Mod = typeof import('../src/main/monitor/sampler')
 
 let mod: Mod
 const send = vi.fn()
-const getWindow = (): unknown => ({ isDestroyed: () => false, webContents: { send } })
+const getWindow = (): unknown => ({
+  isDestroyed: () => false,
+  webContents: { send, getOSProcessId: () => process.pid }
+})
 
 beforeEach(async () => {
   vi.resetModules()
   h.ipcHandlers.clear()
+  h.ipcListeners.clear()
   send.mockClear()
   mod = await import('../src/main/monitor/sampler')
 })
@@ -86,8 +93,16 @@ describe('registerMonitorHandlers — the always-on heartbeat', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mod.registerMonitorHandlers(getWindow as any)
     expect([...h.ipcHandlers.keys()].sort()).toEqual(
-      ['monitor:policyGet', 'monitor:policySet', 'monitor:start', 'monitor:stop'].sort()
+      [
+        'monitor:injectStall',
+        'monitor:policyGet',
+        'monitor:policySet',
+        'monitor:stallEnabled',
+        'monitor:start',
+        'monitor:stop'
+      ].sort()
     )
+    expect([...h.ipcListeners.keys()]).toEqual(['monitor:stallReport'])
   })
 })
 
@@ -149,5 +164,63 @@ describe('monitor:policyGet / monitor:policySet', () => {
     expect(after).toMatchObject({ maxLive: 7 })
     const reread = await h.ipcHandlers.get('monitor:policyGet')?.()
     expect(reread).toMatchObject({ maxLive: 7 })
+  })
+})
+
+describe('the stall monitor in the sample (T697)', () => {
+  const summary = {
+    main: { over50: 2, over100: 1, over250: 0, offenders: [] },
+    renderer: { over50: 1, over100: 1, over250: 1, offenders: [] }
+  }
+  const stub = {
+    summary: () => summary,
+    mainBusyPct: () => 37.4,
+    rendererStalledMs: () => 3_000,
+    reportRenderer: vi.fn(() => 1),
+    injectMainStall: vi.fn(),
+    stop: async () => undefined
+  }
+
+  it('carries both threads, with the main thread measured and the renderer read from its own thread CPU', async () => {
+    const { setStallMonitor } = await import('../src/main/monitor/stall-registry')
+    setStallMonitor(stub)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mod.registerMonitorHandlers(getWindow as any)
+    send.mockClear()
+    await h.ipcHandlers.get('monitor:start')?.()
+    const [, payload] = send.mock.calls.find(([c]) => c === 'monitor:sample') ?? []
+    expect(payload.stalls.main).toMatchObject({ over50: 2, busyPct: 37.4, busyApprox: false })
+    expect(payload.stalls.renderer).toMatchObject({ over250: 1, busyApprox: false })
+    setStallMonitor(null)
+  })
+
+  it('leaves the block out when the monitor is off, and reports the setting', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mod.registerMonitorHandlers(getWindow as any)
+    send.mockClear()
+    await h.ipcHandlers.get('monitor:start')?.()
+    const [, payload] = send.mock.calls.find(([c]) => c === 'monitor:sample') ?? []
+    expect(payload.stalls).toBeUndefined()
+    expect(h.ipcHandlers.get('monitor:stallEnabled')?.()).toBe(false)
+  })
+
+  it('forwards renderer reports to the monitor, and injects a stall only when the env allows it', async () => {
+    const { setStallMonitor } = await import('../src/main/monitor/stall-registry')
+    setStallMonitor(stub)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mod.registerMonitorHandlers(getWindow as any)
+    h.ipcListeners.get('monitor:stallReport')?.({}, [{ x: 1 }])
+    expect(stub.reportRenderer).toHaveBeenCalledWith([{ x: 1 }])
+    expect(h.ipcHandlers.get('monitor:injectStall')?.({}, 'main', 200)).toBe(false)
+    expect(stub.injectMainStall).not.toHaveBeenCalled()
+    process.env.HARNU_STALL_INJECT = '1'
+    try {
+      expect(h.ipcHandlers.get('monitor:injectStall')?.({}, 'main', 200)).toBe(true)
+      expect(stub.injectMainStall).toHaveBeenCalledWith(200)
+      expect(h.ipcHandlers.get('monitor:injectStall')?.({}, 'nope', 200)).toBe(false)
+    } finally {
+      delete process.env.HARNU_STALL_INJECT
+      setStallMonitor(null)
+    }
   })
 })

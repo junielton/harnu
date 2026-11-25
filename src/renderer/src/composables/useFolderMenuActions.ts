@@ -2,6 +2,7 @@ import { useI18n } from 'vue-i18n'
 import { useUiStore } from '../stores/ui'
 import { useSessionsStore, type Folder } from '../stores/sessions'
 import { useHelpersStore } from '../stores/helpers'
+import { openNoteInStack } from '../lib/notes'
 import { isFolderGroup, type FolderGroup, type GroupSource } from '../stores/folder-zones'
 
 /**
@@ -24,6 +25,8 @@ export type FolderAction =
   | 'bootOptions'
   | 'projectMemory'
   | 'memoryLocation'
+  | 'notesToday'
+  | 'notesAll'
   | 'newSubfolder'
   | 'openSubfolder'
   | 'newWorktree'
@@ -238,6 +241,14 @@ export function useFolderMenuActions(): FolderMenuActions {
     else sessions.toggleRevealArchived(folderPath)
   }
 
+  /**
+   * Reselecting the folder you are already in would swap its session terminal for the Folder
+   * View, so the Quick notes actions only select a folder that is not the active one.
+   */
+  function selectUnlessActive(folderPath: string): void {
+    if (folderPath !== sessions.activeFolderPath) sessions.selectFolder(folderPath)
+  }
+
   const run: Record<FolderAction, (folderPath: string) => void> = {
     rename: (p) => ui.openRenameFolder(p),
     newFolderTerminal: (p) => void sessions.createFolderTerminal(p),
@@ -246,6 +257,16 @@ export function useFolderMenuActions(): FolderMenuActions {
     bootOptions: (p) => ui.openClaudeBoot(p),
     projectMemory,
     memoryLocation: (p) => ui.openMemoryLocation(p),
+    // Quick notes act on the right-clicked folder, not the selected one: select it first, so the
+    // pane lands in that folder's helper stack and the picker lists that repo's notes.
+    notesToday: (p) => {
+      selectUnlessActive(p)
+      void openNoteInStack(p)
+    },
+    notesAll: (p) => {
+      selectUnlessActive(p)
+      ui.openNotesPicker(p)
+    },
     newSubfolder: (p) => ui.openNewFolder(p),
     openSubfolder: (p) => ui.openOpenSubfolder(p),
     newWorktree: (p) => ui.openNewWorktree(p),

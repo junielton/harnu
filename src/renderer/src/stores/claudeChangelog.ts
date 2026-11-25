@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import type { ClaudeChangelogState, ClaudeRelease } from '../../../preload'
 import { playNotificationSound } from '../lib/notification-sound'
 import { useSessionsStore } from './sessions'
+import { soundAllowed } from './session-notify'
 
 /**
  * Claude Code changelog watcher (spec 2026-06-18). Holds the release list the
@@ -46,7 +47,7 @@ export const useClaudeChangelogStore = defineStore('claudeChangelog', () => {
     // mirroring the session path. The sound pref lives in the sessions store;
     // read it lazily at event time.
     unsubscribeNewVersion = window.api.onClaudeChangelogNewVersion(() => {
-      if (useSessionsStore().notifyPrefs.sound) playNotificationSound()
+      if (soundAllowed(useSessionsStore().notifyPrefs, 'info')) playNotificationSound('info')
     })
     apply(await window.api.claudeChangelogGet())
   }

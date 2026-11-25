@@ -15,8 +15,6 @@
  * whenever the kill switch is on, regardless of what the renderer sent.
  */
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { ipcMain, shell, type BrowserWindow } from 'electron'
 import {
   scanAll,
@@ -68,8 +66,8 @@ import {
 } from '../worktree-ipc'
 import { spawnEnvOnce } from '../appimage-env'
 import { detachFromSidebar } from '../user-projects'
+import { runFile } from '../spawn-runner'
 
-const runFile = promisify(execFile)
 const GIT_OPTS = { windowsHide: true, timeout: 30_000, maxBuffer: 1 << 20 } as const
 
 /** How long after registration the first background tick fires. */

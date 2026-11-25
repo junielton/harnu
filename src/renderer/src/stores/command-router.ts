@@ -158,7 +158,8 @@ export interface CommandRouterActions {
     sessionId: string | null
     folder: string
     text: string
-    source: 'page-event' | 'overlay'
+    /** `walk` (S-2): a `[harnu-walk]` turn from a guided walk. */
+    source: 'page-event' | 'overlay' | 'walk'
   }): UserTurnResult | Promise<UserTurnResult>
   /**
    * T171 `close_file`: close the non-PTY, file/folder-backed pane (markdown /
@@ -171,6 +172,13 @@ export interface CommandRouterActions {
    * including PTY-backed ones. Returns whether a pane was actually found.
    */
   closeHelperById(worktreePath: string, paneId: string): boolean
+  /**
+   * Does the pane matching `ref` (a file `path` or a `paneId`) in the TARGET worktree's
+   * stack hold unsaved edits? `pane.closeFile` / `pane.closePane` refuse such a pane
+   * with `UNSAVED_CHANGES` instead of dropping the draft; the operator closes it
+   * through the pane's own guarded close.
+   */
+  isPaneUnsaved(worktreePath: string, ref: { path?: string; paneId?: string }): boolean
   /**
    * T113 (background drain): mint a board-dispatch synthetic in `folderPath`
    * WITHOUT selecting it, and queue its background boot — the drain must never
@@ -507,7 +515,8 @@ function handleSessionUserTurn(
   if (!actions.deliverUserTurn) return { ok: false, error: 'deliverUserTurn not wired' }
   if (!isRecord(payload)) return BAD_ARGS
   if (!isNonEmptyString(payload.folder) || !isNonEmptyString(payload.text)) return BAD_ARGS
-  const source = payload.source === 'overlay' ? 'overlay' : 'page-event'
+  const source =
+    payload.source === 'overlay' ? 'overlay' : payload.source === 'walk' ? 'walk' : 'page-event'
   const out = actions.deliverUserTurn({
     sessionId: isNonEmptyString(payload.sessionId) ? payload.sessionId : null,
     folder: payload.folder,
@@ -533,6 +542,9 @@ function handlePaneCloseFile(actions: CommandRouterActions, payload: unknown): D
   if (!isRecord(payload)) return BAD_ARGS
   if (!isNonEmptyString(payload.worktreePath)) return BAD_ARGS
   if (!isNonEmptyString(payload.path)) return BAD_ARGS
+  if (actions.isPaneUnsaved(payload.worktreePath, { path: payload.path })) {
+    return { error: 'UNSAVED_CHANGES' }
+  }
   const paneId = actions.closeHelperByPath(payload.worktreePath, payload.path)
   return paneId ? { paneId } : { closed: false }
 }
@@ -544,6 +556,9 @@ function handlePaneClosePane(actions: CommandRouterActions, payload: unknown): D
   if (!isRecord(payload)) return BAD_ARGS
   if (!isNonEmptyString(payload.worktreePath)) return BAD_ARGS
   if (!isNonEmptyString(payload.paneId)) return BAD_ARGS
+  if (actions.isPaneUnsaved(payload.worktreePath, { paneId: payload.paneId })) {
+    return { error: 'UNSAVED_CHANGES' }
+  }
   return { closed: actions.closeHelperById(payload.worktreePath, payload.paneId) }
 }
 

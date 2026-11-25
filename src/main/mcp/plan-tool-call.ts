@@ -343,7 +343,10 @@ export function planToolCall({
               ? `PATH_NOT_ALLOWED: ${refusal.content?.jailReason ?? ''}`
               : refusal.reason === 'PANE_INPUT_NOT_READY' && browser?.pane?.openedBy === 'operator'
                 ? 'PANE_INPUT_NOT_READY: operator-pane'
-                : refusal.reason
+                : // The tab the reload must name (browser-tabs S-6): the hint is built from this string alone.
+                  refusal.reason === 'PANE_INPUT_NOT_READY' && browser?.pane?.tabId
+                  ? `PANE_INPUT_NOT_READY: ${browser.pane.tabId}`
+                  : refusal.reason
       return denyPlan(tool, folder ?? '', now, result, redact)
     }
   }

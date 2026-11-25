@@ -4,7 +4,17 @@
  * (debounced), sends it again at a hello, and stops when the binding ends.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMissionStateFeed } from '../../src/main/companion/mission-state'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import {
+  createMissionStateFeed,
+  readViewsFromRecords
+} from '../../src/main/companion/mission-state'
+import {
+  reportedUnreadableMissionFiles,
+  resetUnreadableMissionFiles
+} from '../../src/main/missions/store'
 import { MISSION_DEBOUNCE_MS, MISSION_POLL_MS } from '../../src/main/companion/contract'
 import type { BindingView } from '../../src/main/companion/session-table'
 
@@ -319,5 +329,58 @@ describe('the mission state feed', () => {
     await flush(MISSION_DEBOUNCE_MS + MISSION_POLL_MS)
     expect(r.sent).toHaveLength(0)
     r.feed.dispose()
+  })
+})
+
+// ---- Missions v4 S-40 (Decision 12): a record file the companion could not read is named, never skipped ------
+
+describe('readViewsFromRecords — an unreadable record file is named to the app', () => {
+  const LEADER = '3f1c9a52-7d4e-4b8a-9c21-5e6a0b7d8f10' // the leader of the frozen v3 fixture below
+  const BAD = 'mnt-0badc0de-broken.md'
+  let root = ''
+
+  beforeEach(() => {
+    resetUnreadableMissionFiles()
+    root = mkdtempSync(path.join(os.tmpdir(), 'harnu-s40-companion-'))
+    mkdirSync(path.join(root, '.git'))
+    mkdirSync(path.join(root, '.harnu', 'missions'), { recursive: true })
+    writeFileSync(
+      path.join(root, '.harnu', 'missions', 'mnt-5c0de001-modern-active.md'),
+      readFileSync(
+        path.join(
+          __dirname,
+          '..',
+          'fixtures',
+          'missions-v4-compat',
+          'missions',
+          'mnt-5c0de001-modern-active.md'
+        ),
+        'utf8'
+      )
+    )
+    mkdirSync(path.join(root, '.harnu', 'missions-v4'), { recursive: true })
+    writeFileSync(path.join(root, '.harnu', 'missions-v4', BAD), '{ this is not a mission record')
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  it('keeps reading the missions it can, and names the file it could not', async () => {
+    const asked: string[] = []
+    await readViewsFromRecords([root], [LEADER], {
+      readDetail: async (_folder, id) => {
+        asked.push(id)
+        return null
+      }
+    })
+    // The good v3 mission is still read (the bad file does not stop the pass)…
+    expect(asked).toEqual(['mnt-5c0de001'])
+    // …and the bad file is named to the app's unreadable list (one Activity notice), not skipped quietly.
+    expect(reportedUnreadableMissionFiles()).toEqual([BAD])
+    // A second poll is the same failure, not a second name.
+    await readViewsFromRecords([root], [LEADER], { readDetail: async () => null })
+    expect(reportedUnreadableMissionFiles()).toEqual([BAD])
+    // Once the file reads again (here: it is gone) the name leaves the list.
+    rmSync(path.join(root, '.harnu', 'missions-v4', BAD))
+    await readViewsFromRecords([root], [LEADER], { readDetail: async () => null })
+    expect(reportedUnreadableMissionFiles()).toEqual([])
   })
 })

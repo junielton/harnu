@@ -13,9 +13,7 @@
  * Spec: docs/specs/2026-11-02-github-rate-limit/spec.md.
  */
 
-import { execFile } from 'node:child_process'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { promisify } from 'node:util'
 import { spawnEnvOnce } from './appimage-env'
 import {
   isRateLimitStderr,
@@ -24,8 +22,13 @@ import {
   type GhResource
 } from './github-budget-core'
 import { githubBudget } from './github-budget-tracker'
+import { GH_SPAWN_LIMIT, runFile } from './spawn-runner'
 
-const execFileAsync = promisify(execFile)
+/**
+ * BUG-262 / BUG-266 — the limit on `gh` children in flight (and the fork itself) lives in the spawn runner:
+ * `runFile('gh', …)` takes a slot in the `gh` lane. Re-exported here because the budget docs and tests name it.
+ */
+export { GH_SPAWN_LIMIT }
 
 export interface GhRunOptions {
   /** Who is spending (the default; {@link withGhConsumer} can re-attribute a whole call tree). */
@@ -69,7 +72,7 @@ const consumerScope = new AsyncLocalStorage<GhConsumer>()
 
 /**
  * Attribute every `gh` call made inside `fn` to `consumer`, whatever tag the call site carries.
- * The mission derive is shared by the pill, the steward and the merge batch; the caller that
+ * The mission derive is shared by the pill and the steward; the caller that
  * started the work is the one that spent the budget.
  */
 export function withGhConsumer<T>(consumer: GhConsumer, fn: () => Promise<T>): Promise<T> {
@@ -111,29 +114,15 @@ export async function runGh(args: readonly string[], opts: GhRunOptions): Promis
   // Counted when spawned: a call that fails still reached GitHub far enough to be charged.
   githubBudget.record(consumer, opts.resource)
   const env = await spawnEnvOnce()
-  const common = {
-    cwd: opts.cwd,
-    timeout: opts.timeout,
-    maxBuffer: opts.maxBuffer,
-    windowsHide: opts.windowsHide ?? true,
-    encoding: 'utf8' as const,
-    env
-  }
   try {
-    if (opts.stdin === undefined) {
-      const { stdout, stderr } = await execFileAsync('gh', [...args], common)
-      return { stdout: String(stdout), stderr: String(stderr ?? '') }
-    }
-    return await new Promise<GhResult>((resolve, reject) => {
-      const child = execFile('gh', [...args], common, (err, stdout, stderr) => {
-        if (err)
-          reject(Object.assign(err, { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }))
-        else resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? '') })
-      })
-      // `gh` can exit before the body is written (bad auth, no such PR): EPIPE on this stream is
-      // not the story, the callback above carries the real reason.
-      child.stdin?.on('error', () => {})
-      child.stdin?.end(opts.stdin)
+    return await runFile('gh', args, {
+      cwd: opts.cwd,
+      timeout: opts.timeout,
+      maxBuffer: opts.maxBuffer,
+      windowsHide: opts.windowsHide ?? true,
+      env,
+      stdin: opts.stdin,
+      lane: 'gh'
     })
   } catch (err) {
     bookkeep(err)
@@ -146,12 +135,11 @@ export async function runGh(args: readonly string[], opts: GhRunOptions): Promis
  * so it is neither counted here nor held back while the budget is spent.
  */
 export async function runGhBudgetProbe(timeoutMs = 15_000): Promise<GhResult> {
-  const { stdout, stderr } = await execFileAsync('gh', ['api', 'rate_limit'], {
+  return await runFile('gh', ['api', 'rate_limit'], {
     timeout: timeoutMs,
     windowsHide: true,
     maxBuffer: 1 << 20,
-    encoding: 'utf8',
-    env: await spawnEnvOnce()
+    env: await spawnEnvOnce(),
+    lane: 'gh-budget'
   })
-  return { stdout: String(stdout), stderr: String(stderr ?? '') }
 }

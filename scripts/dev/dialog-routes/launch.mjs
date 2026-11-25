@@ -7,10 +7,25 @@
  * Electron over a debugging pipe, so two sides can run at once or one after the other.
  */
 import { _electron as electron } from '@playwright/test'
+import { buildElectronEnv } from '../../../tests/e2e/ci/fixtures/launch-env.ts'
 
 export const WIDTH = 1280
 /** The two window heights every dialog is measured at (spec §6.3 step 4). */
 export const HEIGHTS = [900, 560]
+
+/**
+ * The environment one side is launched with: `HOME` in the side's own user data (a caller's `env` wins), and
+ * NEVER the Wayland variables (BUG-199, the same rule as `tests/e2e/ci/fixtures/launch-app.ts`). On a Wayland
+ * session an Electron child that sees them opens on the operator's desktop instead of the virtual display, its
+ * window never settles, and every route that clicks a sidebar row times out on "stable".
+ *
+ * @param {Record<string, string | undefined>} base the process environment
+ * @param {string} userData
+ * @param {Record<string, string | undefined>} [env] the caller's environment, merged over `base`
+ */
+export function sideEnv(base, userData, env) {
+  return buildElectronEnv(base, { HOME: userData, ...env })
+}
 
 /**
  * @param {{ buildDir: string, userData: string, env?: Record<string, string>, width?: number, height?: number, extraArgs?: string[] }} o
@@ -33,7 +48,7 @@ export async function launchSide({
       ...extraArgs
     ],
     cwd: buildDir,
-    env: env ?? { ...process.env, HOME: userData }
+    env: sideEnv(process.env, userData, env)
   })
   const page = await app.firstWindow()
   await page.locator('body').waitFor({ state: 'visible' })

@@ -1,12 +1,8 @@
 import { ipcMain } from 'electron'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { readFile, writeFile, readdir, stat, rename, unlink, mkdir } from 'node:fs/promises'
-import type { Dirent } from 'node:fs'
+import { Worker } from 'node:worker_threads'
 import {
-  buildFileCostBuckets,
-  extractFirstCwd,
-  mergeCostBuckets,
   buildDailyCostRollup,
   buildModelCostRollup,
   buildProjectCostRollup,
@@ -20,281 +16,101 @@ import {
   type SessionCostRollup
 } from './usage-cost-core'
 import {
-  buildFileAnatomySignals,
-  buildSessionAnatomy,
-  type FileAnatomySignals,
-  type SessionAnatomy,
-  type SessionHourlyPoint
-} from './usage-bi-core'
+  createUsageScanner,
+  type UsageScanBi,
+  type UsageScanMerged,
+  type UsageScanner,
+  type UsageScanReply,
+  type UsageScanRequest,
+  type UsageScanRoots,
+  type UsageScanWorkerData
+} from './usage-scan-worker'
 
 /**
- * Real cost-engine shell (T47 P5). Scans `~/.claude/projects/**\/*.jsonl`
- * (every session's main transcript PLUS its `<sessionId>/subagents/agent-*.jsonl`
- * companions), feeds each file through the pure core (`usage-cost-core.ts`),
- * and serves the merged rollups over `usageCost:*` IPC.
- *
- * Performance: `~/.claude/projects` can be hundreds of MB, so this is
- * incremental. A per-file cache — keyed by `(path, size, mtimeMs)` — stores
- * each file's ALREADY-DEDUPED-AND-PRICED `CostBucket[]` (a handful of
- * day×model rows, not the raw request list), persisted to
- * `~/.claude/om2tab/usage-history/cost-cache.json`. A request only re-parses
- * files whose size or mtime moved since the last scan; everything else is a
- * cheap `stat()` + cache hit. Fail-safe throughout, mirroring
- * `usage-history.ts`: any I/O error degrades to "no engine data" — it never
- * breaks the Settings pane.
+ * Real cost-engine shell (T47 P5). The scan of `~/.claude/projects/**\/*.jsonl` (every session's main
+ * transcript plus its `<sessionId>/subagents/agent-*.jsonl` companions) runs in a worker thread
+ * (`usage-scan-worker.ts`), so the main process never parses a transcript. This side asks for the merged
+ * buckets, calibrates them, folds the rollups and serves them over `usageCost:*` IPC. Fail-safe
+ * throughout, mirroring `usage-history.ts`: any error degrades to "no engine data", it never breaks the
+ * Settings pane.
  */
 
-// ---- Discovery ---------------------------------------------------------------
+// ---- Scan worker ----------------------------------------------------------------
 
-interface FileTask {
-  path: string
-  sessionId: string
-  projectPath: string
-  isSubagent: boolean
+function scanRoots(): UsageScanRoots {
+  return {
+    projectsRoot: join(homedir(), '.claude', 'projects'),
+    cacheDir: join(homedir(), '.claude', 'om2tab', 'usage-history')
+  }
 }
 
-function projectsRoot(): string {
-  return join(homedir(), '.claude', 'projects')
-}
+type ScanWorkerFactory = (data: UsageScanWorkerData) => Worker
+
+let factory: ScanWorkerFactory | null = null
+let worker: Worker | null = null
+let localScanner: UsageScanner | null = null
+let nextId = 1
+const pending = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>()
 
 /**
- * Best-effort slug→path decode (dashes were slashes). LAST-RESORT fallback
- * only: the decode is lossy (a project named `my-cool_project` decodes to
- * `my/cool/project`), so `refreshCache` prefers the real `cwd` recovered from
- * the JSONL lines ({@link extractFirstCwd}) and only falls back here for a
- * file that never carried one.
+ * Run every scan in a worker from now on. Without it (unit tests, tooling) the same scanner runs in this
+ * thread. The worker starts on the first request and is kept, so its in-memory cache is too.
  */
-function decodeSlugToPath(slug: string): string {
-  return slug.startsWith('-') ? '/' + slug.slice(1).replace(/-/g, '/') : slug
+export function startUsageScanWorker(f: ScanWorkerFactory): void {
+  factory = f
 }
 
-/**
- * Two-pass discovery mirroring `claude-reader.ts`'s scan: (1) every top-level
- * `<slug>/<uuid>.jsonl` is a session's main transcript; (2) every
- * `<slug>/<uuid>/subagents/agent-*.jsonl` is a subagent transcript for that
- * SAME session id (semantics #4 — never overlaps the main file, always
- * additive). Never throws — an unreadable directory just yields fewer tasks.
- */
-async function discoverFiles(rootDir: string): Promise<FileTask[]> {
-  let slugDirs: Dirent[]
-  try {
-    slugDirs = await readdir(rootDir, { withFileTypes: true })
-  } catch {
-    return []
+/** Terminate the worker and go back to scanning in this thread. */
+export async function stopUsageScanWorker(): Promise<void> {
+  factory = null
+  const w = worker
+  if (!w) return
+  workerGone(w, new Error('the usage scan worker was stopped'))
+  await w.terminate()
+}
+
+/** The worker is gone: everything waiting on it rejects now, and the next request starts a new one. */
+function workerGone(w: Worker, err: Error): void {
+  if (worker !== w) return
+  worker = null
+  for (const p of pending.values()) p.reject(err)
+  pending.clear()
+}
+
+function ensureWorker(f: ScanWorkerFactory): Worker {
+  if (worker) return worker
+  const w = f({ usageScan: scanRoots() })
+  w.on('message', (m: UsageScanReply) => {
+    const p = pending.get(m.id)
+    if (!p) return
+    pending.delete(m.id)
+    if (m.ok) p.resolve(m.value)
+    else p.reject(new Error(m.error))
+  })
+  w.on('error', (err) => {
+    console.error('[usage-scan] worker failed', err)
+    workerGone(w, err instanceof Error ? err : new Error(String(err)))
+  })
+  w.on('exit', (code) => workerGone(w, new Error(`the usage scan worker exited (${code})`)))
+  worker = w
+  return w
+}
+
+function scan(want: 'merged'): Promise<UsageScanMerged>
+function scan(want: 'bi'): Promise<UsageScanBi>
+function scan(want: 'flush'): Promise<void>
+function scan(want: keyof UsageScanner): Promise<unknown> {
+  const f = factory
+  if (!f) {
+    localScanner ??= createUsageScanner(scanRoots())
+    return localScanner[want]()
   }
-
-  const tasks: FileTask[] = []
-  await Promise.all(
-    slugDirs
-      .filter((d) => d.isDirectory())
-      .map(async (slugDirent) => {
-        const slug = slugDirent.name
-        const projectDir = join(rootDir, slug)
-        const projectPath = decodeSlugToPath(slug)
-        let entries: Dirent[]
-        try {
-          entries = await readdir(projectDir, { withFileTypes: true })
-        } catch {
-          return
-        }
-
-        for (const e of entries) {
-          if (e.isFile() && e.name.endsWith('.jsonl')) {
-            tasks.push({
-              path: join(projectDir, e.name),
-              sessionId: e.name.replace(/\.jsonl$/, ''),
-              projectPath,
-              isSubagent: false
-            })
-          }
-        }
-
-        const parentDirs = entries.filter((d) => d.isDirectory() && !d.name.startsWith('.'))
-        await Promise.all(
-          parentDirs.map(async (dir) => {
-            const parentSessionId = dir.name
-            const subagentsDir = join(projectDir, parentSessionId, 'subagents')
-            let agentFiles: Dirent[]
-            try {
-              agentFiles = await readdir(subagentsDir, { withFileTypes: true })
-            } catch {
-              return
-            }
-            for (const f of agentFiles) {
-              if (f.isFile() && f.name.startsWith('agent-') && f.name.endsWith('.jsonl')) {
-                tasks.push({
-                  path: join(subagentsDir, f.name),
-                  sessionId: parentSessionId,
-                  projectPath,
-                  isSubagent: true
-                })
-              }
-            }
-          })
-        )
-      })
-  )
-  return tasks
-}
-
-// ---- Cache --------------------------------------------------------------------
-
-interface CachedFileEntry {
-  size: number
-  mtimeMs: number
-  buckets: CostBucket[]
-  /** Session-anatomy + hourly-cost signals for this ONE file (T47 P6 S1). */
-  anatomy: FileAnatomySignals
-  /** Real project path: the JSONL's own `cwd` when the file carries one,
-   *  else the lossy slug decode (v5). */
-  projectPath: string
-}
-
-interface CostCacheFile {
-  version: number
-  files: Record<string, CachedFileEntry>
-}
-
-// Cached buckets are ALREADY PRICED, so the version must be bumped whenever the
-// pricing table changes (a stale cache would silently keep old prices for
-// unchanged files). v2: C5 published rates for Fable/Mythos 5, Opus 4.7/4.8,
-// Sonnet 5. v3: C6 cache writes priced by TTL (1h = 2× input, 5m = 1.25×).
-// v4: T47 P6 S1 adds `anatomy` (turns/title/peak-context/hourly buckets) to
-// every cached file entry — a v3 entry lacks the field entirely, so the
-// version bump forces a full rebuild rather than serving `undefined` anatomy.
-// v5: `projectPath` is recovered from the JSONL's real `cwd` instead of the
-// lossy slug decode (dash/underscore project names were mangled, e.g.
-// `my-cool_project` → `my/cool/project`); cached buckets bake the path in,
-// so a v4 cache would keep serving the mangled names for unchanged files.
-const CACHE_VERSION = 5
-
-/**
- * Hourly cost detail (used only by the BI window-enrichment join) is capped to
- * this many days back, computed at the time a file is (re)scanned — keeps the
- * cache file from growing an unbounded per-hour history for old, untouched
- * sessions. Because the cap is applied at SCAN time and a cached entry is only
- * recomputed when its file changes, a long-untouched file's hourly buckets can
- * persist slightly past this boundary until it's next rescanned — accepted for
- * cache-size sanity (pinned in tests), same spirit as the windows-enrichment
- * edge-precision note in `usage-bi-core.ts`.
- */
-const HOURLY_RETENTION_DAYS = 90
-
-function cacheDir(): string {
-  return join(homedir(), '.claude', 'om2tab', 'usage-history')
-}
-function cacheFile(): string {
-  return join(cacheDir(), 'cost-cache.json')
-}
-
-let fileCache = new Map<string, CachedFileEntry>()
-let cacheLoaded = false
-let loadPromise: Promise<void> | null = null
-
-async function loadCache(): Promise<void> {
-  try {
-    const raw = JSON.parse(await readFile(cacheFile(), 'utf8')) as CostCacheFile
-    if (raw && raw.version === CACHE_VERSION && raw.files && typeof raw.files === 'object') {
-      fileCache = new Map(Object.entries(raw.files))
-    }
-  } catch {
-    fileCache = new Map()
-  }
-}
-
-// Unique tmp suffix per write, same atomic-rename pattern as usage-history.ts
-// (T21): a half-written cache is never observable, last writer wins.
-let saveSeq = 0
-async function saveCache(): Promise<void> {
-  const fp = cacheFile()
-  const tmp = `${fp}.${saveSeq++}.tmp`
-  const payload: CostCacheFile = { version: CACHE_VERSION, files: Object.fromEntries(fileCache) }
-  try {
-    await mkdir(cacheDir(), { recursive: true })
-    await writeFile(tmp, JSON.stringify(payload), 'utf8')
-    await rename(tmp, fp)
-  } catch {
-    await unlink(tmp).catch(() => {})
-  }
-}
-
-async function ensureCacheLoaded(): Promise<void> {
-  if (cacheLoaded) return
-  if (!loadPromise) {
-    loadPromise = (async () => {
-      await loadCache()
-      cacheLoaded = true
-    })()
-  }
-  return loadPromise
-}
-
-// ---- Scan + merge ---------------------------------------------------------------
-
-const SCAN_CONCURRENCY = 8
-
-/**
- * (Re)scan every discovered file, reusing the cache for anything whose
- * `(size, mtimeMs)` didn't change. Returns whether the cache was mutated (so
- * the caller only persists when there's something new to save).
- */
-async function refreshCache(tasks: readonly FileTask[]): Promise<boolean> {
-  const currentPaths = new Set(tasks.map((t) => t.path))
-  let mutated = false
-  for (const key of fileCache.keys()) {
-    if (!currentPaths.has(key)) {
-      fileCache.delete(key)
-      mutated = true
-    }
-  }
-
-  let idx = 0
-  async function worker(): Promise<void> {
-    for (;;) {
-      const i = idx++
-      if (i >= tasks.length) return
-      const task = tasks[i]
-      let st: { size: number; mtimeMs: number }
-      try {
-        st = await stat(task.path)
-      } catch {
-        continue
-      }
-      const cached = fileCache.get(task.path)
-      if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) continue
-
-      let raw: string
-      try {
-        raw = await readFile(task.path, 'utf8')
-      } catch {
-        continue
-      }
-      const lines = raw.split('\n')
-      // Prefer the file's own `cwd` — the slug-decoded task.projectPath is
-      // lossy for project names containing `-`/`_` (see decodeSlugToPath).
-      const projectPath = extractFirstCwd(lines) ?? task.projectPath
-      const buckets = buildFileCostBuckets(lines, {
-        sessionId: task.sessionId,
-        projectPath,
-        isSubagent: task.isSubagent
-      })
-      const anatomy = buildFileAnatomySignals(
-        lines,
-        { sessionId: task.sessionId, isSubagent: task.isSubagent },
-        Date.now() - HOURLY_RETENTION_DAYS * 24 * 3600_000
-      )
-      fileCache.set(task.path, {
-        size: st.size,
-        mtimeMs: st.mtimeMs,
-        buckets,
-        anatomy,
-        projectPath
-      })
-      mutated = true
-    }
-  }
-  await Promise.all(Array.from({ length: SCAN_CONCURRENCY }, () => worker()))
-  return mutated
+  return new Promise((resolve, reject) => {
+    const w = ensureWorker(f)
+    const id = nextId++
+    pending.set(id, { resolve, reject })
+    w.postMessage({ id, want } satisfies UsageScanRequest)
+  })
 }
 
 // ---- Summary shape --------------------------------------------------------------
@@ -327,29 +143,6 @@ function emptySummary(): UsageCostSummary {
   }
 }
 
-/** The result of a full incremental (re)scan — the shared substrate both the
- *  P5 summary and the P6 BI snapshot fold into their own shapes. */
-interface ScannedState {
-  tasks: FileTask[]
-  scanMs: number
-}
-
-/**
- * (Re)discover + (re)scan every transcript file, reusing the per-file cache.
- * Single entry point for anything that needs the raw scan — P5's
- * `computeSummary` and P6's {@link buildUsageBiRawData} both call this so the
- * expensive discovery + incremental re-parse only ever happens once per call,
- * never duplicated across the two consumers.
- */
-async function ensureScanned(): Promise<ScannedState> {
-  const startedAt = Date.now()
-  await ensureCacheLoaded()
-  const tasks = await discoverFiles(projectsRoot())
-  const mutated = await refreshCache(tasks)
-  if (mutated) void saveCache()
-  return { tasks, scanMs: Date.now() - startedAt }
-}
-
 // ---- Calibration by the CLI's own total (T389 P1W6 §7.5) -------------------------------------
 
 /** What the host hands us: measured USD per `(session, day)` for the sessions it fully covers. */
@@ -377,9 +170,9 @@ async function calibrated(buckets: CostBucket[]): Promise<CostBucket[]> {
 let inFlight: Promise<UsageCostSummary> | null = null
 
 async function computeSummary(): Promise<UsageCostSummary> {
-  const { tasks, scanMs } = await ensureScanned()
+  const { mergedBuckets, fileCount, scanMs } = await scan('merged')
 
-  const merged = await calibrated(mergeCostBuckets([...fileCache.values()].map((c) => c.buckets)))
+  const merged = await calibrated(mergedBuckets)
   const sessionRollup = buildSessionCostRollup(merged)
 
   return {
@@ -388,7 +181,7 @@ async function computeSummary(): Promise<UsageCostSummary> {
     projectRollup: buildProjectCostRollup(merged),
     topSessions: sessionRollup.slice(0, TOP_SESSIONS_CAP),
     hasEstimated: merged.some((b) => b.estimated),
-    fileCount: tasks.length,
+    fileCount,
     scanMs,
     generatedAtMs: Date.now()
   }
@@ -416,61 +209,14 @@ export async function buildUsageCostSummary(): Promise<UsageCostSummary> {
 
 // ---- BI raw data (T47 P6 S1) ------------------------------------------------
 
-export interface UsageBiRawData {
-  /** Full anatomy for every session discovered (main + subagent files merged). */
-  sessionAnatomies: SessionAnatomy[]
-  /** The same merged buckets `computeSummary` folds — reused for the daily
-   *  model breakdown / rollups the BI snapshot needs, no re-parse. */
-  mergedBuckets: CostBucket[]
-  /** Flattened (session, hour, model) cost points, across every file — the
-   *  window-enrichment join input. */
-  hourlyPoints: SessionHourlyPoint[]
-  fileCount: number
-  scanMs: number
-}
+/** What the BI snapshot reads: the scan's folds, with `mergedBuckets` calibrated here. */
+export type UsageBiRawData = UsageScanBi
 
 let biInFlight: Promise<UsageBiRawData> | null = null
 
 async function computeBiRawData(): Promise<UsageBiRawData> {
-  const { tasks, scanMs } = await ensureScanned()
-
-  const mergedBuckets = await calibrated(
-    mergeCostBuckets([...fileCache.values()].map((c) => c.buckets))
-  )
-
-  const bySession = new Map<string, { projectPath: string; files: FileAnatomySignals[] }>()
-  const subagentCounts = new Map<string, number>()
-  const hourlyPoints: SessionHourlyPoint[] = []
-
-  for (const task of tasks) {
-    const cached = fileCache.get(task.path)
-    if (!cached) continue
-    let entry = bySession.get(task.sessionId)
-    if (!entry) {
-      // cached.projectPath is the cwd-recovered path (v5) — task.projectPath
-      // is the lossy slug decode, kept only as the discovery-time fallback.
-      entry = { projectPath: cached.projectPath, files: [] }
-      bySession.set(task.sessionId, entry)
-    }
-    entry.files.push(cached.anatomy)
-    if (task.isSubagent) {
-      subagentCounts.set(task.sessionId, (subagentCounts.get(task.sessionId) ?? 0) + 1)
-    }
-    for (const h of cached.anatomy.hourly) {
-      hourlyPoints.push({ ...h, sessionId: task.sessionId })
-    }
-  }
-
-  const sessionAnatomies: SessionAnatomy[] = [...bySession.entries()].map(
-    ([sessionId, { projectPath, files }]) =>
-      buildSessionAnatomy(files, {
-        sessionId,
-        projectPath,
-        subagentCount: subagentCounts.get(sessionId) ?? 0
-      })
-  )
-
-  return { sessionAnatomies, mergedBuckets, hourlyPoints, fileCount: tasks.length, scanMs }
+  const raw = await scan('bi')
+  return { ...raw, mergedBuckets: await calibrated(raw.mergedBuckets) }
 }
 
 function emptyBiRawData(): UsageBiRawData {
@@ -499,10 +245,15 @@ export async function buildUsageBiRawData(): Promise<UsageBiRawData> {
 // ---- IPC ------------------------------------------------------------------------
 
 export function registerUsageCostHandlers(): void {
+  // Built by electron-vite as its own main entry, next to this bundle.
+  startUsageScanWorker(
+    (data) => new Worker(join(__dirname, 'usage-scan-worker.js'), { workerData: data })
+  )
   ipcMain.handle('usageCost:summary', (): Promise<UsageCostSummary> => buildUsageCostSummary())
 }
 
 /** Flush the cache on quit — mirrors `closeUsageHistory`. */
 export async function closeUsageCost(): Promise<void> {
-  if (cacheLoaded) await saveCache()
+  // Never start a worker just to quit.
+  if (worker || localScanner) await scan('flush').catch(() => {})
 }

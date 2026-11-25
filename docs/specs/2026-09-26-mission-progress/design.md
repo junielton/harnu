@@ -1,5 +1,10 @@
 # Design — Mission progress
 
+> **Superseded (2026-11-16).** This design describes the mission model before Missions v4, kept as history.
+> The model that replaces it, with one Mission → Milestone → Step record and no Campaign, steward or
+> merge batch, is in [the Missions v4 spec](../2026-11-14-missions-v4/spec.md) and
+> [ADR-0025](../../adr/0025-missions-v4-one-model-supersedes-campaigns-and-stewards.md). Where they disagree, v4 wins.
+
 Promotes the free-markdown goal file (`.capy/goals/<session8>-<slug>.md`, read by no app
 code today) into structured Capy data — a **Mission** — with `mission_*` MCP verbs, live
 derived signals, and a Topbar/sidebar UI.

@@ -27,16 +27,19 @@ vi.mock('electron', () => ({
   ipcMain: { handle: (): void => {}, on: (): void => {} }
 }))
 
-// markdown-watch confines against `markdownKnownRoots()` — stub it so the temp
-// dir this test creates counts as a known root without touching real user
+// markdown-watch confines through `markdownGate()`, which resolves the live known
+// roots inside markdown-read.ts (a mock of the `markdownKnownRoots` export would
+// not reach that internal call) — so stub the two sources the roots come from, so
+// the temp dir this test creates counts as a known root without touching real user
 // settings/scanned folders.
-vi.mock('../src/main/markdown-read', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/main/markdown-read')>()
-  return {
-    ...actual,
-    markdownKnownRoots: async () => [(globalThis as Record<string, unknown>).__TEST_ROOT__]
-  }
-})
+vi.mock('../src/main/user-projects', () => ({
+  readUserProjects: async (): Promise<{ projects: { path: unknown }[] }> => ({
+    projects: [{ path: (globalThis as Record<string, unknown>).__TEST_ROOT__ }]
+  })
+}))
+vi.mock('../src/main/claude-reader', () => ({
+  scanFolders: async (): Promise<unknown[]> => []
+}))
 
 beforeEach(() => {
   __resetMarkdownWatchStateForTests()

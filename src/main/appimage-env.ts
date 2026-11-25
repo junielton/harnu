@@ -1,5 +1,4 @@
-import { execFile } from 'node:child_process'
-
+import { runFile } from './spawn-runner'
 /**
  * Sanitize the AppImage-runtime pollution out of an environment before it is
  * handed to a spawned child process (no electron imports — unit-testable).
@@ -157,14 +156,13 @@ export function captureLoginPath(
   // `-l -i` so both .zprofile and .zshrc/mise-activate run; printf with literal
   // markers around $PATH so we can recover it cleanly from any rc-file output.
   const script = `printf '${PATH_BEGIN}%s${PATH_END}' "$PATH"`
-  return new Promise((resolve) => {
-    execFile(
-      shell,
-      ['-lic', script],
-      { timeout: opts.timeoutMs ?? 5000, encoding: 'utf8' },
-      (_err, stdout) => resolve(stdout ? parseLoginPathOutput(stdout) : null)
-    )
-  })
+  const parse = (stdout: string | undefined): string | null =>
+    stdout ? parseLoginPathOutput(stdout) : null
+  return runFile(shell, ['-lic', script], { timeout: opts.timeoutMs ?? 5000 }).then(
+    ({ stdout }) => parse(stdout),
+    // A timeout or a non-zero rc exit can still have printed the markers.
+    (err: { stdout?: string }) => parse(err.stdout)
+  )
 }
 
 /**

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen: split-stacked</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      [data-dsqa='split-stacked'] .session {
+        height: 40%;
+      }
+      [data-dsqa='split-stacked'] .floor {
+        top: 40%;
+      }
+      [data-dsqa='split-stacked'] .divider.armed,
+      [data-dsqa='split-stacked'] .strip {
+        display: none;
+      }
+
+      [data-dsqa='split-stacked'][data-state='armed'] .session {
+        height: calc(40% - 80px);
+      }
+      [data-dsqa='split-stacked'][data-state='armed'] .dim {
+        display: flex;
+      }
+      [data-dsqa='split-stacked'][data-state='armed'] .floor {
+        display: block;
+      }
+      [data-dsqa='split-stacked'][data-state='armed'] .divider.rest {
+        display: none;
+      }
+      [data-dsqa='split-stacked'][data-state='armed'] .divider.armed {
+        display: block;
+      }
+
+      [data-dsqa='split-stacked'][data-state^='tucked'] .session,
+      [data-dsqa='split-stacked'][data-state^='tucked'] .divider {
+        display: none;
+      }
+      [data-dsqa='split-stacked'][data-state='tucked'] .strip.s-idle,
+      [data-dsqa='split-stacked'][data-state='tucked-hover'] .strip.s-hover {
+        display: block;
+      }
+      [data-dsqa='split-stacked'] .strip {
+        flex: none;
+        position: relative;
+        z-index: 4;
+      }
+      [data-dsqa='split-stacked'] .strip .tuck {
+        width: auto;
+      }
+    </style>
+  </head>
+  <body data-states="default armed tucked tucked-hover">
+    <div data-dsqa="split-stacked" class="app">
+      <header class="topbar">
+        <span class="brand"></span>
+        <span class="crumb"
+          >harnu <span class="sep">/</span> main <span class="sep">/</span>
+          <b>Walk the CMS editor</b></span
+        >
+        <span class="spacer"></span>
+        <span class="pill">Mission · 2 of 5 steps done</span>
+      </header>
+      <div class="main">
+        <div class="split is-stacked">
+          <div class="strip s-idle" data-goto="split-stacked?state=default">
+            <mk-tuck-strip orient="h" state="idle"></mk-tuck-strip>
+          </div>
+          <div class="strip s-hover" data-goto="split-stacked?state=default">
+            <mk-tuck-strip orient="h" state="hover"></mk-tuck-strip>
+          </div>
+
+          <section class="session" data-dsqa-part="session-area">
+            <mk-session-term></mk-session-term>
+            <div class="dim" data-goto="split-stacked?state=tucked">
+              <div class="hint">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m18 15-6-6-6 6" />
+                </svg>
+                Release to tuck the session away
+              </div>
+            </div>
+          </section>
+          <div
+            class="divider rest"
+            data-dsqa-part="divider"
+            data-goto="split-stacked?state=armed"
+          ></div>
+          <div
+            class="divider armed"
+            data-dsqa-part="divider-armed"
+            data-goto="split-stacked?state=tucked"
+          ></div>
+          <div class="floor"><span>40% · session floor</span></div>
+
+          <mk-helper-panes layout="row"></mk-helper-panes>
+        </div>
+        <aside class="rail"><i></i><i></i></aside>
+      </div>
+      <footer class="footer"><span>Ctrl+K commands</span><span>main · clean</span></footer>
+    </div>
+    <script src="../parts/tuck-strip.js"></script>
+    <script src="../parts/helper-panes.js"></script>
+    <script src="../parts/session-term.js"></script>
+    <script src="../mockup.js"></script>
+  </body>
+</html>

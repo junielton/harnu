@@ -19,7 +19,12 @@ describe('decideQuitConfirm', () => {
       confirmEnabled: true,
       reason: 'user'
     })
-    expect(d).toEqual({ confirm: true, sessionIds: ['a', 'c'] })
+    expect(d).toEqual({
+      confirm: true,
+      sessionIds: ['a', 'c'],
+      unsavedFiles: [],
+      allowDontAsk: true
+    })
   })
 
   it('never asks when nothing is working (idle / done / error / needs-input)', () => {
@@ -28,7 +33,12 @@ describe('decideQuitConfirm', () => {
       confirmEnabled: true,
       reason: 'user'
     })
-    expect(d).toEqual({ confirm: false, sessionIds: [] })
+    expect(d).toEqual({
+      confirm: false,
+      sessionIds: [],
+      unsavedFiles: [],
+      allowDontAsk: true
+    })
   })
 
   it('never asks with no sessions at all', () => {
@@ -54,9 +64,82 @@ describe('decideQuitConfirm', () => {
         confirmEnabled: true,
         reason
       })
-      expect(d).toEqual({ confirm: false, sessionIds: [] })
+      expect(d).toEqual({
+        confirm: false,
+        sessionIds: [],
+        unsavedFiles: [],
+        allowDontAsk: true
+      })
     }
   )
+})
+
+describe('decideQuitConfirm with unsaved files', () => {
+  it('asks about unsaved files even when the preference is off, and names the working agents too', () => {
+    // "Quit without saving" kills the working agents as well, so the prompt must say so.
+    const d = decideQuitConfirm({
+      taskStates: states(['a', 'working'], ['b', 'idle']),
+      confirmEnabled: false,
+      reason: 'user',
+      unsavedFiles: ['note.md (wt)']
+    })
+    expect(d).toEqual({
+      confirm: true,
+      sessionIds: ['a'],
+      unsavedFiles: ['note.md (wt)'],
+      allowDontAsk: false
+    })
+  })
+
+  it('with the preference off and no unsaved files, working agents still do not ask', () => {
+    const d = decideQuitConfirm({
+      taskStates: states(['a', 'working']),
+      confirmEnabled: false,
+      reason: 'user',
+      unsavedFiles: []
+    })
+    expect(d).toEqual({ confirm: false, sessionIds: [], unsavedFiles: [], allowDontAsk: true })
+  })
+
+  it('lists both when the preference is on', () => {
+    const d = decideQuitConfirm({
+      taskStates: states(['a', 'working']),
+      confirmEnabled: true,
+      reason: 'user',
+      unsavedFiles: ['note.md (wt)']
+    })
+    expect(d.sessionIds).toEqual(['a'])
+    expect(d.unsavedFiles).toEqual(['note.md (wt)'])
+    expect(d.allowDontAsk).toBe(false)
+  })
+
+  it.each(['update-install', 'system-shutdown'] as const)(
+    'never blocks a %s quit, even with unsaved files',
+    (reason) => {
+      const d = decideQuitConfirm({
+        taskStates: [],
+        confirmEnabled: true,
+        reason,
+        unsavedFiles: ['note.md (wt)']
+      })
+      expect(d).toEqual({
+        confirm: false,
+        sessionIds: [],
+        unsavedFiles: [],
+        allowDontAsk: true
+      })
+    }
+  )
+
+  it('stays instant with nothing dirty and nothing working', () => {
+    const d = decideQuitConfirm({
+      taskStates: states(['a', 'idle']),
+      confirmEnabled: false,
+      reason: 'user',
+      unsavedFiles: []
+    })
+    expect(d.confirm).toBe(false)
+  })
 })
 
 describe('quit-guard prefs', () => {
@@ -117,6 +200,62 @@ describe('buildQuitDialogContent', () => {
   })
 })
 
+describe('buildQuitDialogContent with unsaved files', () => {
+  const build = (
+    unsavedNames: string[],
+    names: string[] = []
+  ): ReturnType<typeof buildQuitDialogContent> =>
+    buildQuitDialogContent({
+      appName: 'Harnu',
+      names,
+      unsavedNames,
+      strings: DEFAULT_QUIT_STRINGS
+    })
+
+  it('one file', () => {
+    const c = build(['a.md (wt)'])
+    expect(c.message).toBe('1 file has unsaved changes')
+    expect(c.detail).toBe('• a.md (wt)\n\nQuitting Harnu now discards them.')
+    expect(c.buttons).toEqual(['Quit without saving', 'Cancel'])
+    expect(c.defaultId).toBe(1)
+    expect(c.cancelId).toBe(1)
+    expect(c.checkboxLabel).toBe('')
+  })
+
+  it('seven files cap at five plus "and 2 more"', () => {
+    const c = build(['1', '2', '3', '4', '5', '6', '7'].map((n) => `${n}.md`))
+    expect(c.message).toBe('7 files have unsaved changes')
+    const bullets = c.detail.split('\n').filter((l) => l.startsWith('•'))
+    expect(bullets).toEqual(['• 1.md', '• 2.md', '• 3.md', '• 4.md', '• 5.md', '• and 2 more'])
+  })
+
+  it('files first, then a blank line and the agents block', () => {
+    const c = build(['a.md'], ['Fix login', 'Other'])
+    expect(c.message).toBe('1 file has unsaved changes')
+    expect(c.detail).toBe(
+      [
+        '• a.md',
+        '',
+        'Quitting Harnu now discards them.',
+        '',
+        '2 agents are still working',
+        '• Fix login',
+        '• Other',
+        '',
+        'Quitting Harnu now interrupts them.'
+      ].join('\n')
+    )
+    expect(c.buttons).toEqual(['Quit without saving', 'Cancel'])
+    expect(c.checkboxLabel).toBe('')
+  })
+
+  it('an empty unsaved list gives exactly the agents-only output', () => {
+    expect(build([], ['a'])).toEqual(
+      buildQuitDialogContent({ appName: 'Harnu', names: ['a'], strings: DEFAULT_QUIT_STRINGS })
+    )
+  })
+})
+
 describe('normalizeQuitStrings', () => {
   it('accepts a complete set and rejects partial or junk input wholesale', () => {
     const full = { ...DEFAULT_QUIT_STRINGS, cancel: 'Cancelar' }
@@ -124,5 +263,10 @@ describe('normalizeQuitStrings', () => {
     expect(normalizeQuitStrings({ ...full, detail: '' })).toBe(DEFAULT_QUIT_STRINGS)
     expect(normalizeQuitStrings({ cancel: 'x' })).toBe(DEFAULT_QUIT_STRINGS)
     expect(normalizeQuitStrings(undefined)).toBe(DEFAULT_QUIT_STRINGS)
+  })
+
+  it('falls back to English when a newer key is missing', () => {
+    const { unsavedMany: _omit, ...old } = DEFAULT_QUIT_STRINGS
+    expect(normalizeQuitStrings({ ...old, cancel: 'Cancelar' })).toBe(DEFAULT_QUIT_STRINGS)
   })
 })

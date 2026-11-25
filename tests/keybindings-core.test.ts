@@ -34,8 +34,8 @@ const chord = (p: Partial<Chord>): Chord => ({
 })
 
 describe('KEYBINDINGS table', () => {
-  it('has 120 rebindable (111 app + 9 browser pane, T564) and 5 reserved ids', () => {
-    expect(REBINDABLE_IDS).toHaveLength(120)
+  it('has 128 rebindable (115 app + 13 browser pane, T564, T790 and browser-tabs S-4) and 5 reserved ids', () => {
+    expect(REBINDABLE_IDS).toHaveLength(128)
     expect(RESERVED_IDS).toHaveLength(5)
     expect(RESERVED_IDS).toContain('app.openKeybindings')
     expect(new Set([...REBINDABLE_IDS, ...RESERVED_IDS]).size).toBe(KEYBINDINGS.length)
@@ -68,6 +68,36 @@ describe('KEYBINDINGS table', () => {
     const resolved = resolveKeybindings(null)
     for (const b of resolved.list) expect(b.conflictsWith).toEqual([])
     expect(resolved.warnings).toEqual([])
+  })
+})
+
+describe('Quick notes shortcuts', () => {
+  it('ship with their defaults, grouped under folders, today featured in the palette', () => {
+    const today = KEYBINDINGS.find((d) => d.id === 'notes.openToday')!
+    const all = KEYBINDINGS.find((d) => d.id === 'notes.open')!
+    expect(today).toMatchObject({ defaultKeys: 'Cmd+Shift+N', group: 'folders' })
+    expect(all).toMatchObject({ defaultKeys: 'Cmd+Alt+N', group: 'folders' })
+    expect(today.menu).toBe(true)
+    expect(all.menu).toBe(true)
+    expect(today.paletteFeatured).toBe(true)
+    expect(all.paletteFeatured).toBe(false)
+    expect(today.palette).not.toBe(false)
+    expect(all.palette).not.toBe(false)
+  })
+
+  it('resolve on both platforms with no conflict against any other default', () => {
+    for (const mac of [true, false]) {
+      const r = resolveKeybindings(null, { mac })
+      expect(r.byId['notes.openToday'].conflictsWith).toEqual([])
+      expect(r.byId['notes.open'].conflictsWith).toEqual([])
+      expect(r.byId['notes.openToday'].source).toBe('default')
+    }
+  })
+
+  it('a keybindings.json override rebinds notes.openToday', () => {
+    const r = resolveKeybindings([{ command: 'notes.openToday', key: 'Cmd+Alt+J' }], { mac: true })
+    expect(r.byId['notes.openToday'].keys).toBe('Cmd+Alt+J')
+    expect(r.byId['notes.openToday'].source).toBe('override')
   })
 })
 

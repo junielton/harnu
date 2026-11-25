@@ -37,8 +37,6 @@ import { ipcMain, app } from 'electron'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { homedir } from 'node:os'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { resolveMemoryLocation, appendMemoryEntry } from './mcp/memory-store'
 import { formatMemoryDate, lintSecrets } from './mcp/memory-core'
 import { grantDecision } from './mcp/grant-core'
@@ -89,11 +87,11 @@ import {
 } from './roadmap-core'
 import { createRoadmapWatcher, scanRoadmapDir, type RoadmapWatcherHandle } from './roadmap-watcher'
 import { pokeManifestDrain } from './manifest-drain'
+import { bindStepSession, noteBoardCardSpawn } from './missions/dispatch'
 import { pushShadowEntry } from './responder-registry'
 import { getExtensionBoardTemplatePath } from './extensions/extensions-loader'
 import { DATA_DIR, mkdirDataDir, onDataDirMigrated } from './data-dir'
-
-const runGit = promisify(execFile)
+import { runFile as runGit } from './spawn-runner'
 
 /** A card-name segment: filesystem-safe, no traversal, no separators. */
 const SAFE_SLUG = /^[A-Za-z0-9._-]+$/
@@ -937,8 +935,14 @@ export function registerRoadmapHandlers(getWindow: () => Electron.BrowserWindow 
   // an absent/dead grant, or a lost reserve all fall back to the confirm.
   ipcMain.handle(
     'roadmap:planDispatch',
-    (_e, args: { folder: string; slug: string; labels: BootPromptLabels }) =>
-      planDispatchCore(args?.folder ?? '', args?.slug, args?.labels)
+    async (_e, args: { folder: string; slug: string; labels: BootPromptLabels }) => {
+      const plan = await planDispatchCore(args?.folder ?? '', args?.slug, args?.labels)
+      // Missions v4 S-26: a card that is the work of a step spawns a session holding that step's verbs.
+      if (plan.ok && typeof args?.slug === 'string') {
+        await noteBoardCardSpawn(args?.folder ?? '', args.slug)
+      }
+      return plan
+    }
   )
 
   // T130 S4 (M8-Generate, E8): the SAME auto-vs-confirm gate as planDispatch —
@@ -1404,6 +1408,9 @@ export async function bindSessionCore(
     updates.executedIn = executedIn.trim()
   }
   const res = await writeCardFields(folder, slug, updates)
+  // Missions v4 S-26: a card that is the work of a step attaches its session to the step as a worker. The
+  // board's Dispatch button and the manifest drain both bind here, so both do it.
+  if (res.ok && typeof slug === 'string') bindStepSession(folder, slug, sessionId.trim())
   if (res.ok && dispatchedWith?.trim()) {
     const { memoryDir, branch } = await resolveMemoryLocation(folder)
     await appendMemoryEntry({

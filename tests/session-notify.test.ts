@@ -22,6 +22,10 @@ const allOn: NotifyPrefs = {
   completed: true,
   failed: true,
   sound: true,
+  soundAsk: true,
+  soundDone: true,
+  soundFail: true,
+  soundInfo: true,
   usageReset: true
 }
 
@@ -167,6 +171,10 @@ describe('parseNotifyPrefs', () => {
       completed: true,
       failed: true,
       sound: true,
+      soundAsk: true,
+      soundDone: true,
+      soundFail: true,
+      soundInfo: true,
       usageReset: false,
       dailyBudget: true
     })
@@ -208,6 +216,10 @@ describe('parseNotifyPrefs', () => {
       completed: true,
       failed: true,
       sound: false,
+      soundAsk: true,
+      soundDone: true,
+      soundFail: true,
+      soundInfo: true,
       usageReset: true,
       dailyBudget: false
     })
@@ -217,6 +229,10 @@ describe('parseNotifyPrefs', () => {
       completed: true,
       failed: true,
       sound: false,
+      soundAsk: true,
+      soundDone: true,
+      soundFail: true,
+      soundInfo: true,
       usageReset: true,
       dailyBudget: false
     })
@@ -229,6 +245,10 @@ describe('parseNotifyPrefs', () => {
       completed: true,
       failed: true,
       sound: true,
+      soundAsk: true,
+      soundDone: true,
+      soundFail: true,
+      soundInfo: true,
       usageReset: false,
       dailyBudget: true
     })
@@ -250,6 +270,10 @@ describe('parseNotifyPrefs', () => {
       completed: true,
       failed: true,
       sound: true,
+      soundAsk: true,
+      soundDone: true,
+      soundFail: true,
+      soundInfo: true,
       usageReset: false,
       dailyBudget: true
     })

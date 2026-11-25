@@ -18,7 +18,7 @@ import {
 } from '../../shared/browser-emulation'
 import { DEFAULT_DOWNLOAD_TIMEOUT_MS, type DownloadArm } from './download-plan'
 import { planUpload, type UploadIo } from './upload-plan'
-import { refuse, refuseBadArgs, type Refusal } from './verbs-core'
+import { refuse, refuseBadArgs, withTab, type Refusal } from './verbs-core'
 
 /** What the view host adds for emulation, zoom and downloads (`view-host.ts` implements it over Electron). */
 export interface BrowserDeviceHost extends BrowserActHost {
@@ -106,6 +106,8 @@ export async function emulateVerb(
 
 export interface UploadArgs {
   paneId: string
+  /** The tab holding the file input (default: the active tab); a background tab comes forward first. */
+  tabId?: string
   ref: string
   paths: string[]
 }
@@ -125,9 +127,10 @@ function attr(list: readonly string[] | undefined, name: string): string | undef
 
 export async function uploadVerb(
   args: UploadArgs,
-  deps: BrowserDeviceDeps,
+  unboundDeps: BrowserDeviceDeps,
   key: object = args
 ): Promise<Record<string, unknown>> {
+  const deps = withTab(unboundDeps, args.tabId)
   return runWrite('browser_upload', args as never, key, deps, async (ctx) => {
     const folder = ctx.rec.folder
     const resolved = ctx.readers.refs.resolve(args.ref)
@@ -174,6 +177,8 @@ export async function uploadVerb(
 
 export interface DownloadArgs {
   paneId: string
+  /** The tab that starts the download (default: the active tab); by `ref` a background tab comes forward first. */
+  tabId?: string
   url?: string
   ref?: string
   name?: string
@@ -182,9 +187,10 @@ export interface DownloadArgs {
 
 export async function downloadVerb(
   args: DownloadArgs,
-  deps: BrowserDeviceDeps,
+  unboundDeps: BrowserDeviceDeps,
   key: object = args
 ): Promise<Record<string, unknown>> {
+  const deps = withTab(unboundDeps, args.tabId)
   return runWrite('browser_download', args as never, key, deps, async (ctx: ActCtx) => {
     const folder = ctx.rec.folder
     const paneId = ctx.rec.paneId

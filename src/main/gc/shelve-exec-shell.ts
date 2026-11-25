@@ -15,8 +15,6 @@
 // doors are called: a shelved worktree is not a removed one (design C3). The folder goes through
 // the asar-safe `rawRm`; git is never asked to remove a worktree behind the repo's guards.
 
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { rawRm } from '../raw-fs'
 import { canUnregister, removeWorktreeAdmin } from '../reaper/worktree-admin-shell'
 import type { ShelveProbe } from './shelve-eligibility-core'
@@ -31,8 +29,7 @@ import {
   type VerifyResult
 } from './shelve-shell'
 import { updateShelved, withShelved, withoutShelved, type ShelvedEntry } from './shelve-store'
-
-const run = promisify(execFile)
+import { runFile as run } from '../spawn-runner'
 
 /** What the cycle decided: the worktree, and the facts that decision was made on. */
 export interface ShelveDecision {
