@@ -213,6 +213,28 @@ describe('usage scan off the calling thread', () => {
   }, 60_000)
 })
 
+describe('usage scan worker failure', () => {
+  it('degrades to empty when the worker dies, and starts a new one on the next request', async () => {
+    writeFixture((m) => new Date(Date.now() - 3600_000 + m * 60_000).toISOString())
+    const { Worker } = await import('node:worker_threads')
+    const { buildUsageScanWorker } = await import('./support/usage-scan-worker-build')
+    const built = await buildUsageScanWorker()
+    cleanupWorker = built.cleanup
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    let started = 0
+    mod.startUsageScanWorker((data) =>
+      ++started === 1 ? new Worker('throw new Error("boom")', { eval: true }) : built.factory(data)
+    )
+
+    const failed = await mod.buildUsageCostSummary()
+    expect(failed.fileCount).toBe(0)
+    expect(failed.dailyRollup).toEqual([])
+
+    expect((await mod.buildUsageCostSummary()).fileCount).toBe(3)
+    expect(started).toBe(2)
+  }, 30_000)
+})
+
 describe('usage cost cache', () => {
   it('removes the tmp files an interrupted save left behind', async () => {
     mkdirSync(cacheDir(), { recursive: true })
