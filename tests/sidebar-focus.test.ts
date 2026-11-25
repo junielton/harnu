@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { setActivePinia, createPinia } from 'pinia'
+import { setActivePinia, createPinia, type Pinia } from 'pinia'
 import { nextTick } from 'vue'
 import { i18n } from '@renderer/i18n'
 import Sidebar from '../src/renderer/src/components/Sidebar.vue'
@@ -120,6 +120,11 @@ function installWindow(
 }
 
 let wrapper: VueWrapper | null = null
+/**
+ * The current test's stores. Mounts and lookups name it: every store action makes its own Pinia
+ * the global active one, so a late one from an earlier test would otherwise hand them old stores.
+ */
+let pinia: Pinia
 type Store = ReturnType<typeof useSessionsStore>
 
 /** A cold start of the renderer: new stores over whatever `localStorage` holds. */
@@ -129,10 +134,11 @@ async function boot(
   overrides: Record<string, unknown> = {}
 ): Promise<Store> {
   wrapper?.unmount()
-  setActivePinia(createPinia())
+  pinia = createPinia()
+  setActivePinia(pinia)
   installWindow(disk, hidden, overrides)
   const store = useSessionsStore()
-  wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
+  wrapper = mount(Sidebar, { global: { plugins: [pinia, i18n] }, attachTo: document.body })
   await store.init()
   for (const f of store.folders) f.expanded = true
   await flushPromises()
@@ -293,14 +299,15 @@ describe('AC-21 Focus on one folder', () => {
     disk[4].sessions[0].modified = old
     // Unpinned, with no recent session: stale, so the full list would not draw it.
     wrapper?.unmount()
-    setActivePinia(createPinia())
+    pinia = createPinia()
+    setActivePinia(pinia)
     installWindow(disk)
     ;(window.api as unknown as Record<string, unknown>).userProjectsList = vi.fn(async () => ({
       projects: [],
       hiddenPaths: []
     }))
     const store = useSessionsStore()
-    wrapper = mount(Sidebar, { global: { plugins: [i18n] }, attachTo: document.body })
+    wrapper = mount(Sidebar, { global: { plugins: [pinia, i18n] }, attachTo: document.body })
     await store.init()
     await flushPromises()
 
@@ -331,7 +338,7 @@ describe('AC-21 Focus on one folder', () => {
     await boot()
     vi.useFakeTimers()
     try {
-      const ui = useUiStore()
+      const ui = useUiStore(pinia)
       const head = header(APP)
       head.dispatchEvent(new MouseEvent('mouseenter'))
       head.querySelector<HTMLElement>('[data-focus-button]')!.click()
@@ -401,14 +408,14 @@ describe('AC-21 the folder menu is the other way in', () => {
     )
 
   async function openMenu(path: string): Promise<void> {
-    useUiStore().openFolderMenu({ projectPath: path, x: 10, y: 10 })
+    useUiStore(pinia).openFolderMenu({ projectPath: path, x: 10, y: 10 })
     await flushPromises()
   }
 
   /** What the menu holds, printed when the item is missing. */
   const menuReport = (store: Store): string =>
     JSON.stringify({
-      menu: useUiStore().folderMenu,
+      menu: useUiStore(pinia).folderMenu,
       focus: store.sidebarFocus,
       hidden: [...store.manuallyHiddenPaths],
       folders: store.folders.map((f) => f.path),
@@ -419,7 +426,7 @@ describe('AC-21 the folder menu is the other way in', () => {
 
   it('offers Focus for another folder and not for the focused one', async () => {
     const store = await boot()
-    const menu = mount(FolderMenu, { global: { plugins: [i18n] }, attachTo: document.body })
+    const menu = mount(FolderMenu, { global: { plugins: [pinia, i18n] }, attachTo: document.body })
 
     await openMenu(WT)
     expect(item(), menuReport(store)).toBeDefined()
@@ -431,7 +438,7 @@ describe('AC-21 the folder menu is the other way in', () => {
 
     await openMenu(WT)
     expect(item()).toBeUndefined()
-    useUiStore().closeFolderMenu()
+    useUiStore(pinia).closeFolderMenu()
     await openMenu(WEB)
     expect(item()).toBeDefined()
     menu.unmount()
@@ -537,7 +544,8 @@ describe('AC-23 Focus follows the selection and survives a restart', () => {
     localStorage.setItem(FOCUS_KEY, JSON.stringify(PORTAL))
     wrapper?.unmount()
     wrapper = null
-    setActivePinia(createPinia())
+    pinia = createPinia()
+    setActivePinia(pinia)
     installWindow(defaultDisk(), [], {
       foldersLoad: vi.fn(async () => {
         throw new Error('scan failed')
