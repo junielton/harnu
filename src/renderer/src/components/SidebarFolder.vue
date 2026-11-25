@@ -756,7 +756,7 @@ function onSelectTeammate(session: Session): void {
             <span
               data-icon-slot
               data-dsqa-part="session-trailing-icon"
-              class="flex size-3.5 shrink-0 items-center justify-center"
+              class="flex h-3.5 w-3.5 shrink-0 items-center justify-center"
             >
               <Crown
                 v-if="sessions.isSessionOrchestratorOn(s.sessionId)"
