@@ -21,6 +21,8 @@ interface TreeOptions {
   order: readonly Folder[]
   aliasFromBranchPaths: ReadonlySet<string>
   hasRows: (folder: Folder) => boolean
+  /** Repo folders closed while a text filter holds them open (their group reads `expanded`). */
+  closed?: ReadonlySet<string>
 }
 
 export function buildSidebarTree(
@@ -52,7 +54,7 @@ export function buildSidebarTree(
       key: group?.key ?? primary.path,
       group,
       label,
-      open: group?.expanded ?? primary.expanded,
+      open: group ? group.expanded && !opts.closed?.has(group.key) : primary.expanded,
       git,
       primary,
       checkouts,

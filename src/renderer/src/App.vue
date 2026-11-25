@@ -156,12 +156,12 @@ watch(anyOverlayOpen, (open) => {
 })
 
 /**
- * Arrow-key / Enter sidebar cursor navigation walks `visibleFolders` (the
- * classic tree). Drill-in mode (2026-07-19) shows a different screen at a
- * time and doesn't render that structure, so retrofitting the cursor to
- * follow it is out of scope here — these shortcuts simply no-op while drill
- * mode is on. Click-based navigation through the drill screens (SidebarDrillView)
- * works fully regardless.
+ * Arrow-key / Enter sidebar cursor navigation walks the flat checkout tree
+ * (`sessions.sidebarCursorRows`: folder headers, checkout rows, the idle-worktrees
+ * row and sessions). Drill-in mode shows a different screen at a time and doesn't
+ * render that tree, so these shortcuts simply no-op while drill mode is on.
+ * Click-based navigation through the drill screens (SidebarDrillView) works
+ * fully regardless.
  */
 function sidebarCursorNavAllowed(): boolean {
   return !sessions.drillModeEnabled
