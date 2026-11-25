@@ -14599,7 +14599,7 @@ four light themes override them.
 | `data-theme`       | `--rail-working` | `--bar-selected`    | `--text-3`                | `--text-4`                | `--warning`               |
 | ------------------ | ---------------- | ------------------- | ------------------------- | ------------------------- | ------------------------- |
 | `light`            | `#55a06c`        | `#1d4ed8` (blue)    | `#52525b` (was `#71717a`) | `#696972` (was `#a1a1aa`) | `#926100` (was `#ca8a04`) |
-| `catppuccin-latte` | `#5a8c50`        | `#1e66f5` (blue)    | `#5f627a` (was `#6c6f85`) | `#65687e` (was `#7c7f93`) | `#845500` (was `#df8e1d`) |
+| `catppuccin-latte` | `#5a8c50`        | `#1e66f5` (blue)    | `#5f627a` (was `#6c6f85`) | `#626579` (was `#7c7f93`) | `#845500` (was `#df8e1d`) |
 | `github-light`     | `#53966a`        | = `--accent` (blue) | `#59636e` (was `#656d76`) | `#646c75` (was `#818b98`) | `#9a6700` (unchanged)     |
 | `gruvbox-light`    | `#6f8c38`        | `#458588` (blue)    | `#665c54` (unchanged)     | `#72665c` (was `#7c6f64`) | `#955700` (was `#b57614`) |
 
@@ -14610,14 +14610,17 @@ What the values hold, against `--sidebar` unless said (WCAG ratio):
 | `data-theme`       | rail | rail vs tree guide | bar  | `--text-4` | `--warning` |
 | ------------------ | ---- | ------------------ | ---- | ---------- | ----------- |
 | `light`            | 3.17 | 2.14               | 6.70 | 5.43       | 5.34        |
-| `catppuccin-latte` | 3.26 | 2.18               | 4.04 | 4.50       | 5.26        |
+| `catppuccin-latte` | 3.26 | 2.18               | 4.04 | 4.72       | 5.26        |
 | `github-light`     | 3.32 | 1.76               | 4.88 | 5.00       | 4.57        |
 | `gruvbox-light`    | 3.48 | 1.76               | 3.84 | 5.06       | 5.24        |
 
-- **Text** (`--text-4`, `--warning`) is 4.5:1 or more on `--sidebar`, and never under 3:1 on `--bg`,
+- **Text** (`--text-4`, `--warning`) is 4.5:1 or more on `--sidebar` (`--text-4` keeps a margin: 4.6 or
+  more), and never under 3:1 on `--bg`,
   `--surface` or `--surface-2`. On a `--surface-2` hover row it is under 4.5 in latte (`--text-4`
-  4.14) and gruvbox (`--text-4` 4.06, `--warning` 4.20).
+  4.34) and gruvbox (`--text-4` 4.06, `--warning` 4.20).
 - **Marks** (rail, bar) are 3:1 or more on `--sidebar`.
+- **The rail and the tree guide differ by hue**, not mainly by lightness (1.76:1 to 2.18:1): their OKLab
+  a/b distance is 0.07 or more, which no grey reaches.
 - **The bar is blue** where the accent is orange: an orange bar sits between failed (red) and needs-you
   (amber) and reads as one of them. The accent itself is unchanged, so buttons and links keep the
   theme's identity.
