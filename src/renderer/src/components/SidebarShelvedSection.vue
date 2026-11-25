@@ -134,8 +134,7 @@ onBeforeUnmount(() => {
         height: `${metrics.checkoutRowHeight}px`,
         padding: '0 12px 0 14px',
         gap: `${metrics.gap}px`,
-        fontSize: '12.5px',
-        marginTop: '2px'
+        fontSize: '12.5px'
       }"
       :aria-expanded="open"
       :title="t('sidebar.shelved.tooltip', members.length, { named: { n: members.length } })"
@@ -154,7 +153,7 @@ onBeforeUnmount(() => {
           }"
         />
       </span>
-      <Archive :size="12" :stroke-width="1.6" class="shrink-0" style="margin-right: 2px" />
+      <Archive :size="12" :stroke-width="1.6" class="shrink-0" />
       <span class="eyebrow">{{ t('sidebar.shelved.label') }}</span>
       <span class="eyebrow" aria-hidden="true">·</span>
       <span class="tabular-nums" style="font-size: 10.5px">{{ members.length }}</span>
@@ -260,7 +259,7 @@ onBeforeUnmount(() => {
             :key="s.sessionId"
             data-session-row
             :data-guide-last="index === m.sessions.length - 1 || undefined"
-            class="sidebar-row sidebar-row-cv sidebar-tree-guide relative flex w-full cursor-pointer items-center text-left transition"
+            class="sidebar-row sidebar-row-cv sidebar-tree-guide sidebar-session-tint relative flex w-full cursor-pointer items-center text-left transition"
             :class="
               restoringSession(m) === s.sessionId ? 'text-text' : 'text-text-2 hover:text-text'
             "
@@ -274,24 +273,10 @@ onBeforeUnmount(() => {
               paddingRight: '12px',
               gap: `${metrics.gap}px`,
               fontSize: '12.5px',
-              fontWeight: restoringSession(m) === s.sessionId ? 500 : 400,
-              background:
-                restoringSession(m) === s.sessionId ? 'var(--color-accent-soft)' : 'transparent'
+              fontWeight: restoringSession(m) === s.sessionId ? 500 : 400
             }"
             @click="onResume(m, s)"
             @contextmenu="(e) => contextMenu.open(e, s.sessionId)"
-            @mouseenter="
-              (e) => {
-                if (restoringSession(m) !== s.sessionId)
-                  (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.025)'
-              }
-            "
-            @mouseleave="
-              (e) => {
-                if (restoringSession(m) !== s.sessionId)
-                  (e.currentTarget as HTMLElement).style.background = 'transparent'
-              }
-            "
           >
             <span
               v-if="restoringSession(m) === s.sessionId"
