@@ -20,7 +20,12 @@ import {
 } from './mcp/http-guard'
 import { classifyFailure, type FailureReason } from './hook-state'
 import { buildHookSettingsBlobJson } from './hook-settings-blob'
-import { getTaskState, ingest, type BridgeEvent as HubBridgeEvent } from './detect/task-state-hub'
+import {
+  getTaskState,
+  ingest,
+  type BridgeEvent as HubBridgeEvent,
+  type HookPayload
+} from './detect/task-state-hub'
 import {
   isDispatchable,
   parseHookRequest,
@@ -45,15 +50,19 @@ import {
 import { interceptActivePaths } from './user-projects'
 import { registerApprovalResolver, closeApprovals } from './approval-resolver'
 import { registerSentinel } from './sentinel-resolver'
-import { STEWARD_ROUTES, type StewardRoute } from './steward-routes'
+import { DOC_READER_ROUTE, answerDocReadHook, minLinesFromRoute } from './doc-reader/hook'
 
 // The public surface moved to the hub; re-exported so no importer changes (ARB-5).
 export {
   addTaskEventObserver,
   getTaskStates,
   pruneTaskState,
-  type HookTaskEvent
+  type HookTaskEvent,
+  type HookPayload
 } from './detect/task-state-hub'
+
+/** Missions v4 S-16b: the path prefix of the summary route, `/mission/<token>/summary`. */
+const MISSION_ROUTE = 'mission'
 
 /** Internal dispatch deadline. STRICTLY < HOOK_TIMEOUT_S*1000 (hook-installer.ts:22 = 5s). */
 const RESPONDER_DEADLINE_MS = 3500
@@ -94,10 +103,15 @@ export function startHookServer(
     registry?: { list: () => readonly Resolver[] }
     deadlineMs?: number
     /**
-     * Campaign ch.5a: the answer to a steward hook (`POST /steward/<token>/<route>`). Returns the
-     * text the hook prints. Absent = the routes answer empty.
+     * T2: the answer to a doc-reader gate hook (`POST /docread/<token>/<minLines>`), a
+     * `PreToolUse` output JSON. Absent = the route answers `{}` (allow).
      */
-    steward?: (route: StewardRoute, body: Record<string, unknown>) => Promise<string>
+    docRead?: (minLines: number, body: Record<string, unknown>) => Promise<string>
+    /**
+     * Missions v4 S-16b: the answer to the summary hook (`POST /mission/<token>/summary`), the text the
+     * hook prints after a compaction. Plain text. Absent, or a throw = the route prints nothing.
+     */
+    missionSummary?: (body: Record<string, unknown>) => Promise<string>
   } = {}
 ): Promise<StartedServer> {
   // Defaults preserve pure-observer behavior, so existing call-sites/tests that
@@ -115,8 +129,16 @@ export function startHookServer(
         res.end(body)
       }
       const parts = (req.url ?? '').split('/').filter(Boolean) // ['hook', token, event, tag]
-      const isSteward = parts[0] === 'steward' // ['steward', token, route]
-      if (req.method !== 'POST' || (parts[0] !== 'hook' && !isSteward)) return respond(404)
+      // Missions v4 S-38: the steward is gone, but a session started before the upgrade may still run
+      // the hooks it installed. They are answered with nothing (no steward route is served any more).
+      const isRetiredRoute = parts[0] === 'steward' // ['steward', token, route]
+      const isDocRead = parts[0] === DOC_READER_ROUTE // ['docread', token, minLines]
+      const isMission = parts[0] === MISSION_ROUTE // ['mission', token, 'summary']
+      if (
+        req.method !== 'POST' ||
+        (parts[0] !== 'hook' && !isRetiredRoute && !isDocRead && !isMission)
+      )
+        return respond(404)
       // http-guard parity (lesson 004): DNS-rebind guard on Host + Origin, and a
       // constant-time token compare (no early-exit timing side-channel). The
       // token is a per-boot 122-bit randomUUID in the path, so this is
@@ -127,9 +149,35 @@ export function startHookServer(
       if (origin !== undefined && !isAllowedOrigin(origin)) return respond(403)
       if (!constantTimeEqual(parts[1] ?? '', token)) return respond(403)
 
-      if (isSteward) {
-        const route = STEWARD_ROUTES.find((r) => r === parts[2])
-        if (!route) return respond(404)
+      if (isDocRead) {
+        // T2: the doc-reader read gate. Fail-open in everything: a bad body, a throwing
+        // handler or no handler at all answers `{}`, which lets the tool call through.
+        const minLines = minLinesFromRoute(parts[2])
+        let rawBody = ''
+        req.on('data', (c) => {
+          rawBody += c
+          if (rawBody.length > 1 << 20) req.destroy()
+        })
+        req.on('end', async () => {
+          let out = '{}'
+          try {
+            const parsed = JSON.parse(rawBody || '{}')
+            if (parsed && typeof parsed === 'object' && opts.docRead)
+              out = await opts.docRead(minLines, parsed as Record<string, unknown>)
+          } catch (err) {
+            console.warn('[doc-reader] gate failed (allowing):', err)
+            out = '{}'
+          }
+          respond(200, out)
+        })
+        req.on('error', () => respond(400))
+        return
+      }
+
+      if (isMission) {
+        // S-16b: the mission summary a `SessionStart` (compact) command hook fetches. Fails soft in
+        // everything: a bad body, a throwing handler or no handler prints nothing.
+        if (parts[2] !== 'summary' || parts.length !== 3) return respond(404)
         let rawBody = ''
         req.on('data', (c) => {
           rawBody += c
@@ -139,20 +187,28 @@ export function startHookServer(
           let payload: Record<string, unknown> = {}
           try {
             const parsed = JSON.parse(rawBody || '{}')
-            if (parsed && typeof parsed === 'object') payload = parsed as Record<string, unknown>
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+              payload = parsed as Record<string, unknown>
           } catch {
             payload = {}
           }
           let text = ''
           try {
-            text = (await opts.steward?.(route, payload)) ?? ''
+            text = (await opts.missionSummary?.(payload)) ?? ''
           } catch (err) {
-            console.warn(`[steward] ${route} route failed (answering empty):`, err)
+            console.warn('[mission] summary route failed (answering empty):', err)
           }
           res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
           res.end(text)
         })
         req.on('error', () => respond(400))
+        return
+      }
+
+      if (isRetiredRoute) {
+        req.resume()
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('')
         return
       }
 
@@ -195,6 +251,18 @@ export function startHookServer(
         // `agent_id` marks a subagent's own tool call; the main thread never sends one.
         const agentId =
           typeof body.agent_id === 'string' && body.agent_id !== '' ? body.agent_id : undefined
+        const str = (v: unknown): string | undefined =>
+          typeof v === 'string' && v !== '' ? v : undefined
+        const payload: HookPayload = {
+          ...(str(body.transcript_path) !== undefined
+            ? { transcriptPath: str(body.transcript_path) }
+            : {}),
+          ...(str(body.cwd) !== undefined ? { cwd: str(body.cwd) } : {}),
+          ...(str(body.prompt) !== undefined ? { prompt: str(body.prompt) } : {}),
+          ...(str(body.last_assistant_message) !== undefined
+            ? { lastAssistantMessage: str(body.last_assistant_message) }
+            : {})
+        }
         if (sessionId && event)
           onEvent({
             sessionId,
@@ -203,7 +271,8 @@ export function startHookServer(
             ts: Date.now(),
             failureReason,
             resetsAt,
-            ...(agentId !== undefined ? { agentId } : {})
+            ...(agentId !== undefined ? { agentId } : {}),
+            ...(Object.keys(payload).length > 0 ? { payload } : {})
           })
 
         // ---- Dispatch branch (responder spec §4.3) — fail-open in EVERYTHING ----
@@ -325,11 +394,11 @@ export function hookSettingsBlobJson(): string | null {
 }
 
 /**
- * Campaign ch.5a: where the steward's hooks point — the live hook bridge's loopback port and its
- * per-boot token — or `null` while the bridge is not listening. Sync, like
- * {@link hookSettingsBlobJson}. The token is a secret: never log the return value.
+ * Where a hook points: the live hook bridge's loopback port and its per-boot token — or `null`
+ * while the bridge is not listening. Sync, like {@link hookSettingsBlobJson}. The token is a secret:
+ * never log the return value.
  */
-export function getStewardHookEndpoint(): { port: number; token: string } | null {
+export function getHookBridgeEndpoint(): { port: number; token: string } | null {
   return currentPort && currentToken ? { port: currentPort, token: currentToken } : null
 }
 
@@ -399,14 +468,16 @@ export function handleBridgeEvent(ev: BridgeEvent, getWindow: () => BrowserWindo
   ingest({ ...ev, source: 'hook' }, getWindow)
 }
 
-/** Campaign ch.5a: who answers a steward hook. Set from `index.ts`, so this file imports no mission code. */
-let stewardRouteHandler:
-  ((route: StewardRoute, body: Record<string, unknown>) => Promise<string>) | null = null
+/**
+ * Missions v4 S-16b: who answers the summary hook. Set from `index.ts`, so this file imports no mission
+ * code. Null = the route prints nothing.
+ */
+let missionSummaryHandler: ((body: Record<string, unknown>) => Promise<string>) | null = null
 
-export function setStewardRouteHandler(
-  fn: ((route: StewardRoute, body: Record<string, unknown>) => Promise<string>) | null
+export function setMissionSummaryHandler(
+  fn: ((body: Record<string, unknown>) => Promise<string>) | null
 ): void {
-  stewardRouteHandler = fn
+  missionSummaryHandler = fn
 }
 
 export async function registerHookBridge(getWindow: () => BrowserWindow | null): Promise<void> {
@@ -423,7 +494,8 @@ export async function registerHookBridge(getWindow: () => BrowserWindow | null):
   const started = await startHookServer((ev) => handleBridgeEvent(ev, getWindow), currentToken, {
     getMode,
     registry: responderRegistry,
-    steward: async (route, body) => (await stewardRouteHandler?.(route, body)) ?? ''
+    docRead: (minLines, body) => answerDocReadHook(minLines, body),
+    missionSummary: async (body) => (await missionSummaryHandler?.(body)) ?? ''
   })
   serverClose = started.close
   currentPort = started.port

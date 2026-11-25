@@ -1,15 +1,16 @@
 /**
  * T602 — `one-by-one`, `grill-me` and `step-by-step`, promoted from personal skills
  * to bundled Harnu skills whose answers persist (in the spec, in project memory, as
- * mission checks) instead of dying in the transcript.
+ * mission criteria and blockers) instead of dying in the transcript.
  *
  * Same silent-breakage guards as `bundled-report-skills.test.ts` (parse, no personal
  * path, catalog + user-doc rows, English only), plus:
  *  - AC-2: a before/after fixture spec — the documented row transform touches only
  *    the open `D-n` rows' status cell, and the memory line has the documented shape;
  *  - AC-3: grill-me's placement rules and closing list are in the text;
- *  - AC-4: a mission fixture — `mission_add_check`'s own core (`applyAddCheck`) run
- *    twice with the same labels adds no duplicate and never ticks.
+ *  - AC-4: step-by-step adds each action as an operator criterion and never ticks one
+ *    (Missions v4 S-31 moved this from the v3 check; its payload is parsed in
+ *    `skill-others-v4.test.ts`).
  * A skill is prose, so what is graded is the contract the text states and the data
  * contract it leans on; the conversational behavior itself is reviewed by hand.
  */
@@ -18,7 +19,6 @@ import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 
 import { parseSkillFrontmatter } from '../src/main/bundled-skills-core'
-import { applyAddCheck, buildMissionFileContent, type Mission } from '../src/main/mission-core'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 const SKILLS = path.join(REPO_ROOT, 'resources', 'skills', 'skills')
@@ -124,12 +124,11 @@ describe('one-by-one — resolved rows persist (AC-2)', () => {
     )
   })
 
-  it('refuses to decide, and never writes chosen itself', () => {
+  it('refuses to decide, and never clears the operator’s blocker itself', () => {
     const f = flat(skill)
     expect(f).toMatch(/You never answer a decision yourself/)
-    expect(f).toMatch(/You never write `chosen`/)
-    expect(f).toContain('CONTROLLED_FIELD')
-    expect(f).toMatch(/Choose…/)
+    expect(f).toMatch(/you never call `mission_clear_blocker` on it \(refused `OPERATOR_ONLY`\)/)
+    expect(f).toMatch(/Done, continue/)
   })
 
   it('serves one question per message and creates the whole list first', () => {
@@ -166,83 +165,25 @@ describe('grill-me — everything raised is placed or listed (AC-3)', () => {
   })
 })
 
-describe('step-by-step — every action is a check, none is ticked (AC-4)', () => {
+describe('step-by-step — every action is an operator criterion, none is ticked (AC-4)', () => {
   const skill = read(SKILLS, 'step-by-step', 'SKILL.md')
   const f = flat(skill)
 
-  it('adds each action with mission_add_check, deduped by label', () => {
-    expect(skill).toMatch(/mission_add_check\(\{ folder, missionId, stepId/)
-    expect(f).toMatch(/dedupes by label/)
-    expect(f).toMatch(/Re-running with the same list adds nothing/)
+  it('adds each action with mission_add_ac, by the operator, and reads before adding', () => {
+    expect(f).toMatch(/`mission_add_ac`/)
+    expect(f).toMatch(/"by": "operator"/)
+    expect(f).toMatch(/Harnu does not dedupe a criterion/)
+    expect(f).toMatch(/read the step's criteria first/)
   })
 
-  it('never ticks a check and holds that as a hard gate', () => {
-    expect(f).toMatch(/Never tick a check/)
-    expect(f).toMatch(/never describe a check as done because the operator said "done" in chat/)
-    expect(skill).not.toMatch(/ticked:\s*true/)
+  it('never ticks a criterion and holds that as a hard gate', () => {
+    expect(f).toMatch(/Never tick a criterion/)
+    expect(f).toMatch(/never describe a criterion as done because the operator said "done" in chat/)
+    expect(skill).not.toMatch(/settled:\s*true/)
   })
 
-  it('reports unticked checks from mission_get, not from the chat', () => {
-    expect(f).toContain('steps[].checks[].ticked')
-    expect(f).toMatch(/Checks still unticked/)
-  })
-
-  const mission = (): Mission => {
-    const at = '2026-10-31T10:00:00.000Z'
-    const m: Mission = {
-      id: 'mnt-0000abcd',
-      slug: 'fixture',
-      folder: '/repo',
-      owner: { sessionId: '11111111-2222-4333-8444-555555555555', folder: '/repo' },
-      status: 'active',
-      declaredEnd: { kind: 'other', target: 'actions done', evidence: 'checks ticked' },
-      steps: [
-        {
-          id: 'stp-1',
-          ordinal: 1,
-          kind: 'custom',
-          title: 'Ship the tunnel',
-          verification: 'human',
-          proof: 'unproven',
-          links: [],
-          blockers: []
-        },
-        {
-          id: 'stp-2',
-          ordinal: 2,
-          kind: 'fixed-end',
-          title: 'Delivered and verified',
-          verification: 'verifier',
-          proof: 'unproven',
-          links: [],
-          blockers: []
-        }
-      ],
-      blockers: [],
-      openQuestions: [],
-      createdAt: at,
-      updatedAt: at,
-      provenance: { author: 'agent', at }
-    }
-    buildMissionFileContent(m) // the fixture must be a valid mission
-    return m
-  }
-
-  it('re-running the same list adds no duplicate and never ticks (mission fixture)', () => {
-    const labels = [
-      'Create the Access service token (Cloudflare)',
-      'Point the DNS route at the tunnel',
-      'Create the Access service token (Cloudflare)' // the list repeats itself
-    ]
-    let m = mission()
-    for (const l of labels) m = applyAddCheck(m, 'stp-1', l, 'agent', '2026-10-31T10:01:00.000Z')
-    const first = m.steps[0].checks!
-    expect(first.map((c) => c.label)).toEqual([labels[0], labels[1]])
-
-    // A second pass over the same list — different case and spacing included.
-    for (const l of labels) m = applyAddCheck(m, 'stp-1', ` ${l.toUpperCase()}  `, 'agent', 'x')
-    expect(m.steps[0].checks).toEqual(first)
-    expect(m.steps[0].checks!.every((c) => c.ticked === undefined)).toBe(true)
-    expect(m.steps[0].checks!.every((c) => c.source === 'agent')).toBe(true)
+  it('reports open criteria from mission_get, not from the chat', () => {
+    expect(f).toContain('`criteria[].settled` on each step')
+    expect(f).toMatch(/Criteria still open/)
   })
 })

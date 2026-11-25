@@ -1,0 +1,1780 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — Guided test walk</title>
+    <style>
+      :root {
+        --ix-bg: #f6f6f7;
+        --ix-fg: #1b1b1f;
+        --ix-muted: #6b6b76;
+        --ix-line: #dcdce2;
+        --ix-card: #fff;
+        --ix-accent: #2f5bea;
+        --ix-draft: #b7791f;
+        --ix-ok: #2f855a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ix-bg: #121216;
+          --ix-fg: #ececf1;
+          --ix-muted: #9a9aa6;
+          --ix-line: #2b2b33;
+          --ix-card: #1b1b21;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        color: var(--ix-fg);
+        background: var(--ix-bg);
+      }
+      header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--ix-line);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ix-draft);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status[data-status='approved'] {
+        background: var(--ix-ok);
+      }
+      nav.toc {
+        font-size: 13px;
+        color: var(--ix-muted);
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      nav.toc a {
+        color: inherit;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        margin-bottom: 40px;
+      }
+      section > h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .prose {
+        max-width: 76ch;
+      }
+      .prose p {
+        margin: 0 0 10px;
+      }
+      a {
+        color: var(--ix-accent);
+      }
+      .controls {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 10px 24px;
+        background: var(--ix-card);
+        border-bottom: 1px solid var(--ix-line);
+        font-size: 13px;
+      }
+      .controls .grp {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .controls .grp > span {
+        color: var(--ix-muted);
+      }
+      .controls button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--ix-line);
+        background: transparent;
+        color: var(--ix-fg);
+        cursor: pointer;
+      }
+      .controls button[aria-pressed='true'] {
+        background: var(--ix-accent);
+        border-color: var(--ix-accent);
+        color: #fff;
+      }
+      .screen {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .screen h3 {
+        margin: 0 0 4px;
+        font-size: 15px;
+      }
+      .screen h3 code {
+        font-size: 12px;
+        color: var(--ix-muted);
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .screen .notes {
+        font-size: 13px;
+        color: var(--ix-muted);
+        margin: 0 0 14px;
+        max-width: 90ch;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+        gap: 18px;
+        align-items: start;
+      }
+      .fig {
+        margin: 0;
+        border: 1px solid var(--ix-line);
+        border-radius: 8px;
+        padding: 10px;
+      }
+      .fig figcaption {
+        font-size: 13px;
+        display: flex;
+        gap: 10px;
+        justify-content: space-between;
+      }
+      .fig .proves {
+        font-size: 12.5px;
+        color: var(--ix-muted);
+        margin: 4px 0 8px;
+      }
+      .fig img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--ix-line);
+        border-radius: 6px;
+      }
+      body[data-w='560'] .grid {
+        grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+      }
+      .screen .approval {
+        font-size: 12px;
+        margin: 12px 0 0;
+        color: var(--ix-muted);
+      }
+      .flow {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+      }
+      .flow h3 {
+        margin: 0;
+        font-size: 14px;
+      }
+      .flow ol {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 0;
+        margin: 8px 0 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .flow li {
+        counter-increment: step;
+        font-size: 13px;
+      }
+      .flow li::before {
+        content: counter(step) '. ';
+        color: var(--ix-muted);
+      }
+      .flow li + li::before {
+        content: '→ ' counter(step) '. ';
+      }
+      .flow li small {
+        color: var(--ix-muted);
+      }
+    </style>
+  </head>
+  <body data-w="560">
+    <header>
+      <h1>Guided test walk · card T765</h1>
+      <span class="status" data-status="draft">draft</span>
+      <nav class="toc">
+        <a href="#contexto">Context</a><a href="#telas">Screens</a><a href="#fluxos">Flows</a
+        ><a href="../MOCKUP-REVIEW.md">Review notes</a>
+      </nav>
+    </header>
+    <div class="controls" aria-label="Capture options">
+      <div class="grp" data-ctl="w">
+        <span>Pane width</span><button data-v="560" aria-pressed="true">560 wide</button
+        ><button data-v="360" aria-pressed="false">360 narrow</button>
+      </div>
+      <div class="grp" data-ctl="theme">
+        <span>Theme</span><button data-v="dark" aria-pressed="true">Dark</button
+        ><button data-v="light" aria-pressed="false">Light</button>
+      </div>
+      <div class="grp" data-ctl="lang">
+        <span>Language</span><button data-v="en" aria-pressed="true">EN</button
+        ><button data-v="pt-BR" aria-pressed="false">PT-BR</button>
+      </div>
+    </div>
+    <main>
+      <section id="contexto">
+        <h2>Context</h2>
+        <div class="prose">
+          <p>
+            <b>What this is.</b> A helper-stack pane that walks the operator through a feature, a PR
+            or a mission, one check at a time. It is the <code>step-by-step</code> skill’s walk
+            moved from chat to a panel. <b>A walk is its own object</b> (a source, a list of checks,
+            a run history, saved per repo); a Mission is just one place that can start one. Two
+            sample walks: the Mission dropdown (9 checks, source: a mission) and a CSV export (6
+            checks, source: PR #48 or the feature just built).
+          </p>
+          <p>
+            <b>How to read it.</b> No iframes (they render blank in Harnu’s own page panes). Every
+            state below is a PNG capture at the width, theme and language you pick in the bar above;
+            <i>open alone ↗</i> opens the live screen with the same choices, and the live screen has
+            its own EN / PT-BR / Dark / Light switch at the bottom right. In a live screen every
+            <code>data-goto</code> works: <i>walk it ↗</i> under Flows clicks through like the app.
+            Serve the folder with <code>python3 -m http.server</code> inside <code>mockup/</code>,
+            or open the files directly.
+          </p>
+          <p>
+            <b>Look.</b> The tokens, buttons, cards and the entry dropdown are the Mission dropdown
+            mockup’s, so the two sit side by side. Nothing here is a new token.
+          </p>
+        </div>
+      </section>
+      <section id="telas">
+        <h2>Screens</h2>
+        <article
+          class="screen"
+          data-screen="entry"
+          data-states="step-open milestone mission closed"
+        >
+          <h3>
+            Entry from a mission: Test it on a step, a milestone or the whole mission
+            <code>entry</code>
+          </h3>
+          <p class="notes">
+            The Mission dropdown (reused from the dropdown mockup) with Test it at three levels: an
+            open step (Criteria row), a milestone (next to Ask) and the whole mission (footer, at
+            the end). A mission is ONE source of a walk, not its home. The walk opens in the helper
+            stack, never inside the dropdown.
+          </p>
+          <div class="grid">
+            <figure class="fig">
+              <figcaption>
+                <b>step-open</b>
+                <a
+                  data-live="entry.html?state=step-open"
+                  href="screens/entry.html?state=step-open"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                A mission is ONE source of a walk. Test it on the Criteria row of an open step: a
+                compact button that opens the walk in the helper stack, never inside the dropdown.
+              </p>
+              <a
+                href="screens/entry.html?state=step-open"
+                target="_blank"
+                data-live="entry.html?state=step-open"
+                ><img
+                  loading="lazy"
+                  data-shot="entry-step-open"
+                  alt="step-open"
+                  src="shots/entry-step-open-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>milestone</b>
+                <a
+                  data-live="entry.html?state=milestone"
+                  href="screens/entry.html?state=milestone"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                Test it on a milestone, next to Ask on the milestone summary line. The walk covers
+                that milestone only.
+              </p>
+              <a
+                href="screens/entry.html?state=milestone"
+                target="_blank"
+                data-live="entry.html?state=milestone"
+                ><img
+                  loading="lazy"
+                  data-shot="entry-milestone"
+                  alt="milestone"
+                  src="shots/entry-milestone-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>mission</b>
+                <a
+                  data-live="entry.html?state=mission"
+                  href="screens/entry.html?state=mission"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                Test the whole mission, in the dropdown footer, shown at the end of a mission (every
+                step done, ready to close).
+              </p>
+              <a
+                href="screens/entry.html?state=mission"
+                target="_blank"
+                data-live="entry.html?state=mission"
+                ><img
+                  loading="lazy"
+                  data-shot="entry-mission"
+                  alt="mission"
+                  src="shots/entry-mission-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>closed</b>
+                <a
+                  data-live="entry.html?state=closed"
+                  href="screens/entry.html?state=closed"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">The dropdown closed: the pill is the door, nothing else changes.</p>
+              <a
+                href="screens/entry.html?state=closed"
+                target="_blank"
+                data-live="entry.html?state=closed"
+                ><img
+                  loading="lazy"
+                  data-shot="entry-closed"
+                  alt="closed"
+                  src="shots/entry-closed-w560-dark-en.png"
+              /></a>
+            </figure>
+          </div>
+          <p class="approval">Approval: <strong>draft</strong></p>
+        </article>
+        <article
+          class="screen"
+          data-screen="walk"
+          data-states="roadmap pr step step-image lightbox failed failed-retry check-failed explain-more explain-teach did-not-understand working skipped-at-end close-out run-past rerun-roadmap rerun empty error"
+        >
+          <h3>The walk pane (helper stack) <code>walk</code></h3>
+          <p class="notes">
+            One pane, 19 states. 560 = a wide pane, 360 = a narrow one. ?walk=mission|export and
+            ?src=mission|milestone|all|pr|feature pick the sample walk and its source (the source
+            line under the pane header); ?n=1..3 picks the served check; ?kind=next on working shows
+            the prepare variant. The EN / PT-BR / Dark / Light switch at the bottom right of a frame
+            is mockup chrome, not product.
+          </p>
+          <div class="grid">
+            <figure class="fig">
+              <figcaption>
+                <b>roadmap</b>
+                <a
+                  data-live="walk.html?state=roadmap"
+                  href="screens/walk.html?state=roadmap"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The whole list exists before step 1. Done steps carry their evidence; each open one
+                says how it will be checked. One primary action: Start with 1.
+              </p>
+              <a
+                href="screens/walk.html?state=roadmap"
+                target="_blank"
+                data-live="walk.html?state=roadmap"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-roadmap"
+                  alt="roadmap"
+                  src="shots/walk-roadmap-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>pr</b>
+                <a data-live="walk.html?state=pr" href="screens/walk.html?state=pr" target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                A walk started from a PR: the source line reads PR #48 · title · author (a link,
+                with a copy of the URL). The checks come from the PR diff, description and linked
+                task. Writes nothing to any mission.
+              </p>
+              <a href="screens/walk.html?state=pr" target="_blank" data-live="walk.html?state=pr"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-pr"
+                  alt="pr"
+                  src="shots/walk-pr-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>step</b>
+                <a
+                  data-live="walk.html?state=step"
+                  href="screens/walk.html?state=step"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                One step on screen: Check 3 of 9, Do (a command is a paste-ready block with Copy),
+                Where (clickable links with a copy), You should see, I will check. The action bar is
+                pinned; Done is primary and Enter does it.
+              </p>
+              <a
+                href="screens/walk.html?state=step"
+                target="_blank"
+                data-live="walk.html?state=step"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-step"
+                  alt="step"
+                  src="shots/walk-step-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>step-image</b>
+                <a
+                  data-live="walk.html?state=step-image"
+                  href="screens/walk.html?state=step-image"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The same step with the expected-result image large and an Enlarge hint. Clicking the
+                image opens the lightbox.
+              </p>
+              <a
+                href="screens/walk.html?state=step-image"
+                target="_blank"
+                data-live="walk.html?state=step-image"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-step-image"
+                  alt="step-image"
+                  src="shots/walk-step-image-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>lightbox</b>
+                <a
+                  data-live="walk.html?state=lightbox"
+                  href="screens/walk.html?state=lightbox"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The image over the whole pane (like the Image lightbox). Esc or the X closes it back
+                to the step.
+              </p>
+              <a
+                href="screens/walk.html?state=lightbox"
+                target="_blank"
+                data-live="walk.html?state=lightbox"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-lightbox"
+                  alt="lightbox"
+                  src="shots/walk-lightbox-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>failed</b>
+                <a
+                  data-live="walk.html?state=failed"
+                  href="screens/walk.html?state=failed"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                Failed: one line and a pasted screenshot, nothing else. Send hands it to the
+                session.
+              </p>
+              <a
+                href="screens/walk.html?state=failed"
+                target="_blank"
+                data-live="walk.html?state=failed"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-failed"
+                  alt="failed"
+                  src="shots/walk-failed-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>failed-retry</b>
+                <a
+                  data-live="walk.html?state=failed-retry"
+                  href="screens/walk.html?state=failed-retry"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The agent gives ONE correction and the same step is served again. No list of causes.
+                A quiet door to the step builder after a second failure.
+              </p>
+              <a
+                href="screens/walk.html?state=failed-retry"
+                target="_blank"
+                data-live="walk.html?state=failed-retry"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-failed-retry"
+                  alt="failed-retry"
+                  src="shots/walk-failed-retry-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>check-failed</b>
+                <a
+                  data-live="walk.html?state=check-failed"
+                  href="screens/walk.html?state=check-failed"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The operator said Done, the agent read-only check disagrees. Evidence (ran,
+                expected, found) with copy on every value. Follow anyway (unverified) or Try again.
+              </p>
+              <a
+                href="screens/walk.html?state=check-failed"
+                target="_blank"
+                data-live="walk.html?state=check-failed"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-check-failed"
+                  alt="check-failed"
+                  src="shots/walk-check-failed-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>explain-more</b>
+                <a
+                  data-live="walk.html?state=explain-more"
+                  href="screens/walk.html?state=explain-more"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                Explain more appends why it matters and 3 extra checks UNDER the current step. The
+                position (Check 3 of 9) and the step above do not move.
+              </p>
+              <a
+                href="screens/walk.html?state=explain-more"
+                target="_blank"
+                data-live="walk.html?state=explain-more"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-explain-more"
+                  alt="explain-more"
+                  src="shots/walk-explain-more-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>explain-teach</b>
+                <a
+                  data-live="walk.html?state=explain-teach"
+                  href="screens/walk.html?state=explain-teach"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The teaching lens, for a walk-through of a feature just built: Explain more teaches.
+                What it does, where it lives (file:line links), the idea behind it (a link), why it
+                behaves this way. The edge-case checks fold under it. The position does not move.
+              </p>
+              <a
+                href="screens/walk.html?state=explain-teach"
+                target="_blank"
+                data-live="walk.html?state=explain-teach"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-explain-teach"
+                  alt="explain-teach"
+                  src="shots/walk-explain-teach-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>did-not-understand</b>
+                <a
+                  data-live="walk.html?state=did-not-understand"
+                  href="screens/walk.html?state=did-not-understand"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The step re-explained more simply, same position, same actions. The agent never
+                advances and never answers &quot;as I said above&quot;.
+              </p>
+              <a
+                href="screens/walk.html?state=did-not-understand"
+                target="_blank"
+                data-live="walk.html?state=did-not-understand"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-did-not-understand"
+                  alt="did-not-understand"
+                  src="shots/walk-did-not-understand-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>working</b>
+                <a
+                  data-live="walk.html?state=working"
+                  href="screens/walk.html?state=working"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The agent runs its read-only check (or prepares the next step). One quiet line, no
+                spinner wall, no actions to press. The jump chip at the bottom left is mockup only.
+              </p>
+              <a
+                href="screens/walk.html?state=working"
+                target="_blank"
+                data-live="walk.html?state=working"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-working"
+                  alt="working"
+                  src="shots/walk-working-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>skipped-at-end</b>
+                <a
+                  data-live="walk.html?state=skipped-at-end"
+                  href="screens/walk.html?state=skipped-at-end"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                Skipped checks resurface before the close, each with a Check now, or the operator
+                closes out leaving them open.
+              </p>
+              <a
+                href="screens/walk.html?state=skipped-at-end"
+                target="_blank"
+                data-live="walk.html?state=skipped-at-end"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-skipped-at-end"
+                  alt="skipped-at-end"
+                  src="shots/walk-skipped-at-end-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>close-out</b>
+                <a
+                  data-live="walk.html?state=close-out"
+                  href="screens/walk.html?state=close-out"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                One line per step and HOW it was verified (you confirmed + my check agreed, nothing
+                to check from here, verified earlier, followed anyway unverified, skipped). Open
+                criteria link to where to tick them. A copyable summary.
+              </p>
+              <a
+                href="screens/walk.html?state=close-out"
+                target="_blank"
+                data-live="walk.html?state=close-out"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-close-out"
+                  alt="close-out"
+                  src="shots/walk-close-out-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>run-past</b>
+                <a
+                  data-live="walk.html?state=run-past"
+                  href="screens/walk.html?state=run-past"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                A past run opened read-only: outcome per check, the operator note and screenshot on
+                the failed one, a run selector, Re-run and Export markdown.
+              </p>
+              <a
+                href="screens/walk.html?state=run-past"
+                target="_blank"
+                data-live="walk.html?state=run-past"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-run-past"
+                  alt="run-past"
+                  src="shots/walk-run-past-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>rerun-roadmap</b>
+                <a
+                  data-live="walk.html?state=rerun-roadmap"
+                  href="screens/walk.html?state=rerun-roadmap"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                A re-run: the same checks as a fresh run, each with a quiet &quot;last time&quot;
+                (passed, failed, skipped). The source line carries a &quot;Re-run · run 4&quot;
+                chip.
+              </p>
+              <a
+                href="screens/walk.html?state=rerun-roadmap"
+                target="_blank"
+                data-live="walk.html?state=rerun-roadmap"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-rerun-roadmap"
+                  alt="rerun-roadmap"
+                  src="shots/walk-rerun-roadmap-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>rerun</b>
+                <a
+                  data-live="walk.html?state=rerun"
+                  href="screens/walk.html?state=rerun"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                A re-run in progress: the same check, with a quiet &quot;Last time&quot; line under
+                the title; a check that failed last time shows what was written then.
+              </p>
+              <a
+                href="screens/walk.html?state=rerun"
+                target="_blank"
+                data-live="walk.html?state=rerun"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-rerun"
+                  alt="rerun"
+                  src="shots/walk-rerun-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>empty</b>
+                <a
+                  data-live="walk.html?state=empty"
+                  href="screens/walk.html?state=empty"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                No walk loaded: says how one starts (Test it on a step) and offers the way back to
+                the Mission.
+              </p>
+              <a
+                href="screens/walk.html?state=empty"
+                target="_blank"
+                data-live="walk.html?state=empty"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-empty"
+                  alt="empty"
+                  src="shots/walk-empty-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>error</b>
+                <a
+                  data-live="walk.html?state=error"
+                  href="screens/walk.html?state=error"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The session is gone. Progress is saved (survives reload, park, compaction), so it
+                says so, offers Resume the session and a copyable error.
+              </p>
+              <a
+                href="screens/walk.html?state=error"
+                target="_blank"
+                data-live="walk.html?state=error"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-error"
+                  alt="error"
+                  src="shots/walk-error-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>The feature walk roadmap (source: the feature just built)</b>
+                <a
+                  data-live="walk.html?state=roadmap&walk=export&src=feature"
+                  href="screens/walk.html?state=roadmap&walk=export&src=feature"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">A variant of a state above (same screen, another sample step).</p>
+              <a
+                href="screens/walk.html?state=roadmap&walk=export&src=feature"
+                target="_blank"
+                data-live="walk.html?state=roadmap&walk=export&src=feature"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-roadmap-feature"
+                  alt="The feature walk roadmap (source: the feature just built)"
+                  src="shots/walk-roadmap-feature-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>A PR walk, check 2 (a read-only check)</b>
+                <a
+                  data-live="walk.html?state=step&walk=export&src=pr&n=2"
+                  href="screens/walk.html?state=step&walk=export&src=pr&n=2"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">A variant of a state above (same screen, another sample step).</p>
+              <a
+                href="screens/walk.html?state=step&walk=export&src=pr&n=2"
+                target="_blank"
+                data-live="walk.html?state=step&walk=export&src=pr&n=2"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-step-export"
+                  alt="A PR walk, check 2 (a read-only check)"
+                  src="shots/walk-step-export-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>Close-out of a PR walk: no mission criterion, saved in Walks</b>
+                <a
+                  data-live="walk.html?state=close-out&walk=export&src=pr"
+                  href="screens/walk.html?state=close-out&walk=export&src=pr"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">A variant of a state above (same screen, another sample step).</p>
+              <a
+                href="screens/walk.html?state=close-out&walk=export&src=pr"
+                target="_blank"
+                data-live="walk.html?state=close-out&walk=export&src=pr"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-close-out-pr"
+                  alt="Close-out of a PR walk: no mission criterion, saved in Walks"
+                  src="shots/walk-close-out-pr-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b
+                  >Check 1: a command block with Copy, a PR link, a branch value, a read-only
+                  check</b
+                >
+                <a
+                  data-live="walk.html?state=step&n=1"
+                  href="screens/walk.html?state=step&n=1"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">A variant of a state above (same screen, another sample step).</p>
+              <a
+                href="screens/walk.html?state=step&n=1"
+                target="_blank"
+                data-live="walk.html?state=step&n=1"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-step-n1"
+                  alt="Check 1: a command block with Copy, a PR link, a branch value, a read-only check"
+                  src="shots/walk-step-n1-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>Check 2: a read-only check with its expected value</b>
+                <a
+                  data-live="walk.html?state=step&n=2"
+                  href="screens/walk.html?state=step&n=2"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">A variant of a state above (same screen, another sample step).</p>
+              <a
+                href="screens/walk.html?state=step&n=2"
+                target="_blank"
+                data-live="walk.html?state=step&n=2"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-step-n2"
+                  alt="Check 2: a read-only check with its expected value"
+                  src="shots/walk-step-n2-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>Check 1 right after Copy: the button says Copied</b>
+                <a
+                  data-live="walk.html?state=step&n=1&copied=1"
+                  href="screens/walk.html?state=step&n=1&copied=1"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">A variant of a state above (same screen, another sample step).</p>
+              <a
+                href="screens/walk.html?state=step&n=1&copied=1"
+                target="_blank"
+                data-live="walk.html?state=step&n=1&copied=1"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-step-n1-copied"
+                  alt="Check 1 right after Copy: the button says Copied"
+                  src="shots/walk-step-n1-copied-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>Working, preparing the next check</b>
+                <a
+                  data-live="walk.html?state=working&kind=next"
+                  href="screens/walk.html?state=working&kind=next"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">A variant of a state above (same screen, another sample step).</p>
+              <a
+                href="screens/walk.html?state=working&kind=next"
+                target="_blank"
+                data-live="walk.html?state=working&kind=next"
+                ><img
+                  loading="lazy"
+                  data-shot="walk-working-next"
+                  alt="Working, preparing the next check"
+                  src="shots/walk-working-next-w560-dark-en.png"
+              /></a>
+            </figure>
+          </div>
+          <p class="approval">Approval: <strong>draft</strong></p>
+        </article>
+        <article class="screen" data-screen="library" data-states="list empty">
+          <h3>The Walks library (helper stack) <code>library</code></h3>
+          <p class="notes">
+            A list of saved walks for this repo: title, source, last run date, outcome, Re-run and
+            Open. Not a dashboard. Empty: how a walk starts, with a copyable command.
+          </p>
+          <div class="grid">
+            <figure class="fig">
+              <figcaption>
+                <b>list</b>
+                <a
+                  data-live="library.html?state=list"
+                  href="screens/library.html?state=list"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                The Walks library: a list of saved walks for this repo. Title, source, last run,
+                outcome (&quot;4 of 6 passed&quot;), Re-run and Open. Newest first. Not a dashboard.
+              </p>
+              <a
+                href="screens/library.html?state=list"
+                target="_blank"
+                data-live="library.html?state=list"
+                ><img
+                  loading="lazy"
+                  data-shot="library-list"
+                  alt="list"
+                  src="shots/library-list-w560-dark-en.png"
+              /></a>
+            </figure>
+            <figure class="fig">
+              <figcaption>
+                <b>empty</b>
+                <a
+                  data-live="library.html?state=empty"
+                  href="screens/library.html?state=empty"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                No walks yet: how one starts (a copyable command, or just say it, or Test it in the
+                Mission).
+              </p>
+              <a
+                href="screens/library.html?state=empty"
+                target="_blank"
+                data-live="library.html?state=empty"
+                ><img
+                  loading="lazy"
+                  data-shot="library-empty"
+                  alt="empty"
+                  src="shots/library-empty-w560-dark-en.png"
+              /></a>
+            </figure>
+          </div>
+          <p class="approval">Approval: <strong>draft</strong></p>
+        </article>
+        <article class="screen" data-screen="offer" data-states="feature-done">
+          <h3>Offer: the session asks to walk you through what it built <code>offer</code></h3>
+          <p class="notes">
+            Outside any mission: a session that just finished a feature offers a walk once, above
+            its prompt. It never starts one on its own.
+          </p>
+          <div class="grid">
+            <figure class="fig">
+              <figcaption>
+                <b>feature-done</b>
+                <a
+                  data-live="offer.html?state=feature-done"
+                  href="screens/offer.html?state=feature-done"
+                  target="_blank"
+                  >open alone ↗</a
+                >
+              </figcaption>
+              <p class="proves">
+                Outside any mission: a session that just built something offers a walk once, above
+                its prompt. Two doors (learn it, or test it end to end) open the same panel; Not now
+                dismisses. It never starts on its own.
+              </p>
+              <a
+                href="screens/offer.html?state=feature-done"
+                target="_blank"
+                data-live="offer.html?state=feature-done"
+                ><img
+                  loading="lazy"
+                  data-shot="offer-feature-done"
+                  alt="feature-done"
+                  src="shots/offer-feature-done-w560-dark-en.png"
+              /></a>
+            </figure>
+          </div>
+          <p class="approval">Approval: <strong>draft</strong></p>
+        </article>
+      </section>
+      <section id="fluxos">
+        <h2>Flows</h2>
+        <article class="flow" data-flow="start-a-walk">
+          <h3>
+            Start a walk: Test it, the roadmap, checks 1 and 2, a check that disagrees, check 3 —
+            <a
+              data-live="entry.html?state=step-open"
+              href="screens/entry.html?state=step-open"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="entry.html?state=step-open"
+                href="screens/entry.html?state=step-open"
+                target="_blank"
+                >entry/step-open</a
+              >
+              <small>via “Test it”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=roadmap"
+                href="screens/walk.html?state=roadmap"
+                target="_blank"
+                >walk/roadmap</a
+              >
+              <small>via “Start with 1”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+              <small>via “Done”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+              <small>via “Done (my check finds a file)”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=check-failed"
+                href="screens/walk.html?state=check-failed"
+                target="_blank"
+                >walk/check-failed</a
+              >
+              <small>via “Follow anyway (unverified)”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+              <small>via “Done”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=working"
+                href="screens/walk.html?state=working"
+                target="_blank"
+                >walk/working</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="it-did-not-work">
+          <h3>
+            It did not work: one line and a screenshot, one correction, the same step again —
+            <a data-live="walk.html?state=step" href="screens/walk.html?state=step" target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+              <small>via “Failed”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=failed"
+                href="screens/walk.html?state=failed"
+                target="_blank"
+                >walk/failed</a
+              >
+              <small>via “Send”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=failed-retry"
+                href="screens/walk.html?state=failed-retry"
+                target="_blank"
+                >walk/failed-retry</a
+              >
+              <small>via “Try again”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="go-deeper">
+          <h3>
+            Explain more: why it matters and extra checks under the same step —
+            <a data-live="walk.html?state=step" href="screens/walk.html?state=step" target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+              <small>via “Explain more”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=explain-more"
+                href="screens/walk.html?state=explain-more"
+                target="_blank"
+                >walk/explain-more</a
+              >
+              <small>via “Explain more (again folds it back)”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="say-it-simpler">
+          <h3>
+            I didn’t get this step: the same step, said more simply —
+            <a data-live="walk.html?state=step" href="screens/walk.html?state=step" target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+              <small>via “I didn’t get this step”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=did-not-understand"
+                href="screens/walk.html?state=did-not-understand"
+                target="_blank"
+                >walk/did-not-understand</a
+              >
+              <small>via “Done”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=working"
+                href="screens/walk.html?state=working"
+                target="_blank"
+                >walk/working</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="zoom-the-image">
+          <h3>
+            Zoom the expected-result image —
+            <a data-live="walk.html?state=step" href="screens/walk.html?state=step" target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+              <small>via “the thumbnail”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step-image"
+                href="screens/walk.html?state=step-image"
+                target="_blank"
+                >walk/step-image</a
+              >
+              <small>via “the large image”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=lightbox"
+                href="screens/walk.html?state=lightbox"
+                target="_blank"
+                >walk/lightbox</a
+              >
+              <small>via “close, or Esc”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step-image"
+                href="screens/walk.html?state=step-image"
+                target="_blank"
+                >walk/step-image</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="finish">
+          <h3>
+            Finish: skipped checks come back, then the close-out —
+            <a
+              data-live="walk.html?state=working"
+              href="screens/walk.html?state=working"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="walk.html?state=working"
+                href="screens/walk.html?state=working"
+                target="_blank"
+                >walk/working</a
+              >
+              <small>via “mockup only: jump to the end”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=skipped-at-end"
+                href="screens/walk.html?state=skipped-at-end"
+                target="_blank"
+                >walk/skipped-at-end</a
+              >
+              <small>via “Close out with 2 skipped”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=close-out"
+                href="screens/walk.html?state=close-out"
+                target="_blank"
+                >walk/close-out</a
+              >
+              <small>via “Open in the Mission”</small>
+            </li>
+            <li>
+              <a
+                data-live="entry.html?state=step-open"
+                href="screens/entry.html?state=step-open"
+                target="_blank"
+                >entry/step-open</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="session-lost">
+          <h3>
+            The session is gone: progress is saved, resume it —
+            <a
+              data-live="walk.html?state=error"
+              href="screens/walk.html?state=error"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="walk.html?state=error"
+                href="screens/walk.html?state=error"
+                target="_blank"
+                >walk/error</a
+              >
+              <small>via “Resume the session”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="feature-walk-through">
+          <h3>
+            Outside any mission: the session offers, the walk teaches —
+            <a
+              data-live="offer.html?state=feature-done"
+              href="screens/offer.html?state=feature-done"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="offer.html?state=feature-done"
+                href="screens/offer.html?state=feature-done"
+                target="_blank"
+                >offer/feature-done</a
+              >
+              <small>via “Walk me through it”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=roadmap"
+                href="screens/walk.html?state=roadmap"
+                target="_blank"
+                >walk/roadmap</a
+              >
+              <small>via “Start with 1”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+              <small>via “Done”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+              <small>via “Explain more”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=explain-teach"
+                href="screens/walk.html?state=explain-teach"
+                target="_blank"
+                >walk/explain-teach</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="pr-walk">
+          <h3>
+            Test someone else’s PR: the walk is built from the PR —
+            <a data-live="walk.html?state=pr" href="screens/walk.html?state=pr" target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a data-live="walk.html?state=pr" href="screens/walk.html?state=pr" target="_blank"
+                >walk/pr</a
+              >
+              <small>via “Start with 1”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="milestone-and-whole-mission">
+          <h3>
+            A mission at any level: a milestone, then the whole mission —
+            <a
+              data-live="entry.html?state=milestone"
+              href="screens/entry.html?state=milestone"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="entry.html?state=milestone"
+                href="screens/entry.html?state=milestone"
+                target="_blank"
+                >entry/milestone</a
+              >
+              <small>via “Test it”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=roadmap"
+                href="screens/walk.html?state=roadmap"
+                target="_blank"
+                >walk/roadmap</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="whole-mission">
+          <h3>
+            The whole mission at its end —
+            <a
+              data-live="entry.html?state=mission"
+              href="screens/entry.html?state=mission"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="entry.html?state=mission"
+                href="screens/entry.html?state=mission"
+                target="_blank"
+                >entry/mission</a
+              >
+              <small>via “Test the whole mission”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=roadmap"
+                href="screens/walk.html?state=roadmap"
+                target="_blank"
+                >walk/roadmap</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="library-open">
+          <h3>
+            Walks library: open a past run (read-only), then re-run it —
+            <a
+              data-live="library.html?state=list"
+              href="screens/library.html?state=list"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="library.html?state=list"
+                href="screens/library.html?state=list"
+                target="_blank"
+                >library/list</a
+              >
+              <small>via “Open”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=run-past"
+                href="screens/walk.html?state=run-past"
+                target="_blank"
+                >walk/run-past</a
+              >
+              <small>via “Re-run”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=rerun-roadmap"
+                href="screens/walk.html?state=rerun-roadmap"
+                target="_blank"
+                >walk/rerun-roadmap</a
+              >
+              <small>via “Start with 1”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="library-rerun">
+          <h3>
+            Walks library: re-run straight away —
+            <a
+              data-live="library.html?state=list"
+              href="screens/library.html?state=list"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="library.html?state=list"
+                href="screens/library.html?state=list"
+                target="_blank"
+                >library/list</a
+              >
+              <small>via “Re-run”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=rerun-roadmap"
+                href="screens/walk.html?state=rerun-roadmap"
+                target="_blank"
+                >walk/rerun-roadmap</a
+              >
+              <small>via “Start with 1”</small>
+            </li>
+            <li>
+              <a
+                data-live="walk.html?state=step"
+                href="screens/walk.html?state=step"
+                target="_blank"
+                >walk/step</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="nothing-to-walk">
+          <h3>
+            Nothing to walk: no walk open, then the library —
+            <a
+              data-live="walk.html?state=empty"
+              href="screens/walk.html?state=empty"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="walk.html?state=empty"
+                href="screens/walk.html?state=empty"
+                target="_blank"
+                >walk/empty</a
+              >
+              <small>via “Open Walks”</small>
+            </li>
+            <li>
+              <a
+                data-live="library.html?state=list"
+                href="screens/library.html?state=list"
+                target="_blank"
+                >library/list</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="walk-to-library">
+          <h3>
+            From any walk to the library —
+            <a
+              data-live="walk.html?state=close-out"
+              href="screens/walk.html?state=close-out"
+              target="_blank"
+              >walk it ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a
+                data-live="walk.html?state=close-out"
+                href="screens/walk.html?state=close-out"
+                target="_blank"
+                >walk/close-out</a
+              >
+              <small>via “Open Walks”</small>
+            </li>
+            <li>
+              <a
+                data-live="library.html?state=list"
+                href="screens/library.html?state=list"
+                target="_blank"
+                >library/list</a
+              >
+            </li>
+          </ol>
+        </article>
+      </section>
+    </main>
+    <script>
+      /* index runtime: no iframes. Swaps the PNG capture and the live link of every state when the width, theme or language changes. */
+      ;(() => {
+        const VIEWPORTS = [560, 360] // MUST mirror mockup.json "viewports"
+        const cur = { w: '560', theme: 'dark', lang: 'en' }
+        const apply = () => {
+          document.body.dataset.w = cur.w
+          document.querySelectorAll('img[data-shot]').forEach((i) => {
+            i.src = `shots/${i.dataset.shot}-w${cur.w}-dark-en.png` /* the repo keeps the dark, English captures at 560 and 360 only; the live links below still follow the theme and language */
+          })
+          document.querySelectorAll('a[data-live]').forEach((a) => {
+            const base = 'screens/' + a.dataset.live
+            a.href = `${base}${base.includes('?') ? '&' : '?'}theme=${cur.theme}&lang=${cur.lang}&w=${cur.w}`
+          })
+        }
+        document.querySelectorAll('.controls .grp').forEach((g) =>
+          g.querySelectorAll('button').forEach(
+            (b) =>
+              (b.onclick = () => {
+                cur[g.dataset.ctl] = b.dataset.v
+                g.querySelectorAll('button').forEach((x) =>
+                  x.setAttribute('aria-pressed', String(x === b))
+                )
+                apply()
+              })
+          )
+        )
+        apply()
+      })()
+    </script>
+  </body>
+</html>

@@ -10,6 +10,7 @@ import { homedir } from 'node:os'
 import { sanitizeSpawnEnv } from './appimage-env'
 import { claudeVersionSync, resolveClaudePath } from './claude-cli'
 import { classifyPolicyProbe, type PolicyProbeClass } from './claude-policy-probe-core'
+import { runFile } from './spawn-runner'
 
 const TIMEOUT_MS = 15_000
 
@@ -74,26 +75,21 @@ export function createPolicyProbe(deps: PolicyProbeDeps): PolicyProbe {
 }
 
 async function runClaude(bin: string, args: string[]): Promise<string> {
-  // Imported lazily: a module that merely imports this file (through the spawn path) must not
-  // touch `child_process` until a probe really runs.
-  const { execFile } = await import('node:child_process')
-  return new Promise((resolve) => {
-    execFile(
-      bin,
-      args,
-      {
-        cwd: homedir(),
-        timeout: TIMEOUT_MS,
-        maxBuffer: 1 << 20,
-        env: sanitizeSpawnEnv(process.env, { execPath: process.execPath })
-      },
-      // `plugin test` exits 1 when it finds nothing to run: the output is the answer either way.
-      (err, stdout, stderr) =>
-        resolve(
-          String(stdout) + String(stderr) + (err && !stdout && !stderr ? String(err.message) : '')
-        )
-    )
-  })
+  // `plugin test` exits 1 when it finds nothing to run: the output is the answer either way.
+  try {
+    const { stdout, stderr } = await runFile(bin, args, {
+      cwd: homedir(),
+      timeout: TIMEOUT_MS,
+      maxBuffer: 1 << 20,
+      env: sanitizeSpawnEnv(process.env, { execPath: process.execPath })
+    })
+    return stdout + stderr
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string }
+    const stdout = e.stdout ?? ''
+    const stderr = e.stderr ?? ''
+    return stdout + stderr + (!stdout && !stderr ? String(e.message) : '')
+  }
 }
 
 /** The app's one probe; `host.ts` supplies the staged directory. */

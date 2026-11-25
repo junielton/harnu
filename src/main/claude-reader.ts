@@ -63,11 +63,16 @@ export interface SubagentEntry {
   /** JS milliseconds, from `fs.stat`. Drives the running/done heuristic. */
   fileMtime: number
   /**
-   * Agent type from `attributionAgent` (e.g. `general-purpose`, `explore`).
-   * Empty string when the field is absent/null — the renderer falls back to a
-   * generic "subagent" label.
+   * Agent type: the sidecar `agent-<id>.meta.json` `agentType`, else the
+   * transcript's `attributionAgent` (e.g. `general-purpose`, `Explore`). Empty
+   * string when neither is known — the renderer then shows no type chip.
    */
   agentType: string
+  /**
+   * Short description of what the subagent did, from the sidecar
+   * `agent-<id>.meta.json` (`description`). Empty when there is no sidecar.
+   */
+  description: string
   /** Origin skill from `attributionSkill` (e.g. `superpowers:…`). Empty if absent. */
   skill: string
   /** Origin plugin from `attributionPlugin`. Empty if absent. */
@@ -1419,16 +1424,76 @@ function pruneSubagentCache(gen: number): void {
   for (const [path, entry] of subagentCache) {
     if (entry.gen !== gen) subagentCache.delete(path)
   }
+  for (const [path, entry] of subagentMetaCache) {
+    if (entry.gen !== gen) subagentMetaCache.delete(path)
+  }
 }
 
 /** Test hooks for the subagent header cache (AC-15). Not used in production. */
 export function __resetSubagentHeaderCacheForTests(): void {
   subagentCache.clear()
+  subagentMetaCache.clear()
   subagentHeaderReads = 0
+  subagentMetaReads = 0
   fileOpens = 0
 }
 export function __subagentHeaderReadsForTests(): number {
   return subagentHeaderReads
+}
+export function __subagentMetaReadsForTests(): number {
+  return subagentMetaReads
+}
+
+/**
+ * Sidecar Claude Code writes next to each subagent transcript:
+ * `agent-<id>.meta.json` → `{ agentType, description, finished, … }`. Only the
+ * two display fields are kept. Cached by the sidecar's own mtime + size, like
+ * the header cache above: a pass stats it (cheap) and reads it only when the
+ * path is new or the file changed. A missing sidecar is cached as absent so a
+ * late-written one is still picked up on the next pass.
+ */
+interface SubagentMeta {
+  agentType: string
+  description: string
+}
+interface CachedSubagentMeta {
+  mtimeMs: number
+  size: number
+  meta: SubagentMeta | null
+  gen: number
+}
+const subagentMetaCache = new Map<string, CachedSubagentMeta>()
+/** Test-only counter of real sidecar reads — asserted by AC-5. */
+let subagentMetaReads = 0
+
+async function readSubagentMetaCached(
+  jsonlPath: string,
+  gen: number
+): Promise<SubagentMeta | null> {
+  const metaPath = jsonlPath.replace(/\.jsonl$/, '.meta.json')
+  const stat = await fs.stat(metaPath).catch(() => null)
+  if (!stat) {
+    subagentMetaCache.delete(metaPath)
+    return null
+  }
+  const c = subagentMetaCache.get(metaPath)
+  if (c && c.mtimeMs === stat.mtimeMs && c.size === stat.size) {
+    c.gen = gen
+    return c.meta
+  }
+  subagentMetaReads += 1
+  let meta: SubagentMeta | null = null
+  try {
+    const obj = JSON.parse(await fs.readFile(metaPath, 'utf8')) as Record<string, unknown>
+    meta = {
+      agentType: typeof obj.agentType === 'string' ? obj.agentType.trim() : '',
+      description: typeof obj.description === 'string' ? obj.description.trim() : ''
+    }
+  } catch {
+    meta = null // malformed or vanished: treated as "no sidecar".
+  }
+  subagentMetaCache.set(metaPath, { mtimeMs: stat.mtimeMs, size: stat.size, meta, gen })
+  return meta
 }
 
 /** Filename → agentId: `agent-<id>.jsonl` → `<id>`. */
@@ -1487,6 +1552,7 @@ async function attachSubagents(
           const stat = await fs.stat(absPath).catch(() => null)
           if (!stat) return
           const header = await scrapeSubagentHeaderCached(absPath, stat, gen)
+          const meta = await readSubagentMetaCached(absPath, gen)
           const agentId = header?.agentId || agentIdFromFilename(f.name)
           // Skip a malformed `agent-.jsonl` (empty id) — it would never match a
           // live `claude:subagent:updated` event and would orphan a row.
@@ -1496,7 +1562,8 @@ async function attachSubagents(
             parentSessionId,
             fullPath: absPath,
             fileMtime: stat.mtimeMs,
-            agentType: header?.agentType ?? '',
+            agentType: meta?.agentType || header?.agentType || '',
+            description: meta?.description ?? '',
             skill: header?.skill ?? '',
             plugin: header?.plugin ?? '',
             model: header?.model ?? '',

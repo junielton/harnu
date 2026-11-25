@@ -18,7 +18,10 @@ const { t } = useI18n()
  * run left to right (width splitters); `side-by-side` keeps today's top-to-bottom
  * stack. Every pane keeps its own 24px header either way.
  */
-const stacked = computed(() => layout.splitOrientation === 'stacked')
+const stacked = computed(
+  // T790: a tucked session leaves the stack the whole main area, and its panes sit side by side (D-1).
+  () => layout.splitOrientation === 'stacked' || helpers.sessionTuckedForCurrentWorktree
+)
 
 const worktreePath = computed<string>(() => helpers.currentWorktreePath ?? '')
 const panes = computed(() => helpers.panesForCurrentWorktree)

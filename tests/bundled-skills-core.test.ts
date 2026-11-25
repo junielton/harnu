@@ -16,6 +16,7 @@ import {
   parseBundledSkillsVersion,
   parseSkillFrontmatter,
   resolveSkillEnabled,
+  SKILL_DEFAULTS,
   stageStamp,
   type BundledSkill
 } from '../src/main/bundled-skills-core'
@@ -58,13 +59,52 @@ describe('resolveSkillEnabled — the tri-state cascade', () => {
   })
 })
 
+describe('resolveSkillEnabled — the per-skill default (D-21, guided walks S-6)', () => {
+  // This block REVERSES the rule the file used to pin ("a missing key resolves off, an empty enabled set emits
+  // no --plugin-dir"): `walk` now resolves ON when nobody chose, and every other skill still resolves off.
+  it('names exactly one default-on skill: walk', () => {
+    expect(SKILL_DEFAULTS).toEqual({ walk: true })
+  })
+
+  it('resolves walk ON when neither the folder nor the global map chose', () => {
+    expect(resolveSkillEnabled({}, {}, 'walk')).toBe(true)
+    expect(resolveSkillEnabled(undefined, undefined, 'walk')).toBe(true)
+    expect(resolveSkillEnabled({ mission: true }, { mission: true }, 'walk')).toBe(true)
+  })
+
+  it('still resolves every other skill OFF, including one that only looks like a default', () => {
+    for (const name of ['mission', 'step-by-step', 'speak', 'walks', 'Walk'])
+      expect(resolveSkillEnabled({}, {}, name), name).toBe(false)
+    // the default map is looked up by own key: an inherited property name is not a default
+    expect(resolveSkillEnabled(undefined, undefined, 'constructor')).toBe(false)
+  })
+
+  it('lets an explicit off win at the global level and at the folder level', () => {
+    expect(resolveSkillEnabled({ walk: false }, {}, 'walk')).toBe(false)
+    expect(resolveSkillEnabled({}, { walk: false }, 'walk')).toBe(false)
+    expect(resolveSkillEnabled({ walk: true }, { walk: false }, 'walk')).toBe(false)
+  })
+
+  it('lets a folder switch it back on over a global off, and an undefined entry inherits the default', () => {
+    expect(resolveSkillEnabled({ walk: false }, { walk: true }, 'walk')).toBe(true)
+    expect(resolveSkillEnabled({ walk: undefined }, { walk: undefined }, 'walk')).toBe(true)
+  })
+})
+
 describe('enabledSkillNames', () => {
   it('returns only the enabled entries, in catalog order', () => {
     expect(enabledSkillNames(CATALOG, { a: true, c: true }, {})).toEqual(['a', 'c'])
   })
 
-  it('is empty on a fresh install', () => {
+  it('is empty on a fresh install when the catalog has no default-on skill', () => {
     expect(enabledSkillNames(CATALOG, {}, {})).toEqual([])
+  })
+
+  it('is exactly the default-on skills on a fresh install of the real catalog shape', () => {
+    const withWalk: BundledSkill[] = [...CATALOG, { name: 'walk', description: 'skill walk' }]
+    expect(enabledSkillNames(withWalk, {}, {})).toEqual(['walk'])
+    expect(enabledSkillNames(withWalk, { walk: false }, {})).toEqual([])
+    expect(enabledSkillNames(withWalk, { a: true }, { walk: false })).toEqual(['a'])
   })
 
   it('applies the folder override on top of the global one', () => {

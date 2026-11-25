@@ -10,6 +10,7 @@ const h = vi.hoisted(() => {
     quit: vi.fn(),
     showMessageBox: vi.fn(),
     states: new Map<string, string>(),
+    unsaved: [] as string[],
     writeFile: vi.fn(async () => undefined),
     shutdownCb: { current: null as null | (() => void) }
   }
@@ -31,6 +32,7 @@ vi.mock('electron', () => ({
   BrowserWindow: class {}
 }))
 vi.mock('../src/main/hook-bridge', () => ({ getTaskStates: () => h.states }))
+vi.mock('../src/main/unsaved-drafts', () => ({ getUnsavedFiles: () => h.unsaved }))
 vi.mock('node:fs', () => ({
   readFileSync: () => {
     throw new Error('ENOENT')
@@ -54,6 +56,7 @@ beforeEach(async () => {
   vi.resetModules()
   h.handlers.clear()
   h.states.clear()
+  h.unsaved = []
   h.quit.mockReset()
   h.showMessageBox.mockReset()
   h.writeFile.mockClear()
@@ -181,6 +184,55 @@ describe('quit guard shell', () => {
     const e2 = evt()
     fresh.guardQuit(e2, noWindow)
     expect(e2.preventDefault).not.toHaveBeenCalled()
+    expect(h.showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('unsaved files ask even when the preference is off, and offer no checkbox', async () => {
+    await h.handlers.get('quit-guard:setPrefs')!({}, { version: 1, confirmOnQuit: false })
+    h.writeFile.mockClear()
+    h.unsaved = ['note.md (wt)']
+    h.showMessageBox.mockResolvedValue({ response: 0, checkboxChecked: true })
+    const e = evt()
+    m.guardQuit(e, noWindow)
+    await flush()
+    expect(e.preventDefault).toHaveBeenCalledOnce()
+    const opts = h.showMessageBox.mock.calls[0][0]
+    expect(opts.message).toBe('1 file has unsaved changes')
+    expect(opts.buttons).toEqual(['Quit without saving', 'Cancel'])
+    expect('checkboxLabel' in opts).toBe(false)
+    expect(h.quit).toHaveBeenCalledOnce()
+    expect(h.writeFile).not.toHaveBeenCalled() // never persists "don't ask" over unsaved work
+  })
+
+  it('unsaved files with the preference off still name the working agents', async () => {
+    await h.handlers.get('quit-guard:setPrefs')!({}, { version: 1, confirmOnQuit: false })
+    h.unsaved = ['note.md (wt)']
+    h.states.set('11111111-aaaa', 'working')
+    h.states.set('22222222-bbbb', 'idle')
+    h.showMessageBox.mockResolvedValue({ response: 1, checkboxChecked: false })
+    m.guardQuit(evt(), noWindow)
+    await flush()
+    const opts = h.showMessageBox.mock.calls[0][0]
+    expect(opts.message).toBe('1 file has unsaved changes')
+    expect(opts.detail).toContain('• note.md (wt)')
+    expect(opts.detail).toContain('1 agent is still working')
+    expect(opts.detail).toContain('• 11111111')
+    expect(opts.detail).not.toContain('22222222')
+    expect('checkboxLabel' in opts).toBe(false)
+  })
+
+  it('unsaved files with Cancel keep the app alive', async () => {
+    h.unsaved = ['note.md (wt)']
+    h.showMessageBox.mockResolvedValue({ response: 1, checkboxChecked: false })
+    m.guardQuit(evt(), noWindow)
+    await flush()
+    expect(h.quit).not.toHaveBeenCalled()
+  })
+
+  it('nothing dirty and nothing working: the quit passes without a dialog', () => {
+    const e = evt()
+    m.guardQuit(e, noWindow)
+    expect(e.preventDefault).not.toHaveBeenCalled()
     expect(h.showMessageBox).not.toHaveBeenCalled()
   })
 

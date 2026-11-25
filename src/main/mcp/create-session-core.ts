@@ -43,6 +43,19 @@ export interface CreateSessionDeps {
    * fired (existing callers/tests are unaffected).
    */
   deadlineFired?: () => boolean
+  /**
+   * Missions v4 S-26: runs once, after the session materialized and before the ACK, for a session
+   * started for one step of a mission. It binds the step (its card, the attached worker) and returns
+   * the fields the ACK gains. It never throws into the ACK: a failure is the returned `bindError`, the
+   * session being alive either way. Omitted for a plain session.
+   */
+  bindMaterialized?: (mat: Materialization) => Promise<Record<string, unknown> | undefined>
+  /**
+   * Missions v4 S-34: runs once, after the session materialized, and returns the fields the ACK gains
+   * (the proactive `missionHint`). A hint never fails the ACK: a throw is dropped. Omitted for a session
+   * started for a step, and for a caller that is exempt.
+   */
+  hint?: () => Promise<Record<string, unknown> | undefined>
 }
 
 /** Echoed alongside the ACK; carried through unchanged from the resolved boot config. */
@@ -113,11 +126,29 @@ export async function runCreateSession(
       heldOnTimeout = true
       return steerError('SPAWN_NOT_MATERIALIZED', folder, syntheticId)
     }
+    let bound: Record<string, unknown> | undefined
+    if (deps.bindMaterialized) {
+      try {
+        bound = await deps.bindMaterialized(mat)
+      } catch (err) {
+        bound = { bindError: err instanceof Error ? err.message : String(err) }
+      }
+    }
+    let hint: Record<string, unknown> | undefined
+    if (deps.hint) {
+      try {
+        hint = await deps.hint()
+      } catch {
+        hint = undefined
+      }
+    }
     return textResult({
       ok: true,
       op: 'create_session',
       result: { ...asRecord(result), sessionId: mat.sessionId },
-      ...ack
+      ...ack,
+      ...(bound ?? {}),
+      ...(hint ?? {})
     })
   } finally {
     if (!heldOnTimeout) deps.release(folder)

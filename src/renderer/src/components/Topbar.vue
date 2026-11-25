@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { sessionTitle } from '../lib/session-label'
 import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useHelpersStore } from '../stores/helpers'
+import { useBrowserStore } from '../stores/browser'
 import { useLayoutStore } from '../stores/layout'
 import { useSettingsStore } from '../stores/settings'
 import { useClaudeBootStore } from '../stores/claudeBoot'
@@ -13,6 +14,7 @@ import { useFolderActions } from '../composables/useFolderActions'
 import { useEditorButton } from '../composables/useEditorButton'
 import EditorIcon from './EditorIcon.vue'
 import { macWindowControlsInset } from '../lib/platform'
+import { openAllNotes, openTodayNote } from '../lib/notes'
 import ActivityBell from './ActivityBell.vue'
 import MissionPill from './MissionPill.vue'
 import TopbarOverflowMenu from './TopbarOverflowMenu.vue'
@@ -20,6 +22,8 @@ import {
   TOPBAR_BAR_ORDER,
   TOPBAR_BRANCH_MIN_PX,
   TOPBAR_MIN_TITLE_PX,
+  titleFloor,
+  regionMin,
   clusterBudget,
   planTopbarOverflow,
   type TopbarActionId,
@@ -31,6 +35,7 @@ import {
   Folder as FolderIcon,
   FolderOpen,
   FolderTree,
+  NotebookPen,
   CheckSquare,
   Crown,
   Server,
@@ -38,6 +43,7 @@ import {
   KanbanSquare,
   GitPullRequest,
   Github,
+  Library,
   Plus,
   Columns2,
   Rows2,
@@ -51,6 +57,7 @@ const sessions = useSessionsStore()
 const ui = useUiStore()
 const keybindings = useKeybindingsStore()
 const helpers = useHelpersStore()
+const browser = useBrowserStore()
 const layout = useLayoutStore()
 const settings = useSettingsStore()
 const boot = useClaudeBootStore()
@@ -319,6 +326,12 @@ const CHORDS: Partial<
     title: (l) => keybindings.withChord(l, 'folder.browseFiles'),
     hint: () => keybindings.chordLabel('folder.browseFiles')
   },
+  // Two lines: today's note (the click), then All notes… (the right-click), each with its CURRENT chord.
+  notes: {
+    title: (l) =>
+      `${keybindings.withChord(l, 'notes.openToday')}\n${keybindings.withChord(t('topbar.notesAll'), 'notes.open')}`,
+    hint: () => keybindings.chordLabel('notes.openToday')
+  },
   terminal: {
     title: (l) => keybindings.withChord(l, 'folder.newTerminal'),
     hint: () => keybindings.chordLabel('folder.newTerminal')
@@ -339,10 +352,12 @@ const TEST_ID: Record<TopbarActionId, string> = {
   roadmap: 'topbar-roadmap',
   'pr-stack': 'topbar-pr-stack',
   review: 'topbar-review',
+  walks: 'topbar-walks',
   'open-folder': 'topbar-open-folder',
   editor: 'topbar-editor',
   'github-pulls': 'topbar-github-pulls',
   explorer: 'topbar-explorer',
+  notes: 'topbar-notes',
   terminal: 'topbar-split',
   browser: 'topbar-browser',
   'split-layout': 'topbar-split-layout',
@@ -358,7 +373,7 @@ const allActions = computed<TopbarActionView[]>(() => {
     id: TopbarActionId,
     label: string,
     rest: Pick<TopbarActionView, 'icon' | 'run'> &
-      Partial<Pick<TopbarActionView, 'iconProps' | 'state' | 'toggle'>>
+      Partial<Pick<TopbarActionView, 'iconProps' | 'state' | 'toggle' | 'secondary'>>
   ): TopbarActionView => {
     const chord = CHORDS[id]
     return {
@@ -400,6 +415,15 @@ const allActions = computed<TopbarActionView[]>(() => {
       state: on(reviewActive.value),
       run: onReviewClick
     }),
+    // Guided walks S-4: the Walks library (the repo's saved walks) in the helper stack. It has no chord yet; the
+    // label is its tooltip and, when the bar is narrow, its row in the `…` menu.
+    view('walks', t('topbar.walks'), {
+      icon: Library,
+      run: () => {
+        const wt = sessions.activeFolderPath
+        if (wt) helpers.addWalksHelper(wt)
+      }
+    }),
     view('open-folder', t('topbar.openFolder'), {
       icon: FolderOpen,
       run: () => folderActions.openInFileManager()
@@ -421,10 +445,17 @@ const allActions = computed<TopbarActionView[]>(() => {
       icon: FolderTree,
       run: () => folderActions.browseFiles()
     }),
+    // Quick notes: click = today's note, right-click = "All notes…" (design.md §6 "Topbar notes button").
+    view('notes', t('topbar.notes'), {
+      icon: NotebookPen,
+      run: () => void openTodayNote(),
+      secondary: () => openAllNotes()
+    }),
     view('terminal', t('topbar.split'), { icon: Terminal, run: () => folderActions.newTerminal() }),
     // T630: Browser sits right next to Terminal — one click, the same operator pane the old Split
     // dropdown item opened.
-    view('browser', t('topbar.browser'), { icon: Globe, run: () => folderActions.newBrowser() })
+    // browser-tabs D-1: with an operator pane open it adds a tab there (Shift+click opens a pane).
+    view('browser', t('topbar.browser'), { icon: Globe, run: () => void onBrowserClick(false) })
   )
   if (helpers.hasHelpersForCurrentWorktree) {
     // T627: split-layout toggle (design.md §6 "Split orientation"). The glyph is the layout in force;
@@ -451,6 +482,8 @@ const headerEl = ref<HTMLElement | null>(null)
 const hiddenIds = ref<TopbarActionId[]>([])
 /** The title region's `min-width`: the title's floor plus the badges after it (measured by `planOverflow`). */
 const regionMinPx = ref(TOPBAR_MIN_TITLE_PX)
+/** The title's own floor: {@link TOPBAR_MIN_TITLE_PX}, less when the badges and the Mission pill need the room. */
+const titleMinPx = ref(TOPBAR_MIN_TITLE_PX)
 const barActions = computed(() => allActions.value.filter((a) => !hiddenIds.value.includes(a.id)))
 const menuActions = computed(() => allActions.value.filter((a) => hiddenIds.value.includes(a.id)))
 
@@ -474,13 +507,15 @@ function planOverflow(): void {
     const min = Number(el.dataset.topbarExtraMin)
     extrasWidth += (min > 0 ? min : el.offsetWidth) + 8
   })
-  regionMinPx.value = TOPBAR_MIN_TITLE_PX + extrasWidth
-  const available = clusterBudget({
+  const budget = {
     headerWidth: header.clientWidth,
     paddingX: (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0),
     hasCrumb: hasCrumb.value,
     extrasWidth
-  })
+  }
+  titleMinPx.value = titleFloor(budget)
+  regionMinPx.value = regionMin(budget)
+  const available = clusterBudget(budget)
   const plan = planTopbarOverflow({
     present: allActions.value.map((a) => a.id),
     available,
@@ -513,6 +548,25 @@ watch(
   planOverflow,
   { flush: 'post' }
 )
+
+/** The Mission pill came, went or changed width (it cannot shrink, so the plan reserves it): measure again. */
+function replanAfterPill(): void {
+  void nextTick(planOverflow)
+}
+
+/** The Browser button: a tab in the last-used operator pane, or a pane (none open, at the tab limit, Shift+click). */
+function onBrowserClick(shift: boolean): Promise<'tab' | 'pane' | void> {
+  const wt = sessions.activeFolderPath
+  if (!wt) return Promise.resolve()
+  return browser.openFromTopbar(wt, { shift }, () => folderActions.newBrowser())
+}
+
+/** Right-click on a bar button: the action's secondary door when it has one (else the native menu is left alone). */
+function onActionContextMenu(a: TopbarActionView, e: MouseEvent): void {
+  if (!a.secondary) return
+  e.preventDefault()
+  a.secondary()
+}
 
 function runHidden(id: TopbarActionId): void {
   allActions.value.find((a) => a.id === id)?.run()
@@ -589,8 +643,8 @@ function onKeydown(e: KeyboardEvent): void {
       <div class="flex flex-1 items-center gap-2" :style="{ minWidth: `${regionMinPx}px` }">
         <FolderIcon :size="12" :stroke-width="1.6" class="shrink-0 text-text-4" />
         <span
-          class="truncate text-text"
-          :style="`font-size: 13px; font-weight: 500; min-width: ${TOPBAR_MIN_TITLE_PX}px`"
+          class="shrink-[1000] truncate text-text"
+          :style="`font-size: 13px; font-weight: 500; min-width: ${titleMinPx}px`"
           data-test="topbar-title"
           >{{ activeFolderLabel }}</span
         >
@@ -631,7 +685,7 @@ function onKeydown(e: KeyboardEvent): void {
       <div class="flex flex-1 items-center gap-2" :style="{ minWidth: `${regionMinPx}px` }">
         <span
           ref="titleEl"
-          class="truncate rounded text-text outline-none transition"
+          class="shrink-[1000] truncate rounded text-text outline-none transition"
           :class="isTerminal ? 'cursor-default' : 'cursor-text'"
           :style="`
             font-size: 13px;
@@ -640,7 +694,7 @@ function onKeydown(e: KeyboardEvent): void {
             margin: -2px -5px;
             border: 1px solid transparent;
             box-sizing: border-box;
-            min-width: ${TOPBAR_MIN_TITLE_PX}px;
+            min-width: ${titleMinPx}px;
             -webkit-app-region: no-drag;
           `"
           data-test="topbar-title"
@@ -675,11 +729,12 @@ function onKeydown(e: KeyboardEvent): void {
           <Crown :size="10" :stroke-width="1.8" class="shrink-0" />
           {{ $t('topbar.orchestratorBadge') }}
         </span>
-        <!-- Mission "N of M done" pill (T370, Mission v2) — clickable, opens the progress
-             popover; renders nothing when this session owns no open mission. -->
+        <!-- Mission pill (T370; Missions v4) — clickable, toggles the Mission dropdown; renders
+             nothing when this session is in no open mission. -->
         <MissionPill
           v-if="!isTerminal && sessions.selectedSession"
           :session-id="sessions.selectedSession.sessionId"
+          @layout="replanAfterPill"
         />
       </div>
     </template>
@@ -712,7 +767,8 @@ function onKeydown(e: KeyboardEvent): void {
           :aria-label="a.label"
           :aria-pressed="a.toggle ? a.state === 'on' : undefined"
           :data-test="TEST_ID[a.id]"
-          @click="a.run()"
+          @click="a.id === 'browser' ? onBrowserClick($event.shiftKey) : a.run()"
+          @contextmenu="onActionContextMenu(a, $event)"
         >
           <component :is="a.icon" v-bind="a.iconProps" />
         </button>

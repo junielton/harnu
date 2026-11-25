@@ -105,8 +105,7 @@ mission exists: create it as _The mission_ below says. Then work in this order:
 6. **Goldfish review.** Run the staged review of _Goldfish review_ below. Every finding gets its
    disposition, and an open `Blocker` keeps the next step from running.
 7. **Approval question.** Run the no-code check of _Before the approval question_ below; a path
-   outside the bundle stops you there. Then run _The approval question_ below: the mission,
-   `open_file`, then the one question `Approve this spec?` The approval is the operator's yes.
+   outside the bundle stops you there. Then run _The approval question_ below.
 
 An unanswered decision in the Open decisions table:
 
@@ -114,45 +113,43 @@ An unanswered decision in the Open decisions table:
 | D-n | <question, citing the R-n it settles> | <option>; <option> | <what a slice uses until it is chosen> | open |
 ```
 
-The skill never dispatches, creates cards, merges or ticks anything: once the operator approves,
-the next step is `harnu:orchestrate-delivery`.
+The skill never dispatches, creates cards or merges: `harnu:orchestrate-delivery` comes after.
 
 ## The mission
 
 The mission is born the moment the entry leaves Small: as soon as triage names Medium, Large or
-Complex, call `mission_create` (a Small entry gets no mission). It gives the work a heartbeat while
-the spec is written and read, and a step the operator marks when they approve.
+Complex, call `mission_create` (a Small entry gets no mission; outside Harnu, without the verbs, say
+so and go on). You lead it. Load `../mission/references/writing-contract.md` first: Harnu refuses
+text over a cap.
 
-- **The end is the delivery's end (D-5):** what ships the objective, never the spec approval. One
-  mission per body of work, so `orchestrate-delivery` adopts this one at dispatch instead of
-  creating a second. When the spec changes the end, stage the new one with `mission_set_end` and a reason.
-- **One step, "Approve spec"**, verification `human`: only the operator marks it. Keep its `stepId`
-  from the ACK; the dispositions, the approval and the blocker all go on it.
-- **The scope** lists the spec path and the PRD and ADR paths the tier will carry, written or not:
-  a path not written yet reads unresolved until it is. Drop the PRD and ADR paths a tier does not
-  carry: Medium and Large list the spec alone, Complex adds the PRD and, when it records an
-  architectural decision, the ADR. Pass `linkedCard` when the entry has a card.
+- **The Done when is the delivery's end (D-5):** what ships the objective, never the spec approval.
+  `orchestrate-delivery` adopts this mission at dispatch. When the spec changes the end, stage it
+  with `mission_set_done_when` and a reason: the operator approves it in the Mission dropdown.
+- **One step, "Approve spec"**, with an operator criterion only the operator ticks. Keep its
+  `stepId`: the dispositions, the approval and the blocker go on it.
+- **The links** are `doc` links to the spec and the PRD and ADR the tier carries, written or not.
+  Drop the PRD and ADR links a tier does not carry: Medium and Large link the spec alone, Complex
+  adds the PRD and, when it records an architectural decision, the ADR. `linkedCard`: the entry's card.
 
 ```json
 {
   "folder": "<absolute path of the repo>",
-  "title": "<the objective, one line>",
+  "title": "<the objective, one line, 60 characters at most>",
+  "doneWhen": "<what ships the objective: its PRs merged, every criterion settled>",
   "sessionId": "<your own Claude session UUID>",
-  "declaredEnd": {
-    "kind": "code",
-    "target": "<what ships the objective: its PRs merged>",
-    "evidence": "<green gates and a delivery-verifier report, every AC met>"
-  },
-  "scope": [
-    "docs/specs/YYYY-MM-DD-<slug>/spec.md",
-    "docs/prds/<card>-<slug>.md",
-    "docs/adr/NNNN-<slug>.md"
+  "links": [
+    { "kind": "doc", "ref": "docs/specs/YYYY-MM-DD-<slug>/spec.md" },
+    { "kind": "doc", "ref": "docs/prds/<card>-<slug>.md" },
+    { "kind": "doc", "ref": "docs/adr/NNNN-<slug>.md" }
   ],
-  "steps": [{ "title": "Approve spec", "verification": "human" }]
+  "steps": [
+    {
+      "title": "Approve spec",
+      "criteria": [{ "text": "The operator approves the spec", "by": "operator" }]
+    }
+  ]
 }
 ```
-
-Without the `mission_*` verbs (outside Harnu), say so in one line and go on without a mission.
 
 ## The Complex bundle
 
@@ -195,7 +192,7 @@ conversation. Stages run in order; the reviewers within a stage run in parallel:
 | Complex | comprehension   | hostile critic, overhead lens, traceability lens | implementation readiness | 5          |
 
 One re-review per stage after fixes, so the worst case is twice the column. A round spawns
-at most five sub-agents, and a Small entry spawns none: it never reaches this section.
+at most five sub-agents, and a Small entry spawns none.
 
 **Spawning.** Each reviewer is one `Agent` call with `subagent_type: "general-purpose"` (never
 `fork`, which inherits this conversation) and, under D-14, a `model` other than yours whenever one
@@ -260,6 +257,7 @@ whose last round failed).
 {
   "folder": "<absolute path of the repo>",
   "missionId": "<mnt-…>",
+  "sessionId": "<your own Claude session UUID>",
   "stepId": "<stp-n of the Approve spec step>",
   "kind": "decision",
   "note": "F-1 (comprehension, Major): fix — <what changed, and where>"
@@ -267,8 +265,7 @@ whose last round failed).
 ```
 
 Each resolved D-n, answered in step 3 or escalated here and answered, is one `memory_append` to
-`decisions`. Its `watches` lists
-the literal directory prefix of each `files-may-touch` glob of the slices whose `gated-by:` names it,
+`decisions`. Its `watches` lists the literal directory prefix of each `files-may-touch` glob of the slices whose `gated-by:` names it,
 plus single-word topics from the question. Recall matches only a literal path or a directory prefix,
 never a glob, so a literal file path stays as it is and a glob gives its prefix:
 `resources/skills/skills/spec/agents/*.md` → `resources/skills/skills/spec/agents/`. When
@@ -317,25 +314,28 @@ Once the no-code check prints nothing, in this order:
 3. **One question.** Ask exactly one question, `Approve this spec?`, and nothing else.
 
 On a yes: `orchestrator_disarm` if you armed the guard, flip the header from
-`status: draft` to `status: approved`, re-run `check` and the no-code check, and log the approval on the "Approve
-spec" step with `mission_log`. Then point the operator at the step's own control: click the
-mission pill, then **Mark verified** on the "Approve spec" step. The approval is theirs: the skill
-never ticks the step, and no verb can. The next step is `harnu:orchestrate-delivery`.
+`status: draft` to `status: approved`, re-run `check` and the no-code check, and log the approval
+on the "Approve spec" step with `mission_log`. Then point the operator at the criterion: in the
+Mission dropdown, tick _The operator approves the spec_ on the "Approve spec" step. The skill never
+ticks the criterion, and no verb of yours can. The next step is `harnu:orchestrate-delivery`.
 
 On a no or a change: apply it inside the bundle, re-run the stage of _Goldfish review_ it touches,
 and ask the question again.
 
-With no operator to answer (the turn ends with the question unanswered): call
-`mission_set_blocker` on the "Approve spec" step as the operator's, so Harnu chimes and
-re-nudges with back-off, and stop. Clear it with `mission_clear_blocker` the turn they answer.
+With no operator to answer (the turn ends with the question unanswered): call `mission_set_blocker`
+on the "Approve spec" step as the operator's, so the Mission dropdown lists it as owed by them, and
+stop. They clear it in the Mission dropdown: `mission_clear_blocker` refuses an operator's blocker
+(`OPERATOR_ONLY`), so you never call it.
 
 ```json
 {
   "folder": "<absolute path of the repo>",
   "missionId": "<mnt-…>",
+  "sessionId": "<your own Claude session UUID>",
   "stepId": "<stp-n of the Approve spec step>",
   "reason": "The spec waits for its approval: <spec path>",
-  "unblocks": "The operator answers `Approve this spec?`",
+  "ask": "Read the spec and answer `Approve this spec?`",
+  "unblocks": "Dispatching the spec's slices",
   "owner": "operator"
 }
 ```
@@ -378,7 +378,7 @@ node <skill directory>/scripts/spec-check.mjs <spec-path> --cards
 **Resolving `<spec-path>`**, first match wins:
 
 1. the path the operator named;
-2. the spec attached to the mission as scope;
+2. the spec linked to the mission (a `doc` link);
 3. the one spec directory changed on the branch (its `spec.md`);
 4. otherwise ask for the path. Never pick between two candidates yourself.
 

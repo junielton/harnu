@@ -240,7 +240,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-## npm packages (188)
+## npm packages (190)
 
 | Package | Version | License |
 | --- | --- | --- |
@@ -286,6 +286,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 | @vueuse/shared | 14.3.0 | MIT |
 | @xterm/addon-image | 0.9.0 | MIT |
 | @xterm/addon-web-links | 0.12.0 | MIT |
+| @xterm/addon-webgl | 0.19.0 | MIT |
 | @xterm/headless | 6.0.0 | MIT |
 | @xterm/xterm | 6.0.0 | MIT |
 | accepts | 2.0.0 | MIT |
@@ -1559,6 +1560,32 @@ https://github.com/xtermjs/xterm.js/tree/master/addons/addon-web-links
 
 ```text
 Copyright (c) 2017, The xterm.js authors (https://github.com/xtermjs/xterm.js)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+### @xterm/addon-webgl@0.19.0 — MIT
+
+https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl
+
+```text
+Copyright (c) 2018, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

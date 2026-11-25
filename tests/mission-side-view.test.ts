@@ -6,7 +6,7 @@
  * options and whether the operator may still choose.
  */
 import { describe, expect, it } from 'vitest'
-import type { MissionStep } from '../src/main/mission-core'
+import type { MissionStep } from '../src/main/missions/derive'
 import { buildMissionModel } from '../src/renderer/src/lib/mission-view'
 import { FIXTURE_NOW, fixtureView } from './helpers/mission-v3-view'
 

@@ -1,0 +1,282 @@
+{
+  "status": "draft",
+  "approvedAt": null,
+  "project": "harnu",
+  "card": null,
+  "tokensFrom": "src/renderer/src/styles/themes.css (@theme block, default theme) + src/renderer/src/styles/main.css (font tokens)",
+  "viewports": [1280],
+  "targets": ["concept — no implementation targets yet"],
+  "screens": [
+    {
+      "id": "mission-pane",
+      "title": "Mission pane (helper stack)",
+      "status": "draft",
+      "approvedAt": null,
+      "states": [
+        "default",
+        "waiting",
+        "step-open",
+        "step-blocked",
+        "all-steps",
+        "ask",
+        "sessions",
+        "handoff-suggest",
+        "handoff-confirm",
+        "clear",
+        "done",
+        "other-session",
+        "simple",
+        "simple-signoff",
+        "big",
+        "big-waiting",
+        "no-mission",
+        "attach-request",
+        "closed"
+      ],
+      "targets": [
+        "new MissionPane.vue (helper stack)",
+        "src/renderer/src/components/MissionPill.vue",
+        "removes MissionPopover.vue / CampaignPopover.vue"
+      ],
+      "notes": "The only surface. The pill toggles a Mission pane that follows the selected session. Glance: progress bar with the count inside, ONE next step (the rest of what waits on you expands in place), then the tree milestone > step > acceptance criteria. A blocked step opens to its blocker and the unblock action. Ask sends a question to the session. Sessions shows who worked on the mission; the operator alone decides a hand-off. A session with no mission can be attached to one, with confirmation. No kanban, no cross-mission queue."
+    }
+  ],
+  "parts": [],
+  "flows": [
+    {
+      "id": "follow-session",
+      "title": "The pane follows the selected session",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "default",
+          "via": "the WebGL renderer session in the sidebar"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "other-session",
+          "via": "the scratch session"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "no-mission"
+        }
+      ]
+    },
+    {
+      "id": "open-step",
+      "title": "Open a step to see its acceptance criteria",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "default",
+          "via": "the Spec step row"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "step-open",
+          "via": "the same row again"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "ask",
+      "title": "Ask the session about a milestone",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "default",
+          "via": "Ask on the current milestone"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "ask",
+          "via": "Send"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "handoff",
+      "title": "Continue the mission in a new session",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "handoff-suggest",
+          "via": "Continue in a new session…"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "handoff-confirm",
+          "via": "Start new session"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "sessions",
+      "title": "See who worked on the mission",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "default",
+          "via": "the Sessions row"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "sessions",
+          "via": "Continue in a new session…"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "handoff-confirm"
+        }
+      ]
+    },
+    {
+      "id": "attach",
+      "title": "Attach a session to a mission",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "no-mission",
+          "via": "Attach on harnu:spec v2"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "attach-request",
+      "title": "A session asks to join a mission",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "attach-request",
+          "via": "Allow"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "toggle-pane",
+      "title": "Close and reopen the pane from the pill",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "default",
+          "via": "the pill"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "closed",
+          "via": "the pill again"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "waiting",
+      "title": "See everything that waits on you in this mission",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "default",
+          "via": "2 more waiting on you"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "waiting",
+          "via": "Open step on the Unblock row"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "step-blocked",
+          "via": "I set it — unblock"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "all-steps",
+      "title": "Show every step of the current milestone",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "default",
+          "via": "6 more in review"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "all-steps",
+          "via": "Show less"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "default"
+        }
+      ]
+    },
+    {
+      "id": "small-task",
+      "title": "A small task scoped from the tracker",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "default",
+          "via": "the Data table session in the sidebar"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "simple",
+          "via": "the Get the sign-offs step (later, once the build is done)"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "simple-signoff"
+        }
+      ]
+    },
+    {
+      "id": "big-mission",
+      "title": "A real 10-milestone mission",
+      "steps": [
+        {
+          "screen": "mission-pane",
+          "state": "default",
+          "via": "the Collector base session in the sidebar"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "big",
+          "via": "4 more waiting on you"
+        },
+        {
+          "screen": "mission-pane",
+          "state": "big-waiting"
+        }
+      ]
+    }
+  ]
+}

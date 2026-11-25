@@ -1,4 +1,5 @@
 import type { TaskState } from '../../../preload'
+import type { SoundFamily } from '../lib/notification-sound'
 
 /**
  * Pure decision logic for OS notifications (os-notifications spec §4).
@@ -38,8 +39,20 @@ export interface NotifyPrefs {
   needsInput: boolean
   completed: boolean
   failed: boolean
-  /** Play a sound when a notification is shown. Orthogonal to the per-state flags. */
+  /**
+   * Play a sound when a notification is shown. Orthogonal to the per-state flags. The master for EVERY
+   * sound call site (session events, the Approval Inbox, the mission cue, the changelog): off means silent.
+   */
   sound: boolean
+  /**
+   * Per-family mutes under the `sound` master (T154), default all on. A muted family stays silent
+   * everywhere it would have played: `ask` (needs input, an approval, a blocking mission cue), `done`
+   * (a turn ended), `fail` (a session failed, `main` is red), `info` (reviews, usage, budget, a new version).
+   */
+  soundAsk: boolean
+  soundDone: boolean
+  soundFail: boolean
+  soundInfo: boolean
   /**
    * Notify when the fleet-wide 5h rate-limit window resets (usage-reset-notify
    * spec). Opt-IN — unlike the other flags, default false: this fires roughly
@@ -79,8 +92,35 @@ export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = {
   completed: true,
   failed: true,
   sound: true,
+  soundAsk: true,
+  soundDone: true,
+  soundFail: true,
+  soundInfo: true,
   usageReset: false,
   dailyBudget: true
+}
+
+/** The sound family a session notify-kind plays (T154): it asks, it finished, it broke. */
+export const NOTIFY_KIND_FAMILY: Record<NotifyKind, SoundFamily> = {
+  'needs-input': 'ask',
+  completed: 'done',
+  failed: 'fail'
+}
+
+/** Which `NotifyPrefs` flag mutes each family. */
+const SOUND_PREF_KEY: Record<SoundFamily, keyof NotifyPrefs> = {
+  ask: 'soundAsk',
+  done: 'soundDone',
+  fail: 'soundFail',
+  info: 'soundInfo'
+}
+
+/**
+ * May this family play? The `sound` master AND the family's own mute (T154). Every sound call site asks
+ * this, so with the master off nothing anywhere plays and a muted family is silent at every call site.
+ */
+export function soundAllowed(prefs: NotifyPrefs, family: SoundFamily): boolean {
+  return prefs.sound && prefs[SOUND_PREF_KEY[family]]
 }
 
 /** Everything `decideNotification` needs beyond the transition itself. */
@@ -125,7 +165,11 @@ export function decideNotification(
   if (!ctx.prefs[PREF_KEY[kind]]) return null
   const channel: NotifyChannel = ctx.windowFocused ? 'toast' : 'os'
   const staringAtIt = ctx.windowFocused && ctx.isSelected
-  return { kind, channel, sound: ctx.prefs.sound && !staringAtIt }
+  return {
+    kind,
+    channel,
+    sound: soundAllowed(ctx.prefs, NOTIFY_KIND_FAMILY[kind]) && !staringAtIt
+  }
 }
 
 /**
@@ -152,6 +196,10 @@ export function parseNotifyPrefs(raw: string | null): NotifyPrefs {
     completed: pick('completed'),
     failed: pick('failed'),
     sound: pick('sound'),
+    soundAsk: pick('soundAsk'),
+    soundDone: pick('soundDone'),
+    soundFail: pick('soundFail'),
+    soundInfo: pick('soundInfo'),
     usageReset: pick('usageReset'),
     dailyBudget: pick('dailyBudget')
   }

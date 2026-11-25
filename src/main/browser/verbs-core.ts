@@ -33,6 +33,12 @@ import type { JailFs, PageFolder } from './page-url'
 import type { PageState, PageStateStore } from './page-state'
 import type { PatchResult } from './page-patch'
 import { openPageFileVerb } from './page-verbs'
+import { findTab } from './tabs'
+import type {
+  BrowserTabCloseResult,
+  BrowserTabNewOptions,
+  BrowserTabResult
+} from '../../shared/browser-tabs'
 
 /** The fixed reminder on every ACK that carries page-derived text (spec §6, §7.6). */
 export const BROWSER_NOTE =
@@ -61,13 +67,18 @@ export type NavigateTarget = { url: string } | { action: 'back' | 'forward' | 'r
 
 /** The view host seam (`view-host.ts` implements it over Electron). */
 export interface BrowserHost {
-  /** Create the guest view parked and start loading `url`; throws if it cannot. */
+  /**
+   * Every method keyed by `paneId` acts on the pane's ACTIVE tab; the optional `tabId` of the methods below names
+   * another tab of the pane instead (browser-tabs S-2, ADR-0026). The agent verbs pass it through (S-6).
+   */
+  /** Create the guest view of the pane's first tab, parked, and start loading `url`; throws if it cannot. */
   create(opts: { paneId: string; folder: string; partition: BrowserPartition; url: string }): void
-  info(paneId: string): LivePaneInfo | undefined
+  info(paneId: string, tabId?: string): LivePaneInfo | undefined
   navigate(
     paneId: string,
     target: NavigateTarget,
-    opts: { waitUntil: 'commit' | 'domcontentloaded' | 'load'; timeoutMs: number; hard: boolean }
+    opts: { waitUntil: 'commit' | 'domcontentloaded' | 'load'; timeoutMs: number; hard: boolean },
+    tabId?: string
   ): Promise<NavigateOutcome>
   /** Destroy the view and everything hanging off it. Idempotent. */
   destroy(paneId: string): void
@@ -76,18 +87,86 @@ export interface BrowserHost {
   /** Whether network capture is on for the pane and when it stops itself (`browser_list`'s `network`). */
   captureStatus?(paneId: string): { active: boolean; expiresAt: number | null }
   /** Mouse and key events reach the pane's current document (false on its first page). Absent = ready. */
-  inputReady?(paneId: string): boolean
+  inputReady?(paneId: string, tabId?: string): boolean
   /**
    * Names the view that shows the pane now. A lease is granted for ONE view: a pane re-created under the same id
    * (discard and restore) is a page the operator never saw, so its token differs and the lease is dead.
    */
-  viewToken?(paneId: string): string | undefined
+  viewToken?(paneId: string, tabId?: string): string | undefined
   /** The zoom factor the pane shows now (1 in device mode); absent = 1 (`browser_list`, T572). */
   zoomOf?(paneId: string): number
   /** The pane's page is discarded (T574, spec §10.1): `info` answers from the record, the view is gone. */
-  isDiscarded?(paneId: string): boolean
+  isDiscarded?(paneId: string, tabId?: string): boolean
+  /**
+   * The tab shows the load error page (browser-tabs S-3): its view is hidden and there is no page to read. The reading
+   * verbs answer `loadError: { code, url }` with an empty page instead of reading the hidden error page.
+   */
+  loadErrorOf?(paneId: string, tabId?: string): { code: string; url: string } | undefined
   /** Bring a discarded pane back (resolves true when it is live). Absent = nothing is ever discarded. */
-  revive?(paneId: string, opts?: { primeInput?: boolean }): Promise<boolean>
+  revive?(paneId: string, opts?: { primeInput?: boolean; tabId?: string }): Promise<boolean>
+  /** Add a tab to the pane (browser-tabs S-6: `browser_open({ paneId })`); a ninth is `TAB_LIMIT`. Absent = no tabs. */
+  newTab?(paneId: string, opts?: BrowserTabNewOptions): BrowserTabResult
+  /** Make `tabId` the pane's active tab (the screenshot and input verbs do it for a background tab). */
+  activateTab?(paneId: string, tabId: string): boolean
+  /** Close one tab; the last one closes the pane (`paneClosed`). */
+  closeTab?(paneId: string, tabId: string): BrowserTabCloseResult
+}
+
+/**
+ * Where each host method that takes a tab keeps its `tabId` argument (browser-tabs S-2: every host call keyed by
+ * `paneId` acts on the active tab, and an optional `tabId` names another one). The verbs of one call name one tab.
+ */
+const TAB_ARG_AT: Readonly<Record<string, number>> = {
+  info: 1,
+  navigate: 3,
+  inputReady: 1,
+  viewToken: 1,
+  isDiscarded: 1,
+  loadErrorOf: 1,
+  readers: 1,
+  cdp: 3,
+  viewMode: 1,
+  capture: 2,
+  inputScale: 1,
+  drive: 2,
+  armDownload: 2,
+  downloadUrl: 2
+}
+
+type AnyFn = (...args: unknown[]) => unknown
+
+/**
+ * The same dependencies with the view host bound to one tab (browser-tabs S-6, spec "The host seam": S-6 only passes
+ * `tabId` through): every host call a verb makes about the pane then names that tab, so a verb written against
+ * `paneId` reads, writes, revives and drives the tab the caller named. Without `tabId` nothing changes (the active
+ * tab). Pane-level host calls (`create`, `destroy`, `zoomOf`, `deviceMode`, emulation) pass through untouched.
+ */
+export function withTab<D extends { host: object }>(deps: D, tabId: string | undefined): D {
+  if (tabId === undefined) return deps
+  const host = new Proxy(deps.host, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target) as unknown
+      if (typeof value !== 'function') return value
+      const fn = value as AnyFn
+      if (prop === 'revive') {
+        return (paneId: unknown, opts: object = {}) => fn.call(target, paneId, { ...opts, tabId })
+      }
+      const at = typeof prop === 'string' ? TAB_ARG_AT[prop] : undefined
+      if (at === undefined) return fn.bind(target)
+      return (...args: unknown[]) => {
+        const next = args.slice(0, at)
+        while (next.length < at) next.push(undefined)
+        next[at] = tabId
+        return fn.apply(target, next)
+      }
+    }
+  })
+  return { ...deps, host: host as D['host'] }
+}
+
+/** The `tabId` a verb's arguments name, if any. */
+export function tabIdOf(args: Record<string, unknown> | undefined): string | undefined {
+  return typeof args?.tabId === 'string' ? args.tabId : undefined
 }
 
 /** The page-protocol seam the live-panel verbs and `browser_open({ path | html })` use (`page-service.ts`). */
@@ -166,9 +245,10 @@ export function accessOf(
   rec: BrowserPaneRecord,
   deps: BrowserVerbDeps,
   originClass: OriginClass,
-  readOptIn = false
+  readOptIn = false,
+  tabId?: string
 ): BrowserPaneAccess {
-  const token = deps.host.viewToken?.(rec.paneId)
+  const token = deps.host.viewToken?.(rec.paneId, tabId)
   return {
     openedBy: rec.openedBy,
     originClass,
@@ -178,7 +258,13 @@ export function accessOf(
     leaseActive:
       token !== undefined && deps.leases ? deps.leases.isActive(rec.paneId, token) : false,
     writeDenied: deps.leases ? deps.leases.isDenied(rec.paneId) : false,
-    inputReady: deps.host.inputReady ? deps.host.inputReady(rec.paneId) : true
+    inputReady: deps.host.inputReady ? deps.host.inputReady(rec.paneId, tabId) : true,
+    // A call that names a tab the pane does not hold is `TAB_NOT_FOUND`, judged before any confirm.
+    ...(tabId !== undefined &&
+    rec.tabs &&
+    !findTab({ tabs: rec.tabs, activeTabId: rec.activeTabId ?? '' }, tabId)
+      ? { tabKnown: false }
+      : {})
   }
 }
 
@@ -197,11 +283,14 @@ export function originOf(
 export function ackBase(
   rec: BrowserPaneRecord,
   live: LivePaneInfo | undefined,
-  origin: OriginClass
+  origin: OriginClass,
+  tabId?: string
 ): Record<string, unknown> {
   return {
     ok: true,
     paneId: rec.paneId,
+    // The tab the call acted on: the one it named, else the pane's active tab.
+    ...((tabId ?? rec.activeTabId) ? { tabId: tabId ?? rec.activeTabId } : {}),
     url: scrubUrl(live?.url ?? ''),
     origin,
     state: live?.loading ? 'loading' : 'live',
@@ -223,26 +312,67 @@ export function noteAgentWrite(deps: Pick<BrowserVerbDeps, 'leases'>, paneId: st
  */
 export function beginPaneVerb(
   registry: Pick<BrowserRegistry, 'beginVerb'>,
-  paneId: string
+  paneId: string,
+  tabId?: string
 ): () => void {
-  return registry.beginVerb(paneId)
+  return registry.beginVerb(paneId, tabId)
 }
 
 /**
  * Whether THIS call revived its pane, kept per call (an async-local store) and not per pane, so two calls on one pane
  * never hand each other's `revived`.
  */
-const revivalOfThisCall = new AsyncLocalStorage<{ revived: boolean }>()
+const revivalOfThisCall = new AsyncLocalStorage<{ revived: boolean; activated: boolean }>()
 
 /** Run one pane-addressed verb call with its own revival record. */
 export function runWithRevival<T>(fn: () => T): T {
-  return revivalOfThisCall.run({ revived: false }, fn)
+  return revivalOfThisCall.run({ revived: false, activated: false }, fn)
 }
 
-/** `revived: true` on the ACK of a verb call that had to bring its discarded pane back. */
+/**
+ * `revived: true` on the ACK of a verb call that had to bring its discarded tab back, and `activated: true` on one
+ * that had to bring its background tab forward (browser-tabs S-6).
+ */
 export function withRevivedFlag(res: Record<string, unknown>): Record<string, unknown> {
   if (res.ok === false) return res
-  return revivalOfThisCall.getStore()?.revived === true ? { ...res, revived: true } : res
+  const store = revivalOfThisCall.getStore()
+  return {
+    ...res,
+    ...(store?.revived === true ? { revived: true } : {}),
+    ...(store?.activated === true ? { activated: true } : {})
+  }
+}
+
+/** The verbs that need their tab in front: a picture of it, and the ones that drive its input (spec "Agent verbs"). */
+const ACTIVATING_OPS: ReadonlySet<string> = new Set([
+  'browser_screenshot',
+  'browser_click',
+  'browser_type',
+  'browser_fill',
+  'browser_press',
+  'browser_upload'
+])
+
+/**
+ * Bring the tab a screenshot or an input verb names to the front (the reading verbs work on a background tab as it
+ * is) and note it for the ACK's `activated: true`. A tab that already shows needs nothing. Activating ends the lease
+ * on the tab that was in front: a lease is one slot per pane and follows the tab it was granted for.
+ */
+export function activateForVerb(
+  op: string,
+  args: Record<string, unknown>,
+  rec: BrowserPaneRecord,
+  deps: Pick<BrowserVerbDeps, 'host'>
+): void {
+  const tabId = tabIdOf(args)
+  if (tabId === undefined || tabId === rec.activeTabId) return
+  // A download by `ref` clicks the element; one by `url` only fetches a file.
+  const activating = ACTIVATING_OPS.has(op) || (op === 'browser_download' && args.ref !== undefined)
+  if (!activating) return
+  if (deps.host.activateTab?.(rec.paneId, tabId)) {
+    const store = revivalOfThisCall.getStore()
+    if (store) store.activated = true
+  }
 }
 
 /**
@@ -254,11 +384,14 @@ export function withRevivedFlag(res: Record<string, unknown>): Record<string, un
 export async function gate(
   op: BrowserOp,
   paneId: string | undefined,
-  deps: BrowserVerbDeps,
-  args?: Record<string, unknown>
+  unboundDeps: BrowserVerbDeps,
+  args?: Record<string, unknown>,
+  /** The tab the call names (browser-tabs S-6): its view, origin and lease are what is judged. Absent = the active tab. */
+  tabId?: string
 ): Promise<
   { refusal: Refusal } | { rec?: BrowserPaneRecord; live?: LivePaneInfo; origin?: OriginClass }
 > {
+  const deps = withTab(unboundDeps, tabId)
   const rec = paneId === undefined ? undefined : deps.registry.get(paneId)
   let live = rec ? deps.host.info(rec.paneId) : undefined
   const originNow = (): OriginClass | undefined => (rec ? originOf(rec, live, deps) : undefined)
@@ -268,7 +401,7 @@ export async function gate(
     // The operator closing the folder's read door ends the leases behind it, whatever turned it off.
     if (rec && rec.openedBy === 'operator' && !readOptIn) deps.leases?.revoke(rec.paneId)
     const denied = gateBrowserOpDetailed(op, {
-      pane: rec && origin ? accessOf(rec, deps, origin, readOptIn) : undefined,
+      pane: rec && origin ? accessOf(rec, deps, origin, readOptIn, tabId) : undefined,
       writesEnabled,
       enforceLease: true,
       ...(args ? { args } : {})
@@ -279,7 +412,8 @@ export async function gate(
       return {
         refusal: refuse(denied.reason as BrowserDenialCode, {
           folder: rec?.folder,
-          ...(rec ? { openedBy: rec.openedBy } : {})
+          ...(rec ? { openedBy: rec.openedBy } : {}),
+          ...(rec && (tabId ?? rec.activeTabId) ? { tabId: tabId ?? rec.activeTabId } : {})
         })
       }
     }
@@ -322,6 +456,8 @@ export async function gate(
 
 export interface OpenArgs {
   folder: string
+  /** Adds a tab to this agent pane of `folder` instead of opening a pane (browser-tabs S-6, `url` form only). */
+  paneId?: string
   url?: string
   path?: string
   html?: string
@@ -342,10 +478,17 @@ export async function openVerb(
   // The same content rules the plan layer applies (defense in depth: the plan refuses first).
   const bad = checkBrowserContent('browser_open', args as unknown as Record<string, unknown>)
   if (bad) return refuseContent(bad)
+  if (args.paneId !== undefined && (args.path !== undefined || args.html !== undefined)) {
+    return refuseBadArgs(
+      '`paneId` adds a tab that loads a `url`; a project page file opens as its own pane, so leave `paneId` out.'
+    )
+  }
   // The `path` and `html` forms open one of our own page files (T569 U2).
   if (args.path !== undefined || args.html !== undefined) return openPageFileVerb(args, deps)
   const verdict = checkTopLevelNavigation(args.url ?? '', 'verb')
   if (!verdict.ok) return refuse('URL_SCHEME_BLOCKED', { scheme: verdict.scheme })
+  if (args.paneId !== undefined)
+    return openTabVerb({ ...args, paneId: args.paneId }, verdict.url, deps)
 
   const owner = args.ownerSessionId ?? null
   if (owner !== null && !deps.sessionKnown(owner)) {
@@ -417,6 +560,74 @@ export async function openVerb(
   }
 }
 
+/**
+ * `browser_open({ paneId, url })`: a new tab in an agent pane of the folder (browser-tabs S-6, spec D-3). It opens in
+ * the background unless the call says `background: false`, so the page the operator is watching does not jump; the
+ * reading verbs work on it as it is, and a screenshot or an input verb brings it forward. A tab is not a pane: it
+ * does not count against the four-pane cap.
+ */
+async function openTabVerb(
+  args: OpenArgs & { paneId: string },
+  url: string,
+  deps: BrowserVerbDeps
+): Promise<Record<string, unknown>> {
+  const rec = deps.registry.get(args.paneId)
+  if (!rec || rec.folder !== args.folder || deps.folderBlocked(rec.folder)) {
+    return refuse('PANE_NOT_FOUND', { folder: args.folder })
+  }
+  // The operator's panes and live panels keep the pages the operator chose; tabs are for the agent's own panes.
+  if (
+    rec.openedBy !== 'agent' ||
+    rec.pagePath ||
+    originOf(rec, deps.host.info(rec.paneId), deps) === 'page'
+  ) {
+    return refuse('NOT_AN_AGENT_PANE', { folder: rec.folder })
+  }
+  if (deps.access.isDisconnected(rec.paneId)) {
+    return refuse('BROWSER_DISCONNECTED', { folder: rec.folder, openedBy: rec.openedBy })
+  }
+  if (deps.access.isPaused(rec.paneId)) return refuse('BROWSER_PAUSED', { folder: rec.folder })
+  if (!deps.host.newTab) return refuse('NOT_YET_AVAILABLE', { feature: 'Tabs' })
+
+  // The hosts this pane had shown BEFORE the call, as `browser_navigate` judges "a new host".
+  const seenBefore = new Set(rec.seenHosts)
+  const token = deps.registry.beginWrite(rec.paneId)
+  let added: BrowserTabResult
+  try {
+    added = deps.host.newTab(rec.paneId, { url, background: args.background !== false })
+  } catch (err) {
+    deps.registry.endWrite(token)
+    throw err
+  }
+  const report = deps.registry.endWrite(token)
+  if (!added.ok) {
+    if (added.error === 'TAB_LIMIT') return refuse('TAB_LIMIT', { folder: rec.folder })
+    if (added.error === 'PANE_NOT_FOUND') return refuse('PANE_NOT_FOUND', { folder: rec.folder })
+    return refuseBadArgs('The tab could not be opened: its page view was not created.')
+  }
+  noteAgentWrite(deps, rec.paneId)
+
+  // `getURL()` is empty until the first commit, so the ACK names the address that was asked for.
+  const live = deps.host.info(rec.paneId, added.tabId)
+  const named = live?.url ? live : { ...(live ?? emptyLive()), url }
+  const origin = originOf(rec, named, deps)
+  const host = hostOf(url)
+  const flagged = flagAfterVerbNavigation(rec.flagged, { origin, host, seenBefore })
+  if (flagged !== rec.flagged) {
+    rec.flagged = flagged
+    deps.host.publishFlag(rec.paneId, rec.flagged)
+  }
+  if (host) rec.seenHosts.add(host)
+  return {
+    ...ackBase(rec, named, origin, added.tabId),
+    reused: false,
+    ownerSessionId: rec.ownerSessionId,
+    openedBy: 'agent',
+    othersWrote: report.othersWrote,
+    operatorInteracted: report.operatorInteracted
+  }
+}
+
 export function emptyLive(): LivePaneInfo {
   return { url: '', title: '', loading: true, canGoBack: false, canGoForward: false }
 }
@@ -460,6 +671,8 @@ export function refuseBadArgs(message: string): Refusal {
 
 export interface NavigateArgs {
   paneId: string
+  /** The tab to navigate (default: the active tab). */
+  tabId?: string
   url?: string
   action?: 'back' | 'forward' | 'reload' | 'stop'
   hard?: boolean
@@ -472,9 +685,10 @@ export const MAX_NAVIGATE_TIMEOUT_MS = 90_000
 
 export async function navigateVerb(
   args: NavigateArgs,
-  deps: BrowserVerbDeps
+  unboundDeps: BrowserVerbDeps
 ): Promise<Record<string, unknown>> {
-  const g = await gate('browser_navigate', args.paneId, deps)
+  const deps = withTab(unboundDeps, args.tabId)
+  const g = await gate('browser_navigate', args.paneId, deps, undefined, args.tabId)
   if ('refusal' in g) return g.refusal
   const rec = g.rec!
 
@@ -520,7 +734,7 @@ export async function navigateVerb(
   if (host) rec.seenHosts.add(host)
 
   return {
-    ...ackBase(rec, live, origin),
+    ...ackBase(rec, live, origin, args.tabId),
     title: deps.scrub(outcome.title),
     status: outcome.status,
     navigationId: outcome.navigationId,
@@ -596,6 +810,18 @@ export async function listVerb(
         emulation: readable ? summarizeEmulation(rec.emulation) : null,
         network: deps.host.captureStatus?.(rec.paneId) ?? { active: false, expiresAt: null },
         inputReady: deps.host.inputReady?.(rec.paneId) ?? true,
+        // The pane's tabs in order (browser-tabs S-6): a handle for each, whether it shows, and whether its page is
+        // loaded (`live`) or released to save memory (`discarded`). The page's own words follow the pane's rule.
+        tabs: rec.tabs.map((tab) => {
+          const tabLive = deps.host.info(rec.paneId, tab.tabId)
+          return {
+            tabId: tab.tabId,
+            url: readable ? scrubUrl(tabLive?.url ?? '') : null,
+            title: readable ? deps.scrub(tabLive?.title ?? '') : null,
+            active: tab.tabId === rec.activeTabId,
+            state: deps.host.isDiscarded?.(rec.paneId, tab.tabId) === true ? 'discarded' : 'live'
+          }
+        }),
         pendingPins: 0,
         createdAt: rec.createdAt,
         lastActiveAt: rec.lastActiveAt
@@ -608,20 +834,61 @@ export async function listVerb(
 /* browser_close                                                                                     */
 /* ------------------------------------------------------------------------------------------------ */
 
+/** `browser_close({ paneId, tabId })`: one tab goes; the last one takes the pane with it (`paneClosed: true`). */
+async function closeTab(
+  rec: BrowserPaneRecord,
+  tabId: string,
+  token: ReturnType<BrowserRegistry['beginWrite']>,
+  base: Record<string, unknown>,
+  deps: BrowserVerbDeps
+): Promise<Record<string, unknown>> {
+  let closed: BrowserTabCloseResult
+  try {
+    closed = deps.host.closeTab?.(rec.paneId, tabId) ?? { ok: false, error: 'BAD_ARGS' }
+  } catch (err) {
+    deps.registry.endWrite(token)
+    throw err
+  }
+  const report = deps.registry.endWrite(token)
+  if (!closed.ok) {
+    return refuse(closed.error === 'TAB_NOT_FOUND' ? 'TAB_NOT_FOUND' : 'PANE_NOT_FOUND', {
+      folder: rec.folder
+    })
+  }
+  if (closed.paneClosed) {
+    // The host already dropped the record; the rest of the pane's state and the renderer's cell go with it.
+    deps.access.forget(rec.paneId)
+    deps.leases?.forget(rec.paneId)
+    await deps.hidePane(rec.folder, rec.paneId).catch(() => false)
+  }
+  return {
+    ...base,
+    closed: true,
+    tabId,
+    paneClosed: closed.paneClosed,
+    othersWrote: report.othersWrote,
+    operatorInteracted: report.operatorInteracted
+  }
+}
+
 export interface CloseArgs {
   paneId: string
+  /** Close only this tab (browser-tabs S-6); without it the whole pane closes. The last tab closes the pane. */
+  tabId?: string
 }
 
 export async function closeVerb(
   args: CloseArgs,
-  deps: BrowserVerbDeps
+  unboundDeps: BrowserVerbDeps
 ): Promise<Record<string, unknown>> {
-  const g = await gate('browser_close', args.paneId, deps)
+  const deps = withTab(unboundDeps, args.tabId)
+  const g = await gate('browser_close', args.paneId, deps, undefined, args.tabId)
   if ('refusal' in g) return g.refusal
   const rec = g.rec!
   const token = deps.registry.beginWrite(rec.paneId)
   const origin = g.origin ?? 'blank'
-  const base = ackBase(rec, g.live, origin)
+  const base = ackBase(rec, g.live, origin, args.tabId)
+  if (args.tabId !== undefined) return closeTab(rec, args.tabId, token, base, deps)
   deps.host.destroy(rec.paneId)
   // Read the write report before `remove` clears the in-flight / operator-interaction tracking.
   const report = deps.registry.endWrite(token)

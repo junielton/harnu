@@ -22,7 +22,7 @@ export type { BudgetSnapshot, GhConsumer, GhResource, ThrottleState }
 const BUCKET_MINUTES = HISTORY_BUCKET_MS / 60_000
 
 /**
- * Display order of the consumers, as the mockup lists them. `merge-batch` only shows when it spent;
+ * Display order of the consumers, as the mockup lists them.
  * `budget` (U1's own `gh api user` lookup, 0–1 calls) never has a row, it only counts in the total.
  */
 export const CONSUMER_ORDER: readonly GhConsumer[] = [
@@ -30,8 +30,7 @@ export const CONSUMER_ORDER: readonly GhConsumer[] = [
   'pr-stack',
   'review',
   'cleanup',
-  'steward',
-  'merge-batch'
+  'steward'
 ]
 
 /** i18n leaf of a consumer: `pr-stack` → `prStack` (vue-i18n key paths stay camelCase). */
@@ -135,11 +134,9 @@ export interface ConsumerRow {
   barPct: number
 }
 
-/** Harnu's consumers for the window, in display order; zero rows are kept except `merge-batch`. */
+/** Harnu's consumers for the window, in display order; zero rows are kept. */
 export function consumerRows(view: ResourceView): ConsumerRow[] {
-  const rows = CONSUMER_ORDER.filter((c) => c !== 'merge-batch' || view.byConsumer[c] > 0).map(
-    (consumer) => ({ consumer, calls: view.byConsumer[consumer] })
-  )
+  const rows = CONSUMER_ORDER.map((consumer) => ({ consumer, calls: view.byConsumer[consumer] }))
   const max = Math.max(1, ...rows.map((r) => r.calls))
   return rows.map((r) => ({ ...r, barPct: Math.round((r.calls / max) * 100) }))
 }
@@ -287,7 +284,6 @@ export function cadenceFor(consumer: GhConsumer, i: CadenceInputs): CadenceCell 
       return cell({ kind: 'every', ms: i.cleanupIntervalMs }, null)
     case 'steward':
       return cell({ kind: 'onEvent' }, null)
-    case 'merge-batch':
     case 'budget':
       // `budget` (the login lookup) never gets a row; it only counts inside Harnu's total.
       return cell({ kind: 'onEvent' }, null)

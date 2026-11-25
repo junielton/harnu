@@ -162,3 +162,74 @@ describe('a natural exit', () => {
     })
   })
 })
+
+describe('setPtyExitObserver (Your move)', () => {
+  const sessionKey = 'sess-0000-exit'
+  afterEach(async () => {
+    pty.setPtyExitObserver(null)
+    const { resetHubForTests } = await import('../src/main/detect/task-state-hub')
+    resetHubForTests()
+  })
+
+  async function working(): Promise<void> {
+    const { ingest } = await import('../src/main/detect/task-state-hub')
+    ingest({ sessionId: sessionKey, event: 'UserPromptSubmit', ts: 1, source: 'hook' }, () => null)
+  }
+
+  it('reports the exit of a session PTY with the hook state read before it is pruned', async () => {
+    const seen: Parameters<Parameters<typeof pty.setPtyExitObserver>[0] & object>[0][] = []
+    pty.setPtyExitObserver((x) => seen.push(x))
+    await pty.createPty(
+      { kind: 'shell', cmd: '/bin/sh', cwd, cols: 80, rows: 24, sessionKey },
+      deps()
+    )
+    await working()
+    lastProc().emitExit(1)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({
+      sessionKey,
+      reason: 'natural',
+      removedFirst: false,
+      taskState: 'working',
+      cwd
+    })
+  })
+
+  it('reports the Ctrl+C the operator wrote before the exit', async () => {
+    const seen: { lastCtrlCAt?: number }[] = []
+    pty.setPtyExitObserver((x) => seen.push(x))
+    const id = await pty.createPty(
+      { kind: 'shell', cmd: '/bin/sh', cwd, cols: 80, rows: 24, sessionKey },
+      deps()
+    )
+    const before = Date.now()
+    h.listeners.get('pty:write')?.({}, id, '\x03')
+    lastProc().emitExit(130)
+    expect(seen[0].lastCtrlCAt).toBeGreaterThanOrEqual(before)
+  })
+
+  it('does not report a PTY the operator closed first', async () => {
+    const seen: unknown[] = []
+    pty.setPtyExitObserver((x) => seen.push(x))
+    const id = await pty.createPty(
+      { kind: 'shell', cmd: '/bin/sh', cwd, cols: 80, rows: 24, sessionKey },
+      deps()
+    )
+    const proc = lastProc()
+    h.listeners.get('pty:destroy')?.({}, id)
+    proc.emitExit(0)
+    expect(seen).toHaveLength(0)
+  })
+
+  it('an observer that throws does not break the exit', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    pty.setPtyExitObserver(() => {
+      throw new Error('boom')
+    })
+    await pty.createPty(
+      { kind: 'shell', cmd: '/bin/sh', cwd, cols: 80, rows: 24, sessionKey },
+      deps()
+    )
+    expect(() => lastProc().emitExit(0)).not.toThrow()
+  })
+})
