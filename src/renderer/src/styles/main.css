@@ -1238,7 +1238,9 @@ textarea,
   background-color: var(--color-accent);
 }
 
+/* A focus stop inside a row (a count chip) is the row's focus too: same bar, no box. */
 [data-row-bar='session']:focus-visible::before,
+[data-row-bar='session']:has([tabindex]:focus-visible)::before,
 [data-row-bar='session'][data-focused='true']::before {
   left: 19px;
   width: 3px;
@@ -1246,12 +1248,14 @@ textarea,
 }
 
 [data-row-bar='checkout']:focus-visible::before,
+[data-row-bar='checkout']:has([tabindex]:focus-visible)::before,
 [data-row-bar='checkout'][data-focused='true']::before {
   width: 3px;
   background-color: var(--color-text);
 }
 
 [data-row-bar='header']:has(button:focus-visible)::before,
+[data-row-bar='header']:has([tabindex]:focus-visible)::before,
 [data-row-bar='header']:focus-visible::before,
 [data-row-bar='header'][data-focused='true']::before {
   width: 3px;
@@ -1259,8 +1263,10 @@ textarea,
 }
 
 [data-row-bar='session'][data-selected='true']:focus-visible::before,
+[data-row-bar='session'][data-selected='true']:has([tabindex]:focus-visible)::before,
 [data-row-bar='session'][data-selected='true'][data-focused='true']::before,
 [data-row-bar='header'][data-current='true']:has(button:focus-visible)::before,
+[data-row-bar='header'][data-current='true']:has([tabindex]:focus-visible)::before,
 [data-row-bar='header'][data-current='true']:focus-visible::before,
 [data-row-bar='header'][data-current='true'][data-focused='true']::before {
   background-color: var(--color-accent);
@@ -1274,6 +1280,8 @@ textarea,
 [data-row-bar='header'][data-current='true'] [data-row-label],
 [data-row-bar]:focus-visible,
 [data-row-bar]:focus-visible [data-row-label],
+[data-row-bar]:has([tabindex]:focus-visible),
+[data-row-bar]:has([tabindex]:focus-visible) [data-row-label],
 [data-row-bar][data-focused='true'],
 [data-row-bar][data-focused='true'] [data-row-label],
 [data-row-bar='header']:has(button:focus-visible),
@@ -1284,12 +1292,20 @@ textarea,
 }
 
 [data-row-bar]:focus-visible,
+[data-row-bar] [tabindex]:focus-visible,
 [data-row-bar='header'] button:focus-visible {
   outline: none;
 }
 
+/* With no box, the focused element itself says which one it is by colour. */
+[data-row-bar] [tabindex]:focus-visible {
+  color: var(--color-text);
+}
+
 @media (forced-colors: active) {
   [data-row-bar]:focus-visible,
+  [data-row-bar]:has([tabindex]:focus-visible),
+  [data-row-bar] [tabindex]:focus-visible,
   [data-row-bar][data-focused='true'],
   [data-row-bar='header']:has(button:focus-visible) {
     outline: 2px solid Highlight;

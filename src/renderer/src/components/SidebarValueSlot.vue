@@ -36,7 +36,7 @@ defineEmits<{ toggle: [] }>()
       :aria-label="label"
       :aria-hidden="label ? undefined : true"
       class="absolute -top-1 right-0 grid size-6 place-items-center justify-items-end text-text-4 opacity-0 transition-opacity duration-(--dur-fast) ease-(--ease) group-hover:opacity-100 group-focus-visible:opacity-100 group-has-focus-visible:opacity-100 group-data-[focused=true]:opacity-100"
-      :class="label && 'cursor-pointer rounded-[var(--float-radius)] hover:bg-border-2'"
+      :class="label && 'cursor-pointer rounded-[var(--float-radius)]'"
       @click="
         (event) => {
           if (label) {
