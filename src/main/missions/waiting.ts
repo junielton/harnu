@@ -7,8 +7,8 @@
  * row, and the wording of an item (`ask`, `why`) is written here and nowhere else.
  *
  * The rank, stated once (spec "Progress, next step and the waiting list", D-14): `main-failing`,
- * `unblock`, `rescope` (an older mission's staged new end, S-40), `settle`, `review`, `close`, `attach`; plan
- * order inside a rank.
+ * `unblock`, `accept` (claims sessions made), `rescope` (an older mission's staged new end, S-40),
+ * `settle`, `review`, `close`, `attach`; plan order inside a rank.
  *
  * Until S-40 a second, v3 list lived here beside it (the operator-owed kinds of Mission v3 §3.12, built
  * from a v3 mission file and its derived signals, with `youSentence` and `youLine`). The v3 handlers and
@@ -25,6 +25,7 @@ import {
   deriveStepState,
   factReading,
   isCarried,
+  openClaimOf,
   type StepInput,
   type StepStateResult
 } from './state'
@@ -46,12 +47,12 @@ export const WAITING_WHY_MAX = 60
 
 /**
  * The v4 kinds of a waiting item, in the rank the v4 list will use: `main-failing` (a merged step
- * whose `main` fact is red), `unblock` (an operator-owned blocker, a decision included), `settle` (an
- * operator criterion to mark), `review` (pull requests that wait for the operator), `close` (ready to
- * close), `attach` (a session asks to join).
+ * whose `main` fact is red), `unblock` (an operator-owned blocker, a decision included), `accept`
+ * (criteria sessions claim are done), `settle` (an operator criterion to mark), `review` (pull requests
+ * that wait for the operator), `close` (ready to close), `attach` (a session asks to join).
  */
 export type WaitingKind =
-  'main-failing' | 'unblock' | 'rescope' | 'settle' | 'review' | 'close' | 'attach'
+  'main-failing' | 'unblock' | 'accept' | 'rescope' | 'settle' | 'review' | 'close' | 'attach'
 
 /**
  * Mission v3 §3.12 — one thing the operator owes a mission: the detail of a waiting item, by v3
@@ -77,10 +78,11 @@ export type WaitingItem = MissionYouItem
 
 // ---- The v4 list (S-8) ------------------------------------------------------------
 
-/** The seven kinds in the one rank the v4 list uses (D-14, and `rescope` since S-40). Index = rank. */
+/** The eight kinds in the one rank the v4 list uses (D-14, `rescope` since S-40, `accept`). Index = rank. */
 export const WAITING_RANK: readonly WaitingKind[] = [
   'main-failing',
   'unblock',
+  'accept',
   'rescope',
   'settle',
   'review',
@@ -101,6 +103,8 @@ interface WaitingBase {
 export type WaitingItemV4 =
   | (WaitingBase & { kind: 'main-failing'; stepId: string; pr: string | null })
   | (WaitingBase & { kind: 'unblock'; stepId: string | null; blockerId: string })
+  /** Every open claim of the mission, as one item: how many, and the steps they are on. */
+  | (WaitingBase & { kind: 'accept'; count: number; stepIds: string[] })
   /** A re-scope an older mission's owner staged and the operator has not answered: Approve or Decline. */
   | (WaitingBase & { kind: 'rescope'; end: string })
   | (WaitingBase & { kind: 'settle'; stepId: string; criterionId: string })
@@ -268,6 +272,8 @@ function mainFailingItems(steps: readonly { step: StepV4; input: StepInput }[]):
  * - `unblock`: an operator-owned blocker that still shows (a `clearsWhen` fact that holds hides it); a
  *   decision is one of these. The blocker's own `ask` and `unblocks` are the wording. A mission-level
  *   blocker's `clearsWhen` is ignored: the write path refuses it, because a fact belongs to a step.
+ * - `accept`: ONE item for every open claim ({@link openClaimOf}), whatever its step reads: the claim is a
+ *   session's ask. A claimed operator criterion keeps its `settle` item too.
  * - `settle`: one item per open operator criterion on a started step (not `todo`, not done). A record converted
  *   from v3 raises them on a `todo` step too, because its facts may be unread and its steps are not planned ahead.
  * - `review`: the pull requests the operator can look over, grouped into one item: the step waits for
@@ -359,6 +365,26 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
 
   const mainFailing = mainFailingItems(steps)
 
+  const accept: WaitingItemV4[] = []
+  const claimed = steps.map(({ step }) => ({
+    stepId: step.id,
+    count: step.acs.filter((c) => openClaimOf(c) !== null).length
+  }))
+  const claims = claimed.reduce((n, s) => n + s.count, 0)
+  if (claims > 0) {
+    accept.push({
+      kind: 'accept',
+      id: 'accept',
+      count: claims,
+      stepIds: claimed.filter((s) => s.count > 0).map((s) => s.stepId),
+      ask:
+        claims === 1
+          ? 'Accept the criterion a session says is done'
+          : `Accept ${claims} criteria sessions say are done`,
+      why: 'Each one is settled once you accept it'
+    })
+  }
+
   const review: WaitingItemV4[] = []
   if (reviewing.length > 0) {
     const n = reviewing.length
@@ -411,6 +437,7 @@ export function waitingListV4(mission: MissionV4, opts: WaitingInputV4 = {}): Wa
   const byKind: Record<WaitingKind, WaitingItemV4[]> = {
     'main-failing': mainFailing,
     unblock,
+    accept,
     rescope,
     settle,
     review,

@@ -472,7 +472,7 @@ describe('spawned identity is not self-declared', () => {
     const verifier = await connectAs(bearerFor(scopeOf('verifier', VERIFIER, id)))
     const ac = (await readRecord(repo, id)).steps[0].acs[0].id
 
-    // The call says it is the stranger (who did not build it). The credential wins: a self-check.
+    // The call says it is the stranger (who did not build it). The credential wins: a claim.
     const r = await okOn(verifier, 'mission_settle_ac', {
       folder: repo,
       missionId: id,
@@ -481,7 +481,7 @@ describe('spawned identity is not self-declared', () => {
       evidence: 'I looked at my own work',
       sessionId: STRANGER
     })
-    expect(r.body.outcome).toBe('self-check')
+    expect(r.body.outcome).toBe('claimed')
     const criterion = (await readRecord(repo, id)).steps[0].acs[0]
     expect(criterion.settled).toBeUndefined()
     expect(criterion.selfCheck?.by).toBe(VERIFIER)
@@ -679,7 +679,7 @@ describe('a create_session for a step asks for the credential of its role', () =
 })
 
 describe('the leader that did a step itself checks it, it does not settle it (carried finding)', () => {
-  it('a leader settling a step nobody else is linked to is a builder: its check reads as a self-check', async () => {
+  it('a leader settling a step nobody else is linked to is a builder: its check reads as a claim', async () => {
     const id = await newMission(repo)
     const ac = (await readRecord(repo, id)).steps[1].acs[0].id // stp-2: no session link on it
     const r = await okOn(mainClient, 'mission_settle_ac', {
@@ -690,7 +690,7 @@ describe('the leader that did a step itself checks it, it does not settle it (ca
       evidence: 'I wrote the README myself and read it again',
       sessionId: LEADER
     })
-    expect(r.body.outcome).toBe('self-check')
+    expect(r.body.outcome).toBe('claimed')
     const criterion = (await readRecord(repo, id)).steps[1].acs[0]
     expect(criterion.settled).toBeUndefined()
     expect(criterion.selfCheck?.by).toBe(LEADER)

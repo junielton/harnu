@@ -755,6 +755,7 @@ interface NextCard {
 export const OWED_RANK = [
   'main-failing',
   'unblock',
+  'accept',
   'rescope',
   'settle',
   'review',

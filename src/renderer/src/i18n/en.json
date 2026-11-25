@@ -426,6 +426,7 @@
       "kind": {
         "main-failing": "Fix",
         "unblock": "Unblock",
+        "accept": "Accept",
         "rescope": "Done when",
         "settle": "Check",
         "review": "Review",
