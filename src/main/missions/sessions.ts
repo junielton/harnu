@@ -363,6 +363,28 @@ export async function attachDispatchedWorker(
 }
 
 /**
+ * A dispatched session could not be attached to its step (AC-13): a `surprise` on the Log, naming the
+ * card (when the dispatch had one) and the step by its title, with the reason and never a session id.
+ */
+export async function logBindSurprise(
+  folder: string,
+  missionId: string,
+  args: { stepId: string; card?: string; reason: string; at?: string }
+): Promise<DoorResult> {
+  const at = args.at ?? new Date().toISOString()
+  return applyChange(folder, missionId, { kind: 'harnu' }, 'operator', (record, log) => {
+    const stepId = resolveStepId(record, args.stepId, missionId)
+    const what = [
+      `Harnu could not attach the session started for step ${quotedTitle(record, stepId ?? args.stepId)}`,
+      args.card !== undefined ? `, card ${args.card}` : '',
+      `. ${args.reason}`
+    ].join('')
+    const heading = `surprise${stepId ? ` · ${stepId}` : ''}`
+    return { record, log: `${logEntry(log, at, heading)}\n${oneLine(what)}\n` }
+  })
+}
+
+/**
  * A session ends, or the mission releases it: its open entry gets `to` and `stoppedAt` (the caller's
  * `step` and `waitingFor`, else what the record says). The row stays: history is append-only. An
  * entry already closed keeps its first `to`.

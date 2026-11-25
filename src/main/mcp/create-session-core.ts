@@ -51,6 +51,11 @@ export interface CreateSessionDeps {
    */
   bindMaterialized?: (mat: Materialization) => Promise<Record<string, unknown> | undefined>
   /**
+   * BUG-296: the session did not materialize in time but was not torn down. A session started for a
+   * step is still owed its attach, or the news that it never got one. Fire and forget.
+   */
+  onNotMaterialized?: (syntheticId: string) => void
+  /**
    * Missions v4 S-34: runs once, after the session materialized, and returns the fields the ACK gains
    * (the proactive `missionHint`). A hint never fails the ACK: a throw is dropped. Omitted for a session
    * started for a step, and for a caller that is exempt.
@@ -124,6 +129,7 @@ export async function runCreateSession(
       // the TTL reap — both wired through `evictObservedSessions` in
       // tool-handlers.ts. Carry the syntheticId so the caller can adopt/poll it.
       heldOnTimeout = true
+      deps.onNotMaterialized?.(syntheticId)
       return steerError('SPAWN_NOT_MATERIALIZED', folder, syntheticId)
     }
     let bound: Record<string, unknown> | undefined

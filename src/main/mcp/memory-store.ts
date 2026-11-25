@@ -52,6 +52,7 @@ import {
   type Provenance
 } from './memory-core'
 import { dataDirReady, mkdirDataDir } from '../data-dir'
+import { atomicWriteFile } from './atomic-write'
 
 /** Where a folder's project memory lives, plus the branch to stamp on writes. */
 export interface MemoryLocation {
@@ -320,6 +321,24 @@ export async function readMemoryForFolder(folder: string): Promise<MemoryPaneDat
 /** Per-page-file write queues for {@link appendMemoryEntry}. */
 const memoryPageLocks = new Map<string, Promise<unknown>>()
 
+/**
+ * Run `fn` (a read → write of one page file) with no other writer of that file in between. A roadmap
+ * card is a page: an append here and Harnu's own writes of the card's fields share this lock, so
+ * neither can overwrite the other with what it read before (BUG-296). Not re-entrant.
+ */
+export function withPageFileLock<T>(file: string, fn: () => Promise<T>): Promise<T> {
+  return serializeByKey(memoryPageLocks, path.resolve(file), fn)
+}
+
+/** Write a card so that a reader never sees it empty or half written, keeping its mode. */
+async function writeCardPage(file: string, content: string): Promise<void> {
+  const mode = await fs.stat(file).then(
+    (s) => s.mode & 0o777,
+    () => 0o644
+  )
+  await atomicWriteFile(file, content, mode)
+}
+
 /** Outcome of a `memory_append`. */
 export type AppendResult =
   | {
@@ -372,7 +391,7 @@ export async function appendMemoryEntry(input: {
 
   // Campaign ch.6 (review): read → mark superseded → write is one critical section per page file,
   // so two concurrent appends can neither drop an entry nor lose a `superseded_by` mark.
-  return serializeByKey(memoryPageLocks, file, async (): Promise<AppendResult> => {
+  return withPageFileLock(file, async (): Promise<AppendResult> => {
     const existing = await readMaybe(file)
     if (parsed.value.requireExists && existing === null) {
       return {
@@ -421,7 +440,8 @@ export async function appendMemoryEntry(input: {
     })
 
     await mkdirDataDir(path.dirname(file))
-    await fs.writeFile(file, content, 'utf8')
+    if (parsed.value.requireExists) await writeCardPage(file, content)
+    else await fs.writeFile(file, content, 'utf8')
     await regenerateIndex(input.memoryDir, input.now)
 
     return {
