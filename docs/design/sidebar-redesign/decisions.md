@@ -47,6 +47,11 @@ sentence here disagree, `design.md` wins and the disagreement is a defect to rep
 
 - The dim working rail is 1.87:1 against the sidebar, below the 3:1 a meaningful bar should have. The
   working dot of each session still carries the state, so the rail is a secondary cue.
+- The 1.87:1 above was accepted looking at the dark theme, and it holds there. In the light themes the
+  40% mix was 1.01:1 to 1.18:1 against the tree guide beside it, so each of the four light themes has a
+  solid rail green (3.17:1 to 3.48:1 against its sidebar). Their selected bar is blue where the accent
+  would read as failed or needs-you, and `--text-4` and `--warning` were darkened to read as text.
+  Values and ratios: `design.md` §9 "Light themes: sidebar contrast". Dark themes are unchanged.
 - When every checkout works, the folder ring, the rails and the dots say the same thing on three
   levels.
 - In the Floating panels layout the rail sits close to the island border.

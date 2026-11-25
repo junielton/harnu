@@ -2341,15 +2341,17 @@ State lives on a **left bar**, never on a fill or a box. No state changes a row'
 weight or background; the label **lights up to `--text`** on hover, selected and keyboard focus
 (colour only). Rest colours are not brightened.
 
-| State                    | Session row (on its guide segment) | Checkout row (x = 0, inset 2px top and bottom) | Folder header (x = 0, a 16px tick centred on the ring) |
-| ------------------------ | ---------------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
-| Rest                     | 1px `--border-2`                   | nothing                                        | nothing                                                |
-| Hover                    | 2px `--text-2`                     | 2px `--text-2`                                 | 2px `--text-2`                                         |
-| Selected / current       | 2px `--accent` (hover keeps it)    | —                                              | 2px `--accent` (hover keeps it)                        |
-| Keyboard focus           | 3px `--text`                       | 3px `--text`                                   | 3px `--text`                                           |
-| Focus + selected/current | 3px `--accent`                     | —                                              | 3px `--accent`                                         |
+| State                    | Session row (on its guide segment)    | Checkout row (x = 0, inset 2px top and bottom) | Folder header (x = 0, a 16px tick centred on the ring) |
+| ------------------------ | ------------------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| Rest                     | 1px `--border-2`                      | nothing                                        | nothing                                                |
+| Hover                    | 2px `--text-2`                        | 2px `--text-2`                                 | 2px `--text-2`                                         |
+| Selected / current       | 2px `--bar-selected` (hover keeps it) | —                                              | 2px `--bar-selected` (hover keeps it)                  |
+| Keyboard focus           | 3px `--text`                          | 3px `--text`                                   | 3px `--text`                                           |
+| Focus + selected/current | 3px `--bar-selected`                  | —                                              | 3px `--bar-selected`                                   |
 
 - A session's 2px bar is centred on the guide (left 19.5px), the 3px one starts at 19px.
+- `--bar-selected` is the theme's `--accent`, except in the light themes whose accent reads as failed
+  or needs-you ([§9 "Light themes: sidebar contrast"](#light-themes-sidebar-contrast)).
 - On a checkout of a group that shows a [rail](#group-rail), hover keeps the **rail's colour at full
   strength** and widens it to 3px.
 - The transition is `background-color` over `--dur-fast` `--ease`; none under reduced motion.
@@ -2371,23 +2373,25 @@ happening in this checkout" without another dot.
   covers the checkout row. The tree guide of the group's last session ends on the same y.
 - **Colour = the hottest session**, in this order:
 
-| Hottest session          | Rail                                                             |
-| ------------------------ | ---------------------------------------------------------------- |
-| needs input              | `--warning`                                                      |
-| failed                   | `--red`                                                          |
-| working (stuck included) | `--green` at **40%** (`bg-green/40`) — the **dim working green** |
-| idle, done, none         | nothing                                                          |
+| Hottest session          | Rail                                         |
+| ------------------------ | -------------------------------------------- |
+| needs input              | `--warning`                                  |
+| failed                   | `--red`                                      |
+| working (stuck included) | `--rail-working` — the **dim working green** |
+| idle, done, none         | nothing                                      |
 
-- **No new token** for the dim green: it is the existing `--color-green` at 40% opacity (Tailwind
-  `bg-green/40`, a `color-mix` on the token), so every theme derives it.
+- `--rail-working` is `--green` at **40%** (`color-mix(in oklab, var(--green) 40%, transparent)`), so
+  every dark theme and every extension theme derives it. The four light themes override it with a solid
+  green, where the 40% mix could not be told from the tree guide
+  ([§9 "Light themes: sidebar contrast"](#light-themes-sidebar-contrast)).
 - **Folder headers never get a rail** (the ring says it), nor does the idle-worktrees row.
 - **Motion:** colour in over `--dur`, out over `--dur-slow`, `--ease`; none under reduced motion.
   `forced-colors: active` → `CanvasText`.
 - The checkout row names the state for assistive tech: "{branch}, needs you" / "failed" /
   "agent working". Folded, the name goes on to say the session count the row shows
   ("{branch}, agent working, 2 sessions"), because the name replaces the row's content.
-- **Accepted:** the dim green is 1.87:1 against `--sidebar` (under 3:1); the session dots still carry
-  "working".
+- **Accepted (dark themes):** the dim green is 1.87:1 against `--sidebar` in `default-dark` (under
+  3:1); the session dots still carry "working". The light themes hold 3:1 or more.
 
 #### Needs attention
 
@@ -14465,6 +14469,10 @@ codebase is a bug to fix.
     0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 12px 32px rgba(0, 0, 0, 0.45),
     0 2px 8px rgba(0, 0, 0, 0.3);
 
+  /* sidebar marks (§6 "Row states", "Group rail"), derived; light themes override them */
+  --rail-working: color-mix(in oklab, var(--green) 40%, transparent);
+  --bar-selected: var(--accent);
+
   /* floating panels (§6 "Floating panels layout"), used only under :root[data-floating] */
   --canvas: color-mix(in oklab, var(--bg) 62%, black); /* dark themes; light themes override it */
   --float-gap: 4px; /* between islands, and from an island to the window edge */
@@ -14571,6 +14579,42 @@ Adding a theme = (1) a complete `:root[data-theme='<id>']` block in
 `theme.<id>` in **both** locales, (4) a row in this table. Alternate theme accents
 can stray from terracotta — the "single warm accent" rule applies to the
 default theme; each theme keeps its own identity.
+
+### Light themes: sidebar contrast
+
+The sidebar says state with 2px marks and its quietest labels in `--text-4`, which washed out on a
+light surface. Two tokens carry the marks, `--rail-working` and `--bar-selected`. Like `--canvas`,
+they are **not** part of the 20-token contract: the base derives them (`--green` at 40%, and
+`--accent`), which is right for every dark theme and is what an extension theme gets, and only the
+four light themes override them.
+
+| `data-theme`       | `--rail-working` | `--bar-selected`    | `--text-3`                | `--text-4`                | `--warning`               |
+| ------------------ | ---------------- | ------------------- | ------------------------- | ------------------------- | ------------------------- |
+| `light`            | `#55a06c`        | `#1d4ed8` (blue)    | `#52525b` (was `#71717a`) | `#696972` (was `#a1a1aa`) | `#926100` (was `#ca8a04`) |
+| `catppuccin-latte` | `#5a8c50`        | `#1e66f5` (blue)    | `#5f627a` (was `#6c6f85`) | `#65687e` (was `#7c7f93`) | `#845500` (was `#df8e1d`) |
+| `github-light`     | `#53966a`        | = `--accent` (blue) | `#59636e` (was `#656d76`) | `#646c75` (was `#818b98`) | `#9a6700` (unchanged)     |
+| `gruvbox-light`    | `#6f8c38`        | `#458588` (blue)    | `#665c54` (unchanged)     | `#72665c` (was `#7c6f64`) | `#955700` (was `#b57614`) |
+
+`--warning-soft` and `--warning-line` are the theme's `--warning` at 0.10 and 0.30.
+
+What the values hold, against `--sidebar` unless said (WCAG ratio):
+
+| `data-theme`       | rail | rail vs tree guide | bar  | `--text-4` | `--warning` |
+| ------------------ | ---- | ------------------ | ---- | ---------- | ----------- |
+| `light`            | 3.17 | 2.14               | 6.70 | 5.43       | 5.34        |
+| `catppuccin-latte` | 3.26 | 2.18               | 4.04 | 4.50       | 5.26        |
+| `github-light`     | 3.32 | 1.76               | 4.88 | 5.00       | 4.57        |
+| `gruvbox-light`    | 3.48 | 1.76               | 3.84 | 5.06       | 5.24        |
+
+- **Text** (`--text-4`, `--warning`) is 4.5:1 or more on `--sidebar`, and never under 3:1 on `--bg`,
+  `--surface` or `--surface-2`. On a `--surface-2` hover row it is under 4.5 in latte (`--text-4`
+  4.14) and gruvbox (`--text-4` 4.06, `--warning` 4.20).
+- **Marks** (rail, bar) are 3:1 or more on `--sidebar`.
+- **The bar is blue** where the accent is orange: an orange bar sits between failed (red) and needs-you
+  (amber) and reads as one of them. The accent itself is unchanged, so buttons and links keep the
+  theme's identity.
+- In light themes the working rail reads as dim by its lower saturation more than by lightness.
+- `tests/light-theme-contrast.test.ts` holds these floors.
 
 ### Extension themes (Extension SDK Phase 1)
 

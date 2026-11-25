@@ -232,7 +232,7 @@ describe('sidebar row states (S-2)', () => {
         "[data-row-bar='header'][data-current='true'][data-focused='true']::before"
       ])
     )
-    expect(accent.declarations['background-color']).toBe('var(--color-accent)')
+    expect(accent.declarations['background-color']).toBe('var(--color-bar-selected)')
   })
 
   it('a focusable element inside a row draws the row bar, not a box', async () => {
@@ -259,7 +259,7 @@ describe('sidebar row states (S-2)', () => {
     expect(accent.selectors).toContain(
       "[data-row-bar='header'][data-current='true']:has([tabindex]:focus-visible)::before"
     )
-    expect(accent.declarations['background-color']).toBe('var(--color-accent)')
+    expect(accent.declarations['background-color']).toBe('var(--color-bar-selected)')
 
     // No box on the element: its text lights up instead. Forced colors keeps an outline.
     const own = rules.find(

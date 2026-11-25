@@ -646,7 +646,7 @@ describe('sidebar group rail priority (S-3)', () => {
       new RegExp(
         `\\[data-checkout-group\\]\\[data-group-rail='${state}'\\]\\s*\\{[^}]*--rail-color:\\s*([^;]+);`
       ).exec(css)?.[1]
-    expect(colour('working')).toBe('color-mix(in oklab, var(--color-green) 40%, transparent)')
+    expect(colour('working')).toBe('var(--color-rail-working)')
     expect(colour('needs-input')).toBe('var(--color-warning)')
     expect(colour('failed')).toBe('var(--color-red)')
   })
