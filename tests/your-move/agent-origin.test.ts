@@ -3,7 +3,7 @@
  * in memory only, so what it says is written down; sessions older than this file are covered by
  * the companion audit log. Only a sure `agent` is ever `true`.
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -94,4 +94,45 @@ describe('agent-spawned sessions', () => {
     expect(await a.isAgentSpawned('anyone')).toBe(false)
     expect(() => a.note('anyone')).not.toThrow()
   })
+})
+
+describe('review: concurrent asks and a list that cannot be read', () => {
+  it('answers a second ask that arrives while the audit is still being read', async () => {
+    await writeFile(
+      path.join(dir, 'audit.ndjson'),
+      [row('first', 'agent'), row('second', 'agent')].join('\n')
+    )
+    const a = origins()
+    expect(await Promise.all([a.isAgentSpawned('first'), a.isAgentSpawned('second')])).toEqual([
+      true,
+      true
+    ])
+    await a.idle()
+  })
+
+  it('keeps a copy of a list it could not understand before writing a new one', async () => {
+    await writeFile(path.join(dir, 'agents.json'), 'not json')
+    const a = origins({ dispatched: 'agent' })
+    expect(await a.isAgentSpawned('dispatched')).toBe(true)
+    await a.idle()
+    expect(await readFile(path.join(dir, 'agents.json.unreadable'), 'utf8')).toBe('not json')
+    expect(JSON.parse(await readFile(path.join(dir, 'agents.json'), 'utf8')).ids).toEqual([
+      'dispatched'
+    ])
+  })
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'never writes over a list it was not allowed to read',
+    async () => {
+      const file = path.join(dir, 'agents.json')
+      const before = JSON.stringify({ version: 1, ids: ['older'] })
+      await writeFile(file, before)
+      await chmod(file, 0o000)
+      const a = origins({ dispatched: 'agent' })
+      expect(await a.isAgentSpawned('dispatched')).toBe(true)
+      await a.idle()
+      await chmod(file, 0o600)
+      expect(await readFile(file, 'utf8')).toBe(before)
+    }
+  )
 })

@@ -283,4 +283,52 @@ describe('startup cleanup wiring (BUG-300)', () => {
       closeYourMove()
     }
   })
+
+  it('booting keeps the card of a shelved worktree, whose folder is gone on purpose (BUG-308)', async () => {
+    const shelved = path.join(dir, 'shelved')
+    await writeFile(
+      path.join(dir, 'gc-shelved.json'),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            id: 'b',
+            repoPath: dir,
+            worktreePath: shelved,
+            branch: 'feat/search',
+            headSha: 'abc1234',
+            namespace: 'refs/archive/feat-search',
+            shelvedAt: 1,
+            idleDays: 4,
+            reason: 'Shelved',
+            freedBytes: null
+          }
+        ]
+      })
+    )
+    await writeFile(
+      path.join(dir, 'your-move.json'),
+      JSON.stringify({
+        version: 1,
+        cursors: {},
+        cards: [
+          card({ id: 'c-shelved', sessionId: 'flaky', folder: shelved }),
+          card({ id: 'c-nofolder', sessionId: 'flaky', folder: path.join(dir, 'removed') })
+        ]
+      })
+    )
+    const { registerYourMove, closeYourMove } = await import('../../src/main/your-move/ipc')
+    registerYourMove(() => null)
+    try {
+      const byId = async (): Promise<Map<string, CardView>> =>
+        new Map(((await h.handlers.get('yourMove:list')?.({})) as CardView[]).map((c) => [c.id, c]))
+      await vi.waitFor(
+        async () => expect((await byId()).get('c-nofolder')?.closedBy).toBe('folder-removed'),
+        { timeout: 4_000 }
+      )
+      expect((await byId()).get('c-shelved')?.closedAt).toBeUndefined()
+    } finally {
+      closeYourMove()
+    }
+  })
 })
