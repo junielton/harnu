@@ -7,7 +7,8 @@
  *   C. a mission has at most one card, and a mission nobody touched in 7 days has none
  *      (`source-mission.ts`);
  *   D. a card whose session transcript or folder is gone closes. A death card closes only with
- *      its folder: a session that really died must not vanish because its transcript did.
+ *      its folder: a session that really died must not vanish because its transcript did. A
+ *      worktree Cleanup shelved is not gone: resuming one of its sessions brings it back.
  *
  * Recall over noise: only a sure "gone" closes anything. A lookup that failed, threw or answered
  * `unknown` keeps the card. Every write goes through the store's own `transact`.
@@ -15,6 +16,7 @@
 
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
+import { isShelvedFolder, type ShelvedFile } from '../gc/shelve-store'
 import {
   closeCards,
   expireStale,
@@ -36,6 +38,25 @@ export async function folderPresence(folder: string): Promise<Presence> {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code
     return code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unknown'
+  }
+}
+
+/**
+ * `base`, except that a missing folder on the shelved list is `present`. `readShelved` must throw
+ * on a list it cannot read: a missing folder is then `unknown`, and its cards stay.
+ */
+export function shelvedAware(
+  base: (folder: string) => Promise<Presence>,
+  readShelved: () => Promise<ShelvedFile>
+): (folder: string) => Promise<Presence> {
+  return async (folder) => {
+    const found = await base(folder)
+    if (found !== 'missing') return found
+    try {
+      return isShelvedFolder(await readShelved(), folder) ? 'present' : 'missing'
+    } catch {
+      return 'unknown'
+    }
   }
 }
 

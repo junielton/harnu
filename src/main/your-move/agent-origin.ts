@@ -39,6 +39,11 @@ const AUDIT_REREAD_MS = 60_000
 /** The newest ids kept. */
 const MAX_REMEMBERED = 5_000
 
+/** The companion audit log under `userData`, older generation first (`companion/audit-log.ts`). */
+export function companionAuditFiles(userData: string): string[] {
+  return ['audit.1.ndjson', 'audit.ndjson'].map((f) => path.join(userData, 'companion', f))
+}
+
 function agentSidsIn(raw: string, into: Set<string>): void {
   for (const line of raw.split('\n')) {
     if (!line.includes('"agent"')) continue
@@ -53,21 +58,40 @@ function agentSidsIn(raw: string, into: Set<string>): void {
 
 export function createAgentOrigins(deps: AgentOriginDeps): AgentOrigins {
   const known = new Set<string>()
-  let audited = new Set<string>()
+  /** The read in use: every ask inside its window waits for the same one. */
+  let audit: Promise<ReadonlySet<string>> = Promise.resolve(new Set<string>())
   let auditedAt = -Infinity
   let queue: Promise<unknown> = Promise.resolve()
+  /** False once the list on disk must not be replaced: it was not read, nor copied aside. */
+  let writable = true
 
-  const loaded: Promise<void> = fs.readFile(deps.file, 'utf8').then(
-    (raw) => {
+  /** Only a missing list is an empty one: anything else is kept before it can be written over. */
+  async function load(): Promise<void> {
+    let raw: string
+    try {
+      raw = await fs.readFile(deps.file, 'utf8')
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return
+      writable = false
+      console.warn(`[your-move] the agent session list is left alone: ${(e as Error).message}`)
+      return
+    }
+    try {
+      const ids = (JSON.parse(raw) as { ids?: unknown }).ids
+      if (!Array.isArray(ids)) throw new Error('no list of ids')
+      for (const id of ids) if (typeof id === 'string') known.add(id)
+    } catch {
       try {
-        const ids = (JSON.parse(raw) as { ids?: unknown }).ids
-        if (Array.isArray(ids)) for (const id of ids) if (typeof id === 'string') known.add(id)
-      } catch {
-        console.warn('[your-move] the agent session list could not be read: starting empty')
+        await fs.copyFile(deps.file, `${deps.file}.unreadable`)
+        console.warn('[your-move] the agent session list was not understood: kept aside')
+      } catch (e) {
+        writable = false
+        console.warn(`[your-move] the agent session list is left alone: ${(e as Error).message}`)
       }
-    },
-    () => undefined
-  )
+    }
+  }
+
+  const loaded = load()
 
   const remember = (sessionId: string): void => {
     if (known.has(sessionId)) return
@@ -75,6 +99,7 @@ export function createAgentOrigins(deps: AgentOriginDeps): AgentOrigins {
     queue = queue
       .then(async () => {
         await loaded
+        if (!writable) return
         const ids = [...known].slice(-MAX_REMEMBERED)
         await fs.mkdir(path.dirname(deps.file), { recursive: true })
         await atomicWriteFile(deps.file, JSON.stringify({ version: 1, ids }), 0o600)
@@ -92,20 +117,24 @@ export function createAgentOrigins(deps: AgentOriginDeps): AgentOrigins {
     }
   }
 
+  async function readAudit(): Promise<ReadonlySet<string>> {
+    const sids = new Set<string>()
+    for (const file of deps.auditFiles) {
+      try {
+        agentSidsIn(await fs.readFile(file, 'utf8'), sids)
+      } catch {
+        /* no log, or not readable: it says nothing */
+      }
+    }
+    return sids
+  }
+
   async function auditSays(sessionId: string): Promise<boolean> {
     if (deps.now() - auditedAt >= AUDIT_REREAD_MS) {
       auditedAt = deps.now()
-      const next = new Set<string>()
-      for (const file of deps.auditFiles) {
-        try {
-          agentSidsIn(await fs.readFile(file, 'utf8'), next)
-        } catch {
-          /* no log, or not readable: it says nothing */
-        }
-      }
-      audited = next
+      audit = readAudit()
     }
-    return audited.has(sessionId)
+    return (await audit).has(sessionId)
   }
 
   return {

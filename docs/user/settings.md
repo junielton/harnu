@@ -234,7 +234,7 @@ The queue is meant to hold only what you can still act on, so Harnu also closes 
 
 - **A newer turn replaces an older one.** When Harnu checks a finished turn of a session, the cards it had filed from that session's earlier turns close, including when the new turn needs nothing from you. A card the new turn repeats stays. A look at a turn that is still running closes nothing.
 - **Seven days of nothing.** A card nobody added anything to for 7 days closes as **expired**. Harnu re-reading the same thing does not count. A mission card follows the mission's own record instead.
-- **Nothing left to open.** A card whose folder no longer exists closes, and so does a card whose session transcript no longer exists. A "Session stopped" card is the exception: it stays while its folder exists, so a session that died is not lost with its transcript. If Harnu cannot tell, the card stays.
+- **Nothing left to open.** A card whose folder no longer exists closes, and so does a card whose session transcript no longer exists. A "Session stopped" card is the exception: it stays while its folder exists, so a session that died is not lost with its transcript. A worktree that Cleanup shelved does not count as gone, since resuming one of its sessions brings it back. If Harnu cannot tell, the card stays.
 
 Closed cards stay in the list for 7 days with the reason. The same rules run once when Harnu starts and the last two again every hour.
 

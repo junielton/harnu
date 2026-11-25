@@ -20,6 +20,7 @@ import { isFolderDenied } from '../mcp/permission-core'
 import { setMissionListObserver } from '../mission-ipc'
 import { setPtyExitObserver, spawnOriginForSession } from '../pty'
 import { getSessionArchive } from '../session-archive-core'
+import { readShelvedForUpdate, SHELVED_FILE } from '../gc/shelve-store'
 import { onFolderRemoved, readUserProjects } from '../user-projects'
 import {
   cardsPage,
@@ -30,10 +31,10 @@ import {
   type CardView,
   type YourMoveCard
 } from './core'
-import { createAgentOrigins } from './agent-origin'
+import { companionAuditFiles, createAgentOrigins } from './agent-origin'
 import { createInspector, laneFor, type InspectOutcome, type InspectRequest } from './inspector'
 import { createJudgeRunner, type JudgeRunner } from './judge'
-import { cleanupQueue, folderPresence, sweepStaleCards } from './hygiene'
+import { cleanupQueue, folderPresence, shelvedAware, sweepStaleCards } from './hygiene'
 import { createTranscriptLocator } from './locate'
 import { closeIneligibleCards, createOperatorGate } from './operator'
 import {
@@ -154,12 +155,16 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   // an agent is written down, and the gate asks. Remembered across restarts.
   const origins = createAgentOrigins({
     file: path.join(userData, AGENTS_FILE),
-    auditFiles: ['audit.1.ndjson', 'audit.ndjson'].map((f) => path.join(userData, 'companion', f)),
+    auditFiles: companionAuditFiles(userData),
     live: (id) => spawnOriginForSession(id),
     now: () => Date.now()
   })
   /** Whether a session's transcript holds an operator entry, remembered across asks (BUG-300). */
   const operatorGate = createOperatorGate({ agentSpawned: (id) => origins.isAgentSpawned(id) })
+  // A shelved worktree has no folder on purpose, and its cards stay (BUG-308).
+  const presence = shelvedAware(folderPresence, () =>
+    readShelvedForUpdate(path.join(userData, SHELVED_FILE))
+  )
 
   let prefs: YourMovePrefs | null = null
   let denyFolders: string[] = []
@@ -219,7 +224,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
   const eligible = async (sessionId: string, folder: string): Promise<boolean> => {
     await refreshDeny()
     // A folder that is gone files nothing (BUG-308): its card could not be acted on.
-    if ((await folderPresence(folder)) === 'missing') return false
+    if ((await presence(folder)) === 'missing') return false
     return (
       !isFolderDenied(folder, denyFolders) &&
       !(getSessionArchive()?.has(sessionId) ?? false) &&
@@ -321,7 +326,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
       const world = {
         store,
         lookup: (id: string) => transcripts.lookup(id),
-        folder: folderPresence,
+        folder: presence,
         now: () => Date.now()
       }
       const leaderGone = async (id: string): Promise<boolean> =>
