@@ -43,8 +43,10 @@ import { useSidebarCursor } from './session-cursor'
 import {
   buildSidebarTree,
   flattenSidebarTree,
+  reuseTree,
   treeCollapseLevel,
-  type CollapseLevel
+  type CollapseLevel,
+  type TreeFolder
 } from '../lib/sidebar-tree'
 import {
   applyGitListings,
@@ -75,6 +77,7 @@ import { buildBoard, type BoardBucket, type BoardSession } from '../components/f
 import { sortFolders, type FolderSortMode } from '../components/folder-sort'
 import { isSidebarDensity, type SidebarDensity } from '../components/sidebar-density'
 import { buildSessionRows, teamHex } from '../components/teammate-grouping'
+import { dotFor } from '../components/session-dot'
 import { isForkSyntheticLike, sessionTitle } from '../lib/session-label'
 import { injectionLedger } from './injection-ledger'
 import { createNavHistory } from '../lib/nav-history'
@@ -2566,16 +2569,21 @@ export const useSessionsStore = defineStore('sessions', () => {
   const checkoutsFolded = persistedSet<string>('om2tab.checkoutsFolded')
   const idleWorktreesOpen = persistedSet<string>('om2tab.idleWorktreesOpen')
 
-  const repoNodes = computed(() => {
-    const filtering = !!filterQuery.value.trim()
-    const visible = filtering ? filteredFolders.value : listableVisibleFolders()
-    return groupByRepo(
-      sortFolders(visible, folderSort.value),
-      filtering ? undefined : collapsedGroups.value,
+  const sortedListedFolders = computed<Folder[]>(() =>
+    sortFolders(
+      filterQuery.value.trim() ? filteredFolders.value : listableVisibleFolders(),
+      folderSort.value
+    )
+  )
+
+  const repoNodes = computed(() =>
+    groupByRepo(
+      sortedListedFolders.value,
+      filterQuery.value.trim() ? undefined : collapsedGroups.value,
       groupAliases.value,
       shelvedByRepo.value
     )
-  })
+  )
 
   function listableVisibleFolders(): Folder[] {
     const ctx = buildClassifyCtx()
@@ -2595,25 +2603,108 @@ export const useSessionsStore = defineStore('sessions', () => {
     )
   )
 
-  const sidebarTree = computed(() =>
-    buildSidebarTree(repoNodes.value, {
-      sort: folderSort.value,
-      aliasFromBranchPaths: aliasFromBranchPaths.value,
-      hasRows: checkoutHasRows
-    })
-  )
-
-  function sidebarSessionRows(folder: Folder): ReturnType<typeof buildSessionRows<Session>> {
+  // Per folder, cached (the BUG-265 shape): a change in one folder's sessions
+  // recomputes that folder alone. The tree and the header ring read only
+  // primitives from these, so a transcript append that changes no verdict wakes
+  // neither.
+  function buildFolderRows(folder: Folder): ReturnType<typeof buildSessionRows<Session>> {
     return buildSessionRows(
       sessionsForDisplay(folder),
       teammateLeadCandidates(folder),
       selectedId.value
     )
   }
+  const folderRows = createKeyedComputeds<ReturnType<typeof buildSessionRows<Session>>>((path) => {
+    const folder = findFolderByPath(path)
+    return folder ? buildFolderRows(folder) : { rows: [], teammatesByLeader: new Map() }
+  })
+
+  function sidebarSessionRows(folder: Folder): ReturnType<typeof buildSessionRows<Session>> {
+    // A folder object the model does not hold (a detached copy) is computed on the spot.
+    return findFolderByPath(folder.path) === folder
+      ? folderRows.get(folder.path)
+      : buildFolderRows(folder)
+  }
+
+  const folderHasRows = createKeyedComputeds<boolean>((path) => {
+    const folder = findFolderByPath(path)
+    return (
+      !!folder &&
+      (sidebarSessionRows(folder).rows.length > 0 || terminalsForFolder(folder).length > 0)
+    )
+  })
 
   function checkoutHasRows(folder: Folder): boolean {
-    return sidebarSessionRows(folder).rows.length > 0 || terminalsForFolder(folder).length > 0
+    return folderHasRows.get(folder.path)
   }
+
+  /**
+   * The folder ring's level for one checkout: 3 needs input, 2 failed, 1 working
+   * (stuck included), 0 nothing. Only sessions the tree can list count, so the
+   * ring never points at a row that is not there; the age filter already keeps
+   * every live one. A folder terminal counts only for the state its own row
+   * shows (an idle shell is not "working").
+   */
+  const folderRingLevels = createKeyedComputeds<number>((path) => {
+    const folder = findFolderByPath(path)
+    if (!folder) return 0
+    let level = 0
+    for (const session of sessionsForDisplay(folder)) {
+      if (archivedIds.value.has(session.sessionId) || session.status === 'archived') continue
+      const dot = dotFor(
+        session.taskState,
+        session.status,
+        activityOf(session, closureNow.value),
+        session.transcriptState
+      )
+      if (dot === 'needs-input') return 3
+      if (dot === 'failed') level = 2
+      else if (dot === 'working' || dot === 'stuck') level = Math.max(level, 1)
+    }
+    for (const terminal of terminalsForFolder(folder)) {
+      if (terminal.taskState === 'needs-input') return 3
+      if (terminal.taskState === 'working') level = Math.max(level, 1)
+    }
+    return level
+  })
+
+  function folderRingLevel(path: string): number {
+    return folderRingLevels.get(path)
+  }
+
+  watch(
+    () => folders.value.map((folder) => folder.path),
+    (paths) => {
+      const keep = new Set(paths)
+      folderRows.prune(keep)
+      folderHasRows.prune(keep)
+      folderRingLevels.prune(keep)
+    }
+  )
+
+  // The previous tree is handed back entry by entry while nothing it draws
+  // changed, so an unrelated session update re-renders no header or checkout row.
+  const sidebarTree = computed<TreeFolder[]>((previous) =>
+    reuseTree(
+      previous,
+      buildSidebarTree(repoNodes.value, {
+        order: sortedListedFolders.value,
+        aliasFromBranchPaths: aliasFromBranchPaths.value,
+        hasRows: checkoutHasRows
+      })
+    )
+  )
+
+  // A repo that loses its last other worktree becomes a standalone folder, whose
+  // open state is its own: carry the header's over, so it does not snap shut.
+  watch(sidebarTree, (next, previous) => {
+    if (filterQuery.value.trim()) return
+    for (const node of next) {
+      if (node.group) continue
+      const was = previous?.find((old) => old.group && old.paths.includes(node.primary.path))
+      if (was?.open) node.primary.expanded = true
+    }
+  })
 
   function isIdleWorktreesOpen(key: string): boolean {
     return !!filterQuery.value.trim() || idleWorktreesOpen.has(key)
@@ -3150,6 +3241,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   function jumpToSession(sessionId: string): void {
     if (!findSessionById(sessionId)) return
     select(sessionId)
+    revealSessionRow(sessionId)
     raiseJumpFlash(`session:${sessionId}`)
   }
 
@@ -3387,7 +3479,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       (s) => s.synthetic === true && s.taskState !== 'completed' && s.taskState !== 'failed'
     )
     if (existing) {
-      folder.expanded = true
+      showNewRow(folder)
       // BUG-102 — a "+ New session" click is a focus intent: route through the
       // shared primitive so it closes any open takeover too, not just the folder
       // selection.
@@ -3425,7 +3517,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     // Insert at the top so it appears immediately above the real sessions.
     folder.sessions.unshift(synthetic)
     bornSyntheticIds.add(sessionId)
-    folder.expanded = true
+    showNewRow(folder)
     // BUG-102 — same focus intent as the dedupe branch above: the operator asked
     // for a session, so every takeover and the folder view must step aside.
     select(sessionId)
@@ -3507,7 +3599,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     } else if (trimmedPrompt.length > 0) {
       pendingAgentPrompts.set(sessionId, prePrompt)
     }
-    folder.expanded = true
+    showNewRow(folder)
     // T113: the background drain spawns with `select: false` — selection is how
     // a MANUAL dispatch boots (TerminalPane activates on select), but the drain
     // must never steal focus; its caller queues the boot via `enqueueAgentBoot`.
@@ -3596,7 +3688,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       ...(bootOverride && Object.keys(bootOverride).length ? { bootOverride } : {})
     }
     folder.sessions.unshift(synthetic)
-    folder.expanded = true
+    showNewRow(folder)
 
     // Record the token-bound migrate's metadata so the right synthetic (this
     // agent's, never a coexisting user one) is upgraded when its JSONL lands.
@@ -3768,7 +3860,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
       folder.sessions.unshift(synthetic)
       bornSyntheticIds.add(sessionId)
-      folder.expanded = true
+      showNewRow(folder)
       // BUG-102 — a fork is a focus intent too; route through `select()` so it
       // closes any open takeover and never leaves a folder selection behind.
       select(sessionId)
@@ -3843,7 +3935,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       ...(command ? { shellCommand: { cmd: command.cmd, args: [...command.args] } } : {})
     }
     folder.sessions.push(terminal)
-    folder.expanded = true
+    showNewRow(folder)
     // BUG-102 — opening a folder terminal is a focus intent too: it was the one
     // mint site `select()` never reached, so it alone left a takeover or the
     // folder view stuck on top of the freshly-opened shell.
@@ -3927,6 +4019,24 @@ export const useSessionsStore = defineStore('sessions', () => {
 
   function toggleIdleWorktrees(key: string): void {
     if (!filterQuery.value.trim()) idleWorktreesOpen.toggle(key)
+  }
+
+  /**
+   * A row was just added to this folder (new, forked, dispatched or agent
+   * session, terminal): open the folder and unfold its checkout so the row is
+   * not born hidden. A collapsed repo header stays collapsed, as it did before.
+   */
+  function showNewRow(folder: Folder): void {
+    folder.expanded = true
+    setCheckoutFolded(folder.path, false)
+  }
+
+  /** Re-reveal a session that may already be selected (the selection watcher stays quiet then). */
+  function revealSessionRow(sessionId: string): void {
+    const folder = findFolderBySessionId(sessionId)
+    if (!folder) return
+    revealCheckout(folder.path)
+    revealSessionId.value = sessionId
   }
 
   function revealCheckout(path: string): void {
@@ -4467,6 +4577,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     }
     setCursorToSession(sessionId)
     select(sessionId)
+    revealSessionRow(sessionId)
     return true
   }
 
@@ -6377,6 +6488,7 @@ export const useSessionsStore = defineStore('sessions', () => {
     repoNodes,
     sidebarTree,
     sidebarSessionRows,
+    folderRingLevel,
     sidebarCursorRows,
     checkoutHasRows,
     isCheckoutFolded: checkoutsFolded.has,

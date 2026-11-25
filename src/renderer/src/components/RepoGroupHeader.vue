@@ -7,7 +7,6 @@ import { useHelpersStore } from '../stores/helpers'
 import { useSessionsStore, type Folder } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
 import { densityMetrics } from './sidebar-density'
-import { dotFor } from './session-dot'
 import SidebarValueSlot from './SidebarValueSlot.vue'
 
 /**
@@ -55,24 +54,10 @@ const count = computed(() => {
 
 /** The hottest session of any checkout: needs input, then failed, then working. */
 const ringStates = ['idle', 'working', 'errored', 'needs-input'] as const
-const ring = computed(() => {
-  let hottest = 0
-  for (const folder of members.value) {
-    for (const session of folder.sessions) {
-      if (sessions.isArchived(session.sessionId) || session.status === 'archived') continue
-      const dot = dotFor(
-        session.taskState,
-        session.status,
-        sessions.activityOf(session, sessions.nowTick),
-        session.transcriptState
-      )
-      if (dot === 'needs-input') return 'needs-input'
-      if (dot === 'failed') hottest = 2
-      else if (dot === 'working' || dot === 'stuck') hottest = Math.max(hottest, 1)
-    }
-  }
-  return ringStates[hottest]
-})
+const ring = computed(
+  () =>
+    ringStates[Math.max(0, ...members.value.map((folder) => sessions.folderRingLevel(folder.path)))]
+)
 
 const ringLabel = {
   idle: 'session.statusIdle',

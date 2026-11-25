@@ -433,4 +433,87 @@ describe('sidebar flat checkout tree (S-1)', () => {
     expect(content()).toBe('true')
     expect(store.selectedFolderPath).toBe(APP)
   })
+
+  it('the ring never points at a row that is not there', async () => {
+    const old = new Date(Date.now() - 10 * DAY).toISOString()
+    const disk = defaultDisk()
+    // A dead, unanswered question outside the age window, and an idle shell.
+    disk[1].sessions.push(
+      session('stale-question', APP, {
+        transcriptState: 'needs-input',
+        modified: old,
+        created: old
+      }) as never,
+      session('shellterm-1', APP, { isShellTerminal: true, status: 'active' }) as never
+    )
+    const { w } = await boot({ disk })
+    expect(w.find('[data-session-id="stale-question"]').exists()).toBe(false)
+    const ring = block(w, APP).get('[data-folder-head] .fleet-ring')
+    expect(ring.classes()).toContain('fleet-ring--idle')
+  })
+
+  it('a row added or jumped to is never left inside a folded checkout', async () => {
+    const { store } = await boot()
+    store.setCheckoutFolded(APP, true)
+    store.createNewSession(APP)
+    expect(store.isCheckoutFolded(APP)).toBe(false)
+
+    store.select('main-1')
+    store.setCheckoutFolded(APP, true)
+    store.jumpToSession('main-1')
+    expect(store.isCheckoutFolded(APP)).toBe(false)
+
+    store.setCheckoutFolded(APP, true)
+    store.activateSession('main-1')
+    expect(store.isCheckoutFolded(APP)).toBe(false)
+  })
+
+  it('losing the last other worktree does not close the folder', async () => {
+    const disk = defaultDisk().filter((d) => d.path === APP || d.path === WT_FEAT)
+    const { w, store } = await boot({ disk })
+    store.folders.find((f) => f.path === APP)!.expanded = false
+    await nextTick()
+    expect(block(w, APP).get('[data-folder-content]').attributes('data-open')).toBe('true')
+
+    store.folders.splice(
+      store.folders.findIndex((f) => f.path === WT_FEAT),
+      1
+    )
+    await nextTick()
+    await nextTick()
+    expect(block(w, APP).get('[data-folder-content]').attributes('data-open')).toBe('true')
+  })
+
+  it('an update that changes nothing drawn keeps the tree as it is', async () => {
+    const { store } = await boot()
+    // Name order, so a newer `modified` cannot legitimately reorder the folders.
+    store.setFolderSort('name')
+    await nextTick()
+    const before = store.sidebarTree
+    store.folders.find((f) => f.path === NOTES)!.sessions[0].modified = new Date().toISOString()
+    await nextTick()
+    expect(store.sidebarTree).toBe(before)
+  })
+
+  it('quiet rows draw nothing extra', async () => {
+    const missions = useMissionsStore()
+    vi.spyOn(missions, 'chipFor').mockImplementation((id) =>
+      id === 'main-1'
+        ? { text: '2/5', compact: '2/5', tone: 'accent', needsYou: false, owed: 0 }
+        : null
+    )
+    const { w, store } = await boot()
+    // Nothing owed: the chip leaves the flex row, so it takes no gap from the title.
+    const chip = w.get('[data-dsqa="sidebar-mission-chip"]')
+    expect(chip.classes()).toContain('absolute')
+    expect(chip.classes()).not.toContain('relative')
+
+    // A folded checkout holding only a terminal shows no "0".
+    const idle = store.folders.find((f) => f.path === WT_IDLE_A)!
+    idle.sessions.push(session('shellterm-2', WT_IDLE_A, { isShellTerminal: true }))
+    await nextTick()
+    store.setCheckoutFolded(WT_IDLE_A, true)
+    await nextTick()
+    expect(checkoutRow(w, WT_IDLE_A).get('[data-value-count]').text()).toBe('')
+  })
 })

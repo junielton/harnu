@@ -739,8 +739,8 @@ function onSelectTeammate(session: Session): void {
 
             <span
               v-if="mission"
-              class="relative flex shrink-0 items-center gap-[3px] self-stretch text-[10.5px] text-warning tabular-nums"
-              :class="!mission.owed && 'absolute right-0'"
+              class="flex shrink-0 items-center gap-[3px] self-stretch text-[10.5px] text-warning tabular-nums"
+              :class="mission.owed ? 'relative' : 'absolute right-0'"
               :title="missionChipLabel(mission)"
               :aria-label="missionChipLabel(mission)"
               data-dsqa="sidebar-mission-chip"

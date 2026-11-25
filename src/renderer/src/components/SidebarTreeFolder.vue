@@ -94,7 +94,7 @@ function preview(event: MouseEvent, path: string): void {
                 checkoutLabel(folder)
               }}</span>
               <SidebarValueSlot
-                :count="folded && hasRows ? count : undefined"
+                :count="folded && count ? count : undefined"
                 :open="hasRows ? !folded : undefined"
               />
             </button>
@@ -139,6 +139,8 @@ function preview(event: MouseEvent, path: string): void {
                   :style="{ height: `${metrics.checkoutRowHeight}px` }"
                   @click="sessions.selectFolder(folder.path)"
                   @contextmenu.prevent="openMenu($event, folder.path)"
+                  @mouseenter="preview($event, folder.path)"
+                  @mouseleave="hoverPreview.leave()"
                 >
                   <span class="w-[13px] shrink-0" aria-hidden="true" />
                   <span class="min-w-0 flex-1 truncate font-mono text-[11.5px] leading-[14px]">{{

@@ -1,5 +1,4 @@
 import { displayAlias } from '../components/folder-alias'
-import { sortFolders, type FolderSortMode } from '../components/folder-sort'
 import { basename, dirname, isFolderGroup, type FolderGroup } from '../stores/folder-zones'
 import type { Folder, SidebarCursor } from '../stores/sessions'
 
@@ -18,7 +17,8 @@ export interface TreeFolder {
 }
 
 interface TreeOptions {
-  sort: FolderSortMode
+  /** Every listed folder in the folder sort order: a repo's checkouts are drawn in it. */
+  order: readonly Folder[]
   aliasFromBranchPaths: ReadonlySet<string>
   hasRows: (folder: Folder) => boolean
 }
@@ -28,9 +28,11 @@ export function buildSidebarTree(
   opts: TreeOptions
 ): TreeFolder[] {
   const labels = new Map<string, number>()
+  const rank = new Map(opts.order.map((folder, index) => [folder.path, index]))
+  const at = (folder: Folder): number => rank.get(folder.path) ?? rank.size
   const tree = nodes.map((node): TreeFolder => {
     const group = isFolderGroup(node) ? node : null
-    const members = isFolderGroup(node) ? sortFolders(node.folders, opts.sort) : [node]
+    const members = isFolderGroup(node) ? [...node.folders].sort((a, b) => at(a) - at(b)) : [node]
     const main = members.find((folder) => folder.isMainWorktree)
     const primary = main ?? members[0]
     const ordered = main ? [main, ...members.filter((folder) => folder !== main)] : members
@@ -65,6 +67,41 @@ export function buildSidebarTree(
     }
   }
   return tree
+}
+
+function same<T>(a: readonly T[] = [], b: readonly T[] = []): boolean {
+  return a.length === b.length && a.every((item, index) => item === b[index])
+}
+
+function sameTreeFolder(a: TreeFolder, b: TreeFolder): boolean {
+  return (
+    a.label === b.label &&
+    a.parentHint === b.parentHint &&
+    a.open === b.open &&
+    a.git === b.git &&
+    a.primary === b.primary &&
+    a.checkoutCount === b.checkoutCount &&
+    !a.group === !b.group &&
+    same(a.group?.folders, b.group?.folders) &&
+    same(a.group?.shelved, b.group?.shelved) &&
+    same(a.checkouts, b.checkouts) &&
+    same(a.idle, b.idle) &&
+    same(a.paths, b.paths)
+  )
+}
+
+/**
+ * `next`, with every folder that draws the same as before kept as the previous
+ * object, and the previous array itself when none changed.
+ */
+export function reuseTree(previous: TreeFolder[] | undefined, next: TreeFolder[]): TreeFolder[] {
+  if (!previous) return next
+  const byKey = new Map(previous.map((folder) => [folder.key, folder]))
+  const tree = next.map((folder) => {
+    const old = byKey.get(folder.key)
+    return old && sameTreeFolder(old, folder) ? old : folder
+  })
+  return same(previous, tree) ? previous : tree
 }
 
 export function checkoutLabel(folder: Folder): string {
