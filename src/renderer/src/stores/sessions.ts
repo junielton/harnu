@@ -41,6 +41,12 @@ import { useLiveRegistry } from './session-live-registry'
 import { useSessionAutoname } from './session-autoname'
 import { useSidebarCursor } from './session-cursor'
 import {
+  buildSidebarTree,
+  flattenSidebarTree,
+  treeCollapseLevel,
+  type CollapseLevel
+} from '../lib/sidebar-tree'
+import {
   applyGitListings,
   mergeFolders,
   pickGitMeta,
@@ -68,7 +74,7 @@ import { sortSessions, type SessionSortMode } from '../components/session-sort'
 import { buildBoard, type BoardBucket, type BoardSession } from '../components/fleet-board'
 import { sortFolders, type FolderSortMode } from '../components/folder-sort'
 import { isSidebarDensity, type SidebarDensity } from '../components/sidebar-density'
-import { teamHex } from '../components/teammate-grouping'
+import { buildSessionRows, teamHex } from '../components/teammate-grouping'
 import { isForkSyntheticLike, sessionTitle } from '../lib/session-label'
 import { injectionLedger } from './injection-ledger'
 import { createNavHistory } from '../lib/nav-history'
@@ -2557,54 +2563,83 @@ export const useSessionsStore = defineStore('sessions', () => {
     return matched
   })
 
-  /**
-   * The single flat sidebar list (BUG-39 — replaces the old `pinnedZone` +
-   * `activeZone` split): every visible folder (pinned ∪ active, minus hidden)
-   * classified, sorted, grouped by shared repo (`groupByRepo`), then by shared
-   * DIRECT parent directory (`groupByParentDir`, T182) — all in ONE pass.
-   *
-   * The single pass is the duplicate-header fix: the old two independent
-   * `groupByRepo` calls (one per zone) each produced their own group header for
-   * a repo with members split across both zones; one combined pass yields
-   * exactly one. Both stages emit the same `FolderGroup` node, and neither ever
-   * puts a group inside a group — that's what caps the list at one level of
-   * indentation (T70's anti-VS-Code rule).
-   *
-   * When the inline filter is active it overrides classification entirely: all
-   * matching folders render here regardless of pinned/active status (spec §5.2).
-   */
-  const visibleFolders = computed<Array<Folder | FolderGroup<Folder>>>(() => {
-    // An active filter forces every group open (a collapsed group would hide
-    // matches): pass no collapsed set.
-    if (filterQuery.value.trim())
-      return groupByParentDir(
-        groupByRepo(
-          sortFolders(filteredFolders.value, folderSort.value),
-          undefined,
-          groupAliases.value,
-          shelvedByRepo.value
-        ),
-        undefined,
-        groupAliases.value
-      )
-    const ctx = buildClassifyCtx()
-    return groupByParentDir(
-      groupByRepo(
-        sortFolders(
-          listableFolders.value.filter((f) => {
-            const status = classifyFolder(f, ctx)
-            return status === 'pinned' || status === 'active'
-          }),
-          folderSort.value
-        ),
-        collapsedGroups.value,
-        groupAliases.value,
-        shelvedByRepo.value
-      ),
-      collapsedGroups.value,
-      groupAliases.value
+  const checkoutsFolded = persistedSet<string>('om2tab.checkoutsFolded')
+  const idleWorktreesOpen = persistedSet<string>('om2tab.idleWorktreesOpen')
+
+  const repoNodes = computed(() => {
+    const filtering = !!filterQuery.value.trim()
+    const visible = filtering ? filteredFolders.value : listableVisibleFolders()
+    return groupByRepo(
+      sortFolders(visible, folderSort.value),
+      filtering ? undefined : collapsedGroups.value,
+      groupAliases.value,
+      shelvedByRepo.value
     )
   })
+
+  function listableVisibleFolders(): Folder[] {
+    const ctx = buildClassifyCtx()
+    return listableFolders.value.filter((folder) => {
+      const zone = classifyFolder(folder, ctx)
+      return zone === 'pinned' || zone === 'active'
+    })
+  }
+
+  // The legacy drill and jump list retains parent-directory groups. Grouping
+  // can change their parent hints, so give it its own group objects.
+  const visibleFolders = computed<Array<Folder | FolderGroup<Folder>>>(() =>
+    groupByParentDir(
+      repoNodes.value.map((node) => (isFolderGroup(node) ? { ...node } : node)),
+      filterQuery.value.trim() ? undefined : collapsedGroups.value,
+      groupAliases.value
+    )
+  )
+
+  const sidebarTree = computed(() =>
+    buildSidebarTree(repoNodes.value, {
+      sort: folderSort.value,
+      aliasFromBranchPaths: aliasFromBranchPaths.value,
+      hasRows: checkoutHasRows
+    })
+  )
+
+  function sidebarSessionRows(folder: Folder): ReturnType<typeof buildSessionRows<Session>> {
+    return buildSessionRows(
+      sessionsForDisplay(folder),
+      teammateLeadCandidates(folder),
+      selectedId.value
+    )
+  }
+
+  function checkoutHasRows(folder: Folder): boolean {
+    return sidebarSessionRows(folder).rows.length > 0 || terminalsForFolder(folder).length > 0
+  }
+
+  function isIdleWorktreesOpen(key: string): boolean {
+    return !!filterQuery.value.trim() || idleWorktreesOpen.has(key)
+  }
+
+  const collapseLevel = computed(() =>
+    treeCollapseLevel(sidebarTree.value, checkoutHasRows, checkoutsFolded.has)
+  )
+
+  const sidebarCursorRows = computed(() =>
+    flattenSidebarTree(sidebarTree.value, {
+      hasRows: checkoutHasRows,
+      checkoutFolded: checkoutsFolded.has,
+      idleOpen: isIdleWorktreesOpen,
+      sessionIds: (folder) => {
+        const { rows, teammatesByLeader } = sidebarSessionRows(folder)
+        const ordered = rows.flatMap(({ session }) => [
+          session,
+          ...(isTeammatesExpanded(session.sessionId)
+            ? (teammatesByLeader.get(session.sessionId) ?? [])
+            : [])
+        ])
+        return [...ordered, ...terminalsForFolder(folder)].map((session) => session.sessionId)
+      }
+    })
+  )
 
   // ── Always-listed git worktrees (T388, sidebar-liveness spec §4.B B2) ──────
 
@@ -3013,8 +3048,7 @@ export const useSessionsStore = defineStore('sessions', () => {
    * a PTY); it only brings the folder into view.
    */
   function revealFolder(path: string): void {
-    const folder = findFolderByPath(path)
-    if (folder) folder.expanded = true
+    revealCheckout(path)
     revealFolderPath.value = path
   }
 
@@ -3095,18 +3129,12 @@ export const useSessionsStore = defineStore('sessions', () => {
    * `jumpToSession`).
    */
   function jumpToFolder(path: string): void {
-    const folder = findFolderByPath(path)
-    if (!folder) return
+    if (!findFolderByPath(path)) return
     useUiStore().closeAllTakeovers()
     selectFolder(path)
-    for (const node of visibleFolders.value) {
-      if (isFolderGroup(node) && node.folders.some((f) => f.path === path)) {
-        collapsedGroupsSet.delete(node.key)
-        break
-      }
-    }
-    folder.expanded = true
+    revealCheckout(path)
     if (drillModeEnabled.value) {
+      revealDrillGroup(path)
       drillStack.value = drillNodeStackForFolder(path)
     }
     recordJumpVisit(path)
@@ -3874,6 +3902,67 @@ export const useSessionsStore = defineStore('sessions', () => {
     collapsedGroupsSet.toggle(key)
   }
 
+  function toggleTreeFolder(key: string): void {
+    const folder = sidebarTree.value.find((node) => node.key === key)
+    if (!folder) return
+    if (folder.group) {
+      if (filterQuery.value.trim()) return
+      if (folder.open) {
+        for (const path of folder.paths) forgetPeeks(path)
+      }
+      toggleGroup(key)
+    } else toggleFolder(folder.primary.path)
+  }
+
+  function setCheckoutFolded(path: string, folded: boolean): void {
+    if (folded) {
+      if (!checkoutsFolded.has(path)) checkoutsFolded.add(path)
+      forgetPeeks(path)
+    } else if (checkoutsFolded.has(path)) checkoutsFolded.delete(path)
+  }
+
+  function toggleCheckoutFold(path: string): void {
+    setCheckoutFolded(path, !checkoutsFolded.has(path))
+  }
+
+  function toggleIdleWorktrees(key: string): void {
+    if (!filterQuery.value.trim()) idleWorktreesOpen.toggle(key)
+  }
+
+  function revealCheckout(path: string): void {
+    const folder = findFolderByPath(path)
+    if (!folder) return
+    folder.expanded = true
+    const node = sidebarTree.value.find((entry) => entry.paths.includes(path))
+    if (node?.group && collapsedGroupsSet.has(node.key)) collapsedGroupsSet.delete(node.key)
+    if (node?.idle.some((checkout) => checkout.path === path) && !idleWorktreesOpen.has(node.key)) {
+      idleWorktreesOpen.add(node.key)
+    }
+    setCheckoutFolded(path, false)
+  }
+
+  function setCollapseLevel(level: CollapseLevel): void {
+    if (level === 2) {
+      for (const key of collapsedGroups.value) {
+        if (key.startsWith('repo:')) collapsedGroupsSet.delete(key)
+      }
+      checkoutsFolded.clear()
+      expandAll()
+      return
+    }
+    for (const node of sidebarTree.value) {
+      if (level === 1 && node.git) {
+        for (const path of node.paths) setCheckoutFolded(path, true)
+      } else if (node.group) {
+        if (!collapsedGroupsSet.has(node.key)) collapsedGroupsSet.add(node.key)
+      } else {
+        node.primary.expanded = false
+        forgetPeeks(node.primary.path)
+      }
+    }
+    if (level === 0) collapseAll()
+  }
+
   /** Expand every folder's session list (spec §5 — expand all). Shelved sections open with them (U2.3b). */
   function expandAll(): void {
     for (const f of folders.value) f.expanded = true
@@ -3973,13 +4062,14 @@ export const useSessionsStore = defineStore('sessions', () => {
       if (!ack.ok) return failed(ack.message)
       markShelvedFolderPresent(member.worktreePath)
       await gc.refresh()
+      revealCheckout(member.worktreePath)
       if (resumeSessionId) {
         for (const f of folders.value) {
           if (
             isInsidePath(f.path, member.worktreePath) &&
             f.sessions.some((x) => x.sessionId === resumeSessionId)
           ) {
-            f.expanded = true
+            revealCheckout(f.path)
           }
         }
         select(resumeSessionId)
@@ -4292,11 +4382,6 @@ export const useSessionsStore = defineStore('sessions', () => {
   }
 
   // --- Sidebar keyboard cursor (T-4.6) --------------------------------------
-  // Owned by the `useSidebarCursor` composable (T25 wave 4): it walks the visible
-  // tree and moves the cursor over it. High read-coupling but strictly
-  // one-directional — the `visibleFolders` computed, display helpers, and
-  // select/toggle actions are all injected. `findFolderBySessionId` stays in
-  // the store (also used by `activateSession`) and is injected here.
   const {
     keyboardCursor,
     cursorDown,
@@ -4306,17 +4391,22 @@ export const useSessionsStore = defineStore('sessions', () => {
     cursorActivate,
     setCursorToSession
   } = useSidebarCursor({
-    visibleFolders,
-    sessionsForDisplay,
-    terminalsForFolder,
-    findFolderByPath,
-    findFolderBySessionId,
+    rows: sidebarCursorRows,
     select,
     selectFolder,
-    isFolderSelected: (path: string) => selectedFolderPath.value === path,
-    toggleFolder,
-    toggleGroup
+    toggleTreeFolder,
+    setCheckoutFolded,
+    toggleIdleWorktrees
   })
+
+  function revealDrillGroup(path: string): void {
+    for (const node of visibleFolders.value) {
+      if (isFolderGroup(node) && node.folders.some((folder) => folder.path === path)) {
+        collapsedGroupsSet.delete(node.key)
+        break
+      }
+    }
+  }
 
   /** Locate `{ folder }` for a session UUID. */
   function findFolderBySessionId(sessionId: string): Folder | null {
@@ -4479,14 +4569,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       const folder = findFolderBySessionId(id)
       if (!folder) return
 
-      for (const node of visibleFolders.value) {
-        if (isFolderGroup(node) && node.folders.some((f) => f.path === folder.path)) {
-          collapsedGroupsSet.delete(node.key)
-          break
-        }
-      }
-
-      folder.expanded = true
+      revealCheckout(folder.path)
 
       if (session.teamName) {
         const hex = teamHex(session.teamName)
@@ -4497,6 +4580,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       }
 
       if (drillModeEnabled.value) {
+        revealDrillGroup(folder.path)
         drillStack.value = drillNodeStackForSession(id)
       }
 
@@ -6290,6 +6374,20 @@ export const useSessionsStore = defineStore('sessions', () => {
     folders,
     foldersLoading,
     visibleFolders,
+    repoNodes,
+    sidebarTree,
+    sidebarSessionRows,
+    sidebarCursorRows,
+    checkoutHasRows,
+    isCheckoutFolded: checkoutsFolded.has,
+    isIdleWorktreesOpen,
+    collapseLevel,
+    setCollapseLevel,
+    toggleTreeFolder,
+    setCheckoutFolded,
+    toggleCheckoutFold,
+    toggleIdleWorktrees,
+    revealCheckout,
     boardBuckets,
     triageQueue,
     dismissedFolders,

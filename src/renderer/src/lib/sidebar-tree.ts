@@ -1,0 +1,167 @@
+import { displayAlias } from '../components/folder-alias'
+import { sortFolders, type FolderSortMode } from '../components/folder-sort'
+import { basename, dirname, isFolderGroup, type FolderGroup } from '../stores/folder-zones'
+import type { Folder, SidebarCursor } from '../stores/sessions'
+
+export interface TreeFolder {
+  key: string
+  group: FolderGroup<Folder> | null
+  label: string
+  parentHint?: string
+  open: boolean
+  git: boolean
+  primary: Folder
+  checkouts: Folder[]
+  idle: Folder[]
+  checkoutCount: number
+  paths: string[]
+}
+
+interface TreeOptions {
+  sort: FolderSortMode
+  aliasFromBranchPaths: ReadonlySet<string>
+  hasRows: (folder: Folder) => boolean
+}
+
+export function buildSidebarTree(
+  nodes: Array<Folder | FolderGroup<Folder>>,
+  opts: TreeOptions
+): TreeFolder[] {
+  const labels = new Map<string, number>()
+  const tree = nodes.map((node): TreeFolder => {
+    const group = isFolderGroup(node) ? node : null
+    const members = isFolderGroup(node) ? sortFolders(node.folders, opts.sort) : [node]
+    const main = members.find((folder) => folder.isMainWorktree)
+    const primary = main ?? members[0]
+    const ordered = main ? [main, ...members.filter((folder) => folder !== main)] : members
+    const git = Boolean(primary.repoId || primary.gitBranch)
+    const label = group?.label ?? displayAlias(primary, opts.aliasFromBranchPaths.has(primary.path))
+    labels.set(label, (labels.get(label) ?? 0) + 1)
+    const checkouts: Folder[] = []
+    const idle: Folder[] = []
+    if (git) {
+      for (const folder of ordered) {
+        const listed = !group || folder === main || opts.hasRows(folder)
+        if (listed) checkouts.push(folder)
+        else idle.push(folder)
+      }
+    }
+    return {
+      key: group?.key ?? primary.path,
+      group,
+      label,
+      open: group?.expanded ?? primary.expanded,
+      git,
+      primary,
+      checkouts,
+      idle,
+      checkoutCount: checkouts.length + idle.length,
+      paths: ordered.map((folder) => folder.path)
+    }
+  })
+  for (const folder of tree) {
+    if ((labels.get(folder.label) ?? 0) > 1) {
+      folder.parentHint = basename(dirname(folder.primary.path))
+    }
+  }
+  return tree
+}
+
+export function checkoutLabel(folder: Folder): string {
+  return folder.gitBranch || folder.alias
+}
+
+export function treeHeaderCursor(folder: TreeFolder): SidebarCursor {
+  return { kind: folder.git ? 'group' : 'folder', id: folder.key }
+}
+
+export interface TreeCursorRow {
+  cursor: SidebarCursor
+  role: 'header' | 'checkout' | 'idle' | 'idle-worktree' | 'session'
+  parent?: TreeCursorRow
+  open?: boolean
+  path?: string
+}
+
+interface CursorOptions {
+  hasRows: (folder: Folder) => boolean
+  sessionIds: (folder: Folder) => string[]
+  checkoutFolded: (path: string) => boolean
+  idleOpen: (key: string) => boolean
+}
+
+export function flattenSidebarTree(tree: TreeFolder[], opts: CursorOptions): TreeCursorRow[] {
+  const rows: TreeCursorRow[] = []
+
+  function appendSessions(folder: Folder, parent: TreeCursorRow): void {
+    for (const id of opts.sessionIds(folder)) {
+      rows.push({ cursor: { kind: 'session', id }, role: 'session', parent })
+    }
+  }
+
+  for (const folder of tree) {
+    const header: TreeCursorRow = {
+      cursor: treeHeaderCursor(folder),
+      role: 'header',
+      path: folder.primary.path,
+      open: folder.open
+    }
+    rows.push(header)
+    if (!folder.open) continue
+    if (!folder.git) {
+      appendSessions(folder.primary, header)
+      continue
+    }
+    for (const checkout of folder.checkouts) {
+      const row: TreeCursorRow = {
+        cursor: { kind: 'folder', id: checkout.path },
+        role: 'checkout',
+        open: opts.hasRows(checkout) ? !opts.checkoutFolded(checkout.path) : undefined,
+        parent: header
+      }
+      rows.push(row)
+      if (row.open) appendSessions(checkout, row)
+    }
+    if (folder.idle.length) {
+      const idle: TreeCursorRow = {
+        cursor: { kind: 'group', id: `idle:${folder.key}` },
+        role: 'idle',
+        open: opts.idleOpen(folder.key),
+        parent: header
+      }
+      rows.push(idle)
+      if (idle.open) {
+        for (const worktree of folder.idle) {
+          rows.push({
+            cursor: { kind: 'folder', id: worktree.path },
+            role: 'idle-worktree',
+            parent: idle
+          })
+        }
+      }
+    }
+  }
+  return rows
+}
+
+export type CollapseLevel = 0 | 1 | 2
+
+export function treeCollapseLevel(
+  tree: TreeFolder[],
+  hasRows: (folder: Folder) => boolean,
+  checkoutFolded: (path: string) => boolean
+): CollapseLevel {
+  let level: CollapseLevel = 0
+  for (const folder of tree) {
+    if (!folder.open) continue
+    level = 1
+    if (
+      folder.git
+        ? folder.checkouts.some((checkout) => !checkoutFolded(checkout.path) && hasRows(checkout))
+        : hasRows(folder.primary)
+    ) {
+      return 2
+    }
+  }
+  return level
+}
