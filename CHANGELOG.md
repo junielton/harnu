@@ -25,7 +25,7 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ### Changed
 
-- **Light themes are easier to read in the sidebar.** The working bar of a checkout no longer fades into the guide line beside it; the selected-session bar is blue where the orange one looked like a failure (Light, Catppuccin Latte, Gruvbox Light); and branch names, folder names, counts and the amber needs-you text are darker. Small grey text and amber are darker across the whole app in these themes. Dark themes look as before.
+- **Light themes are easier to read in the sidebar.** The working bar of a checkout no longer fades into the guide line beside it; the selected-session bar is blue where the orange one looked like a failure (Light, Catppuccin Latte, Gruvbox Light); and branch names, folder names, counts and the amber needs-you text are darker. Across the whole app in these themes, small grey text is darker, and so is amber (GitHub Light keeps its amber). Dark themes look as before.
 - A folder with nothing to commit now reads **clean** in the Folder View and in the folder hover card (it read “no changes”).
 - **The Folder View is slimmer.** Clicking a folder header now shows its name, branch, git summary, path, its actions and, when the repo has a board, one roadmap line. The KPI tiles, the worktrees table, the sessions list, "Where we left off", the activity chart, the card the branch owns and the roadmap's card list are gone from it. PR Stack, Open in your editor and Open folder moved under the **…** button.
 - Drill-in is gone: the depth button in the sidebar header, its screens and the `sidebar.cycleDrillDepth` shortcut are replaced by **Focus on one folder**. A shortcut you had bound to it is now ignored.
