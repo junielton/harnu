@@ -18,12 +18,14 @@ import {
   type SessionAnatomy,
   type SessionHourlyPoint
 } from './usage-bi-core'
+import { readMeasuredLedger, type MeasuredProject } from './companion/turn-ledger'
 
 /**
  * The usage scan, in its own thread. Reading and parsing every transcript that changed is hundreds of
  * megabytes of synchronous work, which on the main process froze input, IPC and terminal output for
- * seconds. `usage-cost.ts` starts this file as a `worker_threads` Worker and gets back only the folded
- * results; the per-file cache never crosses the boundary. No Electron imports: a worker has none.
+ * seconds. The companion turn ledger that calibrates the cost is read here for the same reason.
+ * `usage-cost.ts` starts this file as a `worker_threads` Worker and gets back only the folded results;
+ * the per-file cache never crosses the boundary. No Electron imports: a worker has none.
  *
  * `~/.claude/projects` can be gigabytes, so the scan is incremental. A per-file cache, keyed by
  * `(path, size, mtimeMs)`, stores each file's ALREADY-DEDUPED-AND-PRICED `CostBucket[]` (a handful of
@@ -57,6 +59,8 @@ export interface UsageScanBi extends UsageScanMerged {
 export interface UsageScanner {
   merged(): Promise<UsageScanMerged>
   bi(): Promise<UsageScanBi>
+  /** The companion turn ledger under `dir`, read for calibration. */
+  ledger(dir: string): Promise<MeasuredProject[]>
   /** Persist the cache, if one was ever loaded. */
   flush(): Promise<void>
 }
@@ -64,6 +68,8 @@ export interface UsageScanner {
 export interface UsageScanRequest {
   id: number
   want: keyof UsageScanner
+  /** `ledger` only. */
+  dir?: string
 }
 
 export type UsageScanReply =
@@ -536,6 +542,7 @@ export function createUsageScanner({ projectsRoot, cacheDir }: UsageScanRoots): 
   return {
     merged: scanMerged,
     bi: scanBi,
+    ledger: readMeasuredLedger,
     flush: async () => {
       if (cacheLoaded) await saveCache()
     }
@@ -548,8 +555,8 @@ const roots = (workerData as Partial<UsageScanWorkerData> | null)?.usageScan
 if (!isMainThread && parentPort && roots) {
   const port = parentPort
   const scanner = createUsageScanner(roots)
-  port.on('message', ({ id, want }: UsageScanRequest) => {
-    scanner[want]().then(
+  port.on('message', ({ id, want, dir }: UsageScanRequest) => {
+    scanner[want](dir ?? '').then(
       (value) => port.postMessage({ id, ok: true, value } satisfies UsageScanReply),
       (err) => port.postMessage({ id, ok: false, error: String(err) } satisfies UsageScanReply)
     )
