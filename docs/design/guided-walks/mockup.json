@@ -1,0 +1,395 @@
+{
+  "status": "approved",
+  "approvedAt": "2026-11-17",
+  "project": "harnu",
+  "card": "T765",
+  "tokensFrom": "src/renderer/src/styles/themes.css (@theme block = dark; :root[data-theme='light'] = tokens-light.css) + src/renderer/src/styles/main.css (font tokens)",
+  "viewports": [560, 360],
+  "targets": [
+    "new GuidedWalkPane.vue (+ GuidedWalk*.vue pieces) in the helper stack",
+    "new WalksPane.vue (the library)",
+    "the Mission dropdown (Test it on a step, a milestone, the whole mission)",
+    "session offer bar (new)"
+  ],
+  "screens": [
+    {
+      "id": "entry",
+      "title": "Entry from a mission: Test it on a step, a milestone or the whole mission",
+      "status": "approved",
+      "approvedAt": "2026-11-17",
+      "states": ["step-open", "milestone", "mission", "closed"],
+      "targets": ["new MissionDropdown.vue (the open step's Criteria row)"],
+      "notes": "The Mission dropdown (reused from the dropdown mockup) with Test it at three levels: an open step (Criteria row), a milestone (next to Ask) and the whole mission (footer, at the end). A mission is ONE source of a walk, not its home. The walk opens in the helper stack, never inside the dropdown."
+    },
+    {
+      "id": "walk",
+      "title": "The walk pane (helper stack)",
+      "status": "approved",
+      "approvedAt": "2026-11-17",
+      "states": [
+        "roadmap",
+        "pr",
+        "step",
+        "step-image",
+        "lightbox",
+        "failed",
+        "failed-retry",
+        "check-failed",
+        "explain-more",
+        "explain-teach",
+        "did-not-understand",
+        "working",
+        "skipped-at-end",
+        "close-out",
+        "run-past",
+        "rerun-roadmap",
+        "rerun",
+        "empty",
+        "error"
+      ],
+      "targets": ["new GuidedWalkPane.vue"],
+      "notes": "One pane, 19 states. 560 = a wide pane, 360 = a narrow one. ?walk=mission|export and ?src=mission|milestone|all|pr|feature pick the sample walk and its source (the source line under the pane header); ?n=1..3 picks the served check; ?kind=next on working shows the prepare variant. The EN / PT-BR / Dark / Light switch at the bottom right of a frame is mockup chrome, not product."
+    },
+    {
+      "id": "library",
+      "title": "The Walks library (helper stack)",
+      "status": "approved",
+      "approvedAt": "2026-11-17",
+      "states": ["list", "empty"],
+      "targets": ["new WalksPane.vue"],
+      "notes": "A list of saved walks for this repo: title, source, last run date, outcome, Re-run and Open. Not a dashboard. Empty: how a walk starts, with a copyable command."
+    },
+    {
+      "id": "offer",
+      "title": "Offer: the session asks to walk you through what it built",
+      "status": "approved",
+      "approvedAt": "2026-11-17",
+      "states": ["feature-done"],
+      "targets": ["session offer bar (new)"],
+      "notes": "Outside any mission: a session that just finished a feature offers a walk once, above its prompt. It never starts one on its own."
+    }
+  ],
+  "parts": [],
+  "flows": [
+    {
+      "id": "start-a-walk",
+      "title": "Start a walk: Test it, the roadmap, checks 1 and 2, a check that disagrees, check 3",
+      "steps": [
+        {
+          "screen": "entry",
+          "state": "step-open",
+          "via": "Test it"
+        },
+        {
+          "screen": "walk",
+          "state": "roadmap",
+          "via": "Start with 1"
+        },
+        {
+          "screen": "walk",
+          "state": "step",
+          "via": "Done"
+        },
+        {
+          "screen": "walk",
+          "state": "step",
+          "via": "Done (my check finds a file)"
+        },
+        {
+          "screen": "walk",
+          "state": "check-failed",
+          "via": "Follow anyway (unverified)"
+        },
+        {
+          "screen": "walk",
+          "state": "step",
+          "via": "Done"
+        },
+        {
+          "screen": "walk",
+          "state": "working"
+        }
+      ]
+    },
+    {
+      "id": "it-did-not-work",
+      "title": "It did not work: one line and a screenshot, one correction, the same step again",
+      "steps": [
+        {
+          "screen": "walk",
+          "state": "step",
+          "via": "Failed"
+        },
+        {
+          "screen": "walk",
+          "state": "failed",
+          "via": "Send"
+        },
+        {
+          "screen": "walk",
+          "state": "failed-retry",
+          "via": "Try again"
+        },
+        {
+          "screen": "walk",
+          "state": "step"
+        }
+      ]
+    },
+    {
+      "id": "go-deeper",
+      "title": "Explain more: why it matters and extra checks under the same step",
+      "steps": [
+        {
+          "screen": "walk",
+          "state": "step",
+          "via": "Explain more"
+        },
+        {
+          "screen": "walk",
+          "state": "explain-more",
+          "via": "Explain more (again folds it back)"
+        },
+        {
+          "screen": "walk",
+          "state": "step"
+        }
+      ]
+    },
+    {
+      "id": "say-it-simpler",
+      "title": "I didn’t get this step: the same step, said more simply",
+      "steps": [
+        {
+          "screen": "walk",
+          "state": "step",
+          "via": "I didn’t get this step"
+        },
+        {
+          "screen": "walk",
+          "state": "did-not-understand",
+          "via": "Done"
+        },
+        {
+          "screen": "walk",
+          "state": "working"
+        }
+      ]
+    },
+    {
+      "id": "zoom-the-image",
+      "title": "Zoom the expected-result image",
+      "steps": [
+        {
+          "screen": "walk",
+          "state": "step",
+          "via": "the thumbnail"
+        },
+        {
+          "screen": "walk",
+          "state": "step-image",
+          "via": "the large image"
+        },
+        {
+          "screen": "walk",
+          "state": "lightbox",
+          "via": "close, or Esc"
+        },
+        {
+          "screen": "walk",
+          "state": "step-image"
+        }
+      ]
+    },
+    {
+      "id": "finish",
+      "title": "Finish: skipped checks come back, then the close-out",
+      "steps": [
+        {
+          "screen": "walk",
+          "state": "working",
+          "via": "mockup only: jump to the end"
+        },
+        {
+          "screen": "walk",
+          "state": "skipped-at-end",
+          "via": "Close out with 2 skipped"
+        },
+        {
+          "screen": "walk",
+          "state": "close-out",
+          "via": "Open in the Mission"
+        },
+        {
+          "screen": "entry",
+          "state": "step-open"
+        }
+      ]
+    },
+    {
+      "id": "session-lost",
+      "title": "The session is gone: progress is saved, resume it",
+      "steps": [
+        {
+          "screen": "walk",
+          "state": "error",
+          "via": "Resume the session"
+        },
+        {
+          "screen": "walk",
+          "state": "step"
+        }
+      ]
+    },
+    {
+      "id": "feature-walk-through",
+      "title": "Outside any mission: the session offers, the walk teaches",
+      "steps": [
+        {
+          "screen": "offer",
+          "state": "feature-done",
+          "via": "Walk me through it"
+        },
+        {
+          "screen": "walk",
+          "state": "roadmap",
+          "via": "Start with 1"
+        },
+        {
+          "screen": "walk",
+          "state": "step",
+          "via": "Done"
+        },
+        {
+          "screen": "walk",
+          "state": "step",
+          "via": "Explain more"
+        },
+        {
+          "screen": "walk",
+          "state": "explain-teach"
+        }
+      ]
+    },
+    {
+      "id": "pr-walk",
+      "title": "Test someone else’s PR: the walk is built from the PR",
+      "steps": [
+        {
+          "screen": "walk",
+          "state": "pr",
+          "via": "Start with 1"
+        },
+        {
+          "screen": "walk",
+          "state": "step"
+        }
+      ]
+    },
+    {
+      "id": "milestone-and-whole-mission",
+      "title": "A mission at any level: a milestone, then the whole mission",
+      "steps": [
+        {
+          "screen": "entry",
+          "state": "milestone",
+          "via": "Test it"
+        },
+        {
+          "screen": "walk",
+          "state": "roadmap"
+        }
+      ]
+    },
+    {
+      "id": "whole-mission",
+      "title": "The whole mission at its end",
+      "steps": [
+        {
+          "screen": "entry",
+          "state": "mission",
+          "via": "Test the whole mission"
+        },
+        {
+          "screen": "walk",
+          "state": "roadmap"
+        }
+      ]
+    },
+    {
+      "id": "library-open",
+      "title": "Walks library: open a past run (read-only), then re-run it",
+      "steps": [
+        {
+          "screen": "library",
+          "state": "list",
+          "via": "Open"
+        },
+        {
+          "screen": "walk",
+          "state": "run-past",
+          "via": "Re-run"
+        },
+        {
+          "screen": "walk",
+          "state": "rerun-roadmap",
+          "via": "Start with 1"
+        },
+        {
+          "screen": "walk",
+          "state": "step"
+        }
+      ]
+    },
+    {
+      "id": "library-rerun",
+      "title": "Walks library: re-run straight away",
+      "steps": [
+        {
+          "screen": "library",
+          "state": "list",
+          "via": "Re-run"
+        },
+        {
+          "screen": "walk",
+          "state": "rerun-roadmap",
+          "via": "Start with 1"
+        },
+        {
+          "screen": "walk",
+          "state": "step"
+        }
+      ]
+    },
+    {
+      "id": "nothing-to-walk",
+      "title": "Nothing to walk: no walk open, then the library",
+      "steps": [
+        {
+          "screen": "walk",
+          "state": "empty",
+          "via": "Open Walks"
+        },
+        {
+          "screen": "library",
+          "state": "list"
+        }
+      ]
+    },
+    {
+      "id": "walk-to-library",
+      "title": "From any walk to the library",
+      "steps": [
+        {
+          "screen": "walk",
+          "state": "close-out",
+          "via": "Open Walks"
+        },
+        {
+          "screen": "library",
+          "state": "list"
+        }
+      ]
+    }
+  ]
+}

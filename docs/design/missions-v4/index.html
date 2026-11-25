@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — Missions v4 concept</title>
+    <style>
+      :root {
+        --ix-bg: #f6f6f7;
+        --ix-fg: #1b1b1f;
+        --ix-muted: #6b6b76;
+        --ix-line: #dcdce2;
+        --ix-card: #fff;
+        --ix-accent: #2f5bea;
+        --ix-draft: #b7791f;
+        --ix-ok: #2f855a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ix-bg: #121216;
+          --ix-fg: #ececf1;
+          --ix-muted: #9a9aa6;
+          --ix-line: #2b2b33;
+          --ix-card: #1b1b21;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+        color: var(--ix-fg);
+        background: var(--ix-bg);
+      }
+      header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--ix-line);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .status {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--ix-draft);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .status[data-status='approved'] {
+        background: var(--ix-ok);
+      }
+      nav.toc {
+        font-size: 13px;
+        color: var(--ix-muted);
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+      nav.toc a {
+        color: inherit;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        margin-bottom: 48px;
+      }
+      section > h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+      }
+      .prose {
+        max-width: 72ch;
+        color: var(--ix-fg);
+      }
+      .prose p {
+        margin: 0 0 10px;
+      }
+      /* one card per screen */
+      .screen {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 24px;
+      }
+      .screen .bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+      .screen h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .screen h3 code {
+        font-size: 12px;
+        color: var(--ix-muted);
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .screen .notes {
+        font-size: 13px;
+        color: var(--ix-muted);
+        margin: 0 0 12px;
+        max-width: 80ch;
+      }
+      .chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chips button {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--ix-line);
+        background: transparent;
+        color: var(--ix-fg);
+        cursor: pointer;
+      }
+      .chips button[aria-pressed='true'] {
+        background: var(--ix-accent);
+        border-color: var(--ix-accent);
+        color: #fff;
+      }
+      .open {
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .viewport {
+        overflow: hidden;
+        border: 1px solid var(--ix-line);
+        border-radius: 6px;
+        background: #fff;
+      }
+      .viewport iframe {
+        display: block;
+        border: 0;
+        transform-origin: top left;
+      }
+      .screen .approval {
+        font-size: 12px;
+        margin-top: 8px;
+        color: var(--ix-muted);
+      }
+      /* flows */
+      .flow {
+        background: var(--ix-card);
+        border: 1px solid var(--ix-line);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .flow ol {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 0;
+        margin: 8px 0 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .flow li {
+        counter-increment: step;
+        font-size: 13px;
+      }
+      .flow li::before {
+        content: counter(step) '. ';
+        color: var(--ix-muted);
+      }
+      .flow li + li::before {
+        content: '→ ' counter(step) '. ';
+      }
+      .flow li small {
+        color: var(--ix-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Missions v4 — concept</h1>
+      <!-- data-status MUST mirror mockup.json "status"; check-mockup.mjs enforces it -->
+      <span class="status" data-status="draft">draft</span>
+      <nav class="toc">
+        <a href="#context">Context</a><a href="#screens">Screens</a><a href="#flows">Flows</a>
+      </nav>
+    </header>
+    <main>
+      <section id="context">
+        <h2>Context and decisions</h2>
+        <div class="prose">
+          <p>
+            <b>The concept in one line:</b> <b>Mission → Milestone → Step</b>, and the Step is the
+            board card itself (one pull request). There is one state flow, and everything that waits
+            on you goes to one list.
+          </p>
+          <table style="border-collapse: collapse; font-size: 13px; margin: 8px 0 14px">
+            <tr>
+              <th style="text-align: left; padding: 4px 12px 4px 0">Today</th>
+              <th style="text-align: left; padding: 4px 0">v4</th>
+            </tr>
+            <tr>
+              <td style="padding: 3px 12px 3px 0">
+                Campaign → Chapter → Mission → Step → Check (5 levels)
+              </td>
+              <td>Mission → Milestone (optional) → Step (3 levels)</td>
+            </tr>
+            <tr>
+              <td style="padding: 3px 12px 3px 0">
+                The mission's steps <i>and</i> the board's cards (two trackers)
+              </td>
+              <td>The step <b>is</b> the card; the mission groups the cards</td>
+            </tr>
+            <tr>
+              <td style="padding: 3px 12px 3px 0">6 state vocabularies</td>
+              <td>To do · Running · Waiting for review · Done, and Blocked is a mark</td>
+            </tr>
+            <tr>
+              <td style="padding: 3px 12px 3px 0">3 "You" lists plus the Your move queue</td>
+              <td>One list, inside the pane, for this session's mission</td>
+            </tr>
+            <tr>
+              <td style="padding: 3px 12px 3px 0">Gates + checks + proof + verdict</td>
+              <td>
+                The step's <b>acceptance criteria</b>: the automatic part (pull request, CI, main, a
+                second session) plus your own checks
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 3px 12px 3px 0">Pill: "Ch. 3/3 · Step 10/10 · 4 for you"</td>
+              <td>Pill: "4/17 · 3 for you", for this session's mission</td>
+            </tr>
+            <tr>
+              <td style="padding: 3px 12px 3px 0">
+                A popover over the screen, with everything inside
+              </td>
+              <td>
+                A pane in the helper stack that follows the session and shows only the path: Done →
+                Now → Next
+              </td>
+            </tr>
+          </table>
+          <p>
+            <b>The mission is durable, the session is disposable:</b> the mission lives in the
+            folder with its plan, brief, history and the list of sessions that worked on it. A
+            session only touches the mission it is attached to, with confirmation. Replacing the
+            leading session with a new one is always the operator's decision; Harnu only notices and
+            offers. Acceptance criteria stay on the step.
+          </p>
+          <p>
+            <b>What stays the same (principles):</b> only the server counts progress; every door is
+            the operator's (approve, tick, close); closing is never blocked; "done" comes from facts
+            (gates), never from the agent's report.
+          </p>
+          <p>
+            <b>Discarded by the operator:</b> the kanban view of a mission and the cross-mission "My
+            work" queue. The pane is the only screen; what waits on you appears inside the session's
+            own mission.
+          </p>
+          <p>
+            <b>Gone:</b> merge batch, side quests, radiant, "you are here", the tile map and the
+            fixed step "Delivered and verified". The end criterion is the mission's
+            <b>Done when</b>, and you confirm it in "Close mission…".
+          </p>
+          <p>
+            <b>Settled in the spec:</b> chapters that are separate missions today are read as
+            milestones of one mission and converted by copy on first write; "To do" covers the
+            board's Backlog and Ready; the steward is retired. Each of these is a call made for the
+            operator, to review, in the spec's Open decisions table.
+          </p>
+        </div>
+      </section>
+
+      <section id="screens">
+        <h2>Screens</h2>
+        <article
+          class="screen"
+          data-screen="mission-pane"
+          data-states="default waiting step-open step-blocked all-steps ask sessions handoff-suggest handoff-confirm clear done other-session simple simple-signoff big big-waiting no-mission attach-request closed"
+        >
+          <div class="bar">
+            <h3>Mission pane (helper pane) <code>mission-pane</code></h3>
+            <div class="chips" data-role="viewports"></div>
+            <div class="chips" data-role="states"></div>
+            <a class="open" href="screens/mission-pane.html" target="_blank">open on its own ↗</a>
+          </div>
+          <p class="notes">
+            The only screen. The badge opens and closes the pane, and the pane follows the session
+            (click the sessions in the sidebar). Top to bottom: a progress bar with the count inside
+            it, <b>one</b> next step, and the tree milestone ▸ step ▸ acceptance criteria.
+            <b>waiting</b> the rest of what waits on you, in place · <b>step-open</b> the criteria
+            of a step · <b>step-blocked</b> the blocker and its action · <b>all-steps</b> every step
+            of the milestone · <b>ask</b> · <b>sessions</b> ·
+            <b>handoff-suggest / handoff-confirm</b> · <b>simple</b> a small task from the tracker,
+            with no milestones and the criteria pulled from the task · <b>simple-signoff</b> other
+            people's sign-offs, which you mark · <b>big</b> a real 10-milestone mission (neutral
+            data): three built milestones waiting for review at once, the bar counting milestones ·
+            <b>big-waiting</b> the 5 things that wait · <b>no-mission</b> · <b>attach-request</b>.
+          </p>
+          <div class="viewport"><iframe loading="lazy" title="mission-pane"></iframe></div>
+          <p class="approval">Approval: <strong>draft</strong></p>
+        </article>
+      </section>
+
+      <section id="flows">
+        <h2>Flows</h2>
+        <article class="flow" data-flow="follow-session">
+          <h3>
+            The pane follows the session —
+            <a href="screens/mission-pane.html?state=default" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+              <small>via &quot;the WebGL renderer session in the sidebar&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=other-session" target="_blank"
+                >mission-pane?other-session</a
+              >
+              <small>via &quot;the scratch session&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=no-mission" target="_blank"
+                >mission-pane?no-mission</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="open-step">
+          <h3>
+            Open a step to see its acceptance criteria —
+            <a href="screens/mission-pane.html?state=default" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+              <small>via &quot;the Spec step row&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=step-open" target="_blank"
+                >mission-pane?step-open</a
+              >
+              <small>via &quot;the same row again&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="ask">
+          <h3>
+            Ask the session about a milestone —
+            <a href="screens/mission-pane.html?state=default" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+              <small>via &quot;Ask on the current milestone&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=ask" target="_blank">mission-pane?ask</a>
+              <small>via &quot;Send&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="handoff">
+          <h3>
+            Continue the mission in a new session —
+            <a href="screens/mission-pane.html?state=handoff-suggest" target="_blank"
+              >walk through ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=handoff-suggest" target="_blank"
+                >mission-pane?handoff-suggest</a
+              >
+              <small>via &quot;Continue in a new session…&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=handoff-confirm" target="_blank"
+                >mission-pane?handoff-confirm</a
+              >
+              <small>via &quot;Start new session&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="sessions">
+          <h3>
+            See who worked on the mission —
+            <a href="screens/mission-pane.html?state=default" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+              <small>via &quot;the Sessions row&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=sessions" target="_blank"
+                >mission-pane?sessions</a
+              >
+              <small>via &quot;Continue in a new session…&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=handoff-confirm" target="_blank"
+                >mission-pane?handoff-confirm</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="attach">
+          <h3>
+            Attach a session to a mission —
+            <a href="screens/mission-pane.html?state=no-mission" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=no-mission" target="_blank"
+                >mission-pane?no-mission</a
+              >
+              <small>via &quot;Attach on harnu:spec v2&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="attach-request">
+          <h3>
+            A session asks to join a mission —
+            <a href="screens/mission-pane.html?state=attach-request" target="_blank"
+              >walk through ↗</a
+            >
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=attach-request" target="_blank"
+                >mission-pane?attach-request</a
+              >
+              <small>via &quot;Allow&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="toggle-pane">
+          <h3>
+            Close and reopen the pane from the pill —
+            <a href="screens/mission-pane.html?state=default" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+              <small>via &quot;the pill&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=closed" target="_blank"
+                >mission-pane?closed</a
+              >
+              <small>via &quot;the pill again&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="waiting">
+          <h3>
+            See everything that waits on you in this mission —
+            <a href="screens/mission-pane.html?state=default" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+              <small>via &quot;2 more waiting on you&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=waiting" target="_blank"
+                >mission-pane?waiting</a
+              >
+              <small>via &quot;Open step on the Unblock row&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=step-blocked" target="_blank"
+                >mission-pane?step-blocked</a
+              >
+              <small>via &quot;I set it — unblock&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="all-steps">
+          <h3>
+            Show every step of the current milestone —
+            <a href="screens/mission-pane.html?state=default" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+              <small>via &quot;6 more in review&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=all-steps" target="_blank"
+                >mission-pane?all-steps</a
+              >
+              <small>via &quot;Show less&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="small-task">
+          <h3>
+            A small task scoped from the tracker —
+            <a href="screens/mission-pane.html?state=simple" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+              <small>via &quot;the Data table session in the sidebar&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=simple" target="_blank"
+                >mission-pane?simple</a
+              >
+              <small
+                >via &quot;the Get the sign-offs step (later, once the build is done)&quot;</small
+              >
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=simple-signoff" target="_blank"
+                >mission-pane?simple-signoff</a
+              >
+            </li>
+          </ol>
+        </article>
+        <article class="flow" data-flow="big-mission">
+          <h3>
+            A real 10-milestone mission —
+            <a href="screens/mission-pane.html?state=big" target="_blank">walk through ↗</a>
+          </h3>
+          <ol>
+            <li>
+              <a href="screens/mission-pane.html?state=default" target="_blank"
+                >mission-pane?default</a
+              >
+              <small>via &quot;the Collector base session in the sidebar&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=big" target="_blank">mission-pane?big</a>
+              <small>via &quot;4 more waiting on you&quot;</small>
+            </li>
+            <li>
+              <a href="screens/mission-pane.html?state=big-waiting" target="_blank"
+                >mission-pane?big-waiting</a
+              >
+            </li>
+          </ol>
+        </article>
+      </section>
+    </main>
+    <script>
+      /* index runtime: sizes each frame to the chosen viewport, swaps ?state=, listens for
+   mockup:size from the screens. Do not add behaviour here; screens own their behaviour. */
+      ;(() => {
+        const VIEWPORTS = [1280] // MUST mirror mockup.json "viewports"
+        const frames = new Map() // iframe -> {w, h}
+        const fit = (card) => {
+          const vp = card.querySelector('.viewport'),
+            ifr = vp.querySelector('iframe'),
+            f = frames.get(ifr)
+          const s = Math.min(1, vp.parentElement.clientWidth / f.w)
+          ifr.style.width = f.w + 'px'
+          ifr.style.height = f.h + 'px'
+          ifr.style.transform = `scale(${s})`
+          vp.style.height = Math.ceil(f.h * s) + 'px'
+          vp.style.width = Math.ceil(f.w * s) + 'px'
+        }
+        const load = (card) => {
+          const ifr = card.querySelector('iframe')
+          const state =
+            card.querySelector('[data-role="states"] [aria-pressed="true"]')?.dataset.state ||
+            card.dataset.states.split(/\s+/)[0]
+          ifr.src = `screens/${card.dataset.screen}.html?state=${encodeURIComponent(state)}`
+        }
+        document.querySelectorAll('.screen').forEach((card) => {
+          const ifr = card.querySelector('iframe')
+          frames.set(ifr, { w: VIEWPORTS[0], h: 600 })
+          const vps = card.querySelector('[data-role="viewports"]')
+          VIEWPORTS.forEach((w, i) => {
+            const b = document.createElement('button')
+            b.textContent = w + 'px'
+            b.dataset.w = w
+            b.setAttribute('aria-pressed', String(i === 0))
+            b.onclick = () => {
+              vps
+                .querySelectorAll('button')
+                .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+              frames.get(ifr).w = w
+              fit(card)
+            }
+            vps.append(b)
+          })
+          const sts = card.querySelector('[data-role="states"]')
+          card.dataset.states
+            .split(/\s+/)
+            .filter(Boolean)
+            .forEach((st, i) => {
+              const b = document.createElement('button')
+              b.textContent = st
+              b.dataset.state = st
+              b.setAttribute('aria-pressed', String(i === 0))
+              b.onclick = () => {
+                sts
+                  .querySelectorAll('button')
+                  .forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+                load(card)
+              }
+              sts.append(b)
+            })
+          new IntersectionObserver(
+            (es, io) =>
+              es.forEach((e) => {
+                if (e.isIntersecting) {
+                  io.disconnect()
+                  load(card)
+                }
+              }),
+            { rootMargin: '600px' }
+          ).observe(card)
+          fit(card)
+        })
+        addEventListener('message', (e) => {
+          const m = e.data
+          if (!m || m.type !== 'mockup:size') return
+          for (const [ifr, f] of frames)
+            if (ifr.contentWindow === e.source) {
+              f.h = Math.max(320, m.height)
+              fit(ifr.closest('.screen'))
+            }
+        })
+        addEventListener('resize', () => document.querySelectorAll('.screen').forEach(fit))
+      })()
+    </script>
+  </body>
+</html>

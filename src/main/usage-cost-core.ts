@@ -423,17 +423,19 @@ export function parseAssistantLine(line: string): RawAssistantRecord | null {
  * the FIRST occurrence per group so usage is counted exactly once
  * (semantics #1). Never throws: unparseable/irrelevant lines are silently
  * skipped (fail-safe, matches `statusline-parse.ts`'s style).
+ *
+ * `seen` carries the dedupe across calls: pass the ids already counted from the
+ * earlier part of a file and only new requests come back; the set gains them.
  */
-export function priceFileLines(lines: readonly string[]): PricedRequest[] {
-  const seen = new Map<string, RawAssistantRecord>()
+export function priceFileLines(
+  lines: readonly string[],
+  seen: Set<string> = new Set()
+): PricedRequest[] {
+  const out: PricedRequest[] = []
   for (const line of lines) {
     const rec = parseAssistantLine(line)
-    if (!rec) continue
-    if (!seen.has(rec.requestId)) seen.set(rec.requestId, rec)
-  }
-
-  const out: PricedRequest[] = []
-  for (const rec of seen.values()) {
+    if (!rec || seen.has(rec.requestId)) continue
+    seen.add(rec.requestId)
     const { tier, estimated } = canonicalizeModel(rec.model, rec.speed)
     const costUsd = priceTokens(rec.tokens, rec.webSearchRequests, tier, rec.cacheWriteSplit)
     out.push({
@@ -537,8 +539,23 @@ export function buildFileCostBuckets(
   meta: FileBucketMeta,
   dayKey: (ms: number) => string = localDayKey
 ): CostBucket[] {
-  const priced = priceFileLines(lines)
+  return foldCostBuckets([], priceFileLines(lines), meta, dayKey)
+}
+
+/**
+ * The resumable form of {@link buildFileCostBuckets}: `prev` is the buckets of
+ * the earlier part of a file, `priced` the requests not yet counted. Same
+ * result, to the last bit, as folding the whole file at once. `prev` is not
+ * mutated, and its buckets take `meta.projectPath` (a `cwd` can appear late).
+ */
+export function foldCostBuckets(
+  prev: readonly CostBucket[],
+  priced: readonly PricedRequest[],
+  meta: FileBucketMeta,
+  dayKey: (ms: number) => string = localDayKey
+): CostBucket[] {
   const byKey = new Map<string, CostBucket>()
+  for (const b of prev) byKey.set(bucketKey(b), { ...b, projectPath: meta.projectPath })
   for (const p of priced) {
     const day = dayKey(p.timestampMs)
     const key = bucketKey({

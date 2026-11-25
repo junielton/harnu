@@ -1,28 +1,26 @@
 /**
- * T370 (T358 S9) — `src/main/mission-ipc.ts`: the renderer's read of open
- * missions and the operator doors, driven against a real temp repo.
+ * T370 (T358 S9) — `src/main/mission-ipc.ts`: the renderer's read of open missions and the operator doors,
+ * driven against a real temp repo.
+ *
+ * Missions v4 S-40: the v3 view is gone. `listMissionViews` answers no view of any mission; what it
+ * still carries is the files that could not be read and the copies of an id that lost to a newer one. The
+ * v3 operator doors (`mission:operatorDoor`, `mission:choose`) answer a refusal that points at the Mission
+ * pane. What an operator does to a mission goes through `mission:v4Door`; what the pane reads comes through
+ * `mission:v4View`.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import {
-  createMissionFile,
-  missionsDir,
-  parseMissionFile,
-  readMissionLog,
-  type Mission
-} from '../src/main/mission-core'
+import { buildMissionRecordContent, type MissionV4 } from '../src/main/missions/model'
+import { v3MissionObject, writeV3Mission } from './helpers/v3-mission-file'
 
 const h = vi.hoisted(() => ({
   userDataDir: '',
-  /** Extra latency each derive takes (Mission v3 S2 parallel-list test). */
-  deriveDelayMs: 0,
-  deriveCalls: 0,
-  inFlight: 0,
-  peakInFlight: 0,
-  scanCalls: 0,
-  deriveFails: false
+  /** The folders Harnu knows (`markdownKnownRoots`): what `mission:pathKinds` may look inside. */
+  roots: [] as string[],
+  /** What `registerMissionIpc` registered, by channel (S-15). */
+  handlers: new Map<string, (e: unknown, arg?: unknown) => unknown>()
 }))
 
 vi.mock('electron', () => ({
@@ -34,95 +32,75 @@ vi.mock('electron', () => ({
   dialog: {},
   shell: {},
   BrowserWindow: class {},
-  ipcMain: { handle: (): void => {}, on: (): void => {} }
+  ipcMain: {
+    handle: (channel: string, fn: (e: unknown, arg?: unknown) => unknown): void => {
+      h.handlers.set(channel, fn)
+    },
+    on: (): void => {}
+  }
+}))
+
+// The known roots are the test's own, not the machine's pinned folders and scanned sessions.
+vi.mock('../src/main/markdown-read', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/markdown-read')>()),
+  markdownKnownRoots: async (): Promise<string[]> => [...h.roots]
 }))
 
 // The fleet scan reads the real ~/.claude/projects — keep the tests off it.
 vi.mock('../src/main/claude-reader', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/claude-reader')>()),
-  scanFolders: async (): Promise<unknown[]> => {
-    h.scanCalls++
-    return []
-  }
+  scanFolders: async (): Promise<unknown[]> => []
 }))
-
-// The real derive, observed: how many run, how many at once, and an optional delay.
-vi.mock('../src/main/mcp/tool-handlers', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../src/main/mcp/tool-handlers')>()
-  return {
-    ...real,
-    deriveMissionSignals: async (
-      ...args: Parameters<typeof real.deriveMissionSignals>
-    ): ReturnType<typeof real.deriveMissionSignals> => {
-      h.deriveCalls++
-      h.inFlight++
-      h.peakInFlight = Math.max(h.peakInFlight, h.inFlight)
-      try {
-        if (h.deriveDelayMs > 0) await new Promise((r) => setTimeout(r, h.deriveDelayMs))
-        if (h.deriveFails) throw new Error('derive exploded')
-        return await real.deriveMissionSignals(...args)
-      } finally {
-        h.inFlight--
-      }
-    }
-  }
-})
 
 const OWNER = '11111111-2222-4333-8444-555555555555'
 
-function mission(id: string, over: Partial<Mission> = {}): Mission {
-  return {
+/** A v3 mission file's object, in the repo `folder` (default `/repo`). */
+function mission(
+  id: string,
+  over: Record<string, unknown> = {},
+  folder = '/repo'
+): { id: string; slug: string } & Record<string, unknown> {
+  return v3MissionObject(folder, {
     id,
     slug: `m-${id.slice(4)}`,
-    folder: '/repo',
-    owner: { sessionId: OWNER, folder: '/repo' },
-    status: 'draft',
-    declaredEnd: { kind: 'code', target: 'PR merging the slice', evidence: 'green gates' },
+    owner: { sessionId: OWNER, folder },
+    status: 'active',
+    updatedAt: '2026-09-28T10:00:00.000Z',
+    ...over
+  })
+}
+
+/** An open v4 record. */
+function record(id: string): MissionV4 {
+  return {
+    schemaVersion: 4,
+    id,
+    title: 'A record',
+    doneWhen: 'The record is read',
+    status: 'open',
+    milestones: [],
     steps: [
       {
         id: 'stp-1',
-        ordinal: 1,
-        kind: 'fixed-start',
-        title: 'Scope confirmed',
-        verification: 'existence',
-        proof: 'unproven',
-        links: [],
-        blockers: []
-      },
-      {
-        id: 'stp-3',
-        ordinal: 2,
-        kind: 'custom',
-        title: 'Copy review',
-        verification: 'human',
-        proof: 'unproven',
-        links: [],
-        blockers: []
-      },
-      {
-        id: 'stp-2',
-        ordinal: 3,
-        kind: 'fixed-end',
-        title: 'Delivered and verified',
-        verification: 'verifier',
-        proof: 'unproven',
+        title: 'Read it',
+        acs: [{ id: 'ac-1', text: 'It is read', by: 'operator' }],
         links: [],
         blockers: []
       }
     ],
-    blockers: [],
-    openQuestions: [],
-    createdAt: '2026-09-28T10:00:00.000Z',
-    updatedAt: '2026-09-28T10:00:00.000Z',
-    provenance: { author: 'agent', at: '2026-09-28T10:00:00.000Z' },
-    ...over
-  }
+    sessions: [{ id: OWNER, role: 'leads', from: '2026-11-14T10:00:00Z', to: null }],
+    links: [],
+    blockers: []
+  } as unknown as MissionV4
 }
 
-async function onDisk(root: string, id: string): Promise<{ m: Mission; log: string }> {
-  const name = (await fs.readdir(missionsDir(root))).find((n) => n.startsWith(`${id}-`))!
-  const raw = await fs.readFile(path.join(missionsDir(root), name), 'utf8')
-  return { m: parseMissionFile(raw) as Mission, log: readMissionLog(raw) }
+async function writeRecord(dir: string, rec: MissionV4): Promise<void> {
+  const v4 = path.join(dir, '.harnu', 'missions-v4')
+  await fs.mkdir(v4, { recursive: true })
+  await fs.writeFile(
+    path.join(v4, `${rec.id}-record.md`),
+    buildMissionRecordContent(rec, '# Log\n')
+  )
 }
 
 let root: string
@@ -130,133 +108,55 @@ let ipc: typeof import('../src/main/mission-ipc')
 
 beforeEach(async () => {
   h.userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-mission-ipc-ud-'))
-  h.deriveDelayMs = 0
-  h.deriveCalls = 0
-  h.inFlight = 0
-  h.peakInFlight = 0
-  h.scanCalls = 0
-  h.deriveFails = false
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-mission-ipc-'))
+  h.roots = []
   vi.resetModules()
   ipc = await import('../src/main/mission-ipc')
 })
 
 describe('listMissionViews', () => {
-  it('returns every open mission with its derived block and a structured you item', async () => {
-    await createMissionFile(root, mission('mnt-00000001'), '# First mission\n')
-    await createMissionFile(
-      root,
-      mission('mnt-00000002', {
-        status: 'active',
-        updatedAt: '2026-09-28T11:00:00.000Z',
-        pendingRescope: { kind: 'research', target: 'a memo', evidence: 'merged' }
-      })
+  it('answers no view of any mission, v3 file or v4 record, open or closed', async () => {
+    writeV3Mission(root, mission('mnt-00000001', {}, root), '# First mission\n')
+    writeV3Mission(root, mission('mnt-00000002', { status: 'closed', closedAs: 'delivered' }, root))
+    await writeRecord(root, record('mnt-00000003'))
+    expect(await ipc.listMissionViews([root])).toEqual({ views: [], unreadable: [], shadowed: [] })
+  })
+
+  it('names a file it could not read, v3 or v4, and still reads nothing else into a view', async () => {
+    writeV3Mission(root, mission('mnt-00000001', {}, root))
+    await fs.writeFile(
+      path.join(root, '.harnu', 'missions', 'mnt-deadbeef-broken.md'),
+      '---\nstatus: [\n---\n'
     )
-    await createMissionFile(root, mission('mnt-00000003', { status: 'closed' }))
+    await writeRecord(root, record('mnt-00000003'))
+    await fs.writeFile(
+      path.join(root, '.harnu', 'missions-v4', 'mnt-a7230001-bad.md'),
+      'not a record'
+    )
     const { views, unreadable } = await ipc.listMissionViews([root])
-    expect(unreadable).toEqual([])
-    // Closed missions are left out; newest first.
-    expect(views.map((v) => v.mission.id)).toEqual(['mnt-00000002', 'mnt-00000001'])
-    expect(views[1].title).toBe('First mission')
-    // Mission v3 §3.12: an ordered list of what the operator owes.
-    // The fixture's human step stp-3 is the current step, unticked: owed too.
-    expect(views[0].you).toEqual([
-      { kind: 'rescope', end: { kind: 'research', target: 'a memo', evidence: 'merged' } },
-      { kind: 'human-steps', stepIds: ['stp-3'] }
-    ])
-    expect(views[1].you).toEqual([{ kind: 'human-steps', stepIds: ['stp-3'] }])
-    expect(views[0].derived.live).toBe(true)
-    expect(views[0].derived.steps.map((s) => s.stepId)).toEqual(['stp-1', 'stp-3', 'stp-2'])
-    // Mission v3 §3.5: warnings, never a refusal; the view carries the progress.
-    expect(views[0]).not.toHaveProperty('closeRefusal')
-    expect(views[0].closeWarnings.map((w) => w.kind)).toEqual(['end-unverified', 'rescope-staged'])
-    expect(views[0].progress).toMatchObject({ total: 2, current: { from: 1, to: 1 } })
-    expect(views[0].derived.progress).toEqual(views[0].progress)
-    expect(views[0].root).toBe(root)
+    expect(views).toEqual([])
+    expect([...unreadable].sort()).toEqual(['mnt-a7230001-bad.md', 'mnt-deadbeef-broken.md'])
   })
 
-  it('T589: with onlySessions it derives only the missions those sessions own or are linked to', async () => {
-    const CHILD = '99999999-aaaa-4bbb-8ccc-dddddddddddd'
-    const OTHER = '77777777-aaaa-4bbb-8ccc-dddddddddddd'
-    const linked = mission('mnt-0000000b', {
-      status: 'active',
-      owner: { sessionId: OTHER, folder: '/repo' }
-    })
-    linked.steps[1].links = [{ kind: 'session', ref: CHILD }]
-    await createMissionFile(root, mission('mnt-0000000a', { status: 'active' })) // owned by OWNER
-    await createMissionFile(root, linked) // CHILD is linked on a step
-    await createMissionFile(
-      root,
-      mission('mnt-0000000c', { status: 'active', owner: { sessionId: OTHER, folder: '/repo' } })
-    ) // neither
-    const r = await ipc.listMissionViews([root], Date.now(), {
-      onlySessions: new Set([OWNER, CHILD])
-    })
-    expect(r.views.map((v) => v.mission.id).sort()).toEqual(['mnt-0000000a', 'mnt-0000000b'])
-    expect(h.deriveCalls).toBe(2) // the third was never derived
-    h.deriveCalls = 0
-    const none = await ipc.listMissionViews([root], Date.now(), {
-      onlySessions: new Set(['nobody'])
-    })
-    expect(none.views).toEqual([])
-    expect(h.deriveCalls).toBe(0)
-    // without the option, every mission is derived as before
-    expect((await ipc.listMissionViews([root])).views).toHaveLength(3)
-  })
-
-  it('never carries legacyRaw to the renderer', async () => {
-    await createMissionFile(
-      root,
-      mission('mnt-00000004', {
-        legacy: { source: '/repo/.harnu/goals/x.md', sha256: 'sha256:00', needsReview: [] },
-        legacyRaw: 'a whole legacy file'
-      })
-    )
-    const { views } = await ipc.listMissionViews([root])
-    expect(views[0].mission).not.toHaveProperty('legacyRaw')
-    expect(views[0].mission.legacy?.source).toBe('/repo/.harnu/goals/x.md')
-  })
-
-  // The plan's bound read "< 1.5 s", but 9 derives at 4 at once are 3 waves of
-  // 500 ms — 1.5 s is the floor itself. The bound is the floor plus slack, far
-  // below the 4.5 s a sequential loop takes; the peak pins the limit exactly.
-  it('Mission v3 §3.8: derives in parallel (at most 4 at once) — 9 missions of 500 ms in 3 waves, not 9', async () => {
-    const roots = [root, await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-mission-ipc-b-'))]
-    for (let i = 1; i <= 9; i++) {
-      const id = `mnt-${i.toString(16).padStart(8, '0')}`
-      await createMissionFile(
-        roots[i % 2],
-        mission(id, { status: 'active', updatedAt: `2026-09-28T10:0${i}:00.000Z` })
-      )
-    }
-    h.deriveDelayMs = 500
-    const t0 = Date.now()
-    const { views } = await ipc.listMissionViews(roots)
-    const took = Date.now() - t0
-    expect(took).toBeGreaterThanOrEqual(1500)
-    expect(took).toBeLessThan(2000)
-    expect(h.deriveCalls).toBe(9)
-    expect(h.peakInFlight).toBe(4)
-    // Same answer as the sequential loop: every mission once, newest first.
-    expect(views.map((v) => v.mission.id)).toEqual(
-      [9, 8, 7, 6, 5, 4, 3, 2, 1].map((i) => `mnt-${i.toString(16).padStart(8, '0')}`)
-    )
-    expect(views.map((v) => v.root)).toEqual([9, 8, 7, 6, 5, 4, 3, 2, 1].map((i) => roots[i % 2]))
-  })
-
-  it('Mission v3 §3.8: the fleet scan is memoized for 10 s across list calls', async () => {
-    await createMissionFile(root, mission('mnt-00000001', { status: 'active' }))
-    await ipc.listMissionViews([root])
-    await ipc.listMissionViews([root])
-    expect(h.scanCalls).toBe(1)
-    const real = Date.now()
-    const spy = vi.spyOn(Date, 'now').mockReturnValue(real + 10_001)
+  it('names the files other readers reported too (hibernation, the companion, Your move)', async () => {
+    const { reportUnreadableMissionFiles, resetUnreadableMissionFiles } =
+      await import('../src/main/missions/store')
+    await fs.mkdir(path.join(root, '.git'), { recursive: true })
     try {
-      await ipc.listMissionViews([root])
+      reportUnreadableMissionFiles('your-move', ['mnt-0000aaaa-reported.md'])
+      expect((await ipc.listMissionViews([root])).unreadable).toEqual(['mnt-0000aaaa-reported.md'])
     } finally {
-      spy.mockRestore()
+      resetUnreadableMissionFiles()
     }
-    expect(h.scanCalls).toBe(2)
+    expect((await ipc.listMissionViews([root])).unreadable).toEqual([])
+  })
+
+  it('reads nothing off disk but the file names: a v3 file is left byte for byte as it was', async () => {
+    const file = writeV3Mission(root, mission('mnt-00000001', {}, root), '# First\n')
+    const before = await fs.readFile(file)
+    await ipc.listMissionViews([root])
+    await ipc.listMissionViews([root])
+    expect((await fs.readFile(file)).equals(before)).toBe(true)
   })
 
   it('returns nothing for no folders or a repo with no missions dir', async () => {
@@ -265,7 +165,8 @@ describe('listMissionViews', () => {
   })
 })
 
-// BUG-173 S1 (mission cue noise spec §3.1): missions are unique by `mission.id`.
+// BUG-173 S1 (mission cue noise spec §3.1): missions are unique by `mission.id`. The poll no longer carries
+// the winning copy's view (S-40); it still names the copies that lost, and the store still decides which won.
 describe('listMissionViews — one entry per mission id', () => {
   /** A second repo root: a temp dir with a `.git` directory, like a separate clone. */
   async function cloneRoot(): Promise<string> {
@@ -279,17 +180,15 @@ describe('listMissionViews — one entry per mission id', () => {
     root = await fs.realpath(root)
   })
 
-  it('lists a mission once when two roots hold the same id', async () => {
+  it('reports a copy when two roots hold the same id', async () => {
     const other = await cloneRoot()
-    await createMissionFile(root, mission('mnt-0000d001', { status: 'active' }), '# Twin\n')
-    await createMissionFile(other, mission('mnt-0000d001', { status: 'active' }), '# Twin\n')
+    writeV3Mission(root, mission('mnt-0000d001', {}, root), '# Twin\n')
+    writeV3Mission(other, mission('mnt-0000d001', {}, other), '# Twin\n')
     const { views, shadowed } = await ipc.listMissionViews([root, other])
-    expect(views.map((v) => v.mission.id)).toEqual(['mnt-0000d001'])
+    expect(views).toEqual([])
     // Same updatedAt: the root that sorts first by path wins; the other is reported.
-    const [winner, loser] = [root, other].sort()
-    expect(views[0].root).toBe(winner)
+    const loser = [root, other].sort()[1]
     expect(shadowed).toEqual([{ missionId: 'mnt-0000d001', root: loser }])
-    expect(h.deriveCalls).toBe(1)
   })
 
   it('newest updatedAt wins and a tie breaks on root path', async () => {
@@ -298,30 +197,28 @@ describe('listMissionViews — one entry per mission id', () => {
     const older = '2026-09-28T10:00:00.000Z'
     const newer = '2026-09-29T10:00:00.000Z'
     // The root that sorts LAST holds the newer copy: recency beats path order.
-    await createMissionFile(first, mission('mnt-0000d002', { status: 'active', updatedAt: older }))
-    await createMissionFile(second, mission('mnt-0000d002', { status: 'active', updatedAt: newer }))
+    writeV3Mission(first, mission('mnt-0000d002', { updatedAt: older }, first))
+    writeV3Mission(second, mission('mnt-0000d002', { updatedAt: newer }, second))
     // Folder order must not matter.
     for (const order of [
       [first, second],
       [second, first]
     ]) {
-      const { views, shadowed } = await ipc.listMissionViews(order)
-      expect(views).toHaveLength(1)
-      expect(views[0].root).toBe(second)
-      expect(views[0].mission.updatedAt).toBe(newer)
+      const { shadowed } = await ipc.listMissionViews(order)
       expect(shadowed).toEqual([{ missionId: 'mnt-0000d002', root: first }])
     }
   })
 
-  it('a closed winner drops the id even if an older copy is active', async () => {
+  it('a closed winner shadows an older copy that is still active', async () => {
     const other = await cloneRoot()
-    await createMissionFile(
-      root,
-      mission('mnt-0000d003', { status: 'active', updatedAt: '2026-09-28T10:00:00.000Z' })
-    )
-    await createMissionFile(
+    writeV3Mission(root, mission('mnt-0000d003', { updatedAt: '2026-09-28T10:00:00.000Z' }, root))
+    writeV3Mission(
       other,
-      mission('mnt-0000d003', { status: 'closed', updatedAt: '2026-09-29T10:00:00.000Z' })
+      mission(
+        'mnt-0000d003',
+        { status: 'closed', closedAs: 'delivered', updatedAt: '2026-09-29T10:00:00.000Z' },
+        other
+      )
     )
     const { views, shadowed } = await ipc.listMissionViews([root, other])
     expect(views).toEqual([])
@@ -329,274 +226,364 @@ describe('listMissionViews — one entry per mission id', () => {
   })
 
   it('two spellings of one directory are one root', async () => {
-    await createMissionFile(root, mission('mnt-0000d004', { status: 'active' }))
+    writeV3Mission(root, mission('mnt-0000d004', {}, root))
     const alias = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-mission-ipc-ln-')), 'l')
     await fs.symlink(root, alias)
-    const { views, shadowed } = await ipc.listMissionViews([root, alias])
-    expect(views.map((v) => v.mission.id)).toEqual(['mnt-0000d004'])
+    const { shadowed } = await ipc.listMissionViews([root, alias])
     expect(shadowed).toEqual([])
-    expect(h.deriveCalls).toBe(1)
   })
 })
 
-describe('runOperatorDoor', () => {
-  const AT = '2026-09-28T15:00:00.000Z'
-  const now = (): string => AT
-
-  it('approveRescope and verifyStep apply their core functions', async () => {
-    await createMissionFile(
-      root,
-      mission('mnt-0000000b', {
-        status: 'active',
-        pendingRescope: { kind: 'research', target: 'a memo', evidence: 'merged' }
-      })
-    )
-    expect(
-      await ipc.runOperatorDoor({ door: 'approveRescope', root, missionId: 'mnt-0000000b' }, now)
-    ).toEqual({ ok: true, view: expect.objectContaining({ root }) })
-    expect(
-      await ipc.runOperatorDoor(
-        { door: 'verifyStep', root, missionId: 'mnt-0000000b', stepId: 'stp-3', verified: true },
-        now
-      )
-    ).toEqual({ ok: true, view: expect.objectContaining({ root }) })
-    const { m } = await onDisk(root, 'mnt-0000000b')
-    expect(m.declaredEnd.target).toBe('a memo')
-    expect(m.pendingRescope).toBeUndefined()
-    expect(m.steps[1].proof).toBe('verified')
+describe('observeOpenMissions', () => {
+  it('observes nothing for no folders, a repo with no missions, or a repo with only v3 files', async () => {
+    expect(await ipc.observeOpenMissions([])).toBe(0)
+    expect(await ipc.observeOpenMissions([root])).toBe(0)
+    const file = writeV3Mission(root, mission('mnt-00000001', {}, root))
+    const before = await fs.readFile(file)
+    expect(await ipc.observeOpenMissions([root])).toBe(0)
+    // Never the first v4 write of a v3 file, and no v4 directory appears.
+    expect((await fs.readFile(file)).equals(before)).toBe(true)
+    await expect(fs.stat(path.join(root, '.harnu', 'missions-v4'))).rejects.toThrow()
   })
 
-  it('end: closes any non-closed mission, logs the outcome, and agent verbs then refuse MISSION_CLOSED (Mission v3 §3.5)', async () => {
-    await createMissionFile(
-      root,
-      mission('mnt-0000000c', { status: 'active' }),
-      '# Title\n\n## Log\n'
-    )
-    expect(
-      await ipc.runOperatorDoor(
-        { door: 'end', root, missionId: 'mnt-0000000c', closedAs: 'discarded', reason: 'dead' },
-        now
-      )
-    ).toEqual({ ok: true, view: null })
-    const { m, log } = await onDisk(root, 'mnt-0000000c')
-    expect(m).toMatchObject({ status: 'closed', closedAs: 'discarded', closeReason: 'dead' })
-    expect(log).toContain(`### ${AT} · operator ended (discarded)`)
-    expect(log).toContain('dead')
-    // Review Focus: a double Close is a refusal, never a crash or a resurrected mission.
-    expect(
-      await ipc.runOperatorDoor(
-        { door: 'end', root, missionId: 'mnt-0000000c', closedAs: 'delivered' },
-        now
-      )
-    ).toEqual({ ok: false, error: expect.stringMatching(/^MISSION_CLOSED/) })
-    expect((await onDisk(root, 'mnt-0000000c')).m.closedAs).toBe('discarded')
-    // The owner learns of it: every agent verb now refuses.
-    const { WIRED_TOOLS } = await import('../src/main/mcp/tool-handlers')
-    const log_ = WIRED_TOOLS.find((t) => t.op === 'mission_log')!.handler as unknown as (
-      a: Record<string, unknown>,
-      c: Record<string, unknown>
-    ) => Promise<{ isError?: boolean; content: Array<{ text?: string }> }>
-    const res = await log_(
-      { folder: root, missionId: 'mnt-0000000c', note: 'still here?' },
-      { folder: root, folders: [], denyFolders: [], bridge: undefined }
-    )
-    expect(res.isError).toBe(true)
-    expect(res.content[0].text).toMatch(/^MISSION_CLOSED/)
-    // …and the list no longer shows it.
-    expect((await ipc.listMissionViews([root])).views).toEqual([])
+  it('counts the open v4 records it observed, with its facts injected', async () => {
+    await writeRecord(root, record('mnt-00000003'))
+    const noFacts = {
+      findPrs: async () => ({ ghAvailable: true, worktrees: {}, branches: {}, numbers: {} }),
+      findMainCi: async () => ({ ghAvailable: true, byNumber: {} }),
+      lastKnown: () => null,
+      pathExists: async () => true,
+      taskState: () => undefined
+    }
+    expect(await ipc.observeOpenMissions([root], Date.now(), { v4Facts: () => noFacts })).toBe(1)
+  })
+})
+
+describe('the v3 operator doors', () => {
+  const REFUSAL = /Mission dropdown/
+
+  it('answer a refusal that names the Mission dropdown, and touch nothing on disk', async () => {
+    const file = writeV3Mission(root, mission('mnt-0000000b', {}, root), '# T\n\n## Log\n')
+    const before = await fs.readFile(file)
+    h.handlers.clear()
+    ipc.registerMissionIpc()
+    for (const channel of ['mission:operatorDoor', 'mission:choose']) {
+      const reply = (await h.handlers.get(channel)!(
+        {},
+        { door: 'end', root, missionId: 'mnt-0000000b', closedAs: 'discarded' }
+      )) as { ok: boolean; error?: string }
+      expect(reply.ok, channel).toBe(false)
+      expect(reply.error, channel).toMatch(REFUSAL)
+    }
+    expect((await fs.readFile(file)).equals(before)).toBe(true)
   })
 
-  it('every door appends a line to the Log, so the owner can read what the operator did', async () => {
-    await createMissionFile(root, mission('mnt-0000000f', { status: 'active' }), '# T\n\n## Log\n')
-    await ipc.runOperatorDoor(
-      { door: 'verifyStep', root, missionId: 'mnt-0000000f', stepId: 'stp-3', verified: true },
-      now
-    )
-    await ipc.runOperatorDoor(
-      { door: 'addCheck', root, missionId: 'mnt-0000000f', stepId: 'stp-3', label: 'DSQA' },
-      now
-    )
-    const { log } = await onDisk(root, 'mnt-0000000f')
-    expect(log.match(/^### .* · operator /gm)).toHaveLength(2)
+  it('are no longer exported as a function: the door runner went with the v3 popover', () => {
+    expect((ipc as Record<string, unknown>).runOperatorDoor).toBeUndefined()
   })
+})
 
-  it('checks: the operator adds (source operator), ticks, un-ticks and deletes (Mission v3 §3.6)', async () => {
-    await createMissionFile(root, mission('mnt-0000000e', { status: 'active' }))
-    const door = (d: Record<string, unknown>): Promise<unknown> =>
-      ipc.runOperatorDoor({ root, missionId: 'mnt-0000000e', ...d }, now)
-    expect(await door({ door: 'addCheck', stepId: 'stp-3', label: 'Validated visually' })).toEqual({
-      ok: true,
-      view: expect.objectContaining({ root })
-    })
-    let { m } = await onDisk(root, 'mnt-0000000e')
-    expect(m.steps[1].checks).toEqual([
-      { id: 'chk-1', label: 'Validated visually', source: 'operator', createdAt: AT }
+describe('registerMissionIpc — the v4 door channel (S-15)', () => {
+  it('adds mission:v4Door beside the existing channels and routes a door to the v4 record', async () => {
+    h.handlers.clear()
+    ipc.registerMissionIpc()
+    expect([...h.handlers.keys()].sort()).toEqual([
+      'mission:choose',
+      'mission:handOff',
+      'mission:list',
+      'mission:operatorDoor',
+      'mission:pathKinds',
+      'mission:v4Door',
+      'mission:v4View'
     ])
-    expect(
-      await door({ door: 'tickCheck', stepId: 'stp-3', checkId: 'chk-1', ticked: true })
-    ).toEqual({ ok: true, view: expect.objectContaining({ root }) })
-    ;({ m } = await onDisk(root, 'mnt-0000000e'))
-    expect(m.steps[1].checks![0].ticked).toEqual({ at: AT })
-    expect(
-      await door({ door: 'tickCheck', stepId: 'stp-3', checkId: 'chk-1', ticked: false })
-    ).toEqual({ ok: true, view: expect.objectContaining({ root }) })
-    ;({ m } = await onDisk(root, 'mnt-0000000e'))
-    expect(m.steps[1].checks![0].ticked).toBeUndefined()
-    expect(await door({ door: 'deleteCheck', stepId: 'stp-3', checkId: 'chk-1' })).toEqual({
-      ok: true,
-      view: expect.objectContaining({ root })
-    })
-    ;({ m } = await onDisk(root, 'mnt-0000000e'))
-    expect(m.steps[1].checks).toEqual([])
-    expect(await door({ door: 'deleteCheck', stepId: 'stp-3', checkId: 'chk-1' })).toEqual({
-      ok: false,
-      error: expect.stringMatching(/^CHECK_NOT_FOUND/)
-    })
-    for (const bad of [
-      { door: 'addCheck', stepId: 'stp-3' },
-      { door: 'tickCheck', stepId: 'stp-3', checkId: 'chk-1' },
-      { door: 'deleteCheck', stepId: 'stp-3' }
-    ]) {
-      expect(await door(bad), JSON.stringify(bad)).toEqual({
-        ok: false,
-        error: expect.stringMatching(/^BAD_ARGS/)
-      })
-    }
-  })
 
-  it('Delta 1: an operator addCheck that dedupes writes nothing, logs nothing, and says deduped', async () => {
-    await createMissionFile(root, mission('mnt-0000000f', { status: 'active' }), '# T\n\n## Log\n')
-    const add = (label: string): Promise<unknown> =>
-      ipc.runOperatorDoor(
-        { door: 'addCheck', root, missionId: 'mnt-0000000f', stepId: 'stp-3', label },
-        now
-      )
-    expect(await add('Validated visually')).toEqual({
-      ok: true,
-      view: expect.objectContaining({ root })
-    })
-    const file = path.join(missionsDir(root), (await fs.readdir(missionsDir(root)))[0])
-    const before = await fs.readFile(file, 'utf8')
-    expect(
-      await ipc.runOperatorDoor(
+    const { buildMissionRecordContent } = await import('../src/main/missions/model')
+    const id = 'mnt-d0000099'
+    const dir = path.join(root, '.harnu', 'missions-v4')
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, `${id}-doors.md`),
+      buildMissionRecordContent(
         {
-          door: 'addCheck',
-          root,
-          missionId: 'mnt-0000000f',
-          stepId: 'stp-3',
-          label: 'VALIDATED   visually'
+          schemaVersion: 4,
+          id,
+          title: 'Doors',
+          doneWhen: 'The doors open',
+          status: 'open',
+          milestones: [],
+          steps: [
+            {
+              id: 'stp-1',
+              title: 'Check the doors',
+              acs: [{ id: 'ac-1', text: 'The doors are checked', by: 'operator' }],
+              links: [],
+              blockers: []
+            }
+          ],
+          sessions: [],
+          links: [],
+          blockers: []
         },
-        () => '2026-09-29T09:00:00.000Z'
+        '# Log\n'
       )
-    ).toEqual({ ok: true, view: expect.objectContaining({ root }), deduped: true })
-    // Byte-identical: no log line, no updatedAt bump.
-    expect(await fs.readFile(file, 'utf8')).toBe(before)
-    const { m, log } = await onDisk(root, 'mnt-0000000f')
-    expect(m.steps[1].checks).toHaveLength(1)
-    expect(log.match(/operator added a check/g)).toHaveLength(1)
-  })
-
-  it('Mission v3 §3.2: a tick answers with that mission re-derived — and derives nothing else', async () => {
-    await createMissionFile(root, mission('mnt-00000011', { status: 'active' }), '# Ticked\n')
-    await createMissionFile(root, mission('mnt-00000012', { status: 'active' }))
-    await createMissionFile(root, mission('mnt-00000013', { status: 'active' }))
-    const res = await ipc.runOperatorDoor(
-      { door: 'verifyStep', root, missionId: 'mnt-00000011', stepId: 'stp-3', verified: true },
-      now
     )
-    expect(h.deriveCalls).toBe(1)
-    expect(h.scanCalls).toBeLessThanOrEqual(1)
-    if (!res.ok) throw new Error(res.error)
-    const view = res.view!
-    expect(view.root).toBe(root)
-    expect(view.title).toBe('Ticked')
-    expect(view.mission.id).toBe('mnt-00000011')
-    expect(view.mission.steps[1].proof).toBe('verified')
-    expect(view.mission.updatedAt).toBe(AT)
-    expect(view.progress.states['stp-3']).toBe('verified')
-    expect(view.derived.progress).toEqual(view.progress)
-    expect(view.mission).not.toHaveProperty('legacyRaw')
-    // The same projection the list builds for that mission.
-    const listed = (await ipc.listMissionViews([root])).views.find(
-      (v) => v.mission.id === 'mnt-00000011'
-    )!
-    expect({ ...view, derived: null, progress: null }).toEqual({
-      ...listed,
-      derived: null,
-      progress: null
+    const reply = (await h.handlers.get('mission:v4Door')!(
+      {},
+      {
+        door: 'mark',
+        folder: root,
+        missionId: id,
+        stepId: 'stp-1',
+        criterionId: 'ac-1'
+      }
+    )) as Record<string, unknown>
+    // The outcome, and never the record or the path of its file.
+    expect(reply).toEqual({ ok: true, changed: true, stepId: 'stp-1', criterionId: 'ac-1' })
+    const bad = (await h.handlers.get('mission:v4Door')!({}, { door: 'nope' })) as Record<
+      string,
+      unknown
+    >
+    expect(bad).toMatchObject({ ok: false, code: 'BAD_ARGS' })
+  })
+})
+
+describe('the hand-off and the summary route on the app (S-16b)', () => {
+  const LEADER = '3f1c9a52-7d4e-4b8a-9c21-5e6a0b7d8f10'
+  const NEW_ONE = '9d2e7a10-5c3b-4f68-8a14-2b9e6c0d7f31'
+  const ID = 'mnt-d0000077'
+
+  async function seedV4(): Promise<void> {
+    const { buildMissionRecordContent } = await import('../src/main/missions/model')
+    const dir = path.join(root, '.harnu', 'missions-v4')
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(
+      path.join(dir, `${ID}-hand-off.md`),
+      buildMissionRecordContent(
+        {
+          schemaVersion: 4,
+          id: ID,
+          title: 'Hand off',
+          doneWhen: 'The hand-off works',
+          status: 'open',
+          milestones: [],
+          steps: [
+            {
+              id: 'stp-1',
+              title: 'Check the hand-off',
+              acs: [{ id: 'ac-1', text: 'The hand-off is checked', by: 'operator' }],
+              links: [],
+              blockers: []
+            }
+          ],
+          sessions: [{ id: LEADER, role: 'leads', from: '2026-11-14T10:00:00Z', to: null }],
+          links: [],
+          blockers: []
+        },
+        '# Log\n'
+      )
+    )
+  }
+
+  it('mission:handOff with no starter wired says so and changes nothing', async () => {
+    await seedV4()
+    h.handlers.clear()
+    ipc.registerMissionIpc()
+    ipc.setMissionHandoffStarter(null)
+    const reply = await h.handlers.get('mission:handOff')!({}, { folder: root, missionId: ID })
+    expect(reply).toMatchObject({ ok: false, code: 'HANDOFF_UNAVAILABLE' })
+  })
+
+  it('mission:handOff runs the one hand-off: it starts one session, and replies with the id and no record', async () => {
+    await seedV4()
+    const calls: Array<{ folder: string; prompt: string }> = []
+    h.handlers.clear()
+    ipc.registerMissionIpc()
+    ipc.setMissionHandoffStarter(async (args) => {
+      calls.push(args)
+      return { ok: true, sessionId: NEW_ONE }
     })
-    expect(view.progress.states).toEqual(listed.progress.states)
+    const reply = (await h.handlers.get('mission:handOff')!(
+      {},
+      {
+        folder: root,
+        missionId: ID,
+        sessionId: LEADER,
+        actor: { kind: 'session', sessionId: LEADER }
+      }
+    )) as Record<string, unknown>
+    expect(reply).toMatchObject({ ok: true, sessionId: NEW_ONE, previousLeader: LEADER })
+    expect(reply).not.toHaveProperty('record')
+    expect(reply).not.toHaveProperty('file')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].folder).toBe(root)
+    expect(calls[0].prompt).toContain('Hand off')
+    ipc.setMissionHandoffStarter(null)
   })
 
-  it('Mission v3 §3.2: end answers view null without deriving, for delivered and discarded alike', async () => {
-    await createMissionFile(root, mission('mnt-00000014', { status: 'active' }))
-    await createMissionFile(root, mission('mnt-00000015', { status: 'delivered' }))
-    expect(
-      await ipc.runOperatorDoor(
-        { door: 'end', root, missionId: 'mnt-00000014', closedAs: 'discarded' },
-        now
-      )
-    ).toEqual({ ok: true, view: null })
-    expect(
-      await ipc.runOperatorDoor(
-        { door: 'end', root, missionId: 'mnt-00000015', closedAs: 'delivered' },
-        now
-      )
-    ).toEqual({ ok: true, view: null })
-    expect(h.deriveCalls).toBe(0)
+  it('the view carries the offer from a LIVE reading of the leader’s context, and never starts anything', async () => {
+    await seedV4()
+    const started: unknown[] = []
+    ipc.setMissionHandoffStarter(async (a) => {
+      started.push(a)
+      return { ok: true, sessionId: NEW_ONE }
+    })
+    const view = async (
+      contexts: Array<{ sessionId: string; contextPercent: number | null }>,
+      extra: Record<string, unknown> = {}
+    ): Promise<{ handoff?: unknown }> =>
+      (await ipc.buildMissionV4View(
+        { folder: root, sessionId: 'app', missionId: ID, ...extra },
+        { contexts: () => contexts }
+      )) as { handoff?: unknown }
+
+    expect((await view([{ sessionId: LEADER, contextPercent: 95 }])).handoff).toEqual({
+      offer: true,
+      percent: 95
+    })
+    expect((await view([{ sessionId: LEADER, contextPercent: 40 }])).handoff).toEqual({
+      offer: false,
+      percent: 40
+    })
+    // no live reading for the leader (null, or another session's), no offer
+    expect((await view([{ sessionId: LEADER, contextPercent: null }])).handoff).toEqual({
+      offer: false,
+      percent: null
+    })
+    expect((await view([{ sessionId: 'someone-else', contextPercent: 99 }])).handoff).toEqual({
+      offer: false,
+      percent: null
+    })
+    expect((await view([])).handoff).toEqual({ offer: false, percent: null })
+    // "Not now" at 82: quiet until 87
+    const quiet = await view([{ sessionId: LEADER, contextPercent: 85 }], { dismissedPercent: 82 })
+    expect(quiet.handoff).toEqual({ offer: false, percent: 85 })
+    expect(started).toHaveLength(0)
+    ipc.setMissionHandoffStarter(null)
   })
 
-  it('Review Focus: a double Close clicked at once — one closes, the other is MISSION_CLOSED', async () => {
-    await createMissionFile(root, mission('mnt-00000016', { status: 'active' }), '# T\n\n## Log\n')
-    const end = (): Promise<unknown> =>
-      ipc.runOperatorDoor(
-        { door: 'end', root, missionId: 'mnt-00000016', closedAs: 'delivered' },
-        now
-      )
-    const results = await Promise.all([end(), end()])
-    expect(results).toContainEqual({ ok: true, view: null })
-    expect(results).toContainEqual({ ok: false, error: expect.stringMatching(/^MISSION_CLOSED/) })
-    const { m, log } = await onDisk(root, 'mnt-00000016')
-    expect(m.status).toBe('closed')
-    expect(log.match(/operator ended/g)).toHaveLength(1)
-    // Never resurrected: the list does not show it, and no view was built for it.
-    expect((await ipc.listMissionViews([root])).views).toEqual([])
-  })
-
-  it('a door whose re-derive fails still reports the write: ok with view null, never a throw', async () => {
-    await createMissionFile(root, mission('mnt-00000017', { status: 'active' }))
-    h.deriveFails = true
-    expect(
-      await ipc.runOperatorDoor(
-        { door: 'verifyStep', root, missionId: 'mnt-00000017', stepId: 'stp-3', verified: true },
-        now
-      )
-    ).toEqual({ ok: true, view: null })
-    expect((await onDisk(root, 'mnt-00000017')).m.steps[1].proof).toBe('verified')
-  })
-
-  it('refuses a malformed door without touching disk', async () => {
-    for (const bad of [
-      null,
-      { door: 'delete', root, missionId: 'mnt-0000000d' },
-      { door: 'approve', root, missionId: 'mnt-0000000d' },
-      { door: 'close', root, missionId: 'mnt-0000000d' },
-      { door: 'end', missionId: 'mnt-0000000d', closedAs: 'delivered' },
-      { door: 'end', root, missionId: 'mnt-0000000d', closedAs: 'abandoned' },
-      { door: 'verifyStep', root, missionId: 'mnt-0000000d', stepId: 'stp-3' }
-    ]) {
-      expect(await ipc.runOperatorDoor(bad)).toEqual({
-        ok: false,
-        error: expect.stringMatching(/^BAD_ARGS/)
+  it('a last-known (stale) reading never produces an offer: only a live one does', async () => {
+    await seedV4()
+    vi.resetModules()
+    vi.doMock('../src/main/telemetry-store', () => ({
+      getTelemetryPayload: () => ({
+        perSession: [],
+        lastKnown: [{ sessionId: LEADER, contextPercent: 97 }]
       })
+    }))
+    try {
+      const fresh = await import('../src/main/mission-ipc')
+      const view = (await fresh.buildMissionV4View({
+        folder: root,
+        sessionId: 'app',
+        missionId: ID
+      })) as { handoff?: unknown }
+      expect(view.handoff).toEqual({ offer: false, percent: null })
+    } finally {
+      vi.doUnmock('../src/main/telemetry-store')
     }
-    expect(
-      await ipc.runOperatorDoor({
-        door: 'end',
-        root,
-        missionId: 'mnt-0000dead',
-        closedAs: 'delivered'
+  })
+
+  it('answerMissionSummaryHook serves the open leader after a compaction, and prints nothing for anyone else', async () => {
+    await seedV4()
+    const body = (sessionId: string, source = 'compact'): Record<string, unknown> => ({
+      session_id: sessionId,
+      cwd: root,
+      source
+    })
+    const text = await ipc.answerMissionSummaryHook(body(LEADER))
+    expect(text).toContain('Hand off')
+    expect(text.length).toBeLessThan(10_000)
+    expect(await ipc.answerMissionSummaryHook(body('b6b6b6b6-0000-4000-8000-0000000000b6'))).toBe(
+      ''
+    )
+    expect(await ipc.answerMissionSummaryHook(body(LEADER, 'startup'))).toBe('')
+  })
+})
+
+describe('mission:pathKinds — the dropdown’s read-only existence check (S-4)', () => {
+  it('says file, dir or missing for each absolute path, and reads nothing else', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-pathkinds-'))
+    try {
+      h.roots = [dir]
+      const file = path.join(dir, 'report.md')
+      await fs.writeFile(file, 'x')
+      const gone = path.join(dir, 'gone')
+      h.handlers.clear()
+      ipc.registerMissionIpc()
+      const handler = h.handlers.get('mission:pathKinds')
+      expect(handler).toBeTypeOf('function')
+      expect(await handler!(null, [dir, file, gone, 'relative/path', 42])).toEqual({
+        [dir]: 'dir',
+        [file]: 'file',
+        [gone]: 'missing',
+        'relative/path': 'missing'
       })
-    ).toEqual({ ok: false, error: expect.stringMatching(/^MISSION_NOT_FOUND/) })
+      // Anything but a list answers nothing, and a long list is cut.
+      expect(await handler!(null, 'nope')).toEqual({})
+      const many = Array.from({ length: ipc.PATH_KINDS_MAX + 10 }, (_, i) =>
+        path.join(dir, `n${i}`)
+      )
+      expect(Object.keys((await handler!(null, many)) as object)).toHaveLength(ipc.PATH_KINDS_MAX)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  // Carried fix from S-4 (pathKinds confinement): the renderer is untrusted, so the channel looks only inside
+  // the folders Harnu knows, the same roots `markdown:read` is confined to.
+  it('answers missing for a path outside every known root, and never stats it', async () => {
+    const inside = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-pathkinds-in-'))
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-pathkinds-out-'))
+    const stat = vi.spyOn(fs, 'stat')
+    try {
+      h.roots = [inside]
+      const secret = path.join(outside, 'secret.txt')
+      await fs.writeFile(secret, 'x')
+      h.handlers.clear()
+      ipc.registerMissionIpc()
+      const handler = h.handlers.get('mission:pathKinds')!
+      // A real file and a real folder, outside; a `..` walk out of a root; a prefix that only looks like a root.
+      const escape = path.join(inside, '..', path.basename(outside), 'secret.txt')
+      const lookalike = `${inside}-sibling`
+      const answer = await handler(null, [secret, outside, escape, lookalike, '/etc/hostname', '/'])
+      expect(answer).toEqual({
+        [secret]: 'missing',
+        [outside]: 'missing',
+        [escape]: 'missing',
+        [lookalike]: 'missing',
+        '/etc/hostname': 'missing',
+        '/': 'missing'
+      })
+      expect(stat).not.toHaveBeenCalled()
+    } finally {
+      stat.mockRestore()
+      await fs.rm(inside, { recursive: true, force: true })
+      await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('still answers file or dir inside a known root, including a mission’s own worktrees', async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'harnu-pathkinds-repo-'))
+    try {
+      h.roots = [repo]
+      const worktree = path.join(repo, '.claude', 'worktrees', 'card-score-proofs')
+      const removed = path.join(repo, '.claude', 'worktrees', 'card-gone')
+      const evidence = path.join(repo, '.harnu', 'out', 'score-proofs', 'README.md')
+      await fs.mkdir(worktree, { recursive: true })
+      await fs.mkdir(path.dirname(evidence), { recursive: true })
+      await fs.writeFile(evidence, '# evidence')
+      h.handlers.clear()
+      ipc.registerMissionIpc()
+      const handler = h.handlers.get('mission:pathKinds')!
+      expect(await handler(null, [repo, worktree, removed, evidence])).toEqual({
+        [repo]: 'dir',
+        [worktree]: 'dir',
+        // Inside the root but gone: the dropdown reads it as removed.
+        [removed]: 'missing',
+        [evidence]: 'file'
+      })
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true })
+    }
   })
 })

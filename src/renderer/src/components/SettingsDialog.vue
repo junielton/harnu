@@ -34,6 +34,7 @@ import BundledSkillsPane from './BundledSkillsPane.vue'
 import ModsAuditPane from './ModsAuditPane.vue'
 import MemoryLocationPane from './MemoryLocationPane.vue'
 import HibernationPolicyPane from './HibernationPolicyPane.vue'
+import YourMovePane from './YourMovePane.vue'
 import CleanupSettingsPane from './CleanupSettingsPane.vue'
 import ContainersSettingsPane from './ContainersSettingsPane.vue'
 import PrStackSettingsPane from './PrStackSettingsPane.vue'
@@ -315,6 +316,29 @@ const tabs: Array<{ id: SettingsTabId; labelKey: string; keywords: string[] }> =
     ]
   },
   {
+    id: 'yourMove',
+    labelKey: 'settings.tabs.yourMove',
+    keywords: [
+      'your move',
+      'sua vez',
+      'ball',
+      'bola',
+      'judge',
+      'juiz',
+      'observe',
+      'observar',
+      'live',
+      'queue',
+      'fila',
+      'waiting',
+      'esperando',
+      'cards',
+      'attention',
+      'atencao',
+      'atenção'
+    ]
+  },
+  {
     id: 'usageHistory',
     labelKey: 'settings.tabs.usageHistory',
     keywords: ['usage', 'uso', 'history', 'historico', 'cost', 'custo', 'token', 'plan', 'plano']
@@ -585,7 +609,7 @@ const settingsIndex: Array<{
   {
     tabId: 'general',
     labelKey: 'settings.notifications.sound',
-    keywords: ['sound', 'som', 'chime', 'audio', 'beep'],
+    keywords: ['sound', 'som', 'chime', 'audio', 'beep', 'mute', 'mutar', 'silenciar', 'family'],
     anchor: 'set-sound'
   },
   {
@@ -736,6 +760,17 @@ const notifyStateOptions: Array<{ key: 'needsInput' | 'completed' | 'failed'; la
     { key: 'completed', labelKey: 'settings.notifications.completed' },
     { key: 'failed', labelKey: 'settings.notifications.failed' }
   ]
+
+// Notification-sound family mutes (T154): the Sound switch is the master, each family has its own mute.
+const soundFamilyOptions: Array<{
+  key: 'soundAsk' | 'soundDone' | 'soundFail' | 'soundInfo'
+  labelKey: string
+}> = [
+  { key: 'soundAsk', labelKey: 'settings.notifications.soundFamilies.ask' },
+  { key: 'soundDone', labelKey: 'settings.notifications.soundFamilies.done' },
+  { key: 'soundFail', labelKey: 'settings.notifications.soundFamilies.fail' },
+  { key: 'soundInfo', labelKey: 'settings.notifications.soundFamilies.info' }
+]
 
 // Session-state Hook Bridge opt-out (session-state spec §7). Default ON; toggling
 // installs/uninstalls Harnu's observer hooks in ~/.claude/settings.json.
@@ -1268,6 +1303,7 @@ onBeforeUnmount(() => {
             <ModsAuditPane v-else-if="activeTab === 'mods'" />
             <MemoryLocationPane v-else-if="activeTab === 'memory'" />
             <HibernationPolicyPane v-else-if="activeTab === 'hibernationPolicy'" />
+            <YourMovePane v-else-if="activeTab === 'yourMove'" />
             <CleanupSettingsPane v-else-if="activeTab === 'cleanup'" />
             <ContainersSettingsPane v-else-if="activeTab === 'containers'" @navigate="goToTab" />
             <PrStackSettingsPane v-else-if="activeTab === 'prStack'" />
@@ -2125,6 +2161,30 @@ onBeforeUnmount(() => {
                     @update:model-value="sessions.setNotifyPref('sound', $event)"
                   />
                 </div>
+                <!-- Per-family mutes (T154) — one switch per kind of sound, dimmed + disabled
+                 when the Sound master is off. -->
+                <div
+                  data-test="sound-families"
+                  class="flex items-center"
+                  style="gap: 16px; margin-top: 10px; flex-wrap: wrap"
+                  :style="{ opacity: sessions.notifyPrefs.sound ? 1 : 0.45 }"
+                >
+                  <label
+                    v-for="opt in soundFamilyOptions"
+                    :key="opt.key"
+                    class="flex items-center gap-2"
+                    :class="sessions.notifyPrefs.sound ? 'cursor-pointer' : 'cursor-not-allowed'"
+                  >
+                    <ToggleSwitch
+                      :model-value="sessions.notifyPrefs[opt.key]"
+                      :disabled="!sessions.notifyPrefs.sound"
+                      :aria-label="$t(opt.labelKey)"
+                      @update:model-value="sessions.setNotifyPref(opt.key, $event)"
+                    />
+                    <span class="text-text-2" style="font-size: 12px">{{ $t(opt.labelKey) }}</span>
+                  </label>
+                </div>
+                <SettingHint>{{ $t('settings.notifications.soundHint') }}</SettingHint>
 
                 <!-- Voice (T239) — a sibling of the chime, which is why it lives
                  directly under it. Turning it ON starts NOTHING: no engine probe,

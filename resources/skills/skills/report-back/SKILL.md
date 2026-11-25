@@ -132,8 +132,9 @@ nodes, chat threads, generated files or reports (repo-relative paths count).
 
 `<front name>  <bar> <pct>%  · <verdict>` — the bar is ten cells, `▰` filled /
 `▱` empty. Build it from evidence read this run, never from memory: for a
-Mission, `mission_get` (its steps' proofs — `verified` fills a cell, `claimed`
-and `self-verified` do not); otherwise the board and `gh pr`. **No denominator
+Mission, `mission_get` (`progress.done` of `progress.total` fills the cells, and
+`progress.headline` is its words, never recounted); otherwise the board and
+`gh pr`. **No denominator
 read this run → no bar**, just the front name. A bar built from how far along it
 feels is the worst line this format can emit.
 
@@ -148,26 +149,21 @@ Miss any one and the clause is omitted — an omitted verdict honestly reads as
 "not proven finished". A run that stopped takes the negative form instead:
 `· stopped at <what>`. Never write either from the feeling that it went well.
 
-## When the run belongs to a Mission or a Campaign
+## When the run belongs to a Mission
 
 Take the rail's evidence from what Harnu derived, not from a fresh `gh` pass.
 
-- **The rail reads the `ledger`.** `mission_get` returns the dated rows Harnu wrote
-  itself (dispatched, PR opened, PR merged, CI changed, verified, session died,
-  compaction). A row for a step ("PR `#312` merged", "verified") is the rail's
-  outcome for that step, with its own time; a step with no row has no outcome
-  yet, so it is `-`, not `✓`.
-- **Read `outcome` when it exists.** When `mission_get` or `campaign_get` carries
-  an `outcome` (written when the mission or campaign closes), its `deviations`,
-  `blockers` and `verificationGaps` feed the `open` line and the summary's
-  caveat. When there is none yet, say nothing about it: never write an outcome
-  yourself.
-- **The header is the campaign's, when there is one.** For a mission that is a
-  chapter, build the header's counts from `campaign_get` and `mission_get`
-  exactly as the `status` skill does (`Ch. N/M · Step a/b`), never recounted.
-- **Link the campaign.** Add one line to the links block: the campaign record,
-  `campaign <cmp-id> → .harnu/campaigns/<id>-<slug>.md`, so the reader can open
-  the whole plan, not only the chapter this run touched.
+- **The rail reads `mission_get`.** Its `steps` carry each step's state and the
+  pull request it links, and its `summary` says where the mission is, what was
+  decided and where each session stopped. A step with a PR or a settled
+  criterion has an outcome with its own evidence; a step with none has no
+  outcome yet, so it is `-`, not `✓`.
+- **The header is Harnu's headline**, as the status card prints it: the bar from
+  `progress.done` of `progress.total`, then the `headline` it gives ("4 of 21 steps
+  done"). Never recount it.
+- **The ledger block's `you` line is `next`.** Its `ask` is the line, verbatim, then `(+N
+more)` for the rest of `waiting`. The `open` line takes the blockers an agent
+  owns and any criterion only a self-check covers.
 
 ## Summary rules
 

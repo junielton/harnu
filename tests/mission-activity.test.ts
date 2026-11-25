@@ -7,11 +7,10 @@
  * mission owed right now (not only the ones this poll cued), ordered cued first,
  * then blocking kinds, then newest. `ts` moves only when a poll cued; a quiet
  * sync after every poll rewrites title + items without touching `ts`, removes
- * the entry at zero and never resurrects a dismissed one. `openReview` leaves a
- * request for the review dialog (S5).
+ * the entry at zero and never resurrects a dismissed one. (The review dialog and its
+ * request are gone, S-37.)
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import type { MissionView } from '../src/main/mission-ipc'
 import { useMissionsStore } from '../src/renderer/src/stores/missions'
@@ -19,6 +18,7 @@ import { useNotificationsStore } from '../src/renderer/src/stores/notifications'
 import { useSessionsStore } from '../src/renderer/src/stores/sessions'
 import { playNotificationSound } from '../src/renderer/src/lib/notification-sound'
 import { i18n } from '../src/renderer/src/i18n'
+import { fixtureView } from './helpers/mission-v3-view'
 
 vi.mock('../src/renderer/src/lib/notification-sound', () => ({ playNotificationSound: vi.fn() }))
 
@@ -103,14 +103,14 @@ describe('postMissionActivity — one grouped entry with a row per owed mission'
       {
         id: 'mnt-1',
         title: 'Ship it',
-        description: 'merge PR #6',
+        description: 'Unblock: merge PR #6 — unblocks when merged.',
         sessionId: 'owner-mnt-1',
         target: { view: 'mission', missionId: 'mnt-1' }
       },
       {
         id: 'mnt-2',
         title: 'Docs pass',
-        description: 'delivered, awaiting your close',
+        description: 'Close the mission when you’re satisfied — its end is verified.',
         sessionId: 'owner-mnt-2',
         target: { view: 'mission', missionId: 'mnt-2' }
       }
@@ -121,7 +121,9 @@ describe('postMissionActivity — one grouped entry with a row per owed mission'
     const store = mountStore()
     current = [blocker('mnt-1', 'Ship it', 'merge PR #6')]
     await store.refresh()
-    expect(entry()?.title).toBe('Mission “Ship it” needs you: merge PR #6')
+    expect(entry()?.title).toBe(
+      'Mission “Ship it” needs you: Unblock: merge PR #6 — unblocks when merged.'
+    )
     expect(entry()?.items).toHaveLength(1)
   })
 
@@ -193,7 +195,9 @@ describe('syncMissionActivity — quiet rewrite after every poll', () => {
     current = [closing('mnt-3', 'C')] // two were closed
     await store.refresh()
     expect(entry()).toMatchObject({ id: before.id, ts: before.ts })
-    expect(entry()?.title).toBe('Mission “C” needs you: delivered, awaiting your close')
+    expect(entry()?.title).toBe(
+      'Mission “C” needs you: Close the mission when you’re satisfied — its end is verified.'
+    )
     expect(entry()?.items?.map((i) => i.id)).toEqual(['mnt-3'])
     expect(playNotificationSound).not.toHaveBeenCalled()
   })
@@ -274,26 +278,483 @@ describe('syncMissionActivity — quiet rewrite after every poll', () => {
   })
 })
 
-describe('openReview — the request S5’s review dialog will consume', () => {
-  it('records the focused mission and a timestamp', () => {
-    const store = mountStore()
-    expect(store.reviewRequest).toBeNull()
-    store.openReview('mnt-9')
-    expect(store.reviewRequest).toEqual({ missionId: 'mnt-9', at: Date.now() })
+// ---- Missions v4 S-23 (AC-62): the cue and the sidebar chip read the v4 view ----------------------------------
+
+describe('the store reads the v4 view for the cue, the Activity entry and the sidebar chip', () => {
+  const LEADER = '8f2c1e4a-1111-4222-8333-944455556666'
+  const attachItem = {
+    kind: 'attach',
+    id: 'attach:atr-1',
+    requestId: 'atr-1',
+    sessionId: 'b6b6b6b6-0000-4000-8000-0000000000b6',
+    ask: 'Let “Fix the score” join this mission',
+    why: 'It waits for you'
+  }
+  let items: unknown[]
+  let v4List: ReturnType<typeof vi.fn>
+
+  function detail(id: string, title: string): unknown {
+    return {
+      ok: true,
+      id,
+      title,
+      leads: LEADER,
+      status: 'open',
+      state: 'open',
+      progress: { unit: 'steps', total: 21, done: 4, current: null, allDone: false },
+      waiting: { items },
+      sessions: []
+    }
+  }
+
+  beforeEach(() => {
+    items = []
+    v4List = vi.fn(async (a: { folder: string; sessionId: string; missionId?: string }) =>
+      a.missionId
+        ? { state: 'mission', missionId: a.missionId, detail: detail(a.missionId, 'Score report') }
+        : {
+            state: 'none',
+            missions: [{ id: 'mnt-a7230001', title: 'Score report', headline: '', leads: LEADER }]
+          }
+    )
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      missionList: list, // v3 list: empty, there is nothing in a v3 file here
+      missionV4View: v4List,
+      missionOperatorDoor: vi.fn(),
+      requestAttention: vi.fn(async () => undefined)
+    }
+    current = []
   })
 
-  it('with no argument asks for the whole review', () => {
+  it('a request to join chimes, names the mission and says what to do in the one wording', async () => {
     const store = mountStore()
-    store.openReview()
-    expect(store.reviewRequest).toEqual({ missionId: null, at: Date.now() })
+    await store.refresh() // nothing owed yet
+    items = [attachItem]
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    expect(entry()?.title).toBe(
+      'Mission “Score report” needs you: Let “Fix the score” join this mission'
+    )
+    expect(entry()?.items?.[0]).toMatchObject({
+      id: 'mnt-a7230001',
+      title: 'Score report',
+      description: 'Let “Fix the score” join this mission',
+      sessionId: LEADER
+    })
   })
 
-  it('consumeReviewRequest hands it over once', async () => {
+  it('it asks the channel as no session, so it answers for the mission and never for a member', async () => {
     const store = mountStore()
-    store.openReview('mnt-9')
-    await nextTick()
-    expect(store.consumeReviewRequest()?.missionId).toBe('mnt-9')
-    expect(store.reviewRequest).toBeNull()
-    expect(store.consumeReviewRequest()).toBeNull()
+    await store.refresh()
+    const asked = v4List.mock.calls.map((c) => c[0].sessionId)
+    expect(asked.length).toBeGreaterThan(0)
+    expect(asked.every((id: string) => id !== LEADER)).toBe(true)
+  })
+
+  it('a read that fails changes nothing: the last good list stays and nothing is announced twice', async () => {
+    const store = mountStore()
+    items = [attachItem]
+    await store.refresh()
+    const chimes = vi.mocked(playNotificationSound).mock.calls.length
+    v4List.mockImplementation(async () => {
+      throw new Error('offline')
+    })
+    await store.refresh()
+    expect(vi.mocked(playNotificationSound).mock.calls.length).toBe(chimes)
+  })
+
+  it('the sidebar chip is the pill’s text and tone for the leader of the mission, and nothing for anyone else', async () => {
+    const store = mountStore()
+    items = [attachItem]
+    await store.refresh()
+    expect(store.chipFor(LEADER)).toMatchObject({
+      text: '4/21 · 1 for you',
+      needsYou: true,
+      tone: 'warning'
+    })
+    expect(store.chipFor('someone-else')).toBeNull()
+  })
+})
+
+// ---- Missions v4 S-23 delta 1: a v3 file with steps never reads 0/0 on the chip --------------------------------
+
+describe('the chip of a v3 mission with steps in several states', () => {
+  const LEAD = '8f2c1e4a-1111-4222-8333-944455556666'
+  let repo = ''
+
+  beforeEach(async () => {
+    const fs = await import('node:fs')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-chip-'))
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    const { writeV3Mission } = await import('./helpers/v3-mission-file')
+    const at = '2026-11-14T09:00:00.000Z'
+    const step = (id: string, ordinal: number, over: Record<string, unknown>): unknown => ({
+      id,
+      ordinal,
+      kind: 'custom',
+      title: `Step ${ordinal}`,
+      verification: 'verifier',
+      proof: 'unproven',
+      links: [],
+      blockers: [],
+      ...over
+    })
+    const mission = {
+      id: 'mnt-0a1b2c3d',
+      slug: 'several-steps',
+      folder: repo,
+      owner: { sessionId: LEAD, folder: repo },
+      status: 'active',
+      declaredEnd: { kind: 'code', target: 'The slice is merged', evidence: 'green gates' },
+      steps: [
+        step('stp-1', 1, { kind: 'fixed-start', verification: 'existence', proof: 'verified' }),
+        step('stp-2', 2, { proof: 'verified' }),
+        step('stp-3', 3, { proof: 'verified' }),
+        step('stp-4', 4, {
+          links: [{ kind: 'session', ref: 'c7c7c7c7-0000-4000-8000-0000000000c7' }]
+        }),
+        step('stp-5', 5, {}),
+        step('stp-6', 6, {}),
+        step('stp-7', 7, { kind: 'fixed-end' })
+      ],
+      blockers: [],
+      openQuestions: [],
+      createdAt: at,
+      updatedAt: at,
+      provenance: { author: 'agent', at }
+    }
+    writeV3Mission(repo, mission)
+  })
+
+  afterEach(async () => {
+    const fs = await import('node:fs')
+    fs.rmSync(repo, { recursive: true, force: true })
+  })
+
+  it('reads the same numbers as the v4 pill for it, and never 0/0', async () => {
+    const { missionGet } = await import('../src/main/missions/verbs-read')
+    const { missionPillText } = await import('../src/renderer/src/lib/mission-pane-view')
+    const detail = await missionGet(repo, { kind: 'operator' }, { missionId: 'mnt-0a1b2c3d' })
+    if (!detail.ok) throw new Error(detail.error)
+    const pill = missionPillText(i18n.global.t as never, detail as never)
+
+    const store = mountStore()
+    useSessionsStore().folders = [{ path: repo, sessions: [] }] as never
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      missionList: vi.fn(async () => ({ views: [], unreadable: [] })),
+      missionV4View: vi.fn(async (a: { missionId?: string }) =>
+        a.missionId
+          ? { state: 'mission', missionId: a.missionId, detail }
+          : {
+              state: 'none',
+              missions: [{ id: detail.id, title: detail.title, headline: '', leads: LEAD }]
+            }
+      ),
+      missionOperatorDoor: vi.fn(),
+      requestAttention: vi.fn(async () => undefined)
+    }
+    await store.refresh()
+    const chip = store.chipFor(LEAD)
+    expect(chip).not.toBeNull()
+    expect(chip!.text).toBe(pill)
+    expect(chip!.text).not.toMatch(/^0\/0/)
+    // The mission has steps, so the total is more than nothing.
+    expect(detail.progress.total).toBeGreaterThan(0)
+    expect(chip!.text).toMatch(new RegExp(`^\\d+/${detail.progress.total}\\b`))
+  })
+})
+
+// ---- Missions v4 S-23 delta 2: a finished v3 mission whose leader is not open still cues, with its leader ------
+
+describe('a delivered v3 mission with warnings, its leader not open here', () => {
+  const ABSENT = '4d4d4d4d-0000-4000-8000-0000000000d4'
+  let repo = ''
+
+  beforeEach(async () => {
+    const fs = await import('node:fs')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'harnu-s23-delivered-'))
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    const { writeV3Mission } = await import('./helpers/v3-mission-file')
+    const at = '2026-11-14T09:00:00.000Z'
+    const step = (id: string, ordinal: number, over: Record<string, unknown>): unknown => ({
+      id,
+      ordinal,
+      kind: 'custom',
+      title: `Step ${ordinal}`,
+      verification: 'verifier',
+      proof: 'unproven',
+      links: [],
+      blockers: [],
+      ...over
+    })
+    // The shape the e2e seed documents: finished (delivered, the agent asked to close) with a step not proven.
+    const mission = {
+      id: 'mnt-0000b001',
+      slug: 'seed-cue-mission',
+      folder: repo,
+      owner: { sessionId: ABSENT, folder: repo },
+      status: 'delivered',
+      pendingClose: { at, requestedBy: 'seed' },
+      declaredEnd: { kind: 'code', target: 'The slice is merged', evidence: 'green gates' },
+      steps: [
+        step('stp-1', 1, { kind: 'fixed-start', verification: 'existence', proof: 'verified' }),
+        step('stp-2', 2, {}),
+        step('stp-3', 3, { kind: 'fixed-end' })
+      ],
+      blockers: [],
+      openQuestions: [],
+      createdAt: at,
+      updatedAt: at,
+      provenance: { author: 'agent', at }
+    }
+    writeV3Mission(repo, mission)
+  })
+
+  afterEach(async () => {
+    const fs = await import('node:fs')
+    fs.rmSync(repo, { recursive: true, force: true })
+  })
+
+  it('gives one Activity row that names its leader, so the row says the leader is missing', async () => {
+    const { missionGet } = await import('../src/main/missions/verbs-read')
+    const detail = await missionGet(repo, { kind: 'operator' }, { missionId: 'mnt-0000b001' })
+    if (!detail.ok) throw new Error(detail.error)
+    const store = mountStore()
+    useSessionsStore().folders = [{ path: repo, sessions: [] }] as never
+    let polled = false
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      // The list poll still serves the v3 view, whose `you` says the agent asked to close (pendingClose).
+      missionList: vi.fn(async () => ({
+        views: [
+          {
+            root: repo,
+            mission: {
+              id: 'mnt-0000b001',
+              status: 'delivered',
+              updatedAt: '2026-11-14T09:00:00.000Z',
+              owner: { sessionId: ABSENT, folder: repo },
+              steps: []
+            },
+            title: 'seed-cue-mission',
+            derived: { stale: false },
+            you: [{ kind: 'close' }],
+            closeWarnings: []
+          }
+        ],
+        unreadable: []
+      })),
+      // The first poll sees nothing (a restart with an empty memory is silent); the mission shows up after.
+      missionV4View: vi.fn(async (a: { missionId?: string }) =>
+        !polled
+          ? { state: 'none', missions: [] }
+          : a.missionId
+            ? { state: 'mission', missionId: a.missionId, detail }
+            : {
+                state: 'none',
+                missions: [
+                  { id: detail.id, title: detail.title, headline: '', leads: detail.leads }
+                ]
+              }
+      ),
+      missionOperatorDoor: vi.fn(),
+      requestAttention: vi.fn(async () => undefined)
+    }
+    await store.refresh()
+    polled = true
+    await store.refresh()
+    expect(playNotificationSound).toHaveBeenCalledTimes(1)
+    const items = entry()?.items ?? []
+    expect(items).toHaveLength(1)
+    expect(items[0].sessionId).toBe(ABSENT)
+  })
+})
+
+// ---- Missions v4 S-23 delta 3, S-35: a v3 mission keeps main's cue keys; its chip reads like its pill ----------------
+
+describe('a v3 mission read through the v4 view keeps what main did', () => {
+  const OWNER = '8f2c1e4a-1111-4222-8333-944455556666'
+  const v3 = (you: unknown[]): unknown =>
+    fixtureView('parallel', {
+      mission: { id: 'mnt-0a1b2c3d', owner: { sessionId: OWNER, folder: '/repo' } } as never,
+      view: { you: you as never, title: 'Legacy rollout' }
+    })
+  const detailOf = (items: unknown[]): unknown => ({
+    ok: true,
+    id: 'mnt-0a1b2c3d',
+    title: 'Legacy rollout',
+    leads: OWNER,
+    source: 'v3-mission',
+    status: 'open',
+    state: 'open',
+    progress: { unit: 'steps', total: 5, done: 2, current: null, allDone: false },
+    waiting: { items },
+    sessions: []
+  })
+  const blockerItem = (n: number, stepId: string | null, ask: string): unknown => ({
+    kind: 'unblock',
+    id: `unblock:${stepId ?? 'mission'}:blk-${n}`,
+    stepId,
+    blockerId: `blk-${n}`,
+    ask,
+    why: 'It waits'
+  })
+  let v3Views: unknown[]
+  let v4Items: unknown[]
+
+  function wire(): void {
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      missionList: vi.fn(async () => ({ views: v3Views, unreadable: [] })),
+      missionV4View: vi.fn(async (a: { missionId?: string }) =>
+        a.missionId
+          ? { state: 'mission', missionId: a.missionId, detail: detailOf(v4Items) }
+          : {
+              state: 'none',
+              missions: [
+                { id: 'mnt-0a1b2c3d', title: 'Legacy rollout', headline: '', leads: OWNER }
+              ]
+            }
+      ),
+      missionOperatorDoor: vi.fn(),
+      requestAttention: vi.fn(async () => undefined)
+    }
+  }
+
+  it('removing a mission-level blocker renumbers the step blocker and never chimes', async () => {
+    // Main's own memory for this mission: the keys it wrote (`blocker:<reason>`), cued long ago.
+    const t = Date.now() - 10 * 60_000
+    const k = (count: number): unknown => ({ count, firstOwedAt: t, lastCuedAt: t, nudges: 0 })
+    localStorage.setItem(
+      CUES_KEY,
+      JSON.stringify({
+        v: 1,
+        owed: {
+          'mnt-0a1b2c3d': {
+            lastSeenAt: t,
+            keys: {
+              'blocker:Waiting on the vendor key': k(1),
+              'blocker:Merge the pull request': k(1)
+            }
+          }
+        }
+      })
+    )
+    // The first read is for the upgrade: both blockers owed, as main saw them. No chime.
+    const store = mountStore()
+    v3Views = [
+      v3([
+        { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' },
+        { kind: 'blocker', reason: 'Merge the pull request', unblocks: 'merged' }
+      ])
+    ]
+    v4Items = [
+      blockerItem(1, null, 'Waiting on the vendor key'),
+      blockerItem(3, 'stp-4', 'Merge the pull request')
+    ]
+    wire()
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+    // The operator clears the mission-level one: the step blocker is renumbered (blk-3 to blk-2). Still no chime.
+    v3Views = [v3([{ kind: 'blocker', reason: 'Merge the pull request', unblocks: 'merged' }])]
+    v4Items = [blockerItem(2, 'stp-4', 'Merge the pull request')]
+    wire()
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+  })
+
+  it('updating Harnu chimes nothing for an owed item main already knew', async () => {
+    const t = Date.now() - 10 * 60_000
+    localStorage.setItem(
+      CUES_KEY,
+      JSON.stringify({
+        v: 1,
+        owed: {
+          'mnt-0a1b2c3d': {
+            lastSeenAt: t,
+            keys: {
+              'blocker:Waiting on the vendor key': {
+                count: 1,
+                firstOwedAt: t,
+                lastCuedAt: t,
+                nudges: 0
+              },
+              checks: { count: 2, firstOwedAt: t, lastCuedAt: t, nudges: 0 },
+              'human-steps': { count: 1, firstOwedAt: t, lastCuedAt: t, nudges: 0 }
+            }
+          }
+        }
+      })
+    )
+    const store = mountStore()
+    v3Views = [
+      v3([
+        { kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' },
+        { kind: 'checks', count: 2, stepIds: ['stp-2'] },
+        { kind: 'human-steps', stepIds: ['stp-2'] }
+      ])
+    ]
+    v4Items = [
+      blockerItem(1, null, 'Waiting on the vendor key'),
+      {
+        kind: 'settle',
+        id: 'settle:stp-2:ac-1',
+        stepId: 'stp-2',
+        criterionId: 'ac-1',
+        ask: 'Mark done: a',
+        why: 'w'
+      },
+      {
+        kind: 'settle',
+        id: 'settle:stp-2:ac-2',
+        stepId: 'stp-2',
+        criterionId: 'ac-2',
+        ask: 'Mark done: b',
+        why: 'w'
+      },
+      {
+        kind: 'settle',
+        id: 'settle:stp-2:ac-3',
+        stepId: 'stp-2',
+        criterionId: 'ac-3',
+        ask: 'Mark done: c',
+        why: 'w'
+      }
+    ]
+    wire()
+    await store.refresh()
+    expect(playNotificationSound).not.toHaveBeenCalled()
+  })
+
+  it('the chip of a v3 mission reads like its pill: the view\u2019s counts, the same as a v4 record (S-35)', async () => {
+    const store = mountStore()
+    v3Views = [v3([{ kind: 'blocker', reason: 'Waiting on the vendor key', unblocks: 'a key' }])]
+    v4Items = [blockerItem(1, null, 'Waiting on the vendor key')]
+    wire()
+    await store.refresh()
+    // The v3 list still serves the file for the cue (main's keys), but the chip is the pill's text.
+    expect(store.modelForSession(OWNER)).not.toBeNull()
+    expect(store.chipFor(OWNER)?.text).toBe('2/5 · 1 for you')
+    expect(store.chipFor(OWNER)?.compact).toBe('2/5 · 1 for you')
+    // The same record once a v4 record exists (the first door use): the same text.
+    const detail = detailOf(v4Items) as { source: string }
+    detail.source = 'v4'
+    ;(window as unknown as { api: Record<string, unknown> }).api.missionV4View = vi.fn(
+      async (a: { missionId?: string }) =>
+        a.missionId
+          ? { state: 'mission', missionId: a.missionId, detail }
+          : {
+              state: 'none',
+              missions: [
+                { id: 'mnt-0a1b2c3d', title: 'Legacy rollout', headline: '', leads: OWNER }
+              ]
+            }
+    )
+    await store.refresh()
+    expect(store.chipFor(OWNER)?.text).toBe('2/5 · 1 for you')
+    // There is no v3/v4 switch any more: every record opens the pane.
+    expect('isV3Mission' in store).toBe(false)
   })
 })

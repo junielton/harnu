@@ -10,6 +10,7 @@ import ClaudeBootDialog from '../../src/renderer/src/components/ClaudeBootDialog
 import MemoryLocationDialog from '../../src/renderer/src/components/MemoryLocationDialog.vue'
 import NewFolderDialog from '../../src/renderer/src/components/NewFolderDialog.vue'
 import NewSessionDialog from '../../src/renderer/src/components/NewSessionDialog.vue'
+import NotesPickerDialog from '../../src/renderer/src/components/NotesPickerDialog.vue'
 import NewWorktreeDialog from '../../src/renderer/src/components/NewWorktreeDialog.vue'
 import OpenSubfolderDialog from '../../src/renderer/src/components/OpenSubfolderDialog.vue'
 import RemoveWorktreeDialog from '../../src/renderer/src/components/RemoveWorktreeDialog.vue'
@@ -211,6 +212,25 @@ export const newWorktree = storeDriven({
   })
 })
 
+export const notesPicker = storeDriven({
+  file: 'NotesPickerDialog.vue',
+  component: NotesPickerDialog,
+  open: (ui) => ui.openNotesPicker('/home/dev/org/proj/www'),
+  api: {
+    notesList: () =>
+      Promise.resolve({
+        ok: true,
+        notesDir: '/home/dev/org/proj/www/.harnu/notes',
+        today: '2026-11-24',
+        notes: []
+      })
+  },
+  named: () => ({
+    search: () => q('[role="dialog"] input'),
+    close: headerButton
+  })
+})
+
 export const openSubfolder = storeDriven({
   file: 'OpenSubfolderDialog.vue',
   component: OpenSubfolderDialog,
@@ -273,6 +293,7 @@ export const SURFACES_A: SurfaceSpec[] = [
   newFolder,
   newSession,
   newWorktree,
+  notesPicker,
   openSubfolder,
   removeWorktree,
   renameFolder,

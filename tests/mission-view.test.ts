@@ -7,8 +7,6 @@
  * Every fixture is an S1 progress fixture turned into a `mission:list` view.
  */
 import { describe, it, expect } from 'vitest'
-import { OPERATOR_VERIFIER } from '../src/main/mission-core'
-import { progressHeadline } from '../src/main/mission-progress'
 import {
   buildMissionModel,
   formatDuration,
@@ -17,6 +15,7 @@ import {
   missionState,
   OPERATOR_VERIFIER_ID,
   pillTone,
+  progressHeadline,
   type MissionState
 } from '../src/renderer/src/lib/mission-view'
 import { FIXTURE_NAMES, FIXTURE_NOW, fixtureView } from './helpers/mission-v3-view'
@@ -273,8 +272,8 @@ describe('formatDuration', () => {
 })
 
 describe('OPERATOR_VERIFIER_ID', () => {
-  it('mirrors the main-process OPERATOR_VERIFIER', () => {
-    expect(OPERATOR_VERIFIER_ID).toBe(OPERATOR_VERIFIER)
+  it('is the id a stored v3 file carries on a step the operator ticked', () => {
+    expect(OPERATOR_VERIFIER_ID).toBe('operator')
   })
 })
 

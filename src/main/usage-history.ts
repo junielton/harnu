@@ -2,7 +2,6 @@ import { app, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { readFile, writeFile, appendFile, mkdir, readdir, unlink, rename } from 'node:fs/promises'
-import { execFile, type ChildProcess } from 'node:child_process'
 import { resolveClaudePath } from './claude-cli'
 import { sanitizeSpawnEnv } from './appimage-env'
 import type { FleetTelemetry } from './statusline-parse'
@@ -29,6 +28,7 @@ import {
 import { PLAN_TIERS, PLAN_QUOTA_AS_OF, type PlanTier } from './plan-tiers'
 import { USAGE_CHAT_SYSTEM, buildUsageChatPrompt, parseUsageChatAnswer } from './usage-history-chat'
 import { buildUsageCostSummary } from './usage-cost'
+import { runFile, type RunFilePromise } from './spawn-runner'
 
 /**
  * Usage-history + BI shell (issue #19). Persists the per-turn statusLine
@@ -78,7 +78,7 @@ let prefs: UsageHistoryPrefs = { ...DEFAULT_PREFS }
 let state: HistoryState = emptyHistoryState()
 let loaded = false
 let needsReconcile = true
-const chatChildren = new Set<ChildProcess>()
+const chatChildren = new Set<RunFilePromise>()
 
 // ---- Paths -----------------------------------------------------------------
 
@@ -421,22 +421,27 @@ function runChat(prompt: string, model: string): Promise<{ ok: boolean; stdout?:
   return new Promise((resolve) => {
     void (async () => {
       const bin = (await resolveClaudePath()) ?? 'claude'
-      const child = execFile(
+      const run = runFile(
         bin,
         ['-p', prompt, '--model', model, '--append-system-prompt', USAGE_CHAT_SYSTEM],
         {
           cwd: homedir(),
           env: sanitizeSpawnEnv(process.env, { execPath: process.execPath }),
           timeout: CHAT_TIMEOUT_MS,
-          maxBuffer: 1 << 20,
-          encoding: 'utf8'
-        },
-        (err, stdout) => {
-          chatChildren.delete(child)
-          resolve(err || !stdout?.trim() ? { ok: false } : { ok: true, stdout })
+          maxBuffer: 1 << 20
         }
       )
-      chatChildren.add(child)
+      chatChildren.add(run)
+      run.then(
+        ({ stdout }) => {
+          chatChildren.delete(run)
+          resolve(!stdout?.trim() ? { ok: false } : { ok: true, stdout })
+        },
+        () => {
+          chatChildren.delete(run)
+          resolve({ ok: false })
+        }
+      )
     })()
   })
 }

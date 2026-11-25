@@ -44,7 +44,8 @@
 
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { promises as fs, existsSync } from 'node:fs'
 import * as path from 'node:path'
 import * as os from 'node:os'
@@ -55,7 +56,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import { parseMcpRequest, BODY_MAX } from './http-guard'
 import { type McpOp, type McpToolDef } from './tool-catalog'
-import { WIRED_TOOLS, appendStewardLog, missionRoot, type ToolHandlerCtx } from './tool-handlers'
+import { WIRED_TOOLS, type HandlerCaller, type ToolHandlerCtx } from './tool-handlers'
 import { getContainersService } from '../containers/containers-ipc'
 import { containersConfirmPrompt } from './containers-listing'
 import { planToolCall } from './plan-tool-call'
@@ -84,10 +85,12 @@ import { callIdFor, beginCall, completeCall, wasRecentlyFailed } from './idempot
 import {
   MCP_SERVER_NAME,
   buildHarnuMcpConfig,
+  mcpConfigArgs,
   appManagedMcpArgs,
   shouldInjectMcpConfig
 } from './config-file'
 import { atomicWriteFile } from './atomic-write'
+import { rawRm } from '../raw-fs'
 import { readOrCreateToken, readStoredPort, writeStore } from './token-store'
 import { buildHarnuMcpInstructions } from './instructions'
 import { appLocale } from '../app-locale'
@@ -116,8 +119,16 @@ import {
 import { parsePlanMission } from './validate'
 import { parseAgentBootOverride } from './agent-boot'
 import { listInflightSessions } from './inflight-session-registry'
-import { folderForWorkerId, stewardForWorkerId, WorkerIsStewardError } from '../scheduler-shell'
-import { stewardCallRefusal, verifyStewardBearer } from '../steward-core'
+import { folderForWorkerId, setObserverMcpConfigWriter } from '../scheduler-shell'
+import {
+  mintScopedBearer,
+  SCOPED_VERBS,
+  scopeCallRefusal,
+  scopedAllowedTools,
+  scopeKey,
+  verifyScopedBearer,
+  type Scope
+} from './scope'
 import { inFlightFolderFor } from './agent-inflight-registry'
 import { snapshotInheritOnce, addInheritOnce, closeInheritOnce } from './inherit-once-registry'
 import { pushShadowEntry } from '../responder-registry'
@@ -125,7 +136,7 @@ import type { CommandBridge } from '../command-bridge'
 import type { FolderEntry } from '../folder-model'
 import { scanFolders } from '../claude-reader'
 import { readUserProjects, setUserProjectInheritAgentControl } from '../user-projects'
-import { setMcpArgsProvider } from '../pty'
+import { setMcpArgsProvider, setScopedMcpArgsProvider } from '../pty'
 import { gateTerminalOp, type TerminalGateState } from '../terminal-gate-core'
 import { resolveTerminalGate } from '../terminal-gate'
 import {
@@ -200,14 +211,24 @@ let autoRegisterEnabled = true
 const transports = new Map<string, StreamableHTTPServerTransport>()
 
 /**
- * Campaign ch.5a: who a call comes from. Absent = an ordinary MCP client (the main bearer). A
- * steward's tick presents its own derived bearer, so the server — not the model's obedience to
- * argv — enforces its closed allowlist and its argument rules.
+ * Who a call comes from. Absent = an ordinary MCP client (the main bearer).
+ *
+ * Missions v4 S-25: a `scoped` caller is a session Harnu spawned (a worker or a verifier of one step)
+ * or the observe worker of one folder, recognised by its scoped bearer. `scope.sessionId` is the
+ * caller's id. The server — not the model's obedience to argv — enforces its role.
  */
-export interface McpCaller {
-  kind: 'steward'
-  workerId: string
-}
+export type McpCaller = { kind: 'scoped'; scope: Scope }
+
+/** The key an MCP session is bound to: the scope's key, or '' (ordinary). */
+const callerKey = (caller?: McpCaller): string => (!caller ? '' : scopeKey(caller.scope))
+
+/**
+ * Missions v4 S-24: who is calling the tool call now in flight, as the transport proved it. Set in
+ * {@link handleToolCall} around the whole pipeline (so the confirm and queue paths inherit it) and
+ * read by {@link actuate}, which puts it in the handler's `ctx.caller`: the v4 mission verbs build
+ * the caller's actor from it, never from an argument. Absent = an ordinary client.
+ */
+const callerOfCall = new AsyncLocalStorage<HandlerCaller>()
 
 /** The caller each open MCP session was opened by ('' = ordinary), so a session id cannot be borrowed. */
 const transportCallers = new Map<string, string>()
@@ -300,6 +321,48 @@ async function writeConfigFile(port: number, secret: string): Promise<void> {
 async function deleteConfigFile(): Promise<void> {
   await fs.unlink(configPath()).catch(() => {})
   await fs.unlink(legacyConfigPath()).catch(() => {})
+  await clearScopedConfigs()
+}
+
+// ---- Scoped credentials (Missions v4 S-25) -----------------------------------------------------
+
+/** `<userData>/scoped-mcp` — one 0600 config per session Harnu spawned (each holds a live bearer). */
+function scopedDir(): string {
+  return path.join(app.getPath('userData'), 'scoped-mcp')
+}
+
+/** Remove every scoped config: a credential does not outlive the boot (or the stop) that minted it. */
+async function clearScopedConfigs(): Promise<void> {
+  await rawRm(scopedDir(), { recursive: true, force: true }).catch(() => {})
+}
+
+/**
+ * Write the `--mcp-config` document of one scoped caller (its own bearer, the control server's URL) and
+ * return its path, or `undefined` when the server is not up or the operator opted out of auto-register.
+ * The bearer is derived from the server secret and lives only in this 0600 file in a 0700 directory:
+ * `claude` reads it, and the argv, the model and the logs see only the path.
+ */
+export async function writeScopedMcpConfig(scope: Scope): Promise<string | undefined> {
+  if (!running || !autoRegisterEnabled || listeningPort === 0) return undefined
+  try {
+    const name =
+      scope.role === 'observer'
+        ? `observer-${createHash('sha256').update(scope.folder).digest('hex').slice(0, 16)}`
+        : `${scope.sessionId}`
+    const doc = buildHarnuMcpConfig({ port: listeningPort, token: mintScopedBearer(token, scope) })
+    await fs.mkdir(scopedDir(), { recursive: true, mode: 0o700 })
+    const file = path.join(scopedDir(), `${name}.json`)
+    await atomicWriteFile(file, JSON.stringify(doc, null, 2) + '\n', 0o600)
+    return file
+  } catch {
+    return undefined
+  }
+}
+
+/** The argv that gives a spawned session its scoped verbs: its config's path and the role's allow rules. */
+async function scopedMcpArgsFor(scope: Scope): Promise<string[]> {
+  const file = await writeScopedMcpConfig(scope)
+  return file ? [...mcpConfigArgs(file), '--allowedTools', scopedAllowedTools(scope).join(',')] : []
 }
 
 // ---- Audit persistence ------------------------------------------------------
@@ -918,7 +981,8 @@ export async function actuate(
   }
 
   const deadlineFlag = createDeadlineFlag()
-  const work = def.handler(args, { ...ctx, deadlineFlag })
+  const caller = callerOfCall.getStore()
+  const work = def.handler(args, { ...ctx, deadlineFlag, ...(caller ? { caller } : {}) })
   const raced = await withDeadline(
     work,
     TOOL_CALL_DEADLINE_MS,
@@ -1026,25 +1090,22 @@ export async function handleToolCall(
   rawArgs: unknown,
   caller?: McpCaller
 ): Promise<CallToolResult> {
-  const args = asRecord(rawArgs)
-  // Campaign ch.5a: a steward is judged BEFORE the gate, the confirm or the queues — a refusal
-  // here parks nothing and spends nothing.
-  const steward = caller ? stewardForWorkerId(caller.workerId) : undefined
-  if (caller) {
-    if (!steward) {
-      return errorResult(
-        'STEWARD_GONE: this steward no longer exists (its mission was closed) — stop.'
-      )
-    }
-    const refusal = stewardCallRefusal({ op: def.op, args, missionId: steward.missionId })
-    if (refusal) return errorResult(refusal)
-  }
-  // A steward is a system worker: refuse an edit or delete of one before the gate can park a confirm.
-  if (
-    (def.op === 'update_worker' || def.op === 'delete_worker') &&
-    stewardForWorkerId(strField(args, 'id') ?? '')
-  ) {
-    return errorResult(new WorkerIsStewardError(strField(args, 'id') ?? '').message)
+  let args = asRecord(rawArgs)
+  // Missions v4 S-25: a session Harnu spawned is judged the same way, before anything else: the verb
+  // is in its role, the folder, mission and step are its own, and the arguments it runs with are the
+  // scope's (a step it left out is its own). Its session id is the credential's, never an argument.
+  if (caller?.kind === 'scoped') {
+    const judged = scopeCallRefusal({
+      op: def.op,
+      args,
+      scope: caller.scope,
+      lookups: {
+        paneFolder: (id) => browserRegistry.get(id)?.folder,
+        terminalFolder: (id) => terminalRegistry.get(id)?.folder
+      }
+    })
+    if (!judged.ok) return errorResult(judged.error)
+    args = judged.args
   }
   // T482 F1: a send's place in its terminal's line is decided HERE, synchronously, before the
   // first `await` of the pipeline (prefs, project file, folder scan). Taken later, two sends could
@@ -1055,13 +1116,9 @@ export async function handleToolCall(
   const browserPaneId = QUEUED_BROWSER_OPS.has(def.op) ? strField(args, 'paneId') : undefined
   if (browserPaneId) browserWriteQueue.reserve(args, browserPaneId)
   try {
-    const result = await runToolCall(def, args)
-    // Every action a steward takes is a `steward` Log entry on its mission — written here so it
-    // exists whether or not the model remembers to write one. Reads and `mission_log` itself are not actions.
-    if (steward && def.mutates && def.op !== 'mission_log' && ackIsSuccess(result)) {
-      await appendStewardLog(missionRoot(steward.folder), steward.missionId, def.op, args)
-    }
-    return result
+    return await (caller?.kind === 'scoped'
+      ? callerOfCall.run({ kind: 'scoped', scope: caller.scope }, () => runToolCall(def, args))
+      : runToolCall(def, args))
   } finally {
     browserWriteQueue.drop(args)
     // A call that never reached the handler (refused, parked for a confirm) must not hold the
@@ -1145,7 +1202,9 @@ async function runToolCall(
       def.op === 'browser_open' || def.op === 'browser_list' ? undefined : strField(args, 'paneId'),
       projectsFile,
       strField(args, 'folder'),
-      def.op
+      def.op,
+      // The tab the call names (browser-tabs S-6): its view and origin are what the tier and the lease are judged on.
+      strField(args, 'tabId')
     )
     if (def.op !== 'browser_open' && def.op !== 'browser_list') gateFolder = resolved.folder
     browser = resolved.input
@@ -1435,7 +1494,9 @@ async function parkMutationConfirm(
       ? terminalRegistry.get(strField(args, 'terminalId') ?? '')?.ptyId
       : undefined
   // T571: which view the operator is being asked about, fixed at the moment of asking.
-  const parkedViewToken = browserLease ? getBrowserHost().viewToken(browserLease.paneId) : undefined
+  const parkedViewToken = browserLease
+    ? getBrowserHost().viewToken(browserLease.paneId, strField(args, 'tabId'))
+    : undefined
   const parked = deps.confirm.park(disclosure)
 
   // Immediate fail-closed (no operator surface / saturated) — nothing parked.
@@ -1633,23 +1694,26 @@ async function browserLeasePrompt(
   folder: string
 ): Promise<string> {
   const paneId = strField(args, 'paneId') ?? ''
+  const tabId = strField(args, 'tabId')
   const rec = browserRegistry.get(paneId)
   const host = getBrowserHost()
-  const live = host.info(paneId)
+  const live = host.info(paneId, tabId)
   const home = os.homedir()
   const tilde = (p: string): string =>
     p === home || p.startsWith(home + path.sep) ? '~' + p.slice(home.length) : p
   let target: { role: string; name: string } | null = null
   const ref = strField(args, 'ref')
-  const readers = host.readers(paneId)
+  const readers = host.readers(paneId, tabId)
   if (ref && readers) {
     const r = readers.refs.resolve(ref)
     if (r.ok) {
       try {
-        const res = (await host.cdp(paneId, 'Accessibility.getPartialAXTree', {
-          backendNodeId: r.backendNodeId,
-          fetchRelatives: false
-        })) as { nodes?: Array<{ role?: { value?: unknown }; name?: { value?: unknown } }> }
+        const res = (await host.cdp(
+          paneId,
+          'Accessibility.getPartialAXTree',
+          { backendNodeId: r.backendNodeId, fetchRelatives: false },
+          tabId
+        )) as { nodes?: Array<{ role?: { value?: unknown }; name?: { value?: unknown } }> }
         const n = res.nodes?.[0]
         if (n) {
           target = {
@@ -1690,14 +1754,16 @@ async function grantBrowserLease(
   paneId: string,
   parkedViewToken: string | undefined
 ): Promise<CallToolResult> {
-  const resolved = await resolveBrowserGate(paneId, undefined, undefined, op)
+  const tabId = strField(args, 'tabId')
+  const resolved = await resolveBrowserGate(paneId, undefined, undefined, op, tabId)
   const refusal =
     isBrowserOp(op) && resolved.input.pane
       ? gateBrowserOpDetailed(op, { ...resolved.input })
       : { reason: 'PANE_NOT_FOUND' as const }
   if (refusal) return steerError(refusal.reason, folder)
   const rec = browserRegistry.get(paneId)
-  const token = getBrowserHost().viewToken(paneId)
+  // The lease is for the view of the tab the call names (a lease is one slot per pane and follows that tab).
+  const token = getBrowserHost().viewToken(paneId, tabId)
   // The operator answered about ONE view. If the id now names a different page (restored under the same id),
   // that Allow says nothing about the new one.
   if (!rec || token === undefined || parkedViewToken === undefined) {
@@ -1781,7 +1847,11 @@ async function applyInheritDiscoveryScope(
 
 /** Register every catalog tool on a fresh {@link McpServer}. Dispatches through {@link WIRED_TOOLS} — the `handler`-enriched array — never the raw `MCP_TOOLS`. */
 function registerTools(server: McpServer, caller?: McpCaller): void {
+  // Missions v4 S-25: a scoped session is offered the verbs of its role and no others, so the model
+  // never sees (and never wastes a turn on) a verb the server would refuse.
+  const offered = caller?.kind === 'scoped' ? new Set(SCOPED_VERBS[caller.scope.role]) : undefined
   for (const def of WIRED_TOOLS) {
+    if (offered && !offered.has(def.op)) continue
     server.registerTool(
       def.name,
       {
@@ -1804,7 +1874,7 @@ async function openSession(caller?: McpCaller): Promise<StreamableHTTPServerTran
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (sid: string) => {
       transports.set(sid, transport)
-      transportCallers.set(sid, caller?.workerId ?? '')
+      transportCallers.set(sid, callerKey(caller))
     }
   })
   transport.onclose = (): void => {
@@ -1865,21 +1935,17 @@ function readBody(
 
 /** The loopback request handler: guard → route to a (new or existing) transport. */
 async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  // Campaign ch.5a: a steward tick presents `stw_<workerId>_<mac>`, derived from the server secret.
-  // The guard (Host/Origin/body cap/constant-time compare) is the SAME one, run with the secret
-  // substituted; what the bearer proves is WHICH worker is calling, bound to its MCP session below.
   const auth = req.headers.authorization
   const presented = typeof auth === 'string' ? auth.replace(/^Bearer\s+/i, '') : ''
-  const stewardWorkerId = presented ? verifyStewardBearer(token, presented) : null
-  if (stewardWorkerId && !stewardForWorkerId(stewardWorkerId)) {
-    res.writeHead(403)
-    res.end()
-    return
-  }
+  // Missions v4 S-25: a session Harnu spawned presents `scp_<payload>.<mac>`, derived from the same
+  // secret and checked the same way. What it proves is WHO is calling (the session id inside it) and
+  // what that caller is bound to; both are enforced per call, not trusted from the arguments.
+  const scope = presented ? verifyScopedBearer(token, presented) : null
+  const caller: McpCaller | undefined = scope ? { kind: 'scoped', scope } : undefined
   const guard = parseMcpRequest({
     method: req.method,
     url: req.url,
-    headers: stewardWorkerId ? { ...req.headers, authorization: `Bearer ${token}` } : req.headers,
+    headers: caller ? { ...req.headers, authorization: `Bearer ${token}` } : req.headers,
     token,
     contentLength: contentLengthOf(req.headers['content-length'])
   })
@@ -1900,13 +1966,9 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
   const sidHeader = req.headers['mcp-session-id']
   const sessionId = Array.isArray(sidHeader) ? sidHeader[0] : sidHeader
   let transport = sessionId ? transports.get(sessionId) : undefined
-  // A session belongs to the caller that opened it: a steward bearer on the main client's session id
+  // A session belongs to the caller that opened it: a scoped bearer on the main client's session id
   // (or the reverse) inherits nothing.
-  if (
-    transport &&
-    sessionId &&
-    (transportCallers.get(sessionId) ?? '') !== (stewardWorkerId ?? '')
-  ) {
+  if (transport && sessionId && (transportCallers.get(sessionId) ?? '') !== callerKey(caller)) {
     res.writeHead(403)
     res.end()
     return
@@ -1923,9 +1985,7 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<vo
       )
       return
     }
-    transport = await openSession(
-      stewardWorkerId ? { kind: 'steward', workerId: stewardWorkerId } : undefined
-    )
+    transport = await openSession(caller)
   }
   await transport.handleRequest(req, res, body)
 }
@@ -1984,6 +2044,7 @@ async function start(): Promise<void> {
   if (fellBack) console.warn(`[mcp] ${portFallbackWarning}`)
   // Config is written AFTER the port is known but BEFORE `running` flips, so the
   // pty provider never injects a config the server isn't yet serving.
+  await clearScopedConfigs()
   await writeConfigFile(listeningPort, token)
   await writeStore(userDataDir, { token, port: listeningPort })
   running = true
@@ -2079,6 +2140,10 @@ export async function registerMcpServer(
       configPath()
     )
   )
+  // Missions v4 S-25: the argv of a session Harnu spawns for one step (its own credential, never ours).
+  setScopedMcpArgsProvider(scopedMcpArgsFor)
+  // ...and the observe tick's: its observer credential, for its folder.
+  setObserverMcpConfigWriter(writeScopedMcpConfig)
 
   ipcMain.handle('mcp:status', async () => ({
     enabled: await readMcpEnabled(),

@@ -76,6 +76,8 @@ export interface TerminalRecord {
   ownerSessionId: string | null
   /** The operator pressed Disconnect — permanent (spec §6.4). Only {@link TerminalRegistry.disconnect} sets it. */
   disconnected: boolean
+  /** The shell's pid, for the browser start page's port detection (browser-tabs S-5). Absent when not known. */
+  shellPid?: number
   state: TerminalState
   exit?: TerminalExit
   size: { cols: number; rows: number }
@@ -110,6 +112,8 @@ export interface RegisterTerminalInput {
   ownerSessionId?: string | null
   /** Born disconnected: the record replaces one the operator disconnected (T487 F1). */
   disconnected?: boolean
+  /** The shell's pid (browser-tabs S-5). */
+  shellPid?: number
   size: { cols: number; rows: number }
 }
 
@@ -253,6 +257,7 @@ export class TerminalRegistry {
       origin: input.origin === 'agent' ? 'agent' : 'operator',
       ownerSessionId: input.ownerSessionId ?? null,
       disconnected: input.disconnected === true,
+      ...(typeof input.shellPid === 'number' ? { shellPid: input.shellPid } : {}),
       state: 'running',
       size: { ...input.size },
       title: null,
@@ -305,6 +310,21 @@ export class TerminalRegistry {
   list(): TerminalRecord[] {
     this.sweep()
     return [...this.byId.values()]
+  }
+
+  /**
+   * The live terminals of `folder` with the pid of their shell: what the browser start page reads to find the
+   * servers started there (browser-tabs S-5). Read-only; an exited terminal and one with no known pid are left out.
+   */
+  listTerminalsByFolder(folder: string): Array<{ terminalId: string; shellPid: number }> {
+    this.sweep()
+    const out: Array<{ terminalId: string; shellPid: number }> = []
+    for (const rec of this.byId.values()) {
+      if (rec.folder === folder && rec.state === 'running' && rec.shellPid !== undefined) {
+        out.push({ terminalId: rec.terminalId, shellPid: rec.shellPid })
+      }
+    }
+    return out
   }
 
   /** Live (not exited) agent-origin terminals in `folder` — what `TERMINAL_LIMIT` counts. */

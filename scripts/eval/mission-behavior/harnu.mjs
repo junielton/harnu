@@ -21,7 +21,8 @@
  */
 import { spawn, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import { existsSync, readFileSync, createWriteStream } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, createWriteStream } from 'node:fs'
+import * as os from 'node:os'
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -37,14 +38,74 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  * "materialize" — and the messaging variables would register eval sessions as
  * peers of whoever launched the eval.
  */
-export function cleanEnv(extra = {}) {
+export function cleanEnv(extra = {}, base = process.env) {
   const env = {}
-  for (const [k, v] of Object.entries(process.env)) {
+  for (const [k, v] of Object.entries(base)) {
     if (k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k === 'CLAUDE_PID') continue
     if (k === 'CLAUDE_EFFORT') continue
     env[k] = v
   }
   return { ...env, ...extra }
+}
+
+/** The directory the instance sees as its HOME: under the run directory, deleted with it. */
+export function instanceHome(runDir) {
+  return path.join(runDir, 'home')
+}
+
+/**
+ * The environment of the Harnu INSTANCE the harness starts (not of the scripted `claude` agents, which
+ * keep the operator's: they need its on-disk login).
+ *
+ * The instance must write NOTHING under the operator's `~/.claude`. Harnu resolves that file from
+ * `os.homedir()` (`claudeSettingsPath()` in `src/main/claude-settings.ts`) and, with its hook and
+ * statusLine install on by default, read-modify-writes `~/.claude/settings.json` at boot and again at
+ * exit: a killed run would leave orphan entries and could displace the operator's own statusLine. So the
+ * instance gets its own throwaway HOME (and XDG directories, and no `CLAUDE_CONFIG_DIR`) under the run
+ * directory: its settings, hooks, statusLine, caches and image cache all land there. The scenarios need
+ * nothing from the real `~/.claude`: the mission verbs work on the sandbox repo's `.harnu/`.
+ *
+ * No D-Bus session either: it would raise desktop notifications about the operator's real sessions.
+ *
+ * @param {{ runDir: string, rendererUrl: string, base?: NodeJS.ProcessEnv }} opts
+ */
+export function instanceEnv({ runDir, rendererUrl, base = process.env }) {
+  const home = instanceHome(runDir)
+  const env = cleanEnv({ ELECTRON_RENDERER_URL: rendererUrl }, base)
+  delete env.DBUS_SESSION_BUS_ADDRESS
+  delete env.CLAUDE_CONFIG_DIR
+  env.HOME = home
+  env.XDG_CONFIG_HOME = path.join(home, '.config')
+  env.XDG_CACHE_HOME = path.join(home, '.cache')
+  env.XDG_DATA_HOME = path.join(home, '.local', 'share')
+  return env
+}
+
+/**
+ * Throw unless `env` keeps the instance away from the operator's HOME and Claude config. `realHome` is
+ * the operator's HOME (the harness process's own); every directory the instance resolves must sit under
+ * `runDir/home`. Called before the instance is spawned, so a regression stops the run instead of writing
+ * the operator's settings.
+ */
+export function assertInstanceIsolated(env, realHome, runDir) {
+  const home = instanceHome(runDir)
+  const inside = (p) => typeof p === 'string' && (p === home || p.startsWith(home + path.sep))
+  if (!env.HOME) throw new Error('instance isolation: HOME is not set')
+  if (env.HOME === realHome)
+    throw new Error(`instance isolation: HOME is the operator's (${realHome})`)
+  if (!inside(env.HOME)) {
+    throw new Error(`instance isolation: HOME ${env.HOME} is not under the run directory (${home})`)
+  }
+  if (env.CLAUDE_CONFIG_DIR !== undefined && !inside(env.CLAUDE_CONFIG_DIR)) {
+    throw new Error(
+      `instance isolation: CLAUDE_CONFIG_DIR ${env.CLAUDE_CONFIG_DIR} is not the sandbox's`
+    )
+  }
+  for (const k of ['XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME']) {
+    if (env[k] !== undefined && !inside(env[k])) {
+      throw new Error(`instance isolation: ${k} ${env[k]} is not under the instance's HOME`)
+    }
+  }
 }
 
 /** A free loopback TCP port. */
@@ -230,10 +291,16 @@ export async function startHarnu({ repoRoot, runDir, log }) {
   const [cmd, args] = useXvfb
     ? ['xvfb-run', ['-a', '-s', '-screen 0 1440x900x24', electronBin, ...appArgs]]
     : [electronBin, appArgs]
-  // No D-Bus session: the instance watches the operator's real ~/.claude and
-  // would otherwise raise desktop notifications about their real sessions.
-  const env = cleanEnv({ ELECTRON_RENDERER_URL: renderer.url })
-  delete env.DBUS_SESSION_BUS_ADDRESS
+  // The instance gets its own HOME (see `instanceEnv`): it must write nothing under the operator's
+  // ~/.claude, and it is checked before anything is spawned.
+  const env = instanceEnv({ runDir, rendererUrl: renderer.url })
+  try {
+    assertInstanceIsolated(env, process.env.HOME ?? os.homedir(), runDir)
+  } catch (err) {
+    await renderer.close()
+    throw err
+  }
+  mkdirSync(env.HOME, { recursive: true })
   const out = createWriteStream(path.join(runDir, 'harnu.log'))
   const child = spawn(cmd, args, {
     cwd: repoRoot,

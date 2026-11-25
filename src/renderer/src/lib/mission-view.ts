@@ -11,18 +11,41 @@
  * presentation — the tone, the step visuals, where a child session's row sits.
  */
 import type { MissionView } from '../../../main/mission-ipc'
-import { progressHeadline, type StepState } from '../../../main/mission-progress'
+import type {
+  Blocker,
+  Check,
+  GateState,
+  MissionLinkSignal,
+  MissionProgress,
+  MissionStep,
+  StepGates,
+  StepState
+} from '../../../main/missions/derive'
 import type { MissionChildState } from '../../../main/mcp/fleet-snapshot'
-import type { MissionLinkSignal } from '../../../main/mcp/tool-handlers'
-import type { Blocker, Check, LedgerRow, MissionStep } from '../../../main/mission-core'
-import type { MissionYouItem } from '../../../main/mcp/tool-handlers'
-import type { GateState, StepGates } from '../../../main/mission-gates'
-import { owedKeys } from './mission-cue'
+import type { LedgerRow } from '../../../main/mission-ledger'
+import type { MissionYouItem } from '../../../main/missions/waiting'
+
+/** The headline every surface prints: "Step N of M", "Steps a–b of M", "Step M of M ✓", or nothing (`empty`). */
+export function progressHeadline(p: MissionProgress): {
+  kind: 'single' | 'range' | 'done' | 'empty'
+  n: number
+  to: number
+  m: number
+} {
+  // `empty`: nothing to count (total 0) — surfaces must not print "Step 0 of 0".
+  if (p.total === 0) return { kind: 'empty', n: 0, to: 0, m: 0 }
+  if (p.allDone || !p.current) return { kind: 'done', n: p.total, to: p.total, m: p.total }
+  return {
+    kind: p.current.from === p.current.to ? 'single' : 'range',
+    n: p.current.from,
+    to: p.current.to,
+    m: p.total
+  }
+}
 
 /**
  * `verifiedBy.sessionId` on a step the operator ticked from the UI — mirrors
- * `OPERATOR_VERIFIER` in `mission-core.ts` (tests/mission-view.test.ts pins the
- * two equal).
+ * the operator's verifier id in a stored v3 file.
  */
 export const OPERATOR_VERIFIER_ID = 'operator'
 
@@ -222,40 +245,7 @@ function stepPulse(
   }
 }
 
-/** A piece of the pulse line; the component maps `key` to `mission.pulse.<key>`. */
-export type PulsePart =
-  | { key: 'commits'; n: number }
-  | { key: 'active' | 'quiet'; age: string }
-  | { key: 'activeNow' | 'quietNever' }
-
 type PluralTranslate = (key: string, named: Record<string, unknown>, plural?: number) => string
-
-/** The pulse line as one string — "21 commits · active 2m ago" — for the rail and the pill tooltip. */
-export function pulseText(t: PluralTranslate, p: StepPulseModel): string {
-  return pulseParts(p)
-    .map((part) =>
-      part.key === 'commits'
-        ? t('mission.pulse.commits', { n: part.n }, part.n)
-        : t(`mission.pulse.${part.key}`, 'age' in part ? { age: part.age } : {})
-    )
-    .join(' · ')
-}
-
-/** What the pulse line prints, in order: commits, then activity (design.md §6 "Step pulse"). */
-export function pulseParts(p: StepPulseModel): PulsePart[] {
-  const parts: PulsePart[] = []
-  if (p.commits !== null && p.commits > 0) parts.push({ key: 'commits', n: p.commits })
-  if (p.ageMs === null) {
-    if (p.kind === 'quiet') parts.push({ key: 'quietNever' })
-  } else if (p.kind === 'moving') {
-    parts.push(
-      p.ageMs < 60_000 ? { key: 'activeNow' } : { key: 'active', age: formatDuration(p.ageMs) }
-    )
-  } else {
-    parts.push({ key: 'quiet', age: formatDuration(p.ageMs) })
-  }
-  return parts
-}
 
 export interface MissionModel {
   state: MissionState
@@ -274,8 +264,8 @@ export interface MissionModel {
   addedCount: number
   youLook: YouLook
   /**
-   * T596 (campaign spec Amendments d/e) — what the operator owes as aged rows: the server's `you`
-   * items plus a "Decide" row per undecided decision node. `youLook` follows these rows.
+   * T596 (campaign spec Amendments d/e) — what the operator owes as aged rows: the server's waiting
+   * list, one row per item (a pending decision is an item). `youLook` follows the same list.
    */
   youRows: YouRow[]
   /** T596 (Amendment c) — the last {@link LEDGER_TAIL} ledger rows, newest first. */
@@ -379,49 +369,18 @@ export function ledgerTail(view: MissionView, n: number = LEDGER_TAIL): LedgerRo
 export type YouRisk = 'high' | 'mid' | 'low'
 
 /**
- * One row of the You lane (campaign spec Amendments d/e). `item` is the server's `you` item, or
- * `null` for a "Decide" row, which the renderer derives from an undecided decision node (the
- * server's `you` list has no such kind). `ageMs` is set only where the record holds a timestamp —
- * never guessed.
+ * One row of the You lane (campaign spec Amendments d/e): one item of the server's waiting list
+ * (`view.you`, missions/waiting.ts), nothing more. The renderer adds no row of its own: a pending
+ * decision is in the list. `stepId` is the decision step of a "Decide" row. `ageMs` is set only where
+ * the record holds a timestamp, never guessed.
  */
 export interface YouRow {
-  kind: MissionYouItem['kind'] | 'decide' | 'merge-batch'
-  item: MissionYouItem | null
+  kind: MissionYouItem['kind']
+  item: MissionYouItem
   /** The decision step a "Decide" row is about. */
   stepId: string | null
   ageMs: number | null
   risk: YouRisk
-  /** A `merge-batch` row: the PRs ready to merge, in step order (campaign spec §4, T609). */
-  prs?: MergeReadyPr[]
-}
-
-/** One PR that is ready to merge: its step's open PR, CI green. */
-export interface MergeReadyPr {
-  number: number
-  stepId: string
-  /** The step's title — what the dialog names the PR by. */
-  title: string
-}
-
-/** Two or more PRs make a batch; one is just a merge. */
-export const MERGE_BATCH_MIN = 2
-
-/**
- * The PRs a Merge batch would merge: every counted step whose PR is open (`pr` gate running) with a
- * green `ci` gate, in step order — the stack order the operator confirms. Read off the derived gates,
- * never recounted. A step the server reads as `locked` is left out: its blocker is not done.
- */
-export function mergeReadyPrs(view: MissionView): MergeReadyPr[] {
-  const counted = view.mission.steps.filter((s) => view.progress.states[s.id] !== undefined)
-  const out: MergeReadyPr[] = []
-  for (const step of counted) {
-    const d = view.derived.steps.find((x) => x.stepId === step.id)
-    if (!d || d.prNumber === null) continue
-    if (d.gates.pr !== 'running' || d.gates.ci !== 'green') continue
-    if (view.progress.states[step.id] === 'locked') continue
-    out.push({ number: d.prNumber, stepId: step.id, title: step.title })
-  }
-  return out
 }
 
 const RISK: Record<YouRow['kind'], YouRisk> = {
@@ -431,22 +390,11 @@ const RISK: Record<YouRow['kind'], YouRisk> = {
   'main-red': 'high',
   close: 'mid',
   'human-steps': 'mid',
-  'steward-paused': 'mid',
-  'merge-batch': 'mid',
   approvals: 'mid',
   'needs-input': 'mid',
   checks: 'low',
   'review-import': 'low'
 }
-
-/** Items that block others sit first; a "Decide" row goes right after the last of them. */
-const BLOCKING_FIRST: ReadonlySet<MissionYouItem['kind']> = new Set([
-  'rescope',
-  'close',
-  'steward-paused',
-  'blocker',
-  'main-red'
-])
 
 function ageSince(iso: string | undefined, now: number): number | null {
   const at = iso ? Date.parse(iso) : NaN
@@ -463,8 +411,6 @@ function itemAge(view: MissionView, item: MissionYouItem, now: number): number |
     }
     case 'close':
       return ageSince(m.pendingClose?.at, now)
-    case 'steward-paused':
-      return ageSince(item.at, now)
     case 'main-red':
       return ageSince(
         (m.ledger ?? []).find((r) => r.kind === 'pr-merged' && r.pr === item.pr)?.at,
@@ -485,49 +431,15 @@ function itemAge(view: MissionView, item: MissionYouItem, now: number): number |
   }
 }
 
-/**
- * The You lane as rows (campaign spec Amendments d/e): the server's `you` items in the server's
- * order, with one "Decide" row per undecided decision node inserted after the blocking items.
- */
+/** The You lane as rows: the server's waiting list, in the server's order (missions/waiting.ts). */
 export function youRows(view: MissionView, now: number = Date.now()): YouRow[] {
-  const rows: YouRow[] = view.you.map((item) => ({
+  return view.you.map((item) => ({
     kind: item.kind,
     item,
-    stepId: null,
+    stepId: item.kind === 'decide' ? item.stepId : null,
     ageMs: itemAge(view, item, now),
     risk: RISK[item.kind]
   }))
-  const decide: YouRow[] = view.mission.steps
-    .filter((s) => s.decision !== undefined && s.decision.chosen === undefined)
-    .map((s) => ({
-      kind: 'decide' as const,
-      item: null,
-      stepId: s.id,
-      ageMs: null,
-      risk: RISK.decide
-    }))
-  // Campaign spec §4: two or more green PRs are one owed decision — merge them in order.
-  const ready = mergeReadyPrs(view)
-  const batch: YouRow[] =
-    ready.length >= MERGE_BATCH_MIN
-      ? [
-          {
-            kind: 'merge-batch',
-            item: null,
-            stepId: null,
-            ageMs: null,
-            risk: RISK['merge-batch'],
-            prs: ready
-          }
-        ]
-      : []
-  const derived = [...decide, ...batch]
-  if (derived.length === 0) return rows
-  let at = 0
-  rows.forEach((r, i) => {
-    if (r.item && BLOCKING_FIRST.has(r.item.kind)) at = i + 1
-  })
-  return [...rows.slice(0, at), ...derived, ...rows.slice(at)]
 }
 
 /**
@@ -535,7 +447,28 @@ export function youRows(view: MissionView, now: number = Date.now()): YouRow[] {
  * age inside its sentence, so its slot stays empty rather than saying it twice.
  */
 export function youRowAge(row: YouRow): string | null {
-  return row.ageMs === null || row.kind === 'steward-paused' ? null : formatDuration(row.ageMs)
+  return row.ageMs === null ? null : formatDuration(row.ageMs)
+}
+
+/**
+ * ONE owed item in the operator's words, outside the You lane (the Activity cue, the review dialog):
+ * the same {@link youRowText} the lane uses, so an item has one wording in the renderer. No age is
+ * known here.
+ */
+export function youItemText(
+  t: PluralTranslate,
+  view: MissionView,
+  item: MissionYouItem,
+  sessionName: (sessionId: string) => string = (id) => id
+): string {
+  const row: YouRow = {
+    kind: item.kind,
+    item,
+    stepId: item.kind === 'decide' ? item.stepId : null,
+    ageMs: null,
+    risk: RISK[item.kind]
+  }
+  return youRowText(t, view, row, sessionName)
 }
 
 /**
@@ -552,17 +485,6 @@ export function youRowText(
   const titles = (ids: readonly string[]): string =>
     ids.map((id) => view.mission.steps.find((s) => s.id === id)?.title || id).join(', ')
   const item = row.item
-  if (row.kind === 'merge-batch') {
-    const prs = row.prs ?? []
-    return t('mission.you.mergeBatch', {
-      n: prs.length,
-      chain: prs.map((p) => `#${p.number}`).join(' → ')
-    })
-  }
-  if (!item) {
-    const title = view.mission.steps.find((s) => s.id === row.stepId)?.decision?.title ?? ''
-    return t('mission.you.decide', { title })
-  }
   switch (item.kind) {
     case 'rescope':
       return t('mission.you.rescope', { kind: item.end.kind, target: item.end.target })
@@ -570,18 +492,14 @@ export function youRowText(
       return t('mission.you.close', {})
     case 'blocker':
       return t('mission.you.blocker', { reason: item.reason, unblocks: item.unblocks })
+    case 'decide':
+      return t('mission.you.decide', { title: item.title })
     case 'checks':
       return t('mission.you.checks', { count: item.count, steps: titles(item.stepIds) }, item.count)
     case 'human-steps':
       return t('mission.you.humanSteps', { steps: titles(item.stepIds) }, item.stepIds.length)
     case 'review-import':
       return t('mission.you.reviewImport', {})
-    case 'steward-paused':
-      // "Steward paused {age}: {reason}" — the age is part of the sentence (campaign spec §3.4).
-      return t('mission.you.stewardPaused', {
-        age: row.ageMs === null ? '' : formatDuration(row.ageMs),
-        reason: item.reason
-      })
     case 'main-red':
       return t('mission.you.mainRed', { pr: item.pr, step: titles([item.stepId]) })
     case 'approvals':
@@ -589,13 +507,6 @@ export function youRowText(
     case 'needs-input':
       return t('mission.you.needsInput', { session: sessionName(item.sessionId) })
   }
-}
-
-/** The You block's look from its rows: same rule as {@link youLook}, plus the derived "Decide" rows. */
-function rowsLook(view: MissionView, rows: readonly YouRow[]): YouLook {
-  if (rows.length === 0) return 'clear'
-  // The server has nothing for the operator but a derived "Decide" row does: that is a warning.
-  return view.you.length === 0 ? 'warning' : youLook(view)
 }
 
 /** A step is reached — its unticked checks are due (Mission v3 §3.6). */
@@ -728,7 +639,7 @@ export function buildMissionModel(view: MissionView, now: number = Date.now()): 
       steps: sideRows
     },
     addedCount: m.steps.filter((s) => s.addedReason).length,
-    youLook: rowsLook(view, youRowList),
+    youLook: youLook(view),
     youRows: youRowList,
     ledgerTail: ledgerTail(view),
     needsYou: view.you.length > 0,
@@ -816,80 +727,4 @@ export function endWarnings(view: MissionView): EndWarning[] {
         }
     }
   })
-}
-
-/** The review dialog's three groups (BUG-173 S5, spec §3.5). */
-export interface ReviewGroups {
-  /** `delivered` with a requested close: the owner verified the end and asked. */
-  ready: MissionView[]
-  /** `active` and every step done, close never requested: nobody verified the end. */
-  finished: MissionView[]
-  /** Everything else the operator owes — opened one by one, never closed in bulk. */
-  other: MissionView[]
-}
-
-/**
- * Split the open missions into the review's groups, keeping the input order. The
- * close groups come first and need no owed condition: a delivered mission whose
- * close was requested is `ready`, and an active mission with every step done is
- * `finished` whatever it owes (the finished-but-never-closed backlog is what the
- * bulk close exists to clear). Every other mission is listed only if it owes the
- * operator something (the cue's owed set). A repeated id keeps its first view
- * and a closed mission is never listed.
- */
-export function groupReviewMissions(views: readonly MissionView[]): ReviewGroups {
-  const out: ReviewGroups = { ready: [], finished: [], other: [] }
-  const seen = new Set<string>()
-  for (const v of views) {
-    if (seen.has(v.mission.id)) continue
-    seen.add(v.mission.id)
-    const { status } = v.mission
-    if (status === 'closed') continue
-    if (status === 'delivered' && v.mission.pendingClose) out.ready.push(v)
-    else if (status === 'active' && v.progress.allDone) out.finished.push(v)
-    else if (owedKeys(v).size > 0) out.other.push(v)
-  }
-  return out
-}
-
-/** A bulk close may touch this mission: it is in the ready or the finished group. */
-export function isBulkCloseable(view: MissionView): boolean {
-  const m = view.mission
-  if (m.status === 'delivered') return !!m.pendingClose
-  return m.status === 'active' && view.progress.allDone
-}
-
-/** The ids the review pre-selects: the ready group, nothing else. */
-export function readyIds(groups: ReviewGroups): string[] {
-  return groups.ready.map((v) => v.mission.id)
-}
-
-/** The reason every bulk door carries, so a mission's Log shows it was a batch decision. */
-export function bulkCloseReason(text?: string): string {
-  const why = text?.trim()
-  return why ? `bulk close: ${why}` : 'bulk close'
-}
-
-const END_WARNING_KEY: Record<EndWarning['kind'], string> = {
-  'end-unverified': 'endUnverified',
-  'left-behind': 'leftBehind',
-  'checks-open': 'checksOpen',
-  'blockers-open': 'blockersOpen',
-  'rescope-staged': 'rescopeStaged'
-}
-
-/** Kinds whose heading counts matters — the i18n plural takes `count`. */
-const COUNTED_END_WARNINGS: ReadonlySet<EndWarning['kind']> = new Set([
-  'left-behind',
-  'checks-open',
-  'blockers-open'
-])
-
-/** The heading of one end warning, in the `mission.end.warnings.*` copy the End dialog uses. */
-export function endWarningHeading(
-  t: (key: string, plural?: number) => string,
-  w: EndWarning
-): string {
-  const key = `mission.end.warnings.${END_WARNING_KEY[w.kind]}`
-  return COUNTED_END_WARNINGS.has(w.kind) ? t(key, w.count) : t(key)
 }

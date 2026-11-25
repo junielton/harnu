@@ -10,9 +10,7 @@
  * the logic surface is unit-tested in `tests/pr-stack-core.test.ts`.
  */
 
-import { execFile, type ExecFileOptions } from 'node:child_process'
 import * as path from 'node:path'
-import { promisify } from 'node:util'
 import { ipcMain } from 'electron'
 import { spawnEnvOnce } from './appimage-env'
 import {
@@ -27,7 +25,6 @@ import { runGh } from './gh-runner'
 import type { GhConsumer } from './github-budget-core'
 import { missionCacheTtlMs, prStackBackgroundPaused } from './github-budget-tracker'
 import { isOpenPrViewJson, matchPrLinkToRemote } from './github-remote'
-import { ciOfRuns, type CiRun, type GateCi } from './mission-gates'
 import { readPrefs, writePrefs, type PrStackPrefs } from './pr-stack-prefs'
 import { GH_PR_LIST_OPTS } from './reaper/scan-core'
 import {
@@ -51,10 +48,47 @@ import {
   type PrThreadCounts,
   type WorktreeNode
 } from './pr-stack-core'
+import { runFile as execFileAsync, type RunFileOptions } from './spawn-runner'
+
+/** CI of one commit, as the PR stack and the mission facts report it (`unknown` also covers no checks at all). */
+export type GateCi = 'passing' | 'failing' | 'pending' | 'unknown'
+
+/** One workflow run as `gh run list --json status,conclusion` reports it. */
+export interface CiRun {
+  status?: string
+  conclusion?: string
+  /** The commit the run ran on (`gh run list --json headSha`). */
+  headSha?: string
+}
+
+const RUN_FAIL = new Set([
+  'failure',
+  'timed_out',
+  'cancelled',
+  'startup_failure',
+  'action_required'
+])
+const RUN_PASS = new Set(['success', 'neutral', 'skipped'])
+
+/**
+ * CI of one commit from its workflow runs: any failing run wins, then any run still
+ * going, then all-success. No runs at all is `unknown` — a commit nothing ran on is
+ * not a green one.
+ */
+export function ciOfRuns(runs: readonly CiRun[]): GateCi {
+  if (runs.length === 0) return 'unknown'
+  let pending = false
+  for (const r of runs) {
+    const status = (r.status ?? '').toLowerCase()
+    const conclusion = (r.conclusion ?? '').toLowerCase()
+    if (status && status !== 'completed') pending = true
+    else if (RUN_FAIL.has(conclusion)) return 'failing'
+    else if (!RUN_PASS.has(conclusion)) pending = true
+  }
+  return pending ? 'pending' : 'passing'
+}
 
 export type { PrStackSnapshot }
-
-const execFileAsync = promisify(execFile)
 
 /**
  * Every `git` subprocess on this path goes through here so it is spawned with the
@@ -66,15 +100,9 @@ const execFileAsync = promisify(execFile)
 async function runFile(
   file: string,
   args: readonly string[],
-  opts: Omit<ExecFileOptions, 'env'>
+  opts: Omit<RunFileOptions, 'env'>
 ): Promise<{ stdout: string }> {
-  // `encoding` is pinned so the promisified overload resolves to the string
-  // form (utf8 is execFile's own default — no behavior change).
-  return execFileAsync(file, [...args], {
-    ...opts,
-    encoding: 'utf8',
-    env: await spawnEnvOnce()
-  })
+  return execFileAsync(file, [...args], { ...opts, env: await spawnEnvOnce() })
 }
 
 const GIT_OPTS = { windowsHide: true, timeout: 30_000, maxBuffer: 1 << 20 } as const
@@ -176,6 +204,8 @@ const verdictCache = new BoundedCache<{
   result: Promise<GateCi>
 }>()
 const defaultBranchCache = new BoundedCache<{ at: number; name: Promise<string> }>()
+/** The CI of a base branch's current tip (BUG-294), by repo and branch. */
+const tipVerdictCache = new BoundedCache<{ settledAt: number | null; result: Promise<GateCi> }>()
 
 /** Test seam: forget everything the git/gh join caches hold. */
 export function resetGitJoinCachesForTest(): void {
@@ -183,6 +213,7 @@ export function resetGitJoinCachesForTest(): void {
   aheadCache.clear()
   mergeOidCache.clear()
   verdictCache.clear()
+  tipVerdictCache.clear()
   defaultBranchCache.clear()
   prCache.clear()
 }
@@ -717,6 +748,87 @@ export async function findMainCi(
     }
   }
   return { ghAvailable: !failed, byNumber: failed ? {} : byNumber }
+}
+
+/**
+ * How long a base branch's tip verdict is trusted. The tip moves with every merge, so it is held far
+ * shorter than a merge commit's finished verdict: a fix that turned the branch green must show within
+ * about a minute. A `low` GitHub budget stretches it, like every other mission read (T611).
+ */
+const TIP_TTL_MS = 60_000
+
+/**
+ * CI of the commit at the tip of `branch`: the newest run's commit, with every run of that commit.
+ * `gh run list --branch` lists newest first, so one call answers it. No runs is `unknown`.
+ */
+function tipVerdictOf(repoPath: string, branch: string): Promise<GateCi> {
+  const key = `${repoPath}#${branch}`
+  const hit = tipVerdictCache.get(key)
+  if (
+    hit &&
+    (hit.settledAt === null || Date.now() - hit.settledAt < Math.max(TIP_TTL_MS, prCacheTtlMs()))
+  ) {
+    return hit.result
+  }
+  const fresh = {
+    settledAt: null as number | null,
+    result: runGh(
+      ['run', 'list', '--branch', branch, '--limit', '30', '--json', 'headSha,status,conclusion'],
+      { ...GH_OPTS, cwd: repoPath, consumer: 'missions', resource: 'rest' }
+    ).then(({ stdout }) => {
+      const runs = JSON.parse(stdout) as CiRun[]
+      const tip = runs[0]?.headSha
+      return ciOfRuns(tip === undefined ? runs.slice(0, 1) : runs.filter((r) => r.headSha === tip))
+    })
+  }
+  tipVerdictCache.set(key, fresh)
+  fresh.result.then(
+    () => {
+      fresh.settledAt = Date.now()
+    },
+    () => {
+      if (tipVerdictCache.get(key) === fresh) tipVerdictCache.delete(key)
+    }
+  )
+  return fresh.result
+}
+
+/**
+ * BUG-294 — the CI of the current tip of each base branch: "is main red NOW". One `gh run list` per
+ * branch (never one per mission step), held {@link TIP_TTL_MS}. Degrades like {@link findMainCi}: a failed
+ * or late read is `ghAvailable: false` with no answers, never a throw, so the caller keeps the merge
+ * commits' own verdicts. `waitMs` bounds how long THIS call waits; the lookup lands in the cache.
+ */
+export async function findBaseCi(
+  repoPath: string,
+  bases: readonly string[],
+  opts: { waitMs?: number } = {}
+): Promise<{ ghAvailable: boolean | null; byBase: Record<string, GateCi | null> }> {
+  if (bases.length === 0) return { ghAvailable: null, byBase: {} }
+  const repo = path.resolve(repoPath)
+  const byBase: Record<string, GateCi | null> = {}
+  let failed = false
+  const one = async (b: string): Promise<void> => {
+    try {
+      byBase[b] = await tipVerdictOf(repo, b)
+    } catch {
+      failed = true
+    }
+  }
+  const all = Promise.all([...new Set(bases)].map(one))
+  if (opts.waitMs === undefined) await all
+  else {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<'late'>((resolve) => {
+      timer = setTimeout(() => resolve('late'), opts.waitMs)
+    })
+    try {
+      if ((await Promise.race([all.then(() => 'done' as const), late])) === 'late') failed = true
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  return { ghAvailable: !failed, byBase: failed ? {} : byBase }
 }
 
 /** The last snapshot served per repo: what a skipped background refresh hands back (T611). */

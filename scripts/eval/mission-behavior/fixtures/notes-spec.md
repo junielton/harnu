@@ -1,6 +1,6 @@
 # Notes export — spec
 
-Synthetic spec for the `end-before-dispatch` behavior scenario (Mission v2 S4). It is copied
+Synthetic spec for the `proactive-creates` behavior scenario (Missions v4 S-33). It is copied
 into the sandbox repo as `docs/notes-spec.md`; nothing in it is real.
 
 ## Objective

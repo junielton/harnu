@@ -114,6 +114,22 @@ export class BrowserLeases {
     return lease ? lease.lastWriteAt + LEASE_IDLE_MS : null
   }
 
+  /**
+   * A tab moved to a new pane (browser-tabs spec, "Move to a new pane"): the lease on `fromPaneId` follows it to
+   * `toPaneId` when it was granted for exactly that view and origin (`viewToken`); it stays active, with its idle
+   * clock. A lease for another tab of the pane stays where it is. @returns whether a lease moved.
+   */
+  rekey(fromPaneId: string, toPaneId: string, viewToken: string): boolean {
+    const lease = this.leases.get(fromPaneId)
+    if (!lease || lease.viewToken !== viewToken) return false
+    this.leases.delete(fromPaneId)
+    this.leases.set(toPaneId, lease)
+    // A cooldown belongs to the pane it was raised on, not to the tab that left.
+    this.changed(fromPaneId)
+    this.changed(toPaneId)
+    return true
+  }
+
   /** End the lease on one pane (close, Disconnect). */
   revoke(paneId: string): void {
     if (this.leases.delete(paneId)) this.changed(paneId)

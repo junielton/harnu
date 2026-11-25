@@ -25,7 +25,8 @@ import {
   priceFileLines,
   emptyTokenBreakdown,
   type TokenBreakdown,
-  type CostBucket
+  type CostBucket,
+  type PricedRequest
 } from './usage-cost-core'
 import { firstRealPrompt } from './claude-reader-derive'
 import { WINDOW_DURATION_MS, type WindowRecord } from './usage-history-core'
@@ -211,13 +212,32 @@ export function buildFileAnatomySignals(
   meta: FileAnatomyMeta,
   hourlyCutoffMs = -Infinity
 ): FileAnatomySignals {
-  let minTs: number | null = null
-  let maxTs: number | null = null
-  let turns = 0
-  let customTitle = ''
-  let aiTitle = ''
-  let firstUserText = ''
-  let firstUserFound = false
+  return foldFileAnatomySignals(null, lines, priceFileLines(lines), meta, hourlyCutoffMs)
+}
+
+/**
+ * The resumable form of {@link buildFileAnatomySignals}: `prev` is the signals of
+ * the earlier part of a file (`null` at the start), `lines` the ones after it and
+ * `priced` their not-yet-counted requests. `prev` is not mutated.
+ *
+ * An hourly point of `prev` that lies wholly before the cutoff is dropped. One
+ * the cutoff falls INSIDE can't be split (its requests are already summed), so a
+ * caller that needs the exact result re-reads the file instead.
+ */
+export function foldFileAnatomySignals(
+  prev: FileAnatomySignals | null,
+  lines: readonly string[],
+  priced: readonly PricedRequest[],
+  meta: FileAnatomyMeta,
+  hourlyCutoffMs = -Infinity
+): FileAnatomySignals {
+  let minTs = prev?.minTs ?? null
+  let maxTs = prev?.maxTs ?? null
+  let turns = prev?.turns ?? 0
+  let customTitle = prev?.customTitle ?? ''
+  let aiTitle = prev?.aiTitle ?? ''
+  let firstUserText = prev?.firstUserText ?? ''
+  let firstUserFound = firstUserText !== ''
 
   for (const line of lines) {
     const info = parseAnatomyLine(line)
@@ -238,13 +258,16 @@ export function buildFileAnatomySignals(
     }
   }
 
-  const priced = priceFileLines(lines)
-  let peakContextRatio = 0
-  let tokens = emptyTokenBreakdown()
-  let requestCount = 0
-  let estimated = false
-  const costByModel: Record<string, number> = {}
+  let peakContextRatio = prev?.peakContextRatio ?? 0
+  let tokens = prev?.tokens ?? emptyTokenBreakdown()
+  let requestCount = prev?.requestCount ?? 0
+  let estimated = prev?.estimated ?? false
+  const costByModel: Record<string, number> = { ...prev?.costByModel }
   const hourlyMap = new Map<string, HourlyCostPoint>()
+  for (const h of prev?.hourly ?? []) {
+    if (h.hourStartMs + 3_600_000 <= hourlyCutoffMs) continue
+    hourlyMap.set(`${h.hourStartMs}|${h.model}`, { ...h })
+  }
 
   for (const p of priced) {
     requestCount++
