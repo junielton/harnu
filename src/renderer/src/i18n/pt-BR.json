@@ -45,7 +45,8 @@
       "rescan": "Reescanear pastas",
       "rescanFailed": "Falha ao reescanear",
       "expandAll": "Expandir tudo",
-      "collapseAll": "Recolher tudo",
+      "collapseSessions": "Recolher sessões",
+      "collapseFolders": "Recolher pastas",
       "hidden": "Ocultas ({count})",
       "unhide": "Reexibir"
     },
@@ -61,9 +62,14 @@
       "unhideAllFailed": "{count} pastas não puderam ser reexibidas. Primeiro erro: {reason}",
       "enterHint": "reexibir"
     },
-    "toolbar": {
-      "drillOn": "Ativar navegação drill-in",
-      "drillLevel": "Navegação drill-in: nível {level} de {max}"
+    "focus": {
+      "allFolders": "Pastas",
+      "enter": "Focar nesta pasta",
+      "enterNamed": "Focar em {name}",
+      "others": "{n} outra | {n} outras",
+      "needsYou": "{n} precisa de você | {n} precisam de você",
+      "needsYouShort": "{n} precisa | {n} precisam",
+      "failed": "{n} falhou | {n} falharam"
     },
     "filter": {
       "placeholder": "Filtrar pastas…",
@@ -94,22 +100,15 @@
         "filterTree": "filtrar árvore"
       }
     },
-    "drill": {
-      "back": "Voltar",
-      "worktreeCount": "{n} worktrees",
-      "folderCount": "{n} pastas"
-    },
     "resize": "Redimensionar barra lateral",
     "hide": "Ocultar barra lateral",
     "show": "Mostrar barra lateral",
+    "attention": {
+      "title": "Precisa de atenção"
+    },
     "returnHere": {
       "title": "Voltar aqui",
       "dismiss": "Marcar como visto"
-    },
-    "section": {
-      "collapse": "Recolher {name}",
-      "expand": "Expandir {name}",
-      "resize": "Redimensionar {name}"
     },
     "teammates": {
       "show": "Mostrar {n} teammates",
@@ -117,18 +116,14 @@
       "workingGuard": "Esse teammate está sendo dirigido pelo time-lead agora. Retomar aqui pode conflitar com as escritas dele — continuar mesmo assim?"
     },
     "agentBlockedBadge": "Agentes bloqueados — nenhum agente pode agir nesta pasta",
-    "lineageBadge": "{n} worktree(s) criadas a partir daqui — clique para recolher/expandir"
-  },
-  "board": {
-    "blockedFor": "bloqueada há {time}",
-    "spinningOn": "repetindo {target} ×{count}",
-    "state": {
-      "needsInput": "Needs input",
-      "errored": "Errored",
-      "stuck": "Stuck",
-      "working": "Working",
-      "idle": "Idle",
-      "done": "Done"
+    "tree": {
+      "idleWorktrees": "{count} worktree inativa | {count} worktrees inativas",
+      "foldFolder": "Recolher {name}",
+      "openFolder": "Expandir {name}",
+      "railWorking": "{branch}, agente trabalhando",
+      "railFailed": "{branch}, falhou",
+      "railNeedsInput": "{branch}, precisa de você",
+      "railCount": "{label}, {count} sessão | {label}, {count} sessões"
     }
   },
   "topbar": {
@@ -730,6 +725,9 @@
     "searchTruncated": "Mostrando os primeiros 500 resultados — refine a busca."
   },
   "folderMenu": {
+    "focus": "Focar nesta pasta",
+    "showOlder": "Mostrar antigas ({n})",
+    "showArchived": "Mostrar arquivadas ({n})",
     "label": "Ações da pasta",
     "newTerminal": "Novo terminal",
     "bootOptions": "Opções de inicialização…",
@@ -1126,111 +1124,19 @@
     "disclaimer": "O Harnu é um projeto independente, sem afiliação ou endosso da Anthropic."
   },
   "folderView": {
-    "whereWeLeftOff": "Onde paramos",
-    "sessions": "Sessões",
-    "noSessions": "Nenhuma sessão aqui ainda.",
     "newSession": "Nova sessão",
-    "older": "Antigas ({n})",
-    "archived": "Arquivadas ({n})",
-    "roadmap": "Roadmap",
-    "sessionBound": "sessão vinculada",
-    "worktrees": "Worktrees deste repo",
-    "siblingWorktrees": "Worktrees irmãs",
-    "scope": {
-      "thisFolder": "esta pasta",
-      "repo": "repo",
-      "thisFolderHint": "Só esta pasta — suas próprias sessões, branch e working tree.",
-      "repoHint": "O repo inteiro — toda worktree dele mostra exatamente isto."
-    },
-    "owned": {
-      "rail": {
-        "dispatched": "Despachado",
-        "dispatchedAt": "Despachado · {age}",
-        "commits": "Commits",
-        "commitsCount": "{n} commits",
-        "commitsLatest": "{n} commits · último {sha}",
-        "pr": "PR",
-        "prNumber": "PR #{n}",
-        "merge": "Merge",
-        "merged": "Merged"
-      },
-      "pr": {
-        "merged": "merged",
-        "closed": "fechada",
-        "isDraft": "rascunho",
-        "changesRequested": "mudanças pedidas",
-        "approved": "aprovada",
-        "inReview": "em review"
-      },
-      "meta": {
-        "status": "Status",
-        "ownerSession": "Sessão dona",
-        "git": "Git",
-        "unpushed": "sem push",
-        "cutFrom": "Cortada de"
-      }
-    },
-    "thisWorktree": "esta",
-    "cutFromHere": "cortada daqui",
+    "terminalHere": "Terminal aqui",
+    "browseFiles": "Navegar arquivos",
     "openRoadmap": "Board do roadmap",
     "openPrStack": "PR Stack",
-    "browseFiles": "Navegar arquivos",
     "openFolder": "Abrir pasta",
-    "terminalHere": "Terminal aqui",
-    "fanout": {
-      "title": "Worktrees em andamento",
-      "colBranch": "Branch",
-      "colCard": "Card",
-      "colSessions": "Sessões",
-      "colGit": "Git",
-      "colPr": "PR",
-      "sessionsLive": "{n} · {live} ativas",
-      "noCard": "Nenhum card está executando esta branch",
-      "prState": {
-        "checksPassing": "checks passando",
-        "checksFailing": "checks falhando",
-        "checksRunning": "checks rodando",
-        "changesRequested": "mudanças solicitadas",
-        "draft": "rascunho #{n}",
-        "merged": "merge feito #{n}",
-        "closed": "fechada #{n}",
-        "open": "aberta #{n}"
-      },
-      "expand": "Ver detalhes",
-      "collapse": "Ocultar detalhes",
-      "detail": {
-        "branch": "Branch",
-        "path": "Caminho",
-        "card": "Card",
-        "git": "Git",
-        "gitClean": "em dia com a base",
-        "gitUnavailable": "Não foi possível ler o status do git",
-        "pr": "Pull request",
-        "prNumber": "#{n}",
-        "noPr": "Nenhum pull request aberto para esta branch",
-        "open": "Abrir esta worktree",
-        "isSelf": "Você está nesta worktree"
-      }
-    },
-    "kpi": {
-      "needYou": "esperam você",
-      "needYouAcross": "Em {n} worktrees",
-      "needYouBreakdown": "{sessions} sessões · {prs} PRs com mudanças solicitadas",
-      "needYouPrsUnavailable": "{sessions} sessões · estado das PRs indisponível",
-      "inFlight": "em andamento",
-      "inFlightK": "Worktrees com sessão ativa",
-      "inFlightSub": "{total} worktrees no total · {idle} paradas",
-      "inReview": "em revisão",
-      "roadmapK": "Roadmap · {inProgress} em progresso · {ready} prontos",
-      "sessionsHere": "sessões aqui",
-      "sessionsHereK": "Neste checkout · {older} anteriores",
-      "sessionsHereSub": "Onde as orquestrações começam"
-    },
-    "activity": {
-      "title": "Atividade · 14d",
-      "sessions": "{n} sessões",
-      "today": "hoje · {n}",
-      "chartLabel": "Sessões iniciadas por dia no repositório, últimos 14 dias"
+    "moreActions": "Mais ações da pasta",
+    "moreTitle": "Mais: {actions}",
+    "roadmap": "Roadmap",
+    "road": {
+      "inProgress": "{n} em andamento",
+      "ready": "{n} prontos",
+      "inReview": "{n} em revisão"
     }
   },
   "empty": {
@@ -1349,7 +1255,7 @@
       "activity": "ativa {time}",
       "noActivity": "sem atividade ainda",
       "changes": "{count} alterações",
-      "clean": "sem alterações",
+      "clean": "limpo",
       "ahead": "{n} à frente",
       "behind": "{n} atrás",
       "memoryLabel": "Onde paramos"
@@ -1412,10 +1318,9 @@
     "save": "Salvar"
   },
   "repoGroup": {
-    "menuLabel": "Ações do grupo",
-    "rename": "Renomear grupo",
-    "resetName": "Resetar nome",
-    "cleanup": "Limpeza…"
+    "renameRepo": "Renomear repositório",
+    "cleanUp": "Limpar",
+    "resetName": "Resetar nome"
   },
   "dialog": {
     "close": "Fechar",
@@ -1560,7 +1465,7 @@
       },
       "expandHides": {
         "label": "Expandir esconde",
-        "hint": "O que sai da frente quando um painel auxiliar é expandido para a janela. Tudo também esconde a barra lateral e o Fleet rail; Só a sessão esconde apenas a sessão.",
+        "hint": "O que sai da frente quando um painel auxiliar é expandido para a janela. Tudo também esconde a barra lateral; Só a sessão esconde apenas a sessão.",
         "everything": "Tudo",
         "sessionOnly": "Só a sessão"
       }
@@ -1652,8 +1557,7 @@
       "trustAll": "Confiar em todas as pastas",
       "trustAllHint": "Intercepta tool calls em todas as pastas. Desligue para voltar a escolher pasta por pasta.",
       "rampTitle": "Interceptar por pasta",
-      "rampEmpty": "Nenhuma pasta interceptada ainda — adicione uma abaixo ou ligue Confiar em todas as pastas.",
-      "reviewShadowLog": "Ver shadow log"
+      "rampEmpty": "Nenhuma pasta interceptada ainda — adicione uma abaixo ou ligue Confiar em todas as pastas."
     },
     "notifications": {
       "label": "Notificações do sistema",
@@ -1744,8 +1648,7 @@
     "actions": {
       "session_new": "Nova sessão",
       "app_search": "Abrir a paleta de comandos",
-      "inbox_toggle": "Alternar a coluna de Aprovações",
-      "view_fleetRail": "Alternar a coluna da Frota",
+      "inbox_toggle": "Abrir ou recolher Precisa de você",
       "view_toggleSidebar": "Alternar a barra lateral esquerda",
       "view_toggleHelper": "Alternar o painel dividido à direita",
       "project_switch": "Trocar de projeto",
@@ -1782,7 +1685,6 @@
       "session_closeTerminal": "Fechar o terminal da pasta",
       "sidebar_jump": "Ir para uma pasta ou sessão",
       "sidebar_rescan": "Reescanear pastas",
-      "sidebar_cycleDrillDepth": "Alternar a profundidade de navegação da barra lateral",
       "sidebar_toggleCollapseAll": "Recolher ou expandir todas as pastas",
       "sidebar_hiddenFolders": "Mostrar pastas ocultas",
       "sidebar_cursor_down": "Cursor da barra lateral: baixo",
@@ -1812,9 +1714,6 @@
       "repoGroup_resetName": "Resetar nome (grupo)",
       "repoGroup_cleanup": "Limpeza… (repositório)",
       "inbox_open": "Abrir aprovações",
-      "inbox_toggleOrder": "Mais recentes primeiro / Mais antigos primeiro (coluna da Frota)",
-      "inbox_filter": "Filtrar estados (coluna da Frota)",
-      "inbox_showAll": "Mostrar tudo (coluna da Frota)",
       "view_activity": "Abrir a Atividade",
       "view_missionProgress": "Abrir o progresso da missão",
       "view_pastedImages": "Abrir as imagens coladas",
@@ -2356,22 +2255,10 @@
     "blockedTitle": "Bloqueou um comando perigoso"
   },
   "approvalInbox": {
-    "title": "Fleet",
-    "open": "Abrir aprovações — {count} esperando",
-    "fleetEmpty": "Tudo em dia",
     "subtitle": "Tool calls esperando por você. Allow ou deny sem trocar de tab.",
     "sections": {
-      "needsYou": "Precisa de você",
-      "wouldHave": "Teria pego"
+      "needsYou": "Precisa de você"
     },
-    "rail": {
-      "ariaLabel": "Fleet rail",
-      "expand": "Expandir o Fleet rail",
-      "minimize": "Minimizar o Fleet rail",
-      "resize": "Redimensionar o Fleet rail"
-    },
-    "shadowEmpty": "Nenhuma prévia ainda",
-    "shadowPaused": "Prévia pausada — o responder está off (modo observador).",
     "allow": "Allow",
     "deny": "Deny",
     "expired": "Esse request já expirou — a sessão resolveu no terminal.",
@@ -2379,20 +2266,6 @@
     "allowAria": "Allow {tool} em {folder}",
     "denyAria": "Deny {tool} em {folder}",
     "openSessionAria": "Abrir a sessão de {tool}",
-    "missionsStrip": {
-      "title": "Active missions"
-    },
-    "order": {
-      "newestFirst": "Mais recentes primeiro — clique para os mais antigos primeiro",
-      "oldestFirst": "Mais antigos primeiro — clique para os mais recentes primeiro"
-    },
-    "filter": {
-      "title": "Filtrar estados",
-      "showAll": "Mostrar tudo",
-      "toggleAria": "Mostrar ou esconder cards de {state}",
-      "hiddenAttention": "{count} escondidos pelo filtro",
-      "allHidden": "Todos os cards do fleet estão escondidos pelo seu filtro — toque para mostrar tudo"
-    },
     "row": {
       "outside": "fora do Harnu"
     }

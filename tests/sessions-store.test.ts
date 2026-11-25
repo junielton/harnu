@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import {
   useSessionsStore,
@@ -606,7 +605,7 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
     expect(after.sessions.some((s) => s.sessionId === synthId)).toBe(false)
   })
 
-  it('T459 AC-7: a synthetic collapsing into its disk twin keeps its Fleet-rail position', async () => {
+  it('T459 AC-7: a synthetic collapsing into its disk twin keeps its Needs attention position', async () => {
     // A second folder holds a session created just AFTER the synthetic (T0+1s) —
     // in another folder, so it can never be mistaken for the synthetic's twin.
     const t0 = Date.now()
@@ -636,7 +635,7 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
       .find((f) => f.path === '/repos/alpha')!
       .sessions.find((s) => s.sessionId === synthId)!
     synth.created = at(0)
-    synth.taskState = 'completed'
+    synth.taskState = 'needs-input'
 
     // The real twin's transcript is born 2s AFTER T0 — i.e. AFTER `newer` was
     // created. Keyed by the real row's own `created` the card would jump above it.
@@ -657,19 +656,17 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
 
     const alpha = store.folders.find((f) => f.path === '/repos/alpha')!
     expect(alpha.sessions.some((s) => s.sessionId === synthId)).toBe(false)
-    alpha.sessions.find((s) => s.sessionId === 'real-twin')!.taskState = 'completed'
+    alpha.sessions.find((s) => s.sessionId === 'real-twin')!.taskState = 'needs-input'
     store.folders
       .find((f) => f.path === '/repos/beta')!
-      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'completed'
+      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'needs-input'
 
-    const order = store.boardBuckets
-      .find((b) => b.state === 'done')!
-      .sessions.map((s) => s.sessionId)
+    const order = store.attentionSessions.map((s) => s.sessionId)
     // Newest first: `newer` (T0+1s) above the twin, which keeps the synthetic's T0.
     expect(order).toEqual(['newer', 'real-twin'])
   })
 
-  it('T459 AC-7: an IN-PLACE synthetic→real migration keeps its Fleet-rail position across the next reload', async () => {
+  it('T459 AC-7: an IN-PLACE synthetic→real migration keeps its Needs attention position across the next reload', async () => {
     // Same shape as the twin-collapse test above, but the synthetic row is RENAMED
     // in place (same object). The next `index:updated` reconcile then overwrites
     // its `created` with the JSONL's later birthtime — the sort key must not move.
@@ -726,14 +723,12 @@ describe('useSessionsStore reload coalescing + in-place reconcile (sidebar-freez
 
     const row = alpha.sessions.find((s) => s.sessionId === 'real-inplace')!
     expect(row.created).toBe(at(2000)) // proves the reconcile really rewrote `created`
-    row.taskState = 'completed'
+    row.taskState = 'needs-input'
     store.folders
       .find((f) => f.path === '/repos/beta')!
-      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'completed'
+      .sessions.find((s) => s.sessionId === 'newer')!.taskState = 'needs-input'
 
-    const order = store.boardBuckets
-      .find((b) => b.state === 'done')!
-      .sessions.map((s) => s.sessionId)
+    const order = store.attentionSessions.map((s) => s.sessionId)
     // Newest first: `newer` (T0+1s) stays above the migrated row (anchored at T0).
     expect(order).toEqual(['newer', 'real-inplace'])
   })
@@ -1553,256 +1548,6 @@ describe('useSessionsStore activateSession (BUG-31 — reveal + focus)', () => {
 
     expect(() => store.select('does-not-exist')).not.toThrow()
     expect(store.revealSessionId).toBeNull()
-  })
-})
-
-describe('useSessionsStore drill-in navigation (2026-07-19)', () => {
-  type DiskSession = FolderEntry['sessions'][number]
-
-  // This file runs under the `node` vitest environment (no jsdom, no native
-  // `localStorage`), unlike `layout-store.test.ts` / `persisted.test.ts`
-  // which opt into jsdom. `drillDepth` needs a real read/write-back store
-  // to assert against (not the read-only inline mocks the rest of this
-  // file uses elsewhere), so stub one in with the same in-memory harness
-  // those other suites use.
-  function makeLocalStorage(initial: Record<string, string> = {}): Storage {
-    const store = new Map<string, string>(Object.entries(initial))
-    return {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, v),
-      removeItem: (k: string) => void store.delete(k),
-      clear: () => store.clear(),
-      key: (i: number) => Array.from(store.keys())[i] ?? null,
-      get length() {
-        return store.size
-      }
-    } as Storage
-  }
-
-  function session(over: Partial<DiskSession> = {}): DiskSession {
-    const now = new Date().toISOString()
-    return {
-      sessionId: 's1',
-      fullPath: '/repos/alpha/s1.jsonl',
-      fileMtime: 1,
-      firstPrompt: '',
-      summary: 'one',
-      messageCount: 1,
-      created: now,
-      modified: now,
-      gitBranch: '',
-      projectPath: '/repos/alpha',
-      isSidechain: false,
-      status: 'idle',
-      agents: [],
-      resumable: true,
-      bridged: false,
-      ...over
-    } as DiskSession
-  }
-
-  function folder(
-    path: string,
-    sessions: DiskSession[],
-    over: Partial<FolderEntry> = {}
-  ): FolderEntry {
-    return { path, alias: path.split('/').pop() ?? path, gitBranch: '', sessions, ...over }
-  }
-
-  function installWindow(disk: FolderEntry[]): void {
-    ;(globalThis as unknown as { window: unknown }).window = {
-      api: {
-        foldersLoad: vi.fn(async () => disk),
-        userProjectsList: vi.fn(async () => ({ projects: [], hiddenPaths: [] })),
-        orchestratorListArmed: vi.fn(async () => [])
-      }
-    }
-  }
-
-  beforeEach(() => {
-    setActivePinia(createPinia())
-    vi.stubGlobal('localStorage', makeLocalStorage())
-  })
-
-  afterEach(() => {
-    delete (globalThis as unknown as { window?: unknown }).window
-    vi.unstubAllGlobals()
-  })
-
-  it('defaults to depth 0 (classic tree) with an empty stack', () => {
-    const store = useSessionsStore()
-    expect(store.drillDepth).toBe(0)
-    expect(store.drillModeEnabled).toBe(false)
-    expect(store.drillStack).toEqual([])
-  })
-
-  it('cycleDrillDepth walks 0 → 1 → 2 → 0 and persists each level', async () => {
-    // `persistedRef`'s auto-persist watch uses Vue's default ('pre') flush —
-    // an `await nextTick()` is required between the change and reading the
-    // mirrored key, same as `layout-store.test.ts`'s equivalent assertion.
-    const store = useSessionsStore()
-
-    store.cycleDrillDepth()
-    expect(store.drillDepth).toBe(1)
-    expect(store.drillModeEnabled).toBe(true)
-    await nextTick()
-    expect(localStorage.getItem('om2tab.sidebarDrillDepth')).toBe('1')
-
-    store.cycleDrillDepth()
-    expect(store.drillDepth).toBe(2)
-    await nextTick()
-    expect(localStorage.getItem('om2tab.sidebarDrillDepth')).toBe('2')
-
-    store.cycleDrillDepth()
-    expect(store.drillDepth).toBe(0)
-    expect(store.drillModeEnabled).toBe(false)
-    expect(store.drillStack).toEqual([])
-    await nextTick()
-    expect(localStorage.getItem('om2tab.sidebarDrillDepth')).toBe('0')
-  })
-
-  it('migrates a legacy sidebarDrillMode=true to depth 2 so existing drill-in users keep their behavior', () => {
-    vi.stubGlobal('localStorage', makeLocalStorage({ 'om2tab.sidebarDrillMode': 'true' }))
-    const store = useSessionsStore()
-    expect(store.drillDepth).toBe(2)
-  })
-
-  it('migrates a legacy sidebarDrillMode=false (or absent) to depth 0', () => {
-    vi.stubGlobal('localStorage', makeLocalStorage({ 'om2tab.sidebarDrillMode': 'false' }))
-    const store = useSessionsStore()
-    expect(store.drillDepth).toBe(0)
-  })
-
-  it('prefers an explicit sidebarDrillDepth over the legacy key, and clamps out-of-range values', () => {
-    vi.stubGlobal(
-      'localStorage',
-      makeLocalStorage({ 'om2tab.sidebarDrillMode': 'true', 'om2tab.sidebarDrillDepth': '1' })
-    )
-    expect(useSessionsStore().drillDepth).toBe(1)
-
-    setActivePinia(createPinia())
-    vi.stubGlobal('localStorage', makeLocalStorage({ 'om2tab.sidebarDrillDepth': '9' }))
-    expect(useSessionsStore().drillDepth).toBe(0)
-  })
-
-  it('drillIntoGroup then drillIntoFolder builds a two-entry stack; drillBack pops one level at a time', () => {
-    const store = useSessionsStore()
-    store.drillIntoGroup('repo:repo-x')
-    expect(store.drillStack).toEqual([{ kind: 'group', key: 'repo:repo-x' }])
-
-    store.drillIntoFolder('/repos/alpha/main')
-    expect(store.drillStack).toEqual([
-      { kind: 'group', key: 'repo:repo-x' },
-      { kind: 'folder', path: '/repos/alpha/main' }
-    ])
-
-    store.drillBack()
-    expect(store.drillStack).toEqual([{ kind: 'group', key: 'repo:repo-x' }])
-
-    store.drillBack()
-    expect(store.drillStack).toEqual([])
-  })
-
-  it('drillBack on an empty stack is a no-op', () => {
-    const store = useSessionsStore()
-    store.drillBack()
-    expect(store.drillStack).toEqual([])
-  })
-
-  it("cycling to depth 2 with a selection jumps straight to that session's folder screen, through its group", async () => {
-    installWindow([
-      folder('/repos/alpha/main', [session({ sessionId: 's1' })], {
-        repoId: 'repo-x',
-        isMainWorktree: true
-      }),
-      folder('/repos/alpha/wt-b', [session({ sessionId: 's2' })], { repoId: 'repo-x' })
-    ])
-    const store = useSessionsStore()
-    await store.reloadModel()
-    store.select('s2')
-
-    store.cycleDrillDepth()
-    store.cycleDrillDepth()
-
-    expect(store.drillDepth).toBe(2)
-    expect(store.drillStack).toEqual([
-      { kind: 'group', key: 'repo:repo-x' },
-      { kind: 'folder', path: '/repos/alpha/wt-b' }
-    ])
-  })
-
-  it('at depth 1 the resolved stack stops at the owning group, so the folder renders inline', async () => {
-    installWindow([
-      folder('/repos/alpha/main', [session({ sessionId: 's1' })], {
-        repoId: 'repo-x',
-        isMainWorktree: true
-      }),
-      folder('/repos/alpha/wt-b', [session({ sessionId: 's2' })], { repoId: 'repo-x' })
-    ])
-    const store = useSessionsStore()
-    await store.reloadModel()
-    store.select('s2')
-
-    store.cycleDrillDepth()
-
-    expect(store.drillDepth).toBe(1)
-    expect(store.drillStack).toEqual([{ kind: 'group', key: 'repo:repo-x' }])
-  })
-
-  it('at depth 1 a selection in an ungrouped folder still opens its own session screen', async () => {
-    installWindow([folder('/repos/solo', [session({ sessionId: 's1' })])])
-    const store = useSessionsStore()
-    await store.reloadModel()
-    store.select('s1')
-
-    store.cycleDrillDepth()
-
-    expect(store.drillStack).toEqual([{ kind: 'folder', path: '/repos/solo' }])
-  })
-
-  it('lowering the depth truncates a deeper stack instead of stranding the operator', () => {
-    const store = useSessionsStore()
-    store.drillDepth = 2
-    store.drillIntoGroup('repo:repo-x')
-    store.drillIntoFolder('/repos/alpha/wt-b')
-
-    store.cycleDrillDepth()
-
-    expect(store.drillDepth).toBe(0)
-    expect(store.drillStack).toEqual([])
-  })
-
-  it('auto re-drill: selecting a session in a different folder while drill mode is on replaces the stack', async () => {
-    installWindow([
-      folder('/repos/alpha/main', [session({ sessionId: 's1' })], {
-        repoId: 'repo-x',
-        isMainWorktree: true
-      }),
-      folder('/repos/alpha/wt-b', [session({ sessionId: 's2' })], { repoId: 'repo-x' })
-    ])
-    const store = useSessionsStore()
-    await store.reloadModel()
-    store.cycleDrillDepth()
-    store.cycleDrillDepth() // depth 2, so the resolver keeps the full [group, folder] path
-    store.drillIntoFolder('/repos/alpha/main') // looking at an unrelated screen
-
-    store.select('s2')
-
-    expect(store.drillStack).toEqual([
-      { kind: 'group', key: 'repo:repo-x' },
-      { kind: 'folder', path: '/repos/alpha/wt-b' }
-    ])
-  })
-
-  it('selecting a session does NOT touch the drill stack when drill mode is off', async () => {
-    installWindow([folder('/repos/alpha', [session({ sessionId: 's1' })])])
-    const store = useSessionsStore()
-    await store.reloadModel()
-    store.drillIntoFolder('/repos/somewhere-else')
-
-    store.select('s1')
-
-    expect(store.drillStack).toEqual([{ kind: 'folder', path: '/repos/somewhere-else' }])
   })
 })
 
@@ -2928,7 +2673,7 @@ describe('useSessionsStore identity claims (T389 P1W3)', () => {
     })
   })
 
-  it('T459 AC-7: a claim-bound in-place migration keeps its Fleet-rail position across the next reload', async () => {
+  it('T459 AC-7: a claim-bound in-place migration keeps its Needs attention position across the next reload', async () => {
     const BETA = '/repos/beta'
     const t0 = Date.now()
     const at = (offsetMs: number): string => new Date(t0 + offsetMs).toISOString()
@@ -2977,13 +2722,11 @@ describe('useSessionsStore identity claims (T389 P1W3)', () => {
     const row = store.folders.find((f) => f.path === ALPHA)!.sessions[0]!
     expect(row.sessionId).toBe('R1')
     expect(row.created).toBe(at(2000)) // the reconcile really rewrote `created`
-    row.taskState = 'completed'
+    row.taskState = 'needs-input'
     store.folders
       .find((f) => f.path === BETA)!
-      .sessions.find((x) => x.sessionId === 'newer')!.taskState = 'completed'
-    const order = store.boardBuckets
-      .find((b) => b.state === 'done')!
-      .sessions.map((x) => x.sessionId)
+      .sessions.find((x) => x.sessionId === 'newer')!.taskState = 'needs-input'
+    const order = store.attentionSessions.map((x) => x.sessionId)
     expect(order).toEqual(['newer', 'R1'])
   })
 

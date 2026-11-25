@@ -180,7 +180,7 @@ describe('folder selection from the keyboard cursor', () => {
     expect(store.folders[0].expanded).toBe(true)
   })
 
-  it('a second Enter collapses the folder but keeps it selected', () => {
+  it('a second Enter keeps the folder open and selected', () => {
     const store = useSessionsStore()
     seedFolder(store)
     store.folders[0].expanded = false
@@ -189,7 +189,7 @@ describe('folder selection from the keyboard cursor', () => {
     store.cursorActivate()
     store.cursorActivate()
 
-    expect(store.folders[0].expanded).toBe(false)
+    expect(store.folders[0].expanded).toBe(true)
     expect(store.selectedFolderPath).toBe('/repo/alpha')
   })
 

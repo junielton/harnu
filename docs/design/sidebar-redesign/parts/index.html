@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sidebar parts · Harnu</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <style>
+      /* no token: gallery padding and cell gaps */
+      body {
+        padding: 24px;
+      }
+      h1,
+      h2 {
+        font-weight: 500;
+      }
+      h1 {
+        font-size: var(--text-title);
+      }
+      h2 {
+        margin: 0 0 8px;
+        font-size: var(--text-body);
+        color: var(--color-text-2);
+      }
+      .gallery {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px 16px;
+        align-items: flex-start;
+      }
+      .cell {
+        width: var(--sidebar-width);
+      }
+      .wide {
+        width: 100%;
+      }
+      .cell > div {
+        background: var(--color-sidebar);
+      }
+    </style>
+    <script defer src="icons.js"></script>
+    <script defer src="tree.js"></script>
+    <script defer src="toolbar.js"></script>
+    <script defer src="attention.js"></script>
+    <script defer src="dock.js"></script>
+    <script defer src="app-window.js"></script>
+  </head>
+  <body>
+    <h1>Sidebar parts</h1>
+    <main class="gallery">
+      <section class="cell">
+        <h2>Toolbar · level 2</h2>
+        <div data-dsqa="part--toolbar--level-2"><mk-toolbar state="default"></mk-toolbar></div>
+      </section>
+      <section class="cell">
+        <h2>Toolbar · level 1</h2>
+        <div data-dsqa="part--toolbar--level-1">
+          <mk-toolbar state="sessions-folded"></mk-toolbar>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Toolbar · level 0</h2>
+        <div data-dsqa="part--toolbar--level-0">
+          <mk-toolbar state="folders-folded"></mk-toolbar>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Attention · open</h2>
+        <div data-dsqa="part--attention--open"><mk-attention variant="open"></mk-attention></div>
+      </section>
+      <section class="cell">
+        <h2>Attention · folded</h2>
+        <div data-dsqa="part--attention--folded">
+          <mk-attention variant="folded"></mk-attention>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Tree · app</h2>
+        <div data-dsqa="part--tree--app"><mk-tree variant="app"></mk-tree></div>
+      </section>
+      <section class="cell wide">
+        <h2>Tree · strips</h2>
+        <div data-dsqa="part--tree--strips"><mk-tree variant="strips"></mk-tree></div>
+      </section>
+      <section class="cell">
+        <h2>Tree · separate rails</h2>
+        <div data-dsqa="part--tree--separate-rails">
+          <mk-tree variant="rail" state="separate-rails"></mk-tree>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Tree · selected in active</h2>
+        <div data-dsqa="part--tree--selected-in-active">
+          <mk-tree variant="rail" state="selected-in-active"></mk-tree>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Tree · priority</h2>
+        <div data-dsqa="part--tree--priority">
+          <mk-tree variant="rail" state="priority"></mk-tree>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Tree · folded folder</h2>
+        <div data-dsqa="part--tree--folded-folder">
+          <mk-tree variant="rail" state="folded-folder"></mk-tree>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Tree · folded checkout</h2>
+        <div data-dsqa="part--tree--folded-checkout">
+          <mk-tree variant="rail" state="folded-checkout"></mk-tree>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Tree · focus</h2>
+        <div data-dsqa="part--tree--focus"><mk-tree variant="rail" state="focus"></mk-tree></div>
+      </section>
+      <section class="cell">
+        <h2>Tree · motion</h2>
+        <div data-dsqa="part--tree--motion"><mk-tree variant="rail" state="motion"></mk-tree></div>
+      </section>
+      <section class="cell">
+        <h2>Tree · all idle</h2>
+        <div data-dsqa="part--tree--all-idle">
+          <mk-tree variant="rail" state="all-idle"></mk-tree>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Tree · floating</h2>
+        <div data-dsqa="part--tree--floating" class="fixture-tree rail-floating">
+          <mk-tree variant="rail" state="floating"></mk-tree>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Tree · sticky scrolled</h2>
+        <div
+          data-dsqa="part--tree--sticky-scrolled"
+          class="fixture-tree"
+          data-state="sticky-scrolled"
+        >
+          <mk-tree variant="rail" state="sticky-scrolled"></mk-tree>
+        </div>
+      </section>
+      <section class="cell">
+        <h2>Dock · folded</h2>
+        <div data-dsqa="part--dock--folded"><mk-dock variant="folded"></mk-dock></div>
+      </section>
+      <section class="cell">
+        <h2>Dock · open</h2>
+        <div data-dsqa="part--dock--open"><mk-dock variant="open"></mk-dock></div>
+      </section>
+      <section class="cell wide">
+        <h2>App window · sidebar</h2>
+        <div data-dsqa="part--app-window--sidebar">
+          <mk-app-window view="sidebar"></mk-app-window>
+        </div>
+      </section>
+      <section class="cell wide">
+        <h2>App window · folder view</h2>
+        <div data-dsqa="part--app-window--folder-view">
+          <mk-app-window view="folder-view"></mk-app-window>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

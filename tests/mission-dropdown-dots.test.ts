@@ -331,8 +331,8 @@ describe('AC-12 — the pill and the sidebar chip carry a title and an aria-labe
     // The element's own attributes: from its opening tag to the tag's closing `>`.
     const open = src.lastIndexOf('<span', at)
     const tag = src.slice(open, src.indexOf('>', at))
-    expect(tag).toMatch(/:title="missionChipLabel\(missionOf\(s\)!\)"/)
-    expect(tag).toMatch(/:aria-label="missionChipLabel\(missionOf\(s\)!\)"/)
+    expect(tag).toMatch(/:title="missionChipLabel\(mission\)"/)
+    expect(tag).toMatch(/:aria-label="missionChipLabel\(mission\)"/)
     // And the words exist in both languages, with the headline in them.
     for (const locale of ['en', 'pt-BR'] as const) {
       const m = (MESSAGES[locale] as unknown as { mission: Record<string, string> }).mission

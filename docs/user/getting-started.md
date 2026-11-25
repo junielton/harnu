@@ -46,13 +46,13 @@ Pinned folders live in the sidebar's flat folder list, alongside folders that ar
 
 ## Starting your first session
 
-Every folder row has a **+** for a new session (also reachable with `Cmd/Ctrl+N`, or by opening the [command palette](#the-command-palette) and searching). This opens a small confirm dialog: it shows the target folder, and an **Advanced** section you can expand to override the model or launch flags for just this one session. Press **Start** (or hit Enter) and Harnu spawns a plain `claude` process in that folder — this is your first session, from scratch, with nothing to resume.
+Right-click a checkout or folder header in the sidebar and choose **New session** (also reachable with `Cmd/Ctrl+N`, or by opening the [command palette](#the-command-palette) and searching). This opens a small confirm dialog: it shows the target folder, and an **Advanced** section you can expand to override the model or launch flags for just this one session. Press **Start** (or hit Enter) and Harnu spawns a plain `claude` process in that folder — this is your first session, from scratch, with nothing to resume.
 
 Sessions you've already had with Claude Code show up nested under their folder the moment you pin it — click one to resume it (`claude --resume <id>`) right where you left off. Each session row carries a status dot so you can tell at a glance what's going on: green pulsing means Claude is actively working, amber means it's waiting on you, red means it failed or got stuck, gray is idle, and a checkmark means it finished.
 
 ## The command palette
 
-`Cmd/Ctrl+K` opens a spotlight-style search over your recent sessions, folders, and available actions — the fastest way to jump around once you have more than a couple of folders pinned. A few other shortcuts worth knowing early: `Cmd/Ctrl+B` toggles the sidebar, and `Cmd/Ctrl+Shift+A` / `Cmd/Ctrl+Shift+B` both toggle the Fleet rail.
+`Cmd/Ctrl+K` opens a spotlight-style search over your recent sessions, folders, and available actions — the fastest way to jump around once you have more than a couple of folders pinned. A few other shortcuts worth knowing early: `Cmd/Ctrl+B` toggles the sidebar, and `Cmd/Ctrl+Shift+A` opens or folds the sidebar's **Needs you** section (see [Approvals](approval-inbox.md)).
 
 ## What's next
 

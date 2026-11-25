@@ -16,8 +16,7 @@ import { chromium } from 'playwright-core'
  *   - `npm run dev` is running with at least one folder + session visible.
  *
  * Selectors: session rows carry `[data-session-row]`; the sidebar toolbar's
- * drill toggle carries `[data-drill-toggle]`, its Hidden-folders trigger
- * carries `[data-sidebar-hidden-trigger]`.
+ * Hidden-folders trigger carries `[data-sidebar-hidden-trigger]`.
  */
 test('the sidebar is folder-first: one flat list, sessions directly under folders', async () => {
   const browser = await chromium.connectOverCDP('http://127.0.0.1:9222')

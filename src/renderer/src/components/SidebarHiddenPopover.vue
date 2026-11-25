@@ -22,8 +22,8 @@ import { groupByRepo, isFolderGroup } from '../stores/folder-zones'
  * the list. Unhiding still keeps the popover open, so several folders can be
  * restored in one visit.
  *
- * Design references: `design.md` §6 "Sidebar toolbar (rescan · drill depth ·
- * collapse-all · hidden)".
+ * Design references: `design.md` §6 "Sidebar toolbar (one-line header: rescan ·
+ * collapse cycle · hidden · search)".
  */
 
 const ui = useUiStore()

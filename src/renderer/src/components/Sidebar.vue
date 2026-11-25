@@ -6,28 +6,18 @@ import { useUiStore } from '../stores/ui'
 import { useKeybindingsStore } from '../stores/keybindings'
 import { useLayoutStore } from '../stores/layout'
 import { useClaudeChangelogStore } from '../stores/claudeChangelog'
-import SidebarFolder from './SidebarFolder.vue'
-import SidebarDrillView from './SidebarDrillView.vue'
+import SidebarTreeFolder from './SidebarTreeFolder.vue'
+import { densityMetrics } from './sidebar-density'
+import SidebarFocusBack from './SidebarFocusBack.vue'
 import SidebarJumpPalette from './SidebarJumpPalette.vue'
+import SidebarAttention from './SidebarAttention.vue'
+import SidebarNeedsYou from './SidebarNeedsYou.vue'
 import SidebarReturnZone from './SidebarReturnZone.vue'
-import RepoGroupHeader from './RepoGroupHeader.vue'
-import SidebarShelvedSection from './SidebarShelvedSection.vue'
 import WatcherStatusPill from './WatcherStatusPill.vue'
-import {
-  isFolderGroup,
-  nestByLineage,
-  type FolderGroup,
-  type LineageNode
-} from '../stores/folder-zones'
-import type { Folder } from '../stores/sessions'
-import { persistedSet } from '../stores/persisted'
 import {
   ChevronsDownUp,
   ChevronsUpDown,
-  Columns2,
-  Columns3,
   EyeOff,
-  ListTree,
   Plus,
   RefreshCw,
   Search,
@@ -46,46 +36,15 @@ const layout = useLayoutStore()
 const claudeChangelog = useClaudeChangelogStore()
 const { t } = useI18n()
 
-type ZoneNode = Folder | FolderGroup<Folder>
-
-function isGroup(node: ZoneNode): node is FolderGroup<Folder> {
-  return isFolderGroup(node)
-}
-
 /**
- * T191: worktree lineage — which mothers cut which children, within ONE
- * `FolderGroup`'s member list (D4: nesting never reaches across a zone or
- * repo, which falls out for free since a valid `bornFrom` edge is only ever
- * recorded between two worktrees of the SAME repo — see `nestByLineage`'s own
- * doc comment in `folder-zones.ts`). Collapse state persists by mother path,
- * mirroring the group collapse mechanism.
+ * The message that stands in for the rows (BUG-257): folders still loading, none at all, or a
+ * filter that leaves nothing of what the list shows (every folder, or the focused one).
  */
-const lineageCollapsed = persistedSet<string>('om2tab.lineageCollapsed')
-
-function withLineage(folders: Folder[]): Array<Folder | LineageNode<Folder>> {
-  return nestByLineage(folders, lineageCollapsed.set.value)
-}
-
-function isLineageNode(node: Folder | LineageNode<Folder>): node is LineageNode<Folder> {
-  return 'kind' in node && node.kind === 'lineage-nest'
-}
-
-function toggleLineage(motherPath: string): void {
-  lineageCollapsed.toggle(motherPath)
-}
-
-/**
- * Whether the folder list has a status message (loading / nothing yet / filter
- * matched nothing) to show instead of rows. The drill view mounts outside the
- * tree scroller (BUG-248), so on the ROOT screen this decides which of the two hosts
- * renders; a drilled screen keeps the drill view and shows the same status under its
- * Back row (BUG-257).
- */
-const treeStatus = computed(
-  () =>
-    sessions.folders.length === 0 ||
-    (sessions.visibleFolders.length === 0 && !!sessions.filterQuery.trim())
-)
+const listStatus = computed<'loading' | 'empty' | 'noMatch' | null>(() => {
+  if (sessions.folders.length === 0) return sessions.foldersLoading ? 'loading' : 'empty'
+  if (sessions.filterQuery.trim() && sessions.drawnTree.length === 0) return 'noMatch'
+  return null
+})
 
 const filterInputRef = ref<HTMLInputElement | null>(null)
 const asideRef = ref<HTMLElement | null>(null)
@@ -98,9 +57,27 @@ watch(
   async (path) => {
     if (!path) return
     await nextTick()
-    const sel = `[data-folder-path="${CSS.escape(path)}"]`
-    asideRef.value?.querySelector(sel)?.scrollIntoView({ block: 'nearest' })
+    const selector = `[data-folder-path="${CSS.escape(path)}"]`
+    const row =
+      asideRef.value?.querySelector(`${selector}[data-folder-head], ${selector} > button`) ??
+      asideRef.value?.querySelector(selector)
+    row?.scrollIntoView({ block: 'nearest' })
     sessions.clearRevealFolder()
+  }
+)
+
+// A repo that loses its last other worktree becomes a standalone folder, whose
+// open state is its own: carry the header's over, so it does not snap shut. Lives
+// here, not in the store, so the tree is only built while it is on screen.
+watch(
+  () => sessions.sidebarTree,
+  (next, previous) => {
+    if (sessions.filterQuery.trim()) return
+    for (const node of next) {
+      if (node.group) continue
+      const was = previous?.find((old) => old.group && old.paths.includes(node.primary.path))
+      if (was?.open) node.primary.expanded = true
+    }
   }
 )
 
@@ -137,16 +114,11 @@ watch(
     await nextTick()
     const [kind, ...rest] = signal.token.split(':')
     const value = rest.join(':')
-    // `data-folder-path` sits on the WRAPPER that holds the folder row AND its
-    // whole expanded session list, so flashing it would paint the entire block.
-    // The folder row is its only direct-child `<button>` — that is the row the
-    // spec means. A headerless folder (drill-in depth 2 renders the folder's
-    // sessions without its header) has no such button, and then there is
-    // genuinely no row to flash.
+    const path = `[data-folder-path="${CSS.escape(value)}"]`
     const sel =
       kind === 'session'
         ? `[data-session-id="${CSS.escape(value)}"]`
-        : `[data-folder-path="${CSS.escape(value)}"] > button`
+        : `${path}[data-folder-head], ${path} > button`
     const el = asideRef.value?.querySelector(sel)
     sessions.clearJumpFlash()
     if (!(el instanceof HTMLElement)) return
@@ -161,19 +133,56 @@ watch(
   }
 )
 
+// The arrow cursor and keyboard focus draw the same bar (design.md §6 "Row states"),
+// so only one row may show it: a row still holding DOM focus (it was clicked) gives it
+// up when the cursor moves elsewhere.
+watch(
+  () => sessions.keyboardCursor,
+  async (cursor) => {
+    if (!cursor) return
+    await nextTick()
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement) || !asideRef.value?.contains(active)) return
+    const row = active.closest('[data-row-bar]')
+    if (row && row.getAttribute('data-focused') !== 'true') active.blur()
+  }
+)
+
 // The header buttons and their keyboard bindings (App.vue) run the same functions.
-const { rescanning, anyExpanded, rescan, toggleCollapseAll, toggleJump, toggleHiddenFolders } =
+const { rescanning, rescan, toggleCollapseAll, toggleJump, toggleHiddenFolders } =
   useSidebarActions()
 
-/**
- * Drill button label. At depth 0 it names the action ("turn on"); at 1–2 it
- * names the CURRENT level, since the click advances rather than toggles.
- */
-const drillLabel = computed(() =>
-  sessions.drillDepth === 0
-    ? t('sidebar.toolbar.drillOn')
-    : t('sidebar.toolbar.drillLevel', { level: sessions.drillDepth, max: 2 })
+const collapseLabel = computed(() => {
+  if (sessions.collapseLevel === 2) return t('sidebar.menu.collapseSessions')
+  if (sessions.collapseLevel === 1) return t('sidebar.menu.collapseFolders')
+  return t('sidebar.menu.expandAll')
+})
+
+const willCollapse = computed(() => sessions.collapseLevel > 0)
+
+/** A newly focused folder starts at the top of the list, under its back row. */
+const treeRef = ref<HTMLElement | null>(null)
+watch(
+  () => sessions.sidebarFocus,
+  (path) => {
+    if (path !== null && treeRef.value) treeRef.value.scrollTop = 0
+  },
+  { flush: 'post' }
 )
+
+const treeHeaderHeight = computed(() => densityMetrics(sessions.sidebarDensity).folderRowHeight)
+
+// What the dock sections must leave the list island (design.md "Bottom dock"): the folder list's
+// own minimum plus Needs attention at its full height (a 37px head, and up to six 28px rows), so
+// an open dock body scrolls before a session that needs the operator leaves the screen. The cap
+// keeps both dock heads and Add folder (111px) on screen: only on a very short window does Needs
+// attention give way, down to its head.
+const listIslandMinHeight = computed(() => {
+  const rows = sessions.attentionSessions.length
+  if (rows === 0) return 'min(160px, 40vh)'
+  const attention = 37 + (layout.attentionOpen ? Math.min(rows * 28, 168) : 0)
+  return `min(calc(min(160px, 40vh) + ${attention}px), calc(100% - 111px))`
+})
 
 // `⇥` in the jump palette flips `filterActive` on from outside this component;
 // focus the input once it renders so the operator can keep typing.
@@ -214,7 +223,7 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
   >
     <!-- Header (42px) — ONE row (T288): the old separate toolbar row merged into
          it, so the tree starts directly under the header. Order, right-aligned:
-         rescan · drill depth · collapse-all · hidden(n) · divider · search, with
+         rescan · collapse cycle · hidden(n) · divider · search, with
          search LAST. It still morphs to the inline filter input, which is now
          reached only via the jump palette's `⇥` fallback. On macOS the left
          padding also clears the window controls (traffic lights), which the
@@ -227,11 +236,12 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
     <SidebarJumpPalette />
     <div
       class="flex min-h-0 flex-1 flex-col"
-      style="min-height: min(160px, 40vh)"
+      :style="{ minHeight: listIslandMinHeight }"
       data-island="sidebar-list"
     >
       <header
         role="toolbar"
+        data-dsqa-part="toolbar"
         data-island-head="sidebar-toolbar"
         data-island-band
         :aria-label="$t('sidebar.menu.label')"
@@ -254,39 +264,22 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
               <RefreshCw :size="14" :stroke-width="1.7" :class="rescanning ? 'anim-spin' : ''" />
             </button>
             <button
-              data-drill-toggle
-              class="flex items-center justify-center rounded transition"
-              :class="
-                sessions.drillDepth > 0
-                  ? 'bg-accent-soft text-accent'
-                  : 'text-text-4 hover:bg-surface hover:text-text'
-              "
-              style="width: 26px; height: 26px"
-              :title="keybindings.withChord(drillLabel, 'sidebar.cycleDrillDepth')"
-              :aria-label="drillLabel"
-              @click="sessions.cycleDrillDepth()"
-            >
-              <Columns3 v-if="sessions.drillDepth === 2" :size="14" :stroke-width="1.7" />
-              <Columns2 v-else-if="sessions.drillDepth === 1" :size="14" :stroke-width="1.7" />
-              <ListTree v-else :size="14" :stroke-width="1.7" />
-            </button>
-            <button
-              v-if="sessions.drillDepth < 2"
-              class="flex items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
-              style="width: 26px; height: 26px"
-              :title="
-                keybindings.withChord(
-                  anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll'),
-                  'sidebar.toggleCollapseAll'
-                )
-              "
-              :aria-label="
-                anyExpanded ? $t('sidebar.menu.collapseAll') : $t('sidebar.menu.expandAll')
-              "
+              :data-collapse-level="sessions.collapseLevel"
+              class="relative flex size-[26px] items-center justify-center rounded text-text-4 transition hover:bg-surface hover:text-text"
+              :title="keybindings.withChord(collapseLabel, 'sidebar.toggleCollapseAll')"
+              :aria-label="collapseLabel"
               @click="toggleCollapseAll"
             >
-              <ChevronsDownUp v-if="anyExpanded" :size="14" :stroke-width="1.7" />
+              <ChevronsDownUp v-if="willCollapse" :size="14" :stroke-width="1.7" />
               <ChevronsUpDown v-else :size="14" :stroke-width="1.7" />
+              <span class="absolute bottom-0.5 flex gap-0.5" aria-hidden="true">
+                <span
+                  v-for="dot in sessions.collapseLevel + 1"
+                  :key="dot"
+                  data-level-dot
+                  class="size-0.5 rounded-full bg-current"
+                />
+              </span>
             </button>
             <button
               data-sidebar-hidden-trigger
@@ -360,97 +353,56 @@ const { dragOver, onDragOver, onDragLeave, onDrop } = useFolderDrop()
         </template>
       </header>
 
-      <!-- Tree (folder view). In drill mode the drill view owns its own scroller so
-         its Back row can sit ABOVE it (BUG-248); this wrapper then only mounts to
-         host the loading / empty states while the root screen has nothing to show. -->
-      <div
-        v-if="!sessions.drillModeEnabled || (treeStatus && sessions.drillStack.length === 0)"
-        class="scrollable flex-1 overflow-y-auto"
-        style="padding: 6px 0"
-      >
-        <template v-if="sessions.folders.length === 0 && sessions.foldersLoading">
-          <div data-sidebar-loading class="flex h-full flex-col items-center justify-center gap-3">
-            <RefreshCw :size="20" :stroke-width="1.5" class="text-accent anim-spin" />
-            <div class="text-text-3" style="font-size: 11.5px">{{ $t('sidebar.loading') }}</div>
-          </div>
-        </template>
-        <template v-else-if="sessions.folders.length === 0">
-          <div class="text-text-3" style="padding: 14px 12px; font-size: 11.5px; line-height: 1.5">
-            {{ $t('sidebar.emptyShort') }}
-          </div>
-        </template>
-        <template v-else-if="sessions.visibleFolders.length === 0 && sessions.filterQuery.trim()">
-          <div class="text-text-3" style="padding: 14px 12px; font-size: 11.5px; line-height: 1.5">
-            {{ $t('sidebar.filter.empty') }}
-          </div>
-        </template>
+      <!-- Needs attention: pinned under the toolbar, outside the scroller, so it never leaves the
+         screen with the tree. Part of the list island (design.md §6 "Needs attention"). -->
+      <SidebarAttention />
 
-        <!-- Single flat list: every visible folder (pinned ∪ active), one
-           classify → sort → groupByRepo → groupByParentDir pass (BUG-39,
-           T182). No section header, no zone divider, no visual distinction
-           between a pinned and a merely-active folder. Replaced by
-           SidebarDrillView when drill-in mode is on (design.md §6). -->
-        <template v-if="!sessions.drillModeEnabled">
-          <template
-            v-for="node in sessions.visibleFolders"
-            :key="isGroup(node) ? node.key : node.path"
-          >
-            <template v-if="isGroup(node)">
-              <RepoGroupHeader :group="node" />
-              <div
-                class="overflow-hidden transition-[max-height] duration-300 ease-out"
-                :style="{ maxHeight: node.expanded ? '4000px' : '0' }"
-              >
-                <!-- T191: worktree lineage — a mother's fork badge + its children,
-                   indented one level with a guide line, nested within this repo
-                   group's member list (design.md § "Worktree lineage"). -->
-                <template
-                  v-for="ln in withLineage(node.folders)"
-                  :key="isLineageNode(ln) ? ln.mother.path : ln.path"
-                >
-                  <template v-if="isLineageNode(ln)">
-                    <SidebarFolder
-                      :folder="ln.mother"
-                      nested
-                      :lineage-child-count="ln.children.length"
-                      :lineage-expanded="ln.expanded"
-                      @toggle-lineage="toggleLineage(ln.mother.path)"
-                    />
-                    <div
-                      v-if="ln.expanded"
-                      class="border-l border-border-2"
-                      style="margin-left: 20px"
-                    >
-                      <SidebarFolder
-                        v-for="c in ln.children"
-                        :key="c.path"
-                        :folder="c"
-                        nested
-                        lineage-child
-                      />
-                    </div>
-                  </template>
-                  <SidebarFolder v-else :folder="ln" nested />
-                </template>
-                <!-- U2.3b: the repo group's shelved worktrees — always the LAST block, after any
-                   lineage children (design.md § "Shelved section"). -->
-                <SidebarShelvedSection v-if="node.shelved?.length" :group="node" />
-              </div>
-            </template>
-            <SidebarFolder v-else :folder="node" />
-          </template>
-        </template>
+      <!-- Tree (folder view): every folder, or the focused one under its back row. -->
+      <div
+        ref="treeRef"
+        data-dsqa-part="tree"
+        class="scrollable sidebar-tree-scroll flex-1 overflow-y-auto"
+        :class="listStatus && 'flex flex-col'"
+        :style="{
+          '--sidebar-tree-header-height': `${treeHeaderHeight}px`,
+          '--sidebar-tree-back-height': sessions.sidebarFocus === null ? '0px' : '35px',
+          minHeight: 'calc(min(160px, 40vh) - 42px)'
+        }"
+      >
+        <!-- Spacer elements, not padding, so the sticky rows stick flush. A status message
+             fills what is left of the list on its own. -->
+        <div
+          v-if="!listStatus || sessions.sidebarFocus !== null"
+          class="h-2 shrink-0"
+          aria-hidden="true"
+        />
+        <SidebarFocusBack v-if="sessions.sidebarFocus !== null" />
+        <div
+          v-if="listStatus === 'loading'"
+          data-sidebar-loading
+          class="flex flex-1 flex-col items-center justify-center gap-3"
+        >
+          <RefreshCw :size="20" :stroke-width="1.5" class="text-accent anim-spin" />
+          <div class="text-text-3" style="font-size: 11.5px">{{ $t('sidebar.loading') }}</div>
+        </div>
+        <div
+          v-else-if="listStatus"
+          data-sidebar-status
+          class="text-text-3"
+          style="padding: 14px 12px; font-size: 11.5px; line-height: 1.5"
+        >
+          {{ listStatus === 'empty' ? $t('sidebar.emptyShort') : $t('sidebar.filter.empty') }}
+        </div>
+
+        <SidebarTreeFolder v-for="tree in sessions.drawnTree" :key="tree.key" :tree="tree" />
+        <div v-if="!listStatus" class="h-2" aria-hidden="true" />
       </div>
-      <SidebarDrillView
-        v-if="sessions.drillModeEnabled && !(treeStatus && sessions.drillStack.length === 0)"
-      />
     </div>
 
-    <!-- RETURN HERE zone (T37 — closure axis, T660) — forgotten needs-input sessions. Sits at the
-         BOTTOM, between the list island and the dock, so it never competes with the toolbar. It
-         self-hides when the forgotten set is empty (calm-tech). It is a resizable, collapsible
-         `SidebarSection` (T702); the list island above keeps a minimum height (`min-height` on it,
-         design.md §6 "Sidebar sections") so dragging the section taller never squeezes it away. -->
+    <!-- The bottom dock (design.md §6 "Bottom dock"): Needs you, Return here, then Add folder.
+         Each of the two is absent while empty and folded until the operator opens it; the list
+         island above keeps a minimum height, so an open body never squeezes it away. -->
+    <SidebarNeedsYou />
     <SidebarReturnZone />
 
     <!-- Dock (design.md §6 "Sidebar dock (slot)"): the lower island is a slot that stacks N

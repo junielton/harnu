@@ -53,7 +53,6 @@ const STUBS = Object.fromEntries(
     'CloudSessionPanel',
     'Onboarding',
     'TakeoverHost',
-    'InboxRail',
     'HelperStack',
     'TerminalPane',
     'SessionPreview',

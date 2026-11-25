@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * BUG-276: the Return here eyebrow (`RETURN HERE · <count> · <oldest clock>`) wrapped onto two
- * lines in a narrow sidebar ("RETURN" / "HERE"). jsdom does no layout, so this pins the classes
- * that keep it on one line: the row never wraps, the title is the only part that gives way (with
- * an ellipsis), the count and the clock stay whole, and the chevron stays visible at the end.
+ * BUG-276: the Return here head (label, count, oldest clock) wrapped onto two lines in a narrow
+ * sidebar ("RETURN" / "HERE"). jsdom does no layout, so this pins the classes that keep it on one
+ * line: the row never wraps, the title is the only part that gives way (with an ellipsis), the
+ * count and the clock stay whole, and the chevron stays visible at the end.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
@@ -63,7 +63,7 @@ describe('Return here eyebrow never wraps (BUG-276)', () => {
     expect(row.classList.contains('min-w-0')).toBe(true)
 
     // The title is the one part that truncates; it must be able to shrink below its text.
-    const [title, , count, , clock] = Array.from(line.element.children) as HTMLElement[]
+    const [title, count, clock] = Array.from(line.element.children) as HTMLElement[]
     expect(title.classList.contains('min-w-0')).toBe(true)
     expect(title.classList.contains('truncate')).toBe(true)
 
@@ -72,8 +72,8 @@ describe('Return here eyebrow never wraps (BUG-276)', () => {
     expect(clock.classList.contains('shrink-0')).toBe(true)
   })
 
-  it('keeps the collapse chevron from shrinking', async () => {
+  it('keeps the open chevron from shrinking', async () => {
     const w = await mountZone()
-    expect(w.get('[data-section-toggle]').classes()).toContain('shrink-0')
+    expect(w.get('[data-dock-chevron]').classes()).toContain('shrink-0')
   })
 })

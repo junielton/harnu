@@ -186,6 +186,8 @@ export interface FolderMenuState {
   open: boolean
   /** Absolute path of the project this menu targets. */
   projectPath: string | null
+  /** Repo header that opened this menu, when applicable. */
+  groupKey?: string
   /** Anchor coordinates (viewport). */
   x: number
   y: number
@@ -216,7 +218,7 @@ export interface SidebarJumpPaletteState {
 /**
  * The anchored popovers whose open flag lives here (T486 U4a, spec §3.5 / §6.1):
  * the Topbar's Activity bell and Mission pill, the footer's pasted images, links shelf,
- * Claude service status and plan usage, and the Fleet rail's state filter. Each
+ * Claude service status and plan usage. Each
  * component keeps its own Esc and click-outside handlers; the flag moved here so
  * a keybinding can open the popover and so `anyPopoverOpen` can tell the App's
  * Esc binding (U4b `view.closeTakeover`) that a popover owns this Esc.
@@ -232,8 +234,7 @@ export const POPOVER_IDS = [
   'links',
   'claudeStatus',
   'usagePanel',
-  'githubBudget',
-  'inboxFilter'
+  'githubBudget'
 ] as const
 export type PopoverId = (typeof POPOVER_IDS)[number]
 
@@ -421,12 +422,9 @@ export const useUiStore = defineStore('ui', () => {
     () => POPOVER_IDS.some((id) => popovers.value[id]) || imageLightboxIndex.value !== null
   )
 
-  // NOTE (T83 S0): the Approval Inbox used to be a first-level floating surface
-  // here (`inbox: { open }`). It is now the Inbox rail — a persistent fourth
-  // COLUMN, so its state is layout, not mutex (`stores/layout.ts`
-  // `inboxRailState`). Nothing in this store may close, suppress, or otherwise
-  // "own" it: it is always on screen, so putting it back in the mutex would mean
-  // every dialog/palette/menu open silently hides the approval queue.
+  // NOTE: pending approvals are NOT a floating surface. They sit in the sidebar's bottom dock
+  // (design.md §6 "Bottom dock"), whose open state is layout (`stores/layout.ts`), so no
+  // dialog, palette or menu open ever hides or closes the queue.
 
   // Main-pane "takeover" views (T80 S1 §4, T47 P6 S2, T127 S2, Reaper PR3, T198,
   // T164, T295) — seven views that replace the transcript area, mutually exclusive with
@@ -769,14 +767,19 @@ export const useUiStore = defineStore('ui', () => {
    * and folder menu are all mutually exclusive — only one can be visible
    * at a time.
    */
-  function openFolderMenu(opts: { projectPath: string; x: number; y: number }): void {
+  function openFolderMenu(opts: {
+    projectPath: string
+    x: number
+    y: number
+    groupKey?: string
+  }): void {
     preview.value = { open: false, sessionId: null, folderPath: null, rect: null }
     dialog.value = null
     palette.value = { open: false }
     sidebarHiddenPopover.value = { open: false, anchorRect: null }
     sidebarJumpPalette.value = { open: false }
     menu.value = { open: false, sessionId: null, x: 0, y: 0 }
-    folderMenu.value = { open: true, projectPath: opts.projectPath, x: opts.x, y: opts.y }
+    folderMenu.value = { open: true, ...opts }
   }
 
   function closeFolderMenu(): void {
@@ -1003,8 +1006,8 @@ export const useUiStore = defineStore('ui', () => {
    * opened a view also closes it, so a persistent affordance behaves like the
    * toggle it visually is (the Topbar's own sidebar/helper buttons already do).
    *
-   * Deliberately NOT used by the menu entries (`FolderMenu`, `SessionMenu`,
-   * `RepoGroupHeader`) or by `openNavigableView` — a menu item labelled
+   * Deliberately NOT used by the menu entries (`FolderMenu`, `SessionMenu`)
+   * or by `openNavigableView` — a menu item labelled
    * "Roadmap board" and a notification that navigates to a view must OPEN it,
    * never close whatever happens to be on screen.
    *

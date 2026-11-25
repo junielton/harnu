@@ -98,11 +98,11 @@ describe('matchesShortcutQuery', () => {
   })
 
   it('matches text case-insensitively against label, rendered chord and id', () => {
-    const row = { id: 'view.fleetRail', keys: 'Cmd+Shift+B', scope: 'global' as const }
+    const row = { id: 'view.usageDashboard', keys: 'Cmd+Shift+B', scope: 'global' as const }
     expect(
-      matchesShortcutQuery(row, 'Toggle the Fleet rail', parseShortcutQuery('FLEET'), MAC)
+      matchesShortcutQuery(row, 'Open the usage dashboard', parseShortcutQuery('USAGE'), MAC)
     ).toBe(true)
-    expect(matchesShortcutQuery(row, 'x', parseShortcutQuery('fleetrail'), MAC)).toBe(true)
+    expect(matchesShortcutQuery(row, 'x', parseShortcutQuery('usagedashboard'), MAC)).toBe(true)
     // Rendered off macOS as "Ctrl+Shift+B"; `shift` alone is a word, not a chord.
     expect(matchesShortcutQuery(row, 'x', parseShortcutQuery('shift'), MAC)).toBe(true)
     expect(matchesShortcutQuery(row, 'x', parseShortcutQuery('nothing'), MAC)).toBe(false)
@@ -202,7 +202,7 @@ function inGroupOrder(ids: string[]): string[] {
 describe('search (AC-4, AC-5)', () => {
   it('text mode keeps rows whose label, rendered chord or id contains the query', async () => {
     const w = await mountPane()
-    for (const q of ['session', 'PALETTE', 'cursor', 'ctrl', 'fleetRail']) {
+    for (const q of ['session', 'PALETTE', 'cursor', 'ctrl', 'toggleSidebar']) {
       await searchFor(w, q)
       const needle = q.toLowerCase()
       const expected = list()
@@ -315,7 +315,7 @@ describe('groups (AC-6)', () => {
 describe('chips (AC-7)', () => {
   const OVERRIDES: RawOverrideEntry[] = [
     { command: 'session.new', key: null },
-    { command: 'view.review', key: 'Cmd+Shift+B' },
+    { command: 'view.review', key: 'Cmd+B' },
     { command: 'folder.browseFiles', key: 'Cmd+Shift+O' }
   ]
 
@@ -326,9 +326,9 @@ describe('chips (AC-7)', () => {
     const unbound = list().filter((b) => b.keys === null).length
     const conflicts = list().filter((b) => b.conflictsWith.length > 0).length
     const customized = list().filter((b) => b.source !== 'default').length
-    expect([unbound, conflicts, customized]).toEqual([83, 2, 3])
+    expect([unbound, conflicts, customized]).toEqual([79, 2, 3])
     await searchFor(w, 'zzz')
-    expect(chip(w, 'unbound').text()).toBe('Unbound 83')
+    expect(chip(w, 'unbound').text()).toBe('Unbound 79')
     expect(chip(w, 'conflicts').text()).toBe('Conflicts 2')
     expect(chip(w, 'customized').text()).toBe('Customized 3')
   })
@@ -347,7 +347,7 @@ describe('chips (AC-7)', () => {
     await chip(w, 'unbound').trigger('click')
 
     await chip(w, 'conflicts').trigger('click')
-    expect(new Set(rowIds(w))).toEqual(new Set(['view.fleetRail', 'view.review']))
+    expect(new Set(rowIds(w))).toEqual(new Set(['view.toggleSidebar', 'view.review']))
     await chip(w, 'conflicts').trigger('click')
 
     await chip(w, 'customized').trigger('click')

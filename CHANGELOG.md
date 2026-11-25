@@ -12,10 +12,34 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-25
 
+### Added
+
+- **Focus on one folder.** A target button on a folder header (shown on hover or keyboard focus, also **Focus this folder** in the folder menu) narrows the sidebar to that folder. The **All folders** row pinned at the top brings the full list back and says how many other folders there are, how many need you and how many failed. Selecting a session of another folder leaves Focus, and the focused folder is remembered across restarts. On a narrow sidebar that row drops its less important words first, so the needs-you and failed counts stay readable; keyboard focus follows you in and out.
+- **Needs attention** at the top of the sidebar lists the sessions that need your input or have failed, from every folder, one line each: waiting ones first. Click a row to go to the session. It disappears when nothing needs you.
+- **Needs you** and **Return here** now sit at the bottom of the sidebar, above Add folder, folded to a line with the count and the age of the oldest item, and gone while empty. `Cmd/Ctrl+Shift+A`, the **Open approvals** command and a click on the system notification open Needs you (and expand a collapsed sidebar); it never opens by itself. A pending `Bash` approval shows the whole command on its own line, however long (other tools show a path, a first argument or their name), with Allow and Deny under it, at every sidebar width.
+- A checkout with something happening in it now has a thin coloured bar down its left edge, covering its row and its sessions: dim green while an agent works there, amber when a session needs you, red when one failed. Idle and finished checkouts show nothing, and neighbouring checkouts never share a bar.
+
 ### Fixed
 
+- Worktrees with no session no longer disappear from the sidebar after the window reloads.
 - **The bake-off author sandbox keeps skill references out of its working copy.** The mission v4 mockup files and tests that name the skill are excluded from the sandbox archive.
 - Opening the Usage Dashboard no longer freezes Harnu when the turn ledger is large. The ledger, which corrects the estimated cost with the totals Claude Code measured, is now read off the main process, so typing and terminal output keep flowing while the dashboard loads. In tests with a large ledger and measured costs in use, the app could previously stop responding for more than a minute. The numbers are the same as before.
+
+### Changed
+
+- **Light themes are easier to read in the sidebar.** The working bar of a checkout no longer fades into the guide line beside it; the selected-session bar is blue where the orange one looked like a failure (Light, Catppuccin Latte, Gruvbox Light); and branch names, folder names, counts and the amber needs-you text are darker. Across the whole app in these themes, small grey text is darker, and so is amber (GitHub Light keeps its amber). Dark themes look as before.
+- A folder with nothing to commit now reads **clean** in the Folder View and in the folder hover card (it read “no changes”).
+- **The Folder View is slimmer.** Clicking a folder header now shows its name, branch, git summary, path, its actions and, when the repo has a board, one roadmap line. The KPI tiles, the worktrees table, the sessions list, "Where we left off", the activity chart, the card the branch owns and the roadmap's card list are gone from it. PR Stack, Open in your editor and Open folder moved under the **…** button.
+- Drill-in is gone: the depth button in the sidebar header, its screens and the `sidebar.cycleDrillDepth` shortcut are replaced by **Focus on one folder**. A shortcut you had bound to it is now ignored.
+- The Fleet rail on the right is gone, with its minimized strip, divider, state filter, order toggle and mission-grants strip: fleet state is in the sidebar, and grants are listed and revoked in **Settings → MCP**. The `Cmd/Ctrl+Shift+B` shortcut and the commands that only drove the rail are removed. The interceptor still records its preview (shadow) log, but its **Would-have** list and the **Review shadow log** button are gone from the screen for now.
+- Hover, selection and keyboard focus in the sidebar now show a bar on the left and brighten the row label, without filling the row or moving its contents.
+- The sidebar is now a flat checkout tree. Each repository or folder has one header, with the main checkout first and its worktrees flat below it, and each checkout's sessions under it, joined by a thin guide line. Parent-directory groups and the indented worktree lineage are no longer drawn (**Set parent folder** is still in the menu).
+- Worktrees with no listed session fold into one **n idle worktrees** row. The main checkout always keeps its own row, and a worktree that gains a session comes out of the fold on its own.
+- A folder header shows a ring for the hottest session inside it, stays on screen while you scroll its checkouts, and opens the folder's view when clicked. Only its chevron collapses it. Clicking a checkout folds or unfolds its sessions.
+- Counts and chevrons share one slot at the right edge: you see the count at rest and the chevron on hover or keyboard focus, with nothing moving.
+- The mission chip on a session row is now just **⚠ n** (what the mission owes you); hover the row to see the mission's progress with it, as **2/5 · ⚠ 7**. The orchestrator crown has its own place at the right edge, and the subagent count is what opens and closes the subagent rows.
+- The collapse button in the sidebar toolbar now steps through three levels (everything open, sessions folded, folders folded), with dots under the icon showing the level. It works the same while a text filter is on, and a folder you close then stays closed until you change the filter.
+- **New session**, **Show older** and **Show archived** moved from the folder row's hover icons into the checkout's right-click menu. **Rename repo**, **Reset name** and **Clean up** are in the folder header's right-click menu.
 
 ## 2026-11-24
 

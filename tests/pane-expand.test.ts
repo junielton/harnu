@@ -332,7 +332,6 @@ const APP_STUBS = Object.fromEntries(
     'CloudSessionPanel',
     'Onboarding',
     'TakeoverHost',
-    'InboxRail',
     'HelperStack',
     'TerminalPane',
     'SessionPreview',
@@ -641,7 +640,7 @@ describe('variants', () => {
     }
   })
 
-  it('everything: the sidebar, the session area and the Fleet rail collapse', async () => {
+  it('everything: the sidebar and the session area collapse', async () => {
     const { w, ids } = await mountApp()
     const helpers = useHelpersStore()
     expect(typeof helpers.toggleExpandPane).toBe('function')
@@ -652,10 +651,9 @@ describe('variants', () => {
     expect(w.get('[data-app-shell]').attributes('data-expand')).toBe('everything')
     expect(session().classes()).toContain('lm-collapse')
     expect(w.get('sidebar-stub').classes()).toContain('lm-collapse-w')
-    expect(w.get('[data-rail-column]').classes()).toContain('lm-collapse-w')
     // The dividers that touched a collapsed column collapse with it.
     const dividers = w.findAll('[role="separator"]')
-    expect(dividers.length).toBeGreaterThanOrEqual(3)
+    expect(dividers.length).toBeGreaterThanOrEqual(2)
     expect(dividers.every((d) => /lm-collapse/.test(d.classes().join(' ')))).toBe(true)
     // Topbar and footer are never collapsed.
     expect(w.findAll('[data-app-shell] > :last-child.lm-collapse')).toHaveLength(0)
@@ -664,10 +662,21 @@ describe('variants', () => {
     await flushPromises()
     expect(w.get('[data-app-shell]').attributes('data-expand')).toBeUndefined()
     expect(session().classes()).not.toContain('lm-collapse')
-    expect(w.get('[data-rail-column]').classes()).not.toContain('lm-collapse-w')
   })
 
-  it('session-only: only the session area collapses; the sidebar and the Fleet rail stay', async () => {
+  it('opening Needs you leaves an expand that hides the sidebar', async () => {
+    const { w, ids } = await mountApp()
+    const helpers = useHelpersStore()
+    helpers.toggleExpandPane(FOLDER, ids[0])
+    await flushPromises()
+    expect(w.get('[data-app-shell]').attributes('data-expand')).toBe('everything')
+
+    useLayoutStore().openNeedsYou()
+    await flushPromises()
+    expect(w.get('[data-app-shell]').attributes('data-expand')).toBeUndefined()
+  })
+
+  it('session-only: only the session area collapses; the sidebar stays', async () => {
     const { w, ids } = await mountApp()
     const helpers = useHelpersStore()
     expect(typeof useSettingsStore().setExpandHides).toBe('function')
@@ -676,7 +685,6 @@ describe('variants', () => {
     await flushPromises()
     expect(w.get('[data-app-shell]').attributes('data-expand')).toBe('session-only')
     expect(w.get('[data-island="session"]').classes()).toContain('lm-collapse')
-    expect(w.get('[data-rail-column]').classes()).not.toContain('lm-collapse-w')
     expect(w.get('sidebar-stub').classes()).not.toContain('lm-collapse-w')
   })
 
@@ -983,7 +991,7 @@ describe('motion controller', () => {
     expect(browserDrag).toHaveBeenCalledTimes(2)
   })
 
-  it('maximize, sidebar collapse and Fleet rail minimize start a motion too; a divider drag does not', async () => {
+  it('maximize and sidebar collapse start a motion too; a divider drag does not', async () => {
     const { w, ids } = await mountApp()
     const layout = useLayoutStore()
     const helpers = useHelpersStore()
@@ -997,10 +1005,9 @@ describe('motion controller', () => {
     }
     expect(await motionAfter(() => helpers.toggleMaximizePane(FOLDER, ids[0]))).toBe(true)
     expect(await motionAfter(() => layout.setSidebarCollapsed(true))).toBe(true)
-    expect(await motionAfter(() => layout.setInboxRailState('minimized'))).toBe(true)
-    expect(await motionAfter(() => layout.setInboxRailState('expanded'))).toBe(true)
+    expect(await motionAfter(() => layout.setSidebarCollapsed(false))).toBe(true)
 
-    // Dragging the Fleet rail divider changes its width on every move and never animates.
+    // Dragging a divider changes a width on every move and never animates.
     const divider = w.findAll('[role="separator"][aria-orientation="vertical"]').pop()!
     const move = async (): Promise<boolean> => {
       divider.element.dispatchEvent(

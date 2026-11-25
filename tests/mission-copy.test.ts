@@ -68,7 +68,7 @@ function sessionFolder(): Folder {
 async function mountSidebar(v: MissionView): Promise<void> {
   seed(v)
   wrapper = mount(SidebarFolder, {
-    props: { folder: sessionFolder(), headerless: true },
+    props: { folder: sessionFolder() },
     global: { plugins: [i18n] },
     attachTo: document.body
   })
@@ -76,6 +76,7 @@ async function mountSidebar(v: MissionView): Promise<void> {
 }
 
 const chip = (): DOMWrapper<Element> => body().get('[data-dsqa="sidebar-mission-chip"]')
+const full = (): DOMWrapper<Element> => body().get('[data-mission-full]')
 const toneText = (el: DOMWrapper<Element>): string[] =>
   el.classes().filter((c) => /^text-(accent|warning|green|text-3)$/.test(c))
 
@@ -94,17 +95,18 @@ describe('AC-2 — the sidebar chip', () => {
   it('faq-like reads 8/9 in the accent tone', async () => {
     const v = fixtureView('faq-like')
     await mountSidebar(v)
-    expect(chip().text()).toBe('8/9')
+    expect(full().text()).toBe('Step 8 of 9')
+    expect(chip().find('[data-mission-count]').exists()).toBe(false)
     expect(chip().attributes('aria-label')).toBe('Mission: Step 8 of 9')
-    expect(toneText(chip())).toEqual(['text-accent'])
+    expect(toneText(full())).toEqual(['text-accent'])
   })
 
   it.each([
-    ['parallel', '4–7/9'],
-    ['delivered', '5/5 ✓']
+    ['parallel', 'Steps 4–7 of 9'],
+    ['delivered', 'Step 5 of 5 ✓']
   ] as const)('%s chip reads %s', async (name, text) => {
     await mountSidebar(fixtureView(name))
-    expect(chip().text()).toBe(text)
+    expect(full().text()).toBe(text)
   })
 
   it('needs-you: the chip turns warning and is pinned', async () => {
@@ -112,20 +114,21 @@ describe('AC-2 — the sidebar chip', () => {
       view: { you: [{ kind: 'checks', count: 1, stepIds: ['stp-4'] }] }
     })
     await mountSidebar(v)
-    expect(toneText(chip())).toEqual(['text-warning'])
-    expect(chip().classes()).toContain('opacity-100')
+    expect(toneText(full())).toEqual(['text-warning'])
+    expect(chip().get('[data-mission-count]').text()).toBe('1')
+    expect(chip().find('svg.lucide-triangle-alert').exists()).toBe(true)
     expect(chip().attributes('aria-label')).toBe('Mission: Step 8 of 9 — needs you')
   })
 
-  it('a delivered mission awaiting its close: green, pinned, no warning mark', async () => {
+  it('a delivered mission awaiting its close: green full text, pinned owed count', async () => {
     const v = fixtureView('delivered', {
       mission: { status: 'delivered' },
       view: { you: [{ kind: 'close' }], closeWarnings: [] }
     })
     await mountSidebar(v)
-    expect(toneText(chip())).toEqual(['text-green'])
-    expect(chip().classes()).toContain('opacity-100')
-    expect(chip().find('svg').exists()).toBe(false)
+    expect(toneText(full())).toEqual(['text-green'])
+    expect(chip().get('[data-mission-count]').text()).toBe('1')
+    expect(chip().find('svg.lucide-triangle-alert').exists()).toBe(true)
   })
 
   it('an empty mission renders no chip', async () => {

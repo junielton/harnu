@@ -1,4 +1,4 @@
-import { computed, nextTick, ref, type ComputedRef, type Ref } from 'vue'
+import { nextTick, ref, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionsStore } from '../stores/sessions'
 import { useUiStore } from '../stores/ui'
@@ -15,7 +15,6 @@ const rescanning = ref(false)
 
 export interface SidebarActions {
   rescanning: Ref<boolean>
-  anyExpanded: ComputedRef<boolean>
   rescan: () => Promise<void>
   toggleCollapseAll: () => void
   toggleJump: () => void
@@ -28,8 +27,6 @@ export function useSidebarActions(): SidebarActions {
   const ui = useUiStore()
   const layout = useLayoutStore()
   const { t } = useI18n()
-
-  const anyExpanded = computed<boolean>(() => sessions.folders.some((f) => f.expanded === true))
 
   /**
    * Rescan folders (BUG-55 AC6) — the manual refresh, the escape hatch for any
@@ -48,8 +45,8 @@ export function useSidebarActions(): SidebarActions {
   }
 
   function toggleCollapseAll(): void {
-    if (anyExpanded.value) sessions.collapseAll()
-    else sessions.expandAll()
+    const level = sessions.collapseLevel
+    sessions.setCollapseLevel(level === 0 ? 2 : level === 2 ? 1 : 0)
   }
 
   /**
@@ -101,7 +98,6 @@ export function useSidebarActions(): SidebarActions {
 
   return {
     rescanning,
-    anyExpanded,
     rescan,
     toggleCollapseAll,
     toggleJump,

@@ -37,7 +37,7 @@ This used to be a real bug: an app launched from your desktop or Dock doesn't in
 Check two things, in this order:
 
 1. **Is agent control enabled for that folder at all?** Open **Settings → MCP** — if the folder isn't in the allowed list, none of the capabilities in [Agent control](agent-control.md) are available to a session there, and nothing will show up in the [Approval Inbox](approval-inbox.md) because nothing was ever attempted.
-2. **Did you (or a past session) already grant a durable "always allow" rule, or is a mission grant currently live for that folder?** Both make matching actions run silently by design — check the Approval Inbox's mission-grant strip and the "always allow" state before assuming something's misbehaving.
+2. **Did you (or a past session) already grant a durable "always allow" rule, or is a mission grant currently live for that folder?** Both make matching actions run silently by design — check the live grants in **Settings → MCP** and the "always allow" state before assuming something's misbehaving.
 
 ## Harnu mod: legacy
 

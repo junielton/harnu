@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Group rail · Harnu</title>
+    <link rel="stylesheet" href="../tokens.css" />
+    <link rel="stylesheet" href="../mockup.css" />
+    <script defer src="../parts/icons.js"></script>
+    <script defer src="../parts/tree.js"></script>
+  </head>
+  <body
+    data-states="separate-rails selected-in-active priority folded-folder folded-checkout focus motion all-idle floating sticky-scrolled"
+  >
+    <div data-dsqa="group-rail">
+      <div class="fixture">
+        <div class="fixture-tree" data-rail-frame><mk-tree variant="rail"></mk-tree></div>
+      </div>
+    </div>
+    <script src="../mockup.js"></script>
+    <script>
+      const rail = document.querySelector('[data-dsqa="group-rail"]')
+      rail.querySelector('mk-tree').setAttribute('state', rail.dataset.state)
+      rail
+        .querySelector('[data-rail-frame]')
+        .classList.toggle('rail-floating', rail.dataset.state === 'floating')
+    </script>
+  </body>
+</html>

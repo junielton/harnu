@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from 'vue'
 import {
+  Archive,
   Bot,
+  Clock,
+  Plus,
+  Recycle,
+  RotateCcw,
   ChevronRight,
   Crown,
   Eye,
@@ -24,6 +29,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   SquareTerminal,
+  Target,
   Globe,
   Tag,
   Trash2,
@@ -166,6 +172,12 @@ interface MenuItem {
  * open this menu's folder, not the active one, so they carry no hint.
  */
 const SHORTCUT_OF: Record<string, ShortcutActionId> = {
+  'new-session': 'session.newInFolder',
+  'toggle-older': 'folder.toggleOlder',
+  'toggle-archived': 'folder.toggleArchived',
+  'rename-repo': 'repoGroup.rename',
+  'reset-repo-name': 'repoGroup.resetName',
+  'cleanup-repo': 'repoGroup.cleanup',
   'new-terminal': 'folder.newFolderTerminal',
   rename: 'folder.rename',
   'alias-from-branch': 'folder.toggleBranchAlias',
@@ -343,9 +355,98 @@ function folderLabel(path: string): string {
   return f?.alias || path.replace(/\/+$/, '').split('/').pop() || path
 }
 
+const peekEntries = computed<MenuItem[]>(() => {
+  const path = menuState.value.projectPath
+  const folder = path && sessions.findFolderByPath(path)
+  if (!folder) return []
+  const older = sessions.isOlderRevealed(folder.path)
+  const archived = sessions.isArchivedRevealed(folder.path)
+  const items: MenuItem[] = []
+  if (older || folderActions.visible('toggleOlder', folder.path)) {
+    items.push({
+      id: 'toggle-older',
+      label: older
+        ? t('sidebar.hideOlder')
+        : t('folderMenu.showOlder', { n: sessions.olderSessionCount(folder) }),
+      icon: Clock,
+      onSelect: folderActions.run.toggleOlder
+    })
+  }
+  if (archived || folderActions.visible('toggleArchived', folder.path)) {
+    items.push({
+      id: 'toggle-archived',
+      label: archived
+        ? t('sidebar.hideArchived')
+        : t('folderMenu.showArchived', { n: sessions.archivedSessionCount(folder) }),
+      icon: Archive,
+      onSelect: folderActions.run.toggleArchived
+    })
+  }
+  return items
+})
+
+const repoEntries = computed<MenuItem[]>(() => {
+  const key = menuState.value.groupKey
+  const group = key && sessions.groupInVisible(key)
+  if (!group) return []
+  const items: MenuItem[] = [
+    {
+      id: 'rename-repo',
+      label: t('repoGroup.renameRepo'),
+      icon: PencilLine,
+      separatorBefore: true,
+      onSelect: () => folderActions.group.rename(group)
+    }
+  ]
+  if (folderActions.groupVisible('resetName', group)) {
+    items.push({
+      id: 'reset-repo-name',
+      label: t('repoGroup.resetName'),
+      icon: RotateCcw,
+      onSelect: () => folderActions.group.resetName(group)
+    })
+  }
+  items.push({
+    id: 'cleanup-repo',
+    label: t('repoGroup.cleanUp'),
+    icon: Recycle,
+    onSelect: () => folderActions.group.cleanup(group)
+  })
+  return items
+})
+
+const canFocus = computed(() => {
+  const path = menuState.value.projectPath
+  return !!path && !sessions.isInFocus(path) && !sessions.manuallyHiddenPaths.has(path)
+})
+
 const entries = computed<MenuItem[]>(() => [
   {
+    id: 'new-session',
+    label: t('sidebar.newSession'),
+    icon: Plus,
+    onSelect: (path) => {
+      sessions.revealCheckout(path)
+      ui.openNewSession(path)
+    }
+  },
+  ...peekEntries.value,
+  // Focus on one folder (design.md §6 "Sidebar tree → Focus"): not for the folder already
+  // focused, nor for a hidden one, which the list does not draw.
+  ...(canFocus.value
+    ? [
+        {
+          id: 'focus-folder',
+          label: t('folderMenu.focus'),
+          icon: Target,
+          onSelect: (path: string): void => sessions.enterFocus(path)
+        } satisfies MenuItem
+      ]
+    : []),
+  ...repoEntries.value,
+  {
     id: 'new-terminal',
+    separatorBefore: true,
     label: t('folderMenu.newTerminal'),
     icon: SquareTerminal,
     onSelect: folderActions.run.newFolderTerminal

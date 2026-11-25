@@ -3,14 +3,13 @@ import type { McpGrantView } from '../../../preload'
 
 /**
  * Mission-grants surface (T44 S5c) — the single source of truth for the active
- * mission grants shown in TWO places: the canonical Settings → Control server
- * "Active missions" section (`McpServerPane`) and the compact live-missions strip
- * at the top of the `InboxRail` (where a grant's escalations land).
+ * mission grants: the canonical "Active missions" section of Settings → MCP
+ * (`McpServerPane`), also read by the Roadmap board.
  *
  * A mission grant is the ONE path where an agent's matching actions auto-run
  * without a per-action confirm, so the operator needs to SEE what's auto-allowed
  * (budget/time left) and REVOKE any with one click. This composable keeps the
- * fetch/subscribe/revoke logic DRY — both consumers call `useMissionGrants()`
+ * fetch/subscribe/revoke logic DRY — every consumer calls `useMissionGrants()`
  * and render the same reactive list.
  *
  * Mirrors the queue composables (`session-approvals.ts` / `session-mcp-confirms.ts`):

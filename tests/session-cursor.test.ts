@@ -4,66 +4,66 @@ import { useSidebarCursor, type SidebarCursorDeps } from '../src/renderer/src/st
 import type { Folder, Session } from '../src/renderer/src/stores/sessions'
 import type { FolderGroup } from '../src/renderer/src/stores/folder-zones'
 
-/**
- * T25 wave 4 — the sidebar keyboard cursor extracted from the sessions god-store.
- * The largest, most-coupled leaf, so it's pinned in isolation with a fabricated
- * flat list + stub actions (no Pinia). Mirrors the DOM traversal the arrow keys
- * walk. The list used to be two zones (pinned/active); BUG-39 flattened it to
- * one `visibleFolders` computed, and this harness follows suit.
- */
+import { buildSidebarTree, flattenSidebarTree } from '../src/renderer/src/lib/sidebar-tree'
 
 function sess(id: string): Session {
   return { sessionId: id } as Session
 }
 
 function folder(over: Partial<Folder> & { path: string }): Folder {
-  return { expanded: false, sessions: [], ...over } as Folder
+  return { alias: over.path, expanded: false, sessions: [], ...over } as Folder
 }
 
-/** Build a cursor over a flat list of bare folders, everything else stubbed. */
-function build(
-  visible: Array<Folder | FolderGroup<Folder>>,
-  over: Partial<SidebarCursorDeps> = {}
-): {
-  cursor: ReturnType<typeof useSidebarCursor>
-  select: ReturnType<typeof vi.fn>
-  selectFolder: ReturnType<typeof vi.fn>
-  toggleFolder: ReturnType<typeof vi.fn>
-  toggleGroup: ReturnType<typeof vi.fn>
-  folders: ReturnType<typeof ref<Folder[]>>
-} {
-  // Flatten every folder (bare + group members) into the folders ref.
-  const allFolders: Folder[] = []
-  for (const n of visible) {
-    if ('kind' in n && n.kind === 'folder-group') allFolders.push(...n.folders)
-    else allFolders.push(n as Folder)
-  }
-  const folders = ref<Folder[]>(allFolders)
+function build(visible: Array<Folder | FolderGroup<Folder>>) {
+  const changed = ref(0)
+  const folded = new Set<string>()
+  const idleOpen = new Set<string>()
   const select = vi.fn()
   const selectFolder = vi.fn()
-  const toggleFolder = vi.fn()
-  const toggleGroup = vi.fn()
+  const hasRows = (folder: Folder) => folder.sessions.length > 0
+  const tree = computed(() => {
+    void changed.value
+    const order = visible.flatMap((n) => ('folders' in n ? n.folders : [n]))
+    return buildSidebarTree(visible, { order, aliasFromBranchPaths: new Set(), hasRows })
+  })
+  const toggleTreeFolder = vi.fn((key: string) => {
+    const node = tree.value.find((folder) => folder.key === key)!
+    if (node.group) node.group.expanded = !node.open
+    else node.primary.expanded = !node.open
+    changed.value++
+  })
+  const setCheckoutFolded = vi.fn((path: string, fold: boolean) => {
+    if (fold) folded.add(path)
+    else folded.delete(path)
+    changed.value++
+  })
+  const toggleIdleWorktrees = vi.fn((key: string) => {
+    if (idleOpen.has(key)) idleOpen.delete(key)
+    else idleOpen.add(key)
+    changed.value++
+  })
   const deps: SidebarCursorDeps = {
-    visibleFolders: computed(() => visible),
-    sessionsForDisplay: (f) => f.sessions,
-    terminalsForFolder: () => [],
-    findFolderByPath: (p) => folders.value.find((f) => f.path === p) ?? null,
-    findFolderBySessionId: (id) =>
-      folders.value.find((f) => f.sessions.some((s) => s.sessionId === id)) ?? null,
+    rows: computed(() =>
+      flattenSidebarTree(tree.value, {
+        hasRows,
+        sessionIds: (folder) => folder.sessions.map((s) => s.sessionId),
+        checkoutFolded: (path) => folded.has(path),
+        idleOpen: (key) => idleOpen.has(key)
+      })
+    ),
     select,
     selectFolder,
-    isFolderSelected: () => false,
-    toggleFolder,
-    toggleGroup,
-    ...over
+    toggleTreeFolder,
+    setCheckoutFolded,
+    toggleIdleWorktrees
   }
   return {
     cursor: useSidebarCursor(deps),
     select,
     selectFolder,
-    toggleFolder,
-    toggleGroup,
-    folders
+    toggleTreeFolder,
+    setCheckoutFolded,
+    toggleIdleWorktrees
   }
 }
 
@@ -137,7 +137,13 @@ describe('useSidebarCursor — horizontal nav', () => {
 
 describe('useSidebarCursor — repo groups', () => {
   it('right on a COLLAPSED group expands the group, leaving member sessions untouched', () => {
-    const f1 = folder({ path: '/r/a', repoId: 'R', expanded: false, sessions: [] })
+    const f1 = folder({
+      path: '/r/a',
+      repoId: 'R',
+      isMainWorktree: true,
+      expanded: false,
+      sessions: []
+    })
     const f2 = folder({ path: '/r/b', repoId: 'R', expanded: false, sessions: [] })
     const group = {
       kind: 'folder-group',
@@ -147,10 +153,10 @@ describe('useSidebarCursor — repo groups', () => {
       expanded: false, // group collapsed → member rows hidden
       folders: [f1, f2]
     } as FolderGroup<Folder>
-    const { cursor, toggleGroup } = build([group])
+    const { cursor, toggleTreeFolder } = build([group])
     cursor.keyboardCursor.value = { kind: 'group', id: 'repo:R' }
     cursor.cursorRight() // collapsed → expand the GROUP (not the members' sessions)
-    expect(toggleGroup).toHaveBeenCalledWith('repo:R')
+    expect(toggleTreeFolder).toHaveBeenCalledWith('repo:R')
     expect(f1.expanded).toBe(false) // inner folders' session-list state untouched
     expect(f2.expanded).toBe(false)
     // Cursor stays on the group while it expands.
@@ -158,7 +164,13 @@ describe('useSidebarCursor — repo groups', () => {
   })
 
   it('right on an EXPANDED group descends into the first member', () => {
-    const f1 = folder({ path: '/r/a', repoId: 'R', expanded: false, sessions: [] })
+    const f1 = folder({
+      path: '/r/a',
+      repoId: 'R',
+      isMainWorktree: true,
+      expanded: false,
+      sessions: []
+    })
     const f2 = folder({ path: '/r/b', repoId: 'R', expanded: false, sessions: [] })
     const group = {
       kind: 'folder-group',
@@ -168,11 +180,11 @@ describe('useSidebarCursor — repo groups', () => {
       expanded: true,
       folders: [f1, f2]
     } as FolderGroup<Folder>
-    const { cursor, toggleGroup } = build([group])
+    const { cursor, toggleTreeFolder } = build([group])
     cursor.keyboardCursor.value = { kind: 'group', id: 'repo:R' }
     cursor.cursorRight() // expanded → descend into the first member folder
     expect(cursor.keyboardCursor.value).toEqual({ kind: 'folder', id: '/r/a' })
-    expect(toggleGroup).not.toHaveBeenCalled()
+    expect(toggleTreeFolder).not.toHaveBeenCalled()
   })
 
   it('left on an EXPANDED group collapses the group, leaving member sessions untouched', () => {
@@ -185,10 +197,10 @@ describe('useSidebarCursor — repo groups', () => {
       expanded: true,
       folders: [f1]
     } as FolderGroup<Folder>
-    const { cursor, toggleGroup } = build([group])
+    const { cursor, toggleTreeFolder } = build([group])
     cursor.keyboardCursor.value = { kind: 'group', id: 'repo:R' }
     cursor.cursorLeft()
-    expect(toggleGroup).toHaveBeenCalledWith('repo:R')
+    expect(toggleTreeFolder).toHaveBeenCalledWith('repo:R')
     expect(f1.expanded).toBe(true) // inner folder's session-list state untouched
   })
 
@@ -202,56 +214,81 @@ describe('useSidebarCursor — repo groups', () => {
       expanded: false,
       folders: [f1]
     } as FolderGroup<Folder>
-    const { cursor, toggleGroup } = build([group])
+    const { cursor, toggleTreeFolder } = build([group])
     cursor.keyboardCursor.value = { kind: 'group', id: 'repo:R' }
     cursor.cursorLeft()
-    expect(toggleGroup).not.toHaveBeenCalled()
+    expect(toggleTreeFolder).not.toHaveBeenCalled()
   })
 })
 
 describe('useSidebarCursor — activate', () => {
-  // T212: the folder arm changed contract. Enter used to only expand/collapse,
-  // which left the Folder View unreachable from the keyboard; it now mirrors a
-  // click (select, and expand on the way in).
-  it('activate routes session→select, folder→selectFolder, group→toggleGroup', () => {
-    const a = folder({ path: '/a', expanded: true, sessions: [sess('s1')] })
-    const { cursor, select, selectFolder, toggleFolder, toggleGroup } = build([a])
+  it('activate selects a session, opens the repo primary, and toggles a checkout or idle group', () => {
+    const a = folder({ path: '/a', repoId: 'R', isMainWorktree: true, sessions: [sess('s1')] })
+    const b = folder({ path: '/b', repoId: 'R' })
+    const group: FolderGroup<Folder> = {
+      kind: 'folder-group',
+      source: 'repo',
+      id: 'R',
+      key: 'repo:R',
+      label: 'R',
+      derivedLabel: 'R',
+      expanded: true,
+      folders: [a, b]
+    }
+    const {
+      cursor,
+      select,
+      selectFolder,
+      toggleTreeFolder,
+      setCheckoutFolded,
+      toggleIdleWorktrees
+    } = build([group])
 
     cursor.keyboardCursor.value = { kind: 'session', id: 's1' }
     cursor.cursorActivate()
     expect(select).toHaveBeenCalledWith('s1')
-
-    cursor.keyboardCursor.value = { kind: 'folder', id: '/a' }
+    cursor.cursorLeft()
+    expect(setCheckoutFolded).toHaveBeenLastCalledWith('/a', true)
+    expect(cursor.keyboardCursor.value).toEqual({ kind: 'folder', id: '/a' })
     cursor.cursorActivate()
-    expect(selectFolder).toHaveBeenCalledWith('/a')
-    // Already expanded and not already selected → selection only, no collapse.
-    expect(toggleFolder).not.toHaveBeenCalled()
+    expect(setCheckoutFolded).toHaveBeenLastCalledWith('/a', false)
 
     cursor.keyboardCursor.value = { kind: 'group', id: 'repo:R' }
     cursor.cursorActivate()
-    expect(toggleGroup).toHaveBeenCalledWith('repo:R')
+    expect(selectFolder).toHaveBeenLastCalledWith('/a')
+    expect(toggleTreeFolder).not.toHaveBeenCalled()
+
+    cursor.keyboardCursor.value = { kind: 'group', id: 'idle:repo:R' }
+    cursor.cursorActivate()
+    expect(toggleIdleWorktrees).toHaveBeenCalledWith('repo:R')
+    cursor.cursorRight()
+    expect(cursor.keyboardCursor.value).toEqual({ kind: 'folder', id: '/b' })
+    cursor.cursorActivate()
+    expect(selectFolder).toHaveBeenLastCalledWith('/b')
   })
 
   it('activate expands a collapsed folder on the way in', () => {
     const a = folder({ path: '/a', expanded: false, sessions: [sess('s1')] })
-    const { cursor, selectFolder, toggleFolder } = build([a])
+    const { cursor, selectFolder, toggleTreeFolder } = build([a])
 
     cursor.keyboardCursor.value = { kind: 'folder', id: '/a' }
     cursor.cursorActivate()
 
     expect(selectFolder).toHaveBeenCalledWith('/a')
-    expect(toggleFolder).toHaveBeenCalledWith('/a')
+    expect(toggleTreeFolder).toHaveBeenCalledWith('/a')
   })
 
-  it('activate on the already-selected folder collapses it, selection kept', () => {
+  it('repeated activation selects the folder without collapsing it', () => {
     const a = folder({ path: '/a', expanded: true, sessions: [sess('s1')] })
-    const { cursor, selectFolder, toggleFolder } = build([a], { isFolderSelected: () => true })
+    const { cursor, selectFolder, toggleTreeFolder } = build([a])
 
     cursor.keyboardCursor.value = { kind: 'folder', id: '/a' }
     cursor.cursorActivate()
+    cursor.cursorActivate()
 
     expect(selectFolder).toHaveBeenCalledWith('/a')
-    expect(toggleFolder).toHaveBeenCalledWith('/a')
+    expect(toggleTreeFolder).not.toHaveBeenCalled()
+    expect(a.expanded).toBe(true)
   })
 
   it('activate is a no-op when the cursor is unset', () => {

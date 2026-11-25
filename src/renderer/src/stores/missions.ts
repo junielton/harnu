@@ -55,6 +55,7 @@ import {
 import {
   attachRequestsOf,
   isStaleNamedRead,
+  missionNumbers,
   missionPillText,
   missionPillTone,
   v4MissionOf,
@@ -174,6 +175,12 @@ export interface ChipModel {
   compact: string
   tone: 'neutral' | 'accent' | 'warning' | 'success'
   needsYou: boolean
+  owed: number
+  /**
+   * The pill's count alone ("2/5"), set when something is owed: the sidebar's hover text draws it
+   * beside the alert icon and {@link owed} instead of `text`, whose words stay in the tooltip.
+   */
+  progress?: string
 }
 
 /** Kinds an agent or a later step waits on — they sort ahead of standing to-dos. */
@@ -635,13 +642,26 @@ export const useMissionsStore = defineStore('missions', () => {
         text: headlineText(t, m.headline),
         compact: headlineText(t, m.headline, true),
         tone: m.tone,
-        needsYou: m.needsYou
+        needsYou: m.needsYou,
+        owed: m.youRows.length
       }
     }
     const r = pickedFor(sessionId)
     if (!r) return null
     const text = missionPillText(t, r.detail)
-    return { text, compact: text, tone: missionPillTone(r.detail), needsYou: r.you.length > 0 }
+    const n = missionNumbers(r.detail)
+    return {
+      text,
+      compact: text,
+      tone: missionPillTone(r.detail),
+      needsYou: r.you.length > 0,
+      owed: r.you.length,
+      // "ready to close" is not a count, so it keeps its words.
+      progress:
+        r.you.length > 0 && !n.readyToClose
+          ? t('missionPane.pill.count', { done: n.done, total: n.total })
+          : undefined
+    }
   }
 
   /**

@@ -45,12 +45,12 @@ Opening the **Close mission** dialog plays nothing: you just opened it yourself.
 
 With it on:
 
-- The sidebar toolbar, the Topbar and the Fleet rail header line up as one row of three bars; everything below them starts at the same height.
-- The sidebar is a stack of islands: the folder list with its toolbar joined on top as one box, **Return here** (when something is waiting, just above the dock), and a **dock** at the bottom with Add folder and Settings. The Fleet rail is the same idea: the fleet list with its header joined on top as one box, **Needs you** (while something is pending) and **Would-have**.
+- The sidebar toolbar and the Topbar line up as one row of bars; everything below them starts at the same height.
+- The sidebar is a stack of islands: the folder list with its toolbar (and **Needs attention**) joined on top as one box, then **Needs you** and **Return here** (each its own island, only while something is waiting), and a **dock** at the bottom with Add folder and Settings.
 - Every helper pane is its own island, and the session area is one too.
 - Pane dividers draw no line at rest. The gap itself is the drag handle: hover it and a short grip appears, then drag to resize or double-click to reset, exactly as before.
 - The footer at the bottom stays a flat full-width bar; it is not an island.
-- Minimizing the Fleet rail, collapsing the sidebar or closing the helper stack never closes the gap.
+- Collapsing the sidebar or closing the helper stack never closes the gap.
 
 The switch takes effect immediately and is remembered across restarts; the setting is saved in `settings.json` as `floatingPanels`. Every theme has a darker background to float on; on the light themes it is a soft grey picked by hand, not a heavy dark slab.
 

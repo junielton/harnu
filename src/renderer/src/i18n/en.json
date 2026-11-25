@@ -45,7 +45,8 @@
       "rescan": "Rescan folders",
       "rescanFailed": "Rescan failed",
       "expandAll": "Expand all",
-      "collapseAll": "Collapse all",
+      "collapseSessions": "Collapse sessions",
+      "collapseFolders": "Collapse folders",
       "hidden": "Hidden ({count})",
       "unhide": "Unhide"
     },
@@ -61,9 +62,14 @@
       "unhideAllFailed": "{count} folders could not be unhidden. First error: {reason}",
       "enterHint": "unhide"
     },
-    "toolbar": {
-      "drillOn": "Turn on drill-in navigation",
-      "drillLevel": "Drill-in navigation: level {level} of {max}"
+    "focus": {
+      "allFolders": "All folders",
+      "enter": "Focus this folder",
+      "enterNamed": "Focus {name}",
+      "others": "{n} other | {n} others",
+      "needsYou": "{n} needs you | {n} need you",
+      "needsYouShort": "{n} needs you | {n} need you",
+      "failed": "{n} failed"
     },
     "filter": {
       "placeholder": "Filter folders…",
@@ -94,22 +100,15 @@
         "filterTree": "filter tree"
       }
     },
-    "drill": {
-      "back": "Back",
-      "worktreeCount": "{n} worktrees",
-      "folderCount": "{n} folders"
-    },
     "resize": "Resize sidebar",
     "hide": "Hide sidebar",
     "show": "Show sidebar",
+    "attention": {
+      "title": "Needs attention"
+    },
     "returnHere": {
       "title": "Return here",
       "dismiss": "Mark as seen"
-    },
-    "section": {
-      "collapse": "Collapse {name}",
-      "expand": "Expand {name}",
-      "resize": "Resize {name}"
     },
     "teammates": {
       "show": "Show {n} teammates",
@@ -117,18 +116,14 @@
       "workingGuard": "This teammate is being driven by its team lead right now. Resuming it here could conflict with the lead's writes — continue anyway?"
     },
     "agentBlockedBadge": "Agents blocked — no agent can act in this folder",
-    "lineageBadge": "{n} worktree(s) cut from here — click to collapse/expand"
-  },
-  "board": {
-    "blockedFor": "blocked {time}",
-    "spinningOn": "repeating {target} ×{count}",
-    "state": {
-      "needsInput": "Needs input",
-      "errored": "Errored",
-      "stuck": "Stuck",
-      "working": "Working",
-      "idle": "Idle",
-      "done": "Done"
+    "tree": {
+      "idleWorktrees": "{count} idle worktree | {count} idle worktrees",
+      "foldFolder": "Collapse {name}",
+      "openFolder": "Expand {name}",
+      "railWorking": "{branch}, agent working",
+      "railFailed": "{branch}, failed",
+      "railNeedsInput": "{branch}, needs you",
+      "railCount": "{label}, {count} session | {label}, {count} sessions"
     }
   },
   "topbar": {
@@ -730,6 +725,9 @@
     "searchTruncated": "Showing the first 500 matches — refine your search."
   },
   "folderMenu": {
+    "focus": "Focus this folder",
+    "showOlder": "Show older ({n})",
+    "showArchived": "Show archived ({n})",
     "label": "Folder actions",
     "newTerminal": "New terminal",
     "bootOptions": "Startup options…",
@@ -1126,111 +1124,19 @@
     "disclaimer": "Harnu is an independent project, not affiliated with or endorsed by Anthropic."
   },
   "folderView": {
-    "whereWeLeftOff": "Where we left off",
-    "sessions": "Sessions",
-    "noSessions": "No sessions here yet.",
     "newSession": "New session",
-    "older": "Older ({n})",
-    "archived": "Archived ({n})",
-    "roadmap": "Roadmap",
-    "sessionBound": "session bound",
-    "worktrees": "Worktrees in this repo",
-    "siblingWorktrees": "Sibling worktrees",
-    "scope": {
-      "thisFolder": "this folder",
-      "repo": "repo",
-      "thisFolderHint": "Only this folder — its own sessions, branch and working tree.",
-      "repoHint": "The whole repo — every worktree of it shows exactly this."
-    },
-    "owned": {
-      "rail": {
-        "dispatched": "Dispatched",
-        "dispatchedAt": "Dispatched · {age}",
-        "commits": "Commits",
-        "commitsCount": "{n} commits",
-        "commitsLatest": "{n} commits · latest {sha}",
-        "pr": "PR",
-        "prNumber": "PR #{n}",
-        "merge": "Merge",
-        "merged": "Merged"
-      },
-      "pr": {
-        "merged": "merged",
-        "closed": "closed",
-        "isDraft": "draft",
-        "changesRequested": "changes requested",
-        "approved": "approved",
-        "inReview": "in review"
-      },
-      "meta": {
-        "status": "Status",
-        "ownerSession": "Owner session",
-        "git": "Git",
-        "unpushed": "unpushed",
-        "cutFrom": "Cut from"
-      }
-    },
-    "thisWorktree": "this one",
-    "cutFromHere": "cut from here",
+    "terminalHere": "Terminal here",
+    "browseFiles": "Browse files",
     "openRoadmap": "Roadmap board",
     "openPrStack": "PR Stack",
-    "browseFiles": "Browse files",
     "openFolder": "Open folder",
-    "terminalHere": "Terminal here",
-    "fanout": {
-      "title": "Worktrees in flight",
-      "colBranch": "Branch",
-      "colCard": "Card",
-      "colSessions": "Sessions",
-      "colGit": "Git",
-      "colPr": "PR",
-      "sessionsLive": "{n} · {live} live",
-      "noCard": "No card is executing this branch",
-      "prState": {
-        "checksPassing": "checks passing",
-        "checksFailing": "checks failing",
-        "checksRunning": "checks running",
-        "changesRequested": "changes requested",
-        "draft": "draft #{n}",
-        "merged": "merged #{n}",
-        "closed": "closed #{n}",
-        "open": "open #{n}"
-      },
-      "expand": "Show details",
-      "collapse": "Hide details",
-      "detail": {
-        "branch": "Branch",
-        "path": "Path",
-        "card": "Card",
-        "git": "Git",
-        "gitClean": "up to date with its base",
-        "gitUnavailable": "Git status could not be read",
-        "pr": "Pull request",
-        "prNumber": "#{n}",
-        "noPr": "No open pull request for this branch",
-        "open": "Open this worktree",
-        "isSelf": "You are in this worktree"
-      }
-    },
-    "kpi": {
-      "needYou": "need you",
-      "needYouAcross": "Across {n} worktrees",
-      "needYouBreakdown": "{sessions} sessions · {prs} PRs changes requested",
-      "needYouPrsUnavailable": "{sessions} sessions · PR state unavailable",
-      "inFlight": "in flight",
-      "inFlightK": "Worktrees with a live session",
-      "inFlightSub": "{total} worktrees total · {idle} idle",
-      "inReview": "in review",
-      "roadmapK": "Roadmap · {inProgress} in progress · {ready} ready",
-      "sessionsHere": "sessions here",
-      "sessionsHereK": "In this checkout · {older} older",
-      "sessionsHereSub": "Where orchestrations start"
-    },
-    "activity": {
-      "title": "Activity · 14d",
-      "sessions": "{n} sessions",
-      "today": "today · {n}",
-      "chartLabel": "Sessions started per day across the repo, last 14 days"
+    "moreActions": "More folder actions",
+    "moreTitle": "More: {actions}",
+    "roadmap": "Roadmap",
+    "road": {
+      "inProgress": "{n} in progress",
+      "ready": "{n} ready",
+      "inReview": "{n} in review"
     }
   },
   "empty": {
@@ -1349,7 +1255,7 @@
       "activity": "active {time}",
       "noActivity": "no activity yet",
       "changes": "{count} changes",
-      "clean": "no changes",
+      "clean": "clean",
       "ahead": "{n} ahead",
       "behind": "{n} behind",
       "memoryLabel": "Where we left off"
@@ -1412,10 +1318,9 @@
     "save": "Save"
   },
   "repoGroup": {
-    "menuLabel": "Group actions",
-    "rename": "Rename group",
-    "resetName": "Reset name",
-    "cleanup": "Cleanup…"
+    "renameRepo": "Rename repo",
+    "cleanUp": "Clean up",
+    "resetName": "Reset name"
   },
   "dialog": {
     "close": "Close",
@@ -1560,7 +1465,7 @@
       },
       "expandHides": {
         "label": "Expand hides",
-        "hint": "What gets out of the way when a helper pane is expanded to the window. Everything also hides the sidebar and the Fleet rail; Session only hides just the session.",
+        "hint": "What gets out of the way when a helper pane is expanded to the window. Everything also hides the sidebar; Session only hides just the session.",
         "everything": "Everything",
         "sessionOnly": "Session only"
       }
@@ -1652,8 +1557,7 @@
       "trustAll": "Trust all folders",
       "trustAllHint": "Intercept tool calls in every folder. Turn off to go back to picking folders one at a time.",
       "rampTitle": "Intercept per folder",
-      "rampEmpty": "No folders intercepted yet — add one below or turn on Trust all folders.",
-      "reviewShadowLog": "Review shadow log"
+      "rampEmpty": "No folders intercepted yet — add one below or turn on Trust all folders."
     },
     "notifications": {
       "label": "OS notifications",
@@ -1744,8 +1648,7 @@
     "actions": {
       "session_new": "New session",
       "app_search": "Open command palette",
-      "inbox_toggle": "Toggle the Approval Inbox rail",
-      "view_fleetRail": "Toggle the Fleet rail",
+      "inbox_toggle": "Open or fold Needs you",
       "view_toggleSidebar": "Toggle the left sidebar",
       "view_toggleHelper": "Toggle the right split panel",
       "project_switch": "Switch project",
@@ -1782,7 +1685,6 @@
       "session_closeTerminal": "Close the folder terminal",
       "sidebar_jump": "Jump to a folder or session",
       "sidebar_rescan": "Rescan folders",
-      "sidebar_cycleDrillDepth": "Cycle the sidebar drill depth",
       "sidebar_toggleCollapseAll": "Collapse or expand all folders",
       "sidebar_hiddenFolders": "Show hidden folders",
       "sidebar_cursor_down": "Sidebar cursor: down",
@@ -1812,9 +1714,6 @@
       "repoGroup_resetName": "Reset name (group)",
       "repoGroup_cleanup": "Cleanup… (repo)",
       "inbox_open": "Open approvals",
-      "inbox_toggleOrder": "Newest first / Oldest first (Fleet rail)",
-      "inbox_filter": "Filter states (Fleet rail)",
-      "inbox_showAll": "Show all (Fleet rail)",
       "view_activity": "Open Activity",
       "view_missionProgress": "Open mission progress",
       "view_pastedImages": "Open pasted images",
@@ -2356,22 +2255,10 @@
     "blockedTitle": "Blocked a dangerous command"
   },
   "approvalInbox": {
-    "title": "Fleet",
-    "open": "Open approvals — {count} waiting",
-    "fleetEmpty": "You're all caught up",
     "subtitle": "Tool calls waiting on you. Allow or deny without switching tabs.",
     "sections": {
-      "needsYou": "Needs you",
-      "wouldHave": "Would-have"
+      "needsYou": "Needs you"
     },
-    "rail": {
-      "ariaLabel": "Fleet rail",
-      "expand": "Expand the Fleet rail",
-      "minimize": "Minimize the Fleet rail",
-      "resize": "Resize the Fleet rail"
-    },
-    "shadowEmpty": "No preview entries yet",
-    "shadowPaused": "Preview is paused — the responder is off (observer mode).",
     "allow": "Allow",
     "deny": "Deny",
     "expired": "That request already timed out — the session handled it in the terminal.",
@@ -2379,20 +2266,6 @@
     "allowAria": "Allow {tool} in {folder}",
     "denyAria": "Deny {tool} in {folder}",
     "openSessionAria": "Open the session for {tool}",
-    "missionsStrip": {
-      "title": "Active missions"
-    },
-    "order": {
-      "newestFirst": "Newest first — click for oldest first",
-      "oldestFirst": "Oldest first — click for newest first"
-    },
-    "filter": {
-      "title": "Filter states",
-      "showAll": "Show all",
-      "toggleAria": "Show or hide {state} cards",
-      "hiddenAttention": "{count} hidden by the filter",
-      "allHidden": "All fleet cards are hidden by your filter — tap to show all"
-    },
     "row": {
       "outside": "outside Harnu"
     }

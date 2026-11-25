@@ -200,15 +200,6 @@ describe('AC-33 — session.openToSide', () => {
     actions.run.openToSide('s-a')
     expect(add).not.toHaveBeenCalled()
   })
-
-  it('ignores the cursor in drill mode', () => {
-    const sessions = useSessionsStore()
-    const actions = withSetup(() => useSessionActions())
-    sessions.select('s-a')
-    sessions.keyboardCursor = { kind: 'session', id: 's-b' }
-    sessions.drillDepth = 1
-    expect(actions.openToSideTarget()).toBe('s-a')
-  })
 })
 
 describe('AC-34 — session.contextMenu (Shift+F10)', () => {

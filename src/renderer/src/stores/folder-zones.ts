@@ -58,7 +58,7 @@ interface ZoneFolder {
  * Where a group's membership came from. `repo` — 2+ worktrees sharing a git
  * `repoId`; `path` — 2+ folders sharing a DIRECT parent directory. The two are
  * one node type on purpose: header rendering, the keyboard cursor, collapse
- * persistence, aliases, and drill-in all take a single code path (T182).
+ * persistence and aliases all take a single code path (T182).
  */
 export type GroupSource = 'repo' | 'path'
 
@@ -142,13 +142,13 @@ export interface ClassifyCtx {
 }
 
 /** Last `'/'`-delimited segment, trailing slashes stripped. */
-function basename(p: string): string {
+export function basename(p: string): string {
   if (!p) return ''
   return p.replace(/\/+$/, '').split('/').pop() ?? ''
 }
 
 /** Everything before the last `'/'` segment, trailing slashes stripped. */
-function dirname(p: string): string {
+export function dirname(p: string): string {
   if (!p) return ''
   const trimmed = p.replace(/\/+$/, '')
   const idx = trimmed.lastIndexOf('/')

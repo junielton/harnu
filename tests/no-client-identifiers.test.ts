@@ -109,6 +109,8 @@ const ALLOWED_LOWER_PREFIXES = [
   'agent',
   'agents',
   'argv',
+  // `basis`: a Tailwind flex-basis utility (`basis-12`, the sidebar agent row's title), not a tracker key.
+  'basis',
   'bug',
   // `by`: English prose in a cited article's URL slug (`…-usage-by-90`), not a tracker key.
   'by',

@@ -129,7 +129,7 @@ describe('Sidebar header — one row (AC-1)', () => {
     delete (window as unknown as { api?: unknown }).api
   })
 
-  it('renders rescan, drill, collapse-all, hidden and search in ONE 42px header, search last', async () => {
+  it('renders rescan, collapse-all, hidden and search in ONE 42px header, search last', async () => {
     await bootStore()
     const w = mount(Sidebar, { global: { plugins: [i18n] } })
     await flushPromises()
@@ -141,7 +141,7 @@ describe('Sidebar header — one row (AC-1)', () => {
     // row is gone.
     for (const sel of [
       '[data-sidebar-rescan]',
-      '[data-drill-toggle]',
+      '[data-collapse-level]',
       '[data-sidebar-hidden-trigger]',
       '[data-sidebar-jump-trigger]'
     ]) {
@@ -152,20 +152,6 @@ describe('Sidebar header — one row (AC-1)', () => {
     // Search is LAST, after the divider.
     const buttons = header.findAll('button')
     expect(buttons[buttons.length - 1].attributes('data-sidebar-jump-trigger')).toBeDefined()
-  })
-
-  it('hides collapse-all at drill depth 2 but keeps the search button', async () => {
-    const sessions = await bootStore()
-    const w = mount(Sidebar, { global: { plugins: [i18n] } })
-    await flushPromises()
-
-    sessions.drillDepth = 2
-    await flushPromises()
-    const header = w.get('header')
-    expect(header.findAll('button').some((b) => b.attributes('title')?.includes('ollapse'))).toBe(
-      false
-    )
-    expect(header.find('[data-sidebar-jump-trigger]').exists()).toBe(true)
   })
 
   it('flashes the folder ROW, not the whole folder block (AC-6)', async () => {

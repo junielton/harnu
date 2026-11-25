@@ -31,7 +31,9 @@ const tabs = () => page.getByTestId('browser-tab')
 const address = () => page.getByTestId('browser-address')
 
 async function openBrowserPane(): Promise<void> {
-  await page.locator(`[data-folder-path="${seed.repo}"]`).first().click()
+  await page
+    .locator(`[data-tree-folder]:has([data-folder-path="${seed.repo}"]) [data-folder-head]`)
+    .click()
   await page.getByRole('button', { name: 'Browser', exact: true }).first().click()
   await expect(address()).toBeVisible()
   // The helper stack is narrow: expand the pane to the window so every tab fits in the strip.
@@ -345,7 +347,9 @@ test.describe('browser tabs (browser-tabs S-4)', () => {
       })
     )
     try {
-      await page.locator(`[data-folder-path="${seed.repo}"]`).first().click()
+      await page
+        .locator(`[data-tree-folder]:has([data-folder-path="${seed.repo}"]) [data-folder-head]`)
+        .click()
       await expect
         .poll(
           async () => {

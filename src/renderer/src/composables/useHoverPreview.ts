@@ -24,7 +24,7 @@ const CLOSE_GRACE_MS = 200
 
 /**
  * Module-level grace-close timer, SHARED across every `useHoverPreview` instance
- * — the trigger rows (`SidebarFolder`, `FleetBoardCard`) AND the card components
+ * — the trigger rows (`SidebarFolder`, the tree's checkout rows) AND the card components
  * (`SessionPreview`, `FolderPreview`). Row and card are distinct components with
  * distinct composable instances, so "row + card = one hover zone" can only be
  * coordinated through shared state: a close armed when the mouse leaves the row is
@@ -37,7 +37,7 @@ let closeTimer: ReturnType<typeof setTimeout> | null = null
  * Composable that wires a hover-with-delay-and-grace state machine into the `ui`
  * store's `preview` slice. Two roles share it:
  *
- * - **Trigger rows** (`SidebarFolder`, `FleetBoardCard`) call `enter`/`enterFolder`
+ * - **Trigger rows** (`SidebarFolder`, `SidebarTreeFolder`) call `enter`/`enterFolder`
  *   on `mouseenter` (arms the open) and `leave` on `mouseleave` (arms the grace-
  *   close).
  * - **Card components** (`SessionPreview`, `FolderPreview`) call `cancelClose` on

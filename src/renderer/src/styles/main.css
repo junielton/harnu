@@ -70,17 +70,14 @@ textarea,
  *
  * Painted on EVERY interactive element when the user reaches it via keyboard
  * (`:focus-visible` only — never on click/touch). The accent-line token is
- * the same color used for input :focus borders and the sidebar's
- * arrow-cursor outline, so the ring is visually consistent across surfaces
- * regardless of theme.
+ * the same color used for input :focus borders.
  *
  * `outline-offset: 1px` keeps the ring clear of any internal border and the
  * `border-radius: inherit` re-uses the host's corner rounding — flat rings
  * on flat surfaces, rounded rings on chips/buttons.
  *
  * Per-component overrides: any element that owns its own focus painting (the
- * sidebar's `data-focused` arrow-cursor ring, the command palette's
- * keyboard-cursor accent bar, the SessionMenu items which paint a focus bg
+ * command palette's keyboard-cursor accent bar, the SessionMenu items which paint a focus bg
  * on `focus`) should add `.no-default-ring` to skip this rule. The
  * `:not(.no-default-ring)` selector below provides that opt-out without
  * forcing every overriding component to set `outline: none` defensively.
@@ -89,6 +86,14 @@ textarea,
   outline: 2px solid var(--color-accent-line);
   outline-offset: 1px;
   border-radius: inherit;
+}
+
+/* Needs attention, the Focus back row and the dock heads are full-width buttons against a scroller
+   or an island edge, which would clip a ring drawn outside them: theirs sits inside. */
+[data-attention] button:focus-visible:not(.no-default-ring),
+[data-focus-back]:focus-visible:not(.no-default-ring),
+[data-dock-head]:focus-visible:not(.no-default-ring) {
+  outline-offset: -2px;
 }
 
 .scrollable {
@@ -115,8 +120,8 @@ textarea,
 
 /* Layout containment for long lists (BUG-269, design.md §6 — "Layout containment").
    The sidebar keeps every session row in the DOM, including the rows of collapsed
-   folders (zero-height clip, not `display: none`), and the Fleet rail one card per
-   live session — tens of thousands of boxes on a large workspace. With no
+   folders (zero-height clip, not `display: none`) — tens of thousands of boxes on a
+   large workspace. With no
    containment a style or layout pass walked all of them, so a single change anywhere
    in the page cost 100–240 ms and stalled key delivery to the terminal.
    `content-visibility: auto` makes the browser skip style, layout and paint for any
@@ -124,24 +129,17 @@ textarea,
    it in the DOM — find-in-page, focus, `scrollIntoView` and `querySelector` still
    reach it. Pure performance: no row changes size, position or paint.
    - `.sidebar-contain`: the sidebar column is a layout-containment root with a fixed
-     width, so a layout change elsewhere in the window (terminal, topbar, Fleet rail)
+     width, so a layout change elsewhere in the window (terminal, topbar)
      never re-walks the folder list, and a change inside it never escapes. Nothing in
      the column is `position: fixed` (menus and popovers are teleported to `body`),
      which is what makes the new containing block safe.
    - `.sidebar-row-cv`: session rows have a fixed inline height, so no
-     `contain-intrinsic-size` is needed and scroll positions cannot shift.
-   - `.fleet-card-cv`: a card's height depends on its optional second line, so the
-     placeholder size is `auto <fallback>` — the browser remembers the real height
-     once a card has rendered, which keeps the scrollbar from jumping. */
+     `contain-intrinsic-size` is needed and scroll positions cannot shift. */
 .sidebar-contain {
   contain: layout style;
 }
 .sidebar-row-cv {
   content-visibility: auto;
-}
-.fleet-card-cv {
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 64px;
 }
 
 /* Eyebrow / section label — design.md §3 (Eyebrow scale) + §6 (Section label).
@@ -587,9 +585,8 @@ textarea,
   }
 }
 
-/* Fleet state ring (design.md §7 — Fleet rail). The 16px badge that carries
-   session state on every `FleetBoardCard` and on the minimized rail's
-   minicards. It REPLACED the old card border-ring (T151/T160/T161/BUG-51): a
+/* Fleet state ring (design.md §7). The 16px badge that carries session state on
+   every folder header and Needs attention row. It REPLACED the old card border-ring (T151/T160/T161/BUG-51): a
    masked `.anim-ring::before` plus an `<svg><rect>` travelling
    `stroke-dashoffset`. Consumed as `fleet-ring` + `fleet-ring--<state>`;
    never rebuilt ad-hoc per component.
@@ -711,9 +708,7 @@ textarea,
   opacity: 0.5;
 }
 
-/* idle — never rendered in the Fleet rail (idle is dropped from that
-   projection), but the old sidebar board still passes it. A quiet neutral
-   ring keeps that path from rendering a ringless badge. */
+/* idle — a folder with nothing happening draws the faint track alone. */
 .fleet-ring--idle .fleet-ring-track {
   border-color: var(--color-border-2);
 }
@@ -737,48 +732,11 @@ textarea,
 
 /* Drop-to-pin affordance (sidebar + onboarding, design.md — "Dropping a
    folder onto the sidebar"). The dashed drop-target box pulses by reusing
-   THIS SAME `ring-breathe` keyframe (the Fleet rail's needs-input state,
+   THIS SAME `ring-breathe` keyframe (the ring's needs-input state,
    above) instead of a new one — "a solid ring that breathes" already means
    "waiting on you," which fits a drop target just as well. */
 .anim-drop-pulse {
   animation: ring-breathe 2.2s ease-in-out infinite;
-}
-
-/* Fleet card entrance (design.md §7): a newly-arriving card fades + slides
-   22px from the right as ONE unit (frame + ring badge + content, so they can
-   never diverge). `.card-enter` is removed on `animationend` (see
-   `FleetBoardCard.vue`). */
-@keyframes card-enter {
-  from {
-    opacity: 0;
-    transform: translateX(22px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-.card-enter {
-  animation: card-enter 620ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-/* The state ring is a child badge now, not the card's border, so it no
-   longer has to be suppressed during the entrance slide — it travels with
-   the card as part of the same moving unit. */
-
-/* Collapsible section body (Fleet rail — Needs you / Would-have, design.md
-   §7): a grid `1fr↔0fr` gives a real height transition without measuring
-   pixels (the modern max-height replacement). */
-.collapsible {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows var(--dur-slow) var(--ease);
-}
-.collapsible.closed {
-  grid-template-rows: 0fr;
-}
-.collapsible > .collapsible-inner {
-  overflow: hidden;
-  min-height: 0;
 }
 
 /* Canvas Eraser mark (design.md §6 → "Eraser mark", T536 U1). The pane adds
@@ -904,7 +862,7 @@ textarea,
 /* layout-motion:start */
 /* T628 — layout motion (design.md §7 "Layout motion").
    Transitions exist ONLY while the layout store has raised `data-layout-motion` on the app shell
-   (around a maximize, an expand, a sidebar or Fleet rail change, an orientation switch). A divider
+   (around a maximize, an expand, a sidebar change, an orientation switch). A divider
    drag never raises it, so a drag follows the pointer with no easing. Containers opt in with
    `data-lm`. An orientation switch also sets `data-lm-flip`: that one is animated by a transform
    (FLIP, App.vue), because a flex row turning into a column cannot be interpolated. Both `--dur-slow` and `--ease` are the existing motion tokens. */
@@ -923,7 +881,7 @@ textarea,
    Unlayered and !important on purpose, to beat the layered utilities and the floating rules that
    give the same elements sizes, margins and borders.
    .lm-collapse    a flex item sized by `flex` (session area, helper stack, a pane)
-   .lm-collapse-w  an item sized by `width` (sidebar, Fleet rail column, a vertical divider)
+   .lm-collapse-w  an item sized by `width` (sidebar, a vertical divider)
    .lm-collapse-h  an item sized by `height` (a horizontal divider) */
 .lm-collapse,
 .lm-collapse-w,
@@ -973,13 +931,10 @@ textarea,
   border-radius: var(--float-radius);
   box-sizing: border-box;
 }
+:root[data-floating='on'] [data-island='sidebar-needs-you'],
 :root[data-floating='on'] [data-island='sidebar-return'],
 :root[data-floating='on'] [data-island='sidebar-list'],
-:root[data-floating='on'] [data-island='sidebar-dock'],
-:root[data-floating='on'] [data-island='rail-list'],
-:root[data-floating='on'] [data-island='rail-needs-you'],
-:root[data-floating='on'] [data-island='rail-would-have'],
-:root[data-floating='on'] [data-island='rail-minimized'] {
+:root[data-floating='on'] [data-island='sidebar-dock'] {
   background: var(--color-sidebar);
 }
 :root[data-floating='on'] [data-island='topbar'],
@@ -989,9 +944,8 @@ textarea,
 }
 /* islands whose content must not poke past the rounded corners (scrollers already clip) */
 :root[data-floating='on'] [data-island='session'],
-:root[data-floating='on'] [data-island='sidebar-return'],
-:root[data-floating='on'] [data-island='rail-needs-you'],
-:root[data-floating='on'] [data-island='rail-would-have'] {
+:root[data-floating='on'] [data-island='sidebar-needs-you'],
+:root[data-floating='on'] [data-island='sidebar-return'] {
   overflow: hidden;
 }
 
@@ -1001,28 +955,24 @@ textarea,
   height: var(--float-band);
 }
 
-/* a joined head (the sidebar toolbar, the Fleet rail header) is the TOP of its list island, not an
+/* a joined head (the sidebar toolbar) is the TOP of its list island, not an
    island of its own: it sits inside the island's 1px top border, so it is one px shorter than the
    band and its bottom rule (its own `border-b`, the inner divider) lands on the Topbar's bottom edge.
-   `!important` because both heads carry their 42px as an inline style, which only that beats. */
+   `!important` because the head carries its 42px as an inline style, which only that beats. */
 :root[data-floating='on'] [data-island-head][data-island-band] {
   box-sizing: border-box;
   height: calc(var(--float-band) - 1px) !important;
 }
 
-/* the sidebar column and the expanded Fleet rail are transparent stacks of islands */
-:root[data-floating='on'] aside[data-column]:not([data-rail-state='minimized']) {
+/* the sidebar column is a transparent stack of islands */
+:root[data-floating='on'] aside[data-column] {
   background: transparent;
   gap: var(--float-gap);
 }
 :root[data-floating='on'] [data-island='topbar'] {
   margin-bottom: var(--float-gap);
 }
-/* the Return here zone's own top rule: the island gap separates it from the list now */
-:root[data-floating='on'] [data-section-divider] {
-  display: none;
-}
-/* dock and rail sections are drop-in slots: each extra section is divided from the one above */
+/* dock sections are drop-in slots: each extra section is divided from the one above */
 :root[data-floating='on'] [data-dock-section] + [data-dock-section] {
   border-top: 1px solid var(--color-border);
 }
@@ -1067,10 +1017,6 @@ textarea,
   background: var(--color-accent-line);
 }
 
-/* a divider that is not rendered must not take the gap with it: the minimized Fleet rail */
-:root[data-floating='on'] [data-rail-column][data-rail-state='minimized'] {
-  margin-left: var(--float-gap);
-}
 /* T790 delta 2 — the session tuck strip as its own island (design.md §6 "Tucking the session away",
    the floating bullet). The strip is `bar + --float-gap` in layout (so the gap to the helper stack is its
    own; the main divider is collapsed while tucked), the visible bar is a 4px island with --float-radius
@@ -1148,3 +1094,248 @@ textarea,
   display: none;
 }
 /* floating-panels:end */
+
+.sidebar-tree-scroll {
+  scrollbar-gutter: stable;
+}
+
+.sidebar-tree-scroll :is([data-sidebar-row], [data-folder-path], [data-session-id]) {
+  /* The sticky folder header, and under Focus the back row above it. */
+  scroll-margin-top: calc(var(--sidebar-tree-header-height) + var(--sidebar-tree-back-height, 0px));
+}
+
+.sidebar-disclosure {
+  display: grid;
+  /* Without this the implicit column grows to its content's min width, and one long row
+     widens the whole list. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur) var(--ease);
+}
+
+.sidebar-disclosure[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+.sidebar-disclosure-content {
+  min-height: 0;
+  overflow: clip;
+}
+
+[data-row-bar]::before {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  background-color: transparent;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+[data-row-bar='session']::before {
+  top: 0;
+  bottom: 0;
+  left: 20px;
+  width: 1px;
+}
+
+[data-row-bar='checkout']::before {
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+}
+
+[data-row-bar='header']::before {
+  top: calc(50% - 8px);
+  height: 16px;
+  left: 0;
+  width: 2px;
+}
+
+/* Idle worktrees keep the tree guide alongside their checkout bar. */
+.sidebar-tree-guide::before,
+[data-idle-worktree]::after {
+  position: absolute;
+  inset: 0 auto 0 20px;
+  width: 1px;
+  background-color: var(--color-border-2);
+  pointer-events: none;
+  content: '';
+}
+
+.sidebar-tree-guide[data-guide-last='true']::before,
+[data-idle-worktree][data-guide-last='true']::after {
+  bottom: 2px;
+}
+
+/* Group rail (design.md "Group rail"): one per checkout, over its row and its
+   sessions. The inset keeps neighbours apart, and a `::before` on the group
+   paints under the checkout row's own bar. The state names the duration, so the
+   colour enters over --dur and leaves over --dur-slow. */
+[data-checkout-group] {
+  position: relative;
+}
+
+[data-checkout-group]::before {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+  background-color: transparent;
+  transition: background-color var(--dur-slow) var(--ease);
+}
+
+[data-checkout-group][data-group-rail='working'] {
+  --rail-color: var(--color-rail-working);
+  --rail-strong: var(--color-green);
+}
+
+[data-checkout-group][data-group-rail='failed'] {
+  --rail-color: var(--color-red);
+  --rail-strong: var(--color-red);
+}
+
+[data-checkout-group][data-group-rail='needs-input'] {
+  --rail-color: var(--color-warning);
+  --rail-strong: var(--color-warning);
+}
+
+[data-checkout-group][data-group-rail]::before {
+  background-color: var(--rail-color);
+  transition-duration: var(--dur);
+}
+
+[data-row-bar='session']:hover::before {
+  left: 19.5px;
+  width: 2px;
+  background-color: var(--color-text-2);
+}
+
+[data-row-bar='checkout']:hover::before,
+[data-row-bar='checkout'][data-menu-open='true']::before,
+[data-row-bar='header']:hover::before {
+  width: 2px;
+  background-color: var(--color-text-2);
+}
+
+/* On an active group, hover keeps the rail's colour. `:where` leaves keyboard
+   focus below able to win. */
+:where([data-group-rail]) > [data-row-bar='checkout']:hover::before,
+:where([data-group-rail]) > [data-row-bar='checkout'][data-menu-open='true']::before {
+  width: 3px;
+  background-color: var(--rail-strong);
+}
+
+[data-row-bar='session'][data-selected='true']::before {
+  left: 19.5px;
+  width: 2px;
+  background-color: var(--color-bar-selected);
+}
+
+[data-row-bar='header'][data-current='true']::before {
+  width: 2px;
+  background-color: var(--color-bar-selected);
+}
+
+/* A focus stop inside a row (a count chip) is the row's focus too: same bar, no box. */
+[data-row-bar='session']:focus-visible::before,
+[data-row-bar='session']:has([tabindex]:focus-visible)::before,
+[data-row-bar='session'][data-focused='true']::before {
+  left: 19px;
+  width: 3px;
+  background-color: var(--color-text);
+}
+
+[data-row-bar='checkout']:focus-visible::before,
+[data-row-bar='checkout']:has([tabindex]:focus-visible)::before,
+[data-row-bar='checkout'][data-focused='true']::before {
+  width: 3px;
+  background-color: var(--color-text);
+}
+
+[data-row-bar='header']:has(button:focus-visible)::before,
+[data-row-bar='header']:has([tabindex]:focus-visible)::before,
+[data-row-bar='header']:focus-visible::before,
+[data-row-bar='header'][data-focused='true']::before {
+  width: 3px;
+  background-color: var(--color-text);
+}
+
+[data-row-bar='session'][data-selected='true']:focus-visible::before,
+[data-row-bar='session'][data-selected='true']:has([tabindex]:focus-visible)::before,
+[data-row-bar='session'][data-selected='true'][data-focused='true']::before,
+[data-row-bar='header'][data-current='true']:has(button:focus-visible)::before,
+[data-row-bar='header'][data-current='true']:has([tabindex]:focus-visible)::before,
+[data-row-bar='header'][data-current='true']:focus-visible::before,
+[data-row-bar='header'][data-current='true'][data-focused='true']::before {
+  background-color: var(--color-bar-selected);
+}
+
+[data-row-bar]:hover,
+[data-row-bar]:hover [data-row-label],
+[data-row-bar='session'][data-selected='true'],
+[data-row-bar='session'][data-selected='true'] [data-row-label],
+[data-row-bar='header'][data-current='true'],
+[data-row-bar='header'][data-current='true'] [data-row-label],
+[data-row-bar]:focus-visible,
+[data-row-bar]:focus-visible [data-row-label],
+[data-row-bar]:has([tabindex]:focus-visible),
+[data-row-bar]:has([tabindex]:focus-visible) [data-row-label],
+[data-row-bar][data-focused='true'],
+[data-row-bar][data-focused='true'] [data-row-label],
+[data-row-bar='header']:has(button:focus-visible),
+[data-row-bar='header']:has(button:focus-visible) [data-row-label],
+[data-row-bar='checkout'][data-menu-open='true'],
+[data-row-bar='checkout'][data-menu-open='true'] [data-row-label] {
+  color: var(--color-text);
+}
+
+[data-row-bar]:focus-visible,
+[data-row-bar] [tabindex]:focus-visible,
+[data-row-bar='header'] button:focus-visible {
+  outline: none;
+}
+
+/* With no box, the focused element itself says which one it is by colour. */
+[data-row-bar] [tabindex]:focus-visible,
+[data-row-bar='header'] button:focus-visible {
+  color: var(--color-text);
+}
+
+@media (forced-colors: active) {
+  [data-row-bar]:focus-visible,
+  [data-row-bar]:has([tabindex]:focus-visible),
+  [data-row-bar] [tabindex]:focus-visible,
+  [data-row-bar='header'] button:focus-visible,
+  [data-row-bar][data-focused='true'],
+  [data-row-bar='header']:has(button:focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  [data-checkout-group][data-group-rail]::before {
+    background-color: CanvasText;
+  }
+}
+
+.sidebar-trailing {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.sidebar-trailing-scrim,
+.sidebar-mission-full {
+  background: var(--color-sidebar);
+}
+
+.sidebar-trailing-scrim {
+  position: absolute;
+  inset: 0 0 0 -24px;
+  mask-image: linear-gradient(to right, transparent, var(--color-sidebar) 24px);
+}

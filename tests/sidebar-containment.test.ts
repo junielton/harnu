@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 /**
- * BUG-269 — layout containment for the sidebar and the Fleet rail, pinned as source.
+ * BUG-269 — layout containment for the sidebar, pinned as source.
  *
  * Why it exists: the sidebar keeps every session row in the DOM (rows of collapsed
- * folders sit behind a zero-height clip, not `display: none`) and the Fleet rail one
- * card per live session, so a large workspace is ~15k elements. With no containment a
+ * folders sit behind a zero-height clip, not `display: none`), so a large workspace is
+ * ~15k elements. With no containment a
  * style/layout pass walked all of them and cost 100–240 ms, which stalled key delivery
  * to the terminal.
  *
@@ -20,7 +20,10 @@ import { readFileSync } from 'node:fs'
 const css = readFileSync('src/renderer/src/styles/main.css', 'utf8')
 const sidebar = readFileSync('src/renderer/src/components/Sidebar.vue', 'utf8')
 const folder = readFileSync('src/renderer/src/components/SidebarFolder.vue', 'utf8')
-const card = readFileSync('src/renderer/src/components/FleetBoardCard.vue', 'utf8')
+const component = (name: string): string =>
+  readFileSync(`src/renderer/src/components/${name}`, 'utf8')
+const shelved = readFileSync('src/renderer/src/components/SidebarShelvedSection.vue', 'utf8')
+const treeFolder = readFileSync('src/renderer/src/components/SidebarTreeFolder.vue', 'utf8')
 const repoHeader = readFileSync('src/renderer/src/components/RepoGroupHeader.vue', 'utf8')
 
 /** The declaration block of the first `selector { … }` in the stylesheet. */
@@ -49,13 +52,6 @@ describe('BUG-269 containment helpers (main.css)', () => {
     expect(block('.sidebar-row-cv')).not.toMatch(/contain-intrinsic/)
   })
 
-  it('fleet cards are skipped off-screen and remember their real height once rendered', () => {
-    const b = block('.fleet-card-cv')
-    expect(b).toMatch(/content-visibility:\s*auto/)
-    // `auto <fallback>`: the fallback only stands in until the card has rendered once.
-    expect(b).toMatch(/contain-intrinsic-block-size:\s*auto\s+\d+px/)
-  })
-
   it('the sidebar column is a layout + style containment root, and does NOT clip (no paint/size)', () => {
     const b = block('.sidebar-contain')
     expect(b).toMatch(/contain:\s*layout style\s*;/)
@@ -69,22 +65,16 @@ describe('BUG-269 containment wiring', () => {
     expect(openingTag(sidebar, 'data-sidebar\n')).toMatch(/class="[^"]*\bsidebar-contain\b/)
   })
 
-  it('every session row carries .sidebar-row-cv and keeps its fixed inline height', () => {
-    const tag = openingTag(folder, 'data-session-row')
-    // The marker class is in the opening tag of the row, which is the element whose
-    // height the template pins: the two must travel together.
-    const row = folder.slice(
-      folder.indexOf('data-session-row'),
-      folder.indexOf('data-session-row') + 2500
-    )
-    expect(tag).toBeTruthy()
-    expect(row).toMatch(/class="sidebar-row sidebar-row-cv /)
-    expect(row).toMatch(/height: `\$\{metrics\.sessionRowHeight\}px`/)
-  })
-
-  it('every Fleet card carries .fleet-card-cv', () => {
-    expect(openingTag(card, 'data-dsqa="fleet-card"')).toMatch(/class="fleet-card-cv /)
-  })
+  it.each([folder, shelved])(
+    'session rows carry .sidebar-row-cv and a fixed inline height (%#)',
+    (source) => {
+      const start = source.indexOf('data-session-row')
+      const row = source.slice(start, start + 2500)
+      expect(openingTag(source, 'data-session-row')).toBeTruthy()
+      expect(row).toMatch(/class="sidebar-row sidebar-row-cv /)
+      expect(row).toMatch(/height: `\$\{metrics\.sessionRowHeight\}px`/)
+    }
+  )
 })
 
 describe('BUG-269 invariant: layout containment is safe only while nothing in the column is position: fixed', () => {
@@ -98,7 +88,18 @@ describe('BUG-269 invariant: layout containment is safe only while nothing in th
   for (const [name, source] of [
     ['Sidebar.vue', sidebar],
     ['SidebarFolder.vue', folder],
-    ['RepoGroupHeader.vue', repoHeader]
+    ['RepoGroupHeader.vue', repoHeader],
+    ['SidebarTreeFolder.vue', treeFolder],
+    // Needs attention and the dock live in the column too, with the rows the dock holds.
+    ...[
+      'SidebarAttention.vue',
+      'SidebarDockSection.vue',
+      'SidebarNeedsYou.vue',
+      'SidebarReturnZone.vue',
+      'ApprovalRow.vue',
+      'McpConfirmRow.vue',
+      'YourMoveCard.vue'
+    ].map((name) => [name, component(name)] as const)
   ] as const) {
     it(`${name}: no fixed-position element outside a <Teleport>`, () => {
       const template = withoutTeleports(source.slice(source.indexOf('<template>')))

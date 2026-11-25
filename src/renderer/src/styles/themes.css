@@ -45,14 +45,8 @@
   --radius: 7px;
   --radius-lg: 10px;
 
-  /* Folder View scroll caps (design.md §6 "Folder View → Height caps"). The
-   * two long lists cap their own height and scroll inside themselves instead of
-   * running off the bottom of the page: measured on a 102-worktree, 128-card
-   * repo, the fan-out alone pushed the Sessions block three screens down.
-   * Theme-invariant, like the shape and motion tokens above — they are read by
-   * three components, and a height that lives in one of them is a height the
-   * other two can drift from. */
-  --fv-fanout-max-h: 380px;
+  /* Scroll cap of the lists inside the Cleanup confirm dialogs (design.md §9). The name predates the
+   * slim Folder View, where it started. Theme-invariant. */
   --fv-rail-list-max-h: 280px;
 
   /* Cleanup layout dimensions (design.md §4, "Workspace GC — unified Cleanup"). Theme-invariant. */
@@ -117,6 +111,12 @@
   --float-radius: 4px;
   --float-band: 42px;
 
+  /* Sidebar marks (design.md §6 "Row states" and "Group rail", §9). Derived from the theme's own
+   * green and accent, which is right for every dark theme and for extension themes (they never
+   * define them); the four light themes override them where the derived colour does not read. */
+  --color-rail-working: color-mix(in oklab, var(--color-green) 40%, transparent);
+  --color-bar-selected: var(--color-accent);
+
   --term-ansi-black: #302a25;
   --term-ansi-red: #c6675a;
   --term-ansi-green: #7a9455;
@@ -148,11 +148,13 @@
   --color-border: #e4e4e7;
   --color-border-2: #d4d4d8;
   --color-canvas: #ececef; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
+  --color-rail-working: #55a06c;
+  --color-bar-selected: #1d4ed8;
 
   --color-text: #18181b;
   --color-text-2: #3f3f46;
-  --color-text-3: #71717a;
-  --color-text-4: #a1a1aa;
+  --color-text-3: #52525b;
+  --color-text-4: #696972;
   --color-text-disabled: #d4d4d8;
 
   --color-accent: #c2410c;
@@ -164,11 +166,11 @@
   --color-green-soft: rgba(22, 163, 74, 0.15);
   --color-red: #dc2626;
   --color-red-soft: rgba(220, 38, 38, 0.1);
-  --color-warning: #ca8a04;
+  --color-warning: #926100;
   --color-green-line: rgba(22, 163, 74, 0.35);
   --color-red-line: rgba(220, 38, 38, 0.3);
-  --color-warning-soft: rgba(202, 138, 4, 0.1);
-  --color-warning-line: rgba(202, 138, 4, 0.3);
+  --color-warning-soft: rgba(146, 97, 0, 0.1);
+  --color-warning-line: rgba(146, 97, 0, 0.3);
 
   /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
    * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
@@ -365,11 +367,13 @@
   --color-border: #ccd0da;
   --color-border-2: #bcc0cc;
   --color-canvas: #d8dce5; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
+  --color-rail-working: #5a8c50;
+  --color-bar-selected: #1e66f5;
 
   --color-text: #4c4f69;
   --color-text-2: #5c5f77;
-  --color-text-3: #6c6f85;
-  --color-text-4: #7c7f93;
+  --color-text-3: #5f627a;
+  --color-text-4: #626579;
   --color-text-disabled: #9ca0b0;
 
   --color-accent: #fe640b;
@@ -381,11 +385,11 @@
   --color-green-soft: rgba(64, 160, 43, 0.15);
   --color-red: #d20f39;
   --color-red-soft: rgba(210, 15, 57, 0.1);
-  --color-warning: #df8e1d;
+  --color-warning: #845500;
   --color-green-line: rgba(64, 160, 43, 0.35);
   --color-red-line: rgba(210, 15, 57, 0.3);
-  --color-warning-soft: rgba(223, 142, 29, 0.1);
-  --color-warning-line: rgba(223, 142, 29, 0.3);
+  --color-warning-soft: rgba(132, 85, 0, 0.1);
+  --color-warning-line: rgba(132, 85, 0, 0.3);
 
   /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
    * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
@@ -528,11 +532,12 @@
   --color-border: #d0d7de;
   --color-border-2: #afb8c1;
   --color-canvas: #eaeef2; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
+  --color-rail-working: #53966a;
 
   --color-text: #1f2328;
   --color-text-2: #424a53;
-  --color-text-3: #656d76;
-  --color-text-4: #818b98;
+  --color-text-3: #59636e;
+  --color-text-4: #646c75;
   --color-text-disabled: #afb8c1;
 
   --color-accent: #0969da;
@@ -637,11 +642,13 @@
   --color-border: #d5c4a1;
   --color-border-2: #bdae93;
   --color-canvas: #ebdbb2; /* hand-picked: the dark-theme mix reads as a heavy slab on light */
+  --color-rail-working: #6f8c38;
+  --color-bar-selected: #458588;
 
   --color-text: #3c3836;
   --color-text-2: #504945;
   --color-text-3: #665c54;
-  --color-text-4: #7c6f64;
+  --color-text-4: #72665c;
   --color-text-disabled: #a89984;
 
   --color-accent: #d65d0e;
@@ -653,11 +660,11 @@
   --color-green-soft: rgba(121, 116, 14, 0.15);
   --color-red: #9d0006;
   --color-red-soft: rgba(157, 0, 6, 0.1);
-  --color-warning: #b57614;
+  --color-warning: #955700;
   --color-green-line: rgba(121, 116, 14, 0.35);
   --color-red-line: rgba(157, 0, 6, 0.3);
-  --color-warning-soft: rgba(181, 118, 20, 0.1);
-  --color-warning-line: rgba(181, 118, 20, 0.3);
+  --color-warning-soft: rgba(149, 87, 0, 0.1);
+  --color-warning-line: rgba(149, 87, 0, 0.3);
 
   /* diff surfaces (design.md §6 "Review pane", §9) — word-level intra-line
    * marks. The LINE backgrounds reuse --color-green-soft/--color-red-soft;
