@@ -1,7 +1,7 @@
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
 import { launchApp } from './fixtures/launch-app'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -19,6 +19,10 @@ const MATE = 'bbbbbbbb-0000-4000-8000-000000000002'
 const OTHER = 'cccccccc-0000-4000-8000-000000000003'
 const LONG =
   'Migrate the rate limiter to a shared Redis pool and keep every health check green while it rolls out'
+
+type VueApp = {
+  config: { globalProperties: { $pinia: { _s: Map<string, { sidebarWidth: number }> } } }
+}
 
 let root = ''
 let app: ElectronApplication
@@ -99,6 +103,26 @@ function seed(): string {
     join(agents, 'agent-a1b2c3.meta.json'),
     JSON.stringify({ agentType: 'general-purpose', description: LONG })
   )
+
+  // A second, finished subagent: its row sits under the "N done" fold and carries no status.
+  jsonl(join(agents, 'agent-d4e5f6.jsonl'), [
+    {
+      type: 'user',
+      isSidechain: true,
+      agentId: 'd4e5f6',
+      sessionId: LEAD,
+      cwd: repo,
+      message: { role: 'user', content: LONG },
+      attributionSkill: 'superpowers:dispatching-parallel-agents',
+      timestamp: '2026-01-15T12:00:00.000Z'
+    }
+  ])
+  writeFileSync(
+    join(agents, 'agent-d4e5f6.meta.json'),
+    JSON.stringify({ agentType: 'general-purpose', description: LONG })
+  )
+  const past = new Date(Date.now() - 3_600_000)
+  utimesSync(join(agents, 'agent-d4e5f6.jsonl'), past, past)
 
   writeFileSync(
     join(home, 'projects.json'),
@@ -184,4 +208,106 @@ test('agent rows, teammate rows and long titles never widen the sidebar list', a
   expect(box.titleTruncated).toBe(true)
   expect(box.agentTruncated).toBe(true)
   expect(box.teammateTruncated).toBe(true)
+})
+
+/** Every agent row on screen: part widths, and how far each item sits from the row's middle. */
+function agentRows(): Promise<
+  Array<{
+    label: number
+    type: number
+    skill: number
+    typeWhole: boolean
+    skillWhole: boolean
+    labelCut: boolean
+    off: number
+    baselineSpread: number
+  }>
+> {
+  return page.locator('.sidebar-tree-scroll').evaluate((list) =>
+    [...list.querySelectorAll('.agent-row:not(button)')]
+      .filter((row) => row.getBoundingClientRect().height > 0)
+      .map((row) => {
+        const mid = row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2
+        const label = row.querySelector('span.truncate:not(.font-mono)') as HTMLElement
+        const [type, skill] = [...row.querySelectorAll<HTMLElement>('span.font-mono')]
+        const centres: number[] = []
+        const baselines: number[] = []
+        for (const icon of row.querySelectorAll('svg, .rounded-full')) {
+          const r = icon.getBoundingClientRect()
+          centres.push(r.top + r.height / 2)
+        }
+        const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
+        const texts: Node[] = []
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (n.textContent?.trim()) texts.push(n)
+        }
+        for (const node of texts) {
+          const range = document.createRange()
+          range.selectNodeContents(node)
+          const r = range.getBoundingClientRect()
+          centres.push(r.top + r.height / 2)
+          const probe = document.createElement('span')
+          probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline'
+          node.parentElement!.insertBefore(probe, node)
+          baselines.push(probe.getBoundingClientRect().top)
+          probe.remove()
+        }
+        const width = (el: HTMLElement): number => el.getBoundingClientRect().width
+        return {
+          label: width(label),
+          type: width(type),
+          skill: width(skill),
+          typeWhole: type.scrollWidth <= type.clientWidth,
+          // The skill is longer than its cap, so "whole" is the cap.
+          skillWhole: Math.round(width(skill)) === 120,
+          labelCut: label.scrollWidth > label.clientWidth,
+          off: Math.max(...centres.map((c) => Math.abs(c - mid))),
+          baselineSpread: Math.max(...baselines) - Math.min(...baselines)
+        }
+      })
+  )
+}
+
+async function setSidebarWidth(width: number): Promise<void> {
+  await page.evaluate((width) => {
+    const app = (document.querySelector('#app') as unknown as { __vue_app__: VueApp }).__vue_app__
+    app.config.globalProperties.$pinia._s.get('layout')!.sidebarWidth = width
+  }, width)
+  await page.waitForTimeout(600)
+}
+
+const overflow = (): Promise<number> =>
+  page.locator('.sidebar-tree-scroll').evaluate((el) => el.scrollWidth - el.clientWidth)
+
+test('an agent row keeps its type and skill: the title gives way first', async () => {
+  // Rows were opened by the test above; open the "N done" fold if it is still closed.
+  const fold = page.locator('[data-dsqa="sidebar-agents-done-fold"][aria-expanded="false"]')
+  if ((await fold.count()) > 0) await fold.first().click()
+  await page.waitForTimeout(800)
+
+  const narrow = await agentRows()
+  expect(narrow.length).toBe(2)
+  for (const row of narrow) {
+    expect(row.type).toBeGreaterThan(0)
+    expect(row.skill).toBeGreaterThan(0)
+    // The title keeps about six characters (48px, minus a layout-unit rounding).
+    expect(row.label).toBeGreaterThanOrEqual(47.5)
+    expect(row.off).toBeLessThanOrEqual(0.75)
+    expect(row.baselineSpread).toBeLessThanOrEqual(0.75)
+  }
+  expect(await overflow()).toBe(0)
+
+  // With room to spare the chips are whole while the long title is still the one cut.
+  await setSidebarWidth(440)
+  for (const row of await agentRows()) {
+    expect(row.typeWhole).toBe(true)
+    expect(row.skillWhole).toBe(true)
+    expect(row.labelCut).toBe(true)
+  }
+  expect(await overflow()).toBe(0)
+
+  // At the narrowest sidebar there is no room for the title's floor either: the row
+  // still never pushes the list sideways.
+  await setSidebarWidth(200)
+  expect(await overflow()).toBe(0)
 })
