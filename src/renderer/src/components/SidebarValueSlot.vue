@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { ChevronDown, ChevronUp } from 'lucide-vue-next'
 
-defineProps<{
-  count?: number
-  open?: boolean
-  label?: string
-}>()
+// `open` undefined means the row cannot fold, so no chevron. The explicit default
+// matters: Vue would otherwise cast an absent boolean prop to `false` ("folded").
+withDefaults(
+  defineProps<{
+    count?: number
+    open?: boolean
+    label?: string
+  }>(),
+  { count: undefined, open: undefined, label: undefined }
+)
 
 defineEmits<{ toggle: [] }>()
 </script>

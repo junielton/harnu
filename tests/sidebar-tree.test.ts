@@ -570,4 +570,30 @@ describe('sidebar flat checkout tree (S-1)', () => {
     await nextTick()
     expect(block(w, APP).get('[data-folder-content]').attributes('data-open')).toBe('true')
   })
+
+  it('a row that cannot fold shows no chevron, on hover or focus either', async () => {
+    const disk = defaultDisk()
+    // A main checkout and a non-git folder with nothing listed under them.
+    disk[1].sessions.length = 0
+    disk.push(entry('/w/org-b/empty', []))
+    const { w } = await boot({ disk })
+    const chevrons = (row: ReturnType<VueWrapper['get']>): number =>
+      row.findAll('[data-value-chevron]').length
+
+    await block(w, APP).get('[data-idle-row]').trigger('click')
+    const idle = block(w, APP).findAll('[data-idle-worktree]')
+    expect(idle).toHaveLength(2)
+    for (const row of idle) {
+      expect(chevrons(row)).toBe(0)
+      expect(row.get('[data-value-count]').classes()).not.toContain('group-hover:opacity-0')
+    }
+    expect(chevrons(checkoutRow(w, APP))).toBe(0)
+    expect(chevrons(block(w, '/w/org-b/empty').get('[data-folder-head]'))).toBe(0)
+
+    // Rows that can fold keep theirs.
+    expect(chevrons(checkoutRow(w, WT_FEAT))).toBe(1)
+    expect(chevrons(block(w, APP).get('[data-folder-head]'))).toBe(1)
+    expect(chevrons(block(w, PLAIN).get('[data-folder-head]'))).toBe(1)
+    expect(chevrons(block(w, APP).get('[data-idle-row]'))).toBe(1)
+  })
 })

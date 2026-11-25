@@ -2822,6 +2822,9 @@ export const useSessionsStore = defineStore('sessions', () => {
     )
   }
   let lastTrackKey = trackKey([])
+  // The main process outlives a page reload and only pushes changes, so this
+  // page's first set asks for everything it already holds.
+  let replayListings = true
   const TRACK_DEBOUNCE_MS = 500
   let trackTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -2838,7 +2841,9 @@ export const useSessionsStore = defineStore('sessions', () => {
       gitWorktrees.value = kept
       applyWorktreeListings()
     }
-    void window.api.worktreesTrack(repos).catch((err: unknown) => {
+    const options = { replay: replayListings }
+    replayListings = false
+    void window.api.worktreesTrack(repos, options).catch((err: unknown) => {
       console.warn('[sessions] worktreesTrack failed:', err)
     })
   }

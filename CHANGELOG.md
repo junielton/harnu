@@ -12,6 +12,10 @@ All notable changes to Harnu are recorded here, newest first. Format follows
 
 ## 2026-11-25
 
+### Fixed
+
+- Worktrees with no session no longer disappear from the sidebar after the window reloads.
+
 ### Changed
 
 - Hover, selection and keyboard focus in the sidebar now show a bar on the left and brighten the row label, without filling the row or moving its contents.
