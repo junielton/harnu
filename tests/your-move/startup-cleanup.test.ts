@@ -12,6 +12,7 @@ import type { CardView, YourMoveCard } from '../../src/main/your-move/core'
 const h = vi.hoisted(() => ({
   userData: '',
   lookups: {} as Record<string, { state: string; path?: string }>,
+  leaderCheck: undefined as undefined | ((id: string) => Promise<boolean>),
   handlers: new Map<string, (...args: unknown[]) => Promise<unknown>>()
 }))
 
@@ -48,6 +49,17 @@ vi.mock('../../src/main/your-move/locate', () => ({
     note: (): void => undefined
   })
 }))
+
+vi.mock('../../src/main/your-move/source-mission', async (orig) => {
+  const real = await orig<typeof import('../../src/main/your-move/source-mission')>()
+  return {
+    ...real,
+    setMissionLeaderCheck: (fn: typeof h.leaderCheck): void => {
+      h.leaderCheck = fn
+      real.setMissionLeaderCheck(fn)
+    }
+  }
+})
 
 const card = (over: Partial<YourMoveCard>): YourMoveCard => ({
   id: 'c',
@@ -155,6 +167,56 @@ describe('startup cleanup wiring (BUG-300)', () => {
       expect(byId.get('c-human')?.closedAt).toBeUndefined()
     } finally {
       closeYourMove()
+    }
+  })
+
+  it('the list poll is told which leader sessions are gone, and only on a sure answer (BUG-308)', async () => {
+    const { registerYourMove, closeYourMove } = await import('../../src/main/your-move/ipc')
+    registerYourMove(() => null)
+    try {
+      await vi.waitFor(() => expect(h.leaderCheck).toBeTypeOf('function'), { timeout: 5_000 })
+      expect(await h.leaderCheck!('ghost')).toBe(true)
+      expect(await h.leaderCheck!('flaky')).toBe(false)
+      expect(await h.leaderCheck!('human')).toBe(false)
+    } finally {
+      closeYourMove()
+    }
+    expect(h.leaderCheck).toBeUndefined()
+  })
+
+  it('the running app sweeps idle cards again every hour (BUG-308)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    const start = Date.now()
+    // Not idle at boot; idle half an hour later.
+    const nearly = start - 7 * 86_400_000 + 30 * 60_000
+    await writeFile(
+      path.join(dir, 'your-move.json'),
+      JSON.stringify({
+        version: 1,
+        cursors: {},
+        cards: [
+          card({ id: 'c-soon', sessionId: 'flaky', folder: dir, updatedAt: nearly }),
+          card({ id: 'c-ghost', sessionId: 'ghost', folder: dir })
+        ]
+      })
+    )
+    const { registerYourMove, closeYourMove } = await import('../../src/main/your-move/ipc')
+    registerYourMove(() => null)
+    try {
+      const byId = async (): Promise<Map<string, CardView>> =>
+        new Map(((await h.handlers.get('yourMove:list')?.({})) as CardView[]).map((c) => [c.id, c]))
+      // the startup pass has run (it closed the gone one) and kept the other
+      await vi.waitFor(async () => expect((await byId()).get('c-ghost')?.closedAt).toBeDefined(), {
+        timeout: 4_000
+      })
+      expect((await byId()).get('c-soon')?.closedAt).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(61 * 60_000)
+      await vi.waitFor(async () => expect((await byId()).get('c-soon')?.closedBy).toBe('expired'), {
+        timeout: 4_000
+      })
+    } finally {
+      closeYourMove()
+      vi.useRealTimers()
     }
   })
 })

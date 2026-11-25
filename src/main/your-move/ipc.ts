@@ -375,6 +375,7 @@ export function registerYourMove(getWindow: () => BrowserWindow | null): void {
         if (Date.now() - lastPrune >= PRUNE_EVERY_MS) {
           lastPrune = Date.now()
           sweepStaleCards(world)
+            .catch((e) => console.error(`[your-move] stale sweep failed: ${(e as Error).message}`))
             .then(() => store.transact((s) => ({ next: pruneClosed(s, Date.now()), result: null })))
             .catch((e) => console.error(`[your-move] prune failed: ${(e as Error).message}`))
         }
