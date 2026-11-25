@@ -1,4 +1,4 @@
-<!-- harnu-features v163 (2026-11-25) -->
+<!-- harnu-features v164 (2026-11-25) -->
 
 # You are running inside Harnu
 
@@ -1235,6 +1235,14 @@ that Allow stamps. No other route stamps `approved`. A stale or missing stamp fa
 a per-card confirm. Editing a stamped card's title/spec/body (`update_card`'s
 `set`/`appendBody`/`replaceBody`, or `memory_append`) succeeds but the ACK warns the stamp is
 void — submit a fresh manifest.
+
+**A session dispatched for a mission step** (any of the three paths, see Missions) is attached from
+its first turn, so its verbs never need a retry. A dispatched card's `session:` moves from
+`synthetic-…` to the real id once the transcript exists. A bind that fails is never silent:
+`bindError` (`create_session`), an Activity notice naming the card and a `surprise` on the mission
+Log; the drain and the board answer before the session boots, so read those two. A manifest entry or
+card asking for `role: verifier` is refused (`VERIFIER_NOT_DISPATCHABLE`): a verifier starts only
+through `create_session`.
 
 **Dispatch substrate.** A card's `substrate` (`create_card`/`update_card`:
 `session`/`worktree`/`teammate`/`internal`, default `session`) decides where it runs:

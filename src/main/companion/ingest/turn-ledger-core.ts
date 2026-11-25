@@ -345,3 +345,36 @@ export function measuredUsdByDay(
   }
   return out
 }
+
+/** One project's measured USD, as parallel columns: cheap to hand from one thread to another. */
+export interface MeasuredProject {
+  projectPath: string
+  /** `<sessionId> <local day>`. */
+  keys: string[]
+  usd: number[]
+}
+
+/**
+ * The measured USD per `(session, day)` of every covered session, grouped by project so the caller
+ * asks "is this project active?" once each. The records are indexed by session first: a real ledger
+ * holds tens of thousands of sessions, and summing each over the whole ledger does not finish.
+ */
+export function measuredByProject(records: readonly TurnLedgerRecord[]): MeasuredProject[] {
+  const bySession = new Map<string, TurnLedgerRecord[]>()
+  for (const r of records) {
+    const own = bySession.get(r.sessionId)
+    if (own) own.push(r)
+    else bySession.set(r.sessionId, [r])
+  }
+  const projects = new Map<string, MeasuredProject>()
+  for (const [sid, s] of summarizeLedger(records)) {
+    if (!s.covered) continue
+    let p = projects.get(s.projectPath)
+    if (!p) projects.set(s.projectPath, (p = { projectPath: s.projectPath, keys: [], usd: [] }))
+    for (const [day, usd] of measuredUsdByDay(bySession.get(sid)!, sid)) {
+      p.keys.push(`${sid} ${day}`)
+      p.usd.push(usd)
+    }
+  }
+  return [...projects.values()]
+}
